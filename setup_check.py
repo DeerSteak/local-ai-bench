@@ -274,16 +274,37 @@ def ollama_running():
     except Exception:
         return False, {}
 
-def ollama_pull(tag):
+def find_ollama_binary():
+    """
+    Return the path to the ollama binary, or None if not found.
+    On Windows, Ollama installs to %LOCALAPPDATA%\Programs\Ollama which is
+    not always on the subprocess PATH even when it works in PowerShell.
+    """
+    # Standard PATH lookup first
+    found = shutil.which("ollama")
+    if found:
+        return found
+    # Windows fallback — check known install locations
+    if os_name == "Windows":
+        import os as _os
+        candidates = [
+            _os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+            r"C:\Program Files\Ollama\ollama.exe",
+        ]
+        for c in candidates:
+            if Path(c).exists():
+                return c
+    return None
+
+def ollama_pull(tag, ollama_bin="ollama"):
     """Pull a model via ollama CLI, streaming progress to stdout."""
     print(f"  Pulling {tag} ...")
-    result = subprocess.run(["ollama", "pull", tag])
+    result = subprocess.run([ollama_bin, "pull", tag])
     return result.returncode == 0
 
 def install_ollama():
     """Install Ollama using the appropriate method for this OS."""
     if os_name == "Darwin":
-        # macOS — use Homebrew if available, otherwise direct download
         if shutil.which("brew"):
             info("Installing Ollama via Homebrew ...")
             result = subprocess.run(["brew", "install", "ollama"])
@@ -293,16 +314,13 @@ def install_ollama():
             return False
 
     elif os_name == "Linux":
-        # Check if snap is available (DGX Spark / Ubuntu)
         if shutil.which("snap"):
             info("Installing Ollama via snap ...")
             result = subprocess.run(["sudo", "snap", "install", "ollama"])
             if result.returncode == 0:
-                # snap installs may need a moment before the binary is on PATH
                 import time
                 time.sleep(3)
                 return True
-        # Fall back to the official install script
         info("Installing Ollama via official install script ...")
         result = subprocess.run(
             "curl -fsSL https://ollama.com/install.sh | sh",
@@ -311,25 +329,32 @@ def install_ollama():
         return result.returncode == 0
 
     elif os_name == "Windows":
-        # Use winget if available
         if shutil.which("winget"):
             info("Installing Ollama via winget ...")
-            result = subprocess.run(["winget", "install", "Ollama.Ollama", "--silent"])
-            return result.returncode == 0
+            result = subprocess.run([
+                "winget", "install", "Ollama.Ollama",
+                "--silent", "--accept-package-agreements", "--accept-source-agreements"
+            ])
+            if result.returncode == 0:
+                # Give Windows a moment to finish writing the binary
+                import time
+                time.sleep(5)
+                return True
         else:
             fail("winget not found — install Ollama manually from https://ollama.com/download")
-            return False
+        return False
 
     return False
 
 ollama_up, tag_data = ollama_running()
 
-ollama_found = shutil.which("ollama") is not None
+OLLAMA_BIN = find_ollama_binary()
+ollama_found = OLLAMA_BIN is not None
 
 if ollama_found:
     try:
         ver_out = subprocess.check_output(
-            ["ollama", "--version"], text=True,
+            [OLLAMA_BIN, "--version"], text=True,
             stderr=subprocess.DEVNULL
         ).strip()
         ver_line = next(
@@ -358,14 +383,14 @@ else:
     try:
         if os_name == "Windows":
             subprocess.Popen(
-                ["ollama", "serve"],
+                [OLLAMA_BIN or "ollama", "serve"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         else:
             subprocess.Popen(
-                ["ollama", "serve"],
+                [OLLAMA_BIN or "ollama", "serve"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -414,7 +439,7 @@ if ollama_up:
             ok(f"{label} — already pulled")
         else:
             warn(f"{label} ({size}) — not found, pulling now ...")
-            success = ollama_pull(tag)
+            success = ollama_pull(tag, ollama_bin=OLLAMA_BIN or "ollama")
             if success:
                 ok(f"{label} — pulled successfully")
             else:
