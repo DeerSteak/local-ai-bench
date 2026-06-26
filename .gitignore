@@ -182,3 +182,4 @@ cython_debug/
 ComfyUI/
 bench-env/
 .DS_Store
+hf.txt
