@@ -553,9 +553,7 @@ if COMFYUI_DIR.exists():
         print()
         try:
             token = input(
-                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}
-"
-                f"  (or press Enter to skip Flux.1-schnell): "
+                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip Flux.1-schnell): "
             ).strip()
         except (EOFError, KeyboardInterrupt):
             token = ""
