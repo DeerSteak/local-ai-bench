@@ -420,10 +420,21 @@ def model_pulled(tag):
 
 def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
     """
-    Stream a generation from Ollama.
+    Generate via Ollama and return timing metrics.
     Returns: (ttft_sec, total_sec, tokens_generated, tokens_per_sec)
+
+    Uses urllib instead of requests for streaming to avoid TCP buffering
+    that causes iter_lines() to batch all chunks and inflate TTFT.
+
+    Ollama's final chunk includes server-side timing fields:
+      prompt_eval_duration  — time to process the prompt (nanoseconds)
+      eval_count            — tokens generated
+      eval_duration         — time spent generating (nanoseconds)
+    These are authoritative and used in preference to wall-clock where available.
     """
-    payload = {
+    import urllib.request
+
+    payload = json.dumps({
         "model":  model_tag,
         "prompt": prompt,
         "stream": True,
@@ -431,24 +442,31 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
             "num_predict": 512,
             "temperature": 0.0,
         },
-    }
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
     t_start = time.perf_counter()
     ttft    = None
     tokens  = 0
+    tps     = 0
+    eval_count = 0
 
-    with requests.post(
-        f"{OLLAMA_URL}/api/generate",
-        json=payload,
-        stream=True,
-        timeout=timeout,
-    ) as resp:
-        resp.raise_for_status()
-        for raw_line in resp.iter_lines():
-            if not raw_line:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for raw_line in resp:
+            if not raw_line.strip():
                 continue
-            chunk = json.loads(raw_line)
+            try:
+                chunk = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
 
+            # First token received — record TTFT from wall clock
             if ttft is None and chunk.get("response"):
                 ttft = time.perf_counter() - t_start
 
@@ -456,12 +474,16 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
                 tokens += 1
 
             if chunk.get("done"):
-                eval_count    = chunk.get("eval_count",    tokens)
-                eval_duration = chunk.get("eval_duration", 0)  # nanoseconds
+                eval_count    = chunk.get("eval_count", tokens)
+                eval_duration = chunk.get("eval_duration", 0)      # nanoseconds
+                prompt_dur    = chunk.get("prompt_eval_duration", 0) # nanoseconds
+
+                # Prefer server-side TTFT (prompt processing time) if available
+                if prompt_dur and prompt_dur > 0:
+                    ttft = prompt_dur / 1e9
+
                 if eval_duration and eval_duration > 0:
                     tps = eval_count / (eval_duration / 1e9)
-                else:
-                    tps = 0
                 break
 
     total = time.perf_counter() - t_start
