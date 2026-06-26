@@ -188,6 +188,7 @@ REQUIRED = {
     "sentence_transformers": "sentence-transformers",
     "numpy":                 "numpy",
     "tqdm":                  "tqdm",
+    "huggingface_hub":       "huggingface_hub[cli]",
 }
 
 for import_name, install_name in REQUIRED.items():
@@ -402,7 +403,6 @@ COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 IMAGE_CHECKPOINTS = [
     "sd_xl_base_1.0.safetensors",
     "flux1-schnell.safetensors",
-    "flux1-dev.safetensors",
 ]
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
@@ -454,50 +454,27 @@ if COMFYUI_DIR.exists():
                 ok(f"Checkpoint found: {name} ({size_gb:.1f} GB)")
                 found_ckpts.append(name)
 
-    # ── Token resolution ──────────────────────────────────────────────────────
-    # Used only for gated models (Flux.1-dev). hf.txt takes priority over prompt.
-    def load_token():
-        hf_txt = SCRIPT_DIR / "hf.txt"
-        if hf_txt.exists():
-            token = hf_txt.read_text().strip()
-            if token:
-                ok(f"HuggingFace token loaded from {hf_txt}")
-                return token
-        return None
+    def hf_download(repo, filename):
+        # Try `hf` first (new CLI), fall back to `huggingface-cli`, then Python API
+        for cli in ["hf", "huggingface-cli"]:
+            which = subprocess.run(["which", cli], capture_output=True)
+            if which.returncode == 0:
+                result = subprocess.run(
+                    [cli, "download", repo, filename, "--local-dir", str(CHECKPOINTS)],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    return True
+                break
 
-    def prompt_token():
-        print()
-        print(f"  {YELLOW}Flux.1-dev is a gated model. To download it you need to:{RESET}")
-        print(f"  1. Visit https://huggingface.co/black-forest-labs/FLUX.1-dev")
-        print(f"  2. Accept the license agreement")
-        print(f"  3. Generate a token at https://huggingface.co/settings/tokens")
-        print(f"  4. Save it to hf.txt in this directory, or paste it below")
-        print()
+        # Python API fallback
         try:
-            token = input(
-                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n"
-                f"  (or press Enter to skip Flux.1-dev): "
-            ).strip()
-        except (EOFError, KeyboardInterrupt):
-            token = ""
-        if token:
-            # Offer to save it for future runs
-            try:
-                save = input(f"  Save token to hf.txt for future runs? [y/N]: ").strip().lower()
-                if save == "y":
-                    (SCRIPT_DIR / "hf.txt").write_text(token)
-                    ok("Token saved to hf.txt")
-            except (EOFError, KeyboardInterrupt):
-                pass
-        return token
-
-    def hf_download(repo, filename, token=None):
-        env = os.environ.copy()
-        if token:
-            env["HF_TOKEN"] = token
-        cmd = ["huggingface-cli", "download", repo,
-               filename, "--local-dir", str(CHECKPOINTS)]
-        return subprocess.run(cmd, env=env).returncode == 0
+            from huggingface_hub import hf_hub_download  # type: ignore
+            hf_hub_download(repo_id=repo, filename=filename, local_dir=str(CHECKPOINTS))
+            return True
+        except Exception as e:
+            warn(f"Python API download failed: {e}")
+            return False
 
     # ── Download missing checkpoints ───────────────────────────────────────────
     missing = [n for n in IMAGE_CHECKPOINTS if n not in found_ckpts]
@@ -505,47 +482,23 @@ if COMFYUI_DIR.exists():
         info(f"Downloading {len(missing)} missing checkpoint(s): {', '.join(missing)}")
         CHECKPOINTS.mkdir(parents=True, exist_ok=True)
 
-        # 1. SDXL — public, no token needed
         if "sd_xl_base_1.0.safetensors" in missing:
-            info("Downloading SDXL base model (no login required) ...")
+            info("Downloading SDXL base model ...")
             if hf_download("stabilityai/stable-diffusion-xl-base-1.0",
                            "sd_xl_base_1.0.safetensors"):
-                ok("sd_xl_base_1.0.safetensors downloaded successfully")
+                ok("sd_xl_base_1.0.safetensors downloaded")
                 found_ckpts.append("sd_xl_base_1.0.safetensors")
             else:
                 warn("SDXL download failed — image benchmarks will run without it")
 
-        # 2. Flux.1-schnell — public, Apache 2.0, no token needed
         if "flux1-schnell.safetensors" in missing:
-            info("Downloading Flux.1-schnell (no login required) ...")
+            info("Downloading Flux.1-schnell ...")
             if hf_download("black-forest-labs/FLUX.1-schnell",
                            "flux1-schnell.safetensors"):
-                ok("flux1-schnell.safetensors downloaded successfully")
+                ok("flux1-schnell.safetensors downloaded")
                 found_ckpts.append("flux1-schnell.safetensors")
             else:
                 warn("Flux.1-schnell download failed — image benchmarks will run without it")
-
-        # 3. Flux.1-dev — gated; try hf.txt first, then cached login, then prompt
-        if "flux1-dev.safetensors" in missing:
-            info("Downloading Flux.1-dev (gated model) ...")
-            token = load_token()
-            if hf_download("black-forest-labs/FLUX.1-dev",
-                           "flux1-dev.safetensors", token=token):
-                ok("flux1-dev.safetensors downloaded successfully")
-                found_ckpts.append("flux1-dev.safetensors")
-            else:
-                if not token:
-                    token = prompt_token()
-                    if token and hf_download("black-forest-labs/FLUX.1-dev",
-                                             "flux1-dev.safetensors", token=token):
-                        ok("flux1-dev.safetensors downloaded successfully")
-                        found_ckpts.append("flux1-dev.safetensors")
-                    elif not token:
-                        info("Skipping Flux.1-dev")
-                    else:
-                        fail("Flux.1-dev download failed — check token and license acceptance")
-                else:
-                    fail("Flux.1-dev download failed — check token and license acceptance")
 
     if found_ckpts:
         ok(f"{len(found_ckpts)}/{len(IMAGE_CHECKPOINTS)} image checkpoints ready: "

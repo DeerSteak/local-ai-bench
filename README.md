@@ -153,7 +153,7 @@ output, excluded from rankings.
 | Embedding model | `BAAI/bge-large-en-v1.5` |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
-| Image models | SDXL (20 steps), Flux.1-schnell (4 steps), Flux.1-dev (20 steps) |
+| Image models | SDXL (20 steps), Flux.1-schnell (4 steps) |
 | Image resolutions | 1024×1024 and 1536×1536 |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image per model per resolution |
@@ -163,47 +163,14 @@ output, excluded from rankings.
 
 ## Image Models
 
-Three image models are tested. Each is skipped automatically if its checkpoint
-file is not found in `ComfyUI/models/checkpoints/` — no errors, just a clear
-skip message.
+Two image models are tested. Both are public — no login or token required.
+Each is skipped automatically if its checkpoint is not found in
+`ComfyUI/models/checkpoints/`. `setup_check.py` downloads both automatically.
 
-| Model | Checkpoint filename | Steps | Notes |
+| Model | Checkpoint filename | Steps | Size |
 |---|---|---|---|
-| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5GB, fits 8GB VRAM, no login required |
-| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24GB, Apache 2.0, no login required |
-| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24GB, highest quality, gated (HF login required) |
-
-### Downloading checkpoints
-
-**SDXL** (no login required):
-```bash
-huggingface-cli download stabilityai/stable-diffusion-xl-base-1.0   sd_xl_base_1.0.safetensors   --local-dir ComfyUI/models/checkpoints
-```
-
-**Flux.1-schnell** (no login required, Apache 2.0):
-```bash
-huggingface-cli download black-forest-labs/FLUX.1-schnell   flux1-schnell.safetensors   --local-dir ComfyUI/models/checkpoints
-```
-
-**Flux.1-dev** (requires accepting license at huggingface.co/black-forest-labs/FLUX.1-dev):
-```bash
-huggingface-cli login   # paste your token
-huggingface-cli download black-forest-labs/FLUX.1-dev   flux1-dev.safetensors   --local-dir ComfyUI/models/checkpoints
-```
-
-`setup_check.py` downloads all three automatically:
-- **SDXL** and **Flux.1-schnell** need no login — downloaded silently
-- **Flux.1-dev** is gated — the script checks for a file called `hf.txt` in
-  your working directory first. If found, it uses the token inside it. If not,
-  it tries your cached HuggingFace login, then prompts you to paste a token
-  (offering to save it to `hf.txt` for future runs).
-
-`hf.txt` format — just the token on a single line:
-```
-hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-You can have any combination of checkpoints — the benchmark runs whatever it finds.
+| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB |
+| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB |
 
 ---
 
