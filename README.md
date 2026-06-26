@@ -186,9 +186,10 @@ You can have any combination of checkpoints — the benchmark runs whatever it f
 brew install python@3.11
 ```
 
-### 3. Create working directory and venv
+### 3. Clone repo and create venv
 ```bash
-mkdir ~/llamabench && cd ~/llamabench
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
 /opt/homebrew/bin/python3.11 -m venv bench-env
 source bench-env/bin/activate
 ```
@@ -211,9 +212,8 @@ git clone https://github.com/comfyanonymous/ComfyUI
 pip install -r ComfyUI/requirements.txt
 ```
 
-### 7. Copy scripts and run setup check
+### 7. Run setup check
 ```bash
-# copy setup_check.py, benchmark.py, compare.py into ~/llamabench/
 python setup_check.py
 ```
 
@@ -244,9 +244,10 @@ control the Python environment.
 sudo apt update && sudo apt install -y python3.11 python3.11-venv python3.11-dev
 ```
 
-#### 2. Create working directory and venv
+#### 2. Clone repo and create venv
 ```bash
-mkdir ~/llamabench && cd ~/llamabench
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
 python3.11 -m venv bench-env
 source bench-env/bin/activate
 ```
@@ -269,9 +270,8 @@ git clone https://github.com/comfyanonymous/ComfyUI
 pip install -r ComfyUI/requirements.txt
 ```
 
-#### 6. Copy scripts and run setup check
+#### 6. Run setup check
 ```bash
-# copy setup_check.py, benchmark.py, compare.py into ~/llamabench/
 python setup_check.py
 ```
 
@@ -282,55 +282,61 @@ python benchmark.py
 
 ---
 
-### DGX Spark and other managed systems (NGC container)
+### DGX Spark
 
-The DGX Spark ships with a managed Ubuntu install — use an NGC container
-rather than modifying the system Python or CUDA stack.
+No container needed. Ollama is pre-installed on DGX OS and already optimized
+for the GB10 Grace Blackwell Superchip. Use a venv on the host for Python
+dependencies.
 
-#### 1. Create working directory and pull container
+#### 1. Check Ollama is present and up to date
 ```bash
-mkdir ~/llamabench
-docker pull nvcr.io/nvidia/pytorch:24.12-py3
-```
-
-#### 2. Start the container
-```bash
-docker run --gpus all -it --rm \
-  -v ~/llamabench:/workspace \
-  -p 11434:11434 \
-  -p 8188:8188 \
-  nvcr.io/nvidia/pytorch:24.12-py3 bash
-```
-
-All subsequent commands run inside the container.
-
-#### 3. Install dependencies (inside container)
-```bash
-cd /workspace
-pip install sentence-transformers requests psutil numpy tqdm
-# PyTorch is pre-installed — do not reinstall it
-```
-
-#### 4. Install Ollama and clone ComfyUI (inside container)
-```bash
+ollama --version
+# If missing or outdated:
 curl -fsSL https://ollama.com/install.sh | sh
+```
+
+#### 2. Add your user to the docker group (for Docker permissions if needed later)
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+#### 3. Clone repo and create venv
+```bash
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
+python3 -m venv bench-env
+source bench-env/bin/activate
+```
+
+#### 4. Install dependencies
+```bash
+pip install torch torchvision torchaudio
+pip install sentence-transformers requests psutil numpy tqdm
+```
+
+#### 5. Clone ComfyUI
+```bash
 git clone https://github.com/comfyanonymous/ComfyUI
 pip install -r ComfyUI/requirements.txt
 ```
 
-#### 5. Copy scripts and run setup check (inside container)
+#### 6. Run setup check
 ```bash
-# copy setup_check.py, benchmark.py, compare.py into /workspace/
 python setup_check.py
 ```
 
-#### 6. Run benchmarks (inside container)
+#### 7. Run benchmarks
 ```bash
 python benchmark.py
 ```
 
-Results saved to `/workspace/results_<hostname>.json`, visible on the host
-at `~/llamabench/`.
+**DGX Spark memory tip:** After each model run, unused memory may not be
+released immediately. If RAM looks full between runs, flush it with:
+```bash
+sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches
+```
+The benchmark script does this automatically between models on Linux.
 
 ---
 
@@ -348,10 +354,10 @@ Download from https://developer.nvidia.com/cuda-downloads. After install:
 nvcc --version
 ```
 
-### 3. Create working directory and venv
+### 3. Clone repo and create venv
 ```powershell
-mkdir C:\llamabench
-cd C:\llamabench
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
 python -m venv bench-env
 bench-env\Scripts\activate
 ```
@@ -381,9 +387,8 @@ pip install -r ComfyUI\requirements.txt
 pip install huggingface_hub
 ```
 
-### 8. Copy scripts and run setup check
+### 8. Run setup check
 ```powershell
-# copy setup_check.py, benchmark.py, compare.py into C:\llamabench\
 python setup_check.py
 ```
 
@@ -409,10 +414,10 @@ winget install Python.Python.3.11
 ```
 Check **"Add Python to PATH"** during install.
 
-### 2. Create working directory and venv
+### 2. Clone repo and create venv
 ```powershell
-mkdir C:\llamabench
-cd C:\llamabench
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
 python -m venv bench-env
 bench-env\Scripts\activate
 ```
@@ -450,9 +455,8 @@ pip install -r ComfyUI\requirements.txt
 pip install huggingface_hub
 ```
 
-### 7. Copy scripts and run setup check
+### 7. Run setup check
 ```powershell
-# copy setup_check.py, benchmark.py, compare.py into C:\llamabench\
 python setup_check.py
 ```
 
@@ -525,8 +529,8 @@ python benchmark.py --warmup-timeout 120
   reliable data point; Q4 may be skipped by the warmup timeout.
 - **Linux (standard):** Verify PyTorch sees your GPU before running:
   `python -c "import torch; print(torch.cuda.get_device_name(0))"`
-- **DGX Spark:** Make sure you're inside the NGC container. Don't reinstall
-  PyTorch inside it.
+- **DGX Spark:** Run everything on the host, not in a container. Ollama is
+  pre-installed and GPU-optimized. Use a venv for Python dependencies.
 - **Windows (NVIDIA):** If PyTorch doesn't detect your GPU, check that the
   CUDA version in your pip install URL matches `nvcc --version`.
 - **Windows (AMD):** The `No GPU backend detected` warning from setup_check is
