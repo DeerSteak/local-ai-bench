@@ -724,26 +724,75 @@ def comfyui_available():
 
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt):
-    """Minimal Flux.1 txt2img workflow for ComfyUI API."""
+    """
+    Flux.1 txt2img workflow using the native Flux node set.
+    Flux requires: UNETLoader + DualCLIPLoader + FluxGuidance + ModelSamplingFlux
+    + EmptyLatentImage (not EmptySD3LatentImage) + KSamplerSelect + SamplerCustomAdvanced.
+    """
     return {
-        "6":  {"class_type": "CLIPTextEncode",
-               "inputs": {"text": prompt, "clip": ["30", 1]}},
-        "8":  {"class_type": "VAEDecode",
-               "inputs": {"samples": ["31", 0], "vae": ["30", 2]}},
-        "9":  {"class_type": "SaveImage",
-               "inputs": {"images": ["8", 0], "filename_prefix": "bench"}},
-        "27": {"class_type": "EmptySD3LatentImage",
-               "inputs": {"width": width, "height": height, "batch_size": 1}},
-        "30": {"class_type": "CheckpointLoaderSimple",
-               "inputs": {"ckpt_name": checkpoint}},
-        "31": {"class_type": "KSampler",
+        # Load Flux UNet
+        "1": {"class_type": "UNETLoader",
+              "inputs": {"unet_name": checkpoint, "weight_dtype": "default"}},
+        # Load dual CLIP (t5xxl + clip_l) — ComfyUI looks in models/clip/
+        "2": {"class_type": "DualCLIPLoader",
+              "inputs": {
+                  "clip_name1": "t5xxl_fp16.safetensors",
+                  "clip_name2": "clip_l.safetensors",
+                  "type": "flux",
+              }},
+        # Load VAE
+        "3": {"class_type": "VAELoader",
+              "inputs": {"vae_name": "ae.safetensors"}},
+        # Encode prompt
+        "4": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt, "clip": ["2", 0]}},
+        # Flux guidance
+        "5": {"class_type": "FluxGuidance",
+              "inputs": {"conditioning": ["4", 0], "guidance": cfg}},
+        # Empty latent
+        "6": {"class_type": "EmptyLatentImage",
+              "inputs": {"width": width, "height": height, "batch_size": 1}},
+        # Model sampling for Flux
+        "7": {"class_type": "ModelSamplingFlux",
+              "inputs": {
+                  "model": ["1", 0],
+                  "max_shift": 1.15,
+                  "base_shift": 0.5,
+                  "width": width,
+                  "height": height,
+              }},
+        # Noise
+        "8": {"class_type": "RandomNoise",
+              "inputs": {"noise_seed": seed}},
+        # Sampler
+        "9": {"class_type": "KSamplerSelect",
+              "inputs": {"sampler_name": sampler}},
+        # Scheduler
+        "10": {"class_type": "BasicScheduler",
                "inputs": {
-                   "model": ["30", 0], "positive": ["6", 0],
-                   "negative": ["6", 0], "latent_image": ["27", 0],
-                   "seed": seed, "steps": steps, "cfg": cfg,
-                   "sampler_name": sampler, "scheduler": scheduler,
+                   "model": ["7", 0],
+                   "scheduler": scheduler,
+                   "steps": steps,
                    "denoise": 1.0,
                }},
+        # Run sampler
+        "11": {"class_type": "SamplerCustomAdvanced",
+               "inputs": {
+                   "noise": ["8", 0],
+                   "guider": ["12", 0],
+                   "sampler": ["9", 0],
+                   "sigmas": ["10", 0],
+                   "latent_image": ["6", 0],
+               }},
+        # CFG guider
+        "12": {"class_type": "BasicGuider",
+               "inputs": {"model": ["7", 0], "conditioning": ["5", 0]}},
+        # Decode
+        "13": {"class_type": "VAEDecode",
+               "inputs": {"samples": ["11", 0], "vae": ["3", 0]}},
+        # Save
+        "14": {"class_type": "SaveImage",
+               "inputs": {"images": ["13", 0], "filename_prefix": "bench_flux"}},
     }
 
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
@@ -782,16 +831,41 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> float:
     resp.raise_for_status()
     prompt_id = resp.json()["prompt_id"]
 
+    # Start timing AFTER submission so we measure generation time only,
+    # and stale history entries from previous runs won't match this prompt_id.
     t0 = time.perf_counter()
+    seen = False  # True once we see this prompt_id appear in history
+
     while True:
         time.sleep(1)
-        status = requests.get(
-            f"{COMFYUI_URL}/history/{prompt_id}", timeout=10
-        ).json()
+        try:
+            status = requests.get(
+                f"{COMFYUI_URL}/history/{prompt_id}", timeout=10
+            ).json()
+        except Exception:
+            if time.perf_counter() - t0 > timeout:
+                raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
+            continue
+
         if prompt_id in status:
-            if status[prompt_id].get("status", {}).get("completed"):
+            seen = True
+            job = status[prompt_id]
+            job_status = job.get("status", {})
+
+            # Check for errors first
+            if job_status.get("status_str") == "error" or job.get("error"):
+                msgs = job.get("error") or job_status.get("messages", [])
+                raise RuntimeError(f"ComfyUI job failed: {msgs}")
+
+            if job_status.get("completed"):
                 return time.perf_counter() - t0
+
         if time.perf_counter() - t0 > timeout:
+            if not seen:
+                raise TimeoutError(
+                    f"ComfyUI job never appeared in history after {timeout}s "
+                    f"— workflow may have errored before queuing"
+                )
             raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
 
 def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
