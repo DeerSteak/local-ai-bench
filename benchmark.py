@@ -4,7 +4,7 @@ benchmark.py — Cross-platform LLM benchmark suite.
 
 Tests:
   1. LLM generation — Llama 3.1 70B and GPT-OSS 120B via Ollama
-     Metrics: time-to-first-token (TTFT), tokens/sec, total time
+     Metrics: time-to-first-token (TTFT), tokens/sec
      Context lengths: 2K and 8K tokens
 
   2. Image generation — Flux.1-dev via ComfyUI HTTP API
@@ -421,7 +421,7 @@ def model_pulled(tag):
 def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
     """
     Generate via Ollama and return timing metrics.
-    Returns: (ttft_sec, total_sec, tokens_generated, tokens_per_sec)
+    Returns: (ttft_sec, tokens_generated, tokens_per_sec)
 
     Uses urllib instead of requests for streaming to avoid TCP buffering
     that causes iter_lines() to batch all chunks and inflate TTFT.
@@ -489,7 +489,7 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
     total = time.perf_counter() - t_start
     if ttft is None:
         ttft = total
-    return ttft, total, eval_count, tps
+    return ttft, eval_count, tps
 
 # ── Ollama model loading/unloading ────────────────────────────────────────────
 
@@ -598,21 +598,19 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             label_ctx = f"{ctx_len // 1000}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
 
-            ttfts, totals, tps_list = [], [], []
+            ttfts, tps_list = [], []
 
             for run_i in range(n_runs):
                 try:
-                    ttft, total, tokens, tps = ollama_generate(
+                    ttft, tokens, tps = ollama_generate(
                         tag, prompt, timeout=600
                     )
                     ttfts.append(ttft)
-                    totals.append(total)
                     tps_list.append(tps)
                     print(
                         f"    run {run_i+1}/{n_runs}: "
                         f"TTFT={ttft:.2f}s  "
-                        f"TPS={tps:.1f}  "
-                        f"total={total:.1f}s"
+                        f"TPS={tps:.1f}"
                     )
                 except Exception as e:
                     err(f"Run {run_i+1} failed: {e}")
@@ -623,7 +621,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     "ttft_stdev_sec":  round(stdev(ttfts),   3),
                     "tps_mean":        round(mean(tps_list), 2),
                     "tps_stdev":       round(stdev(tps_list),2),
-                    "total_mean_sec":  round(mean(totals),   2),
+
                     "n_runs":          len(ttfts),
                 }
                 ok(
