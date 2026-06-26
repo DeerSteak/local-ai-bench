@@ -6,11 +6,44 @@ systems. Models that don't fit are skipped automatically — no configuration ne
 
 ---
 
+## Quick Start
+
+```bash
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
+```
+
+Then run the setup script for your platform:
+
+| Platform | Script | Notes |
+|---|---|---|
+| macOS | `bash setup.sh` | Installs Homebrew + Python if needed |
+| Linux / DGX Spark | `bash setup.sh` | Installs Python + Ollama if needed |
+| Windows | `setup.bat` | Double-click or run from terminal |
+
+The setup script installs Python if missing, creates the venv, and runs
+`setup_check.py` which handles everything else — dependencies, Ollama, models,
+and image checkpoints. When it's done:
+
+```bash
+# macOS / Linux
+source bench-env/bin/activate
+python benchmark.py
+
+# Windows
+bench-env\Scripts\activate
+python benchmark.py
+```
+
+---
+
 ## Files
 
 | File | Purpose |
 |---|---|
-| `setup_check.py` | Pre-flight check — run once per machine; starts Ollama, pulls all LLM models, downloads all three image checkpoints |
+| `setup.sh` | One-shot setup for macOS and Linux |
+| `setup.bat` | One-shot setup for Windows |
+| `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
 | `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
 | `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
 
