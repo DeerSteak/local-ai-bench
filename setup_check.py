@@ -547,19 +547,7 @@ if COMFYUI_DIR.exists():
 
 # ── 10. Container check (DGX Spark / Linux) ───────────────────────────────────
 
-if os_name == "Linux":
-    section("Linux / DGX Spark")
-    try:
-        nvcc = subprocess.check_output(
-            ["nvcc", "--version"], text=True, stderr=subprocess.DEVNULL
-        )
-        for line in nvcc.splitlines():
-            if "release" in line.lower():
-                print(f"  CUDA compiler: {line.strip()}")
-                ok("nvcc found")
-                break
-    except FileNotFoundError:
-        info("nvcc not in PATH (normal if using pre-installed system CUDA)")
+
 
 # ── 11. Summary ────────────────────────────────────────────────────────────────
 
