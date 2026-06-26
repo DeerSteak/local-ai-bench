@@ -10,7 +10,7 @@ systems. Models that don't fit are skipped automatically — no configuration ne
 
 | File | Purpose |
 |---|---|
-| `setup_check.py` | Pre-flight check — run once per machine; starts Ollama, pulls missing models, downloads Flux |
+| `setup_check.py` | Pre-flight check — run once per machine; starts Ollama, pulls all LLM models, downloads all three image checkpoints |
 | `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
 | `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
 
@@ -217,10 +217,10 @@ pip install -r ComfyUI/requirements.txt
 python setup_check.py
 ```
 
-`setup_check.py` will start Ollama, pull all eight LLM models, and attempt to
-download Flux.1-dev (prompting for a HuggingFace token if needed) or fall back
-to Flux.1-schnell. SDXL must be downloaded manually if wanted — see the Image
-Models section below.
+`setup_check.py` will start Ollama, pull all eight LLM models, and download
+all three image checkpoints (SDXL, Flux.1-schnell, Flux.1-dev). A HuggingFace
+token is only needed for Flux.1-dev — place it in `hf.txt` or enter it when
+prompted. See the Image Models section for details.
 
 ### 8. Run benchmarks
 ```bash
