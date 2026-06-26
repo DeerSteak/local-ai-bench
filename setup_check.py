@@ -218,24 +218,76 @@ def ollama_pull(tag):
     result = subprocess.run(["ollama", "pull", tag])
     return result.returncode == 0
 
+def install_ollama():
+    """Install Ollama using the appropriate method for this OS."""
+    if os_name == "Darwin":
+        # macOS — use Homebrew if available, otherwise direct download
+        if shutil.which("brew"):
+            info("Installing Ollama via Homebrew ...")
+            result = subprocess.run(["brew", "install", "ollama"])
+            return result.returncode == 0
+        else:
+            fail("Homebrew not found — install Ollama manually from https://ollama.com/download")
+            return False
+
+    elif os_name == "Linux":
+        # Check if snap is available (DGX Spark / Ubuntu)
+        if shutil.which("snap"):
+            info("Installing Ollama via snap ...")
+            result = subprocess.run(["sudo", "snap", "install", "ollama"])
+            if result.returncode == 0:
+                # snap installs may need a moment before the binary is on PATH
+                import time
+                time.sleep(3)
+                return True
+        # Fall back to the official install script
+        info("Installing Ollama via official install script ...")
+        result = subprocess.run(
+            "curl -fsSL https://ollama.com/install.sh | sh",
+            shell=True
+        )
+        return result.returncode == 0
+
+    elif os_name == "Windows":
+        # Use winget if available
+        if shutil.which("winget"):
+            info("Installing Ollama via winget ...")
+            result = subprocess.run(["winget", "install", "Ollama.Ollama", "--silent"])
+            return result.returncode == 0
+        else:
+            fail("winget not found — install Ollama manually from https://ollama.com/download")
+            return False
+
+    return False
+
 ollama_up, tag_data = ollama_running()
 
-try:
-    ver_out = subprocess.check_output(
-        ["ollama", "--version"], text=True,
-        stderr=subprocess.DEVNULL  # suppress "could not connect" noise
-    ).strip()
-    # Strip any warning lines — only keep the version line
-    ver_line = next(
-        (l for l in ver_out.splitlines() if "ollama version" in l.lower()),
-        ver_out.splitlines()[0] if ver_out else "unknown"
-    )
-    print(f"  Binary:  {ver_line.strip()}")
-    ok("Ollama binary found")
-except FileNotFoundError:
-    fail("Ollama not found in PATH")
-    info("Install from https://ollama.com/download")
-    issues.append("Install Ollama from https://ollama.com/download")
+ollama_found = shutil.which("ollama") is not None
+
+if ollama_found:
+    try:
+        ver_out = subprocess.check_output(
+            ["ollama", "--version"], text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
+        ver_line = next(
+            (l for l in ver_out.splitlines() if "ollama version" in l.lower()),
+            ver_out.splitlines()[0] if ver_out else "unknown"
+        )
+        print(f"  Binary:  {ver_line.strip()}")
+        ok("Ollama binary found")
+    except Exception:
+        ok("Ollama binary found")
+else:
+    warn("Ollama not found in PATH — attempting to install ...")
+    installed = install_ollama()
+    if installed:
+        ok("Ollama installed successfully")
+        ollama_found = True
+    else:
+        fail("Ollama installation failed")
+        issues.append("Install Ollama manually from https://ollama.com/download")
+        info("On Linux (DGX Spark / Ubuntu): sudo snap install ollama")
 
 if ollama_up:
     ok("Ollama server is running (port 11434)")
@@ -331,9 +383,9 @@ try:
 except Exception as e:
     warn(f"Could not check disk space: {e}")
 
-# ── 9. ComfyUI & Flux model ────────────────────────────────────────────────────
+# ── 9. ComfyUI — clone if missing, pip install requirements ───────────────────
 
-section("ComfyUI & Flux Model")
+section("ComfyUI")
 
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
@@ -345,26 +397,42 @@ IMAGE_CHECKPOINTS = [
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
 if not COMFYUI_DIR.exists():
-    warn(f"ComfyUI not found at {COMFYUI_DIR}")
-    info("Clone with: git clone https://github.com/comfyanonymous/ComfyUI")
-    info("Then: pip install -r ComfyUI/requirements.txt")
-    issues.append("Clone ComfyUI into this directory")
+    info("ComfyUI not found — cloning ...")
+    result = subprocess.run(
+        ["git", "clone", "https://github.com/comfyanonymous/ComfyUI",
+         str(COMFYUI_DIR)]
+    )
+    if result.returncode == 0:
+        ok("ComfyUI cloned successfully")
+    else:
+        fail("ComfyUI clone failed — check your internet connection and git install")
+        issues.append("git clone https://github.com/comfyanonymous/ComfyUI")
 else:
-    ok(f"ComfyUI directory found")
+    ok(f"ComfyUI directory found at {COMFYUI_DIR}")
 
-    # Check requirements installed
+if COMFYUI_DIR.exists():
     req_file = COMFYUI_DIR / "requirements.txt"
     if req_file.exists():
-        try:
-            subprocess.check_output(
-                [sys.executable, "-m", "pip", "show", "aiohttp"],
-                stderr=subprocess.DEVNULL
+        # Check if aiohttp (a ComfyUI dep) is already installed
+        already_installed = subprocess.run(
+            [sys.executable, "-m", "pip", "show", "aiohttp"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        ).returncode == 0
+
+        if already_installed:
+            ok("ComfyUI requirements already installed")
+        else:
+            info("Installing ComfyUI requirements ...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
             )
-            ok("ComfyUI requirements appear installed")
-        except subprocess.CalledProcessError:
-            warn("ComfyUI requirements may not be installed")
-            info(f"Run: pip install -r {req_file}")
-            issues.append(f"pip install -r {req_file}")
+            if result.returncode == 0:
+                ok("ComfyUI requirements installed")
+            else:
+                fail("ComfyUI requirements install failed")
+                issues.append(f"pip install -r {req_file}")
+    else:
+        warn("ComfyUI requirements.txt not found — clone may be incomplete")
 
     # Check for image checkpoints
     found_ckpts = []
@@ -480,15 +548,7 @@ else:
 # ── 10. Container check (DGX Spark / Linux) ───────────────────────────────────
 
 if os_name == "Linux":
-    section("Container Environment (DGX Spark)")
-    in_container = os.path.exists("/.dockerenv") or os.environ.get("container")
-    if in_container:
-        ok("Running inside a container")
-    else:
-        info("Not in a container — running on host Linux")
-        info("On DGX Spark, consider using NGC containers for PyTorch:")
-        info("  nvcr.io/nvidia/pytorch:24.12-py3")
-
+    section("Linux / DGX Spark")
     try:
         nvcc = subprocess.check_output(
             ["nvcc", "--version"], text=True, stderr=subprocess.DEVNULL
