@@ -176,53 +176,26 @@ You can have any combination of checkpoints — the benchmark runs whatever it f
 
 ## Setup: macOS (Apple Silicon)
 
-### 1. Install Homebrew
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-### 2. Install Python 3.11
+### 1. Install Python 3.11
 ```bash
 brew install python@3.11
 ```
+If you don't have Homebrew: https://brew.sh
 
-### 3. Clone repo and create venv
+### 2. Clone repo, create venv, and run setup
 ```bash
 git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 /opt/homebrew/bin/python3.11 -m venv bench-env
 source bench-env/bin/activate
-```
-
-### 4. Install dependencies
-```bash
-pip install torch torchvision torchaudio
-pip install sentence-transformers requests psutil numpy tqdm
-```
-
-### 5. Install Ollama
-```bash
-brew install ollama
-# or: download from https://ollama.com/download
-```
-
-### 6. Clone ComfyUI
-```bash
-git clone https://github.com/comfyanonymous/ComfyUI
-pip install -r ComfyUI/requirements.txt
-```
-
-### 7. Run setup check
-```bash
 python setup_check.py
 ```
 
-`setup_check.py` will start Ollama, pull all eight LLM models, and download
-all three image checkpoints (SDXL, Flux.1-schnell, Flux.1-dev). A HuggingFace
-token is only needed for Flux.1-dev — place it in `hf.txt` or enter it when
-prompted. See the Image Models section for details.
+`setup_check.py` installs all Python dependencies, installs Ollama if missing,
+pulls all LLM models, and downloads image checkpoints. A HuggingFace token is
+only needed for Flux.1-dev — place it in `hf.txt` or enter it when prompted.
 
-### 8. Run benchmarks
+### 3. Run benchmarks
 ```bash
 python benchmark.py
 ```
@@ -234,8 +207,6 @@ close other apps.
 
 ## Setup: Linux (NVIDIA GPU)
 
-### Standard setup (venv)
-
 For Ubuntu/Debian workstations, cloud VMs, or any Linux machine where you
 control the Python environment.
 
@@ -244,38 +215,19 @@ control the Python environment.
 sudo apt update && sudo apt install -y python3.11 python3.11-venv python3.11-dev
 ```
 
-#### 2. Clone repo and create venv
+#### 2. Clone repo, create venv, and run setup
 ```bash
 git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 python3.11 -m venv bench-env
 source bench-env/bin/activate
-```
-
-#### 3. Install PyTorch with CUDA
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-pip install sentence-transformers requests psutil numpy tqdm
-```
-Replace `cu124` with your CUDA version (check with `nvcc --version`).
-
-#### 4. Install Ollama
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-#### 5. Clone ComfyUI
-```bash
-git clone https://github.com/comfyanonymous/ComfyUI
-pip install -r ComfyUI/requirements.txt
-```
-
-#### 6. Run setup check
-```bash
 python setup_check.py
 ```
 
-#### 7. Run benchmarks
+`setup_check.py` installs all Python dependencies, installs Ollama if missing,
+pulls all LLM models, and downloads image checkpoints.
+
+#### 3. Run benchmarks
 ```bash
 python benchmark.py
 ```
@@ -284,49 +236,26 @@ python benchmark.py
 
 ### DGX Spark
 
-No container needed. Ollama is pre-installed on DGX OS and already optimized
-for the GB10 Grace Blackwell Superchip. Use a venv on the host for Python
-dependencies.
+No container needed. Use a venv on the host.
 
-#### 1. Check Ollama is present and up to date
+#### 1. Install Ollama
 ```bash
-ollama --version
-# If missing or outdated:
-curl -fsSL https://ollama.com/install.sh | sh
+sudo snap install ollama
 ```
 
-#### 2. Add your user to the docker group (for Docker permissions if needed later)
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-#### 3. Clone repo and create venv
+#### 2. Clone repo, create venv, and run setup
 ```bash
 git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 python3 -m venv bench-env
 source bench-env/bin/activate
-```
-
-#### 4. Install dependencies
-```bash
-pip install torch torchvision torchaudio
-pip install sentence-transformers requests psutil numpy tqdm
-```
-
-#### 5. Clone ComfyUI
-```bash
-git clone https://github.com/comfyanonymous/ComfyUI
-pip install -r ComfyUI/requirements.txt
-```
-
-#### 6. Run setup check
-```bash
 python setup_check.py
 ```
 
-#### 7. Run benchmarks
+`setup_check.py` installs all Python dependencies, pulls all LLM models,
+and downloads image checkpoints.
+
+#### 3. Run benchmarks
 ```bash
 python benchmark.py
 ```
@@ -349,52 +278,29 @@ winget install Python.Python.3.11
 Check **"Add Python to PATH"** during install.
 
 ### 2. Install CUDA Toolkit
-Download from https://developer.nvidia.com/cuda-downloads. After install:
-```powershell
-nvcc --version
-```
+Download from https://developer.nvidia.com/cuda-downloads. After install,
+verify with `nvcc --version`.
 
-### 3. Clone repo and create venv
+### 3. Clone repo, create venv, and run setup
 ```powershell
 git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 python -m venv bench-env
 bench-env\Scripts\activate
-```
-
-### 4. Install PyTorch with CUDA
-```powershell
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-pip install sentence-transformers requests psutil numpy tqdm
-```
-Replace `cu124` with your CUDA version.
-
-### 5. Verify PyTorch sees your GPU
-```powershell
-python -c "import torch; print(torch.cuda.get_device_name(0))"
-```
-
-### 6. Install Ollama
-```powershell
-winget install Ollama.Ollama
-```
-Restart your terminal after installing.
-
-### 7. Clone ComfyUI and install huggingface-cli
-```powershell
-git clone https://github.com/comfyanonymous/ComfyUI
-pip install -r ComfyUI\requirements.txt
-pip install huggingface_hub
-```
-
-### 8. Run setup check
-```powershell
 python setup_check.py
 ```
 
-### 9. Run benchmarks
+`setup_check.py` installs all Python dependencies, installs Ollama if missing,
+pulls all LLM models, and downloads image checkpoints.
+
+### 4. Run benchmarks
 ```powershell
 python benchmark.py
+```
+
+If `bench-env\Scripts\activate` gives a permissions error:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 ---
@@ -414,58 +320,31 @@ winget install Python.Python.3.11
 ```
 Check **"Add Python to PATH"** during install.
 
-### 2. Clone repo and create venv
+### 2. Clone repo, create venv, and run setup
 ```powershell
 git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 python -m venv bench-env
 bench-env\Scripts\activate
+python setup_check.py
 ```
 
-### 3. Install PyTorch and dependencies
-ROCm wheels for Windows are not reliably available; use the standard CPU build.
-Ollama handles GPU inference independently.
-```powershell
-pip install torch torchvision torchaudio
-pip install sentence-transformers requests psutil numpy tqdm
-```
+`setup_check.py` installs all Python dependencies, installs Ollama if missing,
+pulls all LLM models, and downloads image checkpoints. The warning about no GPU
+backend for PyTorch is expected on AMD/Windows — Ollama uses the GPU independently.
 
-### 4. Install Ollama
+### 3. Run benchmarks
 ```powershell
-winget install Ollama.Ollama
+python benchmark.py
 ```
-Restart your terminal after installing.
-
-### 5. Verify Ollama is using the GPU
-Run a small model and watch Task Manager → Performance → GPU while it generates:
-```powershell
-ollama run llama3.2:1b "hello"
-```
-You should see your AMD GPU show activity. If only CPU is active, update your
-AMD Adrenalin drivers from https://www.amd.com/en/support.
 
 **Ryzen AI Max+ / APU note:** The iGPU shares system RAM. Ollama allocates most
 of the unified memory pool to the GPU by default. Verify with `ollama ps` while
 a model is loaded.
 
-### 6. Clone ComfyUI and install huggingface-cli
+If `bench-env\Scripts\activate` gives a permissions error:
 ```powershell
-git clone https://github.com/comfyanonymous/ComfyUI
-pip install -r ComfyUI\requirements.txt
-pip install huggingface_hub
-```
-
-### 7. Run setup check
-```powershell
-python setup_check.py
-```
-
-The setup check will warn that no GPU backend was detected for PyTorch — this
-is expected on AMD/Windows and not an error.
-
-### 8. Run benchmarks
-```powershell
-python benchmark.py
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 ---
@@ -522,19 +401,9 @@ python benchmark.py --warmup-timeout 120
 
 ## Tips
 
-- **All platforms:** Close other apps before running — GPU memory contention
-  affects results.
-- **Mac:** Watch Activity Monitor → Memory during 70B runs. If pressure turns
-  red and TPS drops between runs, the system is swapping. The Q3 result is your
-  reliable data point; Q4 may be skipped by the warmup timeout.
-- **Linux (standard):** Verify PyTorch sees your GPU before running:
-  `python -c "import torch; print(torch.cuda.get_device_name(0))"`
-- **DGX Spark:** Run everything on the host, not in a container. Ollama is
-  pre-installed and GPU-optimized. Use a venv for Python dependencies.
-- **Windows (NVIDIA):** If PyTorch doesn't detect your GPU, check that the
-  CUDA version in your pip install URL matches `nvcc --version`.
-- **Windows (AMD):** The `No GPU backend detected` warning from setup_check is
-  expected — Ollama uses the GPU independently.
-- **Windows (all):** If `bench-env\Scripts\activate` gives a permissions error:
-  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+- **All platforms:** Close other apps before running — GPU memory contention affects results.
+- **Mac:** Watch Activity Monitor → Memory during 70B runs. If pressure turns red and TPS drops between runs, the system is swapping. The Q3 result is your reliable data point; Q4 may be skipped by the warmup timeout.
+- **Linux:** Verify PyTorch sees your GPU before running: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
+- **Windows (NVIDIA):** If PyTorch doesn't detect your GPU, check that the CUDA version in your pip install URL matches `nvcc --version`.
+- **Windows (AMD):** The `No GPU backend detected` warning from setup_check is expected — Ollama uses the GPU independently.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.
