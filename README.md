@@ -207,178 +207,31 @@ You can have any combination of checkpoints — the benchmark runs whatever it f
 
 ---
 
-## Setup: macOS (Apple Silicon)
+## Platform Notes
 
-### 1. Install Python 3.11
-```bash
-brew install python@3.11
-```
-If you don't have Homebrew: https://brew.sh
+`setup.sh` / `setup.bat` handle everything — the notes below only cover
+prerequisites the scripts can't install automatically, and platform-specific
+quirks to be aware of.
 
-### 2. Clone repo, create venv, and run setup
-```bash
-git clone https://github.com/DeerSteak/local-ai-bench
-cd local-ai-bench
-/opt/homebrew/bin/python3.11 -m venv bench-env
-source bench-env/bin/activate
-python setup_check.py
-```
+### macOS
+- If you don't have Homebrew, `setup.sh` installs it automatically.
+- Before running benchmarks: plug in power, disable sleep (System Settings → Battery).
 
-`setup_check.py` installs all Python dependencies, installs Ollama if missing,
-pulls all LLM models, and downloads image checkpoints. A HuggingFace token is
-only needed for Flux.1-dev — place it in `hf.txt` or enter it when prompted.
-
-### 3. Run benchmarks
-```bash
-python benchmark.py
-```
-
-**Before running:** plug in power, disable sleep (System Settings → Battery),
-close other apps.
-
----
-
-## Setup: Linux (NVIDIA GPU)
-
-For Ubuntu/Debian workstations, cloud VMs, or any Linux machine where you
-control the Python environment.
-
-#### 1. Install Python 3.11
-```bash
-sudo apt update && sudo apt install -y python3.11 python3.11-venv python3.11-dev
-```
-
-#### 2. Clone repo, create venv, and run setup
-```bash
-git clone https://github.com/DeerSteak/local-ai-bench
-cd local-ai-bench
-python3.11 -m venv bench-env
-source bench-env/bin/activate
-python setup_check.py
-```
-
-`setup_check.py` installs all Python dependencies, installs Ollama if missing,
-pulls all LLM models, and downloads image checkpoints.
-
-#### 3. Run benchmarks
-```bash
-python benchmark.py
-```
-
----
+### Linux (NVIDIA GPU)
+- Python 3.11 is installed via apt if missing. On non-Debian distros, install it manually first.
 
 ### DGX Spark
+- Ollama is installed via snap if missing (`sudo snap install ollama`).
+- After each model run, unused memory may not free immediately. The benchmark script flushes it automatically between models, but if RAM looks full outside of a run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
-No container needed. Use a venv on the host.
+### Windows (NVIDIA GPU)
+- Install the CUDA Toolkit manually before running `setup.bat`: https://developer.nvidia.com/cuda-downloads
+- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
-#### 1. Install Ollama
-```bash
-sudo snap install ollama
-```
-
-#### 2. Clone repo, create venv, and run setup
-```bash
-git clone https://github.com/DeerSteak/local-ai-bench
-cd local-ai-bench
-python3 -m venv bench-env
-source bench-env/bin/activate
-python setup_check.py
-```
-
-`setup_check.py` installs all Python dependencies, pulls all LLM models,
-and downloads image checkpoints.
-
-#### 3. Run benchmarks
-```bash
-python benchmark.py
-```
-
-**DGX Spark memory tip:** After each model run, unused memory may not be
-released immediately. If RAM looks full between runs, flush it with:
-```bash
-sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches
-```
-The benchmark script does this automatically between models on Linux.
-
----
-
-## Setup: Windows (NVIDIA GPU)
-
-### 1. Install Python 3.11
-```powershell
-winget install Python.Python.3.11
-```
-Check **"Add Python to PATH"** during install.
-
-### 2. Install CUDA Toolkit
-Download from https://developer.nvidia.com/cuda-downloads. After install,
-verify with `nvcc --version`.
-
-### 3. Clone repo, create venv, and run setup
-```powershell
-git clone https://github.com/DeerSteak/local-ai-bench
-cd local-ai-bench
-python -m venv bench-env
-bench-env\Scripts\activate
-python setup_check.py
-```
-
-`setup_check.py` installs all Python dependencies, installs Ollama if missing,
-pulls all LLM models, and downloads image checkpoints.
-
-### 4. Run benchmarks
-```powershell
-python benchmark.py
-```
-
-If `bench-env\Scripts\activate` gives a permissions error:
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
----
-
-## Setup: Windows (AMD RDNA3+ GPU)
-
-Covers RX 7000, RX 9000, and APUs including the Ryzen AI Max+ 395.
-
-**ROCm on Windows:** Ollama bundles its own HIP runtime and uses the AMD GPU
-for LLM inference without a full ROCm install. PyTorch cannot access RDNA3+
-GPUs on Windows, so embedding benchmarks fall back to CPU. This is expected —
-LLM and image results are still fully GPU-accelerated.
-
-### 1. Install Python 3.11
-```powershell
-winget install Python.Python.3.11
-```
-Check **"Add Python to PATH"** during install.
-
-### 2. Clone repo, create venv, and run setup
-```powershell
-git clone https://github.com/DeerSteak/local-ai-bench
-cd local-ai-bench
-python -m venv bench-env
-bench-env\Scripts\activate
-python setup_check.py
-```
-
-`setup_check.py` installs all Python dependencies, installs Ollama if missing,
-pulls all LLM models, and downloads image checkpoints. The warning about no GPU
-backend for PyTorch is expected on AMD/Windows — Ollama uses the GPU independently.
-
-### 3. Run benchmarks
-```powershell
-python benchmark.py
-```
-
-**Ryzen AI Max+ / APU note:** The iGPU shares system RAM. Ollama allocates most
-of the unified memory pool to the GPU by default. Verify with `ollama ps` while
-a model is loaded.
-
-If `bench-env\Scripts\activate` gives a permissions error:
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
+### Windows (AMD RDNA3+ / Ryzen AI Max+)
+- PyTorch cannot access AMD GPUs on Windows, so embedding benchmarks fall back to CPU — this is expected. Ollama uses the GPU independently for LLM and image tests.
+- The `No GPU backend detected` warning from setup_check is not an error.
+- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
 
