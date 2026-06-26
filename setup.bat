@@ -71,18 +71,40 @@ set VENV_PIP=%VENV_DIR%\Scripts\pip.exe
 echo.
 echo [Ollama]
 
+:: Check PATH first, then known install locations
+set OLLAMA_BIN=
 where ollama >nul 2>&1
-if %errorlevel% neq 0 (
+if %errorlevel% equ 0 (
+    set OLLAMA_BIN=ollama
+)
+if not defined OLLAMA_BIN (
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
+        set OLLAMA_BIN=%LOCALAPPDATA%\Programs\Ollama\ollama.exe
+    )
+)
+if not defined OLLAMA_BIN (
+    if exist "C:\Program Files\Ollama\ollama.exe" (
+        set OLLAMA_BIN=C:\Program Files\Ollama\ollama.exe
+    )
+)
+
+if not defined OLLAMA_BIN (
     echo   !  Ollama not found -- installing via winget...
     winget install --id Ollama.Ollama --source winget --accept-package-agreements --accept-source-agreements
-    if %errorlevel% neq 0 (
-        echo   X  winget install failed. Please install Ollama from https://ollama.com/download and re-run.
+    :: winget returns non-zero even for "already installed / no upgrade" -- re-check binary
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
+        set OLLAMA_BIN=%LOCALAPPDATA%\Programs\Ollama\ollama.exe
+    )
+    if not defined OLLAMA_BIN (
+        echo   X  Ollama not found after install attempt.
+        echo   -^>  Please install manually from https://ollama.com/download and re-run.
         pause
         exit /b 1
     )
-    echo   OK  Ollama installed -- you may need to restart your terminal for it to be on PATH
-) else (
-    for /f "tokens=*" %%V in ('ollama --version 2^>^&1') do echo   OK  %%V
+    echo   OK  Ollama installed
+)
+
+for /f "tokens=*" %%V in ('"%OLLAMA_BIN%" --version 2^>^&1') do echo   OK  %%V
 )
 
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
