@@ -163,14 +163,23 @@ output, excluded from rankings.
 
 ## Image Models
 
-Two image models are tested. Both are public — no login or token required.
-Each is skipped automatically if its checkpoint is not found in
-`ComfyUI/models/checkpoints/`. `setup_check.py` downloads both automatically.
+Two image models are tested. Each is skipped automatically if its checkpoint
+is not found in `ComfyUI/models/checkpoints/`. `setup_check.py` downloads
+both automatically.
 
-| Model | Checkpoint filename | Steps | Size |
-|---|---|---|---|
-| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB |
-| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB |
+| Model | Checkpoint filename | Steps | Size | Login required |
+|---|---|---|---|---|
+| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
+| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB | Yes (free) |
+
+Flux.1-schnell requires a free HuggingFace account and license acceptance.
+`setup_check.py` checks for a token in this order:
+
+1. `HF_TOKEN` environment variable
+2. `hf.txt` file in the repo root (just the token on a single line)
+3. Interactive prompt (offers to save to `hf.txt` for future runs)
+
+Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell
 
 ---
 
