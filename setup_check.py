@@ -196,9 +196,19 @@ for import_name, install_name in REQUIRED.items():
         ver = getattr(mod, "__version__", "?")
         ok(f"{install_name} ({ver})")
     except ImportError:
-        fail(f"{install_name} not installed")
-        info(f"Install: pip install {install_name}")
-        issues.append(f"pip install {install_name}")
+        warn(f"{install_name} not found — installing ...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", install_name],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            mod = importlib.import_module(import_name)
+            ver = getattr(mod, "__version__", "?")
+            ok(f"{install_name} installed ({ver})")
+        else:
+            fail(f"{install_name} install failed")
+            info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
+            issues.append(f"pip install {install_name}")
 
 # ── 6. Ollama ──────────────────────────────────────────────────────────────────
 
