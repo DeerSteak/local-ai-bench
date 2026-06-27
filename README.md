@@ -211,6 +211,62 @@ quirks to be aware of.
 
 ---
 
+## Dashboard
+
+An interactive results explorer for visualising and exporting benchmark output.
+
+### Setup
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (typically `http://localhost:5173`).
+
+### Loading results
+
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click it to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple files at once replaces all.
+
+Sample files for testing are in `samples/`.
+
+### Sections
+
+Use the **Section** buttons to switch between views:
+
+| Section | Charts |
+|---|---|
+| LLM | Two charts per model — Tokens/sec and Time to First Token — each across context lengths (8K / 32K / 64K) |
+| Embeddings | Sentences per second across batch sizes (32 / 128 / 512) |
+| Images | One grouped bar chart per resolution — all image models side by side per host |
+
+### Multi-file comparison
+
+Each loaded file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, so results from different machines are directly comparable at a glance. The **Models** filter in the controls lets you show or hide individual models.
+
+### Exporting
+
+Drop a logo image onto the **Logo** drop zone to embed it in the bottom-right corner of every chart.
+
+Click **Save PNG** to export every visible chart as an individual file. Files are named by type:
+
+```
+# LLM
+llama3.1-8b-q4_tps_hostname1_vs_hostname2.png
+llama3.1-8b-q4_ttft_hostname1_vs_hostname2.png
+
+# Embeddings
+hostname1_vs_hostname2_embeddings.png
+
+# Images
+1024x1024_images_hostname1_vs_hostname2.png
+```
+
+The **Chart Width** field (default 708 px) controls the pixel width of the capture area — increase it for wider exports.
+
+---
+
 ## Running the Comparison
 
 Copy result files from all machines to one machine, then:
