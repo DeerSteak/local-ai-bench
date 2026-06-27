@@ -97,10 +97,10 @@ downloads both automatically.
 | Model | Checkpoint filename | Steps | Size | Login required |
 |---|---|---|---|---|
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
-| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB | Yes (free) |
+| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | Yes (free) |
 | Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | Yes (free) |
 
-Both Flux models require a free HuggingFace account and separate license acceptance.
+SD3.5 Large and Flux.1-dev require a free HuggingFace account and separate license acceptance.
 `setup_check.py` checks for a token in this order:
 
 1. `HF_TOKEN` environment variable
@@ -108,7 +108,7 @@ Both Flux models require a free HuggingFace account and separate license accepta
 3. Interactive prompt (offers to save to `hf.txt` for future runs)
 
 Accept the licenses at:
-- https://huggingface.co/black-forest-labs/FLUX.1-schnell
+- https://huggingface.co/stabilityai/stable-diffusion-3.5-large
 - https://huggingface.co/black-forest-labs/FLUX.1-dev
 
 ### Embeddings
@@ -176,7 +176,7 @@ ComfyUI is always shut down cleanly.
 | Embedding model | `nomic-embed-text` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
-| Image models | SDXL (20 steps), Flux.1-schnell (4 steps), Flux.1-dev (20 steps) |
+| Image models | SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps) |
 | Image resolutions | 1024×1024 and 1536×1536 |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image per model per resolution |

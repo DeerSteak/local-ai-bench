@@ -871,6 +871,43 @@ def build_flux_workflow(checkpoint, width, height, steps, cfg,
                "inputs": {"images": ["10", 0], "filename_prefix": filename_prefix}},
     }
 
+def build_sd3_workflow(checkpoint, width, height, steps, cfg,
+                       sampler, scheduler, seed, prompt, filename_prefix="bench_sd3"):
+    """
+    SD3.5 Large txt2img workflow for ComfyUI.
+
+    sd3.5_large.safetensors is self-contained (VAE and triple-CLIP bundled), so
+    CheckpointLoaderSimple provides all three outputs. SD3 uses 16-channel latents
+    — EmptySD3LatentImage is required; EmptyLatentImage (4-channel) would fail.
+    """
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple",
+              "inputs": {"ckpt_name": checkpoint}},
+        "2": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt, "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": "", "clip": ["1", 1]}},
+        "4": {"class_type": "EmptySD3LatentImage",
+              "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "5": {"class_type": "KSampler",
+              "inputs": {
+                  "model":          ["1", 0],
+                  "positive":       ["2", 0],
+                  "negative":       ["3", 0],
+                  "latent_image":   ["4", 0],
+                  "seed":           seed,
+                  "steps":          steps,
+                  "cfg":            cfg,
+                  "sampler_name":   sampler,
+                  "scheduler":      scheduler,
+                  "denoise":        1.0,
+              }},
+        "6": {"class_type": "VAEDecode",
+              "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+        "7": {"class_type": "SaveImage",
+              "inputs": {"images": ["6", 0], "filename_prefix": filename_prefix}},
+    }
+
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt, filename_prefix="bench"):
     """Minimal SDXL txt2img workflow for ComfyUI API."""
@@ -1009,6 +1046,10 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                 wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
                                          sampler, scheduler, seed, prompt,
                                          filename_prefix=f"{short}_warmup")
+            elif workflow_t == "sd3":
+                wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
+                                        sampler, scheduler, seed, prompt,
+                                        filename_prefix=f"{short}_warmup")
             else:
                 wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
                                          sampler, scheduler, seed, prompt,
@@ -1031,6 +1072,11 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                     prefix = f"{short}_{res_label}_run{run_i + 1}"
                     if workflow_t == "flux":
                         wf = build_flux_workflow(
+                            checkpoint, w, h, steps, cfg,
+                            sampler, scheduler, seed, prompt,
+                            filename_prefix=prefix)
+                    elif workflow_t == "sd3":
+                        wf = build_sd3_workflow(
                             checkpoint, w, h, steps, cfg,
                             sampler, scheduler, seed, prompt,
                             filename_prefix=prefix)
