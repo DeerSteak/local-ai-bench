@@ -380,12 +380,14 @@ export function findMostStrenuousKey(data, keys) {
 export function flattenLLMData(files) {
   return files.flatMap(f =>
     Object.entries(f.data.llm || {}).flatMap(([model, ctxData]) =>
-      Object.entries(ctxData).map(([ctx, s]) => ({
-        _fileId: f.id, model, ctx,
-        tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
-        ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
-        n_runs: s.n_runs,
-      }))
+      Object.entries(ctxData)
+        .filter(([ctx]) => CTX_ORDER.includes(ctx))
+        .map(([ctx, s]) => ({
+          _fileId: f.id, model, ctx,
+          tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
+          ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
+          n_runs: s.n_runs,
+        }))
     )
   );
 }
