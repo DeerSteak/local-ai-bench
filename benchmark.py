@@ -32,10 +32,12 @@ import json
 import os
 import platform
 import signal
+import statistics
 import subprocess
 import sys
 import time
 import threading
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -51,104 +53,7 @@ COMFYUI_URL  = "http://localhost:8188"
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
-# Image generation models — each entry defines the checkpoint file and workflow type.
-# Models whose checkpoint file is not found in ComfyUI/models/checkpoints/ are
-# skipped automatically with a clear message.
-IMAGE_MODELS = [
-    {
-        "label":      "SDXL",
-        "checkpoint": "sd_xl_base_1.0.safetensors",
-        "workflow":   "sdxl",
-        "steps":      20,
-        "cfg":        7.0,
-        "sampler":    "euler_ancestral",
-        "scheduler":  "normal",
-        "short":      "sdxl",
-    },
-    {
-        "label":      "Flux.1-schnell",
-        "checkpoint": "flux1-schnell.safetensors",
-        "workflow":   "flux",
-        "steps":      4,
-        "cfg":        1.0,
-        "sampler":    "euler",
-        "scheduler":  "simple",
-        "short":      "flux-schnell",
-    },
-    {
-        "label":      "Flux.1-dev",
-        "checkpoint": "flux1-dev.safetensors",
-        "workflow":   "flux",
-        "steps":      20,
-        "cfg":        1.0,
-        "sampler":    "euler",
-        "scheduler":  "simple",
-        "short":      "flux-dev",
-    },
-]
-
-
-# Models
-# Small-tier models (≤16GB VRAM) — run on all hardware including 8GB GPUs
-# Tags verified against ollama.com/library June 2026
-LLM_MODELS_SMALL = [
-    {
-        "tag":   "llama3.1:8b-instruct-q3_K_M",
-        "label": "Llama 3.1 8B Q3_K_M",
-        "short": "llama3.1-8b-q3",
-        "vram":  "~4.3 GB",
-    },
-    {
-        "tag":   "llama3.1:8b-instruct-q4_K_M",
-        "label": "Llama 3.1 8B Q4_K_M",
-        "short": "llama3.1-8b-q4",
-        "vram":  "~4.9 GB",
-    },
-    {
-        "tag":   "qwen3:14b-q4_K_M",
-        "label": "Qwen3 14B Q4_K_M",
-        "short": "qwen3-14b-q4",
-        "vram":  "~9.3 GB",
-    },
-    {
-        "tag":   "qwen3:14b-q8_0",
-        "label": "Qwen3 14B Q8_0",
-        "short": "qwen3-14b-q8",
-        "vram":  "~16 GB",
-    },
-    {
-        "tag":   "gpt-oss:20b",
-        "label": "GPT-OSS 20B (MXFP4)",
-        "short": "gpt-oss-20b",
-        "vram":  "~14 GB",
-    },
-]
-
-# Large-tier models (≥32GB) — for high-memory machines
-# Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist
-LLM_MODELS_LARGE = [
-    {
-        "tag":   "llama3.1:70b-instruct-q3_K_M",
-        "label": "Llama 3.1 70B Q3_K_M",
-        "short": "llama3.1-70b-q3",
-        "vram":  "~32 GB",
-    },
-    {
-        "tag":   "llama3.1:70b-instruct-q4_K_M",
-        "label": "Llama 3.1 70B Q4_K_M",
-        "short": "llama3.1-70b-q4",
-        "vram":  "~42 GB",
-    },
-    {
-        "tag":   "gpt-oss:120b",
-        "label": "GPT-OSS 120B (MXFP4)",
-        "short": "gpt-oss-120b",
-        "vram":  "~65 GB",
-    },
-]
-
-# Default: run both tiers. Use --small-only or --large-only to restrict.
-LLM_MODELS = LLM_MODELS_SMALL + LLM_MODELS_LARGE
+from models import IMAGE_MODELS, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS  # noqa: E402
 
 EMBED_MODEL = "BAAI/bge-large-en-v1.5"
 
@@ -181,16 +86,13 @@ def warn(msg):  print(f"  {YELLOW}!{RESET}  {msg}")
 def err(msg):   print(f"  {RED}✗{RESET}  {msg}")
 def section(t): print(f"\n{BOLD}{'─'*50}\n  {t}\n{'─'*50}{RESET}")
 
-def mean(vals):   return sum(vals) / len(vals) if vals else 0
-def stdev(vals):
-    if len(vals) < 2:
-        return 0
-    m = mean(vals)
-    return (sum((x - m) ** 2 for x in vals) / (len(vals) - 1)) ** 0.5
+def mean(vals):   return statistics.mean(vals) if vals else 0
+def stdev(vals):  return statistics.stdev(vals) if len(vals) >= 2 else 0
+
+_this_proc = psutil.Process(os.getpid())
 
 def peak_ram_mb():
-    proc = psutil.Process(os.getpid())
-    return proc.memory_info().rss / (1024 ** 2)
+    return _this_proc.memory_info().rss / (1024 ** 2)
 
 def system_ram_gb():
     return psutil.virtual_memory().total / (1024 ** 3)
@@ -408,20 +310,20 @@ SHORT_PROMPT = (
     "and what the empirical findings suggest about future AI development."
 )
 
+_PADDING_UNIT = (
+    " Furthermore, consider the implications for hardware design, "
+    "energy consumption, and the economics of training large models."
+)
+
 def build_prompt_for_context(target_tokens: int) -> str:
-    """
-    Pad a prompt to approximate a target context length.
-    Roughly 1 token ≈ 4 chars in English.
-    """
-    base = SHORT_PROMPT
+    """Pad a prompt to approximate a target context length (1 token ≈ 4 chars)."""
     chars_needed = target_tokens * 4
-    padding_unit = (
-        " Furthermore, consider the implications for hardware design, "
-        "energy consumption, and the economics of training large models."
-    )
-    while len(base) < chars_needed:
-        base += padding_unit
-    return base[:chars_needed]
+    parts = [SHORT_PROMPT]
+    total = len(SHORT_PROMPT)
+    while total < chars_needed:
+        parts.append(_PADDING_UNIT)
+        total += len(_PADDING_UNIT)
+    return "".join(parts)[:chars_needed]
 
 # ── Ollama ─────────────────────────────────────────────────────────────────────
 
@@ -455,8 +357,6 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
       eval_duration         — time spent generating (nanoseconds)
     These are authoritative and used in preference to wall-clock where available.
     """
-    import urllib.request
-
     payload = json.dumps({
         "model":  model_tag,
         "prompt": prompt,
@@ -1007,7 +907,11 @@ def main():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--small-only", action="store_true",
-        help="Run only small-tier models (<=16GB VRAM): Llama 3.2 8B, Qwen3 14B, GPT-OSS 20B",
+        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B, Qwen3 14B Q4, GPT-OSS 20B",
+    )
+    size_group.add_argument(
+        "--medium-only", action="store_true",
+        help="Run only medium-tier models (16–32GB VRAM): Qwen3 14B Q8, Qwen3.6 35B-A3B",
     )
     size_group.add_argument(
         "--large-only", action="store_true",
@@ -1024,12 +928,15 @@ def main():
     if args.small_only:
         llm_models = LLM_MODELS_SMALL
         tier_label = "small only (≤16GB)"
+    elif args.medium_only:
+        llm_models = LLM_MODELS_MEDIUM
+        tier_label = "medium only (16–32GB)"
     elif args.large_only:
         llm_models = LLM_MODELS_LARGE
         tier_label = "large only (32GB+)"
     else:
         llm_models = LLM_MODELS
-        tier_label = "all (small + large)"
+        tier_label = "all (small + medium + large)"
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else COMFYUI_DIR
 

@@ -12,10 +12,13 @@ import sys
 import os
 import platform
 import subprocess
-import importlib
 import json
 import shutil
 from pathlib import Path
+
+from models import LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE
+
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -233,34 +236,34 @@ except ImportError:
 
 section("Python Packages")
 
-REQUIRED = {
-    "requests":              "requests",
-    "psutil":                "psutil",
-    "sentence_transformers": "sentence-transformers",
-    "numpy":                 "numpy",
-    "tqdm":                  "tqdm",
-    "huggingface_hub":       "huggingface_hub[cli]",
-}
+req_file = SCRIPT_DIR / "requirements.txt"
+result = subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+    capture_output=True, text=True,
+)
+if result.returncode == 0:
+    ok(f"Packages installed from requirements.txt")
+else:
+    fail("pip install -r requirements.txt failed")
+    info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
+    issues.append("pip install -r requirements.txt")
 
-for import_name, install_name in REQUIRED.items():
-    try:
-        mod = importlib.import_module(import_name)
-        ver = getattr(mod, "__version__", "?")
-        ok(f"{install_name} ({ver})")
-    except ImportError:
-        warn(f"{install_name} not found — installing ...")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", install_name],
-            capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            mod = importlib.import_module(import_name)
-            ver = getattr(mod, "__version__", "?")
-            ok(f"{install_name} installed ({ver})")
-        else:
-            fail(f"{install_name} install failed")
-            info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
-            issues.append(f"pip install {install_name}")
+# sentence-transformers must come after torch so it uses the GPU build
+try:
+    import sentence_transformers as _st
+    ok(f"sentence-transformers ({_st.__version__})")
+except ImportError:
+    warn("sentence-transformers not found — installing ...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "sentence-transformers"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        ok("sentence-transformers installed")
+    else:
+        fail("sentence-transformers install failed")
+        info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
+        issues.append("pip install sentence-transformers")
 
 # ── 6. Ollama ──────────────────────────────────────────────────────────────────
 
@@ -413,27 +416,11 @@ else:
 
 section("Ollama Models")
 
-OLLAMA_MODELS = [
-    # Small tier — fit in 16GB VRAM or less (tags verified June 2026)
-    # Note: llama3.2 tops out at 3B; 8B slot is llama3.1
-    # Note: qwen3:14b has no q3_K_M — q4_K_M and q8_0 are the available quantizations
-    # Note: gpt-oss:20b ships in MXFP4 only — no separate Q3/Q4 variants
-    ("llama3.1:8b-instruct-q3_K_M", "Llama 3.1 8B Q3_K_M",    "~4.3 GB"),
-    ("llama3.1:8b-instruct-q4_K_M", "Llama 3.1 8B Q4_K_M",    "~4.9 GB"),
-    ("qwen3:14b-q4_K_M",            "Qwen3 14B Q4_K_M",        "~9.3 GB"),
-    ("qwen3:14b-q8_0",              "Qwen3 14B Q8_0",           "~16 GB"),
-    ("gpt-oss:20b",                  "GPT-OSS 20B (MXFP4)",    "~14 GB"),
-    # Large tier — 32GB+ memory required
-    # Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist
-    ("llama3.1:70b-instruct-q3_K_M", "Llama 3.1 70B Q3_K_M",  "~32 GB"),
-    ("llama3.1:70b-instruct-q4_K_M", "Llama 3.1 70B Q4_K_M",  "~42 GB"),
-    ("gpt-oss:120b",                  "GPT-OSS 120B (MXFP4)",  "~65 GB"),
-]
-
 if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
 
-    for tag, label, size in OLLAMA_MODELS:
+    for m in LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE:
+        tag, label, size = m["tag"], m["label"], m["vram"]
         already = tag in available or any(tag in a for a in available)
         if already:
             ok(f"{label} — already pulled")
@@ -446,9 +433,9 @@ if ollama_up:
                 fail(f"{label} — pull failed")
                 issues.append(f"ollama pull {tag}")
 else:
-    for tag, label, size in OLLAMA_MODELS:
-        warn(f"Cannot check {label} — Ollama server not running")
-        issues.append(f"ollama pull {tag}  (once Ollama is running)")
+    for m in LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE:
+        warn(f"Cannot check {m['label']} — Ollama server not running")
+        issues.append(f"ollama pull {m['tag']}  (once Ollama is running)")
 
 # ── 8. Disk space ─────────────────────────────────────────────────────────────
 

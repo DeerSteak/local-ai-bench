@@ -1,0 +1,5 @@
+psutil
+requests
+numpy
+tqdm
+huggingface_hub[cli]

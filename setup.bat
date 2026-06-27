@@ -67,7 +67,19 @@ if exist "%VENV_DIR%\Scripts\python.exe" (
 set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
 set VENV_PIP=%VENV_DIR%\Scripts\pip.exe
 
-:: ── 3. Install Ollama if missing ───────────────────────────────────────────────
+:: ── 3. Base Python dependencies ───────────────────────────────────────────────
+echo.
+echo [Python Packages]
+echo   -^>  Installing from requirements.txt ...
+%VENV_PIP% install -r requirements.txt
+if %errorlevel% neq 0 (
+    echo   X  pip install -r requirements.txt failed. Check your internet connection.
+    pause
+    exit /b 1
+)
+echo   OK  Base dependencies installed
+
+:: ── 4. Install Ollama if missing ───────────────────────────────────────────────
 echo.
 echo [Ollama]
 

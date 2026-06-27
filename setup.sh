@@ -80,7 +80,13 @@ fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 
-# ── 3. DGX Spark / Linux: install Ollama if missing ───────────────────────────
+# ── 3. Base Python dependencies ────────────────────────────────────────────────
+section "Python Packages"
+info "Installing from requirements.txt ..."
+"$VENV_PIP" install -r requirements.txt
+ok "Base dependencies installed"
+
+# ── 4. DGX Spark / Linux: install Ollama if missing ───────────────────────────
 if [ "$OS" = "Linux" ] && ! command -v ollama &>/dev/null; then
     section "Ollama"
     warn "Ollama not found — installing via snap..."
