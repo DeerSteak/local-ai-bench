@@ -745,74 +745,58 @@ def comfyui_available():
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt):
     """
-    Flux.1 txt2img workflow using the native Flux node set.
-    Flux requires: UNETLoader + DualCLIPLoader + FluxGuidance + ModelSamplingFlux
-    + EmptyLatentImage (not EmptySD3LatentImage) + KSamplerSelect + SamplerCustomAdvanced.
+    Flux.1 txt2img workflow using CheckpointLoaderSimple.
+
+    flux1-schnell.safetensors from HuggingFace is a full checkpoint
+    (model + CLIP + VAE combined), so we load it with CheckpointLoaderSimple
+    exactly like SDXL. We still use FluxGuidance + SamplerCustomAdvanced
+    for correct Flux sampling behaviour.
     """
     return {
-        # Load Flux UNet
-        "1": {"class_type": "UNETLoader",
-              "inputs": {"unet_name": checkpoint, "weight_dtype": "default"}},
-        # Load dual CLIP (t5xxl + clip_l) — ComfyUI looks in models/clip/
-        "2": {"class_type": "DualCLIPLoader",
-              "inputs": {
-                  "clip_name1": "t5xxl_fp16.safetensors",
-                  "clip_name2": "clip_l.safetensors",
-                  "type": "flux",
-              }},
-        # Load VAE
-        "3": {"class_type": "VAELoader",
-              "inputs": {"vae_name": "ae.safetensors"}},
-        # Encode prompt
-        "4": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["2", 0]}},
-        # Flux guidance
-        "5": {"class_type": "FluxGuidance",
-              "inputs": {"conditioning": ["4", 0], "guidance": cfg}},
-        # Empty latent
-        "6": {"class_type": "EmptyLatentImage",
+        # Load full checkpoint (model + clip + vae)
+        "1": {"class_type": "CheckpointLoaderSimple",
+              "inputs": {"ckpt_name": checkpoint}},
+        # Encode prompt — no negative for Flux
+        "2": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt, "clip": ["1", 1]}},
+        # Flux guidance node (replaces CFGGuider)
+        "3": {"class_type": "FluxGuidance",
+              "inputs": {"conditioning": ["2", 0], "guidance": cfg}},
+        # Empty latent image
+        "4": {"class_type": "EmptyLatentImage",
               "inputs": {"width": width, "height": height, "batch_size": 1}},
-        # Model sampling for Flux
-        "7": {"class_type": "ModelSamplingFlux",
-              "inputs": {
-                  "model": ["1", 0],
-                  "max_shift": 1.15,
-                  "base_shift": 0.5,
-                  "width": width,
-                  "height": height,
-              }},
-        # Noise
-        "8": {"class_type": "RandomNoise",
+        # Noise source
+        "5": {"class_type": "RandomNoise",
               "inputs": {"noise_seed": seed}},
-        # Sampler
-        "9": {"class_type": "KSamplerSelect",
+        # Basic guider wrapping FluxGuidance conditioning
+        "6": {"class_type": "BasicGuider",
+              "inputs": {"model": ["1", 0], "conditioning": ["3", 0]}},
+        # Sampler selection
+        "7": {"class_type": "KSamplerSelect",
               "inputs": {"sampler_name": sampler}},
         # Scheduler
-        "10": {"class_type": "BasicScheduler",
-               "inputs": {
-                   "model": ["7", 0],
-                   "scheduler": scheduler,
-                   "steps": steps,
-                   "denoise": 1.0,
-               }},
-        # Run sampler
-        "11": {"class_type": "SamplerCustomAdvanced",
-               "inputs": {
-                   "noise": ["8", 0],
-                   "guider": ["12", 0],
-                   "sampler": ["9", 0],
-                   "sigmas": ["10", 0],
-                   "latent_image": ["6", 0],
-               }},
-        # CFG guider
-        "12": {"class_type": "BasicGuider",
-               "inputs": {"model": ["7", 0], "conditioning": ["5", 0]}},
-        # Decode
-        "13": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["11", 0], "vae": ["3", 0]}},
+        "8": {"class_type": "BasicScheduler",
+              "inputs": {
+                  "model": ["1", 0],
+                  "scheduler": scheduler,
+                  "steps": steps,
+                  "denoise": 1.0,
+              }},
+        # Run the sampler
+        "9": {"class_type": "SamplerCustomAdvanced",
+              "inputs": {
+                  "noise": ["5", 0],
+                  "guider": ["6", 0],
+                  "sampler": ["7", 0],
+                  "sigmas": ["8", 0],
+                  "latent_image": ["4", 0],
+              }},
+        # Decode latent to image
+        "10": {"class_type": "VAEDecode",
+               "inputs": {"samples": ["9", 0], "vae": ["1", 2]}},
         # Save
-        "14": {"class_type": "SaveImage",
-               "inputs": {"images": ["13", 0], "filename_prefix": "bench_flux"}},
+        "11": {"class_type": "SaveImage",
+               "inputs": {"images": ["10", 0], "filename_prefix": "bench_flux"}},
     }
 
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
@@ -848,7 +832,12 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> float:
         json={"prompt": workflow},
         timeout=30,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text[:500]
+        raise RuntimeError(f"ComfyUI rejected workflow (HTTP {resp.status_code}): {detail}")
     prompt_id = resp.json()["prompt_id"]
 
     # Start timing AFTER submission so we measure generation time only,
@@ -909,7 +898,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
         ckpt_path = checkpoints_dir / checkpoint
         if not ckpt_path.exists():
             warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")
-            info(f"Download and place at: {ckpt_path}")
+            log(f"Download and place at: {ckpt_path}")
             continue
 
         ok(f"{label}: checkpoint found ({ckpt_path.stat().st_size / (1024**3):.1f} GB)")
