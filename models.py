@@ -5,7 +5,7 @@ No external dependencies: safe to import before packages are installed.
 Both benchmark.py and setup_check.py import from here.
 """
 
-EMBED_MODEL = "mxbai-embed-large"
+EMBED_MODEL = "nomic-embed-text"
 
 # Image generation models. Checkpoint files not present in
 # ComfyUI/models/checkpoints/ are skipped automatically.
@@ -21,14 +21,14 @@ IMAGE_MODELS = [
         "short":      "sdxl",
     },
     {
-        "label":      "Flux.1-schnell",
-        "checkpoint": "flux1-schnell.safetensors",
-        "workflow":   "flux",
-        "steps":      4,
-        "cfg":        1.0,
+        "label":      "SD3.5 Large",
+        "checkpoint": "sd3.5_large.safetensors",
+        "workflow":   "sd3",
+        "steps":      28,
+        "cfg":        4.5,
         "sampler":    "euler",
-        "scheduler":  "simple",
-        "short":      "flux-schnell",
+        "scheduler":  "beta",
+        "short":      "sd35-large",
     },
     {
         "label":      "Flux.1-dev",
@@ -46,23 +46,22 @@ IMAGE_MODELS = [
 # Tags verified against ollama.com/library June 2026.
 LLM_MODELS_SMALL = [
     {
-        "tag":   "llama3.1:8b-instruct-q3_K_M",
-        "label": "Llama 3.1 8B Q3_K_M",
-        "short": "llama3.1-8b-q3",
-        "vram":  "~4.3 GB",
-    },
-    {
         "tag":   "llama3.1:8b-instruct-q4_K_M",
         "label": "Llama 3.1 8B Q4_K_M",
         "short": "llama3.1-8b-q4",
         "vram":  "~4.9 GB",
     },
     {
-        "tag":     "qwen3:14b-q4_K_M",
-        "label":   "Qwen3 14B Q4_K_M",
-        "short":   "qwen3-14b-q4",
-        "vram":    "~9.3 GB",
-        "max_ctx": 32768,
+        "tag":   "deepseek-r1:8b",
+        "label": "DeepSeek-R1 8B",
+        "short": "deepseek-r1-8b",
+        "vram":  "~5.2 GB",
+    },
+    {
+        "tag":   "gemma4:e4b",
+        "label": "Gemma 4 E4B",
+        "short": "gemma4-e4b",
+        "vram":  "~9.6 GB",
     },
     {
         "tag":   "gpt-oss:20b",
@@ -75,11 +74,16 @@ LLM_MODELS_SMALL = [
 # Medium-tier models (16–32GB VRAM) — 24 GB GPUs (RTX 3090/4090) and 32 GB unified memory.
 LLM_MODELS_MEDIUM = [
     {
-        "tag":     "qwen3:14b-q8_0",
-        "label":   "Qwen3 14B Q8_0",
-        "short":   "qwen3-14b-q8",
-        "vram":    "~16 GB",
-        "max_ctx": 32768,
+        "tag":   "gemma4:26b",
+        "label": "Gemma 4 27B",
+        "short": "gemma4-26b",
+        "vram":  "~18 GB",
+    },
+    {
+        "tag":   "deepseek-r1:32b",
+        "label": "DeepSeek-R1 32B",
+        "short": "deepseek-r1-32b",
+        "vram":  "~20 GB",
     },
     {
         "tag":   "qwen3.6:35b-a3b",
@@ -89,20 +93,20 @@ LLM_MODELS_MEDIUM = [
     },
 ]
 
-# Large-tier models (≥32GB VRAM).
+# Large-tier models (≥42GB VRAM).
 # Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist.
 LLM_MODELS_LARGE = [
     {
-        "tag":   "llama3.1:70b-instruct-q3_K_M",
-        "label": "Llama 3.1 70B Q3_K_M",
-        "short": "llama3.1-70b-q3",
-        "vram":  "~32 GB",
+        "tag":   "llama3.3:70b-instruct-q4_K_M",
+        "label": "Llama 3.3 70B Q4_K_M",
+        "short": "llama3.3-70b-q4",
+        "vram":  "~43 GB",
     },
     {
-        "tag":   "llama3.1:70b-instruct-q4_K_M",
-        "label": "Llama 3.1 70B Q4_K_M",
-        "short": "llama3.1-70b-q4",
-        "vram":  "~42 GB",
+        "tag":   "deepseek-r1:70b",
+        "label": "DeepSeek-R1 70B",
+        "short": "deepseek-r1-70b",
+        "vram":  "~43 GB",
     },
     {
         "tag":   "gpt-oss:120b",

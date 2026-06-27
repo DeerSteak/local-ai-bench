@@ -355,7 +355,7 @@ if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
 
     all_models = (
-        [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~670 MB"}]
+        [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~274 MB"}]
         + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
     )
     for m in all_models:
@@ -386,7 +386,7 @@ try:
     total_gb = total // (1024**3)
     print(f"  Free:  {free_gb} GB / {total_gb} GB total")
     if free_gb >= 280:
-        ok("Sufficient free space for all ten models")
+        ok("Sufficient free space for all models")
     elif free_gb >= 60:
         warn(f"Only {free_gb} GB free — enough for small-tier models only")
         warn("Large-tier models need ~250 GB total; run with --small-only if disk is limited")
@@ -404,7 +404,7 @@ SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 IMAGE_CHECKPOINTS = [
     "sd_xl_base_1.0.safetensors",
-    "flux1-schnell.safetensors",
+    "sd3.5_large.safetensors",
     "flux1-dev.safetensors",
 ]
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
@@ -499,16 +499,16 @@ if COMFYUI_DIR.exists():
                 return token
         # 3. Prompt
         print()
-        print(f"  {YELLOW}Flux models require a free HuggingFace account.{RESET}")
+        print(f"  {YELLOW}SD3.5 Large and Flux.1-dev require a free HuggingFace account.{RESET}")
         print(f"  1. Create an account at https://huggingface.co")
         print(f"  2. Accept the licenses at:")
-        print(f"       https://huggingface.co/black-forest-labs/FLUX.1-schnell")
+        print(f"       https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
         print(f"       https://huggingface.co/black-forest-labs/FLUX.1-dev")
         print(f"  3. Generate a token at https://huggingface.co/settings/tokens")
         print()
         try:
             token = input(
-                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip Flux models): "
+                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip gated models): "
             ).strip()
         except (EOFError, KeyboardInterrupt):
             token = ""
@@ -568,22 +568,22 @@ if COMFYUI_DIR.exists():
             else:
                 warn("SDXL download failed — image benchmarks will run without it")
 
-        # Flux.1-schnell — gated (free account + license acceptance required)
-        if "flux1-schnell.safetensors" in missing:
-            info("Downloading Flux.1-schnell (requires HuggingFace token) ...")
+        # SD3.5 Large — gated (free account + license acceptance required)
+        if "sd3.5_large.safetensors" in missing:
+            info("Downloading SD3.5 Large (requires HuggingFace token) ...")
             token = load_token()
             if token:
-                if hf_download("black-forest-labs/FLUX.1-schnell",
-                               "flux1-schnell.safetensors", token=token):
-                    ok("flux1-schnell.safetensors downloaded")
-                    found_ckpts.append("flux1-schnell.safetensors")
+                if hf_download("stabilityai/stable-diffusion-3.5-large",
+                               "sd3.5_large.safetensors", token=token):
+                    ok("sd3.5_large.safetensors downloaded")
+                    found_ckpts.append("sd3.5_large.safetensors")
                 else:
-                    fail("Flux.1-schnell download failed — check token and license acceptance")
-                    info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell")
+                    fail("SD3.5 Large download failed — check token and license acceptance")
+                    info("Accept license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
             else:
-                info("Skipping Flux.1-schnell — no token provided")
+                info("Skipping SD3.5 Large — no token provided")
 
-        # Flux.1-dev — gated (same account, separate license acceptance required)
+        # Flux.1-dev — gated (free account + license acceptance required)
         if "flux1-dev.safetensors" in missing:
             info("Downloading Flux.1-dev (requires HuggingFace token) ...")
             token = load_token()

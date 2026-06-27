@@ -3,17 +3,17 @@
 benchmark.py — Cross-platform LLM benchmark suite.
 
 Tests:
-  1. LLM generation — Llama 3.1 70B and GPT-OSS 120B via Ollama
+  1. LLM generation — 10 models across small/medium/large tiers via Ollama
      Metrics: time-to-first-token (TTFT), tokens/sec
-     Context lengths: 2K and 8K tokens
+     Context lengths: 2K, 8K, 32K, 64K
+     Models that exceed the warmup timeout are skipped automatically
 
-  2. Image generation — Flux.1-dev via ComfyUI HTTP API
+  2. Image generation — SDXL, Flux.1-schnell, Flux.1-dev via ComfyUI HTTP API
      Metrics: seconds/image at 1024×1024 and 1536×1536
-     (skipped automatically if Flux model not found)
+     (models skipped automatically if checkpoint not found)
 
-  3. Embeddings — bge-large-en-v1.5 via sentence-transformers
+  3. Embeddings — nomic-embed-text via Ollama
      Metrics: sentences/sec at batch sizes 32, 128, 512
-     Memory tracked throughout
 
 Servers are managed automatically:
   - Ollama: started if not already running, left running after (it's a service)
@@ -50,7 +50,7 @@ import requests
 OLLAMA_URL   = "http://localhost:11434"
 COMFYUI_URL  = "http://localhost:8188"
 
-# Default ComfyUI path — relative to this script's directory (~/llamabench/ComfyUI)
+# Default ComfyUI path — relative to this script's directory
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
@@ -203,7 +203,7 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
     if not found:
         warn("No image model checkpoints found in " + str(checkpoints_dir))
         warn("Expected one of: " + ", ".join(known))
-        warn("Run setup_check.py to download Flux.1-schnell automatically")
+        warn("Run setup_check.py to download Flux models automatically")
         return False
     log(f"Found {len(found)}/{len(known)} image checkpoints: {found}")
 
@@ -871,6 +871,43 @@ def build_flux_workflow(checkpoint, width, height, steps, cfg,
                "inputs": {"images": ["10", 0], "filename_prefix": filename_prefix}},
     }
 
+def build_sd3_workflow(checkpoint, width, height, steps, cfg,
+                       sampler, scheduler, seed, prompt, filename_prefix="bench_sd3"):
+    """
+    SD3.5 Large txt2img workflow for ComfyUI.
+
+    sd3.5_large.safetensors is self-contained (VAE and triple-CLIP bundled), so
+    CheckpointLoaderSimple provides all three outputs. SD3 uses 16-channel latents
+    — EmptySD3LatentImage is required; EmptyLatentImage (4-channel) would fail.
+    """
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple",
+              "inputs": {"ckpt_name": checkpoint}},
+        "2": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt, "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": "", "clip": ["1", 1]}},
+        "4": {"class_type": "EmptySD3LatentImage",
+              "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "5": {"class_type": "KSampler",
+              "inputs": {
+                  "model":          ["1", 0],
+                  "positive":       ["2", 0],
+                  "negative":       ["3", 0],
+                  "latent_image":   ["4", 0],
+                  "seed":           seed,
+                  "steps":          steps,
+                  "cfg":            cfg,
+                  "sampler_name":   sampler,
+                  "scheduler":      scheduler,
+                  "denoise":        1.0,
+              }},
+        "6": {"class_type": "VAEDecode",
+              "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+        "7": {"class_type": "SaveImage",
+              "inputs": {"images": ["6", 0], "filename_prefix": filename_prefix}},
+    }
+
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt, filename_prefix="bench"):
     """Minimal SDXL txt2img workflow for ComfyUI API."""
@@ -1009,6 +1046,10 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                 wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
                                          sampler, scheduler, seed, prompt,
                                          filename_prefix=f"{short}_warmup")
+            elif workflow_t == "sd3":
+                wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
+                                        sampler, scheduler, seed, prompt,
+                                        filename_prefix=f"{short}_warmup")
             else:
                 wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
                                          sampler, scheduler, seed, prompt,
@@ -1031,6 +1072,11 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                     prefix = f"{short}_{res_label}_run{run_i + 1}"
                     if workflow_t == "flux":
                         wf = build_flux_workflow(
+                            checkpoint, w, h, steps, cfg,
+                            sampler, scheduler, seed, prompt,
+                            filename_prefix=prefix)
+                    elif workflow_t == "sd3":
+                        wf = build_sd3_workflow(
                             checkpoint, w, h, steps, cfg,
                             sampler, scheduler, seed, prompt,
                             filename_prefix=prefix)
@@ -1131,15 +1177,15 @@ def main():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--small-only", action="store_true",
-        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B, Qwen3 14B Q4, GPT-OSS 20B",
+        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
     )
     size_group.add_argument(
         "--medium-only", action="store_true",
-        help="Run only medium-tier models (16–32GB VRAM): Qwen3 14B Q8, Qwen3.6 35B-A3B",
+        help="Run only medium-tier models (16–32GB VRAM): Gemma 4 27B, DeepSeek-R1 32B, Qwen3.6 35B-A3B",
     )
     size_group.add_argument(
         "--large-only", action="store_true",
-        help="Run only large-tier models (32GB+ VRAM): Llama 3.1 70B, GPT-OSS 120B",
+        help="Run only large-tier models (42GB+ VRAM): Llama 3.3 70B Q4_K_M, DeepSeek-R1 70B, GPT-OSS 120B (MXFP4)",
     )
     args = parser.parse_args()
 
