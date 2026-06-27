@@ -184,3 +184,4 @@ bench-env/
 .DS_Store
 hf.txt
 machine_profile.json
+**/node_modules
