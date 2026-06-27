@@ -713,7 +713,7 @@ def comfyui_available():
         return False
 
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
-                        sampler, scheduler, seed, prompt):
+                        sampler, scheduler, seed, prompt, filename_prefix="bench_flux"):
     """
     Flux.1 txt2img workflow.
 
@@ -775,11 +775,11 @@ def build_flux_workflow(checkpoint, width, height, steps, cfg,
                "inputs": {"samples": ["9", 0], "vae": ["13", 0]}},
         # Save
         "11": {"class_type": "SaveImage",
-               "inputs": {"images": ["10", 0], "filename_prefix": "bench_flux"}},
+               "inputs": {"images": ["10", 0], "filename_prefix": filename_prefix}},
     }
 
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
-                        sampler, scheduler, seed, prompt):
+                        sampler, scheduler, seed, prompt, filename_prefix="bench"):
     """Minimal SDXL txt2img workflow for ComfyUI API."""
     return {
         "4":  {"class_type": "CheckpointLoaderSimple",
@@ -791,7 +791,7 @@ def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
         "8":  {"class_type": "VAEDecode",
                "inputs": {"samples": ["10", 0], "vae": ["4", 2]}},
         "9":  {"class_type": "SaveImage",
-               "inputs": {"images": ["8", 0], "filename_prefix": "bench"}},
+               "inputs": {"images": ["8", 0], "filename_prefix": filename_prefix}},
         "5":  {"class_type": "EmptyLatentImage",
                "inputs": {"width": width, "height": height, "batch_size": 1}},
         "10": {"class_type": "KSampler",
@@ -914,10 +914,12 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
         try:
             if workflow_t == "flux":
                 wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
-                                         sampler, scheduler, seed, prompt)
+                                         sampler, scheduler, seed, prompt,
+                                         filename_prefix=f"{short}_warmup")
             else:
                 wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
-                                         sampler, scheduler, seed, prompt)
+                                         sampler, scheduler, seed, prompt,
+                                         filename_prefix=f"{short}_warmup")
             comfyui_submit(wf)
             ok(f"{label}: warmup done")
         except Exception as e:
@@ -933,14 +935,17 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
 
             for run_i in range(n_runs):
                 try:
+                    prefix = f"{short}_{res_label}_run{run_i + 1}"
                     if workflow_t == "flux":
                         wf = build_flux_workflow(
                             checkpoint, w, h, steps, cfg,
-                            sampler, scheduler, seed, prompt)
+                            sampler, scheduler, seed, prompt,
+                            filename_prefix=prefix)
                     else:
                         wf = build_sdxl_workflow(
                             checkpoint, w, h, steps, cfg,
-                            sampler, scheduler, seed, prompt)
+                            sampler, scheduler, seed, prompt,
+                            filename_prefix=prefix)
 
                     elapsed, images = comfyui_submit(wf)
                     times.append(elapsed)
@@ -982,6 +987,15 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                         ok(f"Saved image (file copy) → benchmark_images/{dest.name}")
                     except Exception as e:
                         warn(f"Could not save image: {e}")
+
+    log("Unloading ComfyUI models from VRAM ...")
+    try:
+        requests.post(f"{COMFYUI_URL}/free",
+                      json={"unload_models": True, "free_memory": True},
+                      timeout=10)
+        ok("ComfyUI models unloaded")
+    except Exception as e:
+        warn(f"Could not unload ComfyUI models: {e}")
 
     return results
 
