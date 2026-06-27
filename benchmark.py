@@ -69,7 +69,7 @@ IMAGE_PROMPT = (
 
 WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
-WARMUP_TIMEOUT = 300   # seconds per warmup run before aborting this model
+RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -617,7 +617,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
         # Use the largest context this model will actually run so Ollama
         # pre-allocates the full KV cache once — avoiding a reload at max context.
         max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
-        log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {WARMUP_TIMEOUT}s per run) ...")
+        log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {RUN_TIMEOUT}s per run) ...")
         warmup_ok = True
         for warmup_i in range(warmup_runs):
             result_box = [None]   # mutable container so thread can write back
@@ -626,14 +626,14 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             def _warmup():
                 try:
                     result_box[0] = ollama_generate(
-                        tag, "Hello.", timeout=WARMUP_TIMEOUT, num_ctx=max_ctx)
+                        tag, "Hello.", timeout=RUN_TIMEOUT, num_ctx=max_ctx)
                 except Exception as e:
                     exc_box[0] = e
 
             t = threading.Thread(target=_warmup, daemon=True)
             t_start = time.perf_counter()
             t.start()
-            t.join(timeout=WARMUP_TIMEOUT)
+            t.join(timeout=RUN_TIMEOUT)
 
             if t.is_alive():
                 elapsed = time.perf_counter() - t_start
@@ -669,7 +669,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             for run_i in range(n_runs):
                 try:
                     ttft, tokens, tps = ollama_generate(
-                        tag, prompt, timeout=600, num_ctx=ctx_len
+                        tag, prompt, timeout=RUN_TIMEOUT, num_ctx=ctx_len
                     )
                     ttfts.append(ttft)
                     tps_list.append(tps)
@@ -1101,8 +1101,8 @@ def main():
         help=f"Warmup runs before measuring (default: {WARMUP_RUNS})",
     )
     parser.add_argument(
-        "--warmup-timeout", type=int, default=None,
-        help="Seconds to wait per warmup run before aborting this model (default: 300)",
+        "--timeout", type=int, default=None,
+        help="Seconds per run (warmup and measured) before aborting this model (default: 300)",
     )
     parser.add_argument(
         "--out", type=str, default=None,
@@ -1128,9 +1128,9 @@ def main():
     args = parser.parse_args()
 
     # Apply CLI overrides to module-level config
-    global WARMUP_TIMEOUT
-    if args.warmup_timeout is not None:
-        WARMUP_TIMEOUT = args.warmup_timeout
+    global RUN_TIMEOUT
+    if args.timeout is not None:
+        RUN_TIMEOUT = args.timeout
 
     # Select model tier
     if args.small_only:
@@ -1157,7 +1157,7 @@ def main():
     print(f"  Backend:   {profile['backend']}")
     print(f"  RAM:       {profile['ram_gb']} GB")
     print(f"  Runs:      {args.runs} measured + {args.warmup} warmup")
-    print(f"  Warmup TO: {WARMUP_TIMEOUT}s per run")
+    print(f"  Timeout:   {RUN_TIMEOUT}s per run")
     print(f"  Models:    {tier_label}")
     print(f"  Tests:     {', '.join(args.tests)}")
     print(f"  ComfyUI:   {comfyui_dir}")
