@@ -125,3 +125,56 @@
 .exportBtn:disabled {
   opacity: 0.5;
 }
+
+.labelFields {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.labelField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.labelFileName {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #8c959f;
+  font-family: 'IBM Plex Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.labelDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.labelTextarea {
+  width: 140px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: 'IBM Plex Mono', monospace;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1a1f24;
+  background: #ffffff;
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.labelTextarea:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+}

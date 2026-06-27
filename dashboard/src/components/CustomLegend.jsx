@@ -17,7 +17,7 @@ export default function CustomLegend({ payload, isMultiFile }) {
                   strokeDasharray={p.payload?.strokeDasharray || ""}
                 />
               </svg>
-              {p.value}
+              <span style={{ whiteSpace: "pre-line" }}>{p.value}</span>
             </div>
           ))}
         </div>
@@ -31,7 +31,7 @@ export default function CustomLegend({ payload, isMultiFile }) {
         {payload.map(p => (
           <div key={p.value} className={styles.item}>
             <span className={styles.swatch} style={{ background: p.color }} />
-            {p.value}
+            <span style={{ whiteSpace: "pre-line" }}>{p.value}</span>
           </div>
         ))}
       </div>

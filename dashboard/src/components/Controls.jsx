@@ -1,4 +1,4 @@
-import { SECTIONS, SECTION_LABELS } from "../constants";
+import { SECTIONS, SECTION_LABELS, FILE_COLORS } from "../constants";
 import { modelLabel, imageModelLabel, getModelColor, getImageModelColor } from "../utils";
 import styles from "./Controls.module.css";
 
@@ -6,7 +6,9 @@ export default function Controls({
   section, setSection,
   allModels, enabledModels, onToggleModel,
   allImageModels, enabledImageModels, onToggleImageModel,
+  chartStyle, setChartStyle,
   chartWidth, setChartWidth,
+  files, hostnameOverrides, onUpdateHostnameOverride,
   logoSrc, setLogoSrc,
   logoDragOver, onLogoDrop, onLogoDragOver, onLogoDragLeave,
   saving, onSaveChart,
@@ -23,6 +25,40 @@ export default function Controls({
           ))}
         </div>
       </div>
+
+      <div className={styles.dividerGroup}>
+        <div className={styles.controlLabel}>Chart Style</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["line", "Line"], ["bar", "Bar"]].map(([value, label]) => (
+            <button key={value} className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {files.length > 0 && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Labels</div>
+          <div className={styles.labelFields}>
+            {files.map((f, i) => (
+              <div key={f.id} className={styles.labelField}>
+                <div className={styles.labelFileName}>
+                  <span className={styles.labelDot} style={{ background: FILE_COLORS[i % FILE_COLORS.length] }} />
+                  {f.name}
+                </div>
+                <textarea
+                  className={styles.labelTextarea}
+                  value={hostnameOverrides[f.id] ?? f.hostname}
+                  onChange={e => onUpdateHostnameOverride(f.id, e.target.value)}
+                  rows={2}
+                  spellCheck={false}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {section === "llm" && allModels.length > 0 && (
         <div className={styles.dividerGroup}>

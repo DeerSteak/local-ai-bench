@@ -1,42 +1,18 @@
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
   buildLLMDataForModel, buildFileLineConfigs,
   buildEmbedData, buildEmbedLineConfigs,
   buildImagesDataForResolution,
+  buildLLMBarData, buildLLMBarConfigs,
+  buildEmbedBarData, buildEmbedBarConfigs,
+  buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
   getAllLLMModels, getAllImageModels, modelLabel, fmt,
+  sortBarData, findMostStrenuousKey,
 } from "../utils";
 import { SECTION_LABELS, FILE_COLORS, RES_ORDER } from "../constants";
 import CustomLegend from "./CustomLegend";
 import CustomTooltip from "./CustomTooltip";
 import styles from "./ChartPanel.module.css";
-
-function FileSubtitle({ files }) {
-  if (!files.length) return null;
-  if (files.length === 1) {
-    const f = files[0];
-    return (
-      <div className={styles.subtitleSingle}>
-        <span className={styles.subtitleHost}>{f.hostname}</span>
-        <span className={styles.subtitleBackend}>· {f.backend}</span>
-        {f.os && <span className={styles.subtitleOs}>{f.os}</span>}
-      </div>
-    );
-  }
-  return (
-    <div className={styles.subtitleMulti}>
-      {files.map((f, i) => (
-        <div key={f.id} className={styles.subtitleFile}>
-          <span
-            className={styles.subtitleDot}
-            style={{ background: FILE_COLORS[i % FILE_COLORS.length] }}
-          />
-          <span className={styles.subtitleHost}>{f.hostname}</span>
-          <span className={styles.subtitleBackend}>· {f.backend}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function DirectionHint({ direction }) {
   if (!direction) return null;
@@ -47,7 +23,7 @@ function DirectionHint({ direction }) {
   );
 }
 
-function ChartCard({ title, modelName, subtitle, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel, logoSrc, direction }) {
+function ChartCard({ title, modelName, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel, logoSrc, direction }) {
   const yTickFormatter = v => fmt(v, unit);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
@@ -57,7 +33,6 @@ function ChartCard({ title, modelName, subtitle, data, lineConfigs, xKey, xLabel
           <span className={styles.chartTitle}>{title}</span>
           <DirectionHint direction={direction} />
         </div>
-        {subtitle}
       </div>
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
@@ -97,7 +72,102 @@ function ChartCard({ title, modelName, subtitle, data, lineConfigs, xKey, xLabel
   );
 }
 
-function ImageBarCard({ title, subtitle, data, files, chartName, chartModel, logoSrc }) {
+function MultiLineTick({ x, y, payload }) {
+  const lines = String(payload?.value ?? '').split('\n');
+  const lineH = 15;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {lines.map((line, i) => (
+        <text key={i} x={0} y={(i - (lines.length - 1) / 2) * lineH} dy="0.35em"
+          textAnchor="end" fill="#57606a" fontSize={14}>
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function BarLabel({ x, y, width, height, value, naKey, rowData, formatter }) {
+  const isNa = rowData?.[naKey];
+  const label = isNa ? "N/A" : formatter(value);
+  const lx = isNa ? (x ?? 0) + 8 : (x ?? 0) + (width ?? 0) + 6;
+  const ly = (y ?? 0) + (height ?? 0) / 2;
+  return (
+    <text x={lx} y={ly} dy="0.35em" fontSize={12} fontFamily="'IBM Plex Mono', monospace"
+      fill={isNa ? "#8c959f" : "#57606a"} fontStyle={isNa ? "italic" : "normal"}>
+      {label}
+    </text>
+  );
+}
+
+function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction }) {
+  const valFormatter = v => fmt(v, unit);
+
+  // Replace nulls with 0 so recharts renders the bar slot; track which were null.
+  const processedData = data.map(row => {
+    const r = { ...row };
+    for (const bc of barConfigs) {
+      if (r[bc.dataKey] == null) { r[`_na_${bc.dataKey}`] = true; r[bc.dataKey] = 0; }
+    }
+    return r;
+  });
+
+  const maxLabelLines = Math.max(1, ...processedData.map(row => String(row[xKey] ?? '').split('\n').length));
+  const rowH = Math.max(32, maxLabelLines * 16);
+  const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 100);
+  return (
+    <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+      <div className={styles.chartHeader}>
+        {modelName && <div className={styles.chartModelName}>{modelName}</div>}
+        <div className={styles.chartTitleRow}>
+          <span className={styles.chartTitle}>{title}</span>
+          <DirectionHint direction={direction} />
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={chartHeight}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 70, bottom: 8, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
+          <XAxis
+            type="number"
+            tick={{ fill: "#57606a", fontSize: 15 }}
+            tickFormatter={valFormatter}
+            label={{ value: yLabel, position: "insideBottom", offset: -16, fill: "#8c959f", fontSize: 15 }}
+            height={40}
+          />
+          <YAxis
+            type="category"
+            dataKey={xKey}
+            tick={<MultiLineTick />}
+            width={150}
+          />
+          <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
+          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
+          {barConfigs.map(bc => (
+            <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} radius={[0, 3, 3, 0]}>
+              <LabelList dataKey={bc.dataKey} content={(props) => (
+                <BarLabel {...props} naKey={`_na_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
+              )} />
+            </Bar>
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+      {logoSrc && <img src={logoSrc} className={styles.logoOverlay} alt="" />}
+    </div>
+  );
+}
+
+function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
+  const secFormatter = v => fmt(v, "sec");
+
+  const processedData = data.map(row => {
+    const r = { ...row };
+    for (let fi = 0; fi < files.length; fi++) {
+      const k = `f${fi}`;
+      if (r[k] == null) { r[`_na_${k}`] = true; r[k] = 0; }
+    }
+    return r;
+  });
+
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -106,22 +176,31 @@ function ImageBarCard({ title, subtitle, data, files, chartName, chartModel, log
           <span className={styles.chartTitle}>{title}</span>
           <DirectionHint direction="lower" />
         </div>
-        {subtitle}
       </div>
-      <ResponsiveContainer width="100%" height={320}>
-        <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" vertical={false} />
-          <XAxis dataKey="modelLabel" tick={{ fill: "#57606a", fontSize: 15 }} />
-          <YAxis
+      <ResponsiveContainer width="100%" height={Math.max(280, processedData.length * files.length * 32 + 100)}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 70, bottom: 8, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
+          <XAxis
+            type="number"
             tick={{ fill: "#57606a", fontSize: 15 }}
-            tickFormatter={v => fmt(v, "sec")}
-            width={100}
-            label={{ value: "Sec / image", angle: -90, position: "insideLeft", offset: 20, fill: "#8c959f", fontSize: 15, dy: 70 }}
+            tickFormatter={secFormatter}
+            label={{ value: "Sec / image", position: "insideBottom", offset: -16, fill: "#8c959f", fontSize: 15 }}
+            height={40}
+          />
+          <YAxis
+            type="category"
+            dataKey="modelLabel"
+            tick={{ fill: "#57606a", fontSize: 14 }}
+            width={150}
           />
           <Tooltip content={<CustomTooltip unit="sec" xPrefix="Model" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
           {files.map((f, fi) => (
-            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={60} radius={[3, 3, 0, 0]} />
+            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} radius={[0, 3, 3, 0]}>
+              <LabelList dataKey={`f${fi}`} content={(props) => (
+                <BarLabel {...props} naKey={`_na_f${fi}`} rowData={processedData[props.index]} formatter={secFormatter} />
+              )} />
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -132,10 +211,11 @@ function ImageBarCard({ title, subtitle, data, files, chartName, chartModel, log
 
 export default function ChartPanel({
   containerRef, files, section,
-  enabledModels, enabledImageModels, chartWidth, logoSrc,
+  enabledModels, enabledImageModels, chartWidth, logoSrc, chartStyle,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const isMultiFile = files.length > 1;
+  const isBar = chartStyle === "bar";
 
   if (files.length === 0) {
     return (
@@ -152,10 +232,25 @@ export default function ChartPanel({
     const modelGroups = allModels.map(model => {
       const tpsData = buildLLMDataForModel(files, model, "tps");
       const ttftData = buildLLMDataForModel(files, model, "ttft");
-      const tpsConfigs = lineConfigs.filter(lc => tpsData.some(r => r[lc.dataKey] != null));
-      const ttftConfigs = lineConfigs.filter(lc => ttftData.some(r => r[lc.dataKey] != null));
-      if (!tpsConfigs.length && !ttftConfigs.length) return null;
-      return { model, tpsData, ttftData, tpsConfigs, ttftConfigs };
+      const tpsLineConfigs = lineConfigs.filter(lc => tpsData.some(r => r[lc.dataKey] != null));
+      const ttftLineConfigs = lineConfigs.filter(lc => ttftData.some(r => r[lc.dataKey] != null));
+      const rawTpsBarConfigs = buildLLMBarConfigs(files, model);
+      const rawTtftBarConfigs = buildLLMBarConfigs(files, model);
+      const rawTpsBarData = buildLLMBarData(files, model, "tps");
+      const rawTtftBarData = buildLLMBarData(files, model, "ttft");
+      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => rawTpsBarData.some(r => r[bc.dataKey] != null));
+      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => rawTtftBarData.some(r => r[bc.dataKey] != null));
+      const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
+      const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
+      const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
+      const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
+        : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
+        : "sec";
+      const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+      const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
+      const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
+      if (!hasTps && !hasTtft) return null;
+      return { model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft };
     }).filter(Boolean);
 
     if (!modelGroups.length) {
@@ -166,36 +261,53 @@ export default function ChartPanel({
       );
     }
 
-    const subtitle = <FileSubtitle files={files} />;
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
-        {modelGroups.map(({ model, tpsData, ttftData, tpsConfigs, ttftConfigs }) => (
+        {modelGroups.map(({ model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft }) => (
           <div key={model} className={styles.modelGroup}>
             <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
-            {tpsConfigs.length > 0 && (
+            {hasTps && (isBar ? (
+              <GroupedBarCard
+                title="Tokens/sec"
+                modelName={modelLabel(model)}
+                data={tpsBarData}
+                barConfigs={tpsBarConfigs}
+                xKey="systemLabel" yLabel="Tokens/sec" unit="tps"
+                chartName="tps" chartModel={model}
+                logoSrc={logoSrc} direction="higher"
+              />
+            ) : (
               <ChartCard
                 title="Tokens/sec"
-                subtitle={subtitle}
                 modelName={modelLabel(model)}
-                data={tpsData} lineConfigs={tpsConfigs}
+                data={tpsData} lineConfigs={tpsLineConfigs}
                 xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens/sec" unit="tps"
                 isMultiFile={isMultiFile}
                 chartName="tps" chartModel={model}
                 logoSrc={logoSrc} direction="higher"
               />
-            )}
-            {ttftConfigs.length > 0 && (
+            ))}
+            {hasTtft && (isBar ? (
+              <GroupedBarCard
+                title="Time to First Token"
+                modelName={modelLabel(model)}
+                data={ttftBarData}
+                barConfigs={ttftBarConfigs}
+                xKey="systemLabel" yLabel={ttftYLabel} unit={ttftUnit}
+                chartName="ttft" chartModel={model}
+                logoSrc={logoSrc} direction="lower"
+              />
+            ) : (
               <ChartCard
                 title="Time to First Token"
-                subtitle={subtitle}
                 modelName={modelLabel(model)}
-                data={ttftData} lineConfigs={ttftConfigs}
-                xKey="ctxLabel" xLabel="Context Length" yLabel="TTFT (sec)" unit="sec"
+                data={ttftData} lineConfigs={ttftLineConfigs}
+                xKey="ctxLabel" xLabel="Context Length" yLabel={ttftYLabel} unit={ttftUnit}
                 isMultiFile={isMultiFile}
                 chartName="ttft" chartModel={model}
                 logoSrc={logoSrc} direction="lower"
               />
-            )}
+            ))}
           </div>
         ))}
       </div>
@@ -219,17 +331,40 @@ export default function ChartPanel({
       );
     }
 
-    const subtitle = <FileSubtitle files={files} />;
+    const groupedBarConfigs = buildImagesGroupedBarConfigs(files, enabledImageModels);
+    const modelKeys = groupedBarConfigs.map(bc => bc.dataKey);
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
         {resolutions.map(res => {
-          const data = buildImagesDataForResolution(files, res, enabledImageModels);
-          if (!data.length) return null;
+          if (isBar) {
+            const raw = buildImagesGroupedBarDataForResolution(files, res, enabledImageModels);
+            if (!raw.length) return null;
+            const strenuousKey = findMostStrenuousKey(raw, modelKeys);
+            const data = strenuousKey ? sortBarData(raw, [strenuousKey], "asc") : raw;
+            return (
+              <GroupedBarCard
+                key={res}
+                title={res}
+                modelName="Image Generation"
+                data={data}
+                barConfigs={groupedBarConfigs}
+                xKey="systemLabel" yLabel="Sec / image" unit="sec"
+                chartName="images" chartModel={res}
+                logoSrc={logoSrc} direction="lower"
+              />
+            );
+          }
+          const raw = buildImagesDataForResolution(files, res, enabledImageModels);
+          if (!raw.length) return null;
+          const data = [...raw].sort((a, b) => {
+            const maxA = Math.max(...files.map((_, fi) => a[`f${fi}`] ?? 0));
+            const maxB = Math.max(...files.map((_, fi) => b[`f${fi}`] ?? 0));
+            return maxA - maxB;
+          });
           return (
             <ImageBarCard
               key={res}
               title={res}
-              subtitle={subtitle}
               data={data}
               files={files}
               chartName="images"
@@ -242,7 +377,31 @@ export default function ChartPanel({
     );
   }
 
-  const subtitle = <FileSubtitle files={files} />;
+  if (isBar) {
+    const rawBarData = buildEmbedBarData(files);
+    const barConfigs = buildEmbedBarConfigs(files);
+    if (!rawBarData.length || !barConfigs.length) {
+      return (
+        <div className={styles.emptyState} style={containerStyle}>
+          No {SECTION_LABELS[section]} data in the loaded file(s)
+        </div>
+      );
+    }
+    const barData = sortBarData(rawBarData, barConfigs.map(bc => bc.dataKey), "desc");
+    return (
+      <div ref={containerRef} className={styles.container} style={containerStyle}>
+        <GroupedBarCard
+          title="Embedding Throughput"
+          data={barData}
+          barConfigs={barConfigs}
+          xKey="systemLabel" yLabel="Sentences/sec" unit="sps"
+          chartName="embeddings"
+          logoSrc={logoSrc} direction="higher"
+        />
+      </div>
+    );
+  }
+
   const data = buildEmbedData(files);
   const lineConfigs = buildEmbedLineConfigs(files);
 
@@ -258,7 +417,6 @@ export default function ChartPanel({
     <div ref={containerRef} className={styles.container} style={containerStyle}>
       <ChartCard
         title="Embedding Throughput"
-        subtitle={subtitle}
         data={data} lineConfigs={lineConfigs}
         xKey="batchLabel" xLabel="Batch Size" yLabel="Sentences/sec" unit="sps"
         isMultiFile={isMultiFile}

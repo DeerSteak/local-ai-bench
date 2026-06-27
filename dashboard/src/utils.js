@@ -3,6 +3,7 @@ import {
   MODEL_COLORS, IMAGE_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, LLM_MODEL_ORDER, IMAGE_MODEL_ORDER,
+  CTX_COLORS, BATCH_COLORS,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -12,6 +13,12 @@ export function parseJSON(text) {
 export function fmt(v, unit) {
   if (v == null) return "—";
   switch (unit) {
+    case "ms": {
+      const ms = v * 1000;
+      return ms < 10 ? `${ms.toFixed(1)}ms` : `${Math.round(ms)}ms`;
+    }
+    case "sec-plain":
+      return `${v.toFixed(2)}s`;
     case "sec":
       if (v >= 60) return `${(v / 60).toFixed(1)}m`;
       return `${v.toFixed(2)}s`;
@@ -252,6 +259,120 @@ export function buildImagesLineConfigs(files, data, enabledImageModels) {
     }
   }
   return configs;
+}
+
+// ── Bar chart builders (one color per setting, X = systems) ───────────────────
+
+// LLM bar chart: rows = files/systems, cols = context lengths
+export function buildLLMBarData(files, model, metric) {
+  return files.map(f => {
+    const row = { systemLabel: f.hostname };
+    const ctxData = f.data.llm?.[model] || {};
+    for (const ctx of CTX_ORDER) {
+      const s = ctxData[ctx];
+      if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+    }
+    return row;
+  });
+}
+
+export function buildLLMBarConfigs(files, model) {
+  const ctxSet = new Set();
+  for (const f of files)
+    for (const ctx of Object.keys(f.data.llm?.[model] || {})) ctxSet.add(ctx);
+  return CTX_ORDER
+    .filter(ctx => ctxSet.has(ctx))
+    .map((ctx, i) => ({
+      dataKey: ctx,
+      name: ctx,
+      fill: CTX_COLORS[ctx] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    }));
+}
+
+// Embeddings bar chart: rows = files/systems, cols = batch sizes
+export function buildEmbedBarData(files) {
+  return files.map(f => {
+    const row = { systemLabel: f.hostname };
+    const embedData = f.data.embeddings || {};
+    for (const bk of EMBED_BATCH_KEYS) {
+      const s = embedData[bk];
+      if (s) row[bk] = s.sentences_per_sec_mean;
+    }
+    return row;
+  });
+}
+
+export function buildEmbedBarConfigs(files) {
+  const present = new Set();
+  for (const f of files)
+    for (const bk of Object.keys(f.data.embeddings || {})) present.add(bk);
+  return EMBED_BATCH_KEYS
+    .filter(bk => present.has(bk))
+    .map((bk, i) => ({
+      dataKey: bk,
+      name: EMBED_BATCH_LABELS[bk],
+      fill: BATCH_COLORS[bk] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    }));
+}
+
+// Images bar chart: rows = files/systems, cols = image models
+export function buildImagesGroupedBarDataForResolution(files, resolution, enabledImageModels) {
+  const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
+  return files
+    .map(f => {
+      const row = { systemLabel: f.hostname };
+      for (const model of allModels) {
+        const s = f.data.images?.[model]?.resolutions?.[resolution];
+        if (s) row[model] = s.sec_per_image_mean;
+      }
+      return row;
+    })
+    .filter(row => allModels.some(m => row[m] != null));
+}
+
+export function buildImagesGroupedBarConfigs(files, enabledImageModels) {
+  const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
+  return allModels.map(m => ({
+    dataKey: m,
+    name: getImageLabel(files, m),
+    fill: getImageModelColor(m),
+  }));
+}
+
+// ── Bar chart sorting ─────────────────────────────────────────────────────────
+
+// Sort bar-chart rows so the fastest result is first.
+// preferredKeys: ordered array of candidate sort keys; the last one present in
+// the data is used (most strenuous). direction: "desc" = higher is better,
+// "asc" = lower is better.
+export function sortBarData(data, preferredKeys, direction) {
+  let sortKey = null;
+  for (let i = preferredKeys.length - 1; i >= 0; i--) {
+    if (data.some(row => row[preferredKeys[i]] != null)) {
+      sortKey = preferredKeys[i];
+      break;
+    }
+  }
+  if (!sortKey) return data;
+  return [...data].sort((a, b) => {
+    const av = a[sortKey] ?? (direction === "desc" ? -Infinity : Infinity);
+    const bv = b[sortKey] ?? (direction === "desc" ? -Infinity : Infinity);
+    return direction === "desc" ? bv - av : av - bv;
+  });
+}
+
+// Return the key from `keys` whose maximum value across all rows is highest
+// (i.e. the most strenuous setting).
+export function findMostStrenuousKey(data, keys) {
+  let best = null;
+  let bestMax = -Infinity;
+  for (const key of keys) {
+    const vals = data.map(r => r[key]).filter(v => v != null);
+    if (!vals.length) continue;
+    const max = Math.max(...vals);
+    if (max > bestMax) { bestMax = max; best = key; }
+  }
+  return best;
 }
 
 // ── Flat data for StatsTable ───────────────────────────────────────────────────

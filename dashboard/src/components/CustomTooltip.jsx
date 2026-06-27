@@ -8,7 +8,7 @@ export default function CustomTooltip({ active, payload, label, unit, xPrefix })
       <div className={styles.xLabel}>{xPrefix ? `${xPrefix}: ` : ""}{label}</div>
       {payload.map(p => (
         <div key={p.dataKey} className={styles.row} style={{ color: p.color }}>
-          {p.name}: <strong>{fmt(p.value, unit)}</strong>
+          <span style={{ whiteSpace: "pre-line" }}>{p.name}</span>: <strong>{fmt(p.value, unit)}</strong>
         </div>
       ))}
     </div>

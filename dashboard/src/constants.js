@@ -84,6 +84,20 @@ export const SECTION_LABELS = { llm: "LLM", embeddings: "Embeddings", images: "I
 export const LLM_METRICS = ["tps", "ttft"];
 export const LLM_METRIC_LABELS = { tps: "Tokens/sec", ttft: "TTFT (sec)" };
 
+// Colors per context length (used in bar chart mode)
+export const CTX_COLORS = {
+  "8K":  "#0969da",
+  "32K": "#e36209",
+  "64K": "#1a7f37",
+};
+
+// Colors per embedding batch size (used in bar chart mode)
+export const BATCH_COLORS = {
+  "batch_32":  "#0969da",
+  "batch_128": "#e36209",
+  "batch_512": "#1a7f37",
+};
+
 // Ordered context length labels (match benchmark.py output)
 export const CTX_ORDER = ["8K", "32K", "64K"];
 

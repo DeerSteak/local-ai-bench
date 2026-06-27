@@ -16,7 +16,9 @@ export default function Dashboard() {
   const [enabledImageModels, setEnabledImageModels] = useState(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
+  const [chartStyle, setChartStyle] = useState("line");
   const [chartWidth, setChartWidth] = useState(708);
+  const [hostnameOverrides, setHostnameOverrides] = useState({});
   const [logoSrc, setLogoSrc] = useState(null);
   const [logoDragOver, setLogoDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,11 +60,25 @@ export default function Dashboard() {
     setEnabledImageModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
   }, []);
 
+  const effectiveFiles = useMemo(() =>
+    files.map(f => {
+      const ov = hostnameOverrides[f.id];
+      return (ov != null && ov !== '') ? { ...f, hostname: ov } : f;
+    }), [files, hostnameOverrides]);
+
+  const effectiveFilesRef = useRef(effectiveFiles);
+  useEffect(() => { effectiveFilesRef.current = effectiveFiles; }, [effectiveFiles]);
+
+  const updateHostnameOverride = useCallback((fileId, value) => {
+    setHostnameOverrides(prev => ({ ...prev, [fileId]: value }));
+  }, []);
+
   const resetModelState = () => {
     prevModelsRef.current = new Set();
     prevImageModelsRef.current = new Set();
     setEnabledModels(new Set());
     setEnabledImageModels(new Set());
+    setHostnameOverrides({});
   };
 
   const parseFile = async (file) => {
@@ -115,6 +131,7 @@ export default function Dashboard() {
       if (remaining.length === 0) resetModelState();
       return remaining;
     });
+    setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId]; return n; });
   }, []);
 
   const handleLogoDrop = useCallback((e) => {
@@ -134,10 +151,10 @@ export default function Dashboard() {
       const cards = [...chartRef.current.querySelectorAll("[data-chart-name]")];
       if (!cards.length) return;
 
-      const f = filesRef.current;
+      const f = effectiveFilesRef.current;
       const slug = f.length === 0 ? "machine"
-        : f.length === 1 ? f[0].hostname
-        : f.map(fi => fi.hostname).join("_vs_");
+        : f.length === 1 ? f[0].hostname.replace(/\n/g, "_")
+        : f.map(fi => fi.hostname.replace(/\n/g, "_")).join("_vs_");
 
       for (let i = 0; i < cards.length; i++) {
         const canvas = await html2canvas(cards[i], {
@@ -183,7 +200,9 @@ export default function Dashboard() {
         section={section} setSection={setSection}
         allModels={allModels} enabledModels={enabledModels} onToggleModel={toggleModel}
         allImageModels={allImageModels} enabledImageModels={enabledImageModels} onToggleImageModel={toggleImageModel}
+        chartStyle={chartStyle} setChartStyle={setChartStyle}
         chartWidth={chartWidth} setChartWidth={setChartWidth}
+        files={files} hostnameOverrides={hostnameOverrides} onUpdateHostnameOverride={updateHostnameOverride}
         logoSrc={logoSrc} setLogoSrc={setLogoSrc}
         logoDragOver={logoDragOver}
         onLogoDrop={handleLogoDrop}
@@ -194,16 +213,17 @@ export default function Dashboard() {
 
       <ChartPanel
         containerRef={chartRef}
-        files={files}
+        files={effectiveFiles}
         section={section}
         enabledModels={enabledModels}
         enabledImageModels={enabledImageModels}
         chartWidth={chartWidth}
         logoSrc={logoSrc}
+        chartStyle={chartStyle}
       />
 
       <StatsTable
-        files={files}
+        files={effectiveFiles}
         section={section}
         sortConfig={sortConfig}
         onCycleSort={cycleSort}
