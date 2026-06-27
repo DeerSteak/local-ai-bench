@@ -113,7 +113,7 @@ Accept the licenses at:
 
 ### Embeddings
 
-Embeddings run via Ollama (`mxbai-embed-large`) on all platforms — 5,000 sentences
+Embeddings run via Ollama (`nomic-embed-text`) on all platforms — 5,000 sentences
 across batch sizes of 32, 128, and 512. Ollama uses the GPU on every supported
 platform (Metal, CUDA, and ROCm on Windows AMD), so results are directly comparable
 across machines.
@@ -139,7 +139,7 @@ across machines.
 11. GPT-OSS 120B         → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
     (any run — warmup or measured — that exceeds the timeout is skipped; the model moves on)
 --- After all LLM tests ---
-12. Run embedding benchmarks via Ollama (mxbai-embed-large, batch sizes 32/128/512)
+12. Run embedding benchmarks via Ollama (nomic-embed-text, batch sizes 32/128/512)
 13. unload_all_models() — hard sweep to ensure GPU memory is clear
 14. Start ComfyUI
 15. Run image generation benchmarks
@@ -173,7 +173,7 @@ ComfyUI is always shut down cleanly.
 | LLM measured runs | 5 (averaged) |
 | Run timeout | 300s per run (warmup and measured) — model skipped if exceeded |
 | LLM metrics | TTFT, tokens/sec (TPS) |
-| Embedding model | `mxbai-embed-large` (via Ollama) |
+| Embedding model | `nomic-embed-text` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
 | Image models | SDXL (20 steps), Flux.1-schnell (4 steps), Flux.1-dev (20 steps) |
@@ -276,7 +276,7 @@ prerequisites the scripts can't install, and platform-specific quirks to be awar
 ### Windows (AMD GPU)
 - `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
 - Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
-- Embedding benchmarks run via Ollama (`mxbai-embed-large`) and use the GPU, same as every other platform.
+- Embedding benchmarks run via Ollama (`nomic-embed-text`) and use the GPU, same as every other platform.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
@@ -347,6 +347,6 @@ Output is color-coded: green = best, red = slowest. A `compare_results.json` is 
 - **All platforms:** Close other apps before running — GPU memory contention affects results.
 - **Mac:** Watch Activity Monitor → Memory during 70B runs. Both large-tier models need ~42–43 GB — if memory pressure turns red and TPS drops between runs, the system is swapping. Use `--timeout 600` to give more time, or stick to `--medium-only` if memory is tight.
 - **Linux:** Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and check it loads on GPU in `nvidia-smi`.
-- **Windows (AMD):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`mxbai-embed-large`), image generation via ROCm ComfyUI.
+- **Windows (AMD):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`nomic-embed-text`), image generation via ROCm ComfyUI.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.
 

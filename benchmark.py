@@ -12,7 +12,7 @@ Tests:
      Metrics: seconds/image at 1024×1024 and 1536×1536
      (models skipped automatically if checkpoint not found)
 
-  3. Embeddings — mxbai-embed-large via Ollama
+  3. Embeddings — nomic-embed-text via Ollama
      Metrics: sentences/sec at batch sizes 32, 128, 512
 
 Servers are managed automatically:

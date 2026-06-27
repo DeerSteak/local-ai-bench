@@ -355,7 +355,7 @@ if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
 
     all_models = (
-        [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~670 MB"}]
+        [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~274 MB"}]
         + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
     )
     for m in all_models:
