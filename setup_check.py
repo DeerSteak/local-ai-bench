@@ -405,6 +405,7 @@ COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 IMAGE_CHECKPOINTS = [
     "sd_xl_base_1.0.safetensors",
     "flux1-schnell.safetensors",
+    "flux1-dev.safetensors",
 ]
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
@@ -498,14 +499,16 @@ if COMFYUI_DIR.exists():
                 return token
         # 3. Prompt
         print()
-        print(f"  {YELLOW}Flux.1-schnell requires a free HuggingFace account.{RESET}")
+        print(f"  {YELLOW}Flux models require a free HuggingFace account.{RESET}")
         print(f"  1. Create an account at https://huggingface.co")
-        print(f"  2. Accept the license at https://huggingface.co/black-forest-labs/FLUX.1-schnell")
+        print(f"  2. Accept the licenses at:")
+        print(f"       https://huggingface.co/black-forest-labs/FLUX.1-schnell")
+        print(f"       https://huggingface.co/black-forest-labs/FLUX.1-dev")
         print(f"  3. Generate a token at https://huggingface.co/settings/tokens")
         print()
         try:
             token = input(
-                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip Flux.1-schnell): "
+                f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip Flux models): "
             ).strip()
         except (EOFError, KeyboardInterrupt):
             token = ""
@@ -579,6 +582,21 @@ if COMFYUI_DIR.exists():
                     info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell")
             else:
                 info("Skipping Flux.1-schnell — no token provided")
+
+        # Flux.1-dev — gated (same account, separate license acceptance required)
+        if "flux1-dev.safetensors" in missing:
+            info("Downloading Flux.1-dev (requires HuggingFace token) ...")
+            token = load_token()
+            if token:
+                if hf_download("black-forest-labs/FLUX.1-dev",
+                               "flux1-dev.safetensors", token=token):
+                    ok("flux1-dev.safetensors downloaded")
+                    found_ckpts.append("flux1-dev.safetensors")
+                else:
+                    fail("Flux.1-dev download failed — check token and license acceptance")
+                    info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-dev")
+            else:
+                info("Skipping Flux.1-dev — no token provided")
 
     # Flux support files: T5-XXL + CLIP-L (public) and VAE (gated, same token as schnell)
     flux_present = any("flux" in c for c in found_ckpts)
