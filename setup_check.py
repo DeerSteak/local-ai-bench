@@ -573,8 +573,7 @@ if COMFYUI_DIR.exists():
             env["HF_TOKEN"] = token
         # Try `hf` first, fall back to `huggingface-cli`, then Python API
         for cli in ["hf", "huggingface-cli"]:
-            which = subprocess.run(["which", cli], capture_output=True)
-            if which.returncode == 0:
+            if shutil.which(cli):
                 result = subprocess.run(
                     [cli, "download", repo, filename, "--local-dir", str(CHECKPOINTS)],
                     env=env, capture_output=True, text=True
