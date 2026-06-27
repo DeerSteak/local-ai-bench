@@ -386,7 +386,7 @@ try:
     total_gb = total // (1024**3)
     print(f"  Free:  {free_gb} GB / {total_gb} GB total")
     if free_gb >= 280:
-        ok("Sufficient free space for all ten models")
+        ok("Sufficient free space for all models")
     elif free_gb >= 60:
         warn(f"Only {free_gb} GB free — enough for small-tier models only")
         warn("Large-tier models need ~250 GB total; run with --small-only if disk is limited")

@@ -94,15 +94,18 @@ downloads both automatically.
 |---|---|---|---|---|
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
 | Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB | Yes (free) |
+| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | Yes (free) |
 
-Flux.1-schnell requires a free HuggingFace account and license acceptance.
+Both Flux models require a free HuggingFace account and separate license acceptance.
 `setup_check.py` checks for a token in this order:
 
 1. `HF_TOKEN` environment variable
 2. `hf.txt` file in the repo root (just the token on a single line)
 3. Interactive prompt (offers to save to `hf.txt` for future runs)
 
-Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell
+Accept the licenses at:
+- https://huggingface.co/black-forest-labs/FLUX.1-schnell
+- https://huggingface.co/black-forest-labs/FLUX.1-dev
 
 ### Embeddings
 
@@ -168,7 +171,7 @@ ComfyUI is always shut down cleanly.
 | Embedding model | `mxbai-embed-large` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
-| Image models | SDXL (20 steps), Flux.1-schnell (4 steps) |
+| Image models | SDXL (20 steps), Flux.1-schnell (4 steps), Flux.1-dev (20 steps) |
 | Image resolutions | 1024×1024 and 1536×1536 |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image per model per resolution |
@@ -291,7 +294,7 @@ python benchmark.py [options]
 
 Examples:
 ```bash
-# Full run — all 8 models, large ones skipped automatically if they don't fit
+# Full run — all 9 models, large ones skipped automatically if they don't fit
 python benchmark.py
 
 # LLM tests only, quick check with 3 runs

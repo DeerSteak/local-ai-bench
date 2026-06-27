@@ -117,7 +117,6 @@ if not defined OLLAMA_BIN (
 )
 
 for /f "tokens=*" %%V in ('"%OLLAMA_BIN%" --version 2^>^&1') do echo   OK  %%V
-)
 
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
 echo.
