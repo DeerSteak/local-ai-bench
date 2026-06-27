@@ -57,7 +57,7 @@ from models import IMAGE_MODELS, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS
 
 EMBED_MODEL = "BAAI/bge-large-en-v1.5"
 
-CONTEXT_LENGTHS = [8192, 32768, 65536]   # tokens (approximate, via prompt padding)
+CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 EMBED_BATCH_SIZES = [32, 128, 512]
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are now per-model in IMAGE_MODELS
@@ -343,7 +343,8 @@ def model_pulled(tag):
     except Exception:
         return False
 
-def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
+def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
+                    num_ctx: int | None = None):
     """
     Generate via Ollama and return timing metrics.
     Returns: (ttft_sec, tokens_generated, tokens_per_sec)
@@ -356,15 +357,20 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600):
       eval_count            — tokens generated
       eval_duration         — time spent generating (nanoseconds)
     These are authoritative and used in preference to wall-clock where available.
+
+    num_ctx must match the context length being tested. Without it, Ollama uses
+    the model's default, and sending a prompt longer than that default triggers a
+    full model reload — inflating TTFT by minutes rather than seconds.
     """
+    options: dict = {"num_predict": 512, "temperature": 0.0}
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
+
     payload = json.dumps({
         "model":  model_tag,
         "prompt": prompt,
         "stream": True,
-        "options": {
-            "num_predict": 512,
-            "temperature": 0.0,
-        },
+        "options": options,
     }).encode()
 
     req = urllib.request.Request(
@@ -479,8 +485,11 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             warn(f"Pull with: ollama pull {tag}")
             continue
 
-        # Warm up model (load into memory), with a timeout so we don't get stuck
-        log(f"Warming up {label} (timeout: {WARMUP_TIMEOUT}s per run) ...")
+        # Warm up model (load into memory), with a timeout so we don't get stuck.
+        # Use the largest context length so Ollama pre-allocates the full KV cache
+        # once — avoiding a reload on the first measured run at max context.
+        max_ctx = max(context_lengths)
+        log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {WARMUP_TIMEOUT}s per run) ...")
         warmup_ok = True
         for warmup_i in range(warmup_runs):
             result_box = [None]   # mutable container so thread can write back
@@ -488,7 +497,8 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
             def _warmup():
                 try:
-                    result_box[0] = ollama_generate(tag, "Hello.", timeout=WARMUP_TIMEOUT)
+                    result_box[0] = ollama_generate(
+                        tag, "Hello.", timeout=WARMUP_TIMEOUT, num_ctx=max_ctx)
                 except Exception as e:
                     exc_box[0] = e
 
@@ -526,7 +536,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             for run_i in range(n_runs):
                 try:
                     ttft, tokens, tps = ollama_generate(
-                        tag, prompt, timeout=600
+                        tag, prompt, timeout=600, num_ctx=ctx_len
                     )
                     ttfts.append(ttft)
                     tps_list.append(tps)
@@ -761,8 +771,12 @@ def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
                }},
     }
 
-def comfyui_submit(workflow: dict, timeout: int = 300) -> float:
-    """Submit a workflow to ComfyUI, poll until done, return elapsed seconds."""
+def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict]]:
+    """Submit a workflow to ComfyUI, poll until done.
+
+    Returns (elapsed_sec, images) where images is a list of
+    {"filename": str, "subfolder": str, "type": str} dicts from all output nodes.
+    """
     resp = requests.post(
         f"{COMFYUI_URL}/prompt",
         json={"prompt": workflow},
@@ -803,7 +817,11 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> float:
                 raise RuntimeError(f"ComfyUI job failed: {msgs}")
 
             if job_status.get("completed"):
-                return time.perf_counter() - t0
+                elapsed = time.perf_counter() - t0
+                images = []
+                for node_out in job.get("outputs", {}).values():
+                    images.extend(node_out.get("images", []))
+                return elapsed, images
 
         if time.perf_counter() - t0 > timeout:
             if not seen:
@@ -812,6 +830,21 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> float:
                     f"— workflow may have errored before queuing"
                 )
             raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
+
+def save_comfyui_image(img: dict, dest: Path) -> None:
+    """Fetch a generated image from ComfyUI and save it locally."""
+    resp = requests.get(
+        f"{COMFYUI_URL}/view",
+        params={
+            "filename": img["filename"],
+            "subfolder": img.get("subfolder", ""),
+            "type":     img.get("type", "output"),
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(resp.content)
 
 def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                          comfyui_dir):
@@ -841,10 +874,29 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
         results[short] = {"label": label, "checkpoint": checkpoint,
                           "steps": steps, "resolutions": {}}
 
+        # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
+        # shader compilation before timing starts.
+        w0, h0 = resolutions[0]
+        log(f"{label}: warmup run ({w0}x{h0}) ...")
+        try:
+            if workflow_t == "flux":
+                wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
+                                         sampler, scheduler, seed, prompt)
+            else:
+                wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
+                                         sampler, scheduler, seed, prompt)
+            comfyui_submit(wf)
+            ok(f"{label}: warmup done")
+        except Exception as e:
+            warn(f"{label}: warmup failed: {e}")
+
+        img_dir = SCRIPT_DIR / "benchmark_images"
+
         for (w, h) in resolutions:
             res_label = f"{w}x{h}"
             log(f"{label} @ {res_label} — {n_runs} runs ...")
             times = []
+            last_images: list[dict] = []
 
             for run_i in range(n_runs):
                 try:
@@ -857,8 +909,9 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                             checkpoint, w, h, steps, cfg,
                             sampler, scheduler, seed, prompt)
 
-                    elapsed = comfyui_submit(wf)
+                    elapsed, images = comfyui_submit(wf)
                     times.append(elapsed)
+                    last_images = images
                     print(f"    run {run_i+1}/{n_runs}: {elapsed:.1f}s")
                 except Exception as e:
                     err(f"Run {run_i+1} failed: {e}")
@@ -871,6 +924,14 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                 }
                 ok(f"{label} @ {res_label}: "
                    f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
+
+            if last_images:
+                dest = img_dir / f"{short}_{res_label}.png"
+                try:
+                    save_comfyui_image(last_images[0], dest)
+                    ok(f"Saved image → benchmark_images/{dest.name}")
+                except Exception as e:
+                    warn(f"Could not save image: {e}")
 
     return results
 
