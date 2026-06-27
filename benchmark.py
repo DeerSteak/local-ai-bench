@@ -216,13 +216,6 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
     python_exe = find_comfyui_python(comfyui_dir)
 
     cmd = [python_exe, str(main_py), "--listen"]
-    if platform.system() == "Windows":
-        try:
-            subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL)
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            # AMD/Intel GPU on Windows — ComfyUI needs DirectML instead of CUDA
-            cmd.append("--directml")
-            log("Windows non-NVIDIA GPU detected — adding --directml (AMD/Intel)")
 
     log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
 
