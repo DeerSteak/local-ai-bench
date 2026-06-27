@@ -657,12 +657,14 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
         model_ctx_lengths = [c for c in context_lengths
                              if c <= model.get("max_ctx", max(context_lengths))]
 
+        model_timed_out = False
         for ctx_len in model_ctx_lengths:
             prompt = build_prompt_for_context(ctx_len)
             label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
 
             ttfts, tps_list = [], []
+            ctx_timed_out = False
 
             for run_i in range(n_runs):
                 try:
@@ -677,6 +679,11 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                         f"TPS={tps:.1f}"
                     )
                 except Exception as e:
+                    is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
+                    if is_timeout:
+                        err(f"Run {run_i+1} timed out — skipping remaining runs and context lengths for {label}")
+                        ctx_timed_out = True
+                        break
                     err(f"Run {run_i+1} failed: {e}")
 
             if ttfts:
@@ -698,7 +705,14 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
                 )
 
+            if ctx_timed_out:
+                model_timed_out = True
+                results[short]["timed_out"] = label_ctx
+                break
+
         # Unload model and confirm it's gone before moving on
+        if model_timed_out:
+            warn(f"{label}: timed out — moving to next model")
         log(f"Unloading {label} ...")
         unload_model(tag)
         wait_until_unloaded(tag)
