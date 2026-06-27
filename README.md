@@ -320,6 +320,14 @@ python benchmark.py --warmup-timeout 120
 
 ---
 
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You are free to use, fork, modify, and redistribute it for non-commercial purposes. Commercial use is not permitted.
+
+For commercial licensing inquiries, contact [beatclikr@gmail.com](mailto:beatclikr@gmail.com).
+
+---
+
 ## Tips
 
 - **All platforms:** Close other apps before running — GPU memory contention affects results.
