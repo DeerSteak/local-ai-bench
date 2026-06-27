@@ -958,13 +958,30 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                 ok(f"{label} @ {res_label}: "
                    f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
 
-            if last_images:
+            if not last_images:
+                warn(f"{label} @ {res_label}: no images in ComfyUI history response — skipping save")
+            else:
+                img  = last_images[0]
                 dest = img_dir / f"{short}_{res_label}.png"
+                saved = False
                 try:
-                    save_comfyui_image(last_images[0], dest)
+                    save_comfyui_image(img, dest)
                     ok(f"Saved image → benchmark_images/{dest.name}")
+                    saved = True
                 except Exception as e:
-                    warn(f"Could not save image: {e}")
+                    warn(f"HTTP image fetch failed ({e}) — trying direct file copy")
+                if not saved:
+                    # Fallback: copy directly from ComfyUI's output directory
+                    subfolder = img.get("subfolder", "")
+                    src = (comfyui_dir / "output" / subfolder / img["filename"]
+                           if subfolder else comfyui_dir / "output" / img["filename"])
+                    try:
+                        import shutil
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src, dest)
+                        ok(f"Saved image (file copy) → benchmark_images/{dest.name}")
+                    except Exception as e:
+                        warn(f"Could not save image: {e}")
 
     return results
 
