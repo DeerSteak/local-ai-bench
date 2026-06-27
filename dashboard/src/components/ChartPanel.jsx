@@ -2,7 +2,7 @@ import { LineChart, Line, BarChart, Bar, LabelList, XAxis, YAxis, CartesianGrid,
 import {
   buildLLMDataForModel, buildFileLineConfigs,
   buildEmbedData, buildEmbedLineConfigs,
-  buildImagesDataForResolution,
+  buildImagesData, buildImagesLineConfigs,
   buildLLMBarData, buildLLMBarConfigs,
   buildEmbedBarData, buildEmbedBarConfigs,
   buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
@@ -156,58 +156,6 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
   );
 }
 
-function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
-  const secFormatter = v => fmt(v, "sec");
-
-  const processedData = data.map(row => {
-    const r = { ...row };
-    for (let fi = 0; fi < files.length; fi++) {
-      const k = `f${fi}`;
-      if (r[k] == null) { r[`_na_${k}`] = true; r[k] = 0; }
-    }
-    return r;
-  });
-
-  return (
-    <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
-      <div className={styles.chartHeader}>
-        <div className={styles.chartModelName}>Image Generation</div>
-        <div className={styles.chartTitleRow}>
-          <span className={styles.chartTitle}>{title}</span>
-          <DirectionHint direction="lower" />
-        </div>
-      </div>
-      <ResponsiveContainer width="100%" height={Math.max(280, processedData.length * files.length * 32 + 100)}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 70, bottom: 8, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
-          <XAxis
-            type="number"
-            tick={{ fill: "#57606a", fontSize: 15 }}
-            tickFormatter={secFormatter}
-            label={{ value: "Sec / image", position: "insideBottom", offset: -16, fill: "#8c959f", fontSize: 15 }}
-            height={40}
-          />
-          <YAxis
-            type="category"
-            dataKey="modelLabel"
-            tick={{ fill: "#57606a", fontSize: 14 }}
-            width={150}
-          />
-          <Tooltip content={<CustomTooltip unit="sec" xPrefix="Model" />} />
-          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
-          {files.map((f, fi) => (
-            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
-              <LabelList dataKey={`f${fi}`} content={(props) => (
-                <BarLabel {...props} naKey={`_na_f${fi}`} rowData={processedData[props.index]} formatter={secFormatter} />
-              )} />
-            </Bar>
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-      {logoSrc && <img src={logoSrc} className={styles.logoOverlay} alt="" />}
-    </div>
-  );
-}
 
 export default function ChartPanel({
   containerRef, files, section,
@@ -334,46 +282,38 @@ export default function ChartPanel({
 
     const groupedBarConfigs = buildImagesGroupedBarConfigs(files, enabledImageModels);
     const modelKeys = groupedBarConfigs.map(bc => bc.dataKey);
+    const lineData = buildImagesData(files, enabledImageModels);
+    const lineConfigs = buildImagesLineConfigs(files, lineData, enabledImageModels);
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
-        {resolutions.map(res => {
-          if (isBar) {
-            const raw = buildImagesGroupedBarDataForResolution(files, res, enabledImageModels);
-            if (!raw.length) return null;
-            const strenuousKey = findMostStrenuousKey(raw, modelKeys);
-            const data = strenuousKey ? sortBarData(raw, [strenuousKey], "asc") : raw;
-            return (
-              <GroupedBarCard
-                key={res}
-                title={res}
-                modelName="Image Generation"
-                data={data}
-                barConfigs={groupedBarConfigs}
-                xKey="systemLabel" yLabel="Sec / image" unit="sec"
-                chartName="images" chartModel={res}
-                logoSrc={logoSrc} direction="lower"
-              />
-            );
-          }
-          const raw = buildImagesDataForResolution(files, res, enabledImageModels);
+        {isBar ? resolutions.map(res => {
+          const raw = buildImagesGroupedBarDataForResolution(files, res, enabledImageModels);
           if (!raw.length) return null;
-          const data = [...raw].sort((a, b) => {
-            const maxA = Math.max(...files.map((_, fi) => a[`f${fi}`] ?? 0));
-            const maxB = Math.max(...files.map((_, fi) => b[`f${fi}`] ?? 0));
-            return maxA - maxB;
-          });
+          const strenuousKey = findMostStrenuousKey(raw, modelKeys);
+          const data = strenuousKey ? sortBarData(raw, [strenuousKey], "asc") : raw;
           return (
-            <ImageBarCard
+            <GroupedBarCard
               key={res}
               title={res}
+              modelName="Image Generation"
               data={data}
-              files={files}
-              chartName="images"
-              chartModel={res}
-              logoSrc={logoSrc}
+              barConfigs={groupedBarConfigs}
+              xKey="systemLabel" yLabel="Sec / image" unit="sec"
+              chartName="images" chartModel={res}
+              logoSrc={logoSrc} direction="lower"
             />
           );
-        })}
+        }) : (
+          <ChartCard
+            title="Image Generation"
+            data={lineData}
+            lineConfigs={lineConfigs}
+            xKey="resLabel" xLabel="Resolution" yLabel="Sec / image" unit="sec"
+            isMultiFile={isMultiFile}
+            chartName="images"
+            logoSrc={logoSrc} direction="lower"
+          />
+        )}
       </div>
     );
   }

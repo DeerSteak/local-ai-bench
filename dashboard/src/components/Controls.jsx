@@ -29,7 +29,7 @@ export default function Controls({
       <div className={styles.dividerGroup}>
         <div className={styles.controlLabel}>Chart Style</div>
         <div style={{ display: "flex", gap: 6 }}>
-          {[["line", "Line"], ["bar", "Bar"]].map(([value, label]) => (
+          {[["bar", "Bar"], ["line", "Line"]].map(([value, label]) => (
             <button key={value} className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
               {label}
             </button>

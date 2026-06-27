@@ -16,7 +16,7 @@ export default function Dashboard() {
   const [enabledImageModels, setEnabledImageModels] = useState(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
-  const [chartStyle, setChartStyle] = useState("line");
+  const [chartStyle, setChartStyle] = useState("bar");
   const [chartWidth, setChartWidth] = useState(708);
   const [hostnameOverrides, setHostnameOverrides] = useState({});
   const [logoSrc, setLogoSrc] = useState(null);
