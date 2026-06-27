@@ -46,6 +46,7 @@ python benchmark.py
 | `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
 | `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
 | `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
+| `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |
 
 ---
 
@@ -108,7 +109,7 @@ belongs to Llama 3.1.
 8.  Llama 3.1 70B Q3_K_M  → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
 9.  Llama 3.1 70B Q4_K_M  → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
 10. GPT-OSS 120B          → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
-    (any model whose warmup exceeds 5 minutes is skipped and the next runs)
+    (any run — warmup or measured — that exceeds the timeout is skipped; the model moves on)
 --- After all LLM tests ---
 11. Run embedding benchmarks via Ollama (mxbai-embed-large, batch sizes 32/128/512)
 12. unload_all_models() — hard sweep to ensure GPU memory is clear
@@ -150,7 +151,7 @@ platform — Metal, CUDA, and ROCm on Windows AMD.
 | LLM context lengths | 2K, 8K, 32K, 64K (Qwen3 14B capped at 32K) |
 | LLM warmup runs | 2 (discarded) |
 | LLM measured runs | 5 (averaged) |
-| LLM warmup timeout | 300s per run — model skipped if exceeded |
+| Run timeout | 300s per run (warmup and measured) — model skipped if exceeded |
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Embedding model | `mxbai-embed-large` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
@@ -218,7 +219,20 @@ quirks to be aware of.
 
 An interactive results explorer for visualising and exporting benchmark output.
 
-### Setup
+### Quick launch
+
+```bash
+python launch_dashboard.py
+```
+
+Checks for Node.js/npm, installs dependencies if needed, builds the app on first run, starts a local server on port 3000, and opens the browser automatically.
+
+```bash
+python launch_dashboard.py --port 8080   # use a different port
+python launch_dashboard.py --rebuild     # force a fresh npm build
+```
+
+### Manual setup (development)
 
 ```bash
 cd dashboard
@@ -292,7 +306,7 @@ python benchmark.py [options]
 --tests llm emb img     Tests to run (default: all three)
 --runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
---warmup-timeout N      Seconds per warmup run before skipping model (default: 300)
+--timeout N             Seconds per run (warmup and measured) before skipping model (default: 300)
 --small-only            Run only small-tier LLM models (≤16GB VRAM)
 --medium-only           Run only medium-tier LLM models (16–32GB VRAM)
 --large-only            Run only large-tier LLM models (32GB+ VRAM)
@@ -314,8 +328,8 @@ python benchmark.py --tests llm emb
 # Force only small models (useful if you know the large ones won't fit)
 python benchmark.py --small-only
 
-# Shorter warmup timeout
-python benchmark.py --warmup-timeout 120
+# Longer timeout (gives slow hardware more time to complete)
+python benchmark.py --timeout 600
 ```
 
 ---
