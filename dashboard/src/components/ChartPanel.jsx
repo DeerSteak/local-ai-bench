@@ -63,6 +63,7 @@ function ChartCard({ title, modelName, data, lineConfigs, xKey, xLabel, yLabel, 
               strokeDasharray={lc.strokeDasharray}
               connectNulls
               activeDot={{ r: 6 }}
+              isAnimationActive={false}
             />
           ))}
         </LineChart>
@@ -125,7 +126,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
         </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 90, bottom: 8, left: 8 }}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 60, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
           <XAxis
             type="number"
@@ -143,7 +144,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           {barConfigs.map(bc => (
-            <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
+            <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
               <LabelList dataKey={bc.dataKey} content={(props) => (
                 <BarLabel {...props} naKey={`_na_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
               )} />
@@ -196,7 +197,7 @@ function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
           <Tooltip content={<CustomTooltip unit="sec" xPrefix="Model" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
           {files.map((f, fi) => (
-            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
+            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
               <LabelList dataKey={`f${fi}`} content={(props) => (
                 <BarLabel {...props} naKey={`_na_f${fi}`} rowData={processedData[props.index]} formatter={secFormatter} />
               )} />
