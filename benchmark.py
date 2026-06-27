@@ -35,6 +35,7 @@ import signal
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 import threading
 import urllib.request
@@ -213,15 +214,29 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
     log(f"Found {len(found)}/{len(known)} image checkpoints: {found}")
 
     python_exe = find_comfyui_python(comfyui_dir)
+
+    cmd = [python_exe, str(main_py), "--listen"]
+    if platform.system() == "Windows":
+        try:
+            subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # AMD/Intel GPU on Windows — ComfyUI needs DirectML instead of CUDA
+            cmd.append("--directml")
+            log("Windows non-NVIDIA GPU detected — adding --directml (AMD/Intel)")
+
     log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
 
+    # Capture stderr to a temp file so we can show it if ComfyUI exits unexpectedly
+    stderr_log = Path(tempfile.mktemp(suffix="-comfyui-stderr.log"))
     try:
+        stderr_fh = open(stderr_log, "w")
         proc = subprocess.Popen(
-            [python_exe, str(main_py), "--listen"],
+            cmd,
             cwd=str(comfyui_dir),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_fh,
         )
+        stderr_fh.close()
         _managed_procs.append(proc)
     except Exception as e:
         err(f"Failed to start ComfyUI: {e}")
@@ -233,15 +248,35 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
         time.sleep(1)
         if comfyui_available():
             ok(f"ComfyUI started (pid {proc.pid})")
+            try:
+                stderr_log.unlink()
+            except Exception:
+                pass
             return True
         if proc.poll() is not None:
             err(f"ComfyUI exited unexpectedly (code {proc.returncode})")
-            err(f"Try starting it manually: cd {comfyui_dir} && python main.py --listen")
+            try:
+                lines = stderr_log.read_text(errors="replace").strip().splitlines()
+                if lines:
+                    err("Last output from ComfyUI:")
+                    for line in lines[-8:]:
+                        err(f"  {line}")
+            except Exception:
+                pass
+            try:
+                stderr_log.unlink()
+            except Exception:
+                pass
+            err(f"Try starting manually: cd {comfyui_dir} && python main.py {' '.join(cmd[2:])}")
             return False
         if (i + 1) % 10 == 0:
             log(f"Still waiting ... ({i+1}s)")
 
     err("ComfyUI did not respond within 60 seconds")
+    try:
+        stderr_log.unlink()
+    except Exception:
+        pass
     return False
 
 
