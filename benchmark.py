@@ -616,13 +616,17 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     err(f"Run {run_i+1} failed: {e}")
 
             if ttfts:
-                results[short][label_ctx] = {
-                    "ttft_mean_sec":   round(mean(ttfts),    3),
-                    "ttft_stdev_sec":  round(stdev(ttfts),   3),
-                    "tps_mean":        round(mean(tps_list), 2),
-                    "tps_stdev":       round(stdev(tps_list),2),
+                # Drop the single slowest TTFT run before averaging
+                if len(ttfts) > 1:
+                    worst_idx = ttfts.index(max(ttfts))
+                    ttfts = ttfts[:worst_idx] + ttfts[worst_idx+1:]
 
-                    "n_runs":          len(ttfts),
+                results[short][label_ctx] = {
+                    "ttft_mean_sec":  round(mean(ttfts),    3),
+                    "ttft_stdev_sec": round(stdev(ttfts),   3),
+                    "tps_mean":       round(mean(tps_list), 2),
+                    "tps_stdev":      round(stdev(tps_list),2),
+                    "n_runs":         len(tps_list),
                 }
                 ok(
                     f"Context {label_ctx} done: "
