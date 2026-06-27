@@ -51,22 +51,28 @@ python benchmark.py
 
 ## Models
 
-All eight models are attempted by default. If a model doesn't complete warmup
-within 5 minutes it is skipped with a clear message and the benchmark moves on.
-This means the same command works on any hardware — small GPUs naturally skip
-the large models without any extra flags.
+Nine LLM models across three tiers are attempted by default. If a model doesn't
+complete warmup within 5 minutes it is skipped with a clear message and the
+benchmark moves on. This means the same command works on any hardware — small
+GPUs naturally skip the large models without any extra flags.
 
-### Small tier (≤16GB)
+### Small tier (≤16GB VRAM)
 
 | Model | Ollama tag | Size |
 |---|---|---|
 | Llama 3.1 8B Q3_K_M | `llama3.1:8b-instruct-q3_K_M` | ~4.3 GB |
 | Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~4.9 GB |
 | Qwen3 14B Q4_K_M | `qwen3:14b-q4_K_M` | ~9.3 GB |
-| Qwen3 14B Q8_0 | `qwen3:14b-q8_0` | ~16 GB |
 | GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~14 GB |
 
-### Large tier (32GB+)
+### Medium tier (16–32GB VRAM)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Qwen3 14B Q8_0 | `qwen3:14b-q8_0` | ~16 GB |
+| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~22 GB |
+
+### Large tier (32GB+ VRAM)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -78,8 +84,8 @@ the large models without any extra flags.
 separate Q3/Q4 variants. Attempting to pull `gpt-oss:20b-q3_K_M` or
 `gpt-oss:120b-q3_K_M` will fail; use the tags above.
 
-**Notes on Qwen3 14B:** No Q3_K_M variant exists. Q4_K_M and Q8_0 are the
-available quantizations.
+**Notes on Qwen3 14B:** Both variants are capped at 32K context — 64K produces
+multi-minute TTFT at this size and is not useful. No Q3_K_M variant exists.
 
 **Notes on Llama 3.2:** Llama 3.2 tops out at 3B parameters. The 8B slot
 belongs to Llama 3.1.
@@ -92,23 +98,24 @@ belongs to Llama 3.1.
 
 ```
 1.  Start Ollama (if not already running)
---- LLM tests (all 8 models, small tier first) ---
-2.  Llama 3.1 8B Q3_K_M  → warmup → measure → unload → confirm gone
-3.  Llama 3.1 8B Q4_K_M  → warmup → measure → unload → confirm gone
-4.  Qwen3 14B Q4_K_M     → warmup → measure → unload → confirm gone
-5.  Qwen3 14B Q8_0       → warmup → measure → unload → confirm gone
-6.  GPT-OSS 20B          → warmup → measure → unload → confirm gone
-7.  Llama 3.1 70B Q3_K_M → warmup → measure → unload → confirm gone
-8.  Llama 3.1 70B Q4_K_M → warmup → measure → unload → confirm gone
-9.  GPT-OSS 120B         → warmup → measure → unload → confirm gone
+--- LLM tests (all 9 models, small → medium → large) ---
+2.  Llama 3.1 8B Q3_K_M   → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+3.  Llama 3.1 8B Q4_K_M   → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+4.  Qwen3 14B Q4_K_M      → warmup → measure (2K/8K/32K)      → unload → confirm gone
+5.  GPT-OSS 20B           → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+6.  Qwen3 14B Q8_0        → warmup → measure (2K/8K/32K)      → unload → confirm gone
+7.  Qwen3.6 35B-A3B       → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+8.  Llama 3.1 70B Q3_K_M  → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+9.  Llama 3.1 70B Q4_K_M  → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
+10. GPT-OSS 120B          → warmup → measure (2K/8K/32K/64K) → unload → confirm gone
     (any model whose warmup exceeds 5 minutes is skipped and the next runs)
 --- After all LLM tests ---
-10. Run embedding benchmarks (no server needed)
-11. unload_all_models() — hard sweep to ensure GPU memory is clear
-12. Start ComfyUI
-13. Run image generation benchmarks
-14. Shut down ComfyUI
-15. Save results_<hostname>.json
+11. Run embedding benchmarks via Ollama (mxbai-embed-large, batch sizes 32/128/512)
+12. unload_all_models() — hard sweep to ensure GPU memory is clear
+13. Start ComfyUI
+14. Run image generation benchmarks
+15. Shut down ComfyUI
+16. Save results_<hostname>.json
 ```
 
 ### Model isolation
@@ -128,16 +135,11 @@ Servers are started and stopped automatically:
 Ctrl-C and crashes are handled — a signal handler and `finally` block ensure
 ComfyUI is always shut down cleanly.
 
-### Embedding device
+### Embedding backend
 
-| Machine | PyTorch backend | Notes |
-|---|---|---|
-| Apple Silicon Mac | MPS (Metal) | Auto-detected |
-| Linux + NVIDIA | CUDA | Auto-detected |
-| Windows + AMD | CPU | ROCm PyTorch lives in ComfyUI's bundled env, not the bench env; Ollama and ComfyUI use the GPU independently |
-
-CPU embedding results are tagged `(cpu)` in the JSON and dimmed in `compare.py`
-output, excluded from rankings.
+Embeddings run via Ollama (`mxbai-embed-large`) on all platforms, so results are
+directly comparable across machines. Ollama uses the GPU on every supported
+platform — Metal, CUDA, and ROCm on Windows AMD.
 
 ---
 
@@ -145,12 +147,12 @@ output, excluded from rankings.
 
 | Parameter | Value |
 |---|---|
-| LLM context lengths | 2K and 8K tokens |
+| LLM context lengths | 2K, 8K, 32K, 64K (Qwen3 14B capped at 32K) |
 | LLM warmup runs | 2 (discarded) |
 | LLM measured runs | 5 (averaged) |
 | LLM warmup timeout | 300s per run — model skipped if exceeded |
-| LLM metrics | TTFT, tokens/sec (TPS), total time |
-| Embedding model | `BAAI/bge-large-en-v1.5` |
+| LLM metrics | TTFT, tokens/sec (TPS) |
+| Embedding model | `mxbai-embed-large` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
 | Image models | SDXL (20 steps), Flux.1-schnell (4 steps) |
@@ -207,8 +209,7 @@ quirks to be aware of.
 ### Windows (AMD GPU)
 - `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
 - Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
-- Embedding benchmarks fall back to CPU — the ROCm PyTorch lives inside ComfyUI's bundled `python_env` and is not accessible to the benchmark's own venv. This is expected; results are tagged `(cpu)` and excluded from rankings.
-- The `No GPU backend detected` warning from setup_check for PyTorch is not an error.
+- Embedding benchmarks run via Ollama (`mxbai-embed-large`) and use the GPU, same as every other platform.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
@@ -239,7 +240,7 @@ Use the **Section** buttons to switch between views:
 
 | Section | Charts |
 |---|---|
-| LLM | Two charts per model — Tokens/sec and Time to First Token — each across context lengths (8K / 32K / 64K) |
+| LLM | Two charts per model — Tokens/sec and Time to First Token — each across context lengths (2K / 8K / 32K / 64K) |
 | Embeddings | Sentences per second across batch sizes (32 / 128 / 512) |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 
@@ -279,8 +280,7 @@ python compare.py results_*.json
 python compare.py results_mac.json results_dgx.json results_ryzen.json
 ```
 
-Output is color-coded: green = best, red = slowest, dimmed `(cpu)` = ran on
-CPU and excluded from rankings. A `compare_results.json` is also saved.
+Output is color-coded: green = best, red = slowest. A `compare_results.json` is also saved.
 
 ---
 
@@ -293,8 +293,9 @@ python benchmark.py [options]
 --runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
 --warmup-timeout N      Seconds per warmup run before skipping model (default: 300)
---small-only            Run only small-tier LLM models (≤16GB)
---large-only            Run only large-tier LLM models (32GB+)
+--small-only            Run only small-tier LLM models (≤16GB VRAM)
+--medium-only           Run only medium-tier LLM models (16–32GB VRAM)
+--large-only            Run only large-tier LLM models (32GB+ VRAM)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>.json)
 ```
@@ -323,7 +324,6 @@ python benchmark.py --warmup-timeout 120
 
 - **All platforms:** Close other apps before running — GPU memory contention affects results.
 - **Mac:** Watch Activity Monitor → Memory during 70B runs. If pressure turns red and TPS drops between runs, the system is swapping. The Q3 result is your reliable data point; Q4 may be skipped by the warmup timeout.
-- **Linux:** Verify PyTorch sees your GPU before running: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
-- **Windows (NVIDIA):** If PyTorch doesn't detect your GPU, check that the CUDA version in your pip install URL matches `nvcc --version`.
-- **Windows (AMD):** The `No GPU backend detected` PyTorch warning is expected — embeddings run on CPU but LLM and image tests use the GPU via Ollama and ROCm ComfyUI respectively.
+- **Linux:** Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and check it loads on GPU in `nvidia-smi`.
+- **Windows (AMD):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`mxbai-embed-large`), image generation via ROCm ComfyUI.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.

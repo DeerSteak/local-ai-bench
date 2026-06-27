@@ -16,7 +16,7 @@ import json
 import shutil
 from pathlib import Path
 
-from models import LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE
+from models import LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, EMBED_MODEL
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -182,81 +182,9 @@ elif amd_windows:
 elif metal_ok:
     ok("Apple Metal detected")
 else:
-    warn("No GPU acceleration detected — embeddings will run on CPU")
+    warn("No GPU acceleration detected — LLM and image tests may run slowly")
 
-# ── 4. PyTorch & backend ───────────────────────────────────────────────────────
-
-section("PyTorch")
-try:
-    import torch  # type: ignore
-    print(f"  Version: {torch.__version__}")
-
-    if torch.cuda.is_available():
-        ok(f"CUDA available — {torch.cuda.get_device_name(0)}")
-        print(f"  CUDA version: {torch.version.cuda}")
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        ok("MPS (Metal) available")
-    else:
-        warn("No GPU backend detected for PyTorch — embeddings will run on CPU")
-        info("This is expected on Windows with AMD GPU; Ollama uses the GPU independently")
-
-except ImportError:
-    warn("PyTorch not installed — installing ...")
-
-    os_name = platform.system()
-    machine = platform.machine()
-
-    def get_cuda_version():
-        try:
-            out = subprocess.check_output(["nvcc", "--version"], text=True,
-                                           stderr=subprocess.DEVNULL)
-            for line in out.splitlines():
-                if "release" in line.lower():
-                    # e.g. "release 12.4, V12.4.131" -> "cu124"
-                    ver = line.split("release")[1].split(",")[0].strip()
-                    major, minor = ver.split(".")[:2]
-                    return f"cu{major}{minor}"
-        except Exception:
-            pass
-        return None
-
-    torch_pkgs = ["torch", "torchvision", "torchaudio"]
-
-    if os_name == "Darwin":
-        # macOS — standard pip wheel includes Metal (MPS) support
-        index_url = None
-    elif os_name == "Linux" and machine == "aarch64":
-        # ARM64 Linux (DGX Spark GB10) — use Nvidia's PyTorch index for Blackwell
-        index_url = "https://pypi.nvidia.com"
-        info("ARM64 Linux detected (DGX Spark) — using Nvidia PyTorch index for Blackwell support")
-    elif nvidia_ok:
-        cuda_ver = get_cuda_version()
-        if cuda_ver:
-            index_url = f"https://download.pytorch.org/whl/{cuda_ver}"
-            info(f"CUDA {cuda_ver} detected — using PyTorch CUDA wheel")
-        else:
-            index_url = "https://download.pytorch.org/whl/cu124"
-            warn("Could not detect CUDA version — defaulting to cu124")
-    elif rocm_ok:
-        index_url = "https://download.pytorch.org/whl/rocm6.2"
-        info("ROCm detected — using PyTorch ROCm wheel")
-    else:
-        index_url = None  # CPU build
-
-    cmd = [sys.executable, "-m", "pip", "install"] + torch_pkgs
-    if index_url:
-        cmd += ["--index-url", index_url]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode == 0:
-        import torch  # type: ignore
-        ok(f"PyTorch installed ({torch.__version__})")
-    else:
-        fail("PyTorch install failed")
-        info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
-        issues.append("PyTorch install failed — see above for details")
-
-# ── 5. Required Python packages ────────────────────────────────────────────────
+# ── 4. Required Python packages ────────────────────────────────────────────────
 
 section("Python Packages")
 
@@ -272,24 +200,7 @@ else:
     info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
     issues.append("pip install -r requirements.txt")
 
-# sentence-transformers must come after torch so it uses the GPU build
-try:
-    import sentence_transformers as _st
-    ok(f"sentence-transformers ({_st.__version__})")
-except ImportError:
-    warn("sentence-transformers not found — installing ...")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "sentence-transformers"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        ok("sentence-transformers installed")
-    else:
-        fail("sentence-transformers install failed")
-        info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
-        issues.append("pip install sentence-transformers")
-
-# ── 6. Ollama ──────────────────────────────────────────────────────────────────
+# ── 5. Ollama ──────────────────────────────────────────────────────────────────
 
 section("Ollama")
 
@@ -443,7 +354,11 @@ section("Ollama Models")
 if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
 
-    for m in LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE:
+    all_models = (
+        [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~670 MB"}]
+        + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+    )
+    for m in all_models:
         tag, label, size = m["tag"], m["label"], m["vram"]
         already = tag in available or any(tag in a for a in available)
         if already:
@@ -457,8 +372,8 @@ if ollama_up:
                 fail(f"{label} — pull failed")
                 issues.append(f"ollama pull {tag}")
 else:
-    for m in LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE:
-        warn(f"Cannot check {m['label']} — Ollama server not running")
+    for m in [{"tag": EMBED_MODEL}] + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE:
+        warn(f"Cannot check {m['tag']} — Ollama server not running")
         issues.append(f"ollama pull {m['tag']}  (once Ollama is running)")
 
 # ── 8. Disk space ─────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ No external dependencies: safe to import before packages are installed.
 Both benchmark.py and setup_check.py import from here.
 """
 
+EMBED_MODEL = "mxbai-embed-large"
+
 # Image generation models. Checkpoint files not present in
 # ComfyUI/models/checkpoints/ are skipped automatically.
 IMAGE_MODELS = [
@@ -56,10 +58,11 @@ LLM_MODELS_SMALL = [
         "vram":  "~4.9 GB",
     },
     {
-        "tag":   "qwen3:14b-q4_K_M",
-        "label": "Qwen3 14B Q4_K_M",
-        "short": "qwen3-14b-q4",
-        "vram":  "~9.3 GB",
+        "tag":     "qwen3:14b-q4_K_M",
+        "label":   "Qwen3 14B Q4_K_M",
+        "short":   "qwen3-14b-q4",
+        "vram":    "~9.3 GB",
+        "max_ctx": 32768,
     },
     {
         "tag":   "gpt-oss:20b",
@@ -72,10 +75,11 @@ LLM_MODELS_SMALL = [
 # Medium-tier models (16–32GB VRAM) — 24 GB GPUs (RTX 3090/4090) and 32 GB unified memory.
 LLM_MODELS_MEDIUM = [
     {
-        "tag":   "qwen3:14b-q8_0",
-        "label": "Qwen3 14B Q8_0",
-        "short": "qwen3-14b-q8",
-        "vram":  "~16 GB",
+        "tag":     "qwen3:14b-q8_0",
+        "label":   "Qwen3 14B Q8_0",
+        "short":   "qwen3-14b-q8",
+        "vram":    "~16 GB",
+        "max_ctx": 32768,
     },
     {
         "tag":   "qwen3.6:35b-a3b",

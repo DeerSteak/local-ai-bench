@@ -54,9 +54,7 @@ COMFYUI_URL  = "http://localhost:8188"
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
-from models import IMAGE_MODELS, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS  # noqa: E402
-
-EMBED_MODEL = "BAAI/bge-large-en-v1.5"
+from models import IMAGE_MODELS, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODEL  # noqa: E402
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 EMBED_BATCH_SIZES = [32, 128, 512]
@@ -90,11 +88,6 @@ def section(t): print(f"\n{BOLD}{'─'*50}\n  {t}\n{'─'*50}{RESET}")
 
 def mean(vals):   return statistics.mean(vals) if vals else 0
 def stdev(vals):  return statistics.stdev(vals) if len(vals) >= 2 else 0
-
-_this_proc = psutil.Process(os.getpid())
-
-def peak_ram_mb():
-    return _this_proc.memory_info().rss / (1024 ** 2)
 
 def system_ram_gb():
     return psutil.virtual_memory().total / (1024 ** 3)
@@ -607,9 +600,9 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             continue
 
         # Warm up model (load into memory), with a timeout so we don't get stuck.
-        # Use the largest context length so Ollama pre-allocates the full KV cache
-        # once — avoiding a reload on the first measured run at max context.
-        max_ctx = max(context_lengths)
+        # Use the largest context this model will actually run so Ollama
+        # pre-allocates the full KV cache once — avoiding a reload at max context.
+        max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
         log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {WARMUP_TIMEOUT}s per run) ...")
         warmup_ok = True
         for warmup_i in range(warmup_runs):
@@ -647,7 +640,10 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
         results[short] = {}
 
-        for ctx_len in context_lengths:
+        model_ctx_lengths = [c for c in context_lengths
+                             if c <= model.get("max_ctx", max(context_lengths))]
+
+        for ctx_len in model_ctx_lengths:
             prompt = build_prompt_for_context(ctx_len)
             label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
@@ -710,45 +706,20 @@ CORPUS_SENTENCES = [
     "Mixture-of-experts models activate only a subset of parameters per token.",
 ] * 500  # 5,000 sentences total
 
-def detect_embed_device():
-    """Return the best available device for sentence-transformers."""
-    try:
-        import torch  # type: ignore
-        if torch.cuda.is_available():
-            return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-    except ImportError:
-        pass
-    return "cpu"
-
 def run_embedding_benchmarks(batch_sizes, n_runs):
     results = {}
-
-    try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
-    except ImportError:
-        err("sentence-transformers not installed — skipping embedding benchmarks")
-        err("Install: pip install sentence-transformers")
-        return results
-
-    device = detect_embed_device()
     section(f"Embeddings: {EMBED_MODEL}")
 
-    if device == "cpu":
-        warn("No GPU backend detected — embeddings will run on CPU")
-        warn("Results are tagged 'cpu' and will be flagged in compare.py")
-    else:
-        ok(f"Using device: {device}")
-
-    log(f"Loading model {EMBED_MODEL} on {device} ...")
-
-    try:
-        model = SentenceTransformer(EMBED_MODEL, device=device)
-        ok("Model loaded")
-    except Exception as e:
-        err(f"Failed to load embedding model: {e}")
+    if not ollama_available():
+        err("Ollama not running — skipping embedding benchmarks")
         return results
+
+    if not model_pulled(EMBED_MODEL):
+        warn(f"{EMBED_MODEL} not pulled — skipping")
+        warn(f"Pull with: ollama pull {EMBED_MODEL}")
+        return results
+
+    ok(f"Using Ollama model: {EMBED_MODEL}")
 
     corpus = CORPUS_SENTENCES
     log(f"Corpus: {len(corpus)} sentences")
@@ -756,38 +727,34 @@ def run_embedding_benchmarks(batch_sizes, n_runs):
     for bs in batch_sizes:
         log(f"Batch size {bs} — {n_runs} runs ...")
         rates = []
-        ram_peaks = []
 
         for run_i in range(n_runs):
             t0 = time.perf_counter()
             try:
-                model.encode(corpus, batch_size=bs, show_progress_bar=False)
+                for i in range(0, len(corpus), bs):
+                    batch = corpus[i:i + bs]
+                    resp = requests.post(
+                        f"{OLLAMA_URL}/api/embed",
+                        json={"model": EMBED_MODEL, "input": batch},
+                        timeout=120,
+                    )
+                    resp.raise_for_status()
                 elapsed = time.perf_counter() - t0
                 rate = len(corpus) / elapsed
-                ram_mb = peak_ram_mb()
                 rates.append(rate)
-                ram_peaks.append(ram_mb)
-                print(
-                    f"    run {run_i+1}/{n_runs}: "
-                    f"{rate:.0f} sent/sec  "
-                    f"RAM={ram_mb:.0f} MB"
-                )
+                print(f"    run {run_i+1}/{n_runs}: {rate:.0f} sent/sec")
             except Exception as e:
                 err(f"Run {run_i+1} failed: {e}")
 
         if rates:
             key = f"batch_{bs}"
             results[key] = {
-                "sentences_per_sec_mean":  round(mean(rates),      1),
-                "sentences_per_sec_stdev": round(stdev(rates),     1),
-                "peak_ram_mb_mean":        round(mean(ram_peaks),  1),
-                "device":                  device,
+                "sentences_per_sec_mean":  round(mean(rates), 1),
+                "sentences_per_sec_stdev": round(stdev(rates), 1),
+                "device":                  "gpu",
                 "n_runs":                  len(rates),
             }
-            ok(
-                f"Batch {bs}: {results[key]['sentences_per_sec_mean']:.0f} sent/sec"
-                f"  [{device}]"
-            )
+            ok(f"Batch {bs}: {results[key]['sentences_per_sec_mean']:.0f} sent/sec")
 
     return results
 
