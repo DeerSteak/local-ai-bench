@@ -567,7 +567,13 @@ if COMFYUI_DIR.exists():
                 pass
         return token
 
-    def hf_download(repo, filename, token=None):
+    CLIP_DIR = COMFYUI_DIR / "models" / "clip"
+    VAE_DIR  = COMFYUI_DIR / "models" / "vae"
+
+    def hf_download(repo, filename, token=None, dest_dir=None):
+        if dest_dir is None:
+            dest_dir = CHECKPOINTS
+        dest_dir.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         if token:
             env["HF_TOKEN"] = token
@@ -575,7 +581,7 @@ if COMFYUI_DIR.exists():
         for cli in ["hf", "huggingface-cli"]:
             if shutil.which(cli):
                 result = subprocess.run(
-                    [cli, "download", repo, filename, "--local-dir", str(CHECKPOINTS)],
+                    [cli, "download", repo, filename, "--local-dir", str(dest_dir)],
                     env=env, capture_output=True, text=True
                 )
                 if result.returncode == 0:
@@ -585,7 +591,7 @@ if COMFYUI_DIR.exists():
         try:
             from huggingface_hub import hf_hub_download  # type: ignore
             hf_hub_download(repo_id=repo, filename=filename,
-                            local_dir=str(CHECKPOINTS), token=token)
+                            local_dir=str(dest_dir), token=token)
             return True
         except Exception as e:
             warn(f"Python API download failed: {e}")
@@ -621,6 +627,38 @@ if COMFYUI_DIR.exists():
                     info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell")
             else:
                 info("Skipping Flux.1-schnell — no token provided")
+
+    # Flux support files: T5-XXL + CLIP-L (public) and VAE (gated, same token as schnell)
+    flux_present = any("flux" in c for c in found_ckpts)
+    if flux_present:
+        clip_files = [
+            ("t5xxl_fp16.safetensors", CLIP_DIR),
+            ("clip_l.safetensors",     CLIP_DIR),
+        ]
+        for fname, dest in clip_files:
+            if not (dest / fname).exists():
+                info(f"Downloading {fname} (public, no token required) ...")
+                if hf_download("comfyanonymous/flux_text_encoders", fname, dest_dir=dest):
+                    ok(f"{fname} downloaded")
+                else:
+                    warn(f"{fname} download failed — Flux image generation will error")
+            else:
+                ok(f"{fname} already present")
+
+        vae_file = VAE_DIR / "ae.safetensors"
+        if not vae_file.exists():
+            info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
+            token = load_token()
+            if token:
+                if hf_download("black-forest-labs/FLUX.1-schnell", "ae.safetensors",
+                               token=token, dest_dir=VAE_DIR):
+                    ok("ae.safetensors downloaded")
+                else:
+                    warn("ae.safetensors download failed — Flux image generation will error")
+            else:
+                info("Skipping ae.safetensors — no token provided")
+        else:
+            ok("ae.safetensors already present")
 
     if found_ckpts:
         ok(f"{len(found_ckpts)}/{len(IMAGE_CHECKPOINTS)} image checkpoints ready: "
