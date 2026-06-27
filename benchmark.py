@@ -164,8 +164,9 @@ def find_comfyui_python(comfyui_dir: Path) -> str:
     Prefers a venv inside comfyui_dir, then the venv running this script,
     then whatever 'python' resolves to.
     """
-    # venv inside ComfyUI dir
+    # venv inside ComfyUI dir (python_env = ROCm fork's embedded Python)
     for candidate in [
+        comfyui_dir / "python_env" / "python.exe",
         comfyui_dir / "venv" / "bin" / "python",
         comfyui_dir / ".venv" / "bin" / "python",
         comfyui_dir / "venv" / "Scripts" / "python.exe",

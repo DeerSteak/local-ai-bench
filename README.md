@@ -134,7 +134,7 @@ ComfyUI is always shut down cleanly.
 |---|---|---|
 | Apple Silicon Mac | MPS (Metal) | Auto-detected |
 | Linux + NVIDIA | CUDA | Auto-detected |
-| Windows + AMD | CPU | ROCm not available to PyTorch on Windows; Ollama uses the GPU independently for LLM tests |
+| Windows + AMD | CPU | ROCm PyTorch lives in ComfyUI's bundled env, not the bench env; Ollama and ComfyUI use the GPU independently |
 
 CPU embedding results are tagged `(cpu)` in the JSON and dimmed in `compare.py`
 output, excluded from rankings.
@@ -204,9 +204,11 @@ quirks to be aware of.
 - Install the CUDA Toolkit manually before running `setup.bat`: https://developer.nvidia.com/cuda-downloads
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
-### Windows (AMD RDNA3+ / Ryzen AI Max+)
-- PyTorch cannot access AMD GPUs on Windows, so embedding benchmarks fall back to CPU — this is expected. Ollama uses the GPU independently for LLM and image tests.
-- The `No GPU backend detected` warning from setup_check is not an error.
+### Windows (AMD GPU)
+- `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
+- Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
+- Embedding benchmarks fall back to CPU — the ROCm PyTorch lives inside ComfyUI's bundled `python_env` and is not accessible to the benchmark's own venv. This is expected; results are tagged `(cpu)` and excluded from rankings.
+- The `No GPU backend detected` warning from setup_check for PyTorch is not an error.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
@@ -323,5 +325,5 @@ python benchmark.py --warmup-timeout 120
 - **Mac:** Watch Activity Monitor → Memory during 70B runs. If pressure turns red and TPS drops between runs, the system is swapping. The Q3 result is your reliable data point; Q4 may be skipped by the warmup timeout.
 - **Linux:** Verify PyTorch sees your GPU before running: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
 - **Windows (NVIDIA):** If PyTorch doesn't detect your GPU, check that the CUDA version in your pip install URL matches `nvcc --version`.
-- **Windows (AMD):** The `No GPU backend detected` warning from setup_check is expected — Ollama uses the GPU independently.
+- **Windows (AMD):** The `No GPU backend detected` PyTorch warning is expected — embeddings run on CPU but LLM and image tests use the GPU via Ollama and ROCm ComfyUI respectively.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.

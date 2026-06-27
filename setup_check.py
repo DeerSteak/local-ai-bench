@@ -142,19 +142,43 @@ def check_metal():
         pass
     return False
 
-nvidia_ok = check_nvidia()
-rocm_ok   = False
-metal_ok  = False
+def check_amd_windows():
+    """Detect AMD/Radeon GPU on Windows via wmic (no ROCm tooling required)."""
+    if platform.system() != "Windows":
+        return False
+    try:
+        out = subprocess.check_output(
+            ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        for line in out.splitlines():
+            if line.startswith("Name="):
+                name = line.split("=", 1)[1].strip()
+                if name and ("AMD" in name or "Radeon" in name):
+                    print(f"  GPU:     {name}")
+                    return True
+    except Exception:
+        pass
+    return False
+
+nvidia_ok     = check_nvidia()
+rocm_ok       = False
+metal_ok      = False
+amd_windows   = False
 
 if not nvidia_ok:
     rocm_ok = check_rocm()
 if not nvidia_ok and not rocm_ok:
     metal_ok = check_metal()
+if not nvidia_ok and os_name == "Windows":
+    amd_windows = check_amd_windows()
 
 if nvidia_ok:
     ok("CUDA / Nvidia GPU detected")
 elif rocm_ok:
     ok("ROCm / AMD GPU detected")
+elif amd_windows:
+    ok("AMD/Radeon GPU detected on Windows")
 elif metal_ok:
     ok("Apple Metal detected")
 else:
@@ -471,21 +495,47 @@ CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
 if not COMFYUI_DIR.exists():
     info("ComfyUI not found — cloning ...")
+    # On Windows with AMD GPU, use the ROCm-patched fork instead of upstream
+    if amd_windows and not nvidia_ok:
+        comfyui_repo = "https://github.com/patientx-cfz/comfyui-rocm"
+        info("AMD GPU detected on Windows — using ROCm fork")
+    else:
+        comfyui_repo = "https://github.com/comfyanonymous/ComfyUI"
     result = subprocess.run(
-        ["git", "clone", "https://github.com/comfyanonymous/ComfyUI",
-         str(COMFYUI_DIR)]
+        ["git", "clone", comfyui_repo, str(COMFYUI_DIR)]
     )
     if result.returncode == 0:
-        ok("ComfyUI cloned successfully")
+        ok(f"ComfyUI cloned successfully from {comfyui_repo}")
     else:
         fail("ComfyUI clone failed — check your internet connection and git install")
-        issues.append("git clone https://github.com/comfyanonymous/ComfyUI")
+        issues.append(f"git clone {comfyui_repo}")
 else:
     ok(f"ComfyUI directory found at {COMFYUI_DIR}")
 
+if COMFYUI_DIR.exists() and amd_windows and not nvidia_ok:
+    rocm_embedded_python = COMFYUI_DIR / "python_env" / "python.exe"
+    if not rocm_embedded_python.exists():
+        info("Running install.bat for ROCm ComfyUI (this may take several minutes) ...")
+        result = subprocess.run(
+            ["install.bat"],
+            cwd=str(COMFYUI_DIR),
+            shell=True,
+        )
+        if result.returncode == 0:
+            ok("ROCm ComfyUI install.bat completed")
+        else:
+            fail("install.bat failed — check output above")
+            issues.append(f"Run install.bat manually in {COMFYUI_DIR}")
+    else:
+        ok("ROCm ComfyUI already installed (python_env found)")
+
 if COMFYUI_DIR.exists():
+    rocm_embedded_python = COMFYUI_DIR / "python_env" / "python.exe"
+
     req_file = COMFYUI_DIR / "requirements.txt"
-    if req_file.exists():
+    if rocm_embedded_python.exists():
+        ok("ROCm fork detected — skipping requirements install (uses bundled python_env)")
+    elif req_file.exists():
         # Check if aiohttp (a ComfyUI dep) is already installed
         already_installed = subprocess.run(
             [sys.executable, "-m", "pip", "show", "aiohttp"],
