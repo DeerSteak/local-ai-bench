@@ -1,13 +1,21 @@
 import styles from "./CustomLegend.module.css";
 
-export default function CustomLegend({ payload, isMultiFile }) {
+export default function CustomLegend({ payload, isMultiFile, sortOrder }) {
   if (!payload?.length) return null;
+
+  const sorted = sortOrder
+    ? [...payload].sort((a, b) => {
+        const ai = sortOrder.indexOf(a.value);
+        const bi = sortOrder.indexOf(b.value);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+    : payload;
 
   if (isMultiFile) {
     return (
       <div className={styles.wrapper}>
         <div className={styles.items}>
-          {payload.map(p => (
+          {sorted.map(p => (
             <div key={p.dataKey} className={styles.item}>
               <svg width="24" height="12" style={{ flexShrink: 0 }}>
                 <line
@@ -28,7 +36,7 @@ export default function CustomLegend({ payload, isMultiFile }) {
   return (
     <div className={styles.wrapper}>
       <div className={styles.items}>
-        {payload.map(p => (
+        {sorted.map(p => (
           <div key={p.value} className={styles.item}>
             <span className={styles.swatch} style={{ background: p.color }} />
             <span style={{ whiteSpace: "pre-line" }}>{p.value}</span>

@@ -9,7 +9,7 @@ import {
   getAllLLMModels, getAllImageModels, modelLabel, fmt,
   sortBarData, findMostStrenuousKey,
 } from "../utils";
-import { SECTION_LABELS, FILE_COLORS, RES_ORDER } from "../constants";
+import { SECTION_LABELS, FILE_COLORS, RES_ORDER, CTX_ORDER } from "../constants";
 import CustomLegend from "./CustomLegend";
 import CustomTooltip from "./CustomTooltip";
 import styles from "./ChartPanel.module.css";
@@ -141,7 +141,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
             width={150}
           />
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
-          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
+          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           {barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
               <LabelList dataKey={bc.dataKey} content={(props) => (
@@ -238,8 +238,9 @@ export default function ChartPanel({
       const rawTtftBarConfigs = buildLLMBarConfigs(files, model);
       const rawTpsBarData = buildLLMBarData(files, model, "tps");
       const rawTtftBarData = buildLLMBarData(files, model, "ttft");
-      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => rawTpsBarData.some(r => r[bc.dataKey] != null));
-      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => rawTtftBarData.some(r => r[bc.dataKey] != null));
+      const byCtxOrder = (a, b) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
+      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => rawTpsBarData.some(r => r[bc.dataKey] != null)).sort(byCtxOrder);
+      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => rawTtftBarData.some(r => r[bc.dataKey] != null)).sort(byCtxOrder);
       const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
       const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
       const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
