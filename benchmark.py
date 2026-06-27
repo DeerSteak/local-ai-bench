@@ -687,6 +687,8 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     err(f"Run {run_i+1} failed: {e}")
 
             if ttfts:
+                raw_ttfts = ttfts[:]
+                raw_tps = tps_list[:]
                 # Drop the single slowest TTFT run before averaging
                 if len(ttfts) > 1:
                     worst_idx = ttfts.index(max(ttfts))
@@ -698,6 +700,8 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     "tps_mean":       round(mean(tps_list), 2),
                     "tps_stdev":      round(stdev(tps_list),2),
                     "n_runs":         len(tps_list),
+                    "ttft_runs":      [round(t, 3) for t in raw_ttfts],
+                    "tps_runs":       [round(t, 2) for t in raw_tps],
                 }
                 ok(
                     f"Context {label_ctx} done: "
@@ -775,12 +779,18 @@ def run_embedding_benchmarks(batch_sizes, n_runs):
                 err(f"Run {run_i+1} failed: {e}")
 
         if rates:
+            raw_rates = rates[:]
+            # Drop the single slowest run before averaging
+            if len(rates) > 1:
+                worst_idx = rates.index(min(rates))
+                rates = rates[:worst_idx] + rates[worst_idx+1:]
             key = f"batch_{bs}"
             results[key] = {
                 "sentences_per_sec_mean":  round(mean(rates), 1),
                 "sentences_per_sec_stdev": round(stdev(rates), 1),
                 "device":                  "gpu",
                 "n_runs":                  len(rates),
+                "runs":                   [round(r, 1) for r in raw_rates],
             }
             ok(f"Batch {bs}: {results[key]['sentences_per_sec_mean']:.0f} sent/sec")
 
@@ -1038,10 +1048,16 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                     err(f"Run {run_i+1} failed: {e}")
 
             if times:
+                raw_times = times[:]
+                # Drop the single slowest run before averaging
+                if len(times) > 1:
+                    worst_idx = times.index(max(times))
+                    times = times[:worst_idx] + times[worst_idx+1:]
                 results[short]["resolutions"][res_label] = {
                     "sec_per_image_mean":  round(mean(times),  2),
                     "sec_per_image_stdev": round(stdev(times), 2),
                     "n_runs":              len(times),
+                    "runs":               [round(t, 2) for t in raw_times],
                 }
                 ok(f"{label} @ {res_label}: "
                    f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
