@@ -1,0 +1,127 @@
+.controlLabel {
+  font-size: 14px;
+  color: #8c959f;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  margin-bottom: 8px;
+}
+
+.dividerGroup {
+  border-left: 1px solid #d0d7de;
+  padding-left: 24px;
+}
+
+.filterGroup {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filterCheck {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.filterCheck.enabled { color: #1a1f24; }
+.filterCheck.disabled { color: #8c959f; }
+
+.filterCheck input {
+  accent-color: #0969da;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.endGroup {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.widthRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.widthInput {
+  width: 72px;
+  padding: 4px 8px;
+  font-size: 15px;
+  font-family: 'IBM Plex Mono';
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1a1f24;
+  background: #ffffff;
+  outline: none;
+}
+
+.widthUnit {
+  font-size: 14px;
+  color: #8c959f;
+}
+
+.logoDropZone {
+  border: 1px dashed #d0d7de;
+  border-radius: 6px;
+  padding: 4px 10px;
+  text-align: center;
+  background: #f6f8fa;
+  transition: all .2s;
+  cursor: pointer;
+  min-width: 80px;
+}
+
+.logoDropZone.over {
+  border-color: #0969da;
+  background: #dff0ff;
+}
+
+.logoPreview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.logoThumb {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.logoClearBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #8c959f;
+  font-size: 13px;
+  padding: 0;
+}
+
+.logoPlaceholder {
+  font-size: 13px;
+  color: #8c959f;
+}
+
+.logoDropZone.over .logoPlaceholder {
+  color: #0969da;
+}
+
+.exportBtn {
+  font-size: 15px;
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.exportBtn:disabled {
+  opacity: 0.5;
+}

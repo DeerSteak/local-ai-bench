@@ -1,0 +1,61 @@
+{
+  "profile": {
+    "hostname": "rtx3080-gaming",
+    "os": "Ubuntu 22.04",
+    "arch": "x86_64",
+    "python": "3.11.8",
+    "ram_gb": 32.0,
+    "timestamp": "2026-06-21T09:15:22Z",
+    "backend": "cuda"
+  },
+  "llm": {
+    "llama3.1-8b-q3": {
+      "8K":  { "tps_mean": 88.5,  "tps_stdev": 2.3,  "ttft_mean_sec": 0.38, "ttft_stdev_sec": 0.03, "n_runs": 5 },
+      "32K": { "tps_mean": 85.2,  "tps_stdev": 2.1,  "ttft_mean_sec": 1.53, "ttft_stdev_sec": 0.06, "n_runs": 5 },
+      "64K": { "tps_mean": 79.8,  "tps_stdev": 2.6,  "ttft_mean_sec": 3.12, "ttft_stdev_sec": 0.12, "n_runs": 5 }
+    },
+    "llama3.1-8b-q4": {
+      "8K":  { "tps_mean": 79.3,  "tps_stdev": 2.0,  "ttft_mean_sec": 0.45, "ttft_stdev_sec": 0.03, "n_runs": 5 },
+      "32K": { "tps_mean": 75.8,  "tps_stdev": 1.9,  "ttft_mean_sec": 1.82, "ttft_stdev_sec": 0.07, "n_runs": 5 },
+      "64K": { "tps_mean": 70.4,  "tps_stdev": 2.2,  "ttft_mean_sec": 3.70, "ttft_stdev_sec": 0.14, "n_runs": 5 }
+    },
+    "qwen3-14b-q4": {
+      "8K":  { "tps_mean": 48.7,  "tps_stdev": 1.4,  "ttft_mean_sec": 0.69, "ttft_stdev_sec": 0.05, "n_runs": 5 },
+      "32K": { "tps_mean": 46.1,  "tps_stdev": 1.6,  "ttft_mean_sec": 2.78, "ttft_stdev_sec": 0.11, "n_runs": 5 },
+      "64K": { "tps_mean": 42.3,  "tps_stdev": 1.8,  "ttft_mean_sec": 5.65, "ttft_stdev_sec": 0.21, "n_runs": 5 }
+    },
+    "gpt-oss-20b": {
+      "8K":  { "tps_mean": 39.2,  "tps_stdev": 1.2,  "ttft_mean_sec": 0.87, "ttft_stdev_sec": 0.06, "n_runs": 5 },
+      "32K": { "tps_mean": 36.8,  "tps_stdev": 1.3,  "ttft_mean_sec": 3.50, "ttft_stdev_sec": 0.14, "n_runs": 5 },
+      "64K": { "tps_mean": 33.1,  "tps_stdev": 1.5,  "ttft_mean_sec": 7.12, "ttft_stdev_sec": 0.27, "n_runs": 5 }
+    }
+  },
+  "embeddings": {
+    "batch_32":  { "sentences_per_sec_mean": 1923.5, "sentences_per_sec_stdev": 98.7,  "peak_ram_mb_mean": 847.2,  "device": "cuda:0", "n_runs": 5 },
+    "batch_128": { "sentences_per_sec_mean": 6745.2, "sentences_per_sec_stdev": 198.4, "peak_ram_mb_mean": 1189.3, "device": "cuda:0", "n_runs": 5 },
+    "batch_512": { "sentences_per_sec_mean": 16234.7,"sentences_per_sec_stdev": 423.1, "peak_ram_mb_mean": 1987.4, "device": "cuda:0", "n_runs": 5 }
+  },
+  "images": {
+    "sdxl": {
+      "label": "SDXL", "checkpoint": "sd_xl_base_1.0.safetensors", "steps": 20,
+      "resolutions": {
+        "1024x1024": { "sec_per_image_mean": 7.23,  "sec_per_image_stdev": 0.34, "n_runs": 5 },
+        "1536x1536": { "sec_per_image_mean": 17.45, "sec_per_image_stdev": 0.87, "n_runs": 5 }
+      }
+    },
+    "flux-schnell": {
+      "label": "Flux.1-schnell", "checkpoint": "flux1-schnell.safetensors", "steps": 4,
+      "resolutions": {
+        "1024x1024": { "sec_per_image_mean": 3.78,  "sec_per_image_stdev": 0.21, "n_runs": 5 },
+        "1536x1536": { "sec_per_image_mean": 8.92,  "sec_per_image_stdev": 0.42, "n_runs": 5 }
+      }
+    },
+    "flux-dev": {
+      "label": "Flux.1-dev", "checkpoint": "flux1-dev.safetensors", "steps": 20,
+      "resolutions": {
+        "1024x1024": { "sec_per_image_mean": 38.45, "sec_per_image_stdev": 1.23, "n_runs": 5 },
+        "1536x1536": { "sec_per_image_mean": 92.34, "sec_per_image_stdev": 3.45, "n_runs": 5 }
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+.wrapper {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.tableTitle {
+  font-size: 19px;
+  font-weight: 600;
+  color: #1a1f24;
+  font-family: 'IBM Plex Sans';
+  margin-bottom: 14px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+}
+
+.table thead tr {
+  border-bottom: 1px solid #d0d7de;
+}
+
+.th {
+  padding: 6px 12px;
+  text-align: right;
+  font-weight: 400;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  color: #57606a;
+}
+
+.th.sorted {
+  color: #0969da;
+}
+
+.sortArrow {
+  opacity: 0.35;
+}
+
+.th.sorted .sortArrow {
+  opacity: 1;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid #eaeef2;
+}
+
+.table tbody tr:nth-child(even) {
+  background: #f0f2f5aa;
+}
+
+.td {
+  padding: 6px 12px;
+  text-align: right;
+}
+
+.tdModel  { color: #79c0ff; text-align: left; }
+.tdCtx    { color: #1a1f24; }
+.tdNum    { color: #1a1f24; font-weight: 500; }
+.tdStdev  { color: #8c959f; }
+.tdDevice { color: #57606a; text-align: left; }
+.tdRuns   { color: #8c959f; }

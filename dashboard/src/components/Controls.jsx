@@ -1,0 +1,130 @@
+import { SECTIONS, SECTION_LABELS } from "../constants";
+import { modelLabel, imageModelLabel, getModelColor, getImageModelColor } from "../utils";
+import styles from "./Controls.module.css";
+
+export default function Controls({
+  section, setSection,
+  allModels, enabledModels, onToggleModel,
+  allImageModels, enabledImageModels, onToggleImageModel,
+  chartWidth, setChartWidth,
+  logoSrc, setLogoSrc,
+  logoDragOver, onLogoDrop, onLogoDragOver, onLogoDragLeave,
+  saving, onSaveChart,
+}) {
+  return (
+    <div className="card" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+      <div>
+        <div className={styles.controlLabel}>Section</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {SECTIONS.map(s => (
+            <button key={s} className={`pill ${section === s ? "active" : "inactive"}`} onClick={() => setSection(s)}>
+              {SECTION_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {section === "llm" && allModels.length > 0 && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Models</div>
+          <div className={styles.filterGroup}>
+            {allModels.map(m => {
+              const enabled = enabledModels.has(m);
+              const color = getModelColor(m);
+              return (
+                <label
+                  key={m}
+                  className={`${styles.filterCheck} ${enabled ? styles.enabled : styles.disabled}`}
+                  style={enabled ? { color } : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => onToggleModel(m)}
+                    style={enabled ? { accentColor: color } : undefined}
+                  />
+                  {modelLabel(m)}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {section === "images" && allImageModels.length > 0 && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Models</div>
+          <div className={styles.filterGroup}>
+            {allImageModels.map(m => {
+              const enabled = enabledImageModels.has(m);
+              const color = getImageModelColor(m);
+              return (
+                <label
+                  key={m}
+                  className={`${styles.filterCheck} ${enabled ? styles.enabled : styles.disabled}`}
+                  style={enabled ? { color } : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => onToggleImageModel(m)}
+                    style={enabled ? { accentColor: color } : undefined}
+                  />
+                  {imageModelLabel(m)}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className={styles.endGroup}>
+        <div>
+          <div className={styles.controlLabel}>Chart Width</div>
+          <div className={styles.widthRow}>
+            <input
+              type="number"
+              defaultValue={chartWidth}
+              key={chartWidth}
+              min={400}
+              max={2000}
+              onBlur={e => setChartWidth(Math.min(2000, Math.max(400, parseInt(e.target.value) || 708)))}
+              onKeyDown={e => e.key === "Enter" && e.target.blur()}
+              className={styles.widthInput}
+            />
+            <span className={styles.widthUnit}>px</span>
+          </div>
+        </div>
+
+        <div>
+          <div className={styles.controlLabel}>Logo</div>
+          <div
+            onDrop={onLogoDrop}
+            onDragOver={onLogoDragOver}
+            onDragLeave={onLogoDragLeave}
+            className={`${styles.logoDropZone} ${logoDragOver ? styles.over : ""}`}
+          >
+            {logoSrc
+              ? <div className={styles.logoPreview}>
+                  <img src={logoSrc} className={styles.logoThumb} />
+                  <button onClick={() => setLogoSrc(null)} className={styles.logoClearBtn}>✕</button>
+                </div>
+              : <span className={styles.logoPlaceholder}>↓ logo</span>
+            }
+          </div>
+        </div>
+
+        <div>
+          <div className={styles.controlLabel}>Export</div>
+          <button
+            onClick={onSaveChart}
+            disabled={saving}
+            className={`pill inactive ${styles.exportBtn}`}
+          >
+            {saving ? "Saving…" : "⬇ Save PNG"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,10 @@
+.root {
+  background: #ffffff;
+  min-height: 100vh;
+  color: #1a1f24;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 24px 28px;
+  max-width: 1126px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}

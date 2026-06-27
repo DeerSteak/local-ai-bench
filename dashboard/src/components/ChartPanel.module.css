@@ -1,0 +1,123 @@
+.container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  position: relative;
+}
+
+.chartHeader {
+  margin-bottom: 16px;
+}
+
+.chartModelName {
+  font-size: 12px;
+  color: #8c959f;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: 'IBM Plex Mono', monospace;
+  margin-bottom: 2px;
+}
+
+.chartTitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chartTitle {
+  font-size: 19px;
+  font-weight: 600;
+  color: #1a1f24;
+  font-family: 'IBM Plex Sans';
+}
+
+.chartDirection {
+  font-size: 19px;
+  font-weight: 600;
+  color: #1a1f24;
+  font-family: 'IBM Plex Sans', sans-serif;
+  white-space: nowrap;
+}
+
+.subtitleSingle {
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.subtitleHost {
+  font-size: 17px;
+  color: #1a1f24;
+  font-family: 'IBM Plex Mono';
+}
+
+.subtitleBackend {
+  font-size: 15px;
+  color: #57606a;
+  font-family: 'IBM Plex Mono';
+}
+
+.subtitleOs {
+  font-size: 13px;
+  color: #8c959f;
+  font-family: 'IBM Plex Mono';
+}
+
+.subtitleMulti {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.subtitleFile {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.subtitleDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.modelGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modelGroupTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1f24;
+  font-family: 'IBM Plex Sans', sans-serif;
+  padding-top: 16px;
+  border-top: 2px solid #e0e4e8;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #8c959f;
+  font-size: 16px;
+  border: 1px dashed #d0d7de;
+  border-radius: 10px;
+}
+
+.logoOverlay {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  pointer-events: none;
+}
