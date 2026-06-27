@@ -52,6 +52,7 @@
   font-size: 17px;
   color: #1a1f24;
   font-family: 'IBM Plex Mono';
+  white-space: pre-line;
 }
 
 .subtitleBackend {

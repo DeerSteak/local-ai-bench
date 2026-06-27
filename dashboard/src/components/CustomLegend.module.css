@@ -21,6 +21,7 @@
   font-size: 14px;
   color: #57606a;
   font-family: 'IBM Plex Mono', monospace;
+  white-space: pre-line;
 }
 
 .swatch {

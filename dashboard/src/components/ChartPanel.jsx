@@ -97,7 +97,7 @@ function ChartCard({ title, modelName, subtitle, data, lineConfigs, xKey, xLabel
   );
 }
 
-function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
+function ImageBarCard({ title, subtitle, data, files, chartName, chartModel, logoSrc }) {
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -106,6 +106,7 @@ function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
           <span className={styles.chartTitle}>{title}</span>
           <DirectionHint direction="lower" />
         </div>
+        {subtitle}
       </div>
       <ResponsiveContainer width="100%" height={320}>
         <BarChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
@@ -165,15 +166,16 @@ export default function ChartPanel({
       );
     }
 
+    const subtitle = <FileSubtitle files={files} />;
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
-        <FileSubtitle files={files} />
         {modelGroups.map(({ model, tpsData, ttftData, tpsConfigs, ttftConfigs }) => (
           <div key={model} className={styles.modelGroup}>
             <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
             {tpsConfigs.length > 0 && (
               <ChartCard
                 title="Tokens/sec"
+                subtitle={subtitle}
                 modelName={modelLabel(model)}
                 data={tpsData} lineConfigs={tpsConfigs}
                 xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens/sec" unit="tps"
@@ -185,6 +187,7 @@ export default function ChartPanel({
             {ttftConfigs.length > 0 && (
               <ChartCard
                 title="Time to First Token"
+                subtitle={subtitle}
                 modelName={modelLabel(model)}
                 data={ttftData} lineConfigs={ttftConfigs}
                 xKey="ctxLabel" xLabel="Context Length" yLabel="TTFT (sec)" unit="sec"
@@ -216,9 +219,9 @@ export default function ChartPanel({
       );
     }
 
+    const subtitle = <FileSubtitle files={files} />;
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
-        <FileSubtitle files={files} />
         {resolutions.map(res => {
           const data = buildImagesDataForResolution(files, res, enabledImageModels);
           if (!data.length) return null;
@@ -226,6 +229,7 @@ export default function ChartPanel({
             <ImageBarCard
               key={res}
               title={res}
+              subtitle={subtitle}
               data={data}
               files={files}
               chartName="images"
