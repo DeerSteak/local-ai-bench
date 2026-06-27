@@ -152,7 +152,7 @@ LLM_MODELS = LLM_MODELS_SMALL + LLM_MODELS_LARGE
 
 EMBED_MODEL = "BAAI/bge-large-en-v1.5"
 
-CONTEXT_LENGTHS = [2048, 8192]   # tokens (approximate, via prompt padding)
+CONTEXT_LENGTHS = [8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 EMBED_BATCH_SIZES = [32, 128, 512]
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are now per-model in IMAGE_MODELS
@@ -595,7 +595,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
         for ctx_len in context_lengths:
             prompt = build_prompt_for_context(ctx_len)
-            label_ctx = f"{ctx_len // 1000}K"
+            label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
 
             ttfts, tps_list = [], []
