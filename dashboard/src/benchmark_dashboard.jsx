@@ -152,19 +152,14 @@ export default function Dashboard() {
       const cards = [...chartRef.current.querySelectorAll("[data-chart-name]")];
       if (!cards.length) return;
 
-      const f = effectiveFilesRef.current;
-      const slug = f.length === 0 ? "machine"
-        : f.length === 1 ? f[0].hostname.replace(/\n/g, "_")
-        : f.map(fi => fi.hostname.replace(/\n/g, "_")).join("_vs_");
-
       for (let i = 0; i < cards.length; i++) {
         const canvas = await html2canvas(cards[i], {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const { chartName, chartModel } = cards[i].dataset;
         const filename = chartModel
-          ? `${chartModel}_${chartName}_${slug}.png`
-          : `${slug}_${chartName}.png`;
+          ? `${chartModel}_${chartName}.png`
+          : `${chartName}.png`;
         const link = document.createElement("a");
         link.download = filename;
         link.href = canvas.toDataURL("image/png");
