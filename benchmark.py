@@ -63,8 +63,9 @@ IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are now per-model in IMAGE_MODELS
 IMAGE_SEED  = 42
 IMAGE_PROMPT = (
-    "A photorealistic mountain landscape at golden hour, "
-    "dramatic clouds, highly detailed, 8k resolution"
+    "A photorealistic high-end gaming PC build with RGB lighting, "
+    "multiple GPUs, custom water cooling, shot in a dark room, "
+    "highly detailed, 8k resolution"
 )
 
 WARMUP_RUNS    = 2
@@ -305,14 +306,18 @@ def detect_backend():
 # ── Prompt builders ────────────────────────────────────────────────────────────
 
 SHORT_PROMPT = (
-    "Explain the concept of neural scaling laws in machine learning. "
-    "Discuss how model size, dataset size, and compute interact, "
-    "and what the empirical findings suggest about future AI development."
+    "You are a hardware reviewer for HotHardware.com. Compare the performance, "
+    "power efficiency, and value proposition of the latest GPU architectures "
+    "for gaming and content creation workloads. Discuss thermal design, memory "
+    "bandwidth, ray tracing capabilities, and how driver maturity affects "
+    "real-world performance across AAA titles and professional applications."
 )
 
 _PADDING_UNIT = (
-    " Furthermore, consider the implications for hardware design, "
-    "energy consumption, and the economics of training large models."
+    " Additionally, analyze how CPU and platform choices — including chiplet "
+    "designs, memory controllers, and PCIe bandwidth — interact with GPU "
+    "performance, and what this means for system builders choosing between "
+    "competing platforms at different price points."
 )
 
 def build_prompt_for_context(target_tokens: int) -> str:
