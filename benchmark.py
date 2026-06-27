@@ -344,10 +344,33 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
 
 # ── Machine profile ────────────────────────────────────────────────────────────
 
+def _get_hostname():
+    if platform.system() == "Darwin":
+        try:
+            sp = subprocess.run(
+                ["system_profiler", "SPHardwareDataType"],
+                capture_output=True, text=True, timeout=10,
+            )
+            model = chip = ram = None
+            for line in sp.stdout.splitlines():
+                if "Model Name:" in line:
+                    model = line.split(":", 1)[1].strip()
+                elif "Chip:" in line:
+                    # "Apple M4 Max" → "M4 Max"
+                    chip = line.split(":", 1)[1].strip().removeprefix("Apple ").strip()
+                elif "Memory:" in line:
+                    ram = line.split(":", 1)[1].strip()
+            if model and chip and ram:
+                return f"{model} {chip} {ram}"
+        except Exception:
+            pass
+    return platform.node()
+
+
 def build_profile():
     os_name = platform.system()
     profile = {
-        "hostname":   platform.node(),
+        "hostname":   _get_hostname(),
         "os":         f"{os_name} {platform.release()}",
         "arch":       platform.machine(),
         "python":     sys.version.split()[0],
@@ -749,20 +772,29 @@ def comfyui_available():
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt):
     """
-    Flux.1 txt2img workflow using CheckpointLoaderSimple.
+    Flux.1 txt2img workflow.
 
-    flux1-schnell.safetensors from HuggingFace is a full checkpoint
-    (model + CLIP + VAE combined), so we load it with CheckpointLoaderSimple
-    exactly like SDXL. We still use FluxGuidance + SamplerCustomAdvanced
-    for correct Flux sampling behaviour.
+    The BFL flux1-schnell/dev .safetensors files are transformer-only (no CLIP,
+    no VAE), so we load CLIP and VAE via separate nodes rather than relying on
+    CheckpointLoaderSimple output slots 1 and 2 (which would be None).
     """
     return {
-        # Load full checkpoint (model + clip + vae)
+        # UNet from checkpoint (output 0 = model; slots 1/2 are None for BFL files)
         "1": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": checkpoint}},
-        # Encode prompt — no negative for Flux
+        # Dual CLIP for Flux: T5-XXL + CLIP-L
+        "12": {"class_type": "DualCLIPLoader",
+               "inputs": {
+                   "clip_name1": "t5xxl_fp16.safetensors",
+                   "clip_name2": "clip_l.safetensors",
+                   "type": "flux",
+               }},
+        # VAE loaded separately
+        "13": {"class_type": "VAELoader",
+               "inputs": {"vae_name": "ae.safetensors"}},
+        # Encode prompt using dual CLIP — no negative for Flux
         "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["1", 1]}},
+              "inputs": {"text": prompt, "clip": ["12", 0]}},
         # Flux guidance node (replaces CFGGuider)
         "3": {"class_type": "FluxGuidance",
               "inputs": {"conditioning": ["2", 0], "guidance": cfg}},
@@ -795,9 +827,9 @@ def build_flux_workflow(checkpoint, width, height, steps, cfg,
                   "sigmas": ["8", 0],
                   "latent_image": ["4", 0],
               }},
-        # Decode latent to image
+        # Decode latent to image using separate VAE
         "10": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["9", 0], "vae": ["1", 2]}},
+               "inputs": {"samples": ["9", 0], "vae": ["13", 0]}},
         # Save
         "11": {"class_type": "SaveImage",
                "inputs": {"images": ["10", 0], "filename_prefix": "bench_flux"}},
@@ -1002,7 +1034,7 @@ def main():
     comfyui_dir = Path(args.comfyui) if args.comfyui else COMFYUI_DIR
 
     profile  = build_profile()
-    out_path = args.out or f"results_{profile['hostname']}.json"
+    out_path = args.out or f"results_{profile['hostname'].replace(' ', '_')}.json"
 
     print(f"\n{BOLD}LLM Benchmark Suite{RESET}")
     print(f"  Host:      {profile['hostname']}")
