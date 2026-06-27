@@ -276,7 +276,10 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
 # ── Machine profile ────────────────────────────────────────────────────────────
 
 def _get_hostname():
-    if platform.system() == "Darwin":
+    system = platform.system()
+    ram_gb = round(system_ram_gb())
+
+    if system == "Darwin":
         try:
             sp = subprocess.run(
                 ["system_profiler", "SPHardwareDataType"],
@@ -287,14 +290,98 @@ def _get_hostname():
                 if "Model Name:" in line:
                     model = line.split(":", 1)[1].strip()
                 elif "Chip:" in line:
-                    # "Apple M4 Max" → "M4 Max"
                     chip = line.split(":", 1)[1].strip().removeprefix("Apple ").strip()
                 elif "Memory:" in line:
                     ram = line.split(":", 1)[1].strip()
             if model and chip and ram:
-                return f"{model} {chip} {ram}"
+                return f"{model}\n{chip} {ram}"
         except Exception:
             pass
+
+    elif system == "Windows":
+        cpu = gpu = None
+        try:
+            out = subprocess.run(
+                ["wmic", "cpu", "get", "name", "/format:value"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout
+            for line in out.splitlines():
+                if line.startswith("Name="):
+                    cpu = line.split("=", 1)[1].strip()
+                    break
+        except Exception:
+            pass
+        try:
+            out = subprocess.run(
+                ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout
+            _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
+            gpus = [line.split("=", 1)[1].strip()
+                    for line in out.splitlines()
+                    if line.startswith("Name=") and
+                       line.split("=", 1)[1].strip().lower() not in _skip and
+                       line.split("=", 1)[1].strip()]
+            if gpus:
+                gpu = gpus[0]
+        except Exception:
+            pass
+        if cpu and gpu:
+            return f"{cpu}\n{gpu} {ram_gb} GB"
+        elif cpu:
+            return f"{cpu}\n{ram_gb} GB"
+        elif gpu:
+            return f"{gpu} {ram_gb} GB"
+
+    elif system == "Linux":
+        cpu = gpu = None
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        cpu = line.split(":", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+        # NVIDIA first, then AMD via rocminfo, then lspci fallback
+        try:
+            out = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+            if out:
+                gpu = out.splitlines()[0].strip()
+        except Exception:
+            pass
+        if not gpu:
+            try:
+                out = subprocess.run(
+                    ["rocminfo"], capture_output=True, text=True, timeout=10,
+                ).stdout
+                for line in out.splitlines():
+                    if "Marketing Name:" in line:
+                        gpu = line.split(":", 1)[1].strip()
+                        break
+            except Exception:
+                pass
+        if not gpu:
+            try:
+                out = subprocess.run(
+                    ["lspci"], capture_output=True, text=True, timeout=10,
+                ).stdout
+                for line in out.splitlines():
+                    if any(k in line for k in ("VGA", "3D controller", "Display")):
+                        gpu = line.split(":", 2)[-1].strip()
+                        break
+            except Exception:
+                pass
+        if cpu and gpu:
+            return f"{cpu}\n{gpu} {ram_gb} GB"
+        elif cpu:
+            return f"{cpu}\n{ram_gb} GB"
+        elif gpu:
+            return f"{gpu} {ram_gb} GB"
+
     return platform.node()
 
 
