@@ -7,6 +7,7 @@
 
 .chartHeader {
   margin-bottom: 16px;
+  text-align: center;
 }
 
 .chartModelName {
@@ -21,6 +22,7 @@
 .chartTitleRow {
   display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: 10px;
   flex-wrap: wrap;
 }

@@ -143,7 +143,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
           {barConfigs.map(bc => (
-            <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} radius={[0, 3, 3, 0]}>
+            <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
               <LabelList dataKey={bc.dataKey} content={(props) => (
                 <BarLabel {...props} naKey={`_na_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
               )} />
@@ -196,7 +196,7 @@ function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
           <Tooltip content={<CustomTooltip unit="sec" xPrefix="Model" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
           {files.map((f, fi) => (
-            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} radius={[0, 3, 3, 0]}>
+            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
               <LabelList dataKey={`f${fi}`} content={(props) => (
                 <BarLabel {...props} naKey={`_na_f${fi}`} rowData={processedData[props.index]} formatter={secFormatter} />
               )} />
