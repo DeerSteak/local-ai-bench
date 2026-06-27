@@ -98,6 +98,13 @@ export const BATCH_COLORS = {
   "batch_512": "#1a7f37",
 };
 
+// Colors per image model (used in bar chart mode — matches CTX/BATCH palette)
+export const IMAGE_BAR_COLORS = {
+  "sdxl":         "#0969da",
+  "flux-schnell": "#e36209",
+  "flux-dev":     "#1a7f37",
+};
+
 // Ordered context length labels (match benchmark.py output)
 export const CTX_ORDER = ["8K", "32K", "64K"];
 

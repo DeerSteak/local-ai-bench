@@ -3,7 +3,7 @@ import {
   MODEL_COLORS, IMAGE_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, LLM_MODEL_ORDER, IMAGE_MODEL_ORDER,
-  CTX_COLORS, BATCH_COLORS,
+  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -332,10 +332,10 @@ export function buildImagesGroupedBarDataForResolution(files, resolution, enable
 
 export function buildImagesGroupedBarConfigs(files, enabledImageModels) {
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
-  return allModels.map(m => ({
+  return allModels.map((m, i) => ({
     dataKey: m,
     name: getImageLabel(files, m),
-    fill: getImageModelColor(m),
+    fill: IMAGE_BAR_COLORS[m] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
   }));
 }
 
