@@ -148,6 +148,7 @@ export default function Dashboard() {
     if (!chartRef.current || saving) return;
     setSaving(true);
     try {
+      await document.fonts.ready;
       const cards = [...chartRef.current.querySelectorAll("[data-chart-name]")];
       if (!cards.length) return;
 

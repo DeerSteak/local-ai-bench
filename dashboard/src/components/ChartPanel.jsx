@@ -125,7 +125,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
         </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 70, bottom: 8, left: 8 }}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 90, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
           <XAxis
             type="number"
@@ -156,6 +156,58 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
   );
 }
 
+function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
+  const secFormatter = v => fmt(v, "sec");
+
+  const processedData = data.map(row => {
+    const r = { ...row };
+    for (let fi = 0; fi < files.length; fi++) {
+      const k = `f${fi}`;
+      if (r[k] == null) { r[`_na_${k}`] = true; r[k] = 0; }
+    }
+    return r;
+  });
+
+  return (
+    <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+      <div className={styles.chartHeader}>
+        <div className={styles.chartModelName}>Image Generation</div>
+        <div className={styles.chartTitleRow}>
+          <span className={styles.chartTitle}>{title}</span>
+          <DirectionHint direction="lower" />
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={Math.max(280, processedData.length * files.length * 32 + 100)}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 90, bottom: 8, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
+          <XAxis
+            type="number"
+            tick={{ fill: "#57606a", fontSize: 15 }}
+            tickFormatter={secFormatter}
+            label={{ value: "Sec / image", position: "insideBottom", offset: -16, fill: "#8c959f", fontSize: 15 }}
+            height={40}
+          />
+          <YAxis
+            type="category"
+            dataKey="modelLabel"
+            tick={{ fill: "#57606a", fontSize: 14 }}
+            width={150}
+          />
+          <Tooltip content={<CustomTooltip unit="sec" xPrefix="Model" />} />
+          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} />} />
+          {files.map((f, fi) => (
+            <Bar key={fi} dataKey={`f${fi}`} name={f.hostname} fill={FILE_COLORS[fi % FILE_COLORS.length]} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]}>
+              <LabelList dataKey={`f${fi}`} content={(props) => (
+                <BarLabel {...props} naKey={`_na_f${fi}`} rowData={processedData[props.index]} formatter={secFormatter} />
+              )} />
+            </Bar>
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+      {logoSrc && <img src={logoSrc} className={styles.logoOverlay} alt="" />}
+    </div>
+  );
+}
 
 export default function ChartPanel({
   containerRef, files, section,
