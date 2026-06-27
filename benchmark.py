@@ -399,7 +399,7 @@ def detect_backend():
         return "cuda"
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
-    # ROCm
+    # ROCm (Linux)
     try:
         out = subprocess.check_output(["rocminfo"], text=True,
                                        stderr=subprocess.DEVNULL)
@@ -407,6 +407,20 @@ def detect_backend():
             return "rocm"
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
+    # AMD on Windows — rocminfo doesn't exist; detect via wmic
+    if platform.system() == "Windows":
+        try:
+            out = subprocess.check_output(
+                ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            for line in out.splitlines():
+                if line.startswith("Name="):
+                    name = line.split("=", 1)[1].strip()
+                    if name and ("AMD" in name or "Radeon" in name):
+                        return "rocm"
+        except Exception:
+            pass
     # Metal
     if platform.system() == "Darwin":
         return "metal"

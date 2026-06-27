@@ -643,7 +643,7 @@ profile = {
     "os":        f"{platform.system()} {platform.release()}",
     "arch":      platform.machine(),
     "python":    sys.version.split()[0],
-    "backend":   "cuda" if nvidia_ok else ("rocm" if rocm_ok else ("metal" if metal_ok else "cpu")),
+    "backend":   "cuda" if nvidia_ok else ("rocm" if (rocm_ok or amd_windows) else ("metal" if metal_ok else "cpu")),
     "ollama_up": ollama_up,
     "issues":    issues,
 }
