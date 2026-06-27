@@ -4,6 +4,10 @@ Cross-platform benchmarking for LLM generation, image generation, and embeddings
 Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory
 systems. Models that don't fit are skipped automatically — no configuration needed.
 
+### License
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). Free to use, fork, modify, and redistribute for non-commercial purposes. For commercial licensing, contact [beatclikr@gmail.com](mailto:beatclikr@gmail.com).
+
 ---
 
 ## Quick Start
@@ -37,27 +41,16 @@ python benchmark.py
 
 ---
 
-## Files
+## Workloads
 
-| File | Purpose |
-|---|---|
-| `setup.sh` | One-shot setup for macOS and Linux |
-| `setup.bat` | One-shot setup for Windows |
-| `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
-| `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
-| `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
-| `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |
+### LLM
 
----
-
-## Models
-
-Nine LLM models across three tiers are attempted by default. If a model doesn't
+Nine models across three tiers are attempted by default. If a model doesn't
 complete warmup within 5 minutes it is skipped with a clear message and the
 benchmark moves on. This means the same command works on any hardware — small
 GPUs naturally skip the large models without any extra flags.
 
-### Small tier (≤16GB VRAM)
+#### Small tier (≤16GB VRAM)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -66,14 +59,14 @@ GPUs naturally skip the large models without any extra flags.
 | Qwen3 14B Q4_K_M | `qwen3:14b-q4_K_M` | ~9.3 GB |
 | GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~14 GB |
 
-### Medium tier (16–32GB VRAM)
+#### Medium tier (16–32GB VRAM)
 
 | Model | Ollama tag | Size |
 |---|---|---|
 | Qwen3 14B Q8_0 | `qwen3:14b-q8_0` | ~16 GB |
 | Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~22 GB |
 
-### Large tier (32GB+ VRAM)
+#### Large tier (32GB+ VRAM)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -90,6 +83,33 @@ multi-minute TTFT at this size and is not useful. No Q3_K_M variant exists.
 
 **Notes on Llama 3.2:** Llama 3.2 tops out at 3B parameters. The 8B slot
 belongs to Llama 3.1.
+
+### Image Generation
+
+Two models are tested at 1024×1024 and 1536×1536. Each is skipped automatically
+if its checkpoint is not found in `ComfyUI/models/checkpoints/`. `setup_check.py`
+downloads both automatically.
+
+| Model | Checkpoint filename | Steps | Size | Login required |
+|---|---|---|---|---|
+| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
+| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB | Yes (free) |
+
+Flux.1-schnell requires a free HuggingFace account and license acceptance.
+`setup_check.py` checks for a token in this order:
+
+1. `HF_TOKEN` environment variable
+2. `hf.txt` file in the repo root (just the token on a single line)
+3. Interactive prompt (offers to save to `hf.txt` for future runs)
+
+Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell
+
+### Embeddings
+
+Embeddings run via Ollama (`mxbai-embed-large`) on all platforms — 5,000 sentences
+across batch sizes of 32, 128, and 512. Ollama uses the GPU on every supported
+platform (Metal, CUDA, and ROCm on Windows AMD), so results are directly comparable
+across machines.
 
 ---
 
@@ -136,15 +156,7 @@ Servers are started and stopped automatically:
 Ctrl-C and crashes are handled — a signal handler and `finally` block ensure
 ComfyUI is always shut down cleanly.
 
-### Embedding backend
-
-Embeddings run via Ollama (`mxbai-embed-large`) on all platforms, so results are
-directly comparable across machines. Ollama uses the GPU on every supported
-platform — Metal, CUDA, and ROCm on Windows AMD.
-
----
-
-## Benchmark Parameters
+### Benchmark parameters
 
 | Parameter | Value |
 |---|---|
@@ -164,57 +176,6 @@ platform — Metal, CUDA, and ROCm on Windows AMD.
 
 ---
 
-## Image Models
-
-Two image models are tested. Each is skipped automatically if its checkpoint
-is not found in `ComfyUI/models/checkpoints/`. `setup_check.py` downloads
-both automatically.
-
-| Model | Checkpoint filename | Steps | Size | Login required |
-|---|---|---|---|---|
-| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
-| Flux.1-schnell | `flux1-schnell.safetensors` | 4 | ~24 GB | Yes (free) |
-
-Flux.1-schnell requires a free HuggingFace account and license acceptance.
-`setup_check.py` checks for a token in this order:
-
-1. `HF_TOKEN` environment variable
-2. `hf.txt` file in the repo root (just the token on a single line)
-3. Interactive prompt (offers to save to `hf.txt` for future runs)
-
-Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell
-
----
-
-## Platform Notes
-
-`setup.sh` / `setup.bat` handle everything — the notes below only cover
-prerequisites the scripts can't install automatically, and platform-specific
-quirks to be aware of.
-
-### macOS
-- If you don't have Homebrew, `setup.sh` installs it automatically.
-- Before running benchmarks: plug in power, disable sleep (System Settings → Battery).
-
-### Linux (NVIDIA GPU)
-- Python 3.11 is installed via apt if missing. On non-Debian distros, install it manually first.
-
-### DGX Spark
-- Ollama is installed via snap if missing (`sudo snap install ollama`).
-- After each model run, unused memory may not free immediately. The benchmark script flushes it automatically between models, but if RAM looks full outside of a run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
-
-### Windows (NVIDIA GPU)
-- Install the CUDA Toolkit manually before running `setup.bat`: https://developer.nvidia.com/cuda-downloads
-- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
-
-### Windows (AMD GPU)
-- `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
-- Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
-- Embedding benchmarks run via Ollama (`mxbai-embed-large`) and use the GPU, same as every other platform.
-- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
-
----
-
 ## Dashboard
 
 An interactive results explorer for visualising and exporting benchmark output.
@@ -231,16 +192,6 @@ Checks for Node.js/npm, installs dependencies if needed, builds the app on first
 python launch_dashboard.py --port 8080   # use a different port
 python launch_dashboard.py --rebuild     # force a fresh npm build
 ```
-
-### Manual setup (development)
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-Open the URL Vite prints (typically `http://localhost:5173`).
 
 ### Loading results
 
@@ -282,19 +233,43 @@ hostname1_vs_hostname2_embeddings.png
 
 The **Chart Width** field (default 708 px) controls the pixel width of the capture area — increase it for wider exports.
 
----
-
-## Running the Comparison
-
-Copy result files from all machines to one machine, then:
+### Manual setup (development)
 
 ```bash
-python compare.py results_*.json
-# or explicitly:
-python compare.py results_mac.json results_dgx.json results_ryzen.json
+cd dashboard
+npm install
+npm run dev
 ```
 
-Output is color-coded: green = best, red = slowest. A `compare_results.json` is also saved.
+Open the URL Vite prints (typically `http://localhost:5173`).
+
+---
+
+## Prerequisites & Setup
+
+`setup.sh` / `setup.bat` handle most things automatically. The notes below cover
+prerequisites the scripts can't install, and platform-specific quirks to be aware of.
+
+### macOS
+- If you don't have Homebrew, `setup.sh` installs it automatically.
+- Before running benchmarks: plug in power, disable sleep (System Settings → Battery).
+
+### Linux (NVIDIA GPU)
+- Python 3.11 is installed via apt if missing. On non-Debian distros, install it manually first.
+
+### DGX Spark
+- Ollama is installed via snap if missing (`sudo snap install ollama`).
+- After each model run, unused memory may not free immediately. The benchmark script flushes it automatically between models, but if RAM looks full outside of a run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
+
+### Windows (NVIDIA GPU)
+- Install the CUDA Toolkit manually before running `setup.bat`: https://developer.nvidia.com/cuda-downloads
+- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### Windows (AMD GPU)
+- `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
+- Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
+- Embedding benchmarks run via Ollama (`mxbai-embed-large`) and use the GPU, same as every other platform.
+- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
 
@@ -332,13 +307,30 @@ python benchmark.py --small-only
 python benchmark.py --timeout 600
 ```
 
+### Running a comparison
+
+Copy result files from all machines to one machine, then:
+
+```bash
+python compare.py results_*.json
+# or explicitly:
+python compare.py results_mac.json results_dgx.json results_ryzen.json
+```
+
+Output is color-coded: green = best, red = slowest. A `compare_results.json` is also saved.
+
 ---
 
-## License
+## Files
 
-This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You are free to use, fork, modify, and redistribute it for non-commercial purposes. Commercial use is not permitted.
-
-For commercial licensing inquiries, contact [beatclikr@gmail.com](mailto:beatclikr@gmail.com).
+| File | Purpose |
+|---|---|
+| `setup.sh` | One-shot setup for macOS and Linux |
+| `setup.bat` | One-shot setup for Windows |
+| `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
+| `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
+| `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
+| `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |
 
 ---
 
@@ -349,3 +341,4 @@ For commercial licensing inquiries, contact [beatclikr@gmail.com](mailto:beatcli
 - **Linux:** Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and check it loads on GPU in `nvidia-smi`.
 - **Windows (AMD):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`mxbai-embed-large`), image generation via ROCm ComfyUI.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.
+
