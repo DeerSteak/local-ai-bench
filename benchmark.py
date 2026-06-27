@@ -3,9 +3,9 @@
 benchmark.py — Cross-platform LLM benchmark suite.
 
 Tests:
-  1. LLM generation — 9 models across small/medium/large tiers via Ollama
+  1. LLM generation — 10 models across small/medium/large tiers via Ollama
      Metrics: time-to-first-token (TTFT), tokens/sec
-     Context lengths: 2K, 8K, 32K, 64K (Qwen3 14B capped at 32K)
+     Context lengths: 2K, 8K, 32K, 64K
      Models that exceed the warmup timeout are skipped automatically
 
   2. Image generation — SDXL, Flux.1-schnell, Flux.1-dev via ComfyUI HTTP API
@@ -1131,15 +1131,15 @@ def main():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--small-only", action="store_true",
-        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B (Q3_K_M, Q4_K_M), Qwen3 14B Q4_K_M, GPT-OSS 20B (MXFP4)",
+        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
     )
     size_group.add_argument(
         "--medium-only", action="store_true",
-        help="Run only medium-tier models (16–32GB VRAM): Qwen3 14B Q8_0, Qwen3.6 35B-A3B",
+        help="Run only medium-tier models (16–32GB VRAM): Gemma 4 27B, DeepSeek-R1 32B, Qwen3.6 35B-A3B",
     )
     size_group.add_argument(
         "--large-only", action="store_true",
-        help="Run only large-tier models (32GB+ VRAM): Llama 3.1 70B (Q3_K_M, Q4_K_M), GPT-OSS 120B (MXFP4)",
+        help="Run only large-tier models (42GB+ VRAM): Llama 3.3 70B Q4_K_M, DeepSeek-R1 70B, GPT-OSS 120B (MXFP4)",
     )
     args = parser.parse_args()
 
