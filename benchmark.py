@@ -213,6 +213,11 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
 
     log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
 
+    env = os.environ.copy()
+    # ROCm fork on Windows: Triton JIT compilation fails at startup; interpreter mode works
+    if (comfyui_dir / "python_env" / "python.exe").exists():
+        env["TRITON_INTERPRET"] = "1"
+
     # Capture stderr to a temp file so we can show it if ComfyUI exits unexpectedly
     stderr_log = Path(tempfile.mktemp(suffix="-comfyui-stderr.log"))
     try:
@@ -222,6 +227,7 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
             cwd=str(comfyui_dir),
             stdout=subprocess.DEVNULL,
             stderr=stderr_fh,
+            env=env,
         )
         stderr_fh.close()
         _managed_procs.append(proc)
