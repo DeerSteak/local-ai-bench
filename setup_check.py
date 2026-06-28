@@ -541,6 +541,9 @@ if COMFYUI_DIR.exists():
                 )
                 if result.returncode == 0:
                     return True
+                stderr = (result.stderr or result.stdout or "").strip()
+                if stderr:
+                    warn(f"{cli} error: {stderr}")
                 break
         # Python API fallback
         try:
