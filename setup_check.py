@@ -525,7 +525,7 @@ if COMFYUI_DIR.exists():
     CLIP_DIR = COMFYUI_DIR / "models" / "clip"
     VAE_DIR  = COMFYUI_DIR / "models" / "vae"
 
-    def hf_download(repo, filename, token=None, dest_dir=None):
+    def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
         if dest_dir is None:
             dest_dir = CHECKPOINTS
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -533,6 +533,7 @@ if COMFYUI_DIR.exists():
         if token:
             env["HF_TOKEN"] = token
         # Try `hf` first, fall back to `huggingface-cli`, then Python API
+        success = False
         for cli in ["hf", "huggingface-cli"]:
             if shutil.which(cli):
                 result = subprocess.run(
@@ -540,20 +541,31 @@ if COMFYUI_DIR.exists():
                     env=env, capture_output=True, text=True
                 )
                 if result.returncode == 0:
-                    return True
-                stderr = (result.stderr or result.stdout or "").strip()
-                if stderr:
-                    warn(f"{cli} error: {stderr}")
+                    success = True
+                else:
+                    stderr = (result.stderr or result.stdout or "").strip()
+                    if stderr:
+                        warn(f"{cli} error: {stderr}")
                 break
-        # Python API fallback
-        try:
-            from huggingface_hub import hf_hub_download  # type: ignore
-            hf_hub_download(repo_id=repo, filename=filename,
-                            local_dir=str(dest_dir), token=token)
-            return True
-        except Exception as e:
-            warn(f"Python API download failed: {e}")
-            return False
+        if not success:
+            try:
+                from huggingface_hub import hf_hub_download  # type: ignore
+                hf_hub_download(repo_id=repo, filename=filename,
+                                local_dir=str(dest_dir), token=token)
+                success = True
+            except Exception as e:
+                warn(f"Python API download failed: {e}")
+        # If the remote file lives in a subdirectory, move it flat into dest_dir
+        if success and save_as:
+            src = dest_dir / filename
+            dst = dest_dir / save_as
+            if src.exists() and src != dst:
+                shutil.move(str(src), str(dst))
+                try:
+                    src.parent.rmdir()
+                except OSError:
+                    pass
+        return success
 
     # ── Download missing checkpoints ───────────────────────────────────────────
     missing = [n for n in IMAGE_CHECKPOINTS if n not in found_ckpts]
@@ -601,23 +613,45 @@ if COMFYUI_DIR.exists():
             else:
                 info("Skipping Flux.1-dev — no token provided")
 
-    # Flux support files: T5-XXL + CLIP-L (public) and VAE (gated, same token as schnell)
-    flux_present = any("flux" in c for c in found_ckpts)
-    if flux_present:
-        clip_files = [
+    # Text encoders shared by Flux and SD3.5 Large: T5-XXL + CLIP-L (public)
+    sd35_present  = any("sd3.5" in c for c in found_ckpts)
+    flux_present  = any("flux"  in c for c in found_ckpts)
+
+    if flux_present or sd35_present:
+        shared_clip_files = [
             ("t5xxl_fp16.safetensors", CLIP_DIR),
             ("clip_l.safetensors",     CLIP_DIR),
         ]
-        for fname, dest in clip_files:
+        for fname, dest in shared_clip_files:
             if not (dest / fname).exists():
                 info(f"Downloading {fname} (public, no token required) ...")
                 if hf_download("comfyanonymous/flux_text_encoders", fname, dest_dir=dest):
                     ok(f"{fname} downloaded")
                 else:
-                    warn(f"{fname} download failed — Flux image generation will error")
+                    warn(f"{fname} download failed — image generation will error")
             else:
                 ok(f"{fname} already present")
 
+    # SD3.5 Large also needs CLIP-G (gated, same license as checkpoint)
+    if sd35_present:
+        clip_g = CLIP_DIR / "clip_g.safetensors"
+        if not clip_g.exists():
+            info("Downloading clip_g.safetensors for SD3.5 Large (requires HuggingFace token) ...")
+            token = load_token()
+            if token:
+                if hf_download("stabilityai/stable-diffusion-3.5-large",
+                               "text_encoders/clip_g.safetensors", token=token,
+                               dest_dir=CLIP_DIR, save_as="clip_g.safetensors"):
+                    ok("clip_g.safetensors downloaded")
+                else:
+                    warn("clip_g.safetensors download failed — SD3.5 image generation will error")
+                    info("Accept license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
+            else:
+                info("Skipping clip_g.safetensors — no token provided")
+        else:
+            ok("clip_g.safetensors already present")
+
+    if flux_present:
         vae_file = VAE_DIR / "ae.safetensors"
         if not vae_file.exists():
             info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
