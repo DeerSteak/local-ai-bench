@@ -479,6 +479,18 @@ def download_comfyui_portable(asset_filter, label):
                 return False
         seven_zip = str(szr)
 
+    def _flatten_portable():
+        """Move ComfyUI_windows_portable/* up to SCRIPT_DIR if the wrapper folder exists."""
+        wrapper = SCRIPT_DIR / "ComfyUI_windows_portable"
+        if not wrapper.is_dir():
+            return
+        for child in wrapper.iterdir():
+            dest = SCRIPT_DIR / child.name
+            if dest.exists():
+                shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
+            shutil.move(str(child), str(dest))
+        wrapper.rmdir()
+
     if seven_zip:
         try:
             result = subprocess.run(
@@ -490,6 +502,7 @@ def download_comfyui_portable(asset_filter, label):
                 tmp.unlink(missing_ok=True)
                 return False
             tmp.unlink()
+            _flatten_portable()
             ok(f"ComfyUI {tag} {label} portable extracted")
             return True
         except Exception as e:
@@ -503,6 +516,7 @@ def download_comfyui_portable(asset_filter, label):
             with py7zr.SevenZipFile(str(tmp), mode="r") as z:
                 z.extractall(path=str(SCRIPT_DIR))
             tmp.unlink()
+            _flatten_portable()
             ok(f"ComfyUI {tag} {label} portable extracted")
             return True
         except Exception as e:
