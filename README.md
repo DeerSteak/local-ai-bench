@@ -90,9 +90,9 @@ most recent 70B instruction model).
 
 ### Image Generation
 
-Two models are tested at 1024×1024 and 1536×1536. Each is skipped automatically
+Three models are tested at 1024×1024 and 1536×1536. Each is skipped automatically
 if its checkpoint is not found in `ComfyUI/models/checkpoints/`. `setup_check.py`
-downloads both automatically.
+downloads them automatically.
 
 | Model | Checkpoint filename | Steps | Size | Login required |
 |---|---|---|---|---|
@@ -270,13 +270,15 @@ prerequisites the scripts can't install, and platform-specific quirks to be awar
 - After each model run, unused memory may not free immediately. The benchmark script flushes it automatically between models, but if RAM looks full outside of a run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
 ### Windows (NVIDIA GPU)
-- Install the CUDA Toolkit manually before running `setup.bat`: https://developer.nvidia.com/cuda-downloads
+- `setup.bat` detects the NVIDIA GPU and automatically downloads the official ComfyUI NVIDIA portable build (CUDA 12.6, bundled Python environment). No manual CUDA Toolkit install required.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ### Windows (AMD GPU)
-- `setup_check.py` detects AMD/Radeon GPUs via `wmic` and automatically clones [comfyui-rocm](https://github.com/patientx-cfz/comfyui-rocm) instead of standard ComfyUI, then runs its `install.bat` to set up a bundled ROCm Python environment. This can take several minutes on first run — it downloads PyTorch with ROCm support.
-- Image generation runs on the AMD GPU via the ROCm ComfyUI fork.
-- Embedding benchmarks run via Ollama (`nomic-embed-text`) and use the GPU, same as every other platform.
+- `setup.bat` detects AMD/Radeon GPUs and automatically downloads the official ComfyUI AMD portable build (ROCm 7.1.1, bundled Python environment). No manual ROCm install required.
+- If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### Windows (Intel Arc GPU)
+- `setup.bat` detects Intel Arc GPUs and automatically downloads the official ComfyUI Intel portable build (bundled Python environment with XPU support).
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
@@ -347,6 +349,6 @@ Output is color-coded: green = best, red = slowest. A `compare_results.json` is 
 - **All platforms:** Close other apps before running — GPU memory contention affects results.
 - **Mac:** Watch Activity Monitor → Memory during 70B runs. Both large-tier models need ~42–43 GB — if memory pressure turns red and TPS drops between runs, the system is swapping. Use `--timeout 600` to give more time, or stick to `--medium-only` if memory is tight.
 - **Linux:** Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and check it loads on GPU in `nvidia-smi`.
-- **Windows (AMD):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`nomic-embed-text`), image generation via ROCm ComfyUI.
+- **Windows (AMD/Intel):** All three benchmarks use the GPU — LLM via Ollama, embeddings via Ollama (`nomic-embed-text`), image generation via the ComfyUI portable build.
 - **Expect 2–4 hours** for a full run on the Mac; faster on the Spark and Ryzen.
 

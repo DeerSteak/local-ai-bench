@@ -3,3 +3,4 @@ requests
 numpy
 tqdm
 huggingface_hub[cli]
+py7zr

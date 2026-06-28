@@ -85,11 +85,12 @@ elif os_name == "Linux":
 
 elif os_name == "Windows":
     try:
-        result = subprocess.check_output(
-            ["wmic", "computersystem", "get", "TotalPhysicalMemory"],
-            text=True
-        ).strip().splitlines()
-        mem_bytes = int([r for r in result if r.strip().isdigit()][0])
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        mem_bytes = int(out.splitlines()[-1].strip())
         print(f"  RAM:      {mem_bytes // (1024**3)} GB")
     except Exception:
         pass
@@ -142,57 +143,46 @@ def check_metal():
         pass
     return False
 
-def check_amd_windows():
-    """Detect AMD/Radeon GPU on Windows via wmic or PowerShell (no ROCm tooling required)."""
+def check_windows_gpu():
+    """Detect GPU vendor on Windows via PowerShell. Returns 'amd', 'intel', or None."""
     if platform.system() != "Windows":
-        return False
+        return None
 
-    def _amd_name(name):
-        return name and ("AMD" in name or "Radeon" in name)
-
-    # wmic — available on Windows 10 and older Windows 11
-    try:
-        out = subprocess.check_output(
-            ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
-            text=True, stderr=subprocess.DEVNULL,
-        )
-        for line in out.splitlines():
-            if line.startswith("Name="):
-                name = line.split("=", 1)[1].strip()
-                if _amd_name(name):
-                    print(f"  GPU:     {name}")
-                    return True
-    except Exception:
-        pass
-
-    # PowerShell Get-CimInstance — fallback for Windows 11 22H2+ where wmic was removed
+    names = []
     try:
         out = subprocess.check_output(
             ["powershell", "-NoProfile", "-Command",
              "(Get-CimInstance Win32_VideoController).Name"],
             text=True, stderr=subprocess.DEVNULL,
         )
-        for name in out.splitlines():
-            name = name.strip()
-            if _amd_name(name):
-                print(f"  GPU:     {name}")
-                return True
+        names = [n.strip() for n in out.splitlines() if n.strip()]
     except Exception:
         pass
 
-    return False
+    for name in names:
+        if "AMD" in name or "Radeon" in name:
+            print(f"  GPU:     {name}")
+            return "amd"
+        if "Intel" in name and "Arc" in name:
+            print(f"  GPU:     {name}")
+            return "intel"
+
+    return None
 
 nvidia_ok     = check_nvidia()
 rocm_ok       = False
 metal_ok      = False
 amd_windows   = False
+intel_windows = False
 
 if not nvidia_ok:
     rocm_ok = check_rocm()
 if not nvidia_ok and not rocm_ok:
     metal_ok = check_metal()
 if not nvidia_ok and os_name == "Windows":
-    amd_windows = check_amd_windows()
+    _win_vendor   = check_windows_gpu()
+    amd_windows   = _win_vendor == "amd"
+    intel_windows = _win_vendor == "intel"
 
 if nvidia_ok:
     ok("CUDA / Nvidia GPU detected")
@@ -200,6 +190,8 @@ elif rocm_ok:
     ok("ROCm / AMD GPU detected")
 elif amd_windows:
     ok("AMD/Radeon GPU detected on Windows")
+elif intel_windows:
+    ok("Intel Arc GPU detected on Windows")
 elif metal_ok:
     ok("Apple Metal detected")
 else:
@@ -421,7 +413,6 @@ except Exception as e:
 
 section("ComfyUI")
 
-SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 IMAGE_CHECKPOINTS = [
     "sd_xl_base_1.0.safetensors",
@@ -430,58 +421,94 @@ IMAGE_CHECKPOINTS = [
 ]
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
+PORTABLE_PYTHON = SCRIPT_DIR / "python_embeded" / "python.exe"
+nvidia_windows  = nvidia_ok and os_name == "Windows"
+
+def download_comfyui_portable(asset_filter, label):
+    """Download and extract an official ComfyUI Windows portable build."""
+    import urllib.request
+    import json as _json
+    info("Fetching latest ComfyUI release info ...")
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/Comfy-Org/ComfyUI/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            release = _json.load(r)
+        asset = next(
+            (a for a in release["assets"]
+             if asset_filter in a["name"].lower() and a["name"].endswith(".7z")),
+            None,
+        )
+        if not asset:
+            fail(f"No {label} portable build found in latest ComfyUI release")
+            return False
+        url  = asset["browser_download_url"]
+        size = asset["size"] // (1024 ** 2)
+        tag  = release["tag_name"]
+    except Exception as e:
+        fail(f"Could not fetch ComfyUI release info: {e}")
+        return False
+
+    info(f"Downloading ComfyUI {tag} {label} portable ({size} MB) — this may take a while ...")
+    tmp = SCRIPT_DIR / asset["name"]
+    try:
+        urllib.request.urlretrieve(url, str(tmp))
+    except Exception as e:
+        fail(f"Download failed: {e}")
+        return False
+
+    info(f"Extracting {asset['name']} ...")
+    try:
+        import py7zr
+        with py7zr.SevenZipFile(str(tmp), mode="r") as z:
+            z.extractall(path=str(SCRIPT_DIR))
+        tmp.unlink()
+        ok(f"ComfyUI {tag} {label} portable extracted")
+        return True
+    except Exception as e:
+        fail(f"Extraction failed: {e}")
+        return False
+
 if not COMFYUI_DIR.exists():
-    if amd_windows and not nvidia_ok:
-        comfyui_repo = "https://github.com/patientx-cfz/comfyui-rocm"
-        info("AMD GPU detected on Windows — cloning ROCm fork ...")
+    if amd_windows:
+        info("AMD GPU detected on Windows — downloading official ComfyUI AMD portable build ...")
+        if not download_comfyui_portable("amd", "AMD"):
+            issues.append("Download ComfyUI AMD portable from https://github.com/Comfy-Org/ComfyUI/releases")
+    elif nvidia_windows:
+        info("NVIDIA GPU detected on Windows — downloading official ComfyUI NVIDIA portable build ...")
+        if not download_comfyui_portable("nvidia_cu126", "NVIDIA"):
+            issues.append("Download ComfyUI NVIDIA portable from https://github.com/Comfy-Org/ComfyUI/releases")
+    elif intel_windows:
+        info("Intel Arc GPU detected on Windows — downloading official ComfyUI Intel portable build ...")
+        if not download_comfyui_portable("intel", "Intel"):
+            issues.append("Download ComfyUI Intel portable from https://github.com/Comfy-Org/ComfyUI/releases")
     else:
         comfyui_repo = "https://github.com/comfyanonymous/ComfyUI"
-        info("Cloning ComfyUI ...")
-    info(f"Repo: {comfyui_repo}")
-    result = subprocess.run(
-        ["git", "clone", comfyui_repo, str(COMFYUI_DIR)]
-    )
-    if result.returncode == 0:
-        ok(f"ComfyUI cloned to {COMFYUI_DIR}")
-    else:
-        fail("ComfyUI clone failed — check your internet connection and git install")
-        issues.append(f"git clone {comfyui_repo}")
-else:
-    if amd_windows and not nvidia_ok:
-        install_bat = COMFYUI_DIR / "install.bat"
-        if not install_bat.exists():
-            warn(f"ComfyUI found at {COMFYUI_DIR} but this looks like standard ComfyUI, not the ROCm fork")
-            warn("AMD GPU on Windows requires the ROCm fork: https://github.com/patientx-cfz/comfyui-rocm")
-            warn(f"Delete {COMFYUI_DIR} and re-run setup to clone the correct repo")
-            issues.append(f"Delete {COMFYUI_DIR} and re-run setup (AMD GPU requires the ROCm fork)")
+        info(f"Cloning ComfyUI from {comfyui_repo} ...")
+        result = subprocess.run(["git", "clone", comfyui_repo, str(COMFYUI_DIR)])
+        if result.returncode == 0:
+            ok(f"ComfyUI cloned to {COMFYUI_DIR}")
         else:
-            ok(f"ComfyUI found at {COMFYUI_DIR} (ROCm fork)")
+            fail("ComfyUI clone failed — check your internet connection and git install")
+            issues.append(f"git clone {comfyui_repo}")
+else:
+    if amd_windows or nvidia_windows or intel_windows:
+        gpu_label = "AMD" if amd_windows else ("Intel" if intel_windows else "NVIDIA")
+        if not PORTABLE_PYTHON.exists():
+            warn(f"ComfyUI found at {COMFYUI_DIR} but python_embeded is missing")
+            warn(f"Delete {COMFYUI_DIR} and re-run setup to download the {gpu_label} portable build")
+            issues.append(f"Delete {COMFYUI_DIR} and re-run setup ({gpu_label} portable build required)")
+        else:
+            ok(f"ComfyUI found at {COMFYUI_DIR} ({gpu_label} portable)")
     else:
         ok(f"ComfyUI found at {COMFYUI_DIR}")
 
-if COMFYUI_DIR.exists() and amd_windows and not nvidia_ok:
-    rocm_embedded_python = COMFYUI_DIR / "python_env" / "python.exe"
-    if not rocm_embedded_python.exists():
-        info("Running install.bat for ROCm ComfyUI (this may take several minutes) ...")
-        result = subprocess.run(
-            ["install.bat"],
-            cwd=str(COMFYUI_DIR),
-            shell=True,
-        )
-        if result.returncode == 0:
-            ok("ROCm ComfyUI install.bat completed")
-        else:
-            fail("install.bat failed — check output above")
-            issues.append(f"Run install.bat manually in {COMFYUI_DIR}")
-    else:
-        ok("ROCm ComfyUI already installed (python_env found)")
-
 if COMFYUI_DIR.exists():
-    rocm_embedded_python = COMFYUI_DIR / "python_env" / "python.exe"
-
     req_file = COMFYUI_DIR / "requirements.txt"
-    if rocm_embedded_python.exists():
-        ok("ROCm fork detected — skipping requirements install (uses bundled python_env)")
+    if PORTABLE_PYTHON.exists():
+        ok("Windows portable build detected — skipping requirements install (uses bundled python_embeded)")
     elif req_file.exists():
         # Check if aiohttp (a ComfyUI dep) is already installed
         already_installed = subprocess.run(
@@ -514,21 +541,24 @@ if COMFYUI_DIR.exists():
                 ok(f"Checkpoint found: {name} ({size_gb:.1f} GB)")
                 found_ckpts.append(name)
 
+    _hf_token_cache = [None]
+
     def load_token():
-        """Load HF token from hf.txt, env var, or prompt the user."""
-        # 1. Environment variable
+        """Load HF token from env var, hf.txt, or prompt — cached after first load."""
+        if _hf_token_cache[0] is not None:
+            return _hf_token_cache[0]
         token = os.environ.get("HF_TOKEN", "").strip()
         if token:
             ok("HuggingFace token loaded from HF_TOKEN env var")
+            _hf_token_cache[0] = token
             return token
-        # 2. hf.txt file
         hf_txt = SCRIPT_DIR / "hf.txt"
         if hf_txt.exists():
             token = hf_txt.read_text().strip()
             if token:
-                ok(f"HuggingFace token loaded from hf.txt")
+                ok("HuggingFace token loaded from hf.txt")
+                _hf_token_cache[0] = token
                 return token
-        # 3. Prompt
         print()
         print(f"  {YELLOW}SD3.5 Large and Flux.1-dev require a free HuggingFace account.{RESET}")
         print(f"  1. Create an account at https://huggingface.co")
@@ -551,6 +581,7 @@ if COMFYUI_DIR.exists():
                     ok("Token saved to hf.txt")
             except (EOFError, KeyboardInterrupt):
                 pass
+        _hf_token_cache[0] = token or ""
         return token
 
     CLIP_DIR = COMFYUI_DIR / "models" / "clip"
@@ -706,11 +737,7 @@ if COMFYUI_DIR.exists():
         issues.append("Download at least one image checkpoint into ComfyUI/models/checkpoints/")
 
 
-# ── 10. Container check (DGX Spark / Linux) ───────────────────────────────────
-
-
-
-# ── 11. Summary ────────────────────────────────────────────────────────────────
+# ── 10. Summary ────────────────────────────────────────────────────────────────
 
 section("Summary")
 
@@ -729,7 +756,7 @@ profile = {
     "os":        f"{platform.system()} {platform.release()}",
     "arch":      platform.machine(),
     "python":    sys.version.split()[0],
-    "backend":   "cuda" if nvidia_ok else ("rocm" if (rocm_ok or amd_windows) else ("metal" if metal_ok else "cpu")),
+    "backend":   "cuda" if nvidia_ok else ("rocm" if (rocm_ok or amd_windows) else ("xpu" if intel_windows else ("metal" if metal_ok else "cpu"))),
     "ollama_up": ollama_up,
     "issues":    issues,
 }

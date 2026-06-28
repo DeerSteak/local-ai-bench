@@ -8,7 +8,7 @@ Tests:
      Context lengths: 2K, 8K, 32K, 64K
      Models that exceed the warmup timeout are skipped automatically
 
-  2. Image generation — SDXL, Flux.1-schnell, Flux.1-dev via ComfyUI HTTP API
+  2. Image generation — SDXL, SD3.5 Large, Flux.1-dev via ComfyUI HTTP API
      Metrics: seconds/image at 1024×1024 and 1536×1536
      (models skipped automatically if checkpoint not found)
 
@@ -39,7 +39,7 @@ import tempfile
 import time
 import threading
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
@@ -157,8 +157,9 @@ def find_comfyui_python(comfyui_dir: Path) -> str:
     Prefers a venv inside comfyui_dir, then the venv running this script,
     then whatever 'python' resolves to.
     """
-    # venv inside ComfyUI dir (python_env = ROCm fork's embedded Python)
+    # Official AMD portable build: python_embeded sits next to ComfyUI/, not inside it
     for candidate in [
+        comfyui_dir.parent / "python_embeded" / "python.exe",
         comfyui_dir / "python_env" / "python.exe",
         comfyui_dir / "venv" / "bin" / "python",
         comfyui_dir / ".venv" / "bin" / "python",
@@ -209,22 +210,31 @@ def ensure_comfyui(comfyui_dir: Path) -> bool:
 
     python_exe = find_comfyui_python(comfyui_dir)
 
-    cmd = [python_exe, str(main_py), "--listen"]
+    # Windows portable builds: python_embeded is a sibling of ComfyUI/, cwd must be the parent
+    portable_windows = (comfyui_dir.parent / "python_embeded" / "python.exe").exists()
+    if portable_windows:
+        cmd = [python_exe, "-s", str(main_py), "--windows-standalone-build", "--listen"]
+        launch_cwd = str(comfyui_dir.parent)
+    else:
+        cmd = [python_exe, str(main_py), "--listen"]
+        launch_cwd = str(comfyui_dir)
 
     log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
 
     env = os.environ.copy()
-    # ROCm fork on Windows: Triton JIT compilation fails at startup; interpreter mode works
-    if (comfyui_dir / "python_env" / "python.exe").exists():
+    # AMD on Windows: Triton JIT compilation fails; interpreter mode works around it
+    if portable_windows and detect_backend() == "rocm":
         env["TRITON_INTERPRET"] = "1"
 
     # Capture stderr to a temp file so we can show it if ComfyUI exits unexpectedly
-    stderr_log = Path(tempfile.mktemp(suffix="-comfyui-stderr.log"))
     try:
-        stderr_fh = open(stderr_log, "w")
+        stderr_fh = tempfile.NamedTemporaryFile(
+            mode="w", suffix="-comfyui-stderr.log", delete=False
+        )
+        stderr_log = Path(stderr_fh.name)
         proc = subprocess.Popen(
             cmd,
-            cwd=str(comfyui_dir),
+            cwd=launch_cwd,
             stdout=subprocess.DEVNULL,
             stderr=stderr_fh,
             env=env,
@@ -300,32 +310,26 @@ def _get_hostname():
 
     elif system == "Windows":
         cpu = gpu = None
-        try:
-            out = subprocess.run(
-                ["wmic", "cpu", "get", "name", "/format:value"],
-                capture_output=True, text=True, timeout=10,
-            ).stdout
-            for line in out.splitlines():
-                if line.startswith("Name="):
-                    cpu = line.split("=", 1)[1].strip()
-                    break
-        except Exception:
-            pass
-        try:
-            out = subprocess.run(
-                ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
-                capture_output=True, text=True, timeout=10,
-            ).stdout
-            _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
-            gpus = [line.split("=", 1)[1].strip()
-                    for line in out.splitlines()
-                    if line.startswith("Name=") and
-                       line.split("=", 1)[1].strip().lower() not in _skip and
-                       line.split("=", 1)[1].strip()]
-            if gpus:
-                gpu = gpus[0]
-        except Exception:
-            pass
+
+        def _ps_names(cim_class):
+            try:
+                out = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     f"(Get-CimInstance {cim_class}).Name"],
+                    capture_output=True, text=True, timeout=10,
+                ).stdout
+                return [n.strip() for n in out.splitlines() if n.strip()]
+            except Exception:
+                return []
+
+        cpu_names = _ps_names("Win32_Processor")
+        if cpu_names:
+            cpu = cpu_names[0]
+
+        _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
+        gpus = [n for n in _ps_names("Win32_VideoController") if n and n.lower() not in _skip]
+        if gpus:
+            gpu = gpus[0]
         if cpu and gpu:
             return f"{cpu}\n{gpu} {ram_gb} GB"
         elif cpu:
@@ -393,7 +397,7 @@ def build_profile():
         "arch":       platform.machine(),
         "python":     sys.version.split()[0],
         "ram_gb":     round(system_ram_gb(), 1),
-        "timestamp":  datetime.utcnow().isoformat() + "Z",
+        "timestamp":  datetime.now(timezone.utc).isoformat(),
         "backend":    detect_backend(),
     }
     return profile
@@ -413,18 +417,17 @@ def detect_backend():
             return "rocm"
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
-    # AMD on Windows — rocminfo doesn't exist; detect via wmic
+    # AMD on Windows — rocminfo doesn't exist; detect via PowerShell
     if platform.system() == "Windows":
         try:
             out = subprocess.check_output(
-                ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
+                ["powershell", "-NoProfile", "-Command",
+                 "(Get-CimInstance Win32_VideoController).Name"],
                 text=True, stderr=subprocess.DEVNULL,
             )
-            for line in out.splitlines():
-                if line.startswith("Name="):
-                    name = line.split("=", 1)[1].strip()
-                    if name and ("AMD" in name or "Radeon" in name):
-                        return "rocm"
+            names = [n.strip() for n in out.splitlines() if n.strip()]
+            if any("AMD" in n or "Radeon" in n for n in names):
+                return "rocm"
         except Exception:
             pass
     # Metal
