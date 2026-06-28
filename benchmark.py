@@ -876,25 +876,33 @@ def build_sd3_workflow(checkpoint, width, height, steps, cfg,
     """
     SD3.5 Large txt2img workflow for ComfyUI.
 
-    sd3.5_large.safetensors is self-contained (VAE and triple-CLIP bundled), so
-    CheckpointLoaderSimple provides all three outputs. SD3 uses 16-channel latents
-    — EmptySD3LatentImage is required; EmptyLatentImage (4-channel) would fail.
+    sd3.5_large.safetensors contains the UNet and VAE but NOT the text encoders.
+    clip_l.safetensors, clip_g.safetensors, and t5xxl_fp16.safetensors must be
+    present in ComfyUI/models/clip/ (downloaded by setup_check.py).
+    SD3 uses 16-channel latents — EmptySD3LatentImage is required.
     """
     return {
         "1": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": checkpoint}},
-        "2": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["1", 1]}},
+        "2": {"class_type": "TripleCLIPLoader",
+              "inputs": {
+                  "clip_name1": "clip_l.safetensors",
+                  "clip_name2": "clip_g.safetensors",
+                  "clip_name3": "t5xxl_fp16.safetensors",
+                  "type": "sd3",
+              }},
         "3": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": "", "clip": ["1", 1]}},
-        "4": {"class_type": "EmptySD3LatentImage",
+              "inputs": {"text": prompt, "clip": ["2", 0]}},
+        "4": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": "", "clip": ["2", 0]}},
+        "5": {"class_type": "EmptySD3LatentImage",
               "inputs": {"width": width, "height": height, "batch_size": 1}},
-        "5": {"class_type": "KSampler",
+        "6": {"class_type": "KSampler",
               "inputs": {
                   "model":          ["1", 0],
-                  "positive":       ["2", 0],
-                  "negative":       ["3", 0],
-                  "latent_image":   ["4", 0],
+                  "positive":       ["3", 0],
+                  "negative":       ["4", 0],
+                  "latent_image":   ["5", 0],
                   "seed":           seed,
                   "steps":          steps,
                   "cfg":            cfg,
@@ -902,10 +910,10 @@ def build_sd3_workflow(checkpoint, width, height, steps, cfg,
                   "scheduler":      scheduler,
                   "denoise":        1.0,
               }},
-        "6": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
-        "7": {"class_type": "SaveImage",
-              "inputs": {"images": ["6", 0], "filename_prefix": filename_prefix}},
+        "7": {"class_type": "VAEDecode",
+              "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+        "8": {"class_type": "SaveImage",
+              "inputs": {"images": ["7", 0], "filename_prefix": filename_prefix}},
     }
 
 def build_sdxl_workflow(checkpoint, width, height, steps, cfg,
