@@ -143,9 +143,14 @@ def check_metal():
     return False
 
 def check_amd_windows():
-    """Detect AMD/Radeon GPU on Windows via wmic (no ROCm tooling required)."""
+    """Detect AMD/Radeon GPU on Windows via wmic or PowerShell (no ROCm tooling required)."""
     if platform.system() != "Windows":
         return False
+
+    def _amd_name(name):
+        return name and ("AMD" in name or "Radeon" in name)
+
+    # wmic — available on Windows 10 and older Windows 11
     try:
         out = subprocess.check_output(
             ["wmic", "path", "win32_VideoController", "get", "name", "/format:value"],
@@ -154,11 +159,27 @@ def check_amd_windows():
         for line in out.splitlines():
             if line.startswith("Name="):
                 name = line.split("=", 1)[1].strip()
-                if name and ("AMD" in name or "Radeon" in name):
+                if _amd_name(name):
                     print(f"  GPU:     {name}")
                     return True
     except Exception:
         pass
+
+    # PowerShell Get-CimInstance — fallback for Windows 11 22H2+ where wmic was removed
+    try:
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_VideoController).Name"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        for name in out.splitlines():
+            name = name.strip()
+            if _amd_name(name):
+                print(f"  GPU:     {name}")
+                return True
+    except Exception:
+        pass
+
     return False
 
 nvidia_ok     = check_nvidia()
