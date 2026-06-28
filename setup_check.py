@@ -360,6 +360,26 @@ else:
         fail("Ollama binary not found — cannot start server")
         issues.append("Install Ollama from https://ollama.com/download")
 
+# ── 6. Disk space ─────────────────────────────────────────────────────────────
+
+section("Disk Space")
+try:
+    check_path = "C:\\" if os_name == "Windows" else "/"
+    total, used, free = shutil.disk_usage(check_path)
+    free_gb  = free  // (1024**3)
+    total_gb = total // (1024**3)
+    print(f"  Free:  {free_gb} GB / {total_gb} GB total")
+    if free_gb >= 280:
+        ok("Sufficient free space for all models")
+    elif free_gb >= 60:
+        warn(f"Only {free_gb} GB free — enough for small-tier models only")
+        warn("Large-tier models need ~250 GB total; run with --small-only if disk is limited")
+    else:
+        fail(f"Only {free_gb} GB free — may not fit even small models (~57 GB total)")
+        issues.append("Free up at least 60 GB of disk space for small-tier models")
+except Exception as e:
+    warn(f"Could not check disk space: {e}")
+
 # ── 7. Ollama models — pull if missing ────────────────────────────────────────
 
 section("Ollama Models")
@@ -389,27 +409,7 @@ else:
         warn(f"Cannot check {m['tag']} — Ollama server not running")
         issues.append(f"ollama pull {m['tag']}  (once Ollama is running)")
 
-# ── 8. Disk space ─────────────────────────────────────────────────────────────
-
-section("Disk Space")
-try:
-    check_path = "C:\\" if os_name == "Windows" else "/"
-    total, used, free = shutil.disk_usage(check_path)
-    free_gb  = free  // (1024**3)
-    total_gb = total // (1024**3)
-    print(f"  Free:  {free_gb} GB / {total_gb} GB total")
-    if free_gb >= 280:
-        ok("Sufficient free space for all models")
-    elif free_gb >= 60:
-        warn(f"Only {free_gb} GB free — enough for small-tier models only")
-        warn("Large-tier models need ~250 GB total; run with --small-only if disk is limited")
-    else:
-        fail(f"Only {free_gb} GB free — may not fit even small models (~57 GB total)")
-        issues.append("Free up at least 60 GB of disk space for small-tier models")
-except Exception as e:
-    warn(f"Could not check disk space: {e}")
-
-# ── 9. ComfyUI — clone if missing, pip install requirements ───────────────────
+# ── 8. ComfyUI — clone if missing, pip install requirements ───────────────────
 
 section("ComfyUI")
 
@@ -461,16 +461,54 @@ def download_comfyui_portable(asset_filter, label):
         return False
 
     info(f"Extracting {asset['name']} ...")
-    try:
-        import py7zr
-        with py7zr.SevenZipFile(str(tmp), mode="r") as z:
-            z.extractall(path=str(SCRIPT_DIR))
-        tmp.unlink()
-        ok(f"ComfyUI {tag} {label} portable extracted")
-        return True
-    except Exception as e:
-        fail(f"Extraction failed: {e}")
-        return False
+    # py7zr doesn't support BCJ2 (used in ComfyUI portables); use a real 7-zip binary.
+    seven_zip = (shutil.which("7z") or shutil.which("7za") or shutil.which("7zr"))
+    if not seven_zip and os_name == "Windows":
+        szr = SCRIPT_DIR / "7zr.exe"
+        if not szr.exists():
+            info("Downloading 7zr.exe for extraction ...")
+            try:
+                urllib.request.urlretrieve(
+                    "https://github.com/ip7z/7zip/releases/download/26.02/7zr.exe",
+                    str(szr),
+                )
+                ok("7zr.exe downloaded")
+            except Exception as e:
+                fail(f"Could not download 7zr.exe: {e}")
+                tmp.unlink(missing_ok=True)
+                return False
+        seven_zip = str(szr)
+
+    if seven_zip:
+        try:
+            result = subprocess.run(
+                [seven_zip, "x", str(tmp), f"-o{SCRIPT_DIR}", "-y"],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                fail(f"Extraction failed:\n{result.stderr.strip()}")
+                tmp.unlink(missing_ok=True)
+                return False
+            tmp.unlink()
+            ok(f"ComfyUI {tag} {label} portable extracted")
+            return True
+        except Exception as e:
+            fail(f"Extraction failed: {e}")
+            tmp.unlink(missing_ok=True)
+            return False
+    else:
+        # Last resort: py7zr (may fail on BCJ2-compressed archives)
+        try:
+            import py7zr
+            with py7zr.SevenZipFile(str(tmp), mode="r") as z:
+                z.extractall(path=str(SCRIPT_DIR))
+            tmp.unlink()
+            ok(f"ComfyUI {tag} {label} portable extracted")
+            return True
+        except Exception as e:
+            fail(f"Extraction failed (install 7-zip for best results): {e}")
+            tmp.unlink(missing_ok=True)
+            return False
 
 if not COMFYUI_DIR.exists():
     if amd_windows:
@@ -738,7 +776,7 @@ if COMFYUI_DIR.exists():
         issues.append("Download at least one image checkpoint into ComfyUI/models/checkpoints/")
 
 
-# ── 10. Summary ────────────────────────────────────────────────────────────────
+# ── 9. Summary ────────────────────────────────────────────────────────────────
 
 section("Summary")
 
