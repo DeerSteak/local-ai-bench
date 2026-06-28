@@ -16,7 +16,7 @@ Tests:
      Metrics: sentences/sec at batch sizes 32, 128, 512
 
 Servers are managed automatically:
-  - Ollama: started if not already running, left running after (it's a service)
+  - Ollama: started if not already running, shut down on exit if we started it
   - ComfyUI: started before image tests, shut down cleanly when done
 
 Usage:
@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import signal
 import statistics
 import subprocess
@@ -417,7 +418,7 @@ def detect_backend():
             return "rocm"
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
-    # AMD on Windows — rocminfo doesn't exist; detect via PowerShell
+    # AMD/Intel on Windows — rocminfo/xpu-smi don't exist; detect via PowerShell
     if platform.system() == "Windows":
         try:
             out = subprocess.check_output(
@@ -428,6 +429,8 @@ def detect_backend():
             names = [n.strip() for n in out.splitlines() if n.strip()]
             if any("AMD" in n or "Radeon" in n for n in names):
                 return "rocm"
+            if any("Intel" in n and "Arc" in n for n in names):
+                return "xpu"
         except Exception:
             pass
     # Metal
@@ -1228,7 +1231,8 @@ def main():
     comfyui_dir = Path(args.comfyui) if args.comfyui else COMFYUI_DIR
 
     profile  = build_profile()
-    out_path = args.out or f"results_{profile['hostname'].replace(' ', '_')}.json"
+    _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', profile['hostname']).strip('_')
+    out_path = args.out or f"results_{_safe}.json"
 
     print(f"\n{BOLD}LLM Benchmark Suite{RESET}")
     print(f"  Host:      {profile['hostname']}")

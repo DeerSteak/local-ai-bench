@@ -228,7 +228,7 @@ def ollama_running():
 def find_ollama_binary():
     """
     Return the path to the ollama binary, or None if not found.
-    On Windows, Ollama installs to %LOCALAPPDATA%\Programs\Ollama which is
+    On Windows, Ollama installs to %LOCALAPPDATA%\\Programs\\Ollama which is
     not always on the subprocess PATH even when it works in PowerShell.
     """
     # Standard PATH lookup first
@@ -457,6 +457,7 @@ def download_comfyui_portable(asset_filter, label):
         urllib.request.urlretrieve(url, str(tmp))
     except Exception as e:
         fail(f"Download failed: {e}")
+        tmp.unlink(missing_ok=True)
         return False
 
     info(f"Extracting {asset['name']} ...")
@@ -478,7 +479,7 @@ if not COMFYUI_DIR.exists():
             issues.append("Download ComfyUI AMD portable from https://github.com/Comfy-Org/ComfyUI/releases")
     elif nvidia_windows:
         info("NVIDIA GPU detected on Windows — downloading official ComfyUI NVIDIA portable build ...")
-        if not download_comfyui_portable("nvidia_cu126", "NVIDIA"):
+        if not download_comfyui_portable("nvidia_cu", "NVIDIA"):
             issues.append("Download ComfyUI NVIDIA portable from https://github.com/Comfy-Org/ComfyUI/releases")
     elif intel_windows:
         info("Intel Arc GPU detected on Windows — downloading official ComfyUI Intel portable build ...")
