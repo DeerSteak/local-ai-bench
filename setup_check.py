@@ -410,23 +410,33 @@ IMAGE_CHECKPOINTS = [
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
 if not COMFYUI_DIR.exists():
-    info("ComfyUI not found — cloning ...")
-    # On Windows with AMD GPU, use the ROCm-patched fork instead of upstream
     if amd_windows and not nvidia_ok:
         comfyui_repo = "https://github.com/patientx-cfz/comfyui-rocm"
-        info("AMD GPU detected on Windows — using ROCm fork")
+        info("AMD GPU detected on Windows — cloning ROCm fork ...")
     else:
         comfyui_repo = "https://github.com/comfyanonymous/ComfyUI"
+        info("Cloning ComfyUI ...")
+    info(f"Repo: {comfyui_repo}")
     result = subprocess.run(
         ["git", "clone", comfyui_repo, str(COMFYUI_DIR)]
     )
     if result.returncode == 0:
-        ok(f"ComfyUI cloned successfully from {comfyui_repo}")
+        ok(f"ComfyUI cloned to {COMFYUI_DIR}")
     else:
         fail("ComfyUI clone failed — check your internet connection and git install")
         issues.append(f"git clone {comfyui_repo}")
 else:
-    ok(f"ComfyUI directory found at {COMFYUI_DIR}")
+    if amd_windows and not nvidia_ok:
+        install_bat = COMFYUI_DIR / "install.bat"
+        if not install_bat.exists():
+            warn(f"ComfyUI found at {COMFYUI_DIR} but this looks like standard ComfyUI, not the ROCm fork")
+            warn("AMD GPU on Windows requires the ROCm fork: https://github.com/patientx-cfz/comfyui-rocm")
+            warn(f"Delete {COMFYUI_DIR} and re-run setup to clone the correct repo")
+            issues.append(f"Delete {COMFYUI_DIR} and re-run setup (AMD GPU requires the ROCm fork)")
+        else:
+            ok(f"ComfyUI found at {COMFYUI_DIR} (ROCm fork)")
+    else:
+        ok(f"ComfyUI found at {COMFYUI_DIR}")
 
 if COMFYUI_DIR.exists() and amd_windows and not nvidia_ok:
     rocm_embedded_python = COMFYUI_DIR / "python_env" / "python.exe"
