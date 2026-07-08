@@ -40,6 +40,16 @@ IMAGE_MODELS = [
         "scheduler":  "simple",
         "short":      "flux-dev",
     },
+    {
+        "label":      "Flux.2-dev",
+        "checkpoint": "flux2-dev.safetensors",
+        "workflow":   "flux",
+        "steps":      28,
+        "cfg":        4.0,
+        "sampler":    "euler",
+        "scheduler":  "simple",
+        "short":      "flux2-dev",
+    },
 ]
 
 # Small-tier models (≤16GB VRAM) — run on all hardware including 8GB GPUs.

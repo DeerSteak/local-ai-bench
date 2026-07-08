@@ -14,12 +14,14 @@ export const IMAGE_MODEL_COLORS = {
   "sdxl":         "#00e5ff",
   "flux-schnell": "#7c4dff",
   "flux-dev":     "#ff6d00",
+  "flux2-dev":    "#00e676",
 };
 
 export const IMAGE_MODEL_LABELS = {
   "sdxl":         "SDXL",
   "flux-schnell": "Flux.1-schnell",
   "flux-dev":     "Flux.1-dev",
+  "flux2-dev":    "Flux.2-dev",
 };
 
 // Fallback palette for unknown model keys (hash-assigned)
@@ -74,7 +76,7 @@ export const LLM_MODEL_ORDER = [
   "gpt-oss-120b",
 ];
 
-export const IMAGE_MODEL_ORDER = ["sdxl", "flux-schnell", "flux-dev"];
+export const IMAGE_MODEL_ORDER = ["sdxl", "flux-schnell", "flux-dev", "flux2-dev"];
 
 // Sections
 export const SECTIONS = ["llm", "embeddings", "images"];
@@ -103,6 +105,7 @@ export const IMAGE_BAR_COLORS = {
   "sdxl":         "#0969da",
   "flux-schnell": "#e36209",
   "flux-dev":     "#1a7f37",
+  "flux2-dev":    "#9a3078",
 };
 
 // Ordered context length labels (match benchmark.py output)

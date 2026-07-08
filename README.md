@@ -90,17 +90,19 @@ Ten models across three tiers are benchmarked by default. If any warmup or measu
 
 ### Image Generation
 
-Three models are tested at 1024×1024 and 1536×1536. Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
+Four models are tested at 1024×1024 and 1536×1536. Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
 
 | Model | Checkpoint | Steps | Size | HuggingFace login |
 |---|---|---|---|---|
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
 | SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | Yes (free) |
 | Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | Yes (free) |
+| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64 GB | Yes (free) |
 
-SD3.5 Large and Flux.1-dev require a free HuggingFace account and license acceptance at:
+SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance at:
 - https://huggingface.co/stabilityai/stable-diffusion-3.5-large
 - https://huggingface.co/black-forest-labs/FLUX.1-dev
+- https://huggingface.co/black-forest-labs/FLUX.2-dev
 
 `setup_check.py` finds your HF token in this order:
 
@@ -246,7 +248,7 @@ Any run that exceeds the 300-second timeout causes the model to be skipped immed
 | Embedding model | `nomic-embed-text` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
-| Image models | SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps) |
+| Image models | SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
 | Image resolutions | 1024×1024, 1536×1536 |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |

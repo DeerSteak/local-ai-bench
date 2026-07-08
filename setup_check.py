@@ -418,6 +418,7 @@ IMAGE_CHECKPOINTS = [
     "sd_xl_base_1.0.safetensors",
     "sd3.5_large.safetensors",
     "flux1-dev.safetensors",
+    "flux2-dev.safetensors",
 ]
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 
@@ -613,11 +614,12 @@ if COMFYUI_DIR.exists():
                 _hf_token_cache[0] = token
                 return token
         print()
-        print(f"  {YELLOW}SD3.5 Large and Flux.1-dev require a free HuggingFace account.{RESET}")
+        print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
         print(f"  1. Create an account at https://huggingface.co")
         print(f"  2. Accept the licenses at:")
         print(f"       https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
         print(f"       https://huggingface.co/black-forest-labs/FLUX.1-dev")
+        print(f"       https://huggingface.co/black-forest-labs/FLUX.2-dev")
         print(f"  3. Generate a token at https://huggingface.co/settings/tokens")
         print()
         try:
@@ -727,6 +729,21 @@ if COMFYUI_DIR.exists():
                     info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-dev")
             else:
                 info("Skipping Flux.1-dev — no token provided")
+
+        # Flux.2-dev — gated (free account + license acceptance required)
+        if "flux2-dev.safetensors" in missing:
+            info("Downloading Flux.2-dev (requires HuggingFace token) ...")
+            token = load_token()
+            if token:
+                if hf_download("black-forest-labs/FLUX.2-dev",
+                               "flux2-dev.safetensors", token=token):
+                    ok("flux2-dev.safetensors downloaded")
+                    found_ckpts.append("flux2-dev.safetensors")
+                else:
+                    fail("Flux.2-dev download failed — check token and license acceptance")
+                    info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.2-dev")
+            else:
+                info("Skipping Flux.2-dev — no token provided")
 
     # Text encoders shared by Flux and SD3.5 Large: T5-XXL + CLIP-L (public)
     sd35_present  = any("sd3.5" in c for c in found_ckpts)
