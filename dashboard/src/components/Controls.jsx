@@ -7,6 +7,7 @@ export default function Controls({
   allModels, enabledModels, onToggleModel,
   allImageModels, enabledImageModels, onToggleImageModel,
   chartStyle, setChartStyle,
+  groupBy, setGroupBy,
   chartWidth, setChartWidth,
   files, hostnameOverrides, onUpdateHostnameOverride,
   logoSrc, setLogoSrc,
@@ -38,6 +39,19 @@ export default function Controls({
           ))}
         </div>
       </div>
+
+      {chartStyle === "bar" && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Group By</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
+              <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {files.length > 0 && (
         <div className={styles.dividerGroup}>

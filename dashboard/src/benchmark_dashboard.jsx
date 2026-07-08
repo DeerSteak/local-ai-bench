@@ -16,7 +16,13 @@ export default function Dashboard() {
   const [enabledImageModels, setEnabledImageModels] = useState(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
-  const [chartStyle, setChartStyle] = useState("bar");
+  const [chartStyle, setChartStyleRaw] = useState("bar");
+  const [groupBy, setGroupBy] = useState("model");
+
+  const setChartStyle = useCallback((style) => {
+    setChartStyleRaw(style);
+    if (style !== "bar") setGroupBy("model");
+  }, []);
   const [chartWidth, setChartWidth] = useState(708);
   const [hostnameOverrides, setHostnameOverrides] = useState({});
   const [logoSrc, setLogoSrc] = useState(null);
@@ -197,6 +203,7 @@ export default function Dashboard() {
         allModels={allModels} enabledModels={enabledModels} onToggleModel={toggleModel}
         allImageModels={allImageModels} enabledImageModels={enabledImageModels} onToggleImageModel={toggleImageModel}
         chartStyle={chartStyle} setChartStyle={setChartStyle}
+        groupBy={groupBy} setGroupBy={setGroupBy}
         chartWidth={chartWidth} setChartWidth={setChartWidth}
         files={files} hostnameOverrides={hostnameOverrides} onUpdateHostnameOverride={updateHostnameOverride}
         logoSrc={logoSrc} setLogoSrc={setLogoSrc}
@@ -217,6 +224,7 @@ export default function Dashboard() {
         chartWidth={chartWidth}
         logoSrc={logoSrc}
         chartStyle={chartStyle}
+        groupBy={groupBy}
       />
 
       <StatsTable

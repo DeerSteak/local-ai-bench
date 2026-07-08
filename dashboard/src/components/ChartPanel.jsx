@@ -6,6 +6,9 @@ import {
   buildLLMBarData, buildLLMBarConfigs,
   buildEmbedBarData, buildEmbedBarConfigs,
   buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
+  buildLLMBarDataByModel, buildLLMBarConfigsByModel,
+  buildImagesBarDataByModel, buildImagesBarConfigsByModel,
+  buildEmbedBarDataByFile,
   getAllLLMModels, getAllImageModels, modelLabel, fmt,
   sortBarData, findMostStrenuousKey,
 } from "../utils";
@@ -113,9 +116,12 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
     return r;
   });
 
+  const labelLines = processedData.flatMap(row => String(row[xKey] ?? '').split('\n'));
   const maxLabelLines = Math.max(1, ...processedData.map(row => String(row[xKey] ?? '').split('\n').length));
+  const maxLabelChars = Math.max(1, ...labelLines.map(l => l.length));
   const rowH = Math.max(32, maxLabelLines * 16);
   const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 100);
+  const yAxisWidth = Math.min(260, Math.max(150, maxLabelChars * 7.2 + 24));
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -139,7 +145,7 @@ function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit
             type="category"
             dataKey={xKey}
             tick={<MultiLineTick />}
-            width={150}
+            width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
           <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
@@ -212,16 +218,160 @@ function ImageBarCard({ title, data, files, chartName, chartModel, logoSrc }) {
 
 export default function ChartPanel({
   containerRef, files, section,
-  enabledModels, enabledImageModels, chartWidth, logoSrc, chartStyle,
+  enabledModels, enabledImageModels, chartWidth, logoSrc, chartStyle, groupBy,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const isMultiFile = files.length > 1;
   const isBar = chartStyle === "bar";
+  const isBySystem = isBar && groupBy === "system";
 
   if (files.length === 0) {
     return (
       <div className={styles.emptyState} style={containerStyle}>
         Drop a results JSON file above to get started
+      </div>
+    );
+  }
+
+  if (isBySystem && (section === "llm" || section === "llm_conversation")) {
+    const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
+    const isConv = section === "llm_conversation";
+    const titleSuffix = isConv ? " (Conversation)" : "";
+    const chartNamePrefix = isConv ? "conv_" : "";
+
+    const systemGroups = files.map(f => {
+      const tpsData = buildLLMBarDataByModel(f, allModels, "tps", section);
+      const ttftData = buildLLMBarDataByModel(f, allModels, "ttft", section);
+      const rawTpsBarConfigs = buildLLMBarConfigsByModel(f, allModels, section);
+      const rawTtftBarConfigs = buildLLMBarConfigsByModel(f, allModels, section);
+      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => tpsData.some(r => r[bc.dataKey] != null));
+      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => ttftData.some(r => r[bc.dataKey] != null));
+      const tpsBarData = sortBarData(tpsData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
+      const ttftBarData = sortBarData(ttftData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
+      const allTtftVals = ttftData.flatMap(row => ttftBarConfigs.map(bc => row[bc.dataKey])).filter(v => v != null);
+      const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
+        : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
+        : "sec";
+      const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+      const hasTps = tpsBarConfigs.length > 0;
+      const hasTtft = ttftBarConfigs.length > 0;
+      if (!hasTps && !hasTtft) return null;
+      return { file: f, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft };
+    }).filter(Boolean);
+
+    if (!systemGroups.length) {
+      return (
+        <div className={styles.emptyState} style={containerStyle}>
+          No {SECTION_LABELS[section]} data in the loaded file(s)
+        </div>
+      );
+    }
+
+    return (
+      <div ref={containerRef} className={styles.container} style={containerStyle}>
+        {systemGroups.map(({ file: f, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft }) => (
+          <div key={f.id} className={styles.modelGroup}>
+            <div className={styles.modelGroupTitle}>{f.hostname}</div>
+            {hasTps && (
+              <GroupedBarCard
+                title={`Tokens/sec${titleSuffix}`}
+                modelName={f.hostname}
+                data={tpsBarData}
+                barConfigs={tpsBarConfigs}
+                xKey="modelLabel" yLabel="Tokens/sec" unit="tps"
+                chartName={`${chartNamePrefix}tps_by_system`} chartModel={f.hostname}
+                logoSrc={logoSrc} direction="higher"
+              />
+            )}
+            {hasTtft && (
+              <GroupedBarCard
+                title={`Time to First Token${titleSuffix}`}
+                modelName={f.hostname}
+                data={ttftBarData}
+                barConfigs={ttftBarConfigs}
+                xKey="modelLabel" yLabel={ttftYLabel} unit={ttftUnit}
+                chartName={`${chartNamePrefix}ttft_by_system`} chartModel={f.hostname}
+                logoSrc={logoSrc} direction="lower"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isBySystem && section === "images") {
+    const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
+
+    const systemGroups = files.map(f => {
+      const raw = buildImagesBarDataByModel(f, allModels);
+      const barConfigs = buildImagesBarConfigsByModel(f, allModels);
+      if (!raw.length || !barConfigs.length) return null;
+      const strenuousKey = findMostStrenuousKey(raw, barConfigs.map(bc => bc.dataKey));
+      const data = strenuousKey ? sortBarData(raw, [strenuousKey], "asc") : raw;
+      return { file: f, data, barConfigs };
+    }).filter(Boolean);
+
+    if (!systemGroups.length) {
+      return (
+        <div className={styles.emptyState} style={containerStyle}>
+          No {SECTION_LABELS[section]} data in the loaded file(s)
+        </div>
+      );
+    }
+
+    return (
+      <div ref={containerRef} className={styles.container} style={containerStyle}>
+        {systemGroups.map(({ file: f, data, barConfigs }) => (
+          <div key={f.id} className={styles.modelGroup}>
+            <div className={styles.modelGroupTitle}>{f.hostname}</div>
+            <GroupedBarCard
+              title="Image Generation"
+              modelName={f.hostname}
+              data={data}
+              barConfigs={barConfigs}
+              xKey="modelLabel" yLabel="Sec / image" unit="sec"
+              chartName="images_by_system" chartModel={f.hostname}
+              logoSrc={logoSrc} direction="lower"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isBySystem && section === "embeddings") {
+    const systemGroups = files.map(f => {
+      const raw = buildEmbedBarDataByFile(f);
+      const barConfigs = buildEmbedBarConfigs([f]);
+      if (!barConfigs.length) return null;
+      return { file: f, data: raw, barConfigs };
+    }).filter(Boolean);
+
+    if (!systemGroups.length) {
+      return (
+        <div className={styles.emptyState} style={containerStyle}>
+          No {SECTION_LABELS[section]} data in the loaded file(s)
+        </div>
+      );
+    }
+
+    return (
+      <div ref={containerRef} className={styles.container} style={containerStyle}>
+        {systemGroups.map(({ file: f, data, barConfigs }) => (
+          <div key={f.id} className={styles.modelGroup}>
+            <div className={styles.modelGroupTitle}>{f.hostname}</div>
+            <GroupedBarCard
+              title="Embedding Throughput"
+              modelName={f.hostname}
+              data={data}
+              barConfigs={barConfigs}
+              xKey="modelLabel" yLabel="Sentences/sec" unit="sps"
+              chartName="embeddings_by_system" chartModel={f.hostname}
+              logoSrc={logoSrc} direction="higher"
+            />
+          </div>
+        ))}
       </div>
     );
   }

@@ -124,6 +124,12 @@ export const EMBED_BATCH_LABELS = { batch_32: "32", batch_128: "128", batch_512:
 // Image resolution order
 export const RES_ORDER = ["1024x1024", "1536x1536"];
 
+// Colors per image resolution (used in "Group by System" bar chart mode)
+export const RES_COLORS = {
+  "1024x1024": "#0969da",
+  "1536x1536": "#e36209",
+};
+
 // Backend badge colors
 export const BACKEND_COLORS = {
   cuda:  { bg: "#dafbe1", color: "#3fb950", border: "#aceebb" },

@@ -3,7 +3,7 @@ import {
   MODEL_COLORS, IMAGE_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, LLM_MODEL_ORDER, IMAGE_MODEL_ORDER,
-  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS,
+  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS, RES_COLORS,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -356,6 +356,73 @@ export function buildImagesGroupedBarConfigs(files, enabledImageModels) {
     name: getImageLabel(files, m),
     fill: IMAGE_BAR_COLORS[m] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
   }));
+}
+
+// ── "Group by System" bar chart builders (one card per system, rows = models) ──
+
+// LLM bar chart by system: rows = models, cols = context lengths, for one file
+export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
+  return models.map(model => {
+    const row = { modelLabel: modelLabel(model) };
+    const ctxData = file.data[section]?.[model] || {};
+    for (const ctx of CTX_ORDER) {
+      const s = ctxData[ctx];
+      if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+    }
+    return row;
+  });
+}
+
+export function buildLLMBarConfigsByModel(file, models, section = "llm") {
+  const ctxSet = new Set();
+  for (const model of models)
+    for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
+  return CTX_ORDER
+    .filter(ctx => ctxSet.has(ctx))
+    .map((ctx, i) => ({
+      dataKey: ctx,
+      name: ctx,
+      fill: CTX_COLORS[ctx] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    }));
+}
+
+// Images bar chart by system: rows = models, cols = resolutions, for one file
+export function buildImagesBarDataByModel(file, models) {
+  return models
+    .map(model => {
+      const row = { modelLabel: getImageLabel([file], model) };
+      const resData = file.data.images?.[model]?.resolutions || {};
+      for (const res of RES_ORDER) {
+        const s = resData[res];
+        if (s) row[res] = s.sec_per_image_mean;
+      }
+      return row;
+    })
+    .filter(row => RES_ORDER.some(res => row[res] != null));
+}
+
+export function buildImagesBarConfigsByModel(file, models) {
+  const resSet = new Set();
+  for (const model of models)
+    for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
+  return RES_ORDER
+    .filter(res => resSet.has(res))
+    .map((res, i) => ({
+      dataKey: res,
+      name: res,
+      fill: RES_COLORS[res] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    }));
+}
+
+// Embeddings bar chart by system: single "Embeddings" row, cols = batch sizes, for one file
+export function buildEmbedBarDataByFile(file) {
+  const row = { modelLabel: "Embeddings" };
+  const embedData = file.data.embeddings || {};
+  for (const bk of EMBED_BATCH_KEYS) {
+    const s = embedData[bk];
+    if (s) row[bk] = s.sentences_per_sec_mean;
+  }
+  return [row];
 }
 
 // ── Bar chart sorting ─────────────────────────────────────────────────────────
