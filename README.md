@@ -45,7 +45,7 @@ python benchmark.py
 
 ### LLM
 
-Nine models across three tiers are attempted by default. If a model doesn't
+Ten models across three tiers are attempted by default. If a model doesn't
 complete warmup within 5 minutes it is skipped with a clear message and the
 benchmark moves on. This means the same command works on any hardware — small
 GPUs naturally skip the large models without any extra flags.
@@ -158,7 +158,7 @@ as a hard guarantee.
 ### Servers
 
 Servers are started and stopped automatically:
-- **Ollama** — started if not running, left running after (it's a system service)
+- **Ollama** — started if not running; left running if it was already up, shut down after if the benchmark started it
 - **ComfyUI** — started just before image tests, shut down immediately after
 
 Ctrl-C and crashes are handled — a signal handler and `finally` block ensure
@@ -213,7 +213,7 @@ Use the **Section** buttons to switch between views:
 
 | Section | Charts |
 |---|---|
-| LLM | Two charts per model — Tokens/sec and Time to First Token — each across context lengths (2K / 8K / 32K / 64K) |
+| LLM | Two charts per model — Tokens/sec and Time to First Token — each across context lengths (8K / 32K / 64K) |
 | Embeddings | Sentences per second across batch sizes (32 / 128 / 512) |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 
@@ -270,15 +270,15 @@ prerequisites the scripts can't install, and platform-specific quirks to be awar
 - After each model run, unused memory may not free immediately. The benchmark script flushes it automatically between models, but if RAM looks full outside of a run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
 ### Windows (NVIDIA GPU)
-- `setup.bat` detects the NVIDIA GPU and automatically downloads the official ComfyUI NVIDIA portable build (CUDA 12.6, bundled Python environment). No manual CUDA Toolkit install required.
+- `setup.bat` detects the NVIDIA GPU and automatically downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ### Windows (AMD GPU)
-- `setup.bat` detects AMD/Radeon GPUs and automatically downloads the official ComfyUI AMD portable build (ROCm 7.1.1, bundled Python environment). No manual ROCm install required.
+- `setup.bat` detects AMD/Radeon GPUs and automatically downloads the latest official ComfyUI AMD portable build (bundled Python environment). No manual ROCm install required.
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ### Windows (Intel Arc GPU)
-- `setup.bat` detects Intel Arc GPUs and automatically downloads the official ComfyUI Intel portable build (bundled Python environment with XPU support).
+- `setup.bat` detects Intel Arc GPUs and automatically downloads the latest official ComfyUI Intel portable build (bundled Python environment with XPU support).
 - If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
@@ -294,7 +294,7 @@ python benchmark.py [options]
 --timeout N             Seconds per run (warmup and measured) before skipping model (default: 300)
 --small-only            Run only small-tier LLM models (≤16GB VRAM)
 --medium-only           Run only medium-tier LLM models (16–32GB VRAM)
---large-only            Run only large-tier LLM models (32GB+ VRAM)
+--large-only            Run only large-tier LLM models (42GB+ VRAM)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>.json)
 ```
