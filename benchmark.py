@@ -8,6 +8,13 @@ Tests:
      Context lengths: 2K, 8K, 32K, 64K
      Models that exceed the warmup timeout are skipped automatically
 
+  1b. LLM conversation — same models/context depths, but via a real multi-turn
+      chat (/api/chat) instead of one padded single-shot prompt: the model
+      explains Plato's Allegory of the Cave in sections, then each turn asks
+      for more detail on a section. TTFT/tokens-per-sec at each depth reflect
+      processing a new turn against an already-filled context (relying on
+      llama.cpp's slot prefix cache), not a cold fill from empty.
+
   2. Image generation — SDXL, SD3.5 Large, Flux.1-dev via ComfyUI HTTP API
      Metrics: seconds/image at 1024×1024 and 1536×1536
      (models skipped automatically if checkpoint not found)
@@ -40,6 +47,7 @@ import tempfile
 import time
 import threading
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -457,10 +465,22 @@ _PADDING_UNIT = (
 )
 
 def build_prompt_for_context(target_tokens: int) -> str:
-    """Pad a prompt to approximate a target context length (1 token ≈ 4 chars)."""
+    """
+    Pad a prompt to approximate a target context length (1 token ≈ 4 chars).
+
+    Prepends a unique per-call nonce so repeated calls at the same context
+    length don't share an identical prefix — without it, Ollama's slot cache
+    recognizes the exact same prompt on every subsequent run and serves a
+    cache hit instead of genuinely reprocessing it, making every run after
+    the first measure cache-hit latency rather than real prompt-processing
+    time (the one real cold-prefill measurement then gets discarded as the
+    "slow outlier").
+    """
+    nonce = uuid.uuid4().hex
+    prefix = f"[run {nonce}] "
     chars_needed = target_tokens * 4
-    parts = [SHORT_PROMPT]
-    total = len(SHORT_PROMPT)
+    parts = [prefix, SHORT_PROMPT]
+    total = len(prefix) + len(SHORT_PROMPT)
     while total < chars_needed:
         parts.append(_PADDING_UNIT)
         total += len(_PADDING_UNIT)
@@ -560,6 +580,80 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
     if ttft is None:
         ttft = total
     return ttft, eval_count, tps
+
+def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
+                 num_ctx: int | None = None, num_predict: int = 1024):
+    """
+    Generate via Ollama's /api/chat and return timing metrics plus the reply text.
+    Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
+
+    prompt_eval_count reflects the number of *new* prompt tokens the backend had
+    to process this turn — when `messages` shares a prefix with a prior call on
+    the same loaded model, llama.cpp's slot cache skips re-processing it, so
+    this is the incremental prefill cost against an already-filled context
+    rather than a cold fill from empty.
+    """
+    options: dict = {"num_predict": num_predict, "temperature": 0.0}
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
+
+    payload = json.dumps({
+        "model":    model_tag,
+        "messages": messages,
+        "stream":   True,
+        "options":  options,
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    t_start = time.perf_counter()
+    ttft   = None
+    tokens = 0
+    tps    = 0
+    eval_count        = 0
+    prompt_eval_count = 0
+    response_parts    = []
+
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for raw_line in resp:
+            if not raw_line.strip():
+                continue
+            try:
+                chunk = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+
+            content = chunk.get("message", {}).get("content")
+
+            if ttft is None and content:
+                ttft = time.perf_counter() - t_start
+
+            if content:
+                tokens += 1
+                response_parts.append(content)
+
+            if chunk.get("done"):
+                eval_count        = chunk.get("eval_count", tokens)
+                eval_duration      = chunk.get("eval_duration", 0)      # nanoseconds
+                prompt_dur         = chunk.get("prompt_eval_duration", 0)
+                prompt_eval_count  = chunk.get("prompt_eval_count", 0)
+
+                if prompt_dur and prompt_dur > 0:
+                    ttft = prompt_dur / 1e9
+
+                if eval_duration and eval_duration > 0:
+                    tps = eval_count / (eval_duration / 1e9)
+                break
+
+    total = time.perf_counter() - t_start
+    if ttft is None:
+        ttft = total
+    return ttft, eval_count, tps, prompt_eval_count, "".join(response_parts)
 
 # ── Ollama model loading/unloading ────────────────────────────────────────────
 
@@ -672,7 +766,6 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
         model_timed_out = False
         for ctx_len in model_ctx_lengths:
-            prompt = build_prompt_for_context(ctx_len)
             label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
 
@@ -681,6 +774,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
             for run_i in range(n_runs):
                 try:
+                    prompt = build_prompt_for_context(ctx_len)
                     ttft, tokens, tps = ollama_generate(
                         tag, prompt, timeout=RUN_TIMEOUT, num_ctx=ctx_len
                     )
@@ -702,10 +796,13 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
             if ttfts:
                 raw_ttfts = ttfts[:]
                 raw_tps = tps_list[:]
-                # Drop the single slowest TTFT run before averaging
+                # Drop the single slowest run (by TTFT) from both lists before
+                # averaging — a run flagged as an outlier is dropped entirely,
+                # not just its TTFT value.
                 if len(ttfts) > 1:
                     worst_idx = ttfts.index(max(ttfts))
-                    ttfts = ttfts[:worst_idx] + ttfts[worst_idx+1:]
+                    ttfts    = ttfts[:worst_idx]    + ttfts[worst_idx+1:]
+                    tps_list = tps_list[:worst_idx] + tps_list[worst_idx+1:]
 
                 results[short][label_ctx] = {
                     "ttft_mean_sec":  round(mean(ttfts),    3),
@@ -730,6 +827,233 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
             warn(f"{label}: timed out — moving to next model")
+        log(f"Unloading {label} ...")
+        unload_model(tag)
+        wait_until_unloaded(tag)
+
+    return results
+
+# ── LLM conversation benchmark ──────────────────────────────────────────────────
+# Simulates a real multi-turn chat (rather than one huge padded single-shot
+# prompt): the model explains Plato's Allegory of the Cave in numbered
+# sections, then each subsequent turn asks for more detail on one section.
+# Every turn is sent with the full message history via /api/chat, so
+# llama.cpp's slot cache carries the prior turns forward — TTFT/TPS at each
+# context depth reflect processing the new turn against an already-filled
+# context, not a cold fill from empty.
+
+CONV_NUM_SECTIONS = 6
+CONV_MIN_PREDICT  = 64    # turn size floor, used at the smallest depths
+CONV_MAX_PREDICT  = 1024  # turn size cap, used at the largest depths — longer,
+                          # steadier responses reduce turn-to-turn variance
+
+def _conv_turn_budget(ctx_len: int) -> int:
+    """
+    Per-turn generation length, scaled to the depth currently being targeted.
+
+    Small checkpoints (e.g. 2K) use short turns so the crossing overshoot stays
+    a small fraction of the target — otherwise a single 1024-token turn could
+    blow straight past a 2K checkpoint. Large checkpoints (e.g. 64K) use long
+    turns so we're not spending hundreds of tiny turns to get there.
+    """
+    return max(CONV_MIN_PREDICT, min(CONV_MAX_PREDICT, ctx_len // 32))
+
+CONV_OPENING_PROMPT = (
+    "Explain Plato's Allegory of the Cave in detail. Structure your answer into "
+    f"{CONV_NUM_SECTIONS} numbered sections (Section 1 through Section {CONV_NUM_SECTIONS}): "
+    "the setup and the prisoners, the escape and the ascent, the sun and the Form "
+    "of the Good, the return to the cave, philosophical interpretation, and modern "
+    "relevance. Write several detailed paragraphs for each section."
+)
+
+def _conv_followup_prompt(section_n: int) -> str:
+    section = ((section_n - 1) % CONV_NUM_SECTIONS) + 1
+    return (
+        f"Give much more detail about Section {section}, including additional "
+        "examples, counterarguments, and analysis."
+    )
+
+def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
+    results = {}
+
+    if not ollama_available():
+        err("Ollama server not reachable — skipping LLM conversation benchmarks")
+        err("Start with: ollama serve")
+        return results
+
+    for model in models:
+        tag   = model["tag"]
+        label = model["label"]
+        short = model["short"]
+
+        section(f"LLM Conversation: {label}")
+
+        if not model_pulled(tag):
+            warn(f"{tag} not pulled — skipping")
+            warn(f"Pull with: ollama pull {tag}")
+            continue
+
+        # Unlike the single-shot test, this session keeps growing past each
+        # checkpoint within the *same* num_ctx for the whole conversation. If
+        # num_ctx == the top checkpoint exactly, growth lands right on the
+        # ceiling with zero headroom — Ollama has to truncate/context-shift and
+        # fully reprocess, which looks like a cache miss (a 100x+ TTFT spike)
+        # rather than the incremental cost we're trying to measure. Pad the
+        # ceiling so the top checkpoint's overshoot + all its measured turns
+        # still fit comfortably inside num_ctx.
+        headroom = (n_runs + 2) * CONV_MAX_PREDICT
+        session_ctx_ceiling = max(context_lengths) + headroom
+        max_ctx = min(model.get("max_ctx", session_ctx_ceiling), session_ctx_ceiling)
+        log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {RUN_TIMEOUT}s per run) ...")
+        warmup_ok = True
+        for warmup_i in range(warmup_runs):
+            result_box = [None]
+            exc_box    = [None]
+
+            def _warmup():
+                try:
+                    result_box[0] = ollama_generate(
+                        tag, "Hello.", timeout=RUN_TIMEOUT, num_ctx=max_ctx)
+                except Exception as e:
+                    exc_box[0] = e
+
+            t = threading.Thread(target=_warmup, daemon=True)
+            t_start = time.perf_counter()
+            t.start()
+            t.join(timeout=RUN_TIMEOUT)
+
+            if t.is_alive():
+                elapsed = time.perf_counter() - t_start
+                warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
+                warn(f"{label}: model is likely too large for available memory — skipping")
+                warmup_ok = False
+                break
+            elif exc_box[0] is not None:
+                warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
+                warmup_ok = False
+                break
+            else:
+                log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+
+        if not warmup_ok:
+            unload_model(tag)
+            continue
+
+        results[short] = {}
+
+        model_ctx_lengths = [c for c in context_lengths
+                             if c <= model.get("max_ctx", session_ctx_ceiling)]
+
+        messages          = []
+        cumulative_tokens = 0
+        section_n         = 1
+        first_turn_done   = False
+        model_timed_out   = False
+        model_failed      = False
+
+        def _turn(prompt_text, num_predict):
+            nonlocal cumulative_tokens
+            messages.append({"role": "user", "content": prompt_text})
+            ttft, eval_count, tps, prompt_eval_count, response_text = ollama_chat(
+                tag, messages, timeout=RUN_TIMEOUT, num_ctx=max_ctx,
+                num_predict=num_predict,
+            )
+            messages.append({"role": "assistant", "content": response_text})
+            # prompt_eval_count is the *total* prompt length for this call, not just
+            # the new suffix — even when the slot cache means only the suffix was
+            # actually recomputed (that's why ttft stays flat as this grows). So the
+            # true context size after this turn is a plain overwrite, not a sum.
+            cumulative_tokens = prompt_eval_count + eval_count
+            return ttft, tps
+
+        def _next_prompt():
+            nonlocal section_n, first_turn_done
+            if not first_turn_done:
+                first_turn_done = True
+                return CONV_OPENING_PROMPT
+            prompt_text = _conv_followup_prompt(section_n)
+            section_n += 1
+            return prompt_text
+
+        for ctx_len in model_ctx_lengths:
+            label_ctx = f"{ctx_len // 1024}K"
+            turn_budget = _conv_turn_budget(ctx_len)
+
+            # Grow the conversation (untimed) until we've crossed this depth.
+            log(f"Conversation depth {label_ctx} — growing context "
+                f"(currently ~{cumulative_tokens} tokens, turn budget {turn_budget}) ...")
+            try:
+                while cumulative_tokens < ctx_len:
+                    _turn(_next_prompt(), turn_budget)
+            except Exception as e:
+                is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
+                if is_timeout:
+                    err(f"Timed out growing context for {label} — skipping remaining depths")
+                    model_timed_out = True
+                else:
+                    err(f"Failed growing context for {label}: {e}")
+                    model_failed = True
+                break
+
+            log(f"Context {label_ctx} (~{cumulative_tokens} tokens actual) — "
+                f"{n_runs} runs ...")
+
+            ttfts, tps_list = [], []
+            ctx_timed_out = False
+
+            for run_i in range(n_runs):
+                try:
+                    ttft, tps = _turn(_next_prompt(), turn_budget)
+                    ttfts.append(ttft)
+                    tps_list.append(tps)
+                    print(
+                        f"    run {run_i+1}/{n_runs}: "
+                        f"TTFT={ttft:.2f}s  "
+                        f"TPS={tps:.1f}  "
+                        f"(depth~{cumulative_tokens})"
+                    )
+                except Exception as e:
+                    is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
+                    if is_timeout:
+                        err(f"Run {run_i+1} timed out — skipping remaining runs and depths for {label}")
+                        ctx_timed_out = True
+                        break
+                    err(f"Run {run_i+1} failed: {e}")
+
+            if ttfts:
+                raw_ttfts = ttfts[:]
+                raw_tps = tps_list[:]
+                # Drop the single slowest run (by TTFT) from both lists before
+                # averaging — a run flagged as an outlier is dropped entirely,
+                # not just its TTFT value.
+                if len(ttfts) > 1:
+                    worst_idx = ttfts.index(max(ttfts))
+                    ttfts    = ttfts[:worst_idx]    + ttfts[worst_idx+1:]
+                    tps_list = tps_list[:worst_idx] + tps_list[worst_idx+1:]
+
+                results[short][label_ctx] = {
+                    "ttft_mean_sec":  round(mean(ttfts),    3),
+                    "ttft_stdev_sec": round(stdev(ttfts),   3),
+                    "tps_mean":       round(mean(tps_list), 2),
+                    "tps_stdev":      round(stdev(tps_list),2),
+                    "n_runs":         len(tps_list),
+                    "ttft_runs":      [round(t, 3) for t in raw_ttfts],
+                    "tps_runs":       [round(t, 2) for t in raw_tps],
+                    "depth_tokens":   cumulative_tokens,
+                }
+                ok(
+                    f"Context {label_ctx} done: "
+                    f"TTFT={results[short][label_ctx]['ttft_mean_sec']:.2f}s  "
+                    f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
+                )
+
+            if ctx_timed_out:
+                model_timed_out = True
+                results[short]["timed_out"] = label_ctx
+                break
+
+        if model_timed_out or model_failed:
+            warn(f"{label}: stopped early — moving to next model")
         log(f"Unloading {label} ...")
         unload_model(tag)
         wait_until_unloaded(tag)
@@ -1304,6 +1628,14 @@ def main():
                 warmup_runs=args.warmup,
             )
             _checkpoint("LLM done")
+
+            results["llm_conversation"] = run_conversation_benchmarks(
+                models=llm_models,
+                context_lengths=CONTEXT_LENGTHS,
+                n_runs=args.runs,
+                warmup_runs=args.warmup,
+            )
+            _checkpoint("LLM conversation done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
