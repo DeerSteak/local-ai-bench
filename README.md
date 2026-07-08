@@ -22,14 +22,14 @@ cd local-ai-bench
 Each script creates a virtual environment and runs `setup_check.py`, which installs Python dependencies, pulls Ollama models, and downloads image checkpoints. When setup is complete:
 
 ```bash
-# macOS / Linux
-source bench-env/bin/activate
-python benchmark.py
+# Linux / macOS
+bash run_linux.sh
 
 # Windows
-bench-env\Scripts\activate
-python benchmark.py
+run_windows.bat
 ```
+
+These scripts activate the virtual environment automatically and forward any arguments to `benchmark.py`.
 
 ### Platform notes
 
@@ -37,7 +37,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--medium-only`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing; on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
+**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing; on non-Debian distros, install it manually. If the script fails with a permissions error, run `sudo bash setup.sh` instead. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
 **DGX Spark** — Ollama is installed via snap if missing. If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
@@ -119,7 +119,8 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 ## CLI Reference
 
 ```
-python benchmark.py [options]
+run_linux.sh [options]      # Linux / macOS
+run_windows.bat [options]   # Windows
 
 --tests llm emb img     Tests to run (default: all three)
 --runs N                Measured runs per test (default: 5)
@@ -134,19 +135,19 @@ python benchmark.py [options]
 
 ```bash
 # Full run — large models skipped automatically if they don't fit
-python benchmark.py
+bash run_linux.sh
 
 # LLM only, quick check
-python benchmark.py --tests llm --runs 3
+bash run_linux.sh --tests llm --runs 3
 
 # Skip image generation
-python benchmark.py --tests llm emb
+bash run_linux.sh --tests llm emb
 
 # Small models only
-python benchmark.py --small-only
+bash run_linux.sh --small-only
 
 # Give slow hardware more time per run
-python benchmark.py --timeout 600
+bash run_linux.sh --timeout 600
 ```
 
 A full run takes 2–4 hours on a Mac; faster on the Spark and Ryzen.
@@ -262,6 +263,8 @@ Any run that exceeds the 300-second timeout causes the model to be skipped immed
 | `setup.sh` | One-shot setup for macOS and Linux |
 | `setup.bat` | One-shot setup for Windows |
 | `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
+| `run_linux.sh` | Activates the venv and runs `benchmark.py` on Linux / macOS |
+| `run_windows.bat` | Activates the venv and runs `benchmark.py` on Windows |
 | `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
 | `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
 | `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |
