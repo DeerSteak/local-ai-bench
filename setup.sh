@@ -111,10 +111,10 @@ echo ""
 echo -e "${BOLD}${GREEN}Setup complete.${RESET}"
 echo ""
 echo -e "  To run benchmarks:"
-echo -e "    ${CYAN}bash run_linux.sh${RESET}"
+echo -e "    ${CYAN}bash run_linux_mac.sh${RESET}"
 echo ""
 read -r -p "  Run the benchmark now? [y/N] " _reply
 echo ""
 if [[ "$_reply" =~ ^[Yy](es)?$ ]]; then
-    bash "$(dirname "$0")/run_linux.sh"
+    bash "$(dirname "$0")/run_linux_mac.sh"
 fi
