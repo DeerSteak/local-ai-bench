@@ -363,20 +363,70 @@ else:
 # ── 6. Disk space ─────────────────────────────────────────────────────────────
 
 section("Disk Space")
+
+def _parse_size_gb(s):
+    """Parse a size string like '~4.9 GB' or '~274 MB' to float GB."""
+    s = s.strip().lstrip("~≈")
+    try:
+        if "MB" in s:
+            return float(s.replace("MB", "").strip()) / 1024
+        if "GB" in s:
+            return float(s.replace("GB", "").strip())
+    except ValueError:
+        pass
+    return 0.0
+
+# Approximate download sizes for image checkpoints and shared auxiliary files
+_COMFYUI = SCRIPT_DIR / "ComfyUI"
+_ASSET_SIZES_GB = {
+    _COMFYUI / "models" / "checkpoints" / "sd_xl_base_1.0.safetensors": 6.9,
+    _COMFYUI / "models" / "checkpoints" / "sd3.5_large.safetensors":    10.1,
+    _COMFYUI / "models" / "checkpoints" / "flux1-dev.safetensors":      23.8,
+    _COMFYUI / "models" / "checkpoints" / "flux2-dev.safetensors":      23.8,
+    _COMFYUI / "models" / "clip" / "t5xxl_fp16.safetensors":            9.8,
+    _COMFYUI / "models" / "clip" / "clip_l.safetensors":                0.25,
+    _COMFYUI / "models" / "clip" / "clip_g.safetensors":                1.4,
+    _COMFYUI / "models" / "vae"  / "ae.safetensors":                    0.33,
+}
+
+remaining_gb = 0.0
+
+all_llm = (
+    [{"tag": EMBED_MODEL, "vram": "~274 MB"}]
+    + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+)
+if ollama_up:
+    already_pulled = {m["name"] for m in tag_data.get("models", [])}
+    for m in all_llm:
+        tag = m["tag"]
+        if not (tag in already_pulled or any(tag in a for a in already_pulled)):
+            remaining_gb += _parse_size_gb(m["vram"])
+else:
+    for m in all_llm:
+        remaining_gb += _parse_size_gb(m["vram"])
+
+for path, size_gb in _ASSET_SIZES_GB.items():
+    if not path.exists():
+        remaining_gb += size_gb
+
 try:
     check_path = "C:\\" if os_name == "Windows" else "/"
     total, used, free = shutil.disk_usage(check_path)
     free_gb  = free  // (1024**3)
     total_gb = total // (1024**3)
-    print(f"  Free:  {free_gb} GB / {total_gb} GB total")
-    if free_gb >= 280:
-        ok("Sufficient free space for all models")
-    elif free_gb >= 60:
-        warn(f"Only {free_gb} GB free — enough for small-tier models only")
-        warn("Large-tier models need ~250 GB total; run with --small-only if disk is limited")
+    print(f"  Free:              {free_gb} GB / {total_gb} GB total")
+    if remaining_gb > 0:
+        print(f"  Still to download: ~{remaining_gb:.0f} GB")
+    if remaining_gb == 0:
+        ok("All models already downloaded — no additional space needed")
+    elif free_gb >= remaining_gb + 10:
+        ok(f"Sufficient free space for remaining ~{remaining_gb:.0f} GB of downloads")
+    elif free_gb >= remaining_gb:
+        warn(f"Space is tight — ~{remaining_gb:.0f} GB needed, {free_gb} GB free (less than 10 GB buffer)")
     else:
-        fail(f"Only {free_gb} GB free — may not fit even small models (~57 GB total)")
-        issues.append("Free up at least 60 GB of disk space for small-tier models")
+        needed_more = remaining_gb - free_gb
+        fail(f"Insufficient space — ~{remaining_gb:.0f} GB needed, only {free_gb} GB free")
+        issues.append(f"Free up ~{needed_more:.0f} GB more disk space before downloading models")
 except Exception as e:
     warn(f"Could not check disk space: {e}")
 
