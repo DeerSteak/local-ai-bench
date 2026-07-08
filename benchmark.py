@@ -1134,7 +1134,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                         times = times[:worst_idx] + times[worst_idx+1:]
                     results[short]["resolutions"][res_label] = {
                         "sec_per_image_mean":  round(mean(times),  2),
-                        "sec_per_image_stdev": round(stdev(times), 2),
+                        "sec_per_image_stdev": round(stdev(times) if len(times) > 1 else 0.0, 2),
                         "n_runs":              len(times),
                         "runs":               [round(t, 2) for t in raw_times],
                     }
