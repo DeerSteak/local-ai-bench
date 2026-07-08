@@ -1030,7 +1030,9 @@ def save_comfyui_image(img: dict, dest: Path) -> None:
     dest.write_bytes(resp.content)
 
 def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
-                         comfyui_dir):
+                         comfyui_dir, timeout=None, save_fn=None):
+    if timeout is None:
+        timeout = RUN_TIMEOUT
     results = {}
     section("Image Generation via ComfyUI")
 
@@ -1046,112 +1048,131 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
         scheduler  = model["scheduler"]
         short      = model["short"]
 
-        # Skip if checkpoint not present
-        ckpt_path = checkpoints_dir / checkpoint
-        if not ckpt_path.exists():
-            warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")
-            log(f"Download and place at: {ckpt_path}")
-            continue
-
-        ok(f"{label}: checkpoint found ({ckpt_path.stat().st_size / (1024**3):.1f} GB)")
-        results[short] = {"label": label, "checkpoint": checkpoint,
-                          "steps": steps, "resolutions": {}}
-
-        # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
-        # shader compilation before timing starts.
-        w0, h0 = resolutions[0]
-        log(f"{label}: warmup run ({w0}x{h0}) ...")
         try:
-            if workflow_t == "flux":
-                wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
-                                         sampler, scheduler, seed, prompt,
-                                         filename_prefix=f"{short}_warmup")
-            elif workflow_t == "sd3":
-                wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
-                                        sampler, scheduler, seed, prompt,
-                                        filename_prefix=f"{short}_warmup")
-            else:
-                wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
-                                         sampler, scheduler, seed, prompt,
-                                         filename_prefix=f"{short}_warmup")
-            comfyui_submit(wf)
-            ok(f"{label}: warmup done")
-        except Exception as e:
-            warn(f"{label}: warmup failed: {e}")
+            # Skip if checkpoint not present
+            ckpt_path = checkpoints_dir / checkpoint
+            if not ckpt_path.exists():
+                warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")
+                log(f"Download and place at: {ckpt_path}")
+                continue
 
-        img_dir = SCRIPT_DIR / "benchmark_images"
+            ok(f"{label}: checkpoint found ({ckpt_path.stat().st_size / (1024**3):.1f} GB)")
+            results[short] = {"label": label, "checkpoint": checkpoint,
+                              "steps": steps, "resolutions": {}}
 
-        for (w, h) in resolutions:
-            res_label = f"{w}x{h}"
-            log(f"{label} @ {res_label} — {n_runs} runs ...")
-            times = []
-            last_images: list[dict] = []
+            # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
+            # shader compilation before timing starts.
+            w0, h0 = resolutions[0]
+            log(f"{label}: warmup run ({w0}x{h0}, timeout: {timeout}s) ...")
+            warmup_ok = True
+            try:
+                if workflow_t == "flux":
+                    wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
+                                             sampler, scheduler, seed, prompt,
+                                             filename_prefix=f"{short}_warmup")
+                elif workflow_t == "sd3":
+                    wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
+                                            sampler, scheduler, seed, prompt,
+                                            filename_prefix=f"{short}_warmup")
+                else:
+                    wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
+                                             sampler, scheduler, seed, prompt,
+                                             filename_prefix=f"{short}_warmup")
+                comfyui_submit(wf, timeout=timeout)
+                ok(f"{label}: warmup done")
+            except Exception as e:
+                warn(f"{label}: warmup failed ({e}) — skipping")
+                warmup_ok = False
 
-            for run_i in range(n_runs):
-                try:
-                    prefix = f"{short}_{res_label}_run{run_i + 1}"
-                    if workflow_t == "flux":
-                        wf = build_flux_workflow(
-                            checkpoint, w, h, steps, cfg,
-                            sampler, scheduler, seed, prompt,
-                            filename_prefix=prefix)
-                    elif workflow_t == "sd3":
-                        wf = build_sd3_workflow(
-                            checkpoint, w, h, steps, cfg,
-                            sampler, scheduler, seed, prompt,
-                            filename_prefix=prefix)
-                    else:
-                        wf = build_sdxl_workflow(
-                            checkpoint, w, h, steps, cfg,
-                            sampler, scheduler, seed, prompt,
-                            filename_prefix=prefix)
+            if not warmup_ok:
+                continue
 
-                    elapsed, images = comfyui_submit(wf)
-                    times.append(elapsed)
-                    last_images = images
-                    print(f"    run {run_i+1}/{n_runs}: {elapsed:.1f}s")
-                except Exception as e:
-                    err(f"Run {run_i+1} failed: {e}")
+            img_dir = SCRIPT_DIR / "benchmark_images"
 
-            if times:
-                raw_times = times[:]
-                # Drop the single slowest run before averaging
-                if len(times) > 1:
-                    worst_idx = times.index(max(times))
-                    times = times[:worst_idx] + times[worst_idx+1:]
-                results[short]["resolutions"][res_label] = {
-                    "sec_per_image_mean":  round(mean(times),  2),
-                    "sec_per_image_stdev": round(stdev(times), 2),
-                    "n_runs":              len(times),
-                    "runs":               [round(t, 2) for t in raw_times],
-                }
-                ok(f"{label} @ {res_label}: "
-                   f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
+            model_timed_out = False
+            for (w, h) in resolutions:
+                res_label = f"{w}x{h}"
+                log(f"{label} @ {res_label} — {n_runs} runs ...")
+                times = []
+                last_images: list[dict] = []
 
-            if not last_images:
-                warn(f"{label} @ {res_label}: no images in ComfyUI history response — skipping save")
-            else:
-                img  = last_images[0]
-                dest = img_dir / f"{short}_{res_label}.png"
-                saved = False
-                try:
-                    save_comfyui_image(img, dest)
-                    ok(f"Saved image → benchmark_images/{dest.name}")
-                    saved = True
-                except Exception as e:
-                    warn(f"HTTP image fetch failed ({e}) — trying direct file copy")
-                if not saved:
-                    # Fallback: copy directly from ComfyUI's output directory
-                    subfolder = img.get("subfolder", "")
-                    src = (comfyui_dir / "output" / subfolder / img["filename"]
-                           if subfolder else comfyui_dir / "output" / img["filename"])
+                for run_i in range(n_runs):
                     try:
-                        import shutil
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src, dest)
-                        ok(f"Saved image (file copy) → benchmark_images/{dest.name}")
+                        prefix = f"{short}_{res_label}_run{run_i + 1}"
+                        if workflow_t == "flux":
+                            wf = build_flux_workflow(
+                                checkpoint, w, h, steps, cfg,
+                                sampler, scheduler, seed, prompt,
+                                filename_prefix=prefix)
+                        elif workflow_t == "sd3":
+                            wf = build_sd3_workflow(
+                                checkpoint, w, h, steps, cfg,
+                                sampler, scheduler, seed, prompt,
+                                filename_prefix=prefix)
+                        else:
+                            wf = build_sdxl_workflow(
+                                checkpoint, w, h, steps, cfg,
+                                sampler, scheduler, seed, prompt,
+                                filename_prefix=prefix)
+
+                        elapsed, images = comfyui_submit(wf, timeout=timeout)
+                        times.append(elapsed)
+                        last_images = images
+                        print(f"    run {run_i+1}/{n_runs}: {elapsed:.1f}s")
+                    except TimeoutError:
+                        err(f"Run {run_i+1} timed out — skipping {label}")
+                        model_timed_out = True
+                        break
                     except Exception as e:
-                        warn(f"Could not save image: {e}")
+                        err(f"Run {run_i+1} failed: {e}")
+
+                if times:
+                    raw_times = times[:]
+                    # Drop the single slowest run before averaging
+                    if len(times) > 1:
+                        worst_idx = times.index(max(times))
+                        times = times[:worst_idx] + times[worst_idx+1:]
+                    results[short]["resolutions"][res_label] = {
+                        "sec_per_image_mean":  round(mean(times),  2),
+                        "sec_per_image_stdev": round(stdev(times), 2),
+                        "n_runs":              len(times),
+                        "runs":               [round(t, 2) for t in raw_times],
+                    }
+                    ok(f"{label} @ {res_label}: "
+                       f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
+
+                if not last_images:
+                    warn(f"{label} @ {res_label}: no images in ComfyUI history response — skipping save")
+                else:
+                    img  = last_images[0]
+                    dest = img_dir / f"{short}_{res_label}.png"
+                    saved = False
+                    try:
+                        save_comfyui_image(img, dest)
+                        ok(f"Saved image → benchmark_images/{dest.name}")
+                        saved = True
+                    except Exception as e:
+                        warn(f"HTTP image fetch failed ({e}) — trying direct file copy")
+                    if not saved:
+                        # Fallback: copy directly from ComfyUI's output directory
+                        subfolder = img.get("subfolder", "")
+                        src = (comfyui_dir / "output" / subfolder / img["filename"]
+                               if subfolder else comfyui_dir / "output" / img["filename"])
+                        try:
+                            import shutil
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(src, dest)
+                            ok(f"Saved image (file copy) → benchmark_images/{dest.name}")
+                        except Exception as e:
+                            warn(f"Could not save image: {e}")
+
+                if model_timed_out:
+                    warn(f"{label}: timed out — moving to next model")
+                    break
+
+        finally:
+            if save_fn:
+                save_fn(results)
 
     log("Unloading ComfyUI models from VRAM ...")
     try:
@@ -1163,6 +1184,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
         warn(f"Could not unload ComfyUI models: {e}")
 
     return results
+
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
@@ -1263,6 +1285,11 @@ def main():
         "images":     {},
     }
 
+    def _checkpoint(label=""):
+        Path(out_path).write_text(json.dumps(results, indent=2))
+        if label:
+            log(f"Partial results saved to {out_path} ({label})")
+
     try:
         # ── LLM ───────────────────────────────────────────────────────────────
         if "llm" in args.tests:
@@ -1274,6 +1301,7 @@ def main():
                 n_runs=args.runs,
                 warmup_runs=args.warmup,
             )
+            _checkpoint("LLM done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
@@ -1281,6 +1309,7 @@ def main():
                 batch_sizes=EMBED_BATCH_SIZES,
                 n_runs=args.runs,
             )
+            _checkpoint("embeddings done")
 
         # ── Image generation ───────────────────────────────────────────────────
         if "img" in args.tests:
@@ -1293,6 +1322,10 @@ def main():
             if not comfyui_started:
                 warn("Image benchmarks will be skipped")
             else:
+                def _img_save(img_partial):
+                    results["images"] = img_partial
+                    _checkpoint()
+
                 results["images"] = run_image_benchmarks(
                     image_models=IMAGE_MODELS,
                     resolutions=IMAGE_RESOLUTIONS,
@@ -1300,6 +1333,7 @@ def main():
                     prompt=IMAGE_PROMPT,
                     n_runs=args.runs,
                     comfyui_dir=comfyui_dir,
+                    save_fn=_img_save,
                 )
                 # Shut down ComfyUI as soon as image tests are done
                 # to free GPU memory before saving results
