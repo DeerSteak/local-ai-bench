@@ -28,8 +28,9 @@ Servers are managed automatically:
 
 Usage:
   python benchmark.py                  # run all tests
-  python benchmark.py --tests llm      # run only LLM tests
+  python benchmark.py --tests llm      # run only LLM single-shot tests
   python benchmark.py --tests llm emb  # run LLM + embeddings
+  python benchmark.py --tests conv     # run only LLM conversation tests
   python benchmark.py --runs 3         # override number of measured runs
   python benchmark.py --comfyui /path/to/ComfyUI  # override ComfyUI path
 """
@@ -1517,8 +1518,8 @@ def main():
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "emb", "img"],
-        default=["llm", "emb", "img"],
+        choices=["llm", "conv", "emb", "img"],
+        default=["llm", "conv", "emb", "img"],
         help="Which benchmarks to run (default: all)",
     )
     parser.add_argument(
@@ -1604,11 +1605,12 @@ def main():
     signal.signal(signal.SIGTERM, _cleanup)
 
     results = {
-        "version":    VERSION,
-        "profile":    profile,
-        "llm":        {},
-        "embeddings": {},
-        "images":     {},
+        "version":         VERSION,
+        "profile":         profile,
+        "llm":             {},
+        "llm_conversation": {},
+        "embeddings":      {},
+        "images":          {},
     }
 
     def _checkpoint(label=""):
@@ -1618,9 +1620,11 @@ def main():
 
     try:
         # ── LLM ───────────────────────────────────────────────────────────────
-        if "llm" in args.tests:
+        if "llm" in args.tests or "conv" in args.tests:
             section("Starting Servers")
             ensure_ollama()
+
+        if "llm" in args.tests:
             results["llm"] = run_llm_benchmarks(
                 models=llm_models,
                 context_lengths=CONTEXT_LENGTHS,
@@ -1629,6 +1633,7 @@ def main():
             )
             _checkpoint("LLM done")
 
+        if "conv" in args.tests:
             results["llm_conversation"] = run_conversation_benchmarks(
                 models=llm_models,
                 context_lengths=CONTEXT_LENGTHS,

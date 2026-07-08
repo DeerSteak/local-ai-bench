@@ -131,7 +131,7 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 run_linux.sh [options]      # Linux / macOS
 run_windows.bat [options]   # Windows
 
---tests llm emb img     Tests to run (default: all three)
+--tests llm conv emb img  Tests to run (default: all four)
 --runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
@@ -150,7 +150,10 @@ bash run_linux.sh
 bash run_linux.sh --tests llm --runs 3
 
 # Skip image generation
-bash run_linux.sh --tests llm emb
+bash run_linux.sh --tests llm conv emb
+
+# Conversation benchmark only
+bash run_linux.sh --tests conv
 
 # Small models only
 bash run_linux.sh --small-only
