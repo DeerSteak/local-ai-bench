@@ -1,4 +1,4 @@
-# LLM Benchmark Suite
+# Local AI Bench v1.0
 
 Cross-platform benchmarking for LLM generation, image generation, and embeddings. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 

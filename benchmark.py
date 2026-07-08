@@ -68,6 +68,7 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
+VERSION        = "1.0"
 WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
@@ -1279,6 +1280,7 @@ def main():
     signal.signal(signal.SIGTERM, _cleanup)
 
     results = {
+        "version":    VERSION,
         "profile":    profile,
         "llm":        {},
         "embeddings": {},
