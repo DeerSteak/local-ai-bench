@@ -79,8 +79,13 @@ export const LLM_MODEL_ORDER = [
 export const IMAGE_MODEL_ORDER = ["sdxl", "flux-schnell", "flux-dev", "flux2-dev"];
 
 // Sections
-export const SECTIONS = ["llm", "embeddings", "images"];
-export const SECTION_LABELS = { llm: "LLM", embeddings: "Embeddings", images: "Images" };
+export const SECTIONS = ["llm", "llm_conversation", "embeddings", "images"];
+export const SECTION_LABELS = {
+  llm: "LLM",
+  llm_conversation: "LLM Conversation",
+  embeddings: "Embeddings",
+  images: "Images",
+};
 
 // LLM metric options
 export const LLM_METRICS = ["tps", "ttft"];
@@ -88,6 +93,7 @@ export const LLM_METRIC_LABELS = { tps: "Tokens/sec", ttft: "TTFT (sec)" };
 
 // Colors per context length (used in bar chart mode)
 export const CTX_COLORS = {
+  "2K":  "#9a3078",
   "8K":  "#0969da",
   "32K": "#e36209",
   "64K": "#1a7f37",
@@ -109,7 +115,7 @@ export const IMAGE_BAR_COLORS = {
 };
 
 // Ordered context length labels (match benchmark.py output)
-export const CTX_ORDER = ["8K", "32K", "64K"];
+export const CTX_ORDER = ["2K", "8K", "32K", "64K"];
 
 // Embeddings batch keys and labels
 export const EMBED_BATCH_KEYS = ["batch_32", "batch_128", "batch_512"];

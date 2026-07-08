@@ -60,7 +60,7 @@ export default function Controls({
         </div>
       )}
 
-      {section === "llm" && allModels.length > 0 && (
+      {(section === "llm" || section === "llm_conversation") && allModels.length > 0 && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>

@@ -226,19 +226,19 @@ export default function ChartPanel({
     );
   }
 
-  if (section === "llm") {
+  if (section === "llm" || section === "llm_conversation") {
     const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
     const lineConfigs = buildFileLineConfigs(files);
 
     const modelGroups = allModels.map(model => {
-      const tpsData = buildLLMDataForModel(files, model, "tps");
-      const ttftData = buildLLMDataForModel(files, model, "ttft");
+      const tpsData = buildLLMDataForModel(files, model, "tps", section);
+      const ttftData = buildLLMDataForModel(files, model, "ttft", section);
       const tpsLineConfigs = lineConfigs.filter(lc => tpsData.some(r => r[lc.dataKey] != null));
       const ttftLineConfigs = lineConfigs.filter(lc => ttftData.some(r => r[lc.dataKey] != null));
-      const rawTpsBarConfigs = buildLLMBarConfigs(files, model);
-      const rawTtftBarConfigs = buildLLMBarConfigs(files, model);
-      const rawTpsBarData = buildLLMBarData(files, model, "tps");
-      const rawTtftBarData = buildLLMBarData(files, model, "ttft");
+      const rawTpsBarConfigs = buildLLMBarConfigs(files, model, section);
+      const rawTtftBarConfigs = buildLLMBarConfigs(files, model, section);
+      const rawTpsBarData = buildLLMBarData(files, model, "tps", section);
+      const rawTtftBarData = buildLLMBarData(files, model, "ttft", section);
       const byCtxOrder = (a, b) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
       const tpsBarConfigs = rawTpsBarConfigs.filter(bc => rawTpsBarData.some(r => r[bc.dataKey] != null)).sort(byCtxOrder);
       const ttftBarConfigs = rawTtftBarConfigs.filter(bc => rawTtftBarData.some(r => r[bc.dataKey] != null)).sort(byCtxOrder);
@@ -258,10 +258,14 @@ export default function ChartPanel({
     if (!modelGroups.length) {
       return (
         <div className={styles.emptyState} style={containerStyle}>
-          No LLM data in the loaded file(s)
+          No {SECTION_LABELS[section]} data in the loaded file(s)
         </div>
       );
     }
+
+    const isConv = section === "llm_conversation";
+    const titleSuffix = isConv ? " (Conversation)" : "";
+    const chartNamePrefix = isConv ? "conv_" : "";
 
     return (
       <div ref={containerRef} className={styles.container} style={containerStyle}>
@@ -270,43 +274,43 @@ export default function ChartPanel({
             <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
             {hasTps && (isBar ? (
               <GroupedBarCard
-                title="Tokens/sec"
+                title={`Tokens/sec${titleSuffix}`}
                 modelName={modelLabel(model)}
                 data={tpsBarData}
                 barConfigs={tpsBarConfigs}
                 xKey="systemLabel" yLabel="Tokens/sec" unit="tps"
-                chartName="tps" chartModel={model}
+                chartName={`${chartNamePrefix}tps`} chartModel={model}
                 logoSrc={logoSrc} direction="higher"
               />
             ) : (
               <ChartCard
-                title="Tokens/sec"
+                title={`Tokens/sec${titleSuffix}`}
                 modelName={modelLabel(model)}
                 data={tpsData} lineConfigs={tpsLineConfigs}
                 xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens/sec" unit="tps"
                 isMultiFile={isMultiFile}
-                chartName="tps" chartModel={model}
+                chartName={`${chartNamePrefix}tps`} chartModel={model}
                 logoSrc={logoSrc} direction="higher"
               />
             ))}
             {hasTtft && (isBar ? (
               <GroupedBarCard
-                title="Time to First Token"
+                title={`Time to First Token${titleSuffix}`}
                 modelName={modelLabel(model)}
                 data={ttftBarData}
                 barConfigs={ttftBarConfigs}
                 xKey="systemLabel" yLabel={ttftYLabel} unit={ttftUnit}
-                chartName="ttft" chartModel={model}
+                chartName={`${chartNamePrefix}ttft`} chartModel={model}
                 logoSrc={logoSrc} direction="lower"
               />
             ) : (
               <ChartCard
-                title="Time to First Token"
+                title={`Time to First Token${titleSuffix}`}
                 modelName={modelLabel(model)}
                 data={ttftData} lineConfigs={ttftLineConfigs}
                 xKey="ctxLabel" xLabel="Context Length" yLabel={ttftYLabel} unit={ttftUnit}
                 isMultiFile={isMultiFile}
-                chartName="ttft" chartModel={model}
+                chartName={`${chartNamePrefix}ttft`} chartModel={model}
                 logoSrc={logoSrc} direction="lower"
               />
             ))}

@@ -23,9 +23,9 @@ function MachineTd({ fileId, files }) {
   );
 }
 
-function LLMTable({ files, sortConfig, onCycleSort }) {
+function LLMTable({ files, section, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenLLMData(files).sort((a, b) => {
+  const rows = flattenLLMData(files, section).sort((a, b) => {
     const ak = a[sortConfig.key] ?? "";
     const bk = b[sortConfig.key] ?? "";
     return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
@@ -145,7 +145,8 @@ export default function StatsTable({ files, section, sortConfig, onCycleSort }) 
   return (
     <div className={`card ${styles.wrapper}`}>
       <div className={styles.tableTitle}>Raw Numbers — {SECTION_LABELS[section]}</div>
-      {section === "llm"        && <LLMTable    files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {(section === "llm" || section === "llm_conversation") &&
+        <LLMTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
     </div>

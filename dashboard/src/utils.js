@@ -55,10 +55,16 @@ export function imageModelLabel(model) {
   return IMAGE_MODEL_LABELS[model] || model;
 }
 
-// Return all LLM model keys from the loaded files, in canonical order
+// Return all LLM model keys from the loaded files, in canonical order.
+// Checks both the single-shot and conversation LLM sections, since the
+// Models filter is shared UI across both — a model present in only one of
+// them should still show up and not disappear when switching sections.
 export function getAllLLMModels(files) {
   const s = new Set();
-  for (const f of files) for (const m of Object.keys(f.data.llm || {})) s.add(m);
+  for (const f of files) {
+    for (const m of Object.keys(f.data.llm || {})) s.add(m);
+    for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
+  }
   const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
   return [...known, ...unknown];
@@ -85,15 +91,15 @@ export function buildFileLineConfigs(files) {
 }
 
 // LLM: one chart per model. X = context length, lines = files.
-export function buildLLMDataForModel(files, model, metric) {
+export function buildLLMDataForModel(files, model, metric, section = "llm") {
   const ctxSet = new Set();
   for (const f of files)
-    for (const ctx of Object.keys(f.data.llm?.[model] || {})) ctxSet.add(ctx);
+    for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
   return ctxLabels.map(ctx => {
     const row = { ctxLabel: ctx };
     files.forEach((f, fi) => {
-      const s = f.data.llm?.[model]?.[ctx];
+      const s = f.data[section]?.[model]?.[ctx];
       if (s) row[`f${fi}`] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
     });
     return row;
@@ -264,10 +270,10 @@ export function buildImagesLineConfigs(files, data, enabledImageModels) {
 // ── Bar chart builders (one color per setting, X = systems) ───────────────────
 
 // LLM bar chart: rows = files/systems, cols = context lengths
-export function buildLLMBarData(files, model, metric) {
+export function buildLLMBarData(files, model, metric, section = "llm") {
   return files.map(f => {
     const row = { systemLabel: f.hostname };
-    const ctxData = f.data.llm?.[model] || {};
+    const ctxData = f.data[section]?.[model] || {};
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
       if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
@@ -276,10 +282,10 @@ export function buildLLMBarData(files, model, metric) {
   });
 }
 
-export function buildLLMBarConfigs(files, model) {
+export function buildLLMBarConfigs(files, model, section = "llm") {
   const ctxSet = new Set();
   for (const f of files)
-    for (const ctx of Object.keys(f.data.llm?.[model] || {})) ctxSet.add(ctx);
+    for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
   return CTX_ORDER
     .filter(ctx => ctxSet.has(ctx))
     .map((ctx, i) => ({
@@ -377,9 +383,9 @@ export function findMostStrenuousKey(data, keys) {
 
 // ── Flat data for StatsTable ───────────────────────────────────────────────────
 
-export function flattenLLMData(files) {
+export function flattenLLMData(files, section = "llm") {
   return files.flatMap(f =>
-    Object.entries(f.data.llm || {}).flatMap(([model, ctxData]) =>
+    Object.entries(f.data[section] || {}).flatMap(([model, ctxData]) =>
       Object.entries(ctxData)
         .filter(([ctx]) => CTX_ORDER.includes(ctx))
         .map(([ctx, s]) => ({
