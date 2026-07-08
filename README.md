@@ -79,7 +79,7 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 
 | Model | Ollama tag | Size |
 |---|---|---|
-| Gemma 4 27B (MoE, 4B active) | `gemma4:26b` | ~18 GB |
+| Gemma 4 26B (MoE, 4B active) | `gemma4:26b` | ~18 GB |
 | DeepSeek-R1 32B | `deepseek-r1:32b` | ~20 GB |
 | Qwen3.6 35B-A3B (MoE) | `qwen3.6:35b-a3b` | ~22 GB |
 

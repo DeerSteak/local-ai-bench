@@ -85,7 +85,7 @@ LLM_MODELS_SMALL = [
 LLM_MODELS_MEDIUM = [
     {
         "tag":   "gemma4:26b",
-        "label": "Gemma 4 27B",
+        "label": "Gemma 4 26B",
         "short": "gemma4-26b",
         "vram":  "~18 GB",
     },
