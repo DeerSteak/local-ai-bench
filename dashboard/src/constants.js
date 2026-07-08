@@ -1,25 +1,29 @@
-// Colors per known LLM model short key
+// Colors per known LLM model short key (order follows LLM_MODEL_ORDER, i.e.
+// models.py's small -> medium -> large tier order)
 export const MODEL_COLORS = {
-  "llama3.1-8b-q3":  "#00e5ff",
-  "llama3.1-8b-q4":  "#7c4dff",
-  "qwen3-14b-q4":    "#ff6d00",
-  "qwen3-14b-q8":    "#00e676",
-  "gpt-oss-20b":     "#ff4081",
-  "llama3.1-70b-q3": "#ffd740",
-  "llama3.1-70b-q4": "#69f0ae",
-  "gpt-oss-120b":    "#40c4ff",
+  "llama3.1-8b-q4":    "#7c4dff",
+  "deepseek-r1-8b":    "#00e5ff",
+  "gemma4-e4b":        "#ff6d00",
+  "gpt-oss-20b":       "#ff4081",
+  "gemma4-26b":        "#00e676",
+  "deepseek-r1-32b":   "#ffd740",
+  "qwen3.6-35b-a3b":   "#ea80fc",
+  "llama3.3-70b-q4":   "#69f0ae",
+  "deepseek-r1-70b":   "#ccff90",
+  "gpt-oss-120b":      "#40c4ff",
 };
 
+// Matches models.py's IMAGE_MODELS list
 export const IMAGE_MODEL_COLORS = {
   "sdxl":         "#00e5ff",
-  "flux-schnell": "#7c4dff",
+  "sd35-large":   "#7c4dff",
   "flux-dev":     "#ff6d00",
   "flux2-dev":    "#00e676",
 };
 
 export const IMAGE_MODEL_LABELS = {
   "sdxl":         "SDXL",
-  "flux-schnell": "Flux.1-schnell",
+  "sd35-large":   "SD3.5 Large",
   "flux-dev":     "Flux.1-dev",
   "flux2-dev":    "Flux.2-dev",
 };
@@ -55,28 +59,57 @@ export const MODEL_DASH_PATTERNS = [
 
 export const MAX_FILES = 6;
 
-// Human-readable labels for LLM model short keys
+// Human-readable labels for LLM model short keys (matches the "label" field
+// in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
-  "llama3.1-8b-q3":  "Llama 3.1 8B Q3_K_M",
   "llama3.1-8b-q4":  "Llama 3.1 8B Q4_K_M",
-  "qwen3-14b-q4":    "Qwen3 14B Q4_K_M",
-  "qwen3-14b-q8":    "Qwen3 14B Q8_0",
-  "gpt-oss-20b":     "GPT-OSS 20B",
-  "llama3.1-70b-q3": "Llama 3.1 70B Q3_K_M",
-  "llama3.1-70b-q4": "Llama 3.1 70B Q4_K_M",
-  "gpt-oss-120b":    "GPT-OSS 120B",
+  "deepseek-r1-8b":  "DeepSeek-R1 8B",
+  "gemma4-e4b":      "Gemma 4 E4B",
+  "gpt-oss-20b":     "GPT-OSS 20B (MXFP4)",
+  "gemma4-26b":      "Gemma 4 26B",
+  "deepseek-r1-32b": "DeepSeek-R1 32B",
+  "qwen3.6-35b-a3b": "Qwen3.6 35B-A3B",
+  "llama3.3-70b-q4": "Llama 3.3 70B Q4_K_M",
+  "deepseek-r1-70b": "DeepSeek-R1 70B",
+  "gpt-oss-120b":    "GPT-OSS 120B (MXFP4)",
 };
 
-// Canonical model order (determines chart line order and color assignment)
+// Canonical model order (determines chart line order and color assignment).
+// Matches models.py: LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "llama3.1-8b-q3", "llama3.1-8b-q4",
-  "qwen3-14b-q4",   "qwen3-14b-q8",
-  "gpt-oss-20b",
-  "llama3.1-70b-q3","llama3.1-70b-q4",
-  "gpt-oss-120b",
+  "llama3.1-8b-q4", "deepseek-r1-8b", "gemma4-e4b", "gpt-oss-20b",
+  "gemma4-26b", "deepseek-r1-32b", "qwen3.6-35b-a3b",
+  "llama3.3-70b-q4", "deepseek-r1-70b", "gpt-oss-120b",
 ];
 
-export const IMAGE_MODEL_ORDER = ["sdxl", "flux-schnell", "flux-dev", "flux2-dev"];
+// Size tier per model short key — mirrors models.py's LLM_MODELS_SMALL /
+// _MEDIUM / _LARGE groupings (defined by VRAM footprint, not parameter count,
+// which is why e.g. GPT-OSS 20B — MXFP4, ~14GB — is "small" despite 20B params).
+export const MODEL_SIZE_TIER = {
+  "llama3.1-8b-q4":  "small",
+  "deepseek-r1-8b":  "small",
+  "gemma4-e4b":      "small",
+  "gpt-oss-20b":     "small",
+  "gemma4-26b":      "medium",
+  "deepseek-r1-32b": "medium",
+  "qwen3.6-35b-a3b": "medium",
+  "llama3.3-70b-q4": "large",
+  "deepseek-r1-70b": "large",
+  "gpt-oss-120b":    "large",
+};
+
+export const IMAGE_MODEL_ORDER = ["sdxl", "sd35-large", "flux-dev", "flux2-dev"];
+
+// Size tiers for splitting up per-system charts (too many models on one line
+// chart is unreadable — bar charts don't have this problem since bars stack
+// rather than overlapping lines). Matches models.py / README.md's VRAM-based
+// tiers via MODEL_SIZE_TIER above.
+export const SIZE_TIER_ORDER = ["small", "medium", "large"];
+export const SIZE_TIER_LABELS = {
+  small:  "Small (≤16GB VRAM)",
+  medium: "Medium (16–32GB VRAM)",
+  large:  "Large (42GB+ VRAM)",
+};
 
 // Sections
 export const SECTIONS = ["llm", "llm_conversation", "embeddings", "images"];
@@ -109,7 +142,7 @@ export const BATCH_COLORS = {
 // Colors per image model (used in bar chart mode — matches CTX/BATCH palette)
 export const IMAGE_BAR_COLORS = {
   "sdxl":         "#0969da",
-  "flux-schnell": "#e36209",
+  "sd35-large":   "#e36209",
   "flux-dev":     "#1a7f37",
   "flux2-dev":    "#9a3078",
 };

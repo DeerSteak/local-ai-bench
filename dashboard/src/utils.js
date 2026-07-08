@@ -3,7 +3,7 @@ import {
   MODEL_COLORS, IMAGE_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, LLM_MODEL_ORDER, IMAGE_MODEL_ORDER,
-  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS, RES_COLORS,
+  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -66,6 +66,21 @@ export function modelLabel(model) {
 
 export function imageModelLabel(model) {
   return IMAGE_MODEL_LABELS[model] || model;
+}
+
+// Bucket an LLM model key into a size tier. Known models use MODEL_SIZE_TIER
+// (VRAM-based, matching models.py/README.md exactly — param count is not a
+// reliable proxy, e.g. GPT-OSS 20B/MXFP4 is "small" despite 20B params).
+// Unknown models (not in the standard roster) fall back to a param-count
+// heuristic parsed from the key (e.g. "some-new-model-70b" -> 70 -> "large").
+export function getModelSizeTier(model) {
+  if (MODEL_SIZE_TIER[model]) return MODEL_SIZE_TIER[model];
+  const match = model.match(/(\d+)b/i);
+  if (!match) return "medium";
+  const billions = parseInt(match[1], 10);
+  if (billions <= 14) return "small";
+  if (billions < 50) return "medium";
+  return "large";
 }
 
 // Return all LLM model keys from the loaded files, in canonical order.
@@ -423,6 +438,64 @@ export function buildEmbedBarDataByFile(file) {
     if (s) row[bk] = s.sentences_per_sec_mean;
   }
   return [row];
+}
+
+// ── "Group by System" line chart builders (Y = setting, X = metric, lines = models) ──
+
+// LLM line chart by system: rows = context lengths, one line per model, for one file
+export function buildLLMLineDataByCtx(file, models, metric, section = "llm") {
+  const ctxSet = new Set();
+  for (const model of models)
+    for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
+  const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
+  return ctxLabels.map(ctx => {
+    const row = { ctxLabel: ctx };
+    for (const model of models) {
+      const s = file.data[section]?.[model]?.[ctx];
+      if (s) row[model] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+    }
+    return row;
+  });
+}
+
+export function buildLLMLineConfigsByCtx(models, data) {
+  return models
+    .filter(m => data.some(row => row[m] != null))
+    .map(m => ({ dataKey: m, stroke: getModelColor(m), name: modelLabel(m) }));
+}
+
+// Images line chart by system: rows = resolutions, one line per model, for one file
+export function buildImagesLineDataByRes(file, models) {
+  const resSet = new Set();
+  for (const model of models)
+    for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
+  const resLabels = RES_ORDER.filter(r => resSet.has(r));
+  return resLabels.map(res => {
+    const row = { resLabel: res };
+    for (const model of models) {
+      const s = file.data.images?.[model]?.resolutions?.[res];
+      if (s) row[model] = s.sec_per_image_mean;
+    }
+    return row;
+  });
+}
+
+export function buildImagesLineConfigsByRes(file, models, data) {
+  return models
+    .filter(m => data.some(row => row[m] != null))
+    .map(m => ({ dataKey: m, stroke: getImageModelColor(m), name: getImageLabel([file], m) }));
+}
+
+// Embeddings line chart by system: rows = batch sizes, single "Embeddings" line, for one file
+export function buildEmbedLineDataByBatch(file) {
+  const embedData = file.data.embeddings || {};
+  return EMBED_BATCH_KEYS
+    .filter(bk => embedData[bk])
+    .map(bk => ({ batchLabel: EMBED_BATCH_LABELS[bk], value: embedData[bk].sentences_per_sec_mean }));
+}
+
+export function buildEmbedLineConfigByBatch() {
+  return [{ dataKey: "value", stroke: BATCH_COLORS.batch_32, name: "Embeddings" }];
 }
 
 // ── Bar chart sorting ─────────────────────────────────────────────────────────

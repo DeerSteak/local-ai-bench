@@ -9,189 +9,189 @@
     "backend": "cuda"
   },
   "llm": {
-    "llama3.1-8b-q3": {
-      "8K": {
-        "tps_mean": 88.5,
-        "tps_stdev": 2.3,
-        "ttft_mean_sec": 0.38,
-        "ttft_stdev_sec": 0.03,
-        "n_runs": 5
-      },
-      "32K": {
-        "tps_mean": 85.2,
-        "tps_stdev": 2.1,
-        "ttft_mean_sec": 1.53,
-        "ttft_stdev_sec": 0.06,
-        "n_runs": 5
-      },
-      "64K": {
-        "tps_mean": 79.8,
-        "tps_stdev": 2.6,
-        "ttft_mean_sec": 3.12,
-        "ttft_stdev_sec": 0.12,
-        "n_runs": 5
-      }
-    },
     "llama3.1-8b-q4": {
       "8K": {
-        "tps_mean": 79.3,
-        "tps_stdev": 2.0,
-        "ttft_mean_sec": 0.45,
-        "ttft_stdev_sec": 0.03,
+        "tps_mean": 82.4,
+        "tps_stdev": 2.47,
+        "ttft_mean_sec": 0.408,
+        "ttft_stdev_sec": 0.025,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 75.8,
-        "tps_stdev": 1.9,
-        "ttft_mean_sec": 1.82,
-        "ttft_stdev_sec": 0.07,
+        "tps_mean": 78.7,
+        "tps_stdev": 2.36,
+        "ttft_mean_sec": 1.64,
+        "ttft_stdev_sec": 0.099,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 70.4,
-        "tps_stdev": 2.2,
-        "ttft_mean_sec": 3.7,
-        "ttft_stdev_sec": 0.14,
+        "tps_mean": 72.4,
+        "tps_stdev": 2.17,
+        "ttft_mean_sec": 3.33,
+        "ttft_stdev_sec": 0.2,
         "n_runs": 5
       }
     },
-    "qwen3-14b-q4": {
+    "deepseek-r1-8b": {
       "8K": {
-        "tps_mean": 48.7,
-        "tps_stdev": 1.4,
-        "ttft_mean_sec": 0.69,
-        "ttft_stdev_sec": 0.05,
+        "tps_mean": 73.8,
+        "tps_stdev": 2.22,
+        "ttft_mean_sec": 0.451,
+        "ttft_stdev_sec": 0.027,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 46.1,
-        "tps_stdev": 1.6,
-        "ttft_mean_sec": 2.78,
-        "ttft_stdev_sec": 0.11,
+        "tps_mean": 70.5,
+        "tps_stdev": 2.12,
+        "ttft_mean_sec": 1.81,
+        "ttft_stdev_sec": 0.109,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 42.3,
-        "tps_stdev": 1.8,
-        "ttft_mean_sec": 5.65,
-        "ttft_stdev_sec": 0.21,
+        "tps_mean": 64.9,
+        "tps_stdev": 1.95,
+        "ttft_mean_sec": 3.68,
+        "ttft_stdev_sec": 0.221,
+        "n_runs": 5
+      }
+    },
+    "gemma4-e4b": {
+      "8K": {
+        "tps_mean": 93.7,
+        "tps_stdev": 2.81,
+        "ttft_mean_sec": 0.324,
+        "ttft_stdev_sec": 0.019,
+        "n_runs": 5
+      },
+      "32K": {
+        "tps_mean": 89.5,
+        "tps_stdev": 2.69,
+        "ttft_mean_sec": 1.3,
+        "ttft_stdev_sec": 0.078,
+        "n_runs": 5
+      },
+      "64K": {
+        "tps_mean": 82.3,
+        "tps_stdev": 2.47,
+        "ttft_mean_sec": 2.64,
+        "ttft_stdev_sec": 0.159,
         "n_runs": 5
       }
     },
     "gpt-oss-20b": {
       "8K": {
-        "tps_mean": 39.2,
-        "tps_stdev": 1.2,
-        "ttft_mean_sec": 0.87,
-        "ttft_stdev_sec": 0.06,
+        "tps_mean": 44.0,
+        "tps_stdev": 1.32,
+        "ttft_mean_sec": 0.81,
+        "ttft_stdev_sec": 0.049,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 36.8,
-        "tps_stdev": 1.3,
-        "ttft_mean_sec": 3.5,
-        "ttft_stdev_sec": 0.14,
+        "tps_mean": 42.0,
+        "tps_stdev": 1.26,
+        "ttft_mean_sec": 3.26,
+        "ttft_stdev_sec": 0.195,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 33.1,
-        "tps_stdev": 1.5,
-        "ttft_mean_sec": 7.12,
-        "ttft_stdev_sec": 0.27,
+        "tps_mean": 38.7,
+        "tps_stdev": 1.16,
+        "ttft_mean_sec": 6.61,
+        "ttft_stdev_sec": 0.397,
         "n_runs": 5
       }
     }
   },
   "llm_conversation": {
-    "llama3.1-8b-q3": {
-      "8K": {
-        "tps_mean": 88.2,
-        "tps_stdev": 2.29,
-        "ttft_mean_sec": 0.38,
-        "ttft_stdev_sec": 0.03,
-        "n_runs": 5
-      },
-      "32K": {
-        "tps_mean": 81.8,
-        "tps_stdev": 2.02,
-        "ttft_mean_sec": 0.437,
-        "ttft_stdev_sec": 0.017,
-        "n_runs": 5
-      },
-      "64K": {
-        "tps_mean": 75.5,
-        "tps_stdev": 2.46,
-        "ttft_mean_sec": 0.502,
-        "ttft_stdev_sec": 0.019,
-        "n_runs": 5
-      }
-    },
     "llama3.1-8b-q4": {
       "8K": {
-        "tps_mean": 75.0,
-        "tps_stdev": 1.89,
-        "ttft_mean_sec": 0.45,
-        "ttft_stdev_sec": 0.03,
+        "tps_mean": 80.5,
+        "tps_stdev": 2.41,
+        "ttft_mean_sec": 0.408,
+        "ttft_stdev_sec": 0.025,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 75.1,
-        "tps_stdev": 1.88,
-        "ttft_mean_sec": 0.517,
-        "ttft_stdev_sec": 0.02,
+        "tps_mean": 74.8,
+        "tps_stdev": 2.24,
+        "ttft_mean_sec": 0.47,
+        "ttft_stdev_sec": 0.028,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 68.7,
-        "tps_stdev": 2.15,
-        "ttft_mean_sec": 0.594,
-        "ttft_stdev_sec": 0.022,
+        "tps_mean": 70.3,
+        "tps_stdev": 2.11,
+        "ttft_mean_sec": 0.54,
+        "ttft_stdev_sec": 0.032,
         "n_runs": 5
       }
     },
-    "qwen3-14b-q4": {
+    "deepseek-r1-8b": {
       "8K": {
-        "tps_mean": 48.1,
-        "tps_stdev": 1.38,
-        "ttft_mean_sec": 0.69,
-        "ttft_stdev_sec": 0.05,
+        "tps_mean": 72.1,
+        "tps_stdev": 2.16,
+        "ttft_mean_sec": 0.451,
+        "ttft_stdev_sec": 0.027,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 45.4,
-        "tps_stdev": 1.57,
-        "ttft_mean_sec": 0.793,
+        "tps_mean": 67.1,
+        "tps_stdev": 2.01,
+        "ttft_mean_sec": 0.518,
         "ttft_stdev_sec": 0.031,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 41.1,
-        "tps_stdev": 1.75,
-        "ttft_mean_sec": 0.911,
-        "ttft_stdev_sec": 0.034,
+        "tps_mean": 63.1,
+        "tps_stdev": 1.89,
+        "ttft_mean_sec": 0.596,
+        "ttft_stdev_sec": 0.036,
+        "n_runs": 5
+      }
+    },
+    "gemma4-e4b": {
+      "8K": {
+        "tps_mean": 91.6,
+        "tps_stdev": 2.75,
+        "ttft_mean_sec": 0.324,
+        "ttft_stdev_sec": 0.019,
+        "n_runs": 5
+      },
+      "32K": {
+        "tps_mean": 85.2,
+        "tps_stdev": 2.55,
+        "ttft_mean_sec": 0.373,
+        "ttft_stdev_sec": 0.022,
+        "n_runs": 5
+      },
+      "64K": {
+        "tps_mean": 80.0,
+        "tps_stdev": 2.4,
+        "ttft_mean_sec": 0.428,
+        "ttft_stdev_sec": 0.026,
         "n_runs": 5
       }
     },
     "gpt-oss-20b": {
       "8K": {
-        "tps_mean": 39.1,
-        "tps_stdev": 1.2,
-        "ttft_mean_sec": 0.87,
-        "ttft_stdev_sec": 0.06,
+        "tps_mean": 43.0,
+        "tps_stdev": 1.29,
+        "ttft_mean_sec": 0.81,
+        "ttft_stdev_sec": 0.049,
         "n_runs": 5
       },
       "32K": {
-        "tps_mean": 35.4,
-        "tps_stdev": 1.25,
-        "ttft_mean_sec": 1.0,
-        "ttft_stdev_sec": 0.04,
+        "tps_mean": 40.0,
+        "tps_stdev": 1.2,
+        "ttft_mean_sec": 0.931,
+        "ttft_stdev_sec": 0.056,
         "n_runs": 5
       },
       "64K": {
-        "tps_mean": 32.2,
-        "tps_stdev": 1.46,
-        "ttft_mean_sec": 1.148,
-        "ttft_stdev_sec": 0.044,
+        "tps_mean": 37.6,
+        "tps_stdev": 1.13,
+        "ttft_mean_sec": 1.07,
+        "ttft_stdev_sec": 0.064,
         "n_runs": 5
       }
     }
@@ -227,29 +227,29 @@
       "resolutions": {
         "1024x1024": {
           "sec_per_image_mean": 7.23,
-          "sec_per_image_stdev": 0.34,
+          "sec_per_image_stdev": 0.29,
           "n_runs": 5
         },
         "1536x1536": {
-          "sec_per_image_mean": 17.45,
-          "sec_per_image_stdev": 0.87,
+          "sec_per_image_mean": 17.69,
+          "sec_per_image_stdev": 0.71,
           "n_runs": 5
         }
       }
     },
-    "flux-schnell": {
-      "label": "Flux.1-schnell",
-      "checkpoint": "flux1-schnell.safetensors",
-      "steps": 4,
+    "sd35-large": {
+      "label": "SD3.5 Large",
+      "checkpoint": "sd3.5_large.safetensors",
+      "steps": 28,
       "resolutions": {
         "1024x1024": {
-          "sec_per_image_mean": 3.78,
-          "sec_per_image_stdev": 0.21,
+          "sec_per_image_mean": 22.01,
+          "sec_per_image_stdev": 0.88,
           "n_runs": 5
         },
         "1536x1536": {
-          "sec_per_image_mean": 8.92,
-          "sec_per_image_stdev": 0.42,
+          "sec_per_image_mean": 54.05,
+          "sec_per_image_stdev": 2.16,
           "n_runs": 5
         }
       }
@@ -261,12 +261,12 @@
       "resolutions": {
         "1024x1024": {
           "sec_per_image_mean": 38.45,
-          "sec_per_image_stdev": 1.23,
+          "sec_per_image_stdev": 1.54,
           "n_runs": 5
         },
         "1536x1536": {
-          "sec_per_image_mean": 92.34,
-          "sec_per_image_stdev": 3.45,
+          "sec_per_image_mean": 95.49,
+          "sec_per_image_stdev": 3.82,
           "n_runs": 5
         }
       }

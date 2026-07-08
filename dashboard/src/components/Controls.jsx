@@ -8,6 +8,7 @@ export default function Controls({
   allImageModels, enabledImageModels, onToggleImageModel,
   chartStyle, setChartStyle,
   groupBy, setGroupBy,
+  sizeSplit, setSizeSplit,
   chartWidth, setChartWidth,
   files, hostnameOverrides, onUpdateHostnameOverride,
   logoSrc, setLogoSrc,
@@ -40,12 +41,23 @@ export default function Controls({
         </div>
       </div>
 
-      {chartStyle === "bar" && (
+      <div className={styles.dividerGroup}>
+        <div className={styles.controlLabel}>Group By</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
+            <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {groupBy === "system" && (section === "llm" || section === "llm_conversation") && (
         <div className={styles.dividerGroup}>
-          <div className={styles.controlLabel}>Group By</div>
+          <div className={styles.controlLabel}>Model Sizes</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
-              <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
+            {[["tiers", "Split"], ["combined", "Combined"]].map(([value, label]) => (
+              <button key={value} className={`pill ${sizeSplit === value ? "active" : "inactive"}`} onClick={() => setSizeSplit(value)}>
                 {label}
               </button>
             ))}
