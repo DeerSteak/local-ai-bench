@@ -1,5 +1,5 @@
 import { SECTIONS, SECTION_LABELS, FILE_COLORS } from "../constants";
-import { modelLabel, imageModelLabel, getModelColor, getImageModelColor } from "../utils";
+import { modelLabel, imageModelLabel, getModelColor, getImageModelColor, sanitizeForFilename } from "../utils";
 import styles from "./Controls.module.css";
 
 export default function Controls({
@@ -12,7 +12,9 @@ export default function Controls({
   logoSrc, setLogoSrc,
   logoDragOver, onLogoDrop, onLogoDragOver, onLogoDragLeave,
   saving, onSaveChart,
+  filenameSuffix, setFilenameSuffix,
 }) {
+  const cleanSuffix = sanitizeForFilename(filenameSuffix);
   return (
     <div className="card" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
       <div>
@@ -148,6 +150,21 @@ export default function Controls({
               : <span className={styles.logoPlaceholder}>↓ logo</span>
             }
           </div>
+        </div>
+
+        <div>
+          <div className={styles.controlLabel}>Filename Suffix</div>
+          <input
+            type="text"
+            value={filenameSuffix}
+            onChange={e => setFilenameSuffix(e.target.value)}
+            placeholder="e.g. comparison 2026-07-08"
+            className={styles.widthInput}
+            style={{ width: 160 }}
+          />
+          {cleanSuffix && (
+            <div className={styles.suffixPreview}>_{cleanSuffix}.png</div>
+          )}
         </div>
 
         <div>

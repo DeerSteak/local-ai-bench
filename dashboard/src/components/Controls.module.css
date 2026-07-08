@@ -114,6 +114,17 @@
   color: #0969da;
 }
 
+.suffixPreview {
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: 'IBM Plex Mono', monospace;
+  color: #8c959f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
 .exportBtn {
   font-size: 15px;
   padding: 6px 16px;

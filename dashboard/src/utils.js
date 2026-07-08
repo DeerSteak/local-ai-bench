@@ -10,6 +10,19 @@ export function parseJSON(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+// Turn free-typed text (or a whole joined filename stem) into something safe
+// to use as a filename: whitespace and characters reserved/special on common
+// filesystems — including periods, since they read as file extensions/hidden-
+// file markers — collapse to a single hyphen, and any leading/trailing
+// hyphens left over are trimmed.
+export function sanitizeForFilename(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/[\s<>:"/\\|?*#%&{}$!'`=+@~^.]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 export function fmt(v, unit) {
   if (v == null) return "—";
   switch (unit) {

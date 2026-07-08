@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseJSON, getAllLLMModels, getAllImageModels } from "./utils";
+import { parseJSON, getAllLLMModels, getAllImageModels, sanitizeForFilename } from "./utils";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [logoSrc, setLogoSrc] = useState(null);
   const [logoDragOver, setLogoDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [filenameSuffix, setFilenameSuffix] = useState("");
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -157,9 +158,8 @@ export default function Dashboard() {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const { chartName, chartModel } = cards[i].dataset;
-        const filename = chartModel
-          ? `${chartModel}_${chartName}.png`
-          : `${chartName}.png`;
+        const rawBase = [chartModel, chartName, filenameSuffix].filter(Boolean).join("_");
+        const filename = `${sanitizeForFilename(rawBase)}.png`;
         const link = document.createElement("a");
         link.download = filename;
         link.href = canvas.toDataURL("image/png");
@@ -169,7 +169,7 @@ export default function Dashboard() {
     } finally {
       setSaving(false);
     }
-  }, [saving]);
+  }, [saving, filenameSuffix]);
 
   const cycleSort = (key) => {
     setSortConfig(prev => prev.key === key ? { key, dir: prev.dir * -1 } : { key, dir: 1 });
@@ -205,6 +205,7 @@ export default function Dashboard() {
         onLogoDragOver={handleLogoDragOver}
         onLogoDragLeave={handleLogoDragLeave}
         saving={saving} onSaveChart={saveChart}
+        filenameSuffix={filenameSuffix} setFilenameSuffix={setFilenameSuffix}
       />
 
       <ChartPanel
