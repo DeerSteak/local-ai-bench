@@ -138,7 +138,9 @@ echo   Setup complete.
 echo ==================================================
 echo.
 echo   To run benchmarks:
-echo     %VENV_DIR%\Scripts\activate
-echo     python benchmark.py
+echo     run_windows.bat
 echo.
-pause
+set /p _REPLY="  Run the benchmark now? [y/N] "
+echo.
+if /i "%_REPLY%"=="y"   call "%~dp0run_windows.bat"
+if /i "%_REPLY%"=="yes" call "%~dp0run_windows.bat"

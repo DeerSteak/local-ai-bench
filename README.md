@@ -37,9 +37,11 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--medium-only`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing; on non-Debian distros, install it manually. If the script fails with a permissions error, run `sudo bash setup.sh` instead. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
+**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing; on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
 **DGX Spark** — Ollama is installed via snap if missing. If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
+
+**Note for Mac and Linux: If the script fails with a permissions error, run `sudo bash setup.sh` instead. 
 
 **Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required.
 
