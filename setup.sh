@@ -39,9 +39,41 @@ PYTHON=""
 if PYTHON=$(find_python); then
     ok "Found $($PYTHON --version) at $(command -v $PYTHON)"
 else
-    warn "Python $PYTHON_MIN_MAJOR.$PYTHON_MIN_MINOR+ not found — installing..."
+    warn "Python $PYTHON_MIN_MAJOR.$PYTHON_MIN_MINOR+ not found"
+
+    NEED_BREW=0
+    if [ "$OS" = "Darwin" ] && ! command -v brew &>/dev/null; then
+        NEED_BREW=1
+    fi
+
+    echo ""
+    echo "  This will:"
+    if [ "$NEED_BREW" = "1" ]; then
+        echo "    • Install Homebrew"
+    fi
     if [ "$OS" = "Darwin" ]; then
-        if ! command -v brew &>/dev/null; then
+        echo "    • Install Python 3.11 via Homebrew"
+    elif command -v apt-get &>/dev/null; then
+        echo "    • Install python3.11 via apt-get (requires sudo)"
+    elif command -v dnf &>/dev/null; then
+        echo "    • Install python3.11 via dnf (requires sudo)"
+    elif command -v snap &>/dev/null; then
+        echo "    • Install python311 via snap (requires sudo)"
+    else
+        fail "Could not install Python automatically. Please install Python 3.11+ manually and re-run."
+        exit 1
+    fi
+    echo ""
+    read -r -p "  Proceed? [Y/n] " _py_reply || _py_reply="y"
+    echo ""
+    if [[ -n "$_py_reply" && ! "$_py_reply" =~ ^[Yy] ]]; then
+        fail "Setup cancelled — Python 3.11+ is required."
+        exit 1
+    fi
+
+    info "Installing..."
+    if [ "$OS" = "Darwin" ]; then
+        if [ "$NEED_BREW" = "1" ]; then
             info "Installing Homebrew..."
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             # Add brew to PATH for this session
@@ -59,9 +91,6 @@ else
     elif command -v snap &>/dev/null; then
         sudo snap install python311
         PYTHON=python3.11
-    else
-        fail "Could not install Python automatically. Please install Python 3.11+ manually and re-run."
-        exit 1
     fi
     ok "Installed $($PYTHON --version)"
 fi
@@ -86,21 +115,10 @@ info "Installing from requirements.txt ..."
 "$VENV_PIP" install -r requirements.txt
 ok "Base dependencies installed"
 
-# ── 4. DGX Spark / Linux: install Ollama if missing ───────────────────────────
-if [ "$OS" = "Linux" ] && ! command -v ollama &>/dev/null; then
-    section "Ollama"
-    warn "Ollama not found — installing via snap..."
-    if command -v snap &>/dev/null; then
-        sudo snap install ollama
-        ok "Ollama installed via snap"
-    else
-        info "Installing Ollama via install script..."
-        curl -fsSL https://ollama.com/install.sh | sh
-        ok "Ollama installed"
-    fi
-fi
-
 # ── 4. Run setup_check.py inside the venv ─────────────────────────────────────
+# (Ollama detection/install — including on Linux — happens inside
+# setup_check.py, gated behind its own approval prompt, so it isn't
+# installed here without asking.)
 section "Running setup_check.py"
 info "Using $($VENV_PYTHON --version) from $VENV_PYTHON"
 

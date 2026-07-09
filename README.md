@@ -13,17 +13,19 @@ git clone https://github.com/DeerSteak/local-ai-bench
 cd local-ai-bench
 ```
 
-| Platform | Script | What it installs automatically |
+| Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Homebrew, Python |
 | Linux / DGX Spark | `bash setup.sh` | Python, Ollama |
 | Windows | `setup.bat` | Python, Ollama, ComfyUI portable |
 
-Each script creates a virtual environment and runs `setup_check.py`, which installs Python dependencies, pulls Ollama models, and downloads image checkpoints. When setup is complete:
+On macOS/Linux, `setup.sh` shows exactly what it needs to install (Homebrew and/or Python) and asks before doing it — nothing happens silently. (On Windows, `setup.bat` still installs Python via winget automatically if it's missing.)
+
+Each script then creates a virtual environment and hands off to `setup_check.py`, which detects your hardware and shows a numbered list of every LLM and image model — everything selected by default. Type numbers to toggle individual models (`2 4 7-9`), `a` to select/deselect all, or just press Enter to install everything shown; `q` or Ctrl-C cancels at any point with nothing installed yet. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), it asks for a HuggingFace token next. After that, everything you picked — Ollama, pip packages, models, image checkpoints — installs with no further prompts. When setup is complete:
 
 ```bash
 # Linux / macOS
-bash run_linux.sh
+bash run_linux_mac.sh
 
 # Windows
 run_windows.bat
@@ -37,9 +39,9 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--medium-only`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing; on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
+**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
-**DGX Spark** — Ollama is installed via snap if missing. If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
+**DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
 **Note for Mac and Linux: If the script fails with a permissions error, run `sudo bash setup.sh` instead. 
 
@@ -113,7 +115,7 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 - https://huggingface.co/black-forest-labs/FLUX.1-dev
 - https://huggingface.co/black-forest-labs/FLUX.2-dev
 
-`setup_check.py` finds your HF token in this order:
+If you select one of these in the model picker, `setup_check.py` finds your HF token in this order:
 
 1. `HF_TOKEN` environment variable
 2. `hf.txt` in the repo root (token on a single line)
@@ -128,7 +130,7 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 ## CLI Reference
 
 ```
-run_linux.sh [options]      # Linux / macOS
+run_linux_mac.sh [options]  # Linux / macOS
 run_windows.bat [options]   # Windows
 
 --tests llm conv emb img  Tests to run (default: all four)
@@ -144,22 +146,22 @@ run_windows.bat [options]   # Windows
 
 ```bash
 # Full run — large models skipped automatically if they don't fit
-bash run_linux.sh
+bash run_linux_mac.sh
 
 # LLM only, quick check
-bash run_linux.sh --tests llm --runs 3
+bash run_linux_mac.sh --tests llm --runs 3
 
 # Skip image generation
-bash run_linux.sh --tests llm conv emb
+bash run_linux_mac.sh --tests llm conv emb
 
 # Conversation benchmark only
-bash run_linux.sh --tests conv
+bash run_linux_mac.sh --tests conv
 
 # Small models only
-bash run_linux.sh --small-only
+bash run_linux_mac.sh --small-only
 
 # Give slow hardware more time per run
-bash run_linux.sh --timeout 600
+bash run_linux_mac.sh --timeout 600
 ```
 
 A full run takes 2–4 hours on a Mac; faster on the Spark and Ryzen.
@@ -299,8 +301,8 @@ Any run that exceeds the 300-second timeout causes the model to be skipped immed
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
 | `setup.bat` | One-shot setup for Windows |
-| `setup_check.py` | Called by setup scripts — installs deps, pulls models, downloads checkpoints |
-| `run_linux.sh` | Activates the venv and runs `benchmark.py` on Linux / macOS |
+| `setup_check.py` | Called by setup scripts — detects hardware, lets you pick which models to install, then installs everything unattended |
+| `run_linux_mac.sh` | Activates the venv and runs `benchmark.py` on Linux / macOS |
 | `run_windows.bat` | Activates the venv and runs `benchmark.py` on Windows |
 | `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
 | `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
