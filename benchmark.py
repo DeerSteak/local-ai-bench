@@ -83,13 +83,22 @@ DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
 # Tokens/sec below which a model/context-depth is considered "too slow to be
-# worth it" — decode speed is what makes a run slow, not TTFT, and 15 tok/s is
-# roughly reading speed. Used within the single-shot LLM test to end a depth's
-# runs early once confirmed (see run_llm_benchmarks), which in turn is what
-# excludes a model from the conversation test — by far the most expensive
-# test, since it must generate its way through the full context depth turn by
-# turn.
+# worth it" — decode speed is what makes a run slow for the conversation test,
+# where TTFT is amortized over many turns. Used within the single-shot LLM
+# test to end a depth's runs early once confirmed (see run_llm_benchmarks),
+# which in turn is what excludes a model from the conversation test — by far
+# the most expensive test, since it must generate its way through the full
+# context depth turn by turn.
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec
+
+# Seconds of TTFT above which a single-shot depth is considered "too slow to
+# be worth it" — a cold prefill this slow means the depth isn't a realistic
+# single-shot use case even if decode speed is fine. This ends a depth's runs
+# early the same way SLOW_MODEL_MIN_TPS does, but it's single-shot-only: it
+# does NOT feed into "confirmed_slow" and does NOT exclude the model from the
+# conversation test, since conversation TTFT is against an already-warm slot
+# cache (see run_conversation_benchmarks) and isn't comparable to a cold fill.
+SLOW_MODEL_MAX_TTFT = 15.0   # seconds
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -775,7 +784,8 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                              if c <= model.get("max_ctx", max(context_lengths))]
 
         model_timed_out = False
-        model_confirmed_slow = None   # first context depth (label) that early-exited, if any
+        model_confirmed_slow = None        # first depth that early-exited on TPS, if any
+        model_confirmed_slow_ttft = None   # first depth that early-exited on TTFT, if any
         for ctx_len in model_ctx_lengths:
             label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
@@ -805,20 +815,31 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                         break
                     err(f"Run {run_i+1} failed: {e}")
 
-                # Below the conversation speed gate on all of the first 3 runs
-                # means this depth is a confirmed-slow, successful result —
-                # stop measuring here instead of burning 2 more full runs on
-                # a number we've already established, and move on to the next
-                # context depth for this model (it isn't a failure). Decode
-                # speed (TPS) is what makes a run slow, not TTFT, so only TPS
-                # is checked.
-                if len(tps_list) == 3 and all(t < SLOW_MODEL_MIN_TPS for t in tps_list):
-                    log(f"{label} @ {label_ctx}: consistently below "
-                        f"{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs — "
-                        f"stopping this depth early")
+                # Below the conversation speed gate (TPS) or above the cold-prefill
+                # gate (TTFT) on all of the first 3 runs means this depth is a
+                # confirmed-slow, successful result — stop measuring here instead
+                # of burning 2 more full runs on a number we've already
+                # established, and move on to the next context depth for this
+                # model (it isn't a failure). Only the TPS gate feeds
+                # model_confirmed_slow, which excludes the model from the
+                # conversation test — a slow cold prefill here says nothing about
+                # conversation TTFT, which hits an already-warm slot cache.
+                tps_slow  = len(tps_list) == 3 and all(t < SLOW_MODEL_MIN_TPS for t in tps_list)
+                ttft_slow = len(ttfts)    == 3 and all(t > SLOW_MODEL_MAX_TTFT for t in ttfts)
+                if tps_slow or ttft_slow:
+                    if tps_slow:
+                        log(f"{label} @ {label_ctx}: consistently below "
+                            f"{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs — "
+                            f"stopping this depth early")
+                        if model_confirmed_slow is None:
+                            model_confirmed_slow = label_ctx
+                    if ttft_slow:
+                        log(f"{label} @ {label_ctx}: consistently above "
+                            f"{SLOW_MODEL_MAX_TTFT:.0f}s TTFT across 3 runs — "
+                            f"stopping this depth early")
+                        if model_confirmed_slow_ttft is None:
+                            model_confirmed_slow_ttft = label_ctx
                     confirmed_slow = True
-                    if model_confirmed_slow is None:
-                        model_confirmed_slow = label_ctx
                     break
 
             if ttfts:
@@ -856,6 +877,8 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 
         if model_confirmed_slow is not None:
             results[short]["confirmed_slow"] = model_confirmed_slow
+        if model_confirmed_slow_ttft is not None:
+            results[short]["confirmed_slow_ttft"] = model_confirmed_slow_ttft
 
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
