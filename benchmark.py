@@ -82,13 +82,14 @@ WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
-# Threshold below which a model/context-depth is considered "too slow to be
-# worth it". Used within the single-shot LLM test to end a depth's runs early
-# once confirmed (see run_llm_benchmarks), which in turn is what excludes a
-# model from the conversation test — by far the most expensive test, since it
-# must generate its way through the full context depth turn by turn.
-SLOW_MODEL_MIN_TPS      = 10.0   # tokens/sec
-SLOW_MODEL_MAX_TTFT_SEC = 10.0   # seconds
+# Tokens/sec below which a model/context-depth is considered "too slow to be
+# worth it" — decode speed is what makes a run slow, not TTFT, and 15 tok/s is
+# roughly reading speed. Used within the single-shot LLM test to end a depth's
+# runs early once confirmed (see run_llm_benchmarks), which in turn is what
+# excludes a model from the conversation test — by far the most expensive
+# test, since it must generate its way through the full context depth turn by
+# turn.
+SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -808,14 +809,12 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                 # means this depth is a confirmed-slow, successful result —
                 # stop measuring here instead of burning 2 more full runs on
                 # a number we've already established, and move on to the next
-                # context depth for this model (it isn't a failure).
-                if len(tps_list) == 3 and all(
-                    t < SLOW_MODEL_MIN_TPS or f > SLOW_MODEL_MAX_TTFT_SEC
-                    for f, t in zip(ttfts, tps_list)
-                ):
+                # context depth for this model (it isn't a failure). Decode
+                # speed (TPS) is what makes a run slow, not TTFT, so only TPS
+                # is checked.
+                if len(tps_list) == 3 and all(t < SLOW_MODEL_MIN_TPS for t in tps_list):
                     log(f"{label} @ {label_ctx}: consistently below "
-                        f"{SLOW_MODEL_MIN_TPS:.0f} tok/s / over "
-                        f"{SLOW_MODEL_MAX_TTFT_SEC:.0f}s TTFT across 3 runs — "
+                        f"{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs — "
                         f"stopping this depth early")
                     confirmed_slow = True
                     if model_confirmed_slow is None:
@@ -1579,9 +1578,9 @@ def main():
         "--filter-conv", dest="filter_conv",
         action=argparse.BooleanOptionalAction, default=True,
         help=f"Skip the conversation test for models that fail the speed gate "
-             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s or >{SLOW_MODEL_MAX_TTFT_SEC:.0f}s TTFT) "
-             f"in the LLM results (default: True). Use --no-filter-conv to run "
-             f"conversation for every model regardless of LLM speed.",
+             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s) in the LLM results (default: "
+             f"True). Use --no-filter-conv to run conversation for every model "
+             f"regardless of LLM speed.",
     )
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
@@ -1699,8 +1698,7 @@ def main():
                     if "confirmed_slow" in llm_data:
                         warn(f"{model['label']}: skipping conversation test — "
                              f"LLM test confirmed slow at {llm_data['confirmed_slow']} context "
-                             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s or >{SLOW_MODEL_MAX_TTFT_SEC:.0f}s "
-                             f"TTFT across 3 runs)")
+                             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs)")
                         continue
                     conv_models.append(model)
             elif args.filter_conv:
