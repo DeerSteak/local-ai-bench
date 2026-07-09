@@ -3,7 +3,7 @@
 export const MODEL_COLORS = {
   "llama3.2-3b-q4":    "#536dfe",
   "phi4-mini":         "#64ffda",
-  "qwen3.6-4b":        "#ff8a80",
+  "qwen3.5-4b":        "#ff8a80",
   "llama3.1-8b-q4":    "#7c4dff",
   "deepseek-r1-8b":    "#00e5ff",
   "gemma4-e4b":        "#ff6d00",
@@ -67,7 +67,7 @@ export const MAX_FILES = 6;
 export const LLM_MODEL_LABELS = {
   "llama3.2-3b-q4":  "Llama 3.2 3B Q4_K_M",
   "phi4-mini":       "Phi 4 Mini",
-  "qwen3.6-4b":      "Qwen3.6 4B",
+  "qwen3.5-4b":      "Qwen3.5 4B",
   "llama3.1-8b-q4":  "Llama 3.1 8B Q4_K_M",
   "deepseek-r1-8b":  "DeepSeek-R1 8B",
   "gemma4-e4b":      "Gemma 4 E4B",
@@ -84,7 +84,7 @@ export const LLM_MODEL_LABELS = {
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "llama3.2-3b-q4", "phi4-mini", "qwen3.6-4b",
+  "llama3.2-3b-q4", "phi4-mini", "qwen3.5-4b",
   "llama3.1-8b-q4", "deepseek-r1-8b", "gemma4-e4b", "gpt-oss-20b",
   "gemma4-26b", "deepseek-r1-32b", "qwen3.6-35b-a3b",
   "llama3.3-70b-q4", "deepseek-r1-70b", "gpt-oss-120b",
@@ -97,7 +97,7 @@ export const LLM_MODEL_ORDER = [
 export const MODEL_SIZE_TIER = {
   "llama3.2-3b-q4":  "xsmall",
   "phi4-mini":       "xsmall",
-  "qwen3.6-4b":      "xsmall",
+  "qwen3.5-4b":      "xsmall",
   "llama3.1-8b-q4":  "small",
   "deepseek-r1-8b":  "small",
   "gemma4-e4b":      "small",

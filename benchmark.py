@@ -1586,7 +1586,7 @@ def main():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--xsmall-only", action="store_true",
-        help="Run only extra-small-tier models (<6B params): Llama 3.2 3B Q4_K_M, Phi 4 Mini, Qwen3.6 4B",
+        help="Run only extra-small-tier models (<6B params): Llama 3.2 3B Q4_K_M, Phi 4 Mini, Qwen3.5 4B",
     )
     size_group.add_argument(
         "--small-only", action="store_true",

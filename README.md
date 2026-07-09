@@ -83,7 +83,7 @@ Both thresholds (10 tok/s, 10s TTFT) are the same constants (`SLOW_MODEL_MIN_TPS
 |---|---|---|
 | Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.0 GB |
 | Phi 4 Mini | `phi4-mini` | ~2.5 GB |
-| Qwen3.6 4B | `qwen3.6:4b` | ~2.6 GB |
+| Qwen3.5 4B | `qwen3.5:4b` | ~2.6 GB |
 
 #### Small tier (≤20B params)
 

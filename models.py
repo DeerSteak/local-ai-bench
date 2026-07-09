@@ -70,9 +70,9 @@ LLM_MODELS_XSMALL = sorted([
         "params_b": 3.8,
     },
     {
-        "tag":      "qwen3.6:4b",
-        "label":    "Qwen3.6 4B",
-        "short":    "qwen3.6-4b",
+        "tag":      "qwen3.5:4b",
+        "label":    "Qwen3.5 4B",
+        "short":    "qwen3.5-4b",
         "vram":     "~2.6 GB",
         "params_b": 4,
     },
