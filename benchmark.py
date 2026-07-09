@@ -1536,7 +1536,7 @@ def main():
     )
     parser.add_argument(
         "--out", type=str, default=None,
-        help="Output JSON file (default: results_<hostname>.json)",
+        help="Output JSON file (default: results_<hostname>_<timestamp>.json)",
     )
     parser.add_argument(
         "--comfyui", type=str, default=None,
@@ -1580,7 +1580,8 @@ def main():
 
     profile  = build_profile()
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', profile['hostname']).strip('_')
-    out_path = args.out or f"results_{_safe}.json"
+    _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_path = args.out or f"results_{_safe}_{_start_stamp}.json"
 
     print(f"\n{BOLD}LLM Benchmark Suite{RESET}")
     print(f"  Host:      {profile['hostname']}")
