@@ -875,10 +875,22 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
 # context depth reflect processing the new turn against an already-filled
 # context, not a cold fill from empty.
 
-CONV_NUM_SECTIONS = 6
-CONV_MIN_PREDICT  = 64    # turn size floor, used at the smallest depths
-CONV_MAX_PREDICT  = 1024  # turn size cap, used at the largest depths — longer,
-                          # steadier responses reduce turn-to-turn variance
+CONV_NUM_SECTIONS    = 6
+CONV_MIN_PREDICT     = 64    # measured-phase turn size floor, smallest depths
+CONV_MAX_PREDICT     = 1024  # measured-phase turn size cap, largest depths —
+                              # longer, steadier responses reduce turn-to-turn
+                              # variance. Governs only the 5 measured runs
+                              # reported per checkpoint (via _conv_turn_budget
+                              # below) — growth turns are separate, see
+                              # CONV_GROWTH_PREDICT.
+CONV_GROWTH_PREDICT  = 2000  # turn size for every growth turn (opening answer
+                              # and all "give more detail" follow-ups used to
+                              # build up to each checkpoint) — large so growth
+                              # is a handful of substantial turns rather than
+                              # dozens of small ones, more like a real
+                              # conversation. Doesn't affect what's measured;
+                              # some overshoot past each checkpoint is expected
+                              # and fine.
 
 def _conv_turn_budget(ctx_len: int) -> int:
     """
@@ -932,9 +944,11 @@ def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
         # ceiling with zero headroom — Ollama has to truncate/context-shift and
         # fully reprocess, which looks like a cache miss (a 100x+ TTFT spike)
         # rather than the incremental cost we're trying to measure. Pad the
-        # ceiling so the top checkpoint's overshoot + all its measured turns
-        # still fit comfortably inside num_ctx.
-        headroom = (n_runs + 2) * CONV_MAX_PREDICT
+        # ceiling so the top checkpoint's crossing overshoot (one growth turn,
+        # up to CONV_GROWTH_PREDICT) plus all its measured turns (up to
+        # CONV_MAX_PREDICT each, plus 2 extra turns of buffer) still fit
+        # comfortably inside num_ctx.
+        headroom = CONV_GROWTH_PREDICT + (n_runs + 2) * CONV_MAX_PREDICT
         session_ctx_ceiling = max(context_lengths) + headroom
         max_ctx = min(model.get("max_ctx", session_ctx_ceiling), session_ctx_ceiling)
         log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {RUN_TIMEOUT}s per run) ...")
@@ -1012,12 +1026,25 @@ def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
             label_ctx = f"{ctx_len // 1024}K"
             turn_budget = _conv_turn_budget(ctx_len)
 
-            # Grow the conversation (untimed) until we've crossed this depth.
+            # Grow the conversation (untimed) until we've crossed this depth,
+            # using large CONV_GROWTH_PREDICT turns regardless of this
+            # checkpoint's (much smaller) measured-phase turn_budget — see
+            # CONV_GROWTH_PREDICT above for why. Once within CONV_GROWTH_PREDICT
+            # of the ceiling, shrink num_predict to the remaining gap instead of
+            # blindly using the full budget, so the crossing turn lands close to
+            # the checkpoint rather than potentially overshooting it by up to
+            # CONV_GROWTH_PREDICT tokens. num_predict is a cap, not a target —
+            # a turn can still come in short (early stop) — so this can still
+            # take more than one closing turn; the loop just keeps recomputing
+            # the remaining gap each time.
             log(f"Conversation depth {label_ctx} — growing context "
-                f"(currently ~{cumulative_tokens} tokens, turn budget {turn_budget}) ...")
+                f"(currently ~{cumulative_tokens} tokens) ...")
             try:
                 while cumulative_tokens < ctx_len:
-                    _turn(_next_prompt(), turn_budget)
+                    remaining = ctx_len - cumulative_tokens
+                    num_predict = (CONV_GROWTH_PREDICT if remaining > CONV_GROWTH_PREDICT
+                                   else max(CONV_MIN_PREDICT, remaining))
+                    _turn(_next_prompt(), num_predict)
             except Exception as e:
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
