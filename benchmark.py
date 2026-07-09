@@ -82,6 +82,12 @@ WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
+# Conversation test is by far the most expensive (it must generate its way
+# through the full context depth, turn by turn). Models too slow to be worth
+# that cost are identified from the single-shot LLM results and skipped.
+CONV_GATE_MIN_TPS       = 10.0   # tokens/sec
+CONV_GATE_MAX_TTFT_SEC  = 10.0   # seconds, at the model's deepest tested context
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 GREEN  = "\033[92m"
@@ -1542,6 +1548,14 @@ def main():
         "--comfyui", type=str, default=None,
         help=f"Path to ComfyUI directory (default: {COMFYUI_DIR})",
     )
+    parser.add_argument(
+        "--filter-conv", dest="filter_conv",
+        action=argparse.BooleanOptionalAction, default=True,
+        help=f"Skip the conversation test for models that fail the speed gate "
+             f"(<{CONV_GATE_MIN_TPS:.0f} tok/s or >{CONV_GATE_MAX_TTFT_SEC:.0f}s TTFT) "
+             f"in the LLM results (default: True). Use --no-filter-conv to run "
+             f"conversation for every model regardless of LLM speed.",
+    )
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--small-only", action="store_true",
@@ -1635,8 +1649,36 @@ def main():
             _checkpoint("LLM done")
 
         if "conv" in args.tests:
+            conv_models = llm_models
+            if args.filter_conv and "llm" in args.tests:
+                conv_models = []
+                for model in llm_models:
+                    llm_data = results["llm"].get(model["short"])
+                    if not llm_data:
+                        warn(f"{model['label']}: skipping conversation test — "
+                             f"no LLM benchmark data (skipped or timed out)")
+                        continue
+                    depth_keys = [k for k, v in llm_data.items() if isinstance(v, dict)]
+                    if not depth_keys:
+                        warn(f"{model['label']}: skipping conversation test — "
+                             f"no completed LLM context depths")
+                        continue
+                    deepest = max(depth_keys, key=lambda k: int(k.rstrip("K")))
+                    tps  = llm_data[deepest]["tps_mean"]
+                    ttft = llm_data[deepest]["ttft_mean_sec"]
+                    if tps < CONV_GATE_MIN_TPS or ttft > CONV_GATE_MAX_TTFT_SEC:
+                        warn(f"{model['label']}: skipping conversation test — "
+                             f"{tps:.1f} tok/s / {ttft:.1f}s TTFT at {deepest} context "
+                             f"(threshold: ≥{CONV_GATE_MIN_TPS:.0f} tok/s, "
+                             f"≤{CONV_GATE_MAX_TTFT_SEC:.0f}s TTFT)")
+                        continue
+                    conv_models.append(model)
+            elif args.filter_conv:
+                warn("LLM test wasn't run this session — conversation test "
+                     "cannot be speed-gated, running all models")
+
             results["llm_conversation"] = run_conversation_benchmarks(
-                models=llm_models,
+                models=conv_models,
                 context_lengths=CONTEXT_LENGTHS,
                 n_runs=args.runs,
                 warmup_runs=args.warmup,
