@@ -1,6 +1,9 @@
 // Colors per known LLM model short key (order follows LLM_MODEL_ORDER, i.e.
-// models.py's small -> medium -> large tier order)
+// models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
+  "llama3.2-3b-q4":    "#536dfe",
+  "phi4-mini":         "#64ffda",
+  "qwen3.6-4b":        "#ff8a80",
   "llama3.1-8b-q4":    "#7c4dff",
   "deepseek-r1-8b":    "#00e5ff",
   "gemma4-e4b":        "#ff6d00",
@@ -62,6 +65,9 @@ export const MAX_FILES = 6;
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
+  "llama3.2-3b-q4":  "Llama 3.2 3B Q4_K_M",
+  "phi4-mini":       "Phi 4 Mini",
+  "qwen3.6-4b":      "Qwen3.6 4B",
   "llama3.1-8b-q4":  "Llama 3.1 8B Q4_K_M",
   "deepseek-r1-8b":  "DeepSeek-R1 8B",
   "gemma4-e4b":      "Gemma 4 E4B",
@@ -75,17 +81,23 @@ export const LLM_MODEL_LABELS = {
 };
 
 // Canonical model order (determines chart line order and color assignment).
-// Matches models.py: LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE.
+// Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
+// + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
+  "llama3.2-3b-q4", "phi4-mini", "qwen3.6-4b",
   "llama3.1-8b-q4", "deepseek-r1-8b", "gemma4-e4b", "gpt-oss-20b",
   "gemma4-26b", "deepseek-r1-32b", "qwen3.6-35b-a3b",
   "llama3.3-70b-q4", "deepseek-r1-70b", "gpt-oss-120b",
 ];
 
-// Size tier per model short key — mirrors models.py's LLM_MODELS_SMALL /
-// _MEDIUM / _LARGE groupings (defined by parameter count; VRAM footprint is
-// shown per-model for reference, but tier membership doesn't depend on it).
+// Size tier per model short key — mirrors models.py's LLM_MODELS_XSMALL /
+// _SMALL / _MEDIUM / _LARGE groupings (defined by parameter count; VRAM
+// footprint is shown per-model for reference, but tier membership doesn't
+// depend on it).
 export const MODEL_SIZE_TIER = {
+  "llama3.2-3b-q4":  "xsmall",
+  "phi4-mini":       "xsmall",
+  "qwen3.6-4b":      "xsmall",
   "llama3.1-8b-q4":  "small",
   "deepseek-r1-8b":  "small",
   "gemma4-e4b":      "small",
@@ -104,8 +116,9 @@ export const IMAGE_MODEL_ORDER = ["sdxl", "sd35-large", "flux-dev", "flux2-dev"]
 // chart is unreadable — bar charts don't have this problem since bars stack
 // rather than overlapping lines). Matches models.py / README.md's parameter-
 // count-based tiers via MODEL_SIZE_TIER above.
-export const SIZE_TIER_ORDER = ["small", "medium", "large"];
+export const SIZE_TIER_ORDER = ["xsmall", "small", "medium", "large"];
 export const SIZE_TIER_LABELS = {
+  xsmall: "Extra-small (<6B params)",
   small:  "Small (≤20B params)",
   medium: "Medium (26–35B params)",
   large:  "Large (70B+ params)",

@@ -18,7 +18,7 @@ import json
 import shutil
 from pathlib import Path
 
-from models import LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODEL
+from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODEL
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -399,6 +399,7 @@ def select_models():
     there's nothing to restore/flush.
     """
     groups = [
+        ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm"),
         ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm"),
         ("LLM — Medium tier (26–35B params)", LLM_MODELS_MEDIUM, "llm"),
         ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm"),
@@ -483,7 +484,7 @@ selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
 print()
-info(f"LLM models selected: {len(selected_llm)}/{len(LLM_MODELS_SMALL) + len(LLM_MODELS_MEDIUM) + len(LLM_MODELS_LARGE)}")
+info(f"LLM models selected: {len(selected_llm)}/{len(LLM_MODELS_XSMALL) + len(LLM_MODELS_SMALL) + len(LLM_MODELS_MEDIUM) + len(LLM_MODELS_LARGE)}")
 info(f"Image models selected: {len(selected_images)}/{len(IMAGE_MODELS)}")
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
@@ -675,7 +676,7 @@ except Exception as e:
 section("Ollama Models")
 
 deselected_llm = [
-    m for tier in (LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
+    m for tier in (LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
     for m in tier if m["tag"] not in selected_llm_tags
 ]
 for m in deselected_llm:

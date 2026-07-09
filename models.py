@@ -52,78 +52,117 @@ IMAGE_MODELS = [
     },
 ]
 
+# Extra-small-tier models (<6B parameters).
+# Tags verified against ollama.com/library June 2026.
+LLM_MODELS_XSMALL = sorted([
+    {
+        "tag":      "llama3.2:3b-instruct-q4_K_M",
+        "label":    "Llama 3.2 3B Q4_K_M",
+        "short":    "llama3.2-3b-q4",
+        "vram":     "~2.0 GB",
+        "params_b": 3,
+    },
+    {
+        "tag":      "phi4-mini",
+        "label":    "Phi 4 Mini",
+        "short":    "phi4-mini",
+        "vram":     "~2.5 GB",
+        "params_b": 3.8,
+    },
+    {
+        "tag":      "qwen3.6:4b",
+        "label":    "Qwen3.6 4B",
+        "short":    "qwen3.6-4b",
+        "vram":     "~2.6 GB",
+        "params_b": 4,
+    },
+], key=lambda m: m["params_b"])
+
 # Small-tier models (≤20B parameters).
 # Tags verified against ollama.com/library June 2026.
-LLM_MODELS_SMALL = [
+# "params_b" is total parameter count in billions (not active/effective count
+# for MoE models — e.g. Qwen3.6 35B-A3B has 3B active but 35B total) and is
+# what determines test order below, not VRAM or list position.
+LLM_MODELS_SMALL = sorted([
     {
-        "tag":   "llama3.1:8b-instruct-q4_K_M",
-        "label": "Llama 3.1 8B Q4_K_M",
-        "short": "llama3.1-8b-q4",
-        "vram":  "~4.9 GB",
+        "tag":      "llama3.1:8b-instruct-q4_K_M",
+        "label":    "Llama 3.1 8B Q4_K_M",
+        "short":    "llama3.1-8b-q4",
+        "vram":     "~4.9 GB",
+        "params_b": 8,
     },
     {
-        "tag":   "deepseek-r1:8b",
-        "label": "DeepSeek-R1 8B",
-        "short": "deepseek-r1-8b",
-        "vram":  "~5.2 GB",
+        "tag":      "deepseek-r1:8b",
+        "label":    "DeepSeek-R1 8B",
+        "short":    "deepseek-r1-8b",
+        "vram":     "~5.2 GB",
+        "params_b": 8,
     },
     {
-        "tag":   "gemma4:e4b",
-        "label": "Gemma 4 E4B",
-        "short": "gemma4-e4b",
-        "vram":  "~9.6 GB",
+        "tag":      "gemma4:e4b",
+        "label":    "Gemma 4 E4B",
+        "short":    "gemma4-e4b",
+        "vram":     "~9.6 GB",
+        "params_b": 8,   # "E4B" = 4B effective; ~8B total raw parameters
     },
     {
-        "tag":   "gpt-oss:20b",
-        "label": "GPT-OSS 20B (MXFP4)",
-        "short": "gpt-oss-20b",
-        "vram":  "~14 GB",
+        "tag":      "gpt-oss:20b",
+        "label":    "GPT-OSS 20B (MXFP4)",
+        "short":    "gpt-oss-20b",
+        "vram":     "~14 GB",
+        "params_b": 20,
     },
-]
+], key=lambda m: m["params_b"])
 
 # Medium-tier models (26–35B parameters).
-LLM_MODELS_MEDIUM = [
+LLM_MODELS_MEDIUM = sorted([
     {
-        "tag":   "gemma4:26b",
-        "label": "Gemma 4 26B",
-        "short": "gemma4-26b",
-        "vram":  "~18 GB",
+        "tag":      "gemma4:26b",
+        "label":    "Gemma 4 26B",
+        "short":    "gemma4-26b",
+        "vram":     "~18 GB",
+        "params_b": 26,
     },
     {
-        "tag":   "deepseek-r1:32b",
-        "label": "DeepSeek-R1 32B",
-        "short": "deepseek-r1-32b",
-        "vram":  "~20 GB",
+        "tag":      "deepseek-r1:32b",
+        "label":    "DeepSeek-R1 32B",
+        "short":    "deepseek-r1-32b",
+        "vram":     "~20 GB",
+        "params_b": 32,
     },
     {
-        "tag":   "qwen3.6:35b-a3b",
-        "label": "Qwen3.6 35B-A3B",
-        "short": "qwen3.6-35b-a3b",
-        "vram":  "~22 GB",
+        "tag":      "qwen3.6:35b-a3b",
+        "label":    "Qwen3.6 35B-A3B",
+        "short":    "qwen3.6-35b-a3b",
+        "vram":     "~22 GB",
+        "params_b": 35,   # 3B active
     },
-]
+], key=lambda m: m["params_b"])
 
 # Large-tier models (70B+ parameters).
 # Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist.
-LLM_MODELS_LARGE = [
+LLM_MODELS_LARGE = sorted([
     {
-        "tag":   "llama3.3:70b-instruct-q4_K_M",
-        "label": "Llama 3.3 70B Q4_K_M",
-        "short": "llama3.3-70b-q4",
-        "vram":  "~43 GB",
+        "tag":      "llama3.3:70b-instruct-q4_K_M",
+        "label":    "Llama 3.3 70B Q4_K_M",
+        "short":    "llama3.3-70b-q4",
+        "vram":     "~43 GB",
+        "params_b": 70,
     },
     {
-        "tag":   "deepseek-r1:70b",
-        "label": "DeepSeek-R1 70B",
-        "short": "deepseek-r1-70b",
-        "vram":  "~43 GB",
+        "tag":      "deepseek-r1:70b",
+        "label":    "DeepSeek-R1 70B",
+        "short":    "deepseek-r1-70b",
+        "vram":     "~43 GB",
+        "params_b": 70,
     },
     {
-        "tag":   "gpt-oss:120b",
-        "label": "GPT-OSS 120B (MXFP4)",
-        "short": "gpt-oss-120b",
-        "vram":  "~65 GB",
+        "tag":      "gpt-oss:120b",
+        "label":    "GPT-OSS 120B (MXFP4)",
+        "short":    "gpt-oss-120b",
+        "vram":     "~65 GB",
+        "params_b": 120,
     },
-]
+], key=lambda m: m["params_b"])
 
-LLM_MODELS = LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+LLM_MODELS = LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE

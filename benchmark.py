@@ -64,7 +64,7 @@ COMFYUI_URL  = "http://localhost:8188"
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
-from models import IMAGE_MODELS, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODEL  # noqa: E402
+from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODEL  # noqa: E402
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 EMBED_BATCH_SIZES = [32, 128, 512]
@@ -77,7 +77,7 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
-VERSION        = "1.0"
+VERSION        = "1.1"
 WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
@@ -1585,6 +1585,10 @@ def main():
     )
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
+        "--xsmall-only", action="store_true",
+        help="Run only extra-small-tier models (<6B params): Llama 3.2 3B Q4_K_M, Phi 4 Mini, Qwen3.6 4B",
+    )
+    size_group.add_argument(
         "--small-only", action="store_true",
         help="Run only small-tier models (≤20B params): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
     )
@@ -1604,7 +1608,10 @@ def main():
         RUN_TIMEOUT = args.timeout
 
     # Select model tier
-    if args.small_only:
+    if args.xsmall_only:
+        llm_models = LLM_MODELS_XSMALL
+        tier_label = "extra-small only (≤4GB)"
+    elif args.small_only:
         llm_models = LLM_MODELS_SMALL
         tier_label = "small only (≤16GB)"
     elif args.medium_only:
@@ -1615,7 +1622,7 @@ def main():
         tier_label = "large only (32GB+)"
     else:
         llm_models = LLM_MODELS
-        tier_label = "all (small + medium + large)"
+        tier_label = "all (extra-small + small + medium + large)"
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else COMFYUI_DIR
 

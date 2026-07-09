@@ -1,4 +1,4 @@
-# Local AI Bench v1.0
+# Local AI Bench v1.1
 
 Cross-platform benchmarking for LLM generation, image generation, and embeddings. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 
@@ -59,7 +59,7 @@ Close other apps before running — GPU memory contention affects results.
 
 ### LLM
 
-Ten models across three tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
+Thirteen models across four tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
 
 Every model is run through **two separate LLM tests**, back to back, both measured at the same four context lengths (2K / 8K / 32K / 64K):
 
@@ -76,6 +76,14 @@ The conversation test is by far the most expensive part of a full run — it has
 - **Skipping the conversation test entirely.** If a model exits early anywhere in the single-shot test, or times out at any context length, it is excluded from the conversation test. No exceptions, no re-checking the numbers — early exit (or timeout) in the single-shot test is the entire rule. This check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested. Disable this behavior with `--no-filter-conv` to run the conversation test on every model regardless of single-shot speed.
 
 Both thresholds (10 tok/s, 10s TTFT) are the same constants (`SLOW_MODEL_MIN_TPS`, `SLOW_MODEL_MAX_TTFT_SEC` in `benchmark.py`).
+
+#### Extra-small tier (<6B params)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.0 GB |
+| Phi 4 Mini | `phi4-mini` | ~2.5 GB |
+| Qwen3.6 4B | `qwen3.6:4b` | ~2.6 GB |
 
 #### Small tier (≤20B params)
 
@@ -146,6 +154,7 @@ run_windows.bat [options]   # Windows
 --runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
+--xsmall-only           Run only extra-small-tier LLM models (<6B params)
 --small-only            Run only small-tier LLM models (≤20B params)
 --medium-only           Run only medium-tier LLM models (26–35B params)
 --large-only            Run only large-tier LLM models (70B+ params)
