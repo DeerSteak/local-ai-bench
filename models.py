@@ -52,7 +52,7 @@ IMAGE_MODELS = [
     },
 ]
 
-# Small-tier models (≤16GB VRAM) — run on all hardware including 8GB GPUs.
+# Small-tier models (≤20B parameters).
 # Tags verified against ollama.com/library June 2026.
 LLM_MODELS_SMALL = [
     {
@@ -81,7 +81,7 @@ LLM_MODELS_SMALL = [
     },
 ]
 
-# Medium-tier models (16–32GB VRAM) — 24 GB GPUs (RTX 3090/4090) and 32 GB unified memory.
+# Medium-tier models (26–35B parameters).
 LLM_MODELS_MEDIUM = [
     {
         "tag":   "gemma4:26b",
@@ -103,7 +103,7 @@ LLM_MODELS_MEDIUM = [
     },
 ]
 
-# Large-tier models (≥42GB VRAM).
+# Large-tier models (70B+ parameters).
 # Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist.
 LLM_MODELS_LARGE = [
     {

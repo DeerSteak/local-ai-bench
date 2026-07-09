@@ -83,8 +83,8 @@ export const LLM_MODEL_ORDER = [
 ];
 
 // Size tier per model short key — mirrors models.py's LLM_MODELS_SMALL /
-// _MEDIUM / _LARGE groupings (defined by VRAM footprint, not parameter count,
-// which is why e.g. GPT-OSS 20B — MXFP4, ~14GB — is "small" despite 20B params).
+// _MEDIUM / _LARGE groupings (defined by parameter count; VRAM footprint is
+// shown per-model for reference, but tier membership doesn't depend on it).
 export const MODEL_SIZE_TIER = {
   "llama3.1-8b-q4":  "small",
   "deepseek-r1-8b":  "small",
@@ -102,13 +102,13 @@ export const IMAGE_MODEL_ORDER = ["sdxl", "sd35-large", "flux-dev", "flux2-dev"]
 
 // Size tiers for splitting up per-system charts (too many models on one line
 // chart is unreadable — bar charts don't have this problem since bars stack
-// rather than overlapping lines). Matches models.py / README.md's VRAM-based
-// tiers via MODEL_SIZE_TIER above.
+// rather than overlapping lines). Matches models.py / README.md's parameter-
+// count-based tiers via MODEL_SIZE_TIER above.
 export const SIZE_TIER_ORDER = ["small", "medium", "large"];
 export const SIZE_TIER_LABELS = {
-  small:  "Small (≤16GB VRAM)",
-  medium: "Medium (16–32GB VRAM)",
-  large:  "Large (42GB+ VRAM)",
+  small:  "Small (≤20B params)",
+  medium: "Medium (26–35B params)",
+  large:  "Large (70B+ params)",
 };
 
 // Sections

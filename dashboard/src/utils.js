@@ -69,16 +69,15 @@ export function imageModelLabel(model) {
 }
 
 // Bucket an LLM model key into a size tier. Known models use MODEL_SIZE_TIER
-// (VRAM-based, matching models.py/README.md exactly — param count is not a
-// reliable proxy, e.g. GPT-OSS 20B/MXFP4 is "small" despite 20B params).
-// Unknown models (not in the standard roster) fall back to a param-count
-// heuristic parsed from the key (e.g. "some-new-model-70b" -> 70 -> "large").
+// (parameter-count-based, matching models.py/README.md exactly). Unknown
+// models (not in the standard roster) fall back to a param-count heuristic
+// parsed from the key (e.g. "some-new-model-70b" -> 70 -> "large").
 export function getModelSizeTier(model) {
   if (MODEL_SIZE_TIER[model]) return MODEL_SIZE_TIER[model];
   const match = model.match(/(\d+)b/i);
   if (!match) return "medium";
   const billions = parseInt(match[1], 10);
-  if (billions <= 14) return "small";
+  if (billions <= 20) return "small";
   if (billions < 50) return "medium";
   return "large";
 }

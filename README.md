@@ -66,7 +66,7 @@ Every model is run through **two separate LLM tests**, back to back, both measur
 
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
-#### Small tier (≤16GB VRAM)
+#### Small tier (≤20B params)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -75,7 +75,7 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 | Gemma 4 E4B | `gemma4:e4b` | ~9.6 GB |
 | GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~14 GB |
 
-#### Medium tier (16–32GB VRAM)
+#### Medium tier (26–35B params)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -83,7 +83,7 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 | DeepSeek-R1 32B | `deepseek-r1:32b` | ~20 GB |
 | Qwen3.6 35B-A3B (MoE) | `qwen3.6:35b-a3b` | ~22 GB |
 
-#### Large tier (42GB+ VRAM)
+#### Large tier (70B+ params)
 
 | Model | Ollama tag | Size |
 |---|---|---|
@@ -135,9 +135,9 @@ run_windows.bat [options]   # Windows
 --runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
---small-only            Run only small-tier LLM models (≤16GB VRAM)
---medium-only           Run only medium-tier LLM models (16–32GB VRAM)
---large-only            Run only large-tier LLM models (42GB+ VRAM)
+--small-only            Run only small-tier LLM models (≤20B params)
+--medium-only           Run only medium-tier LLM models (26–35B params)
+--large-only            Run only large-tier LLM models (70B+ params)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>.json)
 ```

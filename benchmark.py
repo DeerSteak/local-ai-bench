@@ -1545,15 +1545,15 @@ def main():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
         "--small-only", action="store_true",
-        help="Run only small-tier models (≤16GB VRAM): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
+        help="Run only small-tier models (≤20B params): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
     )
     size_group.add_argument(
         "--medium-only", action="store_true",
-        help="Run only medium-tier models (16–32GB VRAM): Gemma 4 27B, DeepSeek-R1 32B, Qwen3.6 35B-A3B",
+        help="Run only medium-tier models (26–35B params): Gemma 4 26B, DeepSeek-R1 32B, Qwen3.6 35B-A3B",
     )
     size_group.add_argument(
         "--large-only", action="store_true",
-        help="Run only large-tier models (42GB+ VRAM): Llama 3.3 70B Q4_K_M, DeepSeek-R1 70B, GPT-OSS 120B (MXFP4)",
+        help="Run only large-tier models (70B+ params): Llama 3.3 70B Q4_K_M, DeepSeek-R1 70B, GPT-OSS 120B (MXFP4)",
     )
     args = parser.parse_args()
 
