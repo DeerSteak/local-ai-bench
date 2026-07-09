@@ -68,14 +68,7 @@ Every model is run through **two separate LLM tests**, back to back, both measur
 
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
-#### Skipping slow models
-
-The conversation test is by far the most expensive part of a full run — it has to actually generate its way through each context depth turn by turn, rather than sending one padded prompt. Two mechanisms keep a handful of very slow models from dominating total runtime:
-
-- **Early exit within the single-shot test.** At each context length, if a model's first 3 measured runs are *all* below 15 tok/s, or *all* above 15s TTFT, the remaining 2 runs are skipped and the 3 collected runs are averaged directly (the usual "drop the worst run" step is skipped too, since the sample is already small and unlikely to vary much at that speed). This is a successful result, not a failure — the benchmark still moves on to the next context length for that model, it just stops re-confirming a number it has already established.
-- **Skipping the conversation test entirely.** If a model exits early on *decode speed* (TPS) anywhere in the single-shot test, or times out at any context length, it is excluded from the conversation test. No exceptions, no re-checking the numbers — early exit on TPS (or timeout) in the single-shot test is the entire rule. A single-shot TTFT early exit does **not** count: cold-prefill TTFT scales with context depth on its own and says nothing about the conversation test's TTFT, which lands on an already-warm slot cache rather than a cold fill. This check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested. Disable this behavior with `--no-filter-conv` to run the conversation test on every model regardless of single-shot speed.
-
-The thresholds are `SLOW_MODEL_MIN_TPS` (15 tok/s, roughly reading speed) and `SLOW_MODEL_MAX_TTFT` (15s) in `benchmark.py`.
+A model is only excluded from the conversation test if it timed out or was skipped in the single-shot test (e.g. too large to fit in memory) — that check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested.
 
 #### Extra-small tier (<6B params)
 
@@ -151,25 +144,24 @@ run_linux_mac.sh [options]  # Linux / macOS
 run_windows.bat [options]   # Windows
 
 --tests llm conv emb img  Tests to run (default: all four)
---runs N                Measured runs per test (default: 5)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
 --xsmall-only           Run only extra-small-tier LLM models (<6B params)
 --small-only            Run only small-tier LLM models (≤20B params)
 --medium-only           Run only medium-tier LLM models (26–35B params)
 --large-only            Run only large-tier LLM models (70B+ params)
---filter-conv           Skip the conversation test for slow models, per the single-shot LLM results (default: on)
---no-filter-conv        Run the conversation test on every model regardless of single-shot speed
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
 ```
+
+Every test always measures 3 runs per checkpoint and averages them.
 
 ```bash
 # Full run — large models skipped automatically if they don't fit
 bash run_linux_mac.sh
 
 # LLM only, quick check
-bash run_linux_mac.sh --tests llm --runs 3
+bash run_linux_mac.sh --tests llm
 
 # Skip image generation
 bash run_linux_mac.sh --tests llm conv emb
@@ -282,18 +274,16 @@ Each LLM model follows this pattern:
 
 ```
 warmup (2 runs)
-  → measure single-shot   (5 runs at 2K / 8K / 32K / 64K)
-  → measure conversation  (5 runs at 2K / 8K / 32K / 64K, one continuous growing chat)
+  → measure single-shot   (3 runs at 2K / 8K / 32K / 64K)
+  → measure conversation  (3 runs at 2K / 8K / 32K / 64K, one continuous growing chat)
   → unload → confirm gone
 ```
 
-The single-shot test builds an independent padded prompt for every run. The conversation test keeps a single chat growing across all four checkpoints — it grows past each depth, takes 5 measured turns there, then keeps growing toward the next one — with `num_ctx` sized generously above the largest checkpoint so growth never hits the context ceiling mid-session (hitting it would force a full reprocess and corrupt the "incremental turn" measurement).
+The single-shot test builds an independent padded prompt for every run. The conversation test keeps a single chat growing across all four checkpoints — it grows past each depth, takes 3 measured turns there, then keeps growing toward the next one — with `num_ctx` sized generously above the largest checkpoint so growth never hits the context ceiling mid-session (hitting it would force a full reprocess and corrupt the "incremental turn" measurement).
 
 Any run that exceeds the 300-second timeout causes the model to be skipped immediately. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
 
-Two additional checks, both driven by the single-shot results, keep very slow models from dominating total runtime — see [Skipping slow models](#skipping-slow-models) for the full explanation:
-- Within the single-shot test, a context length whose first 3 runs are all below 15 tok/s, or all above 15s TTFT, stops after those 3 runs instead of running all 5.
-- Before the conversation test starts, any model that early-exited on TPS or timed out anywhere in the single-shot test is excluded from the conversation test (`--no-filter-conv` disables this). A TTFT-only early exit does not exclude it.
+A model is only excluded from the conversation test if it timed out or was skipped in the single-shot test.
 
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
@@ -306,10 +296,10 @@ Two additional checks, both driven by the single-shot results, keep very slow mo
 | LLM context lengths | 2K, 8K, 32K, 64K |
 | LLM test modes | Single-shot (cold prefill), Conversation (incremental turn in a growing chat) |
 | LLM warmup runs | 2 (discarded) |
-| LLM measured runs | 5 per context length per test mode — worst-TTFT run dropped from both TTFT and TPS, 4 averaged (single-shot: only 3 runs, no drop, if confirmed slow on TPS or TTFT — see below) |
+| LLM measured runs | 3 per context length per test mode, averaged |
 | Run timeout | 300s per run — model skipped if exceeded |
 | LLM metrics | TTFT, tokens/sec (TPS) |
-| Conversation speed gate | Single-shot early-exited on TPS (see above) or timed out at any depth ⇒ model excluded from conversation test (`--no-filter-conv` disables). A single-shot TTFT-only early exit does not exclude it. |
+| Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
 | Embedding model | `nomic-embed-text` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |

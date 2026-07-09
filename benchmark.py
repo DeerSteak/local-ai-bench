@@ -31,7 +31,6 @@ Usage:
   python benchmark.py --tests llm      # run only LLM single-shot tests
   python benchmark.py --tests llm emb  # run LLM + embeddings
   python benchmark.py --tests conv     # run only LLM conversation tests
-  python benchmark.py --runs 3         # override number of measured runs
   python benchmark.py --comfyui /path/to/ComfyUI  # override ComfyUI path
 """
 
@@ -79,26 +78,8 @@ IMAGE_PROMPT = (
 
 VERSION        = "1.1"
 WARMUP_RUNS    = 2
-DEFAULT_RUNS   = 5
+N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
-
-# Tokens/sec below which a model/context-depth is considered "too slow to be
-# worth it" — decode speed is what makes a run slow for the conversation test,
-# where TTFT is amortized over many turns. Used within the single-shot LLM
-# test to end a depth's runs early once confirmed (see run_llm_benchmarks),
-# which in turn is what excludes a model from the conversation test — by far
-# the most expensive test, since it must generate its way through the full
-# context depth turn by turn.
-SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec
-
-# Seconds of TTFT above which a single-shot depth is considered "too slow to
-# be worth it" — a cold prefill this slow means the depth isn't a realistic
-# single-shot use case even if decode speed is fine. This ends a depth's runs
-# early the same way SLOW_MODEL_MIN_TPS does, but it's single-shot-only: it
-# does NOT feed into "confirmed_slow" and does NOT exclude the model from the
-# conversation test, since conversation TTFT is against an already-warm slot
-# cache (see run_conversation_benchmarks) and isn't comparable to a cold fill.
-SLOW_MODEL_MAX_TTFT = 15.0   # seconds
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -719,7 +700,7 @@ def wait_until_unloaded(model_tag: str, timeout: int = 30):
 
 # ── LLM benchmark ──────────────────────────────────────────────────────────────
 
-def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
+def run_llm_benchmarks(models, context_lengths, warmup_runs):
     results = {}
 
     if not ollama_available():
@@ -784,17 +765,14 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                              if c <= model.get("max_ctx", max(context_lengths))]
 
         model_timed_out = False
-        model_confirmed_slow = None        # first depth that early-exited on TPS, if any
-        model_confirmed_slow_ttft = None   # first depth that early-exited on TTFT, if any
         for ctx_len in model_ctx_lengths:
             label_ctx = f"{ctx_len // 1024}K"
-            log(f"Context {label_ctx} — {n_runs} runs ...")
+            log(f"Context {label_ctx} — {N_RUNS} runs ...")
 
             ttfts, tps_list = [], []
             ctx_timed_out = False
-            confirmed_slow = False
 
-            for run_i in range(n_runs):
+            for run_i in range(N_RUNS):
                 try:
                     prompt = build_prompt_for_context(ctx_len)
                     ttft, tokens, tps = ollama_generate(
@@ -803,7 +781,7 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     ttfts.append(ttft)
                     tps_list.append(tps)
                     print(
-                        f"    run {run_i+1}/{n_runs}: "
+                        f"    run {run_i+1}/{N_RUNS}: "
                         f"TTFT={ttft:.2f}s  "
                         f"TPS={tps:.1f}"
                     )
@@ -815,54 +793,15 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                         break
                     err(f"Run {run_i+1} failed: {e}")
 
-                # Below the conversation speed gate (TPS) or above the cold-prefill
-                # gate (TTFT) on all of the first 3 runs means this depth is a
-                # confirmed-slow, successful result — stop measuring here instead
-                # of burning 2 more full runs on a number we've already
-                # established, and move on to the next context depth for this
-                # model (it isn't a failure). Only the TPS gate feeds
-                # model_confirmed_slow, which excludes the model from the
-                # conversation test — a slow cold prefill here says nothing about
-                # conversation TTFT, which hits an already-warm slot cache.
-                tps_slow  = len(tps_list) == 3 and all(t < SLOW_MODEL_MIN_TPS for t in tps_list)
-                ttft_slow = len(ttfts)    == 3 and all(t > SLOW_MODEL_MAX_TTFT for t in ttfts)
-                if tps_slow or ttft_slow:
-                    if tps_slow:
-                        log(f"{label} @ {label_ctx}: consistently below "
-                            f"{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs — "
-                            f"stopping this depth early")
-                        if model_confirmed_slow is None:
-                            model_confirmed_slow = label_ctx
-                    if ttft_slow:
-                        log(f"{label} @ {label_ctx}: consistently above "
-                            f"{SLOW_MODEL_MAX_TTFT:.0f}s TTFT across 3 runs — "
-                            f"stopping this depth early")
-                        if model_confirmed_slow_ttft is None:
-                            model_confirmed_slow_ttft = label_ctx
-                    confirmed_slow = True
-                    break
-
             if ttfts:
-                raw_ttfts = ttfts[:]
-                raw_tps = tps_list[:]
-                # Drop the single slowest run (by TTFT) from both lists before
-                # averaging — a run flagged as an outlier is dropped entirely,
-                # not just its TTFT value. Skip this when we stopped early at
-                # 3 confirmed-slow runs: the sample is already small and at
-                # that speed the runs aren't going to differ meaningfully.
-                if len(ttfts) > 1 and not confirmed_slow:
-                    worst_idx = ttfts.index(max(ttfts))
-                    ttfts    = ttfts[:worst_idx]    + ttfts[worst_idx+1:]
-                    tps_list = tps_list[:worst_idx] + tps_list[worst_idx+1:]
-
                 results[short][label_ctx] = {
                     "ttft_mean_sec":  round(mean(ttfts),    3),
                     "ttft_stdev_sec": round(stdev(ttfts),   3),
                     "tps_mean":       round(mean(tps_list), 2),
                     "tps_stdev":      round(stdev(tps_list),2),
                     "n_runs":         len(tps_list),
-                    "ttft_runs":      [round(t, 3) for t in raw_ttfts],
-                    "tps_runs":       [round(t, 2) for t in raw_tps],
+                    "ttft_runs":      [round(t, 3) for t in ttfts],
+                    "tps_runs":       [round(t, 2) for t in tps_list],
                 }
                 ok(
                     f"Context {label_ctx} done: "
@@ -874,11 +813,6 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                 model_timed_out = True
                 results[short]["timed_out"] = label_ctx
                 break
-
-        if model_confirmed_slow is not None:
-            results[short]["confirmed_slow"] = model_confirmed_slow
-        if model_confirmed_slow_ttft is not None:
-            results[short]["confirmed_slow_ttft"] = model_confirmed_slow_ttft
 
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
@@ -902,7 +836,7 @@ CONV_NUM_SECTIONS    = 6
 CONV_MIN_PREDICT     = 64    # measured-phase turn size floor, smallest depths
 CONV_MAX_PREDICT     = 1024  # measured-phase turn size cap, largest depths —
                               # longer, steadier responses reduce turn-to-turn
-                              # variance. Governs only the 5 measured runs
+                              # variance. Governs only the N_RUNS measured runs
                               # reported per checkpoint (via _conv_turn_budget
                               # below) — growth turns are separate, see
                               # CONV_GROWTH_PREDICT.
@@ -941,7 +875,7 @@ def _conv_followup_prompt(section_n: int) -> str:
         "examples, counterarguments, and analysis."
     )
 
-def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
+def run_conversation_benchmarks(models, context_lengths, warmup_runs):
     results = {}
 
     if not ollama_available():
@@ -971,7 +905,7 @@ def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
         # up to CONV_GROWTH_PREDICT) plus all its measured turns (up to
         # CONV_MAX_PREDICT each, plus 2 extra turns of buffer) still fit
         # comfortably inside num_ctx.
-        headroom = CONV_GROWTH_PREDICT + (n_runs + 2) * CONV_MAX_PREDICT
+        headroom = CONV_GROWTH_PREDICT + (N_RUNS + 2) * CONV_MAX_PREDICT
         session_ctx_ceiling = max(context_lengths) + headroom
         max_ctx = min(model.get("max_ctx", session_ctx_ceiling), session_ctx_ceiling)
         log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {RUN_TIMEOUT}s per run) ...")
@@ -1079,18 +1013,18 @@ def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
                 break
 
             log(f"Context {label_ctx} (~{cumulative_tokens} tokens actual) — "
-                f"{n_runs} runs ...")
+                f"{N_RUNS} runs ...")
 
             ttfts, tps_list = [], []
             ctx_timed_out = False
 
-            for run_i in range(n_runs):
+            for run_i in range(N_RUNS):
                 try:
                     ttft, tps = _turn(_next_prompt(), turn_budget)
                     ttfts.append(ttft)
                     tps_list.append(tps)
                     print(
-                        f"    run {run_i+1}/{n_runs}: "
+                        f"    run {run_i+1}/{N_RUNS}: "
                         f"TTFT={ttft:.2f}s  "
                         f"TPS={tps:.1f}  "
                         f"(depth~{cumulative_tokens})"
@@ -1104,24 +1038,14 @@ def run_conversation_benchmarks(models, context_lengths, n_runs, warmup_runs):
                     err(f"Run {run_i+1} failed: {e}")
 
             if ttfts:
-                raw_ttfts = ttfts[:]
-                raw_tps = tps_list[:]
-                # Drop the single slowest run (by TTFT) from both lists before
-                # averaging — a run flagged as an outlier is dropped entirely,
-                # not just its TTFT value.
-                if len(ttfts) > 1:
-                    worst_idx = ttfts.index(max(ttfts))
-                    ttfts    = ttfts[:worst_idx]    + ttfts[worst_idx+1:]
-                    tps_list = tps_list[:worst_idx] + tps_list[worst_idx+1:]
-
                 results[short][label_ctx] = {
                     "ttft_mean_sec":  round(mean(ttfts),    3),
                     "ttft_stdev_sec": round(stdev(ttfts),   3),
                     "tps_mean":       round(mean(tps_list), 2),
                     "tps_stdev":      round(stdev(tps_list),2),
                     "n_runs":         len(tps_list),
-                    "ttft_runs":      [round(t, 3) for t in raw_ttfts],
-                    "tps_runs":       [round(t, 2) for t in raw_tps],
+                    "ttft_runs":      [round(t, 3) for t in ttfts],
+                    "tps_runs":       [round(t, 2) for t in tps_list],
                     "depth_tokens":   cumulative_tokens,
                 }
                 ok(
@@ -1158,7 +1082,7 @@ CORPUS_SENTENCES = [
     "Mixture-of-experts models activate only a subset of parameters per token.",
 ] * 500  # 5,000 sentences total
 
-def run_embedding_benchmarks(batch_sizes, n_runs):
+def run_embedding_benchmarks(batch_sizes):
     results = {}
     section(f"Embeddings: {EMBED_MODEL}")
 
@@ -1177,10 +1101,10 @@ def run_embedding_benchmarks(batch_sizes, n_runs):
     log(f"Corpus: {len(corpus)} sentences")
 
     for bs in batch_sizes:
-        log(f"Batch size {bs} — {n_runs} runs ...")
+        log(f"Batch size {bs} — {N_RUNS} runs ...")
         rates = []
 
-        for run_i in range(n_runs):
+        for run_i in range(N_RUNS):
             t0 = time.perf_counter()
             try:
                 for i in range(0, len(corpus), bs):
@@ -1194,23 +1118,18 @@ def run_embedding_benchmarks(batch_sizes, n_runs):
                 elapsed = time.perf_counter() - t0
                 rate = len(corpus) / elapsed
                 rates.append(rate)
-                print(f"    run {run_i+1}/{n_runs}: {rate:.0f} sent/sec")
+                print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} sent/sec")
             except Exception as e:
                 err(f"Run {run_i+1} failed: {e}")
 
         if rates:
-            raw_rates = rates[:]
-            # Drop the single slowest run before averaging
-            if len(rates) > 1:
-                worst_idx = rates.index(min(rates))
-                rates = rates[:worst_idx] + rates[worst_idx+1:]
             key = f"batch_{bs}"
             results[key] = {
                 "sentences_per_sec_mean":  round(mean(rates), 1),
                 "sentences_per_sec_stdev": round(stdev(rates), 1),
                 "device":                  "gpu",
                 "n_runs":                  len(rates),
-                "runs":                   [round(r, 1) for r in raw_rates],
+                "runs":                   [round(r, 1) for r in rates],
             }
             ok(f"Batch {bs}: {results[key]['sentences_per_sec_mean']:.0f} sent/sec")
 
@@ -1437,7 +1356,7 @@ def save_comfyui_image(img: dict, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(resp.content)
 
-def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
+def run_image_benchmarks(image_models, resolutions, seed, prompt,
                          comfyui_dir, timeout=None, save_fn=None):
     if timeout is None:
         timeout = RUN_TIMEOUT
@@ -1500,11 +1419,11 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
             model_timed_out = False
             for (w, h) in resolutions:
                 res_label = f"{w}x{h}"
-                log(f"{label} @ {res_label} — {n_runs} runs ...")
+                log(f"{label} @ {res_label} — {N_RUNS} runs ...")
                 times = []
                 last_images: list[dict] = []
 
-                for run_i in range(n_runs):
+                for run_i in range(N_RUNS):
                     try:
                         prefix = f"{short}_{res_label}_run{run_i + 1}"
                         if workflow_t == "flux":
@@ -1526,7 +1445,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                         elapsed, images = comfyui_submit(wf, timeout=timeout)
                         times.append(elapsed)
                         last_images = images
-                        print(f"    run {run_i+1}/{n_runs}: {elapsed:.1f}s")
+                        print(f"    run {run_i+1}/{N_RUNS}: {elapsed:.1f}s")
                     except TimeoutError:
                         err(f"Run {run_i+1} timed out — skipping {label}")
                         model_timed_out = True
@@ -1535,16 +1454,11 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt, n_runs,
                         err(f"Run {run_i+1} failed: {e}")
 
                 if times:
-                    raw_times = times[:]
-                    # Drop the single slowest run before averaging
-                    if len(times) > 1:
-                        worst_idx = times.index(max(times))
-                        times = times[:worst_idx] + times[worst_idx+1:]
                     results[short]["resolutions"][res_label] = {
                         "sec_per_image_mean":  round(mean(times),  2),
                         "sec_per_image_stdev": round(stdev(times) if len(times) > 1 else 0.0, 2),
                         "n_runs":              len(times),
-                        "runs":               [round(t, 2) for t in raw_times],
+                        "runs":               [round(t, 2) for t in times],
                     }
                     ok(f"{label} @ {res_label}: "
                        f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
@@ -1605,10 +1519,6 @@ def main():
         help="Which benchmarks to run (default: all)",
     )
     parser.add_argument(
-        "--runs", type=int, default=DEFAULT_RUNS,
-        help=f"Number of measured runs per test (default: {DEFAULT_RUNS})",
-    )
-    parser.add_argument(
         "--warmup", type=int, default=WARMUP_RUNS,
         help=f"Warmup runs before measuring (default: {WARMUP_RUNS})",
     )
@@ -1623,14 +1533,6 @@ def main():
     parser.add_argument(
         "--comfyui", type=str, default=None,
         help=f"Path to ComfyUI directory (default: {COMFYUI_DIR})",
-    )
-    parser.add_argument(
-        "--filter-conv", dest="filter_conv",
-        action=argparse.BooleanOptionalAction, default=True,
-        help=f"Skip the conversation test for models that fail the speed gate "
-             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s) in the LLM results (default: "
-             f"True). Use --no-filter-conv to run conversation for every model "
-             f"regardless of LLM speed.",
     )
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument(
@@ -1685,7 +1587,7 @@ def main():
     print(f"  OS:        {profile['os']}")
     print(f"  Backend:   {profile['backend']}")
     print(f"  RAM:       {profile['ram_gb']} GB")
-    print(f"  Runs:      {args.runs} measured + {args.warmup} warmup")
+    print(f"  Runs:      {N_RUNS} measured + {args.warmup} warmup")
     print(f"  Timeout:   {RUN_TIMEOUT}s per run")
     print(f"  Models:    {tier_label}")
     print(f"  Tests:     {', '.join(args.tests)}")
@@ -1726,14 +1628,13 @@ def main():
             results["llm"] = run_llm_benchmarks(
                 models=llm_models,
                 context_lengths=CONTEXT_LENGTHS,
-                n_runs=args.runs,
                 warmup_runs=args.warmup,
             )
             _checkpoint("LLM done")
 
         if "conv" in args.tests:
             conv_models = llm_models
-            if args.filter_conv and "llm" in args.tests:
+            if "llm" in args.tests:
                 conv_models = []
                 for model in llm_models:
                     llm_data = results["llm"].get(model["short"])
@@ -1745,20 +1646,11 @@ def main():
                         warn(f"{model['label']}: skipping conversation test — "
                              f"LLM test timed out at {llm_data['timed_out']} context")
                         continue
-                    if "confirmed_slow" in llm_data:
-                        warn(f"{model['label']}: skipping conversation test — "
-                             f"LLM test confirmed slow at {llm_data['confirmed_slow']} context "
-                             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s across 3 runs)")
-                        continue
                     conv_models.append(model)
-            elif args.filter_conv:
-                warn("LLM test wasn't run this session — conversation test "
-                     "cannot be speed-gated, running all models")
 
             results["llm_conversation"] = run_conversation_benchmarks(
                 models=conv_models,
                 context_lengths=CONTEXT_LENGTHS,
-                n_runs=args.runs,
                 warmup_runs=args.warmup,
             )
             _checkpoint("LLM conversation done")
@@ -1767,7 +1659,6 @@ def main():
         if "emb" in args.tests:
             results["embeddings"] = run_embedding_benchmarks(
                 batch_sizes=EMBED_BATCH_SIZES,
-                n_runs=args.runs,
             )
             _checkpoint("embeddings done")
 
@@ -1791,7 +1682,6 @@ def main():
                     resolutions=IMAGE_RESOLUTIONS,
                     seed=IMAGE_SEED,
                     prompt=IMAGE_PROMPT,
-                    n_runs=args.runs,
                     comfyui_dir=comfyui_dir,
                     save_fn=_img_save,
                 )
