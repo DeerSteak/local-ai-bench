@@ -28,8 +28,18 @@ for %%C in (python3.13 python3.12 python3.11 python3 python) do (
     )
 )
 
-:: Python not found or too old — try to install via winget
-echo   !  Python 3.11+ not found -- installing via winget...
+:: Python not found or too old — ask before installing via winget
+echo   !  Python 3.11+ not found
+echo.
+echo   This will:
+echo     - Install Python 3.11 via winget
+echo.
+set /p _PY_REPLY="  Proceed? [Y/n] "
+echo.
+if /i "%_PY_REPLY%"=="n" goto :python_cancelled
+if /i "%_PY_REPLY%"=="no" goto :python_cancelled
+
+echo   -^>  Installing Python 3.11 via winget...
 winget install --id Python.Python.3.11 --source winget --accept-package-agreements --accept-source-agreements
 if %errorlevel% neq 0 (
     echo   X  winget install failed. Please install Python 3.11+ from https://python.org and re-run.
@@ -44,6 +54,12 @@ call refreshenv >nul 2>&1 || (
 )
 set PYTHON=python
 echo   OK  Python installed
+goto :python_found
+
+:python_cancelled
+echo   X  Setup cancelled -- Python 3.11+ is required.
+pause
+exit /b 1
 
 :python_found
 
@@ -79,46 +95,9 @@ if %errorlevel% neq 0 (
 )
 echo   OK  Base dependencies installed
 
-:: ── 4. Install Ollama if missing ───────────────────────────────────────────────
-echo.
-echo [Ollama]
-
-:: Check PATH first, then known install locations
-set OLLAMA_BIN=
-where ollama >nul 2>&1
-if %errorlevel% equ 0 (
-    set OLLAMA_BIN=ollama
-)
-if not defined OLLAMA_BIN (
-    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
-        set OLLAMA_BIN=%LOCALAPPDATA%\Programs\Ollama\ollama.exe
-    )
-)
-if not defined OLLAMA_BIN (
-    if exist "C:\Program Files\Ollama\ollama.exe" (
-        set OLLAMA_BIN=C:\Program Files\Ollama\ollama.exe
-    )
-)
-
-if not defined OLLAMA_BIN (
-    echo   !  Ollama not found -- installing via winget...
-    winget install --id Ollama.Ollama --source winget --accept-package-agreements --accept-source-agreements
-    :: winget returns non-zero even for "already installed / no upgrade" -- re-check binary
-    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
-        set OLLAMA_BIN=%LOCALAPPDATA%\Programs\Ollama\ollama.exe
-    )
-    if not defined OLLAMA_BIN (
-        echo   X  Ollama not found after install attempt.
-        echo   -^>  Please install manually from https://ollama.com/download and re-run.
-        pause
-        exit /b 1
-    )
-    echo   OK  Ollama installed
-)
-
-for /f "tokens=*" %%V in ('"%OLLAMA_BIN%" --version 2^>^&1') do echo   OK  %%V
-
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
+:: (Ollama detection/install happens inside setup_check.py, gated behind its
+:: own approval prompt, so it isn't installed here without asking.)
 echo.
 echo [Running setup_check.py]
 echo.

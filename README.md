@@ -19,7 +19,7 @@ cd local-ai-bench
 | Linux / DGX Spark | `bash setup.sh` | Python, Ollama |
 | Windows | `setup.bat` | Python, Ollama, ComfyUI portable |
 
-On macOS/Linux, `setup.sh` shows exactly what it needs to install (Homebrew and/or Python) and asks before doing it — nothing happens silently. (On Windows, `setup.bat` still installs Python via winget automatically if it's missing.)
+`setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
 
 Each script then creates a virtual environment and hands off to `setup_check.py`, which detects your hardware and shows a numbered list of every LLM and image model — everything selected by default. Type numbers to toggle individual models (`2 4 7-9`), `a` to select/deselect all, or just press Enter to install everything shown; `q` or Ctrl-C cancels at any point with nothing installed yet. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), it asks for a HuggingFace token next. After that, everything you picked — Ollama, pip packages, models, image checkpoints — installs with no further prompts. When setup is complete:
 
