@@ -82,11 +82,13 @@ WARMUP_RUNS    = 2
 DEFAULT_RUNS   = 5
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
-# Conversation test is by far the most expensive (it must generate its way
-# through the full context depth, turn by turn). Models too slow to be worth
-# that cost are identified from the single-shot LLM results and skipped.
-CONV_GATE_MIN_TPS       = 10.0   # tokens/sec
-CONV_GATE_MAX_TTFT_SEC  = 10.0   # seconds, at the model's deepest tested context
+# Threshold below which a model/context-depth is considered "too slow to be
+# worth it". Used within the single-shot LLM test to end a depth's runs early
+# once confirmed (see run_llm_benchmarks), which in turn is what excludes a
+# model from the conversation test — by far the most expensive test, since it
+# must generate its way through the full context depth turn by turn.
+SLOW_MODEL_MIN_TPS      = 10.0   # tokens/sec
+SLOW_MODEL_MAX_TTFT_SEC = 10.0   # seconds
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -772,12 +774,14 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                              if c <= model.get("max_ctx", max(context_lengths))]
 
         model_timed_out = False
+        model_confirmed_slow = None   # first context depth (label) that early-exited, if any
         for ctx_len in model_ctx_lengths:
             label_ctx = f"{ctx_len // 1024}K"
             log(f"Context {label_ctx} — {n_runs} runs ...")
 
             ttfts, tps_list = [], []
             ctx_timed_out = False
+            confirmed_slow = False
 
             for run_i in range(n_runs):
                 try:
@@ -800,13 +804,33 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                         break
                     err(f"Run {run_i+1} failed: {e}")
 
+                # Below the conversation speed gate on all of the first 3 runs
+                # means this depth is a confirmed-slow, successful result —
+                # stop measuring here instead of burning 2 more full runs on
+                # a number we've already established, and move on to the next
+                # context depth for this model (it isn't a failure).
+                if len(tps_list) == 3 and all(
+                    t < SLOW_MODEL_MIN_TPS or f > SLOW_MODEL_MAX_TTFT_SEC
+                    for f, t in zip(ttfts, tps_list)
+                ):
+                    log(f"{label} @ {label_ctx}: consistently below "
+                        f"{SLOW_MODEL_MIN_TPS:.0f} tok/s / over "
+                        f"{SLOW_MODEL_MAX_TTFT_SEC:.0f}s TTFT across 3 runs — "
+                        f"stopping this depth early")
+                    confirmed_slow = True
+                    if model_confirmed_slow is None:
+                        model_confirmed_slow = label_ctx
+                    break
+
             if ttfts:
                 raw_ttfts = ttfts[:]
                 raw_tps = tps_list[:]
                 # Drop the single slowest run (by TTFT) from both lists before
                 # averaging — a run flagged as an outlier is dropped entirely,
-                # not just its TTFT value.
-                if len(ttfts) > 1:
+                # not just its TTFT value. Skip this when we stopped early at
+                # 3 confirmed-slow runs: the sample is already small and at
+                # that speed the runs aren't going to differ meaningfully.
+                if len(ttfts) > 1 and not confirmed_slow:
                     worst_idx = ttfts.index(max(ttfts))
                     ttfts    = ttfts[:worst_idx]    + ttfts[worst_idx+1:]
                     tps_list = tps_list[:worst_idx] + tps_list[worst_idx+1:]
@@ -830,6 +854,9 @@ def run_llm_benchmarks(models, context_lengths, n_runs, warmup_runs):
                 model_timed_out = True
                 results[short]["timed_out"] = label_ctx
                 break
+
+        if model_confirmed_slow is not None:
+            results[short]["confirmed_slow"] = model_confirmed_slow
 
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
@@ -1552,7 +1579,7 @@ def main():
         "--filter-conv", dest="filter_conv",
         action=argparse.BooleanOptionalAction, default=True,
         help=f"Skip the conversation test for models that fail the speed gate "
-             f"(<{CONV_GATE_MIN_TPS:.0f} tok/s or >{CONV_GATE_MAX_TTFT_SEC:.0f}s TTFT) "
+             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s or >{SLOW_MODEL_MAX_TTFT_SEC:.0f}s TTFT) "
              f"in the LLM results (default: True). Use --no-filter-conv to run "
              f"conversation for every model regardless of LLM speed.",
     )
@@ -1658,19 +1685,15 @@ def main():
                         warn(f"{model['label']}: skipping conversation test — "
                              f"no LLM benchmark data (skipped or timed out)")
                         continue
-                    depth_keys = [k for k, v in llm_data.items() if isinstance(v, dict)]
-                    if not depth_keys:
+                    if "timed_out" in llm_data:
                         warn(f"{model['label']}: skipping conversation test — "
-                             f"no completed LLM context depths")
+                             f"LLM test timed out at {llm_data['timed_out']} context")
                         continue
-                    deepest = max(depth_keys, key=lambda k: int(k.rstrip("K")))
-                    tps  = llm_data[deepest]["tps_mean"]
-                    ttft = llm_data[deepest]["ttft_mean_sec"]
-                    if tps < CONV_GATE_MIN_TPS or ttft > CONV_GATE_MAX_TTFT_SEC:
+                    if "confirmed_slow" in llm_data:
                         warn(f"{model['label']}: skipping conversation test — "
-                             f"{tps:.1f} tok/s / {ttft:.1f}s TTFT at {deepest} context "
-                             f"(threshold: ≥{CONV_GATE_MIN_TPS:.0f} tok/s, "
-                             f"≤{CONV_GATE_MAX_TTFT_SEC:.0f}s TTFT)")
+                             f"LLM test confirmed slow at {llm_data['confirmed_slow']} context "
+                             f"(<{SLOW_MODEL_MIN_TPS:.0f} tok/s or >{SLOW_MODEL_MAX_TTFT_SEC:.0f}s "
+                             f"TTFT across 3 runs)")
                         continue
                     conv_models.append(model)
             elif args.filter_conv:
