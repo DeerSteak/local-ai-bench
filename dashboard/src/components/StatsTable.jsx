@@ -46,7 +46,15 @@ function LLMTable({ files, section, sortConfig, onCycleSort }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, i) => (
+        {rows.map((r, i) => r.skipped ? (
+          <tr key={i} className={styles.trSkipped}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={styles.td} colSpan={6}>
+              Skipped — {r.skip_detail}
+            </td>
+          </tr>
+        ) : (
           <tr key={i}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>

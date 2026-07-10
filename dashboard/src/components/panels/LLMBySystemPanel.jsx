@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import {
   buildLLMBarDataByModel, buildLLMBarConfigsByModel,
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
-  getAllLLMModels, sortBarData, getModelSizeTier,
+  getAllLLMModels, sortBarData, getModelSizeTier, getConvSkipInfo, modelLabel,
 } from "../../utils";
 import { SECTION_LABELS, SIZE_TIER_ORDER, SIZE_TIER_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -47,7 +47,11 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       if (!hasTps && !hasTtft) return null;
       return { tier, tpsBarData, ttftBarData, tpsBarConfigs, ttftBarConfigs, tpsLineData, ttftLineData, tpsLineConfigs, ttftLineConfigs, hasTps, hasTtft };
     }).filter(Boolean);
-    if (!groups.length) return null;
+
+    const skipEntries = isConv
+      ? allModels.map(m => ({ model: m, info: getConvSkipInfo(f, m) })).filter(e => e.info)
+      : [];
+    if (!groups.length && !skipEntries.length) return null;
 
     const allTtftVals = (isBar
       ? groups.flatMap(g => g.ttftBarData.flatMap(row => g.ttftBarConfigs.map(bc => row[bc.dataKey])))
@@ -57,7 +61,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
       : "sec";
     const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
-    return { file: f, groups, ttftUnit, ttftYLabel };
+    return { file: f, groups, ttftUnit, ttftYLabel, skipEntries };
   }).filter(Boolean);
 
   if (!systemGroups.length) {
@@ -66,9 +70,16 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {systemGroups.map(({ file: f, groups, ttftUnit, ttftYLabel }) => (
+      {systemGroups.map(({ file: f, groups, ttftUnit, ttftYLabel, skipEntries }) => (
         <div key={f.id} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{f.hostname}</div>
+          {skipEntries.length > 0 && (
+            <div className={styles.skipNote}>
+              {skipEntries.map(e => (
+                <div key={e.model}>{modelLabel(e.model)}: Skipped — {e.info.detail}</div>
+              ))}
+            </div>
+          )}
           {groups.map(g => {
             const tierSuffix = g.tier ? ` — ${SIZE_TIER_LABELS[g.tier]}` : "";
             const tierKey = g.tier ? `_${g.tier}` : "";

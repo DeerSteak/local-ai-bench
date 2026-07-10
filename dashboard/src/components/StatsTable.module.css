@@ -65,3 +65,9 @@
 .tdStdev  { color: #8c959f; }
 .tdDevice { color: #57606a; text-align: left; }
 .tdRuns   { color: #8c959f; }
+
+.trSkipped .td {
+  text-align: left;
+  color: #e36209;
+  font-style: italic;
+}

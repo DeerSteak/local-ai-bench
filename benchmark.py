@@ -81,6 +81,13 @@ WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
 
+# Tokens/sec below which a model is considered unusable for real conversation
+# use and skipped from the (expensive) conversation test — decode speed this
+# low means every turn of a real back-and-forth chat is a slog, regardless of
+# how the single-shot test's TTFT looked. Checked against every context depth
+# the single-shot LLM test reported, not just one.
+SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 GREEN  = "\033[92m"
@@ -1644,6 +1651,12 @@ def main():
 
     # Register cleanup for Ctrl-C and normal exit
     def _cleanup(sig=None, frame=None):
+        if sig is not None:
+            print(f"\n{YELLOW}Interrupted — unloading models before exit ...{RESET}")
+        if ollama_available():
+            unload_all_models()
+        if comfyui_available():
+            comfyui_free_models()
         if _managed_procs:
             print(f"\n{YELLOW}Cleaning up managed servers ...{RESET}")
             _shutdown_managed()
@@ -1683,17 +1696,42 @@ def main():
 
         if "conv" in args.tests:
             conv_models = llm_models
+            llm_conv_skips = {}
             if "llm" in args.tests:
                 conv_models = []
                 for model in llm_models:
-                    llm_data = results["llm"].get(model["short"])
+                    short = model["short"]
+                    llm_data = results["llm"].get(short)
                     if not llm_data:
-                        warn(f"{model['label']}: skipping conversation test — "
-                             f"no LLM benchmark data (skipped or timed out)")
+                        detail = "no LLM benchmark data (checkpoint skipped or model failed)"
+                        warn(f"{model['label']}: skipping conversation test — {detail}")
+                        llm_conv_skips[short] = {
+                            "label": model["label"], "skipped": True,
+                            "skip_reason": "no_llm_data", "skip_detail": detail,
+                        }
                         continue
                     if "timed_out" in llm_data:
-                        warn(f"{model['label']}: skipping conversation test — "
-                             f"LLM test timed out at {llm_data['timed_out']} context")
+                        detail = f"LLM test timed out at {llm_data['timed_out']} context"
+                        warn(f"{model['label']}: skipping conversation test — {detail}")
+                        llm_conv_skips[short] = {
+                            "label": model["label"], "skipped": True,
+                            "skip_reason": "timed_out", "skip_detail": detail,
+                        }
+                        continue
+                    slow_ctx = next(
+                        (ctx for ctx, d in llm_data.items()
+                         if isinstance(d, dict) and d.get("tps_mean") is not None
+                         and d["tps_mean"] < SLOW_MODEL_MIN_TPS),
+                        None,
+                    )
+                    if slow_ctx is not None:
+                        detail = (f"{llm_data[slow_ctx]['tps_mean']:.1f} tok/s at {slow_ctx} "
+                                  f"context (below {SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)")
+                        warn(f"{model['label']}: skipping conversation test — {detail}")
+                        llm_conv_skips[short] = {
+                            "label": model["label"], "skipped": True,
+                            "skip_reason": "slow_tps", "skip_detail": detail,
+                        }
                         continue
                     conv_models.append(model)
 
@@ -1702,6 +1740,7 @@ def main():
                 context_lengths=CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
             )
+            results["llm_conversation"].update(llm_conv_skips)
             _checkpoint("LLM conversation done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────

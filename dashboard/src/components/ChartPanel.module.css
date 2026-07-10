@@ -103,6 +103,16 @@
   border-top: 2px solid #e0e4e8;
 }
 
+.skipNote {
+  font-size: 14px;
+  font-style: italic;
+  color: #e36209;
+  font-family: 'IBM Plex Mono', monospace;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .emptyState {
   display: flex;
   align-items: center;

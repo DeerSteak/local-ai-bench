@@ -1,6 +1,6 @@
 import {
   buildLLMDataForModel, buildFileLineConfigs, buildLLMBarConfigs, buildLLMBarData,
-  getAllLLMModels, modelLabel, sortBarData,
+  getAllLLMModels, modelLabel, sortBarData, getConvSkipInfo,
 } from "../../utils";
 import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -13,6 +13,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
   const lineConfigs = buildFileLineConfigs(files);
+  const isConv = section === "llm_conversation";
 
   const modelGroups = allModels.map(model => {
     const tpsData = buildLLMDataForModel(files, model, "tps", section);
@@ -35,23 +36,35 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
     const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
     const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
-    if (!hasTps && !hasTtft) return null;
-    return { model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft };
+    const skipEntries = isConv
+      ? files.map(f => ({ hostname: f.hostname, info: getConvSkipInfo(f, model) }))
+             .filter(e => e.info)
+      : [];
+    if (!hasTps && !hasTtft && !skipEntries.length) return null;
+    return { model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, skipEntries };
   }).filter(Boolean);
 
   if (!modelGroups.length) {
     return <EmptyState style={containerStyle}>No {SECTION_LABELS[section]} data in the loaded file(s)</EmptyState>;
   }
 
-  const isConv = section === "llm_conversation";
   const titleSuffix = isConv ? " (Conversation)" : "";
   const chartNamePrefix = isConv ? "conv_" : "";
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {modelGroups.map(({ model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft }) => (
+      {modelGroups.map(({ model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, skipEntries }) => (
         <div key={model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
+          {skipEntries.length > 0 && (
+            <div className={styles.skipNote}>
+              {skipEntries.map(e => (
+                <div key={e.hostname}>
+                  {isMultiFile ? `${e.hostname}: ` : ""}Skipped — {e.info.detail}
+                </div>
+              ))}
+            </div>
+          )}
           {hasTps && (isBar ? (
             <GroupedBarCard
               title={`Tokens/sec${titleSuffix}`}

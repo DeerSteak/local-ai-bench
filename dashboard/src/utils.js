@@ -82,6 +82,15 @@ export function getModelSizeTier(model) {
   return "large";
 }
 
+// Conversation-test skip info for one (file, model) pair — non-null only when
+// benchmark.py intentionally excluded this model from the conversation test
+// (too slow, timed out in the single-shot test, or had no single-shot data).
+export function getConvSkipInfo(file, model) {
+  const d = file.data.llm_conversation?.[model];
+  if (!d?.skipped) return null;
+  return { reason: d.skip_reason, detail: d.skip_detail };
+}
+
 // Return all LLM model keys from the loaded files, in canonical order.
 // Checks both the single-shot and conversation LLM sections, since the
 // Models filter is shared UI across both — a model present in only one of
@@ -537,16 +546,22 @@ export function findMostStrenuousKey(data, keys) {
 
 export function flattenLLMData(files, section = "llm") {
   return files.flatMap(f =>
-    Object.entries(f.data[section] || {}).flatMap(([model, ctxData]) =>
-      Object.entries(ctxData)
+    Object.entries(f.data[section] || {}).flatMap(([model, ctxData]) => {
+      if (ctxData?.skipped) {
+        return [{
+          _fileId: f.id, model, ctx: "—", skipped: true,
+          skip_reason: ctxData.skip_reason, skip_detail: ctxData.skip_detail,
+        }];
+      }
+      return Object.entries(ctxData)
         .filter(([ctx]) => CTX_ORDER.includes(ctx))
         .map(([ctx, s]) => ({
           _fileId: f.id, model, ctx,
           tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
           ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
           n_runs: s.n_runs,
-        }))
-    )
+        }));
+    })
   );
 }
 
