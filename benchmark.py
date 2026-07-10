@@ -115,8 +115,17 @@ def system_ram_gb():
 # Tracks processes we started so we can shut them down cleanly
 _managed_procs: list[subprocess.Popen] = []
 
+# True while Ollama is running with GPU devices hidden (--emb-cpu-only). If the
+# script dies before it restores normal mode, _shutdown_managed() must not
+# leave that GPU-hidden process running silently in the background.
+_cpu_only_active = False
+
 def _shutdown_managed():
     """Terminate any servers we started."""
+    if _cpu_only_active:
+        warn("Exiting while Ollama is in forced CPU-only mode — killing it "
+             "rather than leaving GPU devices hidden in the background")
+        stop_all_ollama()
     for proc in _managed_procs:
         if proc.poll() is None:
             log(f"Stopping managed process (pid {proc.pid}) ...")
@@ -127,37 +136,27 @@ def _shutdown_managed():
                 proc.kill()
     _managed_procs.clear()
 
-def ensure_ollama():
-    """Start Ollama if not already running. Returns True if available."""
-    if ollama_available():
-        ok("Ollama already running")
-        return True
+def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:
+    """Start 'ollama serve', optionally with extra/overridden environment
+    variables (e.g. HIP_VISIBLE_DEVICES="" to force CPU-only). Tracked in
+    _managed_procs for cleanup on exit. Returns True once reachable."""
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
 
-    log("Ollama not running — attempting to start ...")
     os_name = platform.system()
-
     try:
+        kwargs = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         if os_name == "Windows":
             # On Windows Ollama is a system tray app; 'ollama serve' starts the server
-            proc = subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            )
-        else:
-            proc = subprocess.Popen(
-                ["ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        proc = subprocess.Popen(["ollama", "serve"], **kwargs)
         _managed_procs.append(proc)
     except FileNotFoundError:
         err("'ollama' not found in PATH — install from https://ollama.com/download")
         return False
 
-    # Wait up to 15s for it to come up
-    for i in range(15):
+    for i in range(timeout):
         time.sleep(1)
         if ollama_available():
             ok(f"Ollama started (pid {proc.pid})")
@@ -166,7 +165,39 @@ def ensure_ollama():
             err(f"Ollama exited unexpectedly (code {proc.returncode})")
             return False
 
-    err("Ollama did not respond within 15 seconds")
+    err(f"Ollama did not respond within {timeout} seconds")
+    return False
+
+def stop_all_ollama(timeout: int = 15) -> None:
+    """Kill any running Ollama server, including one this script didn't
+    start itself, so a fresh instance can be launched with different
+    environment variables (e.g. to force CPU-only for embeddings)."""
+    os_name = platform.system()
+    try:
+        if os_name == "Windows":
+            subprocess.run(["taskkill", "/IM", "ollama.exe", "/F"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(["pkill", "-f", "ollama serve"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        pass
+
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < timeout:
+        if not ollama_available():
+            return
+        time.sleep(1)
+    warn(f"Ollama still reachable {timeout}s after attempting to stop it")
+
+def ensure_ollama():
+    """Start Ollama if not already running. Returns True if available."""
+    if ollama_available():
+        ok("Ollama already running")
+        return True
+
+    log("Ollama not running — attempting to start ...")
+    return start_ollama()
     return False
 
 def find_comfyui_python(comfyui_dir: Path) -> str:
@@ -1154,7 +1185,10 @@ def run_embedding_benchmarks(models, batch_sizes):
             log(f"Batch size {bs} — {N_RUNS} runs ...")
             rates = []
 
-            for run_i in range(N_RUNS):
+            MAX_CRASH_RETRIES = 2
+            run_i = 0
+            crash_retries = 0
+            while run_i < N_RUNS:
                 t0 = time.perf_counter()
                 try:
                     for i in range(0, len(corpus), bs):
@@ -1177,8 +1211,36 @@ def run_embedding_benchmarks(models, batch_sizes):
                     rate = len(corpus) / elapsed
                     rates.append(rate)
                     print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} sent/sec")
+                    run_i += 1
                 except Exception as e:
                     err(f"Run {run_i+1} failed: {e}")
+                    # A connection-refused error means Ollama's model runner
+                    # subprocess had already died (commonly OOM) before this
+                    # request. Wait for the main Ollama server to notice and
+                    # respawn it, then retry this same run — up to a capped
+                    # number of attempts, since a deterministic OOM at this
+                    # batch size would just crash again identically forever.
+                    if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                        crash_retries += 1
+                        if crash_retries > MAX_CRASH_RETRIES:
+                            err(f"Ollama's model runner crashed {crash_retries} times at "
+                                f"batch size {bs} — giving up on this batch size")
+                            break
+                        err(f"Ollama's model runner appears to have crashed (possibly OOM) "
+                            f"at batch size {bs} — waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES}")
+                        recovered = False
+                        wait_t0 = time.perf_counter()
+                        while time.perf_counter() - wait_t0 < 30:
+                            if ollama_available():
+                                recovered = True
+                                break
+                            time.sleep(2)
+                        if not recovered:
+                            warn("Ollama did not become reachable again within 30s — giving up on this batch size")
+                            break
+                        # don't advance run_i — retry the same run now that Ollama is back
+                    else:
+                        run_i += 1
 
             if rates:
                 key = f"batch_{bs}"
@@ -1728,6 +1790,14 @@ def main():
         help=f"Path to ComfyUI directory (default: {COMFYUI_DIR})",
     )
     parser.add_argument(
+        "--emb-cpu-only", action="store_true",
+        help="Force CPU-only inference for the embedding benchmarks by restarting "
+             "Ollama with GPU devices hidden (HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES "
+             "/ ROCR_VISIBLE_DEVICES set empty). Stops any running Ollama server "
+             "(even one this script didn't start) and restores normal GPU mode "
+             "afterward. Useful on GPU backends unstable under embedding batching.",
+    )
+    parser.add_argument(
         "--maxtier", type=str, default=None,
         choices=["xsmall", "small", "medium", "large"],
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
@@ -1881,19 +1951,48 @@ def main():
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
-            results["embeddings"] = run_embedding_benchmarks(
-                models=EMBED_MODELS,
-                batch_sizes=EMBED_BATCH_SIZES,
-            )
-            _checkpoint("embeddings done")
+            if args.emb_cpu_only:
+                global _cpu_only_active
+                section("Embeddings: forcing CPU-only")
+                warn("Stopping Ollama to relaunch in CPU-only mode for embeddings ...")
+                stop_all_ollama()
+                cpu_env = {
+                    "HIP_VISIBLE_DEVICES": "",
+                    "CUDA_VISIBLE_DEVICES": "",
+                    "ROCR_VISIBLE_DEVICES": "",
+                }
+                if not start_ollama(extra_env=cpu_env):
+                    err("Failed to start Ollama in CPU-only mode — skipping embeddings")
+                    results["embeddings"] = {}
+                else:
+                    _cpu_only_active = True
+                    results["embeddings"] = run_embedding_benchmarks(
+                        models=EMBED_MODELS,
+                        batch_sizes=EMBED_BATCH_SIZES,
+                    )
+                    _checkpoint("embeddings done")
+                    log("Restoring normal (GPU-enabled) Ollama ...")
+                    stop_all_ollama()
+                    _cpu_only_active = False
+                    start_ollama()
+            else:
+                results["embeddings"] = run_embedding_benchmarks(
+                    models=EMBED_MODELS,
+                    batch_sizes=EMBED_BATCH_SIZES,
+                )
+                _checkpoint("embeddings done")
 
         # ── Image generation ───────────────────────────────────────────────────
         if "img" in args.tests:
             section("Starting Servers")
-            # Hard guarantee: nothing from Ollama in memory before ComfyUI loads
+            # Hard guarantee: nothing from Ollama in memory before ComfyUI loads.
+            # Image generation is always the last phase (see phase order above),
+            # so there's nothing left in this run that needs Ollama afterward —
+            # kill the whole server rather than just unloading its models, to
+            # free up whatever memory the idle process itself still holds.
             if ollama_available():
-                log("Ensuring all Ollama models are unloaded ...")
-                unload_all_models()
+                log("Stopping Ollama entirely to free memory for ComfyUI ...")
+                stop_all_ollama()
             comfyui_started = ensure_comfyui(comfyui_dir)
             if not comfyui_started:
                 warn("Image benchmarks will be skipped")
