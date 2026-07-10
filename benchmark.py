@@ -1684,22 +1684,12 @@ def main():
         "--comfyui", type=str, default=None,
         help=f"Path to ComfyUI directory (default: {COMFYUI_DIR})",
     )
-    size_group = parser.add_mutually_exclusive_group()
-    size_group.add_argument(
-        "--xsmall-only", action="store_true",
-        help="Run only extra-small-tier models (<6B params): Llama 3.2 3B Q4_K_M, Phi 4 Mini, Qwen3.5 4B",
-    )
-    size_group.add_argument(
-        "--small-only", action="store_true",
-        help="Run only small-tier models (≤20B params): Llama 3.1 8B Q4_K_M, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
-    )
-    size_group.add_argument(
-        "--medium-only", action="store_true",
-        help="Run only medium-tier models (26–35B params): Gemma 4 26B, DeepSeek-R1 32B, Qwen3.6 35B-A3B",
-    )
-    size_group.add_argument(
-        "--large-only", action="store_true",
-        help="Run only large-tier models (70B+ params): Llama 3.3 70B Q4_K_M, DeepSeek-R1 70B, GPT-OSS 120B (MXFP4)",
+    parser.add_argument(
+        "--maxtier", type=str, default=None,
+        choices=["xsmall", "small", "medium", "large"],
+        help="Cap LLM models (single-shot and conversation tests) at this size tier "
+             "and below (default: all tiers). xsmall: <6B params. small: adds ≤20B. "
+             "medium: adds 26-35B. large: adds 70B+ (i.e. no cap).",
     )
     args = parser.parse_args()
 
@@ -1708,19 +1698,22 @@ def main():
     if args.timeout is not None:
         RUN_TIMEOUT = args.timeout
 
-    # Select model tier
-    if args.xsmall_only:
-        llm_models = LLM_MODELS_XSMALL
-        tier_label = "extra-small only (≤4GB)"
-    elif args.small_only:
-        llm_models = LLM_MODELS_SMALL
-        tier_label = "small only (≤16GB)"
-    elif args.medium_only:
-        llm_models = LLM_MODELS_MEDIUM
-        tier_label = "medium only (16–32GB)"
-    elif args.large_only:
-        llm_models = LLM_MODELS_LARGE
-        tier_label = "large only (32GB+)"
+    # Select model tier — cumulative: --maxtier caps at that tier and includes everything below it
+    TIER_MODELS = {
+        "xsmall": LLM_MODELS_XSMALL,
+        "small":  LLM_MODELS_XSMALL + LLM_MODELS_SMALL,
+        "medium": LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM,
+        "large":  LLM_MODELS,
+    }
+    TIER_LABELS = {
+        "xsmall": "extra-small only (≤4GB)",
+        "small":  "small and below (≤16GB)",
+        "medium": "medium and below (≤32GB)",
+        "large":  "large and below — all tiers (32GB+)",
+    }
+    if args.maxtier:
+        llm_models = TIER_MODELS[args.maxtier]
+        tier_label = TIER_LABELS[args.maxtier]
     else:
         llm_models = LLM_MODELS
         tier_label = "all (extra-small + small + medium + large)"

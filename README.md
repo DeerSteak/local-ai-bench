@@ -37,7 +37,7 @@ These scripts activate the virtual environment automatically and forward any arg
 
 Close other apps before running — GPU memory contention affects results.
 
-**macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--medium-only`.
+**macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
 
 **Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
@@ -150,10 +150,9 @@ run_windows.bat [options]   # Windows
 --tests llm conv emb img  Tests to run (default: all four)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
---xsmall-only           Run only extra-small-tier LLM models (<6B params)
---small-only            Run only small-tier LLM models (≤20B params)
---medium-only           Run only medium-tier LLM models (26–35B params)
---large-only            Run only large-tier LLM models (70B+ params)
+--maxtier TIER          Cap LLM models (single-shot + conversation) at this tier
+                        and below: xsmall (<6B), small (≤20B), medium (26–35B),
+                        large (70B+, default — no cap)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
 ```
@@ -173,8 +172,8 @@ bash run_linux_mac.sh --tests llm conv emb
 # Conversation benchmark only
 bash run_linux_mac.sh --tests conv
 
-# Small models only
-bash run_linux_mac.sh --small-only
+# Cap at small-tier models and below (skips medium and large entirely)
+bash run_linux_mac.sh --maxtier small
 
 # Give slow hardware more time per run
 bash run_linux_mac.sh --timeout 600
