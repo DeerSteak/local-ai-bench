@@ -43,7 +43,7 @@ IMAGE_MODELS = [
     {
         "label":      "Flux.2-dev",
         "checkpoint": "flux2-dev.safetensors",
-        "workflow":   "flux",
+        "workflow":   "flux2",
         "steps":      28,
         "cfg":        4.0,
         "sampler":    "euler",

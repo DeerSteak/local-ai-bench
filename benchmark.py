@@ -1270,6 +1270,60 @@ def build_flux_workflow(checkpoint, width, height, steps, cfg,
                "inputs": {"images": ["10", 0], "filename_prefix": filename_prefix}},
     }
 
+def build_flux2_workflow(checkpoint, width, height, steps, cfg,
+                         sampler, scheduler, seed, prompt, filename_prefix="bench_flux2"):
+    """
+    Flux.2-dev txt2img workflow.
+
+    Flux.2 uses a Mistral-3-24B text encoder (loaded via a single CLIPLoader,
+    type "flux2") instead of the T5-XXL + CLIP-L pair used by Flux.1/SD3, and
+    a dedicated flux2-vae.safetensors — reusing Flux.1's DualCLIPLoader/VAE
+    here silently produces a text-embedding-dimension mismatch deep in the
+    transformer (txt_in linear layer) rather than a clear error.
+    """
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple",
+              "inputs": {"ckpt_name": checkpoint}},
+        "12": {"class_type": "CLIPLoader",
+               "inputs": {
+                   "clip_name": "mistral_3_small_flux2_fp8.safetensors",
+                   "type": "flux2",
+               }},
+        "13": {"class_type": "VAELoader",
+               "inputs": {"vae_name": "flux2-vae.safetensors"}},
+        "2": {"class_type": "CLIPTextEncode",
+              "inputs": {"text": prompt, "clip": ["12", 0]}},
+        "3": {"class_type": "FluxGuidance",
+              "inputs": {"conditioning": ["2", 0], "guidance": cfg}},
+        "4": {"class_type": "EmptyLatentImage",
+              "inputs": {"width": width, "height": height, "batch_size": 1}},
+        "5": {"class_type": "RandomNoise",
+              "inputs": {"noise_seed": seed}},
+        "6": {"class_type": "BasicGuider",
+              "inputs": {"model": ["1", 0], "conditioning": ["3", 0]}},
+        "7": {"class_type": "KSamplerSelect",
+              "inputs": {"sampler_name": sampler}},
+        "8": {"class_type": "BasicScheduler",
+              "inputs": {
+                  "model": ["1", 0],
+                  "scheduler": scheduler,
+                  "steps": steps,
+                  "denoise": 1.0,
+              }},
+        "9": {"class_type": "SamplerCustomAdvanced",
+              "inputs": {
+                  "noise": ["5", 0],
+                  "guider": ["6", 0],
+                  "sampler": ["7", 0],
+                  "sigmas": ["8", 0],
+                  "latent_image": ["4", 0],
+              }},
+        "10": {"class_type": "VAEDecode",
+               "inputs": {"samples": ["9", 0], "vae": ["13", 0]}},
+        "11": {"class_type": "SaveImage",
+               "inputs": {"images": ["10", 0], "filename_prefix": filename_prefix}},
+    }
+
 def build_sd3_workflow(checkpoint, width, height, steps, cfg,
                        sampler, scheduler, seed, prompt, filename_prefix="bench_sd3"):
     """
@@ -1460,6 +1514,10 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
                     wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
                                              sampler, scheduler, seed, prompt,
                                              filename_prefix=f"{short}_warmup")
+                elif workflow_t == "flux2":
+                    wf = build_flux2_workflow(checkpoint, w0, h0, steps, cfg,
+                                              sampler, scheduler, seed, prompt,
+                                              filename_prefix=f"{short}_warmup")
                 elif workflow_t == "sd3":
                     wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
                                             sampler, scheduler, seed, prompt,
@@ -1489,20 +1547,29 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
                 for run_i in range(N_RUNS):
                     try:
                         prefix = f"{short}_{res_label}_run{run_i + 1}"
+                        # Vary the seed per run — an identical seed/workflow lets
+                        # ComfyUI cache every node, so repeat runs return near-
+                        # instantly instead of re-running generation.
+                        run_seed = seed + run_i
                         if workflow_t == "flux":
                             wf = build_flux_workflow(
                                 checkpoint, w, h, steps, cfg,
-                                sampler, scheduler, seed, prompt,
+                                sampler, scheduler, run_seed, prompt,
+                                filename_prefix=prefix)
+                        elif workflow_t == "flux2":
+                            wf = build_flux2_workflow(
+                                checkpoint, w, h, steps, cfg,
+                                sampler, scheduler, run_seed, prompt,
                                 filename_prefix=prefix)
                         elif workflow_t == "sd3":
                             wf = build_sd3_workflow(
                                 checkpoint, w, h, steps, cfg,
-                                sampler, scheduler, seed, prompt,
+                                sampler, scheduler, run_seed, prompt,
                                 filename_prefix=prefix)
                         else:
                             wf = build_sdxl_workflow(
                                 checkpoint, w, h, steps, cfg,
-                                sampler, scheduler, seed, prompt,
+                                sampler, scheduler, run_seed, prompt,
                                 filename_prefix=prefix)
 
                         elapsed, images = comfyui_submit(wf, timeout=timeout)

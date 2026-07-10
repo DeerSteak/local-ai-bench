@@ -981,11 +981,13 @@ else:
                     else:
                         info("Skipping Flux.2-dev — no token provided")
 
-        # Text encoders shared by Flux and SD3.5 Large: T5-XXL + CLIP-L (public)
-        sd35_present = any("sd3.5" in c for c in found_ckpts)
-        flux_present = any("flux"  in c for c in found_ckpts)
+        # Text encoders shared by Flux.1 and SD3.5 Large: T5-XXL + CLIP-L (public).
+        # Flux.2-dev uses a different (Mistral-3-24B) text encoder — handled below.
+        sd35_present  = any("sd3.5" in c for c in found_ckpts)
+        flux1_present = "flux1-dev.safetensors" in found_ckpts
+        flux2_present = "flux2-dev.safetensors" in found_ckpts
 
-        if flux_present or sd35_present:
+        if flux1_present or sd35_present:
             shared_clip_files = [
                 ("t5xxl_fp16.safetensors", CLIP_DIR),
                 ("clip_l.safetensors",     CLIP_DIR),
@@ -1019,7 +1021,7 @@ else:
             else:
                 ok("clip_g.safetensors already present")
 
-        if flux_present:
+        if flux1_present:
             vae_file = VAE_DIR / "ae.safetensors"
             if not vae_file.exists():
                 info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
@@ -1034,6 +1036,33 @@ else:
                     info("Skipping ae.safetensors — no token provided")
             else:
                 ok("ae.safetensors already present")
+
+        # Flux.2-dev needs its own (public, no token) text encoder + VAE —
+        # a different architecture from Flux.1/SD3.5, not interchangeable.
+        if flux2_present:
+            text_encoder_dir = COMFYUI_DIR / "models" / "text_encoders"
+            mistral_file = "mistral_3_small_flux2_fp8.safetensors"
+            if not (text_encoder_dir / mistral_file).exists():
+                info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
+                if hf_download("Comfy-Org/flux2-dev",
+                               f"split_files/text_encoders/{mistral_file}",
+                               dest_dir=text_encoder_dir, save_as=mistral_file):
+                    ok(f"{mistral_file} downloaded")
+                else:
+                    warn(f"{mistral_file} download failed — Flux.2-dev image generation will error")
+            else:
+                ok(f"{mistral_file} already present")
+
+            flux2_vae = VAE_DIR / "flux2-vae.safetensors"
+            if not flux2_vae.exists():
+                info("Downloading flux2-vae.safetensors (Flux.2 VAE, public, no token required) ...")
+                if hf_download("Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors",
+                               dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
+                    ok("flux2-vae.safetensors downloaded")
+                else:
+                    warn("flux2-vae.safetensors download failed — Flux.2-dev image generation will error")
+            else:
+                ok("flux2-vae.safetensors already present")
 
         n_expected = len(selected_images)
         if found_ckpts:
