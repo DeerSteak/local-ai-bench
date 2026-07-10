@@ -32,8 +32,9 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       const rawTtftBarData = buildLLMBarDataByModel(f, models, "ttft", section);
       const rawTpsBarConfigs = buildLLMBarConfigsByModel(f, models, section);
       const rawTtftBarConfigs = buildLLMBarConfigsByModel(f, models, section);
-      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => rawTpsBarData.some(r => r[bc.dataKey] != null));
-      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => rawTtftBarData.some(r => r[bc.dataKey] != null));
+      const hasValueOrStatus = (rows, key) => rows.some(r => r[key] != null || r[`_status_${key}`] != null);
+      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey));
+      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey));
       const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
       const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
 

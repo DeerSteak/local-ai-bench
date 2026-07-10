@@ -78,14 +78,15 @@ function MultiLineTick({ x, y, payload }) {
   );
 }
 
-function BarLabel({ x, y, width, height, value, naKey, rowData, formatter }) {
+function BarLabel({ x, y, width, height, value, naKey, statusKey, rowData, formatter }) {
   const isNa = rowData?.[naKey];
-  const label = isNa ? "N/A" : formatter(value);
-  const lx = isNa ? (x ?? 0) + 8 : (x ?? 0) + (width ?? 0) + 6;
+  const status = rowData?.[statusKey];
+  const label = status || (isNa ? "N/A" : formatter(value));
+  const lx = (status || isNa) ? (x ?? 0) + 8 : (x ?? 0) + (width ?? 0) + 6;
   const ly = (y ?? 0) + (height ?? 0) / 2;
   return (
     <text x={lx} y={ly} dy="0.35em" fontSize={12} fontFamily="'IBM Plex Mono', monospace"
-      fill={isNa ? "#8c959f" : "#57606a"} fontStyle={isNa ? "italic" : "normal"}>
+      fill={status ? "#e36209" : isNa ? "#8c959f" : "#57606a"} fontStyle={(status || isNa) ? "italic" : "normal"}>
       {label}
     </text>
   );
@@ -96,6 +97,20 @@ function computeYAxisWidth(rows, key) {
   const lines = rows.flatMap(row => String(row[key] ?? '').split('\n'));
   const maxLabelChars = Math.max(1, ...lines.map(l => l.length));
   return Math.min(260, Math.max(150, maxLabelChars * 7.2 + 24));
+}
+
+// Reserve enough right margin for the longest bar-end label, including any
+// "Timed Out" / "Skipped - ..." status text (which runs longer than a
+// formatted value or "N/A").
+function computeRightMargin(rows, barConfigs) {
+  let maxChars = 4;
+  for (const row of rows) {
+    for (const bc of barConfigs) {
+      const status = row[`_status_${bc.dataKey}`];
+      if (status && status.length > maxChars) maxChars = status.length;
+    }
+  }
+  return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
 export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction }) {
@@ -114,6 +129,7 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
   const rowH = Math.max(32, maxLabelLines * 16);
   const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 100);
   const yAxisWidth = computeYAxisWidth(processedData, xKey);
+  const rightMargin = computeRightMargin(processedData, barConfigs);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -124,7 +140,7 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
         </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: 60, bottom: 8, left: 8 }}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: rightMargin, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
           <XAxis
             type="number"
@@ -144,7 +160,7 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
           {barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
               <LabelList dataKey={bc.dataKey} content={(props) => (
-                <BarLabel {...props} naKey={`_na_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
+                <BarLabel {...props} naKey={`_na_${bc.dataKey}`} statusKey={`_status_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
               )} />
             </Bar>
           ))}

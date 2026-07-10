@@ -100,6 +100,50 @@ export function getConvSkipInfo(file, model) {
   return { reason: d.skip_reason, detail: d.skip_detail };
 }
 
+const SKIP_REASON_LABELS = {
+  timed_out: "Skipped - LLM Timed Out",
+  slow_tps: "Skipped - LLM Too Slow",
+  no_llm_data: "Skipped - No LLM Data",
+};
+
+// Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
+// Out" for the context at which benchmark.py's run itself timed out (llm or
+// llm_conversation both set a "timed_out" field), "{ctx} - Skipped" for every
+// later (larger) context that was consequently never attempted, or a
+// "Skipped - ..." label when the whole model was excluded from the
+// conversation test. Returns null for cells with real data, or earlier
+// contexts that simply weren't reached for unrelated reasons.
+export function getBarStatusLabel(file, model, ctx, section) {
+  if (section === "llm_conversation") {
+    const skip = getConvSkipInfo(file, model);
+    if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
+  }
+  const timedOutCtx = file.data[section]?.[model]?.timed_out;
+  if (timedOutCtx) {
+    const timedOutIdx = CTX_ORDER.indexOf(timedOutCtx);
+    const ctxIdx = CTX_ORDER.indexOf(ctx);
+    if (ctxIdx === timedOutIdx) return `${ctx} - Timed Out`;
+    if (ctxIdx > timedOutIdx) return `${ctx} - Skipped`;
+  }
+  return null;
+}
+
+// Bar-chart status label for one (file, model, resolution) cell in the
+// Images charts, mirroring getBarStatusLabel above: "{res} - Timed Out" for
+// the resolution at which benchmark.py's image generation run itself timed
+// out, "{res} - Skipped" for every larger resolution consequently never
+// attempted. Returns null for cells with real data.
+export function getImageBarStatusLabel(file, model, res) {
+  const timedOutRes = file.data.images?.[model]?.timed_out;
+  if (timedOutRes) {
+    const timedOutIdx = RES_ORDER.indexOf(timedOutRes);
+    const resIdx = RES_ORDER.indexOf(res);
+    if (resIdx === timedOutIdx) return `${res} - Timed Out`;
+    if (resIdx > timedOutIdx) return `${res} - Skipped`;
+  }
+  return null;
+}
+
 // Return all LLM model keys from the loaded files, in canonical order.
 // Checks both the single-shot and conversation LLM sections, since the
 // Models filter is shared UI across both — a model present in only one of
@@ -372,6 +416,8 @@ export function buildLLMBarData(files, model, metric, section = "llm") {
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
       if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      const status = getBarStatusLabel(f, model, ctx, section);
+      if (status) row[`_status_${ctx}`] = status;
     }
     return row;
   });
@@ -379,8 +425,11 @@ export function buildLLMBarData(files, model, metric, section = "llm") {
 
 export function buildLLMBarConfigs(files, model, section = "llm") {
   const ctxSet = new Set();
-  for (const f of files)
+  for (const f of files) {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
+    const timedOutCtx = f.data[section]?.[model]?.timed_out;
+    if (timedOutCtx) ctxSet.add(timedOutCtx);
+  }
   return CTX_ORDER
     .filter(ctx => ctxSet.has(ctx))
     .map((ctx, i) => ({
@@ -423,10 +472,12 @@ export function buildImagesGroupedBarDataForResolution(files, resolution, enable
       for (const model of allModels) {
         const s = f.data.images?.[model]?.resolutions?.[resolution];
         if (s) row[model] = s.sec_per_image_mean;
+        const status = getImageBarStatusLabel(f, model, resolution);
+        if (status) row[`_status_${model}`] = status;
       }
       return row;
     })
-    .filter(row => allModels.some(m => row[m] != null));
+    .filter(row => allModels.some(m => row[m] != null || row[`_status_${m}`] != null));
 }
 
 export function buildImagesGroupedBarConfigs(files, enabledImageModels) {
@@ -448,6 +499,8 @@ export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
       if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      const status = getBarStatusLabel(file, model, ctx, section);
+      if (status) row[`_status_${ctx}`] = status;
     }
     return row;
   });
@@ -455,8 +508,11 @@ export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
 
 export function buildLLMBarConfigsByModel(file, models, section = "llm") {
   const ctxSet = new Set();
-  for (const model of models)
+  for (const model of models) {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
+    const timedOutCtx = file.data[section]?.[model]?.timed_out;
+    if (timedOutCtx) ctxSet.add(timedOutCtx);
+  }
   return CTX_ORDER
     .filter(ctx => ctxSet.has(ctx))
     .map((ctx, i) => ({
@@ -475,16 +531,21 @@ export function buildImagesBarDataByModel(file, models) {
       for (const res of RES_ORDER) {
         const s = resData[res];
         if (s) row[res] = s.sec_per_image_mean;
+        const status = getImageBarStatusLabel(file, model, res);
+        if (status) row[`_status_${res}`] = status;
       }
       return row;
     })
-    .filter(row => RES_ORDER.some(res => row[res] != null));
+    .filter(row => RES_ORDER.some(res => row[res] != null || row[`_status_${res}`] != null));
 }
 
 export function buildImagesBarConfigsByModel(file, models) {
   const resSet = new Set();
-  for (const model of models)
+  for (const model of models) {
     for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
+    const timedOutRes = file.data.images?.[model]?.timed_out;
+    if (timedOutRes) resSet.add(timedOutRes);
+  }
   return RES_ORDER
     .filter(res => resSet.has(res))
     .map((res, i) => ({

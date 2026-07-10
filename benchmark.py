@@ -1606,6 +1606,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
                     except TimeoutError:
                         err(f"Run {run_i+1} timed out — skipping {label}")
                         model_timed_out = True
+                        results[short]["timed_out"] = res_label
                         break
                     except Exception as e:
                         err(f"Run {run_i+1} failed: {e}")
@@ -1859,6 +1860,7 @@ def main():
                     seed=IMAGE_SEED,
                     prompt=IMAGE_PROMPT,
                     comfyui_dir=comfyui_dir,
+                    timeout=RUN_TIMEOUT * 2,
                     save_fn=_img_save,
                 )
                 # Shut down ComfyUI as soon as image tests are done

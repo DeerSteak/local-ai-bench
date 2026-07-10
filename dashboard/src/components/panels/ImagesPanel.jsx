@@ -16,8 +16,11 @@ export default function ImagesPanel({ containerRef, files, enabledImageModels, c
 
   const resSet = new Set();
   for (const f of files)
-    for (const model of allModels)
+    for (const model of allModels) {
       for (const res of Object.keys(f.data.images?.[model]?.resolutions || {})) resSet.add(res);
+      const timedOutRes = f.data.images?.[model]?.timed_out;
+      if (timedOutRes) resSet.add(timedOutRes);
+    }
   const resolutions = RES_ORDER.filter(r => resSet.has(r));
 
   if (!resolutions.length || !allModels.length) {
