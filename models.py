@@ -22,7 +22,25 @@ EMBED_MODELS = [
 
 # Image generation models. Checkpoint files not present in
 # ComfyUI/models/checkpoints/ are skipped automatically.
+# "tier" maps each checkpoint onto the same xsmall/small/medium/large scale as
+# the LLM tiers (roughly by checkpoint size) so --maxtier caps both together.
 IMAGE_MODELS = [
+    {
+        "label":       "Stable Diffusion 1.5",
+        "checkpoint":  "v1-5-pruned-emaonly.safetensors",
+        "workflow":    "sdxl",  # same minimal loader→CLIP→KSampler→VAE graph works unchanged
+        "steps":       20,
+        "cfg":         7.5,
+        "sampler":     "euler",
+        "scheduler":   "normal",
+        "short":       "sd15",
+        "tier":        "xsmall",  # ~2.1 GB
+        # SD1.5 was trained at 512x512; the project's default 1024/1536 test
+        # resolutions push it well outside that range and produce visibly
+        # degraded (duplicated-subject) output, so it gets its own native-range
+        # pair instead: base resolution and the same 1.5x step used elsewhere.
+        "resolutions": [(512, 512), (768, 768)],
+    },
     {
         "label":      "SDXL",
         "checkpoint": "sd_xl_base_1.0.safetensors",
@@ -32,6 +50,7 @@ IMAGE_MODELS = [
         "sampler":    "euler_ancestral",
         "scheduler":  "normal",
         "short":      "sdxl",
+        "tier":       "small",     # ~6.5 GB
     },
     {
         "label":      "SD3.5 Large",
@@ -42,6 +61,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "beta",
         "short":      "sd35-large",
+        "tier":       "medium",    # ~16.5 GB
     },
     {
         "label":      "Flux.1-dev",
@@ -52,6 +72,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "simple",
         "short":      "flux-dev",
+        "tier":       "large",     # ~24 GB
     },
     {
         "label":      "Flux.2-dev",
@@ -62,6 +83,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "simple",
         "short":      "flux2-dev",
+        "tier":       "large",     # ~64 GB
     },
 ]
 

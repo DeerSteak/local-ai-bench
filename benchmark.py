@@ -1518,6 +1518,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
         sampler    = model["sampler"]
         scheduler  = model["scheduler"]
         short      = model["short"]
+        model_resolutions = model.get("resolutions", resolutions)
 
         try:
             # Skip if checkpoint not present
@@ -1533,25 +1534,29 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
 
             # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
             # shader compilation before timing starts.
-            w0, h0 = resolutions[0]
+            w0, h0 = model_resolutions[0]
             log(f"{label}: warmup run ({w0}x{h0}, timeout: {timeout}s) ...")
             warmup_ok = True
+            # Use a seed outside the measured runs' range (seed .. seed+N_RUNS-1) so
+            # this warmup can't hit the same ComfyUI node cache as measured run 1,
+            # which would otherwise return near-instantly instead of regenerating.
+            warmup_seed = seed - 1
             try:
                 if workflow_t == "flux":
                     wf = build_flux_workflow(checkpoint, w0, h0, steps, cfg,
-                                             sampler, scheduler, seed, prompt,
+                                             sampler, scheduler, warmup_seed, prompt,
                                              filename_prefix=f"{short}_warmup")
                 elif workflow_t == "flux2":
                     wf = build_flux2_workflow(checkpoint, w0, h0, steps, cfg,
-                                              sampler, scheduler, seed, prompt,
+                                              sampler, scheduler, warmup_seed, prompt,
                                               filename_prefix=f"{short}_warmup")
                 elif workflow_t == "sd3":
                     wf = build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
-                                            sampler, scheduler, seed, prompt,
+                                            sampler, scheduler, warmup_seed, prompt,
                                             filename_prefix=f"{short}_warmup")
                 else:
                     wf = build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
-                                             sampler, scheduler, seed, prompt,
+                                             sampler, scheduler, warmup_seed, prompt,
                                              filename_prefix=f"{short}_warmup")
                 comfyui_submit(wf, timeout=timeout)
                 ok(f"{label}: warmup done")
@@ -1565,7 +1570,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
             img_dir = SCRIPT_DIR / "benchmark_images"
 
             model_timed_out = False
-            for (w, h) in resolutions:
+            for (w, h) in model_resolutions:
                 res_label = f"{w}x{h}"
                 log(f"{label} @ {res_label} — {N_RUNS} runs ...")
                 times = []
@@ -1712,12 +1717,16 @@ def main():
         "medium": "medium and below (≤32GB)",
         "large":  "large and below — all tiers (32GB+)",
     }
+    TIER_ORDER = ["xsmall", "small", "medium", "large"]
     if args.maxtier:
         llm_models = TIER_MODELS[args.maxtier]
         tier_label = TIER_LABELS[args.maxtier]
+        max_idx = TIER_ORDER.index(args.maxtier)
+        image_models = [m for m in IMAGE_MODELS if TIER_ORDER.index(m["tier"]) <= max_idx]
     else:
         llm_models = LLM_MODELS
         tier_label = "all (extra-small + small + medium + large)"
+        image_models = IMAGE_MODELS
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else COMFYUI_DIR
 
@@ -1734,6 +1743,8 @@ def main():
     print(f"  Runs:      {N_RUNS} measured + {args.warmup} warmup")
     print(f"  Timeout:   {RUN_TIMEOUT}s per run")
     print(f"  Models:    {tier_label}")
+    if args.maxtier:
+        print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
     print(f"  Tests:     {', '.join(args.tests)}")
     print(f"  ComfyUI:   {comfyui_dir}")
 
@@ -1855,7 +1866,7 @@ def main():
                     _checkpoint()
 
                 results["images"] = run_image_benchmarks(
-                    image_models=IMAGE_MODELS,
+                    image_models=image_models,
                     resolutions=IMAGE_RESOLUTIONS,
                     seed=IMAGE_SEED,
                     prompt=IMAGE_PROMPT,
