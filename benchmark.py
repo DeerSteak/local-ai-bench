@@ -1976,6 +1976,9 @@ def main():
                     _cpu_only_active = False
                     start_ollama()
             else:
+                if not ollama_available():
+                    section("Starting Servers")
+                    ensure_ollama()
                 results["embeddings"] = run_embedding_benchmarks(
                     models=EMBED_MODELS,
                     batch_sizes=EMBED_BATCH_SIZES,

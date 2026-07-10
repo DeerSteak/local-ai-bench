@@ -139,6 +139,8 @@ If you select one of these in the model picker, `setup_check.py` finds your HF t
 
 Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across 5,000 sentences at batch sizes 32, 128, and 512. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
+Embeddings can also be forced to run CPU-only with `--emb-cpu-only` — in some cases (e.g. an unstable or immature GPU backend) throughput or stability can actually be better on the CPU. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
+
 | Model | Ollama tag | Size |
 |---|---|---|
 | Nomic Embed Text | `nomic-embed-text` | ~274 MB |
@@ -153,6 +155,9 @@ run_linux_mac.sh [options]  # Linux / macOS
 run_windows.bat [options]   # Windows
 
 --tests llm conv emb img  Tests to run (default: all four)
+--emb-cpu-only          Force CPU-only inference for the embedding tests
+                        (restarts Ollama with GPU devices hidden, then
+                        restores normal GPU mode afterward)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
@@ -279,7 +284,7 @@ Open the URL Vite prints (typically `http://localhost:5173`).
 
 ### Execution
 
-LLM benchmarks run first (small → medium → large), followed by embeddings. Before starting ComfyUI for image tests, `unload_all_models()` performs a hard sweep of `/api/ps` to ensure GPU memory is clear.
+LLM benchmarks run first (small → medium → large), followed by embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
 
 Each LLM model follows this pattern:
 
