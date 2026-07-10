@@ -104,8 +104,6 @@ A model is only excluded from the conversation test if it timed out or was skipp
 
 **DeepSeek-R1** is a reasoning model that generates internal thinking tokens before its answer. TPS includes this thinking output, and TTFT captures the first thinking token rather than the first answer token — an accurate reflection of real-world inference.
 
-**GPT-OSS** ships in MXFP4 precision only — no Q3/Q4 variants exist. Tags like `gpt-oss:20b-q3_K_M` will fail; use the tags above.
-
 **Llama versions:** Llama 3.2 tops out at 3B parameters. The 8B slot uses Llama 3.1; the 70B slot uses Llama 3.3, the most recent 70B instruction model.
 
 ### Image Generation

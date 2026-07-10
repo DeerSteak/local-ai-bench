@@ -146,7 +146,6 @@ LLM_MODELS_MEDIUM = sorted([
 ], key=lambda m: m["params_b"])
 
 # Large-tier models (70B+ parameters).
-# Note: gpt-oss:120b ships in MXFP4 only — no Q3/Q4 variants exist.
 LLM_MODELS_LARGE = sorted([
     {
         "tag":      "llama3.3:70b-instruct-q4_K_M",
