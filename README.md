@@ -112,12 +112,14 @@ Four models are tested at 1024×1024 and 1536×1536. Any model whose checkpoint 
 
 Each of the 3 measured runs uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation.
 
-| Model | Checkpoint | Steps | Size | HuggingFace login |
-|---|---|---|---|---|
-| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
-| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | Yes (free) |
-| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | Yes (free) |
-| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64 GB | Yes (free) |
+| Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
+|---|---|---|---|---|---|
+| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | small | No |
+| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | medium | Yes (free) |
+| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | large | Yes (free) |
+| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64 GB | large | Yes (free) |
+
+`--maxtier` caps image models the same way it caps LLMs — see [CLI Reference](#cli-reference).
 
 SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance at:
 - https://huggingface.co/stabilityai/stable-diffusion-3.5-large
@@ -150,9 +152,11 @@ run_windows.bat [options]   # Windows
 --tests llm conv emb img  Tests to run (default: all four)
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
---maxtier TIER          Cap LLM models (single-shot + conversation) at this tier
-                        and below: xsmall (<6B), small (≤20B), medium (26–35B),
-                        large (70B+, default — no cap)
+--maxtier TIER          Cap LLM models (single-shot + conversation) AND image
+                        models at this tier and below: xsmall (<6B / no image
+                        models), small (≤20B / +SDXL), medium (26–35B /
+                        +SD3.5 Large), large (70B+ / +Flux.1-dev, Flux.2-dev —
+                        default, no cap)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
 ```
@@ -172,7 +176,9 @@ bash run_linux_mac.sh --tests llm conv emb
 # Conversation benchmark only
 bash run_linux_mac.sh --tests conv
 
-# Cap at small-tier models and below (skips medium and large entirely)
+# Cap at small-tier models and below — skips medium/large LLMs and
+# medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
+# leaving only SDXL for the image test
 bash run_linux_mac.sh --maxtier small
 
 # Give slow hardware more time per run

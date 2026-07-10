@@ -22,6 +22,8 @@ EMBED_MODELS = [
 
 # Image generation models. Checkpoint files not present in
 # ComfyUI/models/checkpoints/ are skipped automatically.
+# "tier" maps each checkpoint onto the same xsmall/small/medium/large scale as
+# the LLM tiers (roughly by checkpoint size) so --maxtier caps both together.
 IMAGE_MODELS = [
     {
         "label":      "SDXL",
@@ -32,6 +34,7 @@ IMAGE_MODELS = [
         "sampler":    "euler_ancestral",
         "scheduler":  "normal",
         "short":      "sdxl",
+        "tier":       "small",     # ~6.5 GB
     },
     {
         "label":      "SD3.5 Large",
@@ -42,6 +45,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "beta",
         "short":      "sd35-large",
+        "tier":       "medium",    # ~16.5 GB
     },
     {
         "label":      "Flux.1-dev",
@@ -52,6 +56,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "simple",
         "short":      "flux-dev",
+        "tier":       "large",     # ~24 GB
     },
     {
         "label":      "Flux.2-dev",
@@ -62,6 +67,7 @@ IMAGE_MODELS = [
         "sampler":    "euler",
         "scheduler":  "simple",
         "short":      "flux2-dev",
+        "tier":       "large",     # ~64 GB
     },
 ]
 
