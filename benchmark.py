@@ -906,7 +906,8 @@ def run_llm_benchmarks(models, context_lengths, warmup_runs, force_all=False):
                 results[short]["timed_out"] = label_ctx
                 break
 
-            if tps_list and mean(tps_list) < SLOW_MODEL_MIN_TPS:
+            is_first_ctx = ctx_len == model_ctx_lengths[0]
+            if is_first_ctx and tps_list and mean(tps_list) < SLOW_MODEL_MIN_TPS:
                 if force_all:
                     warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
                          f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — --force-all set, continuing anyway")
@@ -2071,11 +2072,12 @@ def main():
                             "skip_reason": "timed_out", "skip_detail": detail,
                         }
                         continue
-                    slow_ctx = None if args.force_all else llm_data.get("slow_tps") or next(
-                        (ctx for ctx, d in llm_data.items()
-                         if isinstance(d, dict) and d.get("tps_mean") is not None
-                         and d["tps_mean"] < SLOW_MODEL_MIN_TPS),
-                        None,
+                    first_ctx_label = f"{CONTEXT_LENGTHS[0] // 1024}K"
+                    slow_ctx = None if args.force_all else llm_data.get("slow_tps") or (
+                        first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
+                        and llm_data[first_ctx_label].get("tps_mean") is not None
+                        and llm_data[first_ctx_label]["tps_mean"] < SLOW_MODEL_MIN_TPS
+                        else None
                     )
                     if slow_ctx is not None:
                         ctx_data = llm_data.get(slow_ctx)
