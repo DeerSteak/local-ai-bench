@@ -1518,6 +1518,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
         sampler    = model["sampler"]
         scheduler  = model["scheduler"]
         short      = model["short"]
+        model_resolutions = model.get("resolutions", resolutions)
 
         try:
             # Skip if checkpoint not present
@@ -1533,7 +1534,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
 
             # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
             # shader compilation before timing starts.
-            w0, h0 = resolutions[0]
+            w0, h0 = model_resolutions[0]
             log(f"{label}: warmup run ({w0}x{h0}, timeout: {timeout}s) ...")
             warmup_ok = True
             # Use a seed outside the measured runs' range (seed .. seed+N_RUNS-1) so
@@ -1569,7 +1570,7 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
             img_dir = SCRIPT_DIR / "benchmark_images"
 
             model_timed_out = False
-            for (w, h) in resolutions:
+            for (w, h) in model_resolutions:
                 res_label = f"{w}x{h}"
                 log(f"{label} @ {res_label} — {N_RUNS} runs ...")
                 times = []

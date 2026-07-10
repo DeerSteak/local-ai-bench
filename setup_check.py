@@ -37,6 +37,11 @@ def fail(msg):  print(f"  {RED}✗{RESET}  {msg}")
 def info(msg):  print(f"  {CYAN}→{RESET}  {msg}")
 def section(title): print(f"\n{BOLD}{title}{RESET}\n" + "─" * 50)
 
+def link(url, text=None):
+    """OSC 8 terminal hyperlink. Terminals without support swallow the escape
+    codes as an unrecognized control sequence, leaving just the visible text."""
+    return f"\033]8;;{url}\033\\{text or url}\033]8;;\033\\"
+
 INSTALL_STARTED = False  # flipped True once the unattended install phase begins
 
 def cancel_setup(*_args):
@@ -76,6 +81,7 @@ issues = []
 # Approximate download sizes, keyed by filename — used both to show sizes on
 # the model-selection screen and to estimate remaining disk space needed.
 CHECKPOINT_SIZES_GB = {
+    "v1-5-pruned-emaonly.safetensors": 2.1,
     "sd_xl_base_1.0.safetensors": 6.9,
     "sd3.5_large.safetensors":    10.1,
     "flux1-dev.safetensors":      23.8,
@@ -394,11 +400,14 @@ def select_models():
     """
     Flat numbered list spanning every LLM tier, the embeddings model, and
     image models, all checked by default. Type numbers/ranges to toggle,
-    a section keyword (xs/s/m/l/emb/img) to toggle a whole section, 'a' to
-    select/deselect all, or press Enter to accept the current selection.
+    a size-tier keyword (xs/s/m/l) to toggle every model at that tier —
+    LLM and image checkpoints alike — 'emb'/'img' to toggle a whole
+    model-type section, 'a' to select/deselect all, or press Enter to
+    accept the current selection.
     Plain input() only — no raw terminal mode — so stray keys from earlier
     prompts can't leak in and there's nothing to restore/flush.
     """
+    TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
         ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
@@ -410,8 +419,13 @@ def select_models():
     group_keys = {g[3] for g in groups}
     entries = []
     for _, items, kind, group_key in groups:
+        # LLM groups are already one-per-tier; image models carry their own
+        # "tier" field (see models.py) so xs/s/m/l can reach them too.
+        tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
-            entries.append({"item": m, "kind": kind, "group": group_key, "checked": True})
+            entry_tier = tier if kind == "llm" else m.get("tier")
+            entries.append({"item": m, "kind": kind, "group": group_key,
+                            "tier": entry_tier, "checked": True})
 
     def size_label(m, kind):
         if kind in ("llm", "embed"):
@@ -434,8 +448,9 @@ def select_models():
             print()
 
     render()
-    print("  Type numbers to toggle (e.g. '2 4 7-9'), a section keyword")
-    print(f"  ({', '.join(sorted(group_keys))}) to toggle a whole section, 'a' to select/deselect all, 'q' to cancel,")
+    print("  Type numbers to toggle (e.g. '2 4 7-9'), a size tier (xs/s/m/l — LLM")
+    print("  and image checkpoints together) or 'emb'/'img' to toggle a whole")
+    print("  section, 'a' to select/deselect all, 'q' to cancel,")
     while True:
         try:
             raw = input("  or press Enter to install everything checked above: ").strip().lower()
@@ -449,6 +464,14 @@ def select_models():
         if raw in ("a", "all"):
             all_checked = all(e["checked"] for e in entries)
             for e in entries:
+                e["checked"] = not all_checked
+            print()
+            render()
+            continue
+        if raw in TIER_KEYS:
+            matching = [e for e in entries if e["tier"] == TIER_KEYS[raw]]
+            all_checked = all(e["checked"] for e in matching)
+            for e in matching:
                 e["checked"] = not all_checked
             print()
             render()
@@ -522,12 +545,12 @@ def load_token():
             return token
     print()
     print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
-    print(f"  1. Create an account at https://huggingface.co")
+    print(f"  1. Create an account at {link('https://huggingface.co')}")
     print(f"  2. Accept the licenses at:")
-    print(f"       https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
-    print(f"       https://huggingface.co/black-forest-labs/FLUX.1-dev")
-    print(f"       https://huggingface.co/black-forest-labs/FLUX.2-dev")
-    print(f"  3. Generate a token at https://huggingface.co/settings/tokens")
+    print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
+    print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
+    print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
+    print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
     print()
     try:
         token = input(
@@ -947,7 +970,15 @@ else:
             for m in missing:
                 short, ckpt = m["short"], m["checkpoint"]
 
-                if short == "sdxl":
+                if short == "sd15":
+                    info("Downloading Stable Diffusion 1.5 (no login required) ...")
+                    if hf_download("Comfy-Org/stable-diffusion-v1-5-archive", ckpt):
+                        ok(f"{ckpt} downloaded")
+                        found_ckpts.append(ckpt)
+                    else:
+                        warn("SD1.5 download failed — image benchmarks will run without it")
+
+                elif short == "sdxl":
                     info("Downloading SDXL base model (no login required) ...")
                     if hf_download("stabilityai/stable-diffusion-xl-base-1.0", ckpt):
                         ok(f"{ckpt} downloaded")
@@ -964,7 +995,7 @@ else:
                             found_ckpts.append(ckpt)
                         else:
                             fail("SD3.5 Large download failed — check token and license acceptance")
-                            info("Accept license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
+                            info(f"Accept license at: {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
                     else:
                         info("Skipping SD3.5 Large — no token provided")
 
@@ -977,7 +1008,7 @@ else:
                             found_ckpts.append(ckpt)
                         else:
                             fail("Flux.1-dev download failed — check token and license acceptance")
-                            info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.1-dev")
+                            info(f"Accept license at: {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
                     else:
                         info("Skipping Flux.1-dev — no token provided")
 
@@ -990,7 +1021,7 @@ else:
                             found_ckpts.append(ckpt)
                         else:
                             fail("Flux.2-dev download failed — check token and license acceptance")
-                            info("Accept license at: https://huggingface.co/black-forest-labs/FLUX.2-dev")
+                            info(f"Accept license at: {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
                     else:
                         info("Skipping Flux.2-dev — no token provided")
 
@@ -1028,7 +1059,7 @@ else:
                         ok("clip_g.safetensors downloaded")
                     else:
                         warn("clip_g.safetensors download failed — SD3.5 image generation will error")
-                        info("Accept license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-large")
+                        info(f"Accept license at: {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
                 else:
                     info("Skipping clip_g.safetensors — no token provided")
             else:

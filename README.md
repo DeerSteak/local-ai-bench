@@ -21,7 +21,7 @@ cd local-ai-bench
 
 `setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
 
-Each script then creates a virtual environment and hands off to `setup_check.py`, which detects your hardware and shows a numbered list of every LLM and image model — everything selected by default. Type numbers to toggle individual models (`2 4 7-9`), `a` to select/deselect all, or just press Enter to install everything shown; `q` or Ctrl-C cancels at any point with nothing installed yet. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), it asks for a HuggingFace token next. After that, everything you picked — Ollama, pip packages, models, image checkpoints — installs with no further prompts. When setup is complete:
+Each script then creates a virtual environment and hands off to `setup_check.py`, which detects your hardware and shows a numbered list of every LLM and image model — everything selected by default. Type numbers to toggle individual models (`2 4 7-9`), a size tier (`xs`/`s`/`m`/`l`) to toggle every model at that tier — LLM and image checkpoints together, e.g. `s` toggles the small-tier LLMs and SDXL as a group — `emb`/`img` to toggle a whole section, `a` to select/deselect all, or just press Enter to install everything shown; `q` or Ctrl-C cancels at any point with nothing installed yet. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), it asks for a HuggingFace token next. After that, everything you picked — Ollama, pip packages, models, image checkpoints — installs with no further prompts. When setup is complete:
 
 ```bash
 # Linux / macOS
@@ -108,16 +108,19 @@ A model is only excluded from the conversation test if it timed out or was skipp
 
 ### Image Generation
 
-Four models are tested at 1024×1024 and 1536×1536. Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
+Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
 
-Each of the 3 measured runs uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation.
+Each of the 3 measured runs uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. The warmup run before those 3 also uses its own distinct seed, for the same reason.
 
 | Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
 |---|---|---|---|---|---|
+| Stable Diffusion 1.5 | `v1-5-pruned-emaonly.safetensors` | 20 | ~2.1 GB | xsmall | No |
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | small | No |
 | SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | medium | Yes (free) |
 | Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | large | Yes (free) |
 | Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64 GB | large | Yes (free) |
+
+**Stable Diffusion 1.5** was trained at 512×512; testing it at the other models' 1024/1536 resolutions produces visibly degraded (duplicated-subject) output, so it gets its own native-range pair — 512×512 and 768×768 (the same 1.5x step used for everything else) — instead of the shared resolution list.
 
 `--maxtier` caps image models the same way it caps LLMs — see [CLI Reference](#cli-reference).
 
@@ -153,10 +156,9 @@ run_windows.bat [options]   # Windows
 --warmup N              Warmup runs before measuring (default: 2)
 --timeout N             Seconds per run before skipping model (default: 300)
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
-                        models at this tier and below: xsmall (<6B / no image
-                        models), small (≤20B / +SDXL), medium (26–35B /
-                        +SD3.5 Large), large (70B+ / +Flux.1-dev, Flux.2-dev —
-                        default, no cap)
+                        models at this tier and below: xsmall (<6B / +SD1.5),
+                        small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
+                        large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
 ```
@@ -178,7 +180,7 @@ bash run_linux_mac.sh --tests conv
 
 # Cap at small-tier models and below — skips medium/large LLMs and
 # medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
-# leaving only SDXL for the image test
+# leaving SD1.5 and SDXL for the image test
 bash run_linux_mac.sh --maxtier small
 
 # Give slow hardware more time per run
@@ -313,8 +315,8 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
 | Embedding measured runs | 3 per batch size, averaged |
-| Image models | SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
-| Image resolutions | 1024×1024, 1536×1536 |
+| Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
+| Image resolutions | 1024×1024, 1536×1536 (SD1.5: 512×512, 768×768) |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |
 | Image measured runs | 3 per resolution, averaged |

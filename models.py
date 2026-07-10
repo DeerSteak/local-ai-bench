@@ -26,6 +26,22 @@ EMBED_MODELS = [
 # the LLM tiers (roughly by checkpoint size) so --maxtier caps both together.
 IMAGE_MODELS = [
     {
+        "label":       "Stable Diffusion 1.5",
+        "checkpoint":  "v1-5-pruned-emaonly.safetensors",
+        "workflow":    "sdxl",  # same minimal loader→CLIP→KSampler→VAE graph works unchanged
+        "steps":       20,
+        "cfg":         7.5,
+        "sampler":     "euler",
+        "scheduler":   "normal",
+        "short":       "sd15",
+        "tier":        "xsmall",  # ~2.1 GB
+        # SD1.5 was trained at 512x512; the project's default 1024/1536 test
+        # resolutions push it well outside that range and produce visibly
+        # degraded (duplicated-subject) output, so it gets its own native-range
+        # pair instead: base resolution and the same 1.5x step used elsewhere.
+        "resolutions": [(512, 512), (768, 768)],
+    },
+    {
         "label":      "SDXL",
         "checkpoint": "sd_xl_base_1.0.safetensors",
         "workflow":   "sdxl",
