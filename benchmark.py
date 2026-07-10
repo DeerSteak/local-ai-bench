@@ -136,21 +136,44 @@ def _shutdown_managed():
                 proc.kill()
     _managed_procs.clear()
 
+# Path to the log file capturing the current/most recent Ollama server's
+# stdout+stderr — set by start_ollama() so a crash's actual message can be
+# surfaced later instead of silently discarded.
+_ollama_log_path: Path | None = None
+
+def tail_ollama_log(n_lines: int = 40) -> str:
+    """Return the last n_lines of the current Ollama server's captured
+    output, for surfacing the real crash reason instead of guessing."""
+    if _ollama_log_path is None:
+        return "(no Ollama log captured this session)"
+    try:
+        lines = _ollama_log_path.read_text(errors="replace").splitlines()
+        return "\n".join(lines[-n_lines:]) or "(log file is empty)"
+    except Exception as e:
+        return f"(failed to read Ollama log: {e})"
+
 def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:
     """Start 'ollama serve', optionally with extra/overridden environment
     variables (e.g. HIP_VISIBLE_DEVICES="" to force CPU-only). Tracked in
     _managed_procs for cleanup on exit. Returns True once reachable."""
+    global _ollama_log_path
+
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
 
     os_name = platform.system()
     try:
-        kwargs = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        log_fh = tempfile.NamedTemporaryFile(
+            mode="w", suffix="-ollama-server.log", delete=False
+        )
+        _ollama_log_path = Path(log_fh.name)
+        kwargs = dict(stdout=log_fh, stderr=subprocess.STDOUT, env=env)
         if os_name == "Windows":
             # On Windows Ollama is a system tray app; 'ollama serve' starts the server
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         proc = subprocess.Popen(["ollama", "serve"], **kwargs)
+        log_fh.close()
         _managed_procs.append(proc)
     except FileNotFoundError:
         err("'ollama' not found in PATH — install from https://ollama.com/download")
@@ -159,10 +182,11 @@ def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:
     for i in range(timeout):
         time.sleep(1)
         if ollama_available():
-            ok(f"Ollama started (pid {proc.pid})")
+            ok(f"Ollama started (pid {proc.pid}) — log: {_ollama_log_path}")
             return True
         if proc.poll() is not None:
             err(f"Ollama exited unexpectedly (code {proc.returncode})")
+            err(f"Last output:\n{tail_ollama_log()}")
             return False
 
     err(f"Ollama did not respond within {timeout} seconds")
@@ -1222,12 +1246,13 @@ def run_embedding_benchmarks(models, batch_sizes):
                     # batch size would just crash again identically forever.
                     if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
                         crash_retries += 1
+                        err(f"Ollama's model runner appears to have crashed at batch size {bs} "
+                            f"— last server output:\n{tail_ollama_log()}")
                         if crash_retries > MAX_CRASH_RETRIES:
                             err(f"Ollama's model runner crashed {crash_retries} times at "
                                 f"batch size {bs} — giving up on this batch size")
                             break
-                        err(f"Ollama's model runner appears to have crashed (possibly OOM) "
-                            f"at batch size {bs} — waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES}")
+                        warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
                         recovered = False
                         wait_t0 = time.perf_counter()
                         while time.perf_counter() - wait_t0 < 30:
