@@ -187,6 +187,6 @@ machine_profile.json
 **/node_modules
 7zr.exe
 /.omc
-/dashboard/.omc
 /benchmark_images
+/dashboard/.omc
 results*.json
