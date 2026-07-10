@@ -1237,7 +1237,7 @@ def _save_crash_cache(cache: dict) -> None:
     except Exception as e:
         warn(f"Failed to save embedding crash cache: {e}")
 
-def run_embedding_benchmarks(models):
+def run_embedding_benchmarks(models, warmup_runs=WARMUP_RUNS):
     results = {}
 
     if not ollama_available():
@@ -1275,6 +1275,32 @@ def run_embedding_benchmarks(models):
                 "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
             }
             continue
+
+        # Warm up model (load into memory) before measuring. The first embed
+        # call against a freshly-unloaded model pays a one-time cost, model
+        # weights loading into memory, first-call kernel/graph setup, that
+        # has nothing to do with steady-state throughput — folding it into a
+        # measured run would understate this model's real performance.
+        log(f"Warming up {label} ...")
+        for warmup_i in range(warmup_runs):
+            try:
+                resp = requests.post(
+                    f"{OLLAMA_URL}/api/embed",
+                    json={"model": tag, "input": chunks},
+                    timeout=120,
+                )
+                if not resp.ok:
+                    warn(f"Warmup run {warmup_i+1} failed: HTTP {resp.status_code}")
+                else:
+                    log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+            except Exception as e:
+                warn(f"Warmup run {warmup_i+1} failed: {e}")
+                if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                    wait_t0 = time.perf_counter()
+                    while time.perf_counter() - wait_t0 < 30:
+                        if ollama_available():
+                            break
+                        time.sleep(2)
 
         log(f"Embedding {len(chunks)} chunks in one call — {N_RUNS} runs ...")
         rates = []
@@ -2071,6 +2097,7 @@ def main():
                     _cpu_only_active = True
                     results["embeddings"] = run_embedding_benchmarks(
                         models=EMBED_MODELS,
+                        warmup_runs=args.warmup,
                     )
                     _checkpoint("embeddings done")
                     log("Restoring normal (GPU-enabled) Ollama ...")
@@ -2083,6 +2110,7 @@ def main():
                     ensure_ollama()
                 results["embeddings"] = run_embedding_benchmarks(
                     models=EMBED_MODELS,
+                    warmup_runs=args.warmup,
                 )
                 _checkpoint("embeddings done")
 
