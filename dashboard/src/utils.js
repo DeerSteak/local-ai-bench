@@ -1,10 +1,10 @@
 import {
-  CTX_ORDER, EMBED_BATCH_KEYS, EMBED_BATCH_LABELS, RES_ORDER,
+  CTX_ORDER, RES_ORDER,
   MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS,
   LLM_MODEL_ORDER, IMAGE_MODEL_ORDER, EMBED_MODEL_ORDER,
-  CTX_COLORS, BATCH_COLORS, IMAGE_BAR_COLORS, EMBED_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
+  CTX_COLORS, IMAGE_BAR_COLORS, EMBED_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -261,57 +261,6 @@ export function getEmbedLabel(files, model) {
   return embedModelLabel(model);
 }
 
-// Embeddings: X = batch size, lines = models (+ file distinction if multi)
-export function buildEmbedData(files, enabledEmbedModels) {
-  const isSingle = files.length === 1;
-  const batchSet = new Set();
-  for (const f of files)
-    for (const md of Object.values(f.data.embeddings || {}))
-      for (const bk of Object.keys(md)) if (EMBED_BATCH_KEYS.includes(bk)) batchSet.add(bk);
-  const batchKeys = EMBED_BATCH_KEYS.filter(bk => batchSet.has(bk));
-
-  return batchKeys
-    .map(bk => {
-      const row = { batchLabel: EMBED_BATCH_LABELS[bk] };
-      files.forEach((f, fi) => {
-        for (const [model, md] of Object.entries(f.data.embeddings || {})) {
-          if (!enabledEmbedModels.has(model) || !md[bk]) continue;
-          const key = isSingle ? model : `f${fi}_${model}`;
-          row[key] = md[bk].sentences_per_sec_mean;
-        }
-      });
-      return row;
-    })
-    .filter(row => Object.keys(row).some(k => k !== "batchLabel"));
-}
-
-export function buildEmbedLineConfigs(files, data, enabledEmbedModels) {
-  const isSingle = files.length === 1;
-  const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
-  const configs = [];
-  if (isSingle) {
-    for (const m of allModels) {
-      if (data.some(d => d[m] != null))
-        configs.push({ dataKey: m, stroke: getEmbedModelColor(m), name: getEmbedLabel(files, m) });
-    }
-  } else {
-    for (let fi = 0; fi < files.length; fi++) {
-      const stroke = FILE_COLORS[fi % FILE_COLORS.length];
-      allModels.forEach((m, mi) => {
-        const dataKey = `f${fi}_${m}`;
-        if (data.some(d => d[dataKey] != null))
-          configs.push({
-            dataKey,
-            stroke,
-            strokeDasharray: MODEL_DASH_PATTERNS[mi % MODEL_DASH_PATTERNS.length],
-            name: `${files[fi].hostname} — ${getEmbedLabel(files, m)}`,
-          });
-      });
-    }
-  }
-  return configs;
-}
-
 // Images: one chart per model. X = resolution, lines = files.
 export function buildImagesDataForModel(files, model) {
   const resSet = new Set();
@@ -439,15 +388,15 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     }));
 }
 
-// Embeddings bar chart: rows = files/systems, cols = models, one chart per batch size
-export function buildEmbedGroupedBarDataForBatch(files, batchKey, enabledEmbedModels) {
+// Embeddings bar chart: rows = files/systems, cols = models
+export function buildEmbedGroupedBarData(files, enabledEmbedModels) {
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
   return files
     .map(f => {
       const row = { systemLabel: f.hostname };
       for (const model of allModels) {
-        const s = f.data.embeddings?.[model]?.[batchKey];
-        if (s) row[model] = s.sentences_per_sec_mean;
+        const s = f.data.embeddings?.[model];
+        if (s && !s.skipped) row[model] = s.chunks_per_sec_mean;
       }
       return row;
     })
@@ -555,32 +504,21 @@ export function buildImagesBarConfigsByModel(file, models) {
     }));
 }
 
-// Embeddings bar chart by system: rows = models, cols = batch sizes, for one file
+// Embeddings bar chart by system: rows = models, single throughput value, for one file
 export function buildEmbedBarDataByModel(file, models) {
   return models
     .map(model => {
+      const s = file.data.embeddings?.[model];
       const row = { modelLabel: getEmbedLabel([file], model) };
-      const embedData = file.data.embeddings?.[model] || {};
-      for (const bk of EMBED_BATCH_KEYS) {
-        const s = embedData[bk];
-        if (s) row[bk] = s.sentences_per_sec_mean;
-      }
+      if (s && !s.skipped) row.throughput = s.chunks_per_sec_mean;
       return row;
     })
-    .filter(row => EMBED_BATCH_KEYS.some(bk => row[bk] != null));
+    .filter(row => row.throughput != null);
 }
 
 export function buildEmbedBarConfigsByModel(file, models) {
-  const present = new Set();
-  for (const model of models)
-    for (const bk of Object.keys(file.data.embeddings?.[model] || {})) present.add(bk);
-  return EMBED_BATCH_KEYS
-    .filter(bk => present.has(bk))
-    .map((bk, i) => ({
-      dataKey: bk,
-      name: EMBED_BATCH_LABELS[bk],
-      fill: BATCH_COLORS[bk] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-    }));
+  const hasAny = models.some(model => file.data.embeddings?.[model] && !file.data.embeddings[model].skipped);
+  return hasAny ? [{ dataKey: "throughput", name: "Chunks/sec", fill: FALLBACK_COLORS[0] }] : [];
 }
 
 // ── "Group by System" line chart builders (Y = setting, X = metric, lines = models) ──
@@ -627,28 +565,6 @@ export function buildImagesLineConfigsByRes(file, models, data) {
   return models
     .filter(m => data.some(row => row[m] != null))
     .map(m => ({ dataKey: m, stroke: getImageModelColor(m), name: getImageLabel([file], m) }));
-}
-
-// Embeddings line chart by system: rows = batch sizes, one line per model, for one file
-export function buildEmbedLineDataByBatch(file, models) {
-  const batchSet = new Set();
-  for (const model of models)
-    for (const bk of Object.keys(file.data.embeddings?.[model] || {})) if (EMBED_BATCH_KEYS.includes(bk)) batchSet.add(bk);
-  const batchKeys = EMBED_BATCH_KEYS.filter(bk => batchSet.has(bk));
-  return batchKeys.map(bk => {
-    const row = { batchLabel: EMBED_BATCH_LABELS[bk] };
-    for (const model of models) {
-      const s = file.data.embeddings?.[model]?.[bk];
-      if (s) row[model] = s.sentences_per_sec_mean;
-    }
-    return row;
-  });
-}
-
-export function buildEmbedLineConfigsByBatch(file, models, data) {
-  return models
-    .filter(m => data.some(row => row[m] != null))
-    .map(m => ({ dataKey: m, stroke: getEmbedModelColor(m), name: getEmbedLabel([file], m) }));
 }
 
 // ── Bar chart sorting ─────────────────────────────────────────────────────────
@@ -712,21 +628,23 @@ export function flattenLLMData(files, section = "llm") {
 
 export function flattenEmbedData(files) {
   return files.flatMap(f =>
-    Object.entries(f.data.embeddings || {}).flatMap(([model, md]) =>
-      Object.entries(md)
-        .filter(([bk]) => EMBED_BATCH_KEYS.includes(bk))
-        .map(([bk, s]) => ({
-          _fileId: f.id, model,
-          modelLabel: md.label || model,
-          batchKey: bk,
-          batchLabel: EMBED_BATCH_LABELS[bk] || bk,
-          sps_mean: s.sentences_per_sec_mean,
-          sps_stdev: s.sentences_per_sec_stdev,
-          peak_ram_mb: s.peak_ram_mb_mean,
-          device: s.device,
-          n_runs: s.n_runs,
-        }))
-    )
+    Object.entries(f.data.embeddings || {}).map(([model, s]) => {
+      const modelLabel = s.label || model;
+      if (s.skipped) {
+        return {
+          _fileId: f.id, model, modelLabel, skipped: true,
+          skip_reason: s.skip_reason, skip_detail: s.skip_detail,
+        };
+      }
+      return {
+        _fileId: f.id, model, modelLabel,
+        cps_mean: s.chunks_per_sec_mean,
+        cps_stdev: s.chunks_per_sec_stdev,
+        n_chunks: s.n_chunks,
+        device: s.device,
+        n_runs: s.n_runs,
+      };
+    })
   );
 }
 

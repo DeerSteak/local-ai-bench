@@ -46,7 +46,7 @@ export default function ChartPanel({
     return (
       <EmbeddingsBySystemPanel
         containerRef={containerRef} files={files} enabledEmbedModels={enabledEmbedModels}
-        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar}
+        chartWidth={chartWidth} logoSrc={logoSrc}
       />
     );
   }
@@ -73,7 +73,6 @@ export default function ChartPanel({
     <EmbeddingsPanel
       containerRef={containerRef} files={files} enabledEmbedModels={enabledEmbedModels}
       chartWidth={chartWidth} logoSrc={logoSrc}
-      isBar={isBar} isMultiFile={isMultiFile}
     />
   );
 }

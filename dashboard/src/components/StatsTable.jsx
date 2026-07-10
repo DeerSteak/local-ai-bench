@@ -85,23 +85,29 @@ function EmbedTable({ files, sortConfig, onCycleSort }) {
         <tr>
           {isMulti && <th className={styles.th}>Machine</th>}
           <SortTh label="Model" sortKey="modelLabel" sortConfig={sortConfig} onCycleSort={onCycleSort} />
-          <SortTh label="Batch Size" sortKey="batchLabel" sortConfig={sortConfig} onCycleSort={onCycleSort} />
-          <SortTh label="Sent/sec" sortKey="sps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Chunks/sec" sortKey="cps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
-          <SortTh label="Peak RAM (MB)" sortKey="peak_ram_mb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Chunks" sortKey="n_chunks" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Device</th>
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, i) => (
+        {rows.map((r, i) => r.skipped ? (
+          <tr key={i} className={styles.trSkipped}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{r.modelLabel}</td>
+            <td className={styles.td} colSpan={5}>
+              Skipped — {r.skip_detail}
+            </td>
+          </tr>
+        ) : (
           <tr key={i}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{r.modelLabel}</td>
-            <td className={`${styles.td} ${styles.tdCtx}`}>{r.batchLabel}</td>
-            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.sps_mean, "sps")}</td>
-            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.sps_stdev, "sps")}</td>
-            <td className={`${styles.td} ${styles.tdNum}`}>{r.peak_ram_mb != null ? Math.round(r.peak_ram_mb) : "—"}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.cps_mean, "sps")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.cps_stdev, "sps")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.n_chunks ?? "—"}</td>
             <td className={`${styles.td} ${styles.tdDevice}`}>{r.device || "—"}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>

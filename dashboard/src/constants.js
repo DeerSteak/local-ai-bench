@@ -158,14 +158,7 @@ export const CTX_COLORS = {
   "64K": "#1a7f37",
 };
 
-// Colors per embedding batch size (used in bar chart mode)
-export const BATCH_COLORS = {
-  "batch_32":  "#0969da",
-  "batch_128": "#e36209",
-  "batch_512": "#1a7f37",
-};
-
-// Colors per image model (used in bar chart mode — matches CTX/BATCH palette)
+// Colors per image model (used in bar chart mode — matches CTX palette)
 export const IMAGE_BAR_COLORS = {
   "sdxl":         "#0969da",
   "sd35-large":   "#e36209",
@@ -181,10 +174,6 @@ export const EMBED_BAR_COLORS = {
 
 // Ordered context length labels (match benchmark.py output)
 export const CTX_ORDER = ["2K", "8K", "32K", "64K"];
-
-// Embeddings batch keys and labels
-export const EMBED_BATCH_KEYS = ["batch_32", "batch_128", "batch_512"];
-export const EMBED_BATCH_LABELS = { batch_32: "32", batch_128: "128", batch_512: "512" };
 
 // Image resolution order
 export const RES_ORDER = ["1024x1024", "1536x1536"];

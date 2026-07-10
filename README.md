@@ -137,7 +137,7 @@ If you select one of these in the model picker, `setup_check.py` finds your HF t
 
 ### Embeddings
 
-Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across a 5,000-sentence corpus at batch sizes 32, 128, and 512. The corpus is built from a real multi-chapter document (`sample_document.txt`) rather than a handful of sentences repeated many times, then repeated only as many times as needed to reach 5,000 — closer to a real embedding workload and less likely to trigger caching/deduplication behavior that repeated filler text can hit. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~19 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
 If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--emb-cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
 
@@ -230,7 +230,7 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 |---|---|
 | LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (2K / 8K / 32K / 64K), single-shot cold-prefill test |
 | LLM Conversation | Same two charts per model and context lengths, but from the multi-turn conversation test |
-| Embeddings | Sentences per second across batch sizes (32 / 128 / 512) |
+| Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 
 The **Models** filter and **Machine** labels are shared between the LLM and LLM Conversation sections, so switching between them keeps the same models/files selected.
@@ -245,7 +245,7 @@ The **Models** filter and **Machine** labels are shared between the LLM and LLM 
 
 **LLM Conversation → TTFT.** Time to process just the *next* turn in an already-long conversation, relying on the backend's KV-cache reuse (llama.cpp/Ollama's slot cache) so only the new turn's tokens need to be run through the network, not the entire history again. This is **why conversation TTFT at, say, 32K is typically a small fraction of single-shot TTFT at 32K** — they're not measuring the same thing. Single-shot TTFT is "cold start with a huge prompt"; conversation TTFT is "one more message in a chat that's already this long." Both are real workloads; which one matters more depends on whether your use case looks like one-shot document Q&A or an ongoing chat/agent session.
 
-**Embeddings → Sentences/sec.** Embedding throughput at each batch size. Higher is better.
+**Embeddings → Chunks/sec.** Throughput embedding one real document's chunks in a single call. Higher is better.
 
 **Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.
 
@@ -317,9 +317,8 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
-| Embedding corpus | 5,000 sentences, built from `sample_document.txt` (real document, repeated only as needed) |
-| Embedding batch sizes | 32, 128, 512 |
-| Embedding measured runs | 3 per batch size, averaged |
+| Embedding corpus | `sample_document.txt` chunked into ~150-word paragraph-sized pieces (~190 chunks), embedded in one call |
+| Embedding measured runs | 3, averaged |
 | Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
 | Image resolutions | 1024×1024, 1536×1536 (SD1.5: 512×512, 768×768) |
 | Image seed | 42 (fixed) |
