@@ -137,7 +137,7 @@ If you select one of these in the model picker, `setup_check.py` finds your HF t
 
 ### Embeddings
 
-Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across 5,000 sentences at batch sizes 32, 128, and 512. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across a 5,000-sentence corpus at batch sizes 32, 128, and 512. The corpus is built from a real multi-chapter document (`sample_document.txt`) rather than a handful of sentences repeated many times, then repeated only as many times as needed to reach 5,000 — closer to a real embedding workload and less likely to trigger caching/deduplication behavior that repeated filler text can hit. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
 If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--emb-cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
 
@@ -317,7 +317,7 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
-| Embedding corpus | 5,000 sentences |
+| Embedding corpus | 5,000 sentences, built from `sample_document.txt` (real document, repeated only as needed) |
 | Embedding batch sizes | 32, 128, 512 |
 | Embedding measured runs | 3 per batch size, averaged |
 | Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |

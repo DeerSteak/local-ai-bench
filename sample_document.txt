@@ -1,0 +1,585 @@
+A Practical Survey of Local AI Inference
+
+Chapter 1: Introduction
+
+Running artificial intelligence models on personal hardware has moved from a niche hobby to a mainstream practice in just a few years. What once required a rack of data center GPUs can now, for many workloads, be accomplished on a single consumer graphics card, an Apple Silicon laptop, or even a modest desktop CPU. This shift has been driven by three parallel trends: smaller and more efficient model architectures, aggressive quantization techniques that shrink memory footprints without destroying accuracy, and inference engines that squeeze every available cycle out of consumer silicon. Together these advances have made it possible to run capable language models, image generators, and embedding models entirely offline, with no dependency on a remote API and no data ever leaving the machine it runs on.
+
+This document surveys the landscape of local inference as it stands today, covering the major categories of models people run locally, the hardware considerations that shape performance, and the tradeoffs involved in choosing between different backends. It is written to be read end to end, but each chapter can also stand on its own as a reference.
+
+The pace of change in this space deserves a brief note before diving in. A model that is considered state of the art at the time of writing may be superseded within months by a smaller model trained with better data or a more efficient architecture. An inference engine that lacks support for a particular hardware backend today may gain it in the next release cycle. Readers should treat the specific numbers and product names in this survey as a snapshot of a fast-moving field rather than a permanent reference, while the underlying principles of memory bandwidth, quantization tradeoffs, and batching behavior are far more durable and will remain relevant regardless of which specific models or engines are popular by the time this is read.
+
+It is also worth setting expectations about scope. This survey focuses on inference, meaning the process of running an already-trained model to produce outputs, rather than on training or fine-tuning, which involve a substantially different set of hardware and software considerations. A machine well suited to running a large quantized model for chat may be poorly suited to fine-tuning even a much smaller model, since training requires holding gradients and optimizer state in memory alongside the weights themselves, multiplying the effective memory requirement several times over compared to inference alone.
+
+Chapter 2: Why Run Models Locally
+
+There are several distinct reasons people choose local inference over cloud APIs, and they rarely overlap perfectly. The first is privacy. A user summarizing private medical notes, drafting legal correspondence, or processing proprietary source code may simply be unwilling to send that content to a third party, regardless of what privacy policy is attached to the service. Local inference removes that question entirely, since the data never leaves the device.
+
+The second reason is cost. API pricing is usually structured around tokens processed, and for a hobbyist or a small business running thousands of requests a day, that can add up quickly. A one-time hardware purchase, amortized over years of use, is often cheaper in the long run than a recurring subscription, especially for lighter workloads such as embeddings and small classification tasks.
+
+The third reason is latency and reliability. A model running on the same machine as the application calling it has no network round trip, no rate limiting, and no outage risk tied to a third party's infrastructure. For applications embedded in a larger pipeline, that predictability can matter more than raw throughput.
+
+Finally, there is simple curiosity and control. Being able to inspect exactly which weights are loaded, tweak sampling parameters directly, or swap in a fine-tuned checkpoint without waiting on a vendor's roadmap appeals to a large and growing community of enthusiasts and researchers.
+
+These motivations often compound rather than standing alone. A developer building a note-taking application with built-in search, for instance, may care about privacy because user notes are sensitive, about cost because the application has a free tier that cannot absorb per-request API fees at scale, and about latency because search-as-you-type functionality demands sub-second response times that a network round trip to a remote provider would struggle to guarantee consistently. In that scenario, local inference is not a single deciding factor but the sum of several independent advantages pointing in the same direction.
+
+There are, of course, tradeoffs on the other side of the ledger. Local inference shifts the burden of hardware provisioning, model management, and software updates onto the user or developer rather than a managed service. A cloud API abstracts away GPU procurement, driver compatibility, and model versioning entirely; running locally means taking on all of that complexity directly. For teams without dedicated infrastructure expertise, this can be a meaningful cost even when the per-token economics favor local inference. The right choice is rarely universal and depends heavily on the specific application, team, and constraints involved.
+
+Chapter 3: Categories of Local Models
+
+Local inference workloads generally fall into four broad categories, each with distinct hardware and software characteristics.
+
+Large language models are the most visible category, encompassing everything from small instruction-tuned models with a few billion parameters up to dense or mixture-of-experts models rivaling the largest commercial offerings. These models handle chat, summarization, code generation, and general reasoning tasks. Their defining resource constraint is memory: a model must fit, in some quantized form, into available RAM or VRAM, and the speed at which tokens are generated depends heavily on memory bandwidth rather than raw compute throughput.
+
+Image generation models, most commonly diffusion-based architectures, trade a different set of resources. They are far more compute-bound than language models during the denoising steps, meaning GPU throughput matters more than pure memory capacity, though large models and high resolutions still demand substantial VRAM. A single image generation might take anywhere from under a second to over a minute depending on model size, resolution, and step count.
+
+Embedding models convert text into dense numerical vectors that capture semantic meaning, enabling similarity search, retrieval-augmented generation, and classification. These models are typically much smaller than generative language models, often under a gigabyte, and are usually run in large batches rather than one input at a time, since the common use case is indexing an entire corpus of documents rather than responding to a single user query.
+
+Speech and audio models round out the picture, covering transcription, text-to-speech, and increasingly real-time voice conversion. These workloads tend to be latency-sensitive in a different way than text generation, since they are often part of an interactive pipeline where a user is waiting on the other end of a phone call or voice assistant.
+
+Within the large language model category itself, there is a further useful distinction between dense models, where every parameter participates in every forward pass, and mixture-of-experts models, where a routing mechanism selects only a subset of specialized sub-networks to activate for any given token. A mixture-of-experts model with a large total parameter count may have a much smaller active parameter count per token, meaning its memory bandwidth requirements during generation resemble a much smaller dense model even though its total footprint in storage and memory is far larger. This distinction matters enormously for local deployment, since it changes which resource, total memory capacity or per-token bandwidth, is the binding constraint.
+
+Image generation models also split along an important axis: latent diffusion models that operate in a compressed latent space, versus models that operate directly in pixel space. Latent diffusion dramatically reduces the compute and memory required for each denoising step by working with a much smaller spatial representation, which is why nearly all modern local image generation tools are built around this architecture rather than earlier pixel-space diffusion approaches.
+
+Embedding models, for their part, vary along dimensionality and context length rather than the axes that dominate generative model comparisons. A larger embedding dimension generally captures more nuance but costs more to store and compare at search time, while a longer supported context length allows embedding bigger chunks of text at once, trading off against the precision that comes from embedding smaller, more focused passages.
+
+Chapter 4: Hardware Considerations
+
+The single most important hardware factor for local language model inference is memory bandwidth, not raw compute. Token generation is fundamentally a memory-bound operation: for each token produced, the entire set of active model weights must be read from memory at least once. A GPU with enormous compute throughput but modest memory bandwidth will still bottleneck on this weight-streaming step, and the model will generate tokens no faster than the memory subsystem can deliver the numbers needed for the next multiplication.
+
+This is why unified memory architectures have become so compelling for local inference. Apple's M-series chips, and more recently AMD's Ryzen AI Max processors, share a single pool of high-bandwidth memory between CPU and GPU, avoiding the need to keep two separate copies of a model in two separate memory pools. This lets a laptop or a mini desktop run a model that would otherwise require a discrete GPU with tens of gigabytes of dedicated VRAM, simply because the entire system memory is addressable by the GPU cores.
+
+Discrete GPUs still hold a clear advantage in raw throughput, particularly for compute-bound workloads like image generation, and for language model inference at low batch sizes their higher memory bandwidth per dollar generally outperforms unified memory systems of similar price. The tradeoff is capacity: a consumer GPU tops out around twenty-four to thirty-two gigabytes of VRAM at reasonable prices, while a unified memory system can be configured with well over a hundred gigabytes, enabling much larger models to run at all, even if each token takes somewhat longer to produce.
+
+CPU-only inference remains viable for smaller models and for workloads where latency is not critical, such as offline batch processing of a document corpus overnight. Modern CPUs with wide vector instruction sets and high core counts can achieve surprisingly reasonable throughput on quantized models, though they will rarely match a dedicated accelerator for anything beyond small to medium sized models.
+
+Beyond the headline distinction between discrete VRAM and unified memory, several second-order hardware factors shape real-world performance. Memory channel count and clock speed matter even within a single architecture family: a system with dual-channel memory will see roughly half the bandwidth of an otherwise identical system with quad-channel memory, and this difference translates almost linearly into token generation speed for memory-bound workloads. Similarly, the specific memory technology in use, whether a discrete GPU's dedicated GDDR memory or a unified system's LPDDR or similar, carries meaningfully different bandwidth characteristics per gigabyte of theoretical capacity, and marketing specifications for total memory size say nothing about this crucial second dimension.
+
+Thermal design and sustained clock behavior also matter more for local inference than casual benchmarking often reveals. A laptop chip that hits an impressive peak throughput number in a short burst may throttle significantly during a sustained multi-minute generation of a long response, particularly in a thin chassis with limited cooling. Desktop and workstation form factors, with more generous thermal headroom, tend to sustain their peak performance far longer, which matters disproportionately for workloads like batch embedding of a large document corpus that may run continuously for many minutes.
+
+Storage speed, while rarely the bottleneck during steady-state inference, affects the experience of loading and swapping between models. A large quantized model stored on a fast NVMe drive can be loaded into memory in seconds, while the same model on a slower drive, or worse, a network-attached share, can take long enough to noticeably disrupt a workflow that involves frequently switching between models for different tasks.
+
+Chapter 5: Quantization
+
+Quantization is the technique of representing model weights with fewer bits than the original training precision, trading a small amount of accuracy for a large reduction in memory footprint and, often, a meaningful increase in inference speed. A model trained in sixteen-bit floating point can frequently be quantized to eight bits, four bits, or even lower with only a modest drop in output quality, provided the quantization method is well chosen for the model architecture.
+
+The appeal of quantization for local inference is straightforward: a four-bit quantized model occupies roughly a quarter of the memory of its sixteen-bit counterpart, which can be the difference between a model fitting entirely in VRAM versus spilling into slower system memory, or between a model running at all on a memory-constrained device versus not running at all. Because inference is memory-bandwidth bound, a smaller quantized model can also produce tokens noticeably faster, since less data needs to move through the memory bus for each generation step.
+
+Quantization is not free, however. Aggressive quantization can degrade a model's ability to follow complex instructions, perform precise arithmetic, or maintain coherence over very long contexts. Different quantization schemes make different tradeoffs here, and the right choice often depends on the specific task: a model used for casual conversation can tolerate much more aggressive quantization than one used for code generation or mathematical reasoning, where small errors compound.
+
+Not all quantization methods are created equal, and the specific technique used matters as much as the target bit width. Simple uniform quantization, which maps the full range of weight values onto evenly spaced discrete levels, is easy to implement but wastes precision on regions of the value distribution that are rarely used. More sophisticated approaches account for the actual statistical distribution of weights in a trained model, allocating finer-grained precision to the value ranges that occur most often and coarser precision elsewhere, which tends to preserve more of the original model's behavior at the same average bit width.
+
+Some quantization schemes also apply different precision to different parts of a model rather than a uniform bit width throughout. Certain layers, particularly those handling attention mechanisms in a transformer, are more sensitive to precision loss than others, and mixed-precision quantization schemes that keep these sensitive layers at a higher bit width while aggressively quantizing less sensitive layers can achieve a better overall quality-to-size tradeoff than uniform quantization at any single bit width.
+
+Calibration also plays a significant role in quantization quality. Some methods quantize a model using only the statistics of its trained weights, with no reference to actual inputs, while others use a small calibration dataset representative of expected usage to inform how values should be mapped to the reduced precision range. Calibrated quantization generally preserves more quality at aggressive bit widths, at the cost of requiring an extra preprocessing step and a representative sample of data before the quantized model can be produced.
+
+It is worth noting that quantization affects different model categories differently. Language models, given their sheer parameter counts, benefit enormously from quantization purely on memory grounds. Embedding models, being much smaller to begin with, see less dramatic absolute memory savings from quantization, though the relative speed benefits from reduced memory traffic still apply. Image generation models occupy a middle ground, where quantizing certain components, particularly the largest transformer or U-Net blocks, yields meaningful benefits while other components are often left at higher precision to avoid visible artifacts in generated output.
+
+Chapter 6: Batching and Throughput
+
+Batching is the practice of processing multiple independent requests together in a single forward pass through a model, amortizing the cost of reading weights from memory across many outputs instead of just one. For workloads with many independent, similarly-sized inputs, such as embedding a large collection of documents, batching can produce dramatic throughput improvements, since the expensive weight-loading step is shared across the entire batch rather than repeated for every single input.
+
+The optimal batch size for a given workload depends on several factors: the available memory, the length of individual inputs, and the specific inference engine's internal scheduling behavior. Very small batches under-utilize available compute and memory bandwidth, leaving performance on the table. Very large batches can run into memory limits, since intermediate activations for every item in the batch must be held simultaneously, and some inference engines exhibit non-obvious behavior at certain batch size thresholds due to internal buffer sizing or scheduling assumptions that were not designed with extremely large batches in mind.
+
+In practice, finding a good batch size for a given model and hardware combination is often an empirical exercise rather than a matter of following a fixed formula. Benchmarking a sweep of batch sizes, from small to large, and observing where throughput plateaus or where errors begin to appear, is the most reliable way to find the sweet spot for a specific deployment.
+
+The relationship between batch size and throughput typically follows a predictable curve when things are working correctly. Starting from a batch size of one, throughput per item improves rapidly as batch size increases, since each additional item in the batch shares the fixed cost of loading weights from memory. This improvement eventually flattens into a plateau once the workload transitions from being memory-bandwidth bound to being compute bound, at which point additional batching provides only marginal further improvement while consuming proportionally more memory for activations. Understanding where a given model and hardware combination sits on this curve is essential for choosing a batch size that maximizes throughput without wasting memory on activations that provide no further speed benefit.
+
+Batching interacts with request latency in an important way that is easy to overlook when optimizing purely for throughput. A larger batch generally improves aggregate throughput, meaning more total items processed per second across the whole batch, but it can also increase the latency experienced by the first items in that batch, since they must wait for the full batch to be assembled and processed together rather than being handled immediately. For interactive applications where a single user is waiting on a single response, small or even unbatched processing is usually preferable despite the throughput cost, while for offline bulk processing, such as indexing an entire document corpus overnight, maximizing batch size for throughput is almost always the right choice since no individual user is waiting on any single item.
+
+Dynamic batching, where an inference server accumulates incoming requests over a short time window and processes them together rather than requiring the caller to construct batches explicitly, has become a common feature of production inference systems. This approach attempts to capture the throughput benefits of batching for workloads with many small, independent requests arriving over time, without requiring the caller to have foreknowledge of how many requests will arrive or to delay individual requests waiting for a full batch to accumulate.
+
+Chapter 7: Retrieval-Augmented Generation
+
+Retrieval-augmented generation, commonly abbreviated as RAG, combines a search step with a generation step to give a language model access to information beyond what it memorized during training. Rather than relying solely on parametric knowledge baked into the model's weights, a RAG system retrieves relevant passages from an external corpus at query time and includes them in the prompt, letting the model ground its response in specific, up-to-date, or private information.
+
+The retrieval step typically relies on embedding models to convert both the corpus and the incoming query into vectors, then finds the most similar vectors using an approximate nearest neighbor search over a vector database. This means the quality of a RAG system depends heavily on the quality of its embeddings: a model that fails to capture the semantic relationship between a query and a relevant passage will surface the wrong context, regardless of how capable the downstream language model is at reasoning over whatever it receives.
+
+Building a useful RAG corpus involves decisions that are easy to overlook but significantly affect quality. Documents must be split into chunks small enough to embed meaningfully and to fit within a retrieval budget, but large enough to preserve context; a chunk that cuts a sentence in half, or that separates a claim from its supporting evidence, can lead to retrieval that technically matches keywords but misses the actual meaning a user is looking for. Overlapping chunks, where consecutive segments share a portion of text, are a common mitigation, trading some redundancy in the index for a lower chance of splitting an important idea across a chunk boundary.
+
+Beyond basic chunking, more sophisticated RAG systems incorporate a second retrieval stage often called reranking. In this approach, an initial fast but coarse retrieval step pulls back a larger candidate set of potentially relevant chunks using vector similarity alone, and a second, more computationally expensive model then scores each candidate more precisely against the query before the final small set is passed to the generating model. This two-stage approach balances the speed of vector search against the higher accuracy of a model that can directly compare a query and a candidate passage together, rather than relying solely on the geometry of two independently computed embedding vectors.
+
+Query transformation is another technique that improves RAG quality in practice. A user's raw query is not always the ideal input for a retrieval step; it may be phrased ambiguously, may omit context that a language model could infer, or may benefit from being decomposed into several sub-queries when it touches on multiple distinct topics. Systems that rewrite or expand a query before embedding it for retrieval, sometimes using a language model to generate several candidate rephrasings, often see meaningfully better retrieval accuracy than systems that embed the raw user query verbatim.
+
+The freshness of a RAG corpus is a practical operational concern distinct from any of the modeling choices above. A corpus that is embedded once and never updated will drift out of sync with the underlying source documents as they change, leading to retrieval of stale or superseded information. Production RAG systems typically need a defined re-indexing pipeline, whether triggered on every document change or run on a periodic schedule, and the throughput of the embedding step directly determines how quickly a large corpus can be brought back into sync after a significant update.
+
+Chapter 8: Vector Databases and Similarity Search
+
+A vector database stores high-dimensional embeddings and provides efficient mechanisms for finding the vectors most similar to a given query vector, typically using cosine similarity or a related distance metric. Because an exhaustive comparison against every stored vector becomes prohibitively slow as a collection grows into the millions or billions of entries, production vector databases rely on approximate nearest neighbor algorithms, which sacrifice a small amount of recall accuracy in exchange for search times that scale far better with collection size.
+
+Several families of approximate nearest neighbor algorithms are in common use. Graph-based approaches build a navigable graph over the vector space, allowing a search to greedily traverse toward the query's neighborhood rather than scanning the entire collection. Tree-based and hashing-based approaches partition the space into regions that can be searched independently. Each family makes different tradeoffs between index build time, memory usage, query latency, and recall, and the right choice depends on the specific scale and update frequency of a given application.
+
+For a local, single-user application, a full-scale vector database is often overkill; a simple in-memory index rebuilt periodically can perform perfectly well for collections up to a few hundred thousand documents. It is only at larger scales, or when documents are being added and removed continuously, that the more sophisticated indexing structures used by dedicated vector database systems become necessary.
+
+The choice of distance metric, while often treated as an afterthought, meaningfully affects retrieval quality and must be matched to how a given embedding model was trained. Some models are trained explicitly to produce vectors whose cosine similarity reflects semantic closeness, while others are optimized for a dot product or Euclidean distance comparison instead. Using a mismatched distance metric at query time, even against a technically correct index, can silently degrade retrieval quality in a way that is difficult to diagnose without specifically checking the embedding model's documentation for its intended comparison method.
+
+Index build time and update behavior are practical considerations that matter as much as raw query speed for many applications. Some index structures support efficient incremental updates, allowing new vectors to be added without rebuilding the entire index, while others require a full rebuild to incorporate new data, making them poorly suited to corpora that change frequently. An application with a corpus that grows continuously throughout the day has very different indexing requirements than one that ingests a large but static corpus once and serves queries against it indefinitely afterward.
+
+Filtering, the ability to combine a vector similarity search with a constraint on metadata such as a document's category, date, or access permissions, is another dimension where vector database implementations vary considerably. Naive approaches perform the vector search first and then discard results that fail the metadata filter, which can return far fewer results than requested if the filter is restrictive. More sophisticated implementations integrate filtering directly into the search traversal, avoiding this problem at the cost of additional implementation complexity.
+
+Chapter 9: Choosing an Inference Engine
+
+Several inference engines have emerged as popular choices for running models locally, each with a different philosophy. Some prioritize simplicity and ease of use, wrapping a well-optimized underlying engine in a friendly command-line interface and automatic model management, making them a good default choice for anyone who wants to get a model running quickly without tuning low-level parameters. Others expose far more configuration surface, letting an advanced user tune every aspect of memory allocation, batching behavior, and hardware backend selection, at the cost of a steeper learning curve.
+
+Backend support varies meaningfully across engines and across operating systems. Support for a given GPU vendor's compute stack is often more mature on Linux than on Windows, particularly for less common consumer chips, and a workload that runs flawlessly on one platform can behave unpredictably on another simply due to the relative maturity of the underlying drivers. Anyone deploying local inference on less mainstream hardware should expect to spend some time working through platform-specific quirks, and should not be surprised if a driver update or an inference engine update changes behavior, for better or worse, on a subsequent run.
+
+Beyond raw backend compatibility, inference engines differ in how they manage model lifecycle. Some automatically load a model into memory on first use and unload it after a period of inactivity, freeing resources for other applications but incurring a reload cost the next time that model is needed. Others keep every loaded model resident until explicitly told to unload it, prioritizing consistent low latency over memory efficiency. Neither approach is universally correct; the right default depends on whether a given deployment tends to serve a single model continuously or switch between several models throughout a session.
+
+API compatibility is a further practical consideration. Some engines expose an interface deliberately designed to be a drop-in replacement for a popular commercial API, easing migration for applications already built against that interface, while others expose a bespoke API optimized for their own feature set. For a new project with no existing integration to preserve, this compatibility consideration matters less than for a project migrating an existing application from a cloud provider to local inference, where minimizing changes to calling code can significantly reduce migration effort.
+
+Community and ecosystem maturity, while harder to quantify than technical benchmarks, often ends up being a decisive factor in practice. An engine with an active community produces faster answers to platform-specific problems, more third-party integrations, and a steadier stream of compatibility updates as new models are released. This is particularly relevant for local inference on newer or less common hardware, where official vendor support may lag behind community-contributed fixes and workarounds by a considerable margin.
+
+Chapter 10: Benchmarking Considerations
+
+Benchmarking local inference is trickier than it might first appear, because so many variables interact with one another. A model's throughput depends on the specific prompt length, the number of tokens generated, whether earlier context can be reused from a cache, the batch size, the precision of the loaded weights, and the specific hardware backend selected, among other factors. A benchmark that varies only one of these dimensions while holding the others fixed can produce numbers that do not generalize to a real workload where several dimensions vary simultaneously.
+
+It is also easy to accidentally benchmark something other than what was intended. Warm-up runs are essential, since the first request against a freshly loaded model often pays a one-time cost for just-in-time compilation, cache population, or lazy memory allocation that will not be repeated on subsequent requests. Skipping warm-up runs risks reporting a misleadingly slow number that reflects one-time overhead rather than steady-state performance. Similarly, testing with unrealistic inputs, such as a corpus made of a handful of sentences repeated thousands of times, may exercise code paths differently than a genuinely varied real-world document would, since some caching and deduplication behavior can be sensitive to repeated content in ways that would not occur with natural language.
+
+A meaningful benchmark should therefore aim to resemble the target workload as closely as practical: realistic document lengths and vocabulary for embedding tests, realistic conversation lengths and turn counts for chat benchmarks, and realistic resolution and step counts for image generation tests. Where a benchmark must simplify for the sake of repeatability, it is worth being explicit about which dimensions were simplified and why, so that anyone interpreting the results understands what has and has not been captured.
+
+Reproducibility across repeated runs is another dimension that deserves explicit attention. A single measurement on a shared or thermally variable system can be noisy enough to mislead, particularly on hardware that adjusts clock speeds dynamically based on temperature and sustained load. Averaging several measured runs, and discarding or clearly flagging any run that fails outright rather than silently omitting it, produces a far more trustworthy result than reporting a single best-case number, which tends to overstate the throughput a user should actually expect during normal use.
+
+Cross-machine comparability is a particularly demanding goal, since it requires controlling for every variable discussed above simultaneously across systems that may differ in every other respect. A benchmark suite intended to compare throughput across different hardware configurations needs a fixed workload definition, precisely because otherwise it is impossible to know whether a difference in measured results reflects a genuine hardware difference or simply a difference in what was measured. This is one of the strongest arguments for using a shared, realistic, and well-documented corpus for embedding benchmarks rather than an ad hoc one improvised separately for each test run.
+
+Chapter 11: Looking Ahead
+
+The trend toward more capable models running on less hardware shows no sign of slowing. Model architectures continue to improve in parameter efficiency, quantization techniques continue to close the gap with full-precision accuracy, and consumer hardware, particularly unified memory designs, continues to expand the range of models that can run entirely on-device. For anyone building applications on top of local inference, the practical advice remains the same as it has been for years: benchmark on the actual hardware you intend to deploy on, with data that resembles your actual workload, and revisit those benchmarks periodically, since both the models and the software running them continue to change quickly enough that last quarter's numbers may no longer hold.
+
+Several developments are worth watching closely. Continued growth in unified memory capacity, following the trajectory already seen in recent consumer chips, will likely keep expanding the ceiling of what an individual developer or hobbyist can run without dedicated data center hardware. Improvements in speculative decoding and other techniques that predict multiple future tokens before verifying them against the full model promise further throughput gains without requiring any change to the underlying model weights. And as multimodal models that natively handle text, images, and audio within a single architecture mature, the current sharp separation between language model inference, image generation, and speech processing described throughout this survey may itself become a less useful way of categorizing local AI workloads, replaced by a more unified view of a single model handling many modalities within one inference pipeline.
+
+Chapter 12: Deployment and Operational Patterns
+
+Moving a local inference setup from an experiment on a single developer's machine to something other people depend on introduces a set of operational concerns that are easy to overlook when everything runs on one desk. The first is process supervision: a model server that crashes at two in the morning needs something watching it and restarting it, whether that is a simple process manager, a system service definition, or a more elaborate orchestration layer, since a local deployment does not benefit from the automatic failover that a managed cloud service provides by default.
+
+Resource contention is a second concern that grows quickly once more than one workload shares a machine. A language model server, an embedding server, and an image generation service running simultaneously on the same GPU will compete for the same memory and the same compute queue, and without explicit scheduling or prioritization, a long-running batch embedding job can starve an interactive chat session of the responsiveness it needs. Some teams address this by dedicating specific hardware to specific workload categories, accepting lower utilization in exchange for predictable performance, while others build explicit queuing and prioritization into their own request routing layer.
+
+Versioning deserves more attention than it typically receives in local deployments. Unlike a cloud API where the provider controls exactly which model version answers a given request, a local deployment often has several quantized variants of a model sitting on disk, produced at different times with different tools, and it is easy to lose track of exactly which variant is loaded in a given environment. Establishing a naming convention that encodes the base model, the quantization method, and the bit width directly in the file name, and treating model files as versioned artifacts rather than loose files in a folder, pays for itself the first time a subtle quality regression needs to be traced back to a specific model swap.
+
+Monitoring a local deployment is different in character from monitoring a cloud service, since there is no vendor dashboard providing utilization graphs by default. Basic instrumentation, tracking request latency, token throughput, memory usage, and error rates over time, is straightforward to bolt onto most inference engines and pays significant dividends when diagnosing the kind of intermittent hardware or driver issue that can otherwise take a long time to characterize from scattered anecdotal reports alone.
+
+Chapter 13: Security and Governance Considerations
+
+Running models locally shifts certain security responsibilities away from a cloud provider and onto whoever operates the local deployment, and it is worth being explicit about what that shift entails rather than assuming that local automatically means more secure. A cloud provider's managed API benefits from a dedicated security team patching the underlying infrastructure, while a local deployment's operating system, drivers, and inference engine all need to be kept up to date by whoever is running them, and a neglected local server can accumulate unpatched vulnerabilities just as easily as any other piece of long-running software.
+
+Network exposure is a specific and common misconfiguration worth calling out directly. Many local inference engines bind to all network interfaces by default rather than only the local loopback address, which is convenient for accessing a server from another device on the same network but can inadvertently expose an inference endpoint, and whatever data passes through it, to anyone else who can reach that network segment. Anyone running local inference on a shared or untrusted network should explicitly verify which interfaces a server is listening on rather than assuming a sensible default.
+
+Model provenance is another governance concern that grows more relevant as the ecosystem of publicly shared model weights grows. A model file, like any other executable artifact, can in principle be modified to behave differently than its public description suggests, and downloading model weights from an unofficial mirror rather than a well-established distribution channel introduces a supply chain risk analogous to installing software from an untrusted source. Verifying checksums against a trusted source and preferring well-known distribution channels for model weights are simple practices that meaningfully reduce this risk.
+
+Data handling policy still matters even when inference happens locally, particularly in organizational settings. Logs, caches, and temporary files produced during local inference can retain sensitive input data long after a request completes, and a local deployment that solves the network exposure problem inherent in cloud APIs can still leak the same sensitive data through an overlooked log file or a debug output left enabled in a production configuration. Treating local inference logs with the same care as any other store of potentially sensitive data is a basic but frequently skipped precaution.
+
+Chapter 14: Evaluation Beyond Throughput
+
+Everything discussed so far has focused heavily on performance: tokens per second, images per minute, sentences embedded per second. Performance benchmarking is necessary but not sufficient, since a fast model that produces poor quality output is rarely a good tradeoff against a somewhat slower model that produces reliably useful results. Any serious evaluation of a local inference setup needs a quality dimension alongside the performance dimension, even though quality is considerably harder to measure objectively.
+
+For language models, quality evaluation typically combines automated benchmarks covering knowledge, reasoning, and instruction-following with some amount of direct human review of outputs relevant to the specific application. Automated benchmarks are useful for quickly comparing many candidate models on a level playing field, but they can diverge meaningfully from how a model performs on a specific real-world task, particularly one involving a narrow domain or an unusual output format that general-purpose benchmarks do not specifically probe.
+
+For embedding models, quality evaluation centers on retrieval accuracy: given a labeled set of queries and known-relevant documents, how often does the embedding model's similarity ranking surface the genuinely relevant documents near the top of the results. This kind of evaluation requires a labeled dataset that resembles the target application's actual documents and queries, since an embedding model that performs well on a generic benchmark corpus may perform quite differently on, for example, a corpus of internal technical documentation with its own specialized vocabulary and structure.
+
+For image generation models, evaluation is the most subjective of the three, since there is no single ground truth for what constitutes a good image from a given prompt. Some teams rely on structured human preference comparisons between candidate models, others use automated aesthetic and prompt-alignment scoring models as a rough proxy, and most serious evaluation efforts end up combining both, using automated scoring to quickly narrow a large candidate set and human review to make the final call among the top contenders.
+
+Whatever the modality, the same principle from earlier chapters on benchmarking applies equally to quality evaluation: the evaluation data should resemble the target workload as closely as practical, since a model tuned or selected against an unrepresentative evaluation set can look excellent on paper while performing poorly on the actual task it will be used for in practice.
+
+Chapter 15: Community, Licensing, and the Open Model Ecosystem
+
+The rapid growth of local inference over the past several years owes as much to the emergence of a vibrant open model ecosystem as it does to any single hardware or software advance. Organizations and independent researchers alike now regularly publish trained model weights for public download, and this steady supply of freely available models is what makes local inference practical for most users, who would otherwise lack the resources to train a competitive model from scratch themselves.
+
+Licensing terms across this ecosystem vary considerably and deserve careful attention before a model is adopted for anything beyond casual personal use. Some models are released under permissive open-source licenses that impose few restrictions on commercial use or redistribution, while others carry custom licenses with specific conditions, such as restrictions on use above a certain company revenue threshold, requirements to display attribution, or prohibitions on using the model's outputs to train a competing model. Treating every downloaded model as if it carried the same permissive terms is a common and avoidable mistake for teams building products on top of locally hosted models.
+
+Community-driven quantization and conversion work has become its own significant sub-ecosystem. It is common for a model's original publisher to release only the full-precision weights, leaving the work of producing quantized variants in various formats to independent community contributors. This division of labor has generally worked well, but it does mean that a quantized model file's quality and correctness depend on the care taken by whichever third party produced it, and popular, well-reviewed quantization sources tend to be a safer default than obscure or unverified ones.
+
+Fine-tuning and adapter sharing round out the ecosystem, allowing a base model to be specialized for a narrower task, tone, or domain without the cost of training from scratch. Lightweight adapter techniques, which train only a small number of additional parameters layered on top of a frozen base model, have made this kind of specialization accessible even on modest hardware, and the resulting adapters are often small enough to distribute and swap in and out of a base model far more easily than full fine-tuned checkpoints. This has led to a long tail of narrowly specialized adapters covering everything from specific writing styles to domain-specific technical vocabularies, most of which would never have justified the cost of a full fine-tuning run on their own.
+
+Chapter 16: Closing Summary
+
+Across the preceding chapters, a handful of themes recur regardless of which specific model category or hardware platform is under discussion. Memory, in both capacity and bandwidth, is almost always the binding constraint for local inference, more so than raw compute throughput. Quantization is the single most impactful lever available for fitting a larger, more capable model into a given memory budget, at the cost of some carefully managed quality tradeoff. Batching unlocks substantial throughput gains for workloads with many independent inputs, but only within a range that respects the memory and scheduling limits of the specific inference engine in use, and pushing past that range can produce surprising and sometimes severe failures rather than a graceful degradation in throughput.
+
+Benchmarking any of this meaningfully requires discipline: realistic workloads, adequate warm-up, repeated measurement, and explicit documentation of what has been simplified for the sake of repeatability. A benchmark that fails to reflect real usage risks guiding decisions, whether about hardware purchases, model selection, or configuration tuning, toward conclusions that do not hold up once a system faces its actual intended workload. The tools and techniques described throughout this survey continue to evolve quickly, but the discipline of measuring what actually matters, on hardware that actually resembles a real deployment, remains the most durable skill for anyone working seriously with local AI inference.
+
+Chapter 17: A Worked Example
+
+Concepts scattered across a survey like this one are easier to internalize when tied to a single concrete scenario, so consider a small team building an internal documentation assistant intended to answer employee questions by searching a few thousand internal pages and summarizing the relevant results. The team begins, as most do, by picking an embedding model to index the corpus and a language model to generate the final answer, and quickly discovers that these two choices interact more than expected.
+
+Their first attempt uses a large, high-quality embedding model chosen purely for its strong benchmark scores, without checking its resource profile against the modest workstation available for the project. Indexing the full document corpus takes far longer than anticipated, since the workstation's available memory bandwidth cannot keep pace with the model's size at any reasonable batch size, and the team realizes only after starting the job that a smaller embedding model, sacrificing a small amount of retrieval accuracy, would have finished indexing in a fraction of the time on the same hardware.
+
+After switching to a more modest embedding model sized appropriately for their hardware, the team turns to chunking strategy. Their first pass splits documents purely by a fixed character count, ignoring sentence and paragraph boundaries entirely, and retrieval quality suffers visibly: chunks frequently begin or end mid-sentence, and the language model receiving these fragments in its prompt occasionally misinterprets a truncated claim as if it were complete. Switching to a chunking approach that respects paragraph boundaries, with a modest overlap between consecutive chunks, produces a noticeable improvement in the coherence of retrieved context and, downstream, in the quality of generated answers.
+
+With retrieval quality reasonable, the team next benchmarks end-to-end latency under realistic conditions, only to discover that their initial testing, conducted with a single user issuing one query at a time, understated the load the system would face once rolled out to the whole department. Under concurrent load from multiple simultaneous users, the language model server's lack of any batching or queuing strategy causes response times to degrade sharply, since each request effectively waits for the previous one to fully complete rather than being processed alongside it. Introducing a simple request queue with modest batching resolves most of this degradation, at the cost of a small amount of added latency for any single request arriving alongside others.
+
+Finally, the team sets up a lightweight recurring re-indexing job to keep the embedded corpus in sync as internal documentation is updated, having learned from the earlier chapters on retrieval-augmented generation that a static index left unmaintained would slowly drift out of sync with the source material it was meant to reflect. None of these individual lessons were exotic or difficult in isolation, but the team's experience illustrates a pattern that recurs constantly in practice: a working local inference deployment is rarely the result of a single correct decision, but rather the accumulation of many individually modest adjustments, each addressing a specific bottleneck or quality gap uncovered through direct measurement on the actual target hardware and the actual target workload.
+
+Chapter 18: A Closer Look at Compute Types
+
+The earlier discussion of hardware treated memory bandwidth as the dominant factor and largely set aside the question of which specific type of compute unit is doing the work, but that distinction matters enough in practice to deserve its own treatment. Four broad categories of compute unit show up repeatedly in local inference discussions: integrated GPUs, discrete GPUs, CPUs, and dedicated neural processing units, and a fifth category, large unified memory designs that blur the line between several of these, has become increasingly relevant in the past few product cycles.
+
+An integrated GPU, built onto the same package as the CPU and typically sharing system memory with it, has historically been the weakest option for serious inference work, offering modest compute throughput and being constrained to whatever memory bandwidth the shared system memory controller provides. For years this made integrated graphics a poor choice for anything beyond the smallest models. That has changed somewhat as integrated GPU designs have grown more capable and, in some newer designs, gained access to substantially wider memory buses than older integrated solutions, narrowing the gap with entry-level discrete cards for memory-bound workloads even though compute-bound tasks like image generation still favor a discrete card at a similar price point.
+
+A discrete GPU remains the most straightforward choice for maximizing raw throughput, since it pairs dedicated high-bandwidth memory with compute cores designed from the ground up for parallel workloads, without needing to share either resource with the rest of the system. The limitation, as covered earlier, is capacity: dedicated memory on a discrete card is fixed at purchase time and cannot be expanded, which caps the size of model that can be run entirely on the card regardless of how much system memory is otherwise available in the machine.
+
+CPUs remain relevant for local inference not because they are fast, but because they are universal. Every machine has one, CPU inference requires no specific driver stack or vendor-specific software support, and for smaller models or latency-insensitive batch workloads, modern CPUs with wide vector instructions and many cores can produce entirely acceptable throughput. The tradeoff is that CPU memory bandwidth, while often generous in absolute terms, is typically split across many general-purpose tasks rather than dedicated to a single inference workload, and CPU compute throughput for the dense matrix operations at the heart of neural network inference lags well behind purpose-built accelerators of similar cost.
+
+Dedicated neural processing units, increasingly common in recent consumer chips, take a different approach entirely, trading the general-purpose flexibility of a GPU for specialized circuits optimized narrowly for the kinds of low-precision matrix operations neural network inference relies on. This specialization can deliver excellent performance per watt, making an NPU an attractive choice for sustained, battery-conscious workloads such as on-device transcription or background semantic indexing. The tradeoff is software maturity and flexibility: NPU software stacks have historically lagged behind GPU stacks in both the range of supported model architectures and the stability of that support, and a workload that runs without issue on a GPU backend may need specific conversion steps, or may not be supported at all, on a given NPU stack.
+
+Large unified memory architectures, exemplified by recent high-end laptop and workstation chips that pair a capable GPU with a very wide, very large pool of shared memory, represent something of a synthesis of the categories above. They offer the memory capacity advantages traditionally associated only with a large pool of system RAM, combined with GPU-class compute and memory bandwidth far exceeding what a conventional shared-memory integrated GPU could offer. This combination is what has made it possible to run models on a single chip that would previously have required a discrete GPU with an unrealistic amount of dedicated VRAM, though such designs are new enough that their software support, particularly on less common operating systems and driver stacks, can still be noticeably less mature than the equivalent support for long-established discrete GPU platforms.
+
+Taken together, these five categories are best thought of as different points along two independent axes: how much compute and memory bandwidth is available, and how mature and flexible the surrounding software stack is. A discrete GPU on a well-supported platform typically wins on the first axis and is comfortably ahead on the second. A brand-new unified memory design or a new NPU stack may promise excellent numbers on the first axis while still working through rough edges on the second, and anyone choosing hardware for a local inference deployment should weigh both axes rather than optimizing for peak theoretical throughput alone.
+
+In practice, the safest way to evaluate any of these compute types for a specific workload is still direct measurement rather than relying on vendor specifications alone. Marketing figures for peak compute throughput rarely reflect the sustained, real-world performance of a specific model on a specific inference engine, and the only way to know how a given chip will actually behave under a target workload is to run that workload on it and observe the result directly, ideally across more than one software backend where more than one is available for the hardware in question.
+
+Chapter 19: Case Study — An Open Local Benchmark Suite
+
+Much of what this survey has argued for in the abstract, realistic workloads, repeated measurement, cross-machine comparability, explicit documentation of what has been simplified, is easier to appreciate through a concrete tool built around those principles. One such tool is a cross-platform benchmark suite designed to measure LLM generation, image generation, and embedding throughput across wildly different hardware, from an eight-gigabyte consumer GPU up to large unified-memory workstations, without requiring any manual configuration to skip models that will not fit on a given machine.
+
+The suite's language model tests run every candidate model through two distinct measurements rather than one, reflecting the observation made earlier in this survey that a single throughput number rarely captures a workload's full character. The first measurement, a single-shot test, sends a large prompt padded to a target size, sent fresh with unique content on every run, so it always represents a genuine cold prefill with nothing cached, simulating the experience of pasting a large document into a fresh conversation and asking a single question about it. The second measurement, a conversation test, instead grows a single real multi-turn chat to each target depth, measuring the cost of processing the next turn against an already-filled context, which better reflects the pattern of a long-running chat session or an autonomous agent loop. The suite is explicit that these two measurements are not comparable at face value, since the conversation test benefits from key-value cache reuse that the single-shot test deliberately avoids, and time-to-first-token numbers between the two can differ by an order of magnitude at the same nominal context length for exactly that reason.
+
+Image generation testing in the same suite follows a similar philosophy of avoiding accidentally benchmarking something other than what was intended. Each measured run uses a distinct seed rather than reusing one, because an identical seed paired with an identical workflow would let the underlying rendering engine cache every processing node and return a cached result almost instantly rather than performing genuine generation, silently invalidating the measurement. Models whose checkpoint files are not present on a given machine are simply skipped, rather than causing the whole run to fail, which is part of what allows the same benchmark invocation to run unmodified across machines with very different amounts of available memory.
+
+The embedding tests in this suite are the most directly relevant to the discussion of batching and throughput earlier in this survey. They sweep a range of batch sizes against a fixed corpus, deliberately measuring, rather than assuming, where throughput plateaus and where a given backend begins to show instability at larger batch sizes. Consistent with the benchmarking principles discussed earlier, the suite's own maintainers have specifically worked to make the corpus resemble a real document rather than a small set of sentences repeated many times over, precisely because repeated content can interact differently with caching and deduplication behavior in an inference engine than genuinely varied natural language would, which could otherwise produce throughput numbers that look impressive but do not generalize to the messier, more varied text a real deployment would actually need to embed.
+
+Across all three workload categories, the suite follows the same operational pattern described in the chapter on deployment: it starts whichever backend service a given test needs if it is not already running, tears it down cleanly afterward, and captures enough diagnostic output that a failure can be traced back to an actual cause rather than left as an unexplained crash. When a backend crashes partway through a batch, for instance, the suite waits for it to recover and retries the same measurement a bounded number of times before giving up, and if the same combination of model and batch size fails repeatedly across separate invocations, it records that outcome so a future run does not have to rediscover the same failure from scratch. This mirrors, in miniature, the broader argument of this survey: that trustworthy benchmarking is less about any single clever measurement technique and more about a general discipline of not letting incidental engineering shortcuts quietly distort the numbers a reader ultimately relies on.
+
+Appendix: Project Reference Documentation
+
+The remainder of this document reproduces the reference documentation for the local benchmark suite discussed above, included here as a real-world example of the kind of project documentation this survey has referred to throughout — the sort of practical, workload-specific detail that a generic technical article, including this one, necessarily leaves out.
+
+
+# Local AI Bench v1.1
+
+Cross-platform benchmarking for LLM generation, image generation, and embeddings. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE) — free to use, fork, modify, and redistribute for non-commercial purposes. For commercial licensing, contact [beatclikr@gmail.com](mailto:beatclikr@gmail.com).
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/DeerSteak/local-ai-bench
+cd local-ai-bench
+```
+
+| Platform | Script | What it can install |
+|---|---|---|
+| macOS | `bash setup.sh` | Homebrew, Python |
+| Linux / DGX Spark | `bash setup.sh` | Python, Ollama |
+| Windows | `setup.bat` | Python, Ollama, ComfyUI portable |
+
+`setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
+
+Each script then creates a virtual environment and hands off to `setup_check.py`, which detects your hardware and shows a numbered list of every LLM and image model — everything selected by default. Type numbers to toggle individual models (`2 4 7-9`), a size tier (`xs`/`s`/`m`/`l`) to toggle every model at that tier — LLM and image checkpoints together, e.g. `s` toggles the small-tier LLMs and SDXL as a group — `emb`/`img` to toggle a whole section, `a` to select/deselect all, or just press Enter to install everything shown; `q` or Ctrl-C cancels at any point with nothing installed yet. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), it asks for a HuggingFace token next. After that, everything you picked — Ollama, pip packages, models, image checkpoints — installs with no further prompts. When setup is complete:
+
+```bash
+# Linux / macOS
+bash run_linux_mac.sh
+
+# Windows
+run_windows.bat
+```
+
+These scripts activate the virtual environment automatically and forward any arguments to `benchmark.py`.
+
+### Platform notes
+
+Close other apps before running — GPU memory contention affects results.
+
+**macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
+
+**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
+
+**DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
+
+**Note for Mac and Linux: If the script fails with a permissions error, run `sudo bash setup.sh` instead. 
+
+**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required.
+
+**Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
+
+**Windows (Intel Arc)** — The setup script downloads the latest official ComfyUI Intel portable build with XPU support.
+
+**Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+---
+
+## Workloads
+
+### LLM
+
+Twelve models across four tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
+
+Every model is run through **two separate LLM tests**, back to back, both measured at the same four context lengths (2K / 8K / 32K / 64K):
+
+- **Single-shot** — a large prompt, padded to the target size and sent fresh (with unique content) on every run, so it's always a genuine cold prefill of that many tokens with nothing cached. This simulates dropping a large document, codebase, or transcript into a single prompt and asking one question about it.
+- **Conversation** — a real multi-turn chat that grows to each target depth: the model explains Plato's Allegory of the Cave, then each following turn asks for more detail on a section. Because the message history grows turn over turn, this measures the cost of processing the *next* turn against an already-filled context — the pattern of a long chat session or an agent loop, not a one-shot cold start.
+
+These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
+
+A model is only excluded from the conversation test if it timed out or was skipped in the single-shot test (e.g. too large to fit in memory) — that check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested.
+
+#### Extra-small tier (<6B params)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.0 GB |
+| Phi 4 Mini | `phi4-mini` | ~2.5 GB |
+| Qwen3.5 4B | `qwen3.5:4b` | ~2.6 GB |
+
+#### Small tier (≤20B params)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~4.9 GB |
+| Gemma 4 E4B | `gemma4:e4b` | ~9.6 GB |
+| GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~14 GB |
+
+#### Medium tier (26–35B params)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Gemma 4 26B (MoE, 4B active) | `gemma4:26b` | ~18 GB |
+| DeepSeek-R1 32B | `deepseek-r1:32b` | ~20 GB |
+| Qwen3.6 35B-A3B (MoE) | `qwen3.6:35b-a3b` | ~22 GB |
+
+#### Large tier (70B+ params)
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~43 GB |
+| DeepSeek-R1 70B | `deepseek-r1:70b` | ~43 GB |
+| GPT-OSS 120B (MXFP4) | `gpt-oss:120b` | ~65 GB |
+
+**DeepSeek-R1** is a reasoning model that generates internal thinking tokens before its answer. TPS includes this thinking output, and TTFT captures the first thinking token rather than the first answer token — an accurate reflection of real-world inference.
+
+**Llama versions:** Llama 3.2 tops out at 3B parameters. The 8B slot uses Llama 3.1; the 70B slot uses Llama 3.3, the most recent 70B instruction model.
+
+### Image Generation
+
+Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
+
+Each of the 3 measured runs uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. The warmup run before those 3 also uses its own distinct seed, for the same reason.
+
+| Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
+|---|---|---|---|---|---|
+| Stable Diffusion 1.5 | `v1-5-pruned-emaonly.safetensors` | 20 | ~2.1 GB | xsmall | No |
+| SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | small | No |
+| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | medium | Yes (free) |
+| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~24 GB | large | Yes (free) |
+| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64 GB | large | Yes (free) |
+
+**Stable Diffusion 1.5** was trained at 512×512; testing it at the other models' 1024/1536 resolutions produces visibly degraded (duplicated-subject) output, so it gets its own native-range pair — 512×512 and 768×768 (the same 1.5x step used for everything else) — instead of the shared resolution list.
+
+`--maxtier` caps image models the same way it caps LLMs — see [CLI Reference](#cli-reference).
+
+SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance at:
+- https://huggingface.co/stabilityai/stable-diffusion-3.5-large
+- https://huggingface.co/black-forest-labs/FLUX.1-dev
+- https://huggingface.co/black-forest-labs/FLUX.2-dev
+
+If you select one of these in the model picker, `setup_check.py` finds your HF token in this order:
+
+1. `HF_TOKEN` environment variable
+2. `hf.txt` in the repo root (token on a single line)
+3. Interactive prompt — offers to save to `hf.txt` for future runs
+
+### Embeddings
+
+Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across 5,000 sentences at batch sizes 32, 128, and 512. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+
+If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--emb-cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Nomic Embed Text | `nomic-embed-text` | ~274 MB |
+| MixedBread Embed Large | `mxbai-embed-large` | ~670 MB |
+
+---
+
+## CLI Reference
+
+```
+run_linux_mac.sh [options]  # Linux / macOS
+run_windows.bat [options]   # Windows
+
+--tests llm conv emb img  Tests to run (default: all four)
+--emb-cpu-only          Force CPU-only inference for the embedding tests
+                        (restarts Ollama with GPU devices hidden, then
+                        restores normal GPU mode afterward)
+--warmup N              Warmup runs before measuring (default: 2)
+--timeout N             Seconds per run before skipping model (default: 300)
+--maxtier TIER          Cap LLM models (single-shot + conversation) AND image
+                        models at this tier and below: xsmall (<6B / +SD1.5),
+                        small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
+                        large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
+--comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
+--out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
+```
+
+Every test always measures 3 runs per checkpoint and averages them.
+
+```bash
+# Full run — large models skipped automatically if they don't fit
+bash run_linux_mac.sh
+
+# LLM only, quick check
+bash run_linux_mac.sh --tests llm
+
+# Skip image generation
+bash run_linux_mac.sh --tests llm conv emb
+
+# Conversation benchmark only
+bash run_linux_mac.sh --tests conv
+
+# Cap at small-tier models and below — skips medium/large LLMs and
+# medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
+# leaving SD1.5 and SDXL for the image test
+bash run_linux_mac.sh --maxtier small
+
+# Give slow hardware more time per run
+bash run_linux_mac.sh --timeout 600
+```
+
+A full run takes 2–4 hours on a Mac; faster on the Spark and Ryzen.
+
+### Comparing results
+
+Copy result files from all machines to one machine, then:
+
+```bash
+python compare.py results_*.json
+# or explicitly:
+python compare.py results_mac.json results_dgx.json results_ryzen.json
+```
+
+Output is color-coded: green = best, red = slowest. A `compare_results.json` is also saved.
+
+---
+
+## Dashboard
+
+An interactive results explorer for visualising and exporting benchmark output.
+
+```bash
+python launch_dashboard.py
+python launch_dashboard.py --port 8080   # use a different port
+python launch_dashboard.py --rebuild     # force a fresh npm build
+```
+
+Requires Node.js/npm. On first run, installs npm dependencies and builds the app, then starts a local server on port 3000 and opens the browser automatically.
+
+### Loading results
+
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`.
+
+### Sections
+
+| Section | Charts |
+|---|---|
+| LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (2K / 8K / 32K / 64K), single-shot cold-prefill test |
+| LLM Conversation | Same two charts per model and context lengths, but from the multi-turn conversation test |
+| Embeddings | Sentences per second across batch sizes (32 / 128 / 512) |
+| Images | One grouped bar chart per resolution — all image models side by side per host |
+
+The **Models** filter and **Machine** labels are shared between the LLM and LLM Conversation sections, so switching between them keeps the same models/files selected.
+
+### What the charts mean
+
+**LLM → Tokens/sec.** Decode throughput (tokens generated per second) for the single-shot test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
+
+**LLM → TTFT.** Time to process the single-shot prompt before the first token comes back — a genuine cold prefill, since every run sends fresh, never-before-seen prompt content. Lower is better. This answers "if I paste a large document and hit send, how long do I wait before anything happens?" TTFT rises sharply with context length here, since the model has to run every one of those tokens through the network with nothing cached.
+
+**LLM Conversation → Tokens/sec.** The same decode-throughput metric, but measured mid-conversation instead of after a single cold prompt. Generally close to the single-shot number for the same model — decode speed doesn't depend much on how the context got filled.
+
+**LLM Conversation → TTFT.** Time to process just the *next* turn in an already-long conversation, relying on the backend's KV-cache reuse (llama.cpp/Ollama's slot cache) so only the new turn's tokens need to be run through the network, not the entire history again. This is **why conversation TTFT at, say, 32K is typically a small fraction of single-shot TTFT at 32K** — they're not measuring the same thing. Single-shot TTFT is "cold start with a huge prompt"; conversation TTFT is "one more message in a chat that's already this long." Both are real workloads; which one matters more depends on whether your use case looks like one-shot document Q&A or an ongoing chat/agent session.
+
+**Embeddings → Sentences/sec.** Embedding throughput at each batch size. Higher is better.
+
+**Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.
+
+### Multi-file comparison
+
+Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. The **Models** filter shows or hides individual models.
+
+### Exporting
+
+Drop a logo image onto the **Logo** drop zone to embed it in the bottom-right corner of every chart. Click **Save PNG** to export all visible charts as individual files:
+
+```
+llama3.1-8b-q4_tps.png
+llama3.1-8b-q4_ttft.png
+llama3.1-8b-q4_conv_tps.png       # LLM Conversation section
+llama3.1-8b-q4_conv_ttft.png      # LLM Conversation section
+embeddings.png
+1024x1024_images.png
+```
+
+The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
+
+### Development
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (typically `http://localhost:5173`).
+
+---
+
+## How It Works
+
+### Execution
+
+LLM benchmarks run first (small → medium → large), followed by embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
+
+Each LLM model follows this pattern:
+
+```
+warmup (2 runs)
+  → measure single-shot   (3 runs at 2K / 8K / 32K / 64K)
+  → measure conversation  (3 runs at 2K / 8K / 32K / 64K, one continuous growing chat)
+  → unload → confirm gone
+```
+
+The single-shot test builds an independent padded prompt for every run. The conversation test keeps a single chat growing across all four checkpoints — it grows past each depth, takes 3 measured turns there, then keeps growing toward the next one — with `num_ctx` sized generously above the largest checkpoint so growth never hits the context ceiling mid-session (hitting it would force a full reprocess and corrupt the "incremental turn" measurement).
+
+Any run that exceeds the 300-second timeout causes the model to be skipped immediately. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
+
+A model is only excluded from the conversation test if it timed out or was skipped in the single-shot test.
+
+**Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
+
+**ComfyUI** is started just before the image tests and shut down immediately after. A signal handler and `finally` block ensure clean shutdown on Ctrl-C or crash.
+
+### Parameters
+
+| Parameter | Value |
+|---|---|
+| LLM context lengths | 2K, 8K, 32K, 64K |
+| LLM test modes | Single-shot (cold prefill), Conversation (incremental turn in a growing chat) |
+| LLM warmup runs | 2 (discarded) |
+| LLM measured runs | 3 per context length per test mode, averaged |
+| Run timeout | 300s per run — model skipped if exceeded |
+| LLM metrics | TTFT, tokens/sec (TPS) |
+| Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
+| Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
+| Embedding corpus | 5,000 sentences |
+| Embedding batch sizes | 32, 128, 512 |
+| Embedding measured runs | 3 per batch size, averaged |
+| Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
+| Image resolutions | 1024×1024, 1536×1536 (SD1.5: 512×512, 768×768) |
+| Image seed | 42 (fixed) |
+| Image metrics | Seconds per image, per model, per resolution |
+| Image measured runs | 3 per resolution, averaged |
+
+---
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `setup.sh` | One-shot setup for macOS and Linux |
+| `setup.bat` | One-shot setup for Windows |
+| `setup_check.py` | Called by setup scripts — detects hardware, lets you pick which models to install, then installs everything unattended |
+| `run_linux_mac.sh` | Activates the venv and runs `benchmark.py` on Linux / macOS |
+| `run_windows.bat` | Activates the venv and runs `benchmark.py` on Windows |
+| `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
+| `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
+| `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |

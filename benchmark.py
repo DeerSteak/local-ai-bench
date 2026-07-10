@@ -1167,18 +1167,48 @@ def run_conversation_benchmarks(models, context_lengths, warmup_runs):
 
 # ── Embeddings benchmark ───────────────────────────────────────────────────────
 
-CORPUS_SENTENCES = [
-    "The transformer architecture revolutionized natural language processing.",
-    "Attention mechanisms allow models to weigh the importance of each token.",
-    "Retrieval-augmented generation combines search with language model generation.",
-    "Vector databases store embeddings for efficient similarity search.",
-    "Semantic search finds documents based on meaning rather than keywords.",
-    "Fine-tuning adapts a pre-trained model to a specific downstream task.",
-    "Quantization reduces model size by using lower precision arithmetic.",
-    "The context window determines how much text a model can process at once.",
-    "Flash attention reduces memory usage during transformer forward passes.",
-    "Mixture-of-experts models activate only a subset of parameters per token.",
-] * 500  # 5,000 sentences total
+# A real, varied document rather than a handful of sentences repeated many
+# times — repeated filler can interact with an inference engine's caching
+# behavior differently than genuinely varied text, which risks measuring
+# something other than real-world embedding throughput.
+EMBED_DOCUMENT_PATH = SCRIPT_DIR / "sample_document.txt"
+EMBED_CORPUS_TARGET_SIZE = 5000
+
+def load_embedding_corpus(path: Path = EMBED_DOCUMENT_PATH,
+                           target_size: int = EMBED_CORPUS_TARGET_SIZE) -> list[str]:
+    """Split the source document into sentence-like chunks and repeat the
+    set only as many times as needed to reach target_size."""
+    text = path.read_text().replace("\n", " ")
+    raw = re.split(r"(?<=[.!?])\s+", text)
+    # Drop markdown table rows, code fences, and other non-prose fragments
+    # that a sentence-boundary split can't cleanly separate.
+    sentences = [
+        s.strip() for s in raw
+        if len(s.split()) >= 4 and sum(c.isalpha() for c in s) / len(s) > 0.5
+    ]
+
+    reps = max(1, -(-target_size // len(sentences)))  # ceil division
+    corpus = (sentences * reps)[:max(target_size, len(sentences))]
+    log(f"Corpus: {len(sentences)} real sentences from {path.name}"
+        + (f", repeated {reps}x to reach {len(corpus)}" if reps > 1 else " (no repetition needed)"))
+    return corpus
+
+# Records model/batch-size combos that crashed Ollama's runner repeatedly
+# (deterministically, not a transient blip) so future runs don't waste time
+# rediscovering the same crash. Delete this file to retry a skipped combo.
+EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")
+
+def _load_crash_cache() -> dict:
+    try:
+        return json.loads(EMBED_CRASH_CACHE.read_text())
+    except Exception:
+        return {}
+
+def _save_crash_cache(cache: dict) -> None:
+    try:
+        EMBED_CRASH_CACHE.write_text(json.dumps(cache, indent=2))
+    except Exception as e:
+        warn(f"Failed to save embedding crash cache: {e}")
 
 def run_embedding_benchmarks(models, batch_sizes):
     results = {}
@@ -1186,6 +1216,9 @@ def run_embedding_benchmarks(models, batch_sizes):
     if not ollama_available():
         err("Ollama not running — skipping embedding benchmarks")
         return results
+
+    crash_cache = _load_crash_cache()
+    corpus = load_embedding_corpus()
 
     for model in models:
         tag   = model["tag"]
@@ -1201,17 +1234,28 @@ def run_embedding_benchmarks(models, batch_sizes):
 
         ok(f"Using Ollama model: {tag}")
 
-        corpus = CORPUS_SENTENCES
-        log(f"Corpus: {len(corpus)} sentences")
-
         model_results = {}
         for bs in batch_sizes:
+            cache_key = f"{tag}:{bs}"
+            if cache_key in crash_cache:
+                detail = crash_cache[cache_key]
+                warn(f"Batch size {bs} previously crashed Ollama's runner repeatedly "
+                     f"on {detail.get('crashed_at', 'an earlier run')} — skipping "
+                     f"(delete {EMBED_CRASH_CACHE} to retry)")
+                model_results[f"batch_{bs}"] = {
+                    "skipped": True,
+                    "skip_reason": "known_crash",
+                    "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
+                }
+                continue
+
             log(f"Batch size {bs} — {N_RUNS} runs ...")
             rates = []
 
             MAX_CRASH_RETRIES = 2
             run_i = 0
             crash_retries = 0
+            gave_up_from_crashes = False
             while run_i < N_RUNS:
                 t0 = time.perf_counter()
                 try:
@@ -1251,6 +1295,7 @@ def run_embedding_benchmarks(models, batch_sizes):
                         if crash_retries > MAX_CRASH_RETRIES:
                             err(f"Ollama's model runner crashed {crash_retries} times at "
                                 f"batch size {bs} — giving up on this batch size")
+                            gave_up_from_crashes = True
                             break
                         warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
                         recovered = False
@@ -1277,6 +1322,15 @@ def run_embedding_benchmarks(models, batch_sizes):
                     "runs":                   [round(r, 1) for r in rates],
                 }
                 ok(f"Batch {bs}: {model_results[key]['sentences_per_sec_mean']:.0f} sent/sec")
+            elif gave_up_from_crashes:
+                crashed_at = datetime.now().isoformat(timespec="seconds")
+                crash_cache[cache_key] = {"crashed_at": crashed_at}
+                _save_crash_cache(crash_cache)
+                model_results[f"batch_{bs}"] = {
+                    "skipped": True,
+                    "skip_reason": "known_crash",
+                    "skip_detail": f"Ollama's runner crashed repeatedly at this batch size ({crashed_at})",
+                }
 
         results[short] = {"label": label, **model_results}
 

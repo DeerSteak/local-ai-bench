@@ -190,3 +190,4 @@ machine_profile.json
 /benchmark_images
 /dashboard/.omc
 results*.json
+.embed_crash_cache.json
