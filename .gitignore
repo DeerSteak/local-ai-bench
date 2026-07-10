@@ -186,3 +186,7 @@ hf.txt
 machine_profile.json
 **/node_modules
 7zr.exe
+/.omc
+/benchmark_images
+/dashboard/.omc
+results*.json
