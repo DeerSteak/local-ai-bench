@@ -1212,7 +1212,7 @@ def comfyui_free_models(timeout: int = 10) -> None:
     except Exception as e:
         warn(f"Could not unload ComfyUI models: {e}")
 
-def comfyui_interrupt_and_clear(timeout: int = 10) -> None:
+def comfyui_interrupt_and_clear(timeout: int = 10, confirm_timeout: int = 15) -> None:
     """Stop ComfyUI's currently running job and drop anything still queued.
 
     ComfyUI executes one job at a time. If we give up on a job client-side
@@ -1221,6 +1221,10 @@ def comfyui_interrupt_and_clear(timeout: int = 10) -> None:
     submission queues silently behind it and can time out in turn without
     ever actually starting. Call this right after a timeout so the next
     submission starts from a clean queue.
+
+    /interrupt and /queue clear only signal ComfyUI — they return before the
+    running job has actually unwound, so we poll /queue afterward until both
+    queue_running and queue_pending are actually empty (or we give up and warn).
     """
     try:
         requests.post(f"{COMFYUI_URL}/interrupt", timeout=timeout)
@@ -1230,6 +1234,19 @@ def comfyui_interrupt_and_clear(timeout: int = 10) -> None:
         requests.post(f"{COMFYUI_URL}/queue", json={"clear": True}, timeout=timeout)
     except Exception as e:
         warn(f"Failed to clear ComfyUI queue: {e}")
+
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < confirm_timeout:
+        try:
+            status = requests.get(f"{COMFYUI_URL}/queue", timeout=10).json()
+        except Exception as e:
+            warn(f"Failed to confirm ComfyUI queue is clear: {e}")
+            return
+        if not status.get("queue_running") and not status.get("queue_pending"):
+            return
+        time.sleep(1)
+    warn(f"ComfyUI queue still not empty {confirm_timeout}s after interrupt/clear — "
+         f"a stuck job may still be occupying the execution slot")
 
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt, filename_prefix="bench_flux"):
@@ -1428,6 +1445,18 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict
     Returns (elapsed_sec, images) where images is a list of
     {"filename": str, "subfolder": str, "type": str} dicts from all output nodes.
     """
+    # A prior job (from an earlier model/test) can be left running or queued
+    # if its own timeout handling didn't fully clear it — e.g. the interrupt
+    # or queue-clear request itself failed. Check first so a stuck job never
+    # silently eats our execution slot and causes a fresh, unrelated timeout.
+    try:
+        queue_status = requests.get(f"{COMFYUI_URL}/queue", timeout=10).json()
+        if queue_status.get("queue_running") or queue_status.get("queue_pending"):
+            warn("ComfyUI queue has leftover job(s) from a prior submission — clearing before continuing")
+            comfyui_interrupt_and_clear()
+    except Exception as e:
+        warn(f"Failed to check ComfyUI queue before submission: {e}")
+
     resp = requests.post(
         f"{COMFYUI_URL}/prompt",
         json={"prompt": workflow},
