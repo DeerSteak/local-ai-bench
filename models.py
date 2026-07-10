@@ -5,7 +5,20 @@ No external dependencies: safe to import before packages are installed.
 Both benchmark.py and setup_check.py import from here.
 """
 
-EMBED_MODEL = "nomic-embed-text"
+EMBED_MODELS = [
+    {
+        "tag":   "nomic-embed-text",
+        "label": "Nomic Embed Text",
+        "short": "nomic-embed-text",
+        "vram":  "~274 MB",
+    },
+    {
+        "tag":   "mxbai-embed-large",
+        "label": "MixedBread Embed Large",
+        "short": "mxbai-embed-large",
+        "vram":  "~670 MB",
+    },
+]
 
 # Image generation models. Checkpoint files not present in
 # ComfyUI/models/checkpoints/ are skipped automatically.

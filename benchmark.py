@@ -19,7 +19,7 @@ Tests:
      Metrics: seconds/image at 1024×1024 and 1536×1536
      (models skipped automatically if checkpoint not found)
 
-  3. Embeddings — nomic-embed-text via Ollama
+  3. Embeddings — nomic-embed-text and mxbai-embed-large via Ollama
      Metrics: sentences/sec at batch sizes 32, 128, 512
 
 Servers are managed automatically:
@@ -64,7 +64,7 @@ COMFYUI_URL  = "http://localhost:8188"
 SCRIPT_DIR   = Path(__file__).resolve().parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
-from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODEL  # noqa: E402
+from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS  # noqa: E402
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 EMBED_BATCH_SIZES = [32, 128, 512]
@@ -1125,56 +1125,65 @@ CORPUS_SENTENCES = [
     "Mixture-of-experts models activate only a subset of parameters per token.",
 ] * 500  # 5,000 sentences total
 
-def run_embedding_benchmarks(batch_sizes):
+def run_embedding_benchmarks(models, batch_sizes):
     results = {}
-    section(f"Embeddings: {EMBED_MODEL}")
 
     if not ollama_available():
         err("Ollama not running — skipping embedding benchmarks")
         return results
 
-    if not model_pulled(EMBED_MODEL):
-        warn(f"{EMBED_MODEL} not pulled — skipping")
-        warn(f"Pull with: ollama pull {EMBED_MODEL}")
-        return results
+    for model in models:
+        tag   = model["tag"]
+        label = model["label"]
+        short = model["short"]
 
-    ok(f"Using Ollama model: {EMBED_MODEL}")
+        section(f"Embeddings: {label}")
 
-    corpus = CORPUS_SENTENCES
-    log(f"Corpus: {len(corpus)} sentences")
+        if not model_pulled(tag):
+            warn(f"{tag} not pulled — skipping")
+            warn(f"Pull with: ollama pull {tag}")
+            continue
 
-    for bs in batch_sizes:
-        log(f"Batch size {bs} — {N_RUNS} runs ...")
-        rates = []
+        ok(f"Using Ollama model: {tag}")
 
-        for run_i in range(N_RUNS):
-            t0 = time.perf_counter()
-            try:
-                for i in range(0, len(corpus), bs):
-                    batch = corpus[i:i + bs]
-                    resp = requests.post(
-                        f"{OLLAMA_URL}/api/embed",
-                        json={"model": EMBED_MODEL, "input": batch},
-                        timeout=120,
-                    )
-                    resp.raise_for_status()
-                elapsed = time.perf_counter() - t0
-                rate = len(corpus) / elapsed
-                rates.append(rate)
-                print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} sent/sec")
-            except Exception as e:
-                err(f"Run {run_i+1} failed: {e}")
+        corpus = CORPUS_SENTENCES
+        log(f"Corpus: {len(corpus)} sentences")
 
-        if rates:
-            key = f"batch_{bs}"
-            results[key] = {
-                "sentences_per_sec_mean":  round(mean(rates), 1),
-                "sentences_per_sec_stdev": round(stdev(rates), 1),
-                "device":                  "gpu",
-                "n_runs":                  len(rates),
-                "runs":                   [round(r, 1) for r in rates],
-            }
-            ok(f"Batch {bs}: {results[key]['sentences_per_sec_mean']:.0f} sent/sec")
+        model_results = {}
+        for bs in batch_sizes:
+            log(f"Batch size {bs} — {N_RUNS} runs ...")
+            rates = []
+
+            for run_i in range(N_RUNS):
+                t0 = time.perf_counter()
+                try:
+                    for i in range(0, len(corpus), bs):
+                        batch = corpus[i:i + bs]
+                        resp = requests.post(
+                            f"{OLLAMA_URL}/api/embed",
+                            json={"model": tag, "input": batch},
+                            timeout=120,
+                        )
+                        resp.raise_for_status()
+                    elapsed = time.perf_counter() - t0
+                    rate = len(corpus) / elapsed
+                    rates.append(rate)
+                    print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} sent/sec")
+                except Exception as e:
+                    err(f"Run {run_i+1} failed: {e}")
+
+            if rates:
+                key = f"batch_{bs}"
+                model_results[key] = {
+                    "sentences_per_sec_mean":  round(mean(rates), 1),
+                    "sentences_per_sec_stdev": round(stdev(rates), 1),
+                    "device":                  "gpu",
+                    "n_runs":                  len(rates),
+                    "runs":                   [round(r, 1) for r in rates],
+                }
+                ok(f"Batch {bs}: {model_results[key]['sentences_per_sec_mean']:.0f} sent/sec")
+
+        results[short] = {"label": label, **model_results}
 
     return results
 
@@ -1831,6 +1840,7 @@ def main():
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
             results["embeddings"] = run_embedding_benchmarks(
+                models=EMBED_MODELS,
                 batch_sizes=EMBED_BATCH_SIZES,
             )
             _checkpoint("embeddings done")

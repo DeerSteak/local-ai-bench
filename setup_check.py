@@ -18,7 +18,7 @@ import json
 import shutil
 from pathlib import Path
 
-from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODEL
+from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -392,38 +392,40 @@ section("Model Selection")
 
 def select_models():
     """
-    Flat numbered list spanning every LLM tier and image model, all checked
-    by default. Type numbers/ranges to toggle, 'a' to select/deselect all,
-    or press Enter to accept the current selection. Plain input() only — no
-    raw terminal mode — so stray keys from earlier prompts can't leak in and
-    there's nothing to restore/flush.
+    Flat numbered list spanning every LLM tier, the embeddings model, and
+    image models, all checked by default. Type numbers/ranges to toggle,
+    a section keyword (xs/s/m/l/emb/img) to toggle a whole section, 'a' to
+    select/deselect all, or press Enter to accept the current selection.
+    Plain input() only — no raw terminal mode — so stray keys from earlier
+    prompts can't leak in and there's nothing to restore/flush.
     """
     groups = [
-        ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm"),
-        ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm"),
-        ("LLM — Medium tier (26–35B params)", LLM_MODELS_MEDIUM, "llm"),
-        ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm"),
-        ("Image generation models",           IMAGE_MODELS,      "image"),
+        ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
+        ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
+        ("LLM — Medium tier (26–35B params)", LLM_MODELS_MEDIUM, "llm",   "m"),
+        ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm",   "l"),
+        ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
+        ("Image generation models",           IMAGE_MODELS,      "image", "img"),
     ]
+    group_keys = {g[3] for g in groups}
     entries = []
-    for _, items, kind in groups:
+    for _, items, kind, group_key in groups:
         for m in items:
-            entries.append({"item": m, "kind": kind, "checked": True})
+            entries.append({"item": m, "kind": kind, "group": group_key, "checked": True})
 
     def size_label(m, kind):
-        if kind == "llm":
+        if kind in ("llm", "embed"):
             return f"  ({m['vram']})"
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
         return f"  (~{gb:.1f} GB)" if gb else ""
 
     def render():
         print(f"  {BOLD}Choose which models to install (all selected by default){RESET}")
-        print("  The embeddings model is always installed and isn't listed here.\n")
         n = 1
-        for header, items, kind in groups:
+        for header, items, kind, group_key in groups:
             if not items:
                 continue
-            print(f"  {CYAN}{header}{RESET}")
+            print(f"  {CYAN}{header} [{group_key}]{RESET}")
             for m in items:
                 e = entries[n - 1]
                 box = "[x]" if e["checked"] else "[ ]"
@@ -432,7 +434,8 @@ def select_models():
             print()
 
     render()
-    print("  Type numbers to toggle (e.g. '2 4 7-9'), 'a' to select/deselect all, 'q' to cancel,")
+    print("  Type numbers to toggle (e.g. '2 4 7-9'), a section keyword")
+    print(f"  ({', '.join(sorted(group_keys))}) to toggle a whole section, 'a' to select/deselect all, 'q' to cancel,")
     while True:
         try:
             raw = input("  or press Enter to install everything checked above: ").strip().lower()
@@ -446,6 +449,14 @@ def select_models():
         if raw in ("a", "all"):
             all_checked = all(e["checked"] for e in entries)
             for e in entries:
+                e["checked"] = not all_checked
+            print()
+            render()
+            continue
+        if raw in group_keys:
+            matching = [e for e in entries if e["group"] == raw]
+            all_checked = all(e["checked"] for e in matching)
+            for e in matching:
                 e["checked"] = not all_checked
             print()
             render()
@@ -477,15 +488,17 @@ def select_models():
 
     selected_llm    = [e["item"] for e in entries if e["checked"] and e["kind"] == "llm"]
     selected_images = [e["item"] for e in entries if e["checked"] and e["kind"] == "image"]
-    return selected_llm, selected_images
+    selected_embed  = [e["item"] for e in entries if e["checked"] and e["kind"] == "embed"]
+    return selected_llm, selected_images, selected_embed
 
-selected_llm, selected_images = select_models()
+selected_llm, selected_images, selected_embed = select_models()
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
 print()
 info(f"LLM models selected: {len(selected_llm)}/{len(LLM_MODELS_XSMALL) + len(LLM_MODELS_SMALL) + len(LLM_MODELS_MEDIUM) + len(LLM_MODELS_LARGE)}")
 info(f"Image models selected: {len(selected_images)}/{len(IMAGE_MODELS)}")
+info(f"Embeddings models selected: {len(selected_embed)}/{len(EMBED_MODELS)}")
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
@@ -622,7 +635,7 @@ VAE_DIR     = COMFYUI_DIR / "models" / "vae"
 
 remaining_gb = 0.0
 
-all_llm = [{"tag": EMBED_MODEL, "vram": "~274 MB"}] + selected_llm
+all_llm = selected_embed + selected_llm
 if ollama_up:
     already_pulled = {m["name"] for m in tag_data.get("models", [])}
     for m in all_llm:
@@ -684,7 +697,7 @@ for m in deselected_llm:
 
 if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
-    all_models = [{"tag": EMBED_MODEL, "label": f"Embed: {EMBED_MODEL}", "vram": "~274 MB"}] + selected_llm
+    all_models = selected_embed + selected_llm
     for m in all_models:
         tag, label, size = m["tag"], m["label"], m["vram"]
         already = tag in available or any(tag in a for a in available)
@@ -699,7 +712,7 @@ if ollama_up:
                 fail(f"{label} — pull failed")
                 issues.append(f"ollama pull {tag}")
 else:
-    for m in [{"tag": EMBED_MODEL}] + selected_llm:
+    for m in selected_embed + selected_llm:
         warn(f"Cannot check {m['tag']} — Ollama server not running")
         issues.append(f"ollama pull {m['tag']}  (once Ollama is running)")
 

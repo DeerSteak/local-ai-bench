@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseJSON, getAllLLMModels, getAllImageModels, sanitizeForFilename } from "./utils";
+import { parseJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, sanitizeForFilename } from "./utils";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [section, setSection] = useState("llm");
   const [enabledModels, setEnabledModels] = useState(new Set());
   const [enabledImageModels, setEnabledImageModels] = useState(new Set());
+  const [enabledEmbedModels, setEnabledEmbedModels] = useState(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
@@ -35,6 +36,7 @@ export default function Dashboard() {
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
+  const allEmbedModels = useMemo(() => getAllEmbedModels(files), [files]);
 
   // Auto-enable newly appearing models
   const prevModelsRef = useRef(new Set());
@@ -55,12 +57,25 @@ export default function Dashboard() {
     }
   }, [allImageModels]);
 
+  const prevEmbedModelsRef = useRef(new Set());
+  useEffect(() => {
+    const newOnes = allEmbedModels.filter(m => !prevEmbedModelsRef.current.has(m));
+    if (newOnes.length) {
+      setEnabledEmbedModels(prev => { const n = new Set(prev); newOnes.forEach(m => n.add(m)); return n; });
+      newOnes.forEach(m => prevEmbedModelsRef.current.add(m));
+    }
+  }, [allEmbedModels]);
+
   const toggleModel = useCallback((m) => {
     setEnabledModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
   }, []);
 
   const toggleImageModel = useCallback((m) => {
     setEnabledImageModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
+  }, []);
+
+  const toggleEmbedModel = useCallback((m) => {
+    setEnabledEmbedModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
   }, []);
 
   const effectiveFiles = useMemo(() =>
@@ -79,8 +94,10 @@ export default function Dashboard() {
   const resetModelState = () => {
     prevModelsRef.current = new Set();
     prevImageModelsRef.current = new Set();
+    prevEmbedModelsRef.current = new Set();
     setEnabledModels(new Set());
     setEnabledImageModels(new Set());
+    setEnabledEmbedModels(new Set());
     setHostnameOverrides({});
   };
 
@@ -198,6 +215,7 @@ export default function Dashboard() {
         section={section} setSection={setSection}
         allModels={allModels} enabledModels={enabledModels} onToggleModel={toggleModel}
         allImageModels={allImageModels} enabledImageModels={enabledImageModels} onToggleImageModel={toggleImageModel}
+        allEmbedModels={allEmbedModels} enabledEmbedModels={enabledEmbedModels} onToggleEmbedModel={toggleEmbedModel}
         chartStyle={chartStyle} setChartStyle={setChartStyle}
         groupBy={groupBy} setGroupBy={setGroupBy}
         sizeSplit={sizeSplit} setSizeSplit={setSizeSplit}
@@ -218,6 +236,7 @@ export default function Dashboard() {
         section={section}
         enabledModels={enabledModels}
         enabledImageModels={enabledImageModels}
+        enabledEmbedModels={enabledEmbedModels}
         chartWidth={chartWidth}
         logoSrc={logoSrc}
         chartStyle={chartStyle}

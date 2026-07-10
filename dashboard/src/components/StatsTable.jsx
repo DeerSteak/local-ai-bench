@@ -84,6 +84,7 @@ function EmbedTable({ files, sortConfig, onCycleSort }) {
       <thead>
         <tr>
           {isMulti && <th className={styles.th}>Machine</th>}
+          <SortTh label="Model" sortKey="modelLabel" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Batch Size" sortKey="batchLabel" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Sent/sec" sortKey="sps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
@@ -96,6 +97,7 @@ function EmbedTable({ files, sortConfig, onCycleSort }) {
         {rows.map((r, i) => (
           <tr key={i}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{r.modelLabel}</td>
             <td className={`${styles.td} ${styles.tdCtx}`}>{r.batchLabel}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.sps_mean, "sps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.sps_stdev, "sps")}</td>

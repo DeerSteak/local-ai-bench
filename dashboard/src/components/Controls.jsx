@@ -1,11 +1,15 @@
 import { SECTIONS, SECTION_LABELS, FILE_COLORS } from "../constants";
-import { modelLabel, imageModelLabel, getModelColor, getImageModelColor, sanitizeForFilename } from "../utils";
+import {
+  modelLabel, imageModelLabel, embedModelLabel,
+  getModelColor, getImageModelColor, getEmbedModelColor, sanitizeForFilename,
+} from "../utils";
 import styles from "./Controls.module.css";
 
 export default function Controls({
   section, setSection,
   allModels, enabledModels, onToggleModel,
   allImageModels, enabledImageModels, onToggleImageModel,
+  allEmbedModels, enabledEmbedModels, onToggleEmbedModel,
   chartStyle, setChartStyle,
   groupBy, setGroupBy,
   sizeSplit, setSizeSplit,
@@ -135,6 +139,33 @@ export default function Controls({
                     style={enabled ? { accentColor: color } : undefined}
                   />
                   {imageModelLabel(m)}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {section === "embeddings" && allEmbedModels.length > 0 && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Models</div>
+          <div className={styles.filterGroup}>
+            {allEmbedModels.map(m => {
+              const enabled = enabledEmbedModels.has(m);
+              const color = getEmbedModelColor(m);
+              return (
+                <label
+                  key={m}
+                  className={`${styles.filterCheck} ${enabled ? styles.enabled : styles.disabled}`}
+                  style={enabled ? { color } : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => onToggleEmbedModel(m)}
+                    style={enabled ? { accentColor: color } : undefined}
+                  />
+                  {embedModelLabel(m)}
                 </label>
               );
             })}

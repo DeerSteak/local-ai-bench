@@ -112,6 +112,19 @@ export const MODEL_SIZE_TIER = {
 
 export const IMAGE_MODEL_ORDER = ["sdxl", "sd35-large", "flux-dev", "flux2-dev"];
 
+// Matches models.py's EMBED_MODELS list
+export const EMBED_MODEL_COLORS = {
+  "nomic-embed-text":  "#0969da",
+  "mxbai-embed-large": "#e36209",
+};
+
+export const EMBED_MODEL_LABELS = {
+  "nomic-embed-text":  "Nomic Embed Text",
+  "mxbai-embed-large": "MixedBread Embed Large",
+};
+
+export const EMBED_MODEL_ORDER = ["nomic-embed-text", "mxbai-embed-large"];
+
 // Size tiers for splitting up per-system charts (too many models on one line
 // chart is unreadable — bar charts don't have this problem since bars stack
 // rather than overlapping lines). Matches models.py / README.md's parameter-
@@ -158,6 +171,12 @@ export const IMAGE_BAR_COLORS = {
   "sd35-large":   "#e36209",
   "flux-dev":     "#1a7f37",
   "flux2-dev":    "#9a3078",
+};
+
+// Colors per embedding model (used in bar chart mode — matches CTX/BATCH palette)
+export const EMBED_BAR_COLORS = {
+  "nomic-embed-text":  "#0969da",
+  "mxbai-embed-large": "#e36209",
 };
 
 // Ordered context length labels (match benchmark.py output)

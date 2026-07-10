@@ -12,7 +12,7 @@ import { EmptyState } from "./panels/shared";
 // recharts wrappers) live in components/charts/ChartCards.jsx.
 export default function ChartPanel({
   containerRef, files, section,
-  enabledModels, enabledImageModels, chartWidth, logoSrc, chartStyle, groupBy, sizeSplit,
+  enabledModels, enabledImageModels, enabledEmbedModels, chartWidth, logoSrc, chartStyle, groupBy, sizeSplit,
 }) {
   const isBar = chartStyle === "bar";
   const isBySystem = groupBy === "system";
@@ -45,7 +45,8 @@ export default function ChartPanel({
   if (isBySystem && section === "embeddings") {
     return (
       <EmbeddingsBySystemPanel
-        containerRef={containerRef} files={files} chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar}
+        containerRef={containerRef} files={files} enabledEmbedModels={enabledEmbedModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar}
       />
     );
   }
@@ -70,7 +71,8 @@ export default function ChartPanel({
 
   return (
     <EmbeddingsPanel
-      containerRef={containerRef} files={files} chartWidth={chartWidth} logoSrc={logoSrc}
+      containerRef={containerRef} files={files} enabledEmbedModels={enabledEmbedModels}
+      chartWidth={chartWidth} logoSrc={logoSrc}
       isBar={isBar} isMultiFile={isMultiFile}
     />
   );
