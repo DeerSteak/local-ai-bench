@@ -1691,7 +1691,7 @@ def main():
     )
     size_group.add_argument(
         "--small-only", action="store_true",
-        help="Run only small-tier models (≤20B params): Llama 3.1 8B Q4_K_M, DeepSeek-R1 8B, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
+        help="Run only small-tier models (≤20B params): Llama 3.1 8B Q4_K_M, Gemma 4 E4B, GPT-OSS 20B (MXFP4)",
     )
     size_group.add_argument(
         "--medium-only", action="store_true",

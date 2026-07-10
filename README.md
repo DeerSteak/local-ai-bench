@@ -59,7 +59,7 @@ Close other apps before running — GPU memory contention affects results.
 
 ### LLM
 
-Thirteen models across four tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
+Twelve models across four tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
 
 Every model is run through **two separate LLM tests**, back to back, both measured at the same four context lengths (2K / 8K / 32K / 64K):
 
@@ -83,7 +83,6 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | Model | Ollama tag | Size |
 |---|---|---|
 | Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~4.9 GB |
-| DeepSeek-R1 8B | `deepseek-r1:8b` | ~5.2 GB |
 | Gemma 4 E4B | `gemma4:e4b` | ~9.6 GB |
 | GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~14 GB |
 
@@ -113,6 +112,8 @@ A model is only excluded from the conversation test if it timed out or was skipp
 
 Four models are tested at 1024×1024 and 1536×1536. Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
 
+Each of the 3 measured runs uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation.
+
 | Model | Checkpoint | Steps | Size | HuggingFace login |
 |---|---|---|---|---|
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~6.5 GB | No |
@@ -133,7 +134,12 @@ If you select one of these in the model picker, `setup_check.py` finds your HF t
 
 ### Embeddings
 
-`nomic-embed-text` via Ollama — 5,000 sentences across batch sizes 32, 128, and 512. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — each run across 5,000 sentences at batch sizes 32, 128, and 512. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+
+| Model | Ollama tag | Size |
+|---|---|---|
+| Nomic Embed Text | `nomic-embed-text` | ~274 MB |
+| MixedBread Embed Large | `mxbai-embed-large` | ~670 MB |
 
 ---
 
@@ -300,13 +306,15 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | Run timeout | 300s per run — model skipped if exceeded |
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
-| Embedding model | `nomic-embed-text` (via Ollama) |
+| Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
 | Embedding corpus | 5,000 sentences |
 | Embedding batch sizes | 32, 128, 512 |
+| Embedding measured runs | 3 per batch size, averaged |
 | Image models | SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
 | Image resolutions | 1024×1024, 1536×1536 |
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |
+| Image measured runs | 3 per resolution, averaged |
 
 ---
 

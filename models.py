@@ -105,13 +105,6 @@ LLM_MODELS_SMALL = sorted([
         "params_b": 8,
     },
     {
-        "tag":      "deepseek-r1:8b",
-        "label":    "DeepSeek-R1 8B",
-        "short":    "deepseek-r1-8b",
-        "vram":     "~5.2 GB",
-        "params_b": 8,
-    },
-    {
         "tag":      "gemma4:e4b",
         "label":    "Gemma 4 E4B",
         "short":    "gemma4-e4b",
