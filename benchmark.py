@@ -1164,7 +1164,15 @@ def run_embedding_benchmarks(models, batch_sizes):
                             json={"model": tag, "input": batch},
                             timeout=120,
                         )
-                        resp.raise_for_status()
+                        if not resp.ok:
+                            try:
+                                detail = resp.json()
+                            except Exception:
+                                detail = resp.text[:500]
+                            raise RuntimeError(
+                                f"Ollama rejected embed request (HTTP {resp.status_code}, "
+                                f"batch_size={bs}, batch_items={len(batch)}): {detail}"
+                            )
                     elapsed = time.perf_counter() - t0
                     rate = len(corpus) / elapsed
                     rates.append(rate)
