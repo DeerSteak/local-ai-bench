@@ -76,7 +76,7 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
-VERSION        = "1.1"
+VERSION        = "1.2"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting
@@ -792,7 +792,7 @@ def wait_until_unloaded(model_tag: str, timeout: int = 30):
 
 # ── LLM benchmark ──────────────────────────────────────────────────────────────
 
-def run_llm_benchmarks(models, context_lengths, warmup_runs):
+def run_llm_benchmarks(models, context_lengths, warmup_runs, force_all=False):
     results = {}
 
     if not ollama_available():
@@ -905,6 +905,16 @@ def run_llm_benchmarks(models, context_lengths, warmup_runs):
                 model_timed_out = True
                 results[short]["timed_out"] = label_ctx
                 break
+
+            if tps_list and mean(tps_list) < SLOW_MODEL_MIN_TPS:
+                if force_all:
+                    warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
+                         f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — --force-all set, continuing anyway")
+                else:
+                    warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
+                         f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — marking slow, skipping deeper contexts")
+                    results[short]["slow_tps"] = label_ctx
+                    break
 
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
@@ -1933,6 +1943,13 @@ def main():
              "and below (default: all tiers). xsmall: <6B params. small: adds ≤20B. "
              "medium: adds 26-35B. large: adds 70B+ (i.e. no cap).",
     )
+    parser.add_argument(
+        "--force-all", action="store_true",
+        help=f"Ignore the {SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
+             "context length in the LLM prefill test and always run the conversation "
+             "test, even for models that would otherwise be marked slow and skipped. "
+             "Does not override real failures (timeouts, missing data). (default: false)",
+    )
     args = parser.parse_args()
 
     # Apply CLI overrides to module-level config
@@ -2026,6 +2043,7 @@ def main():
                 models=llm_models,
                 context_lengths=CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
+                force_all=args.force_all,
             )
             _checkpoint("LLM done")
 
@@ -2053,15 +2071,18 @@ def main():
                             "skip_reason": "timed_out", "skip_detail": detail,
                         }
                         continue
-                    slow_ctx = next(
+                    slow_ctx = None if args.force_all else llm_data.get("slow_tps") or next(
                         (ctx for ctx, d in llm_data.items()
                          if isinstance(d, dict) and d.get("tps_mean") is not None
                          and d["tps_mean"] < SLOW_MODEL_MIN_TPS),
                         None,
                     )
                     if slow_ctx is not None:
-                        detail = (f"{llm_data[slow_ctx]['tps_mean']:.1f} tok/s at {slow_ctx} "
-                                  f"context (below {SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)")
+                        ctx_data = llm_data.get(slow_ctx)
+                        detail = (f"{ctx_data['tps_mean']:.1f} tok/s at {slow_ctx} "
+                                  f"context (below {SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)"
+                                  if isinstance(ctx_data, dict) and ctx_data.get("tps_mean") is not None
+                                  else f"below {SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff at {slow_ctx} context")
                         warn(f"{model['label']}: skipping conversation test — {detail}")
                         llm_conv_skips[short] = {
                             "label": model["label"], "skipped": True,

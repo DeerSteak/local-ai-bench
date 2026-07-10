@@ -1,4 +1,4 @@
-# Local AI Bench v1.1
+# Local AI Bench v1.2
 
 Cross-platform benchmarking for LLM generation, image generation, and embeddings. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 
@@ -68,7 +68,7 @@ Every model is run through **two separate LLM tests**, back to back, both measur
 
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
-A model is only excluded from the conversation test if it timed out or was skipped in the single-shot test (e.g. too large to fit in memory) — that check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested.
+If a model's single-shot decode speed drops below 15 tok/s at some context length, the single-shot test stops there — deeper context lengths are skipped for that model, since a slower run would just be a longer wait for a data point nobody needs. A model is excluded from the conversation test if it timed out, was skipped in the single-shot test (e.g. too large to fit in memory), or was marked too slow this way — that check only runs when the LLM test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested. Pass `--force-all` to ignore the slow-model cutoff and always run every context length and the conversation test (see [CLI Reference](#cli-reference)).
 
 #### Extra-small tier (<6B params)
 
@@ -166,6 +166,12 @@ run_windows.bat [options]   # Windows
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
+--force-all             Ignore the 15 tok/s slow-model cutoff: run every context
+                        length in the LLM single-shot test and always run the
+                        conversation test, even for models that would otherwise
+                        be marked slow and skipped. Doesn't override real
+                        failures (timeouts, missing data). Rarely needed —
+                        default: false
 ```
 
 Every test always measures 3 runs per checkpoint and averages them.

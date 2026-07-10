@@ -108,22 +108,32 @@ const SKIP_REASON_LABELS = {
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
-// llm_conversation both set a "timed_out" field), "{ctx} - Skipped" for every
-// later (larger) context that was consequently never attempted, or a
-// "Skipped - ..." label when the whole model was excluded from the
-// conversation test. Returns null for cells with real data, or earlier
-// contexts that simply weren't reached for unrelated reasons.
+// llm_conversation both set a "timed_out" field), "{ctx} - Too Slow" for the
+// context at which the model dropped below the tok/s cutoff (llm sets a
+// "slow_tps" field), "{ctx} - Skipped" for every later (larger) context that
+// was consequently never attempted, or a "Skipped - ..." label when the
+// whole model was excluded from the conversation test. Returns null for
+// cells with real data, or earlier contexts that simply weren't reached for
+// unrelated reasons.
 export function getBarStatusLabel(file, model, ctx, section) {
   if (section === "llm_conversation") {
     const skip = getConvSkipInfo(file, model);
     if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
   }
-  const timedOutCtx = file.data[section]?.[model]?.timed_out;
+  const sectionData = file.data[section]?.[model];
+  const timedOutCtx = sectionData?.timed_out;
   if (timedOutCtx) {
     const timedOutIdx = CTX_ORDER.indexOf(timedOutCtx);
     const ctxIdx = CTX_ORDER.indexOf(ctx);
     if (ctxIdx === timedOutIdx) return `${ctx} - Timed Out`;
     if (ctxIdx > timedOutIdx) return `${ctx} - Skipped`;
+  }
+  const slowTpsCtx = sectionData?.slow_tps;
+  if (slowTpsCtx) {
+    const slowIdx = CTX_ORDER.indexOf(slowTpsCtx);
+    const ctxIdx = CTX_ORDER.indexOf(ctx);
+    if (ctxIdx === slowIdx) return `${ctx} - Too Slow`;
+    if (ctxIdx > slowIdx) return `${ctx} - Skipped`;
   }
   return null;
 }
@@ -378,6 +388,8 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = f.data[section]?.[model]?.timed_out;
     if (timedOutCtx) ctxSet.add(timedOutCtx);
+    const slowTpsCtx = f.data[section]?.[model]?.slow_tps;
+    if (slowTpsCtx) ctxSet.add(slowTpsCtx);
   }
   return CTX_ORDER
     .filter(ctx => ctxSet.has(ctx))
@@ -461,6 +473,8 @@ export function buildLLMBarConfigsByModel(file, models, section = "llm") {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = file.data[section]?.[model]?.timed_out;
     if (timedOutCtx) ctxSet.add(timedOutCtx);
+    const slowTpsCtx = file.data[section]?.[model]?.slow_tps;
+    if (slowTpsCtx) ctxSet.add(slowTpsCtx);
   }
   return CTX_ORDER
     .filter(ctx => ctxSet.has(ctx))
