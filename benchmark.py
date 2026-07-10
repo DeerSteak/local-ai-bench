@@ -67,7 +67,6 @@ COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS  # noqa: E402
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
-EMBED_BATCH_SIZES = [32, 128, 512]
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are now per-model in IMAGE_MODELS
 IMAGE_SEED  = 42
@@ -1167,35 +1166,63 @@ def run_conversation_benchmarks(models, context_lengths, warmup_runs):
 
 # ── Embeddings benchmark ───────────────────────────────────────────────────────
 
-# A real, varied document rather than a handful of sentences repeated many
-# times — repeated filler can interact with an inference engine's caching
-# behavior differently than genuinely varied text, which risks measuring
-# something other than real-world embedding throughput.
+# Real document-ingestion workload: chunk one real document the way a RAG
+# pipeline would (paragraph-sized pieces), then embed every chunk from it in
+# a single call, the way an app actually ingests one document — rather than
+# sweeping arbitrary "batch sizes" that don't correspond to any real client
+# behavior. max_words caps every chunk well under any embedding model's
+# context length (mxbai-embed-large's is 512 tokens) regardless of how the
+# source document is formatted — this is also what fixes "content length
+# exceeds context length" errors that an unbounded chunker can produce when
+# it runs into a document's own markdown tables/code blocks.
 EMBED_DOCUMENT_PATH = SCRIPT_DIR / "sample_document.txt"
-EMBED_CORPUS_TARGET_SIZE = 5000
+EMBED_CHUNK_MAX_WORDS = 150
+EMBED_CHUNK_MIN_WORDS = 6
 
-def load_embedding_corpus(path: Path = EMBED_DOCUMENT_PATH,
-                           target_size: int = EMBED_CORPUS_TARGET_SIZE) -> list[str]:
-    """Split the source document into sentence-like chunks and repeat the
-    set only as many times as needed to reach target_size."""
-    text = path.read_text().replace("\n", " ")
-    raw = re.split(r"(?<=[.!?])\s+", text)
-    # Drop markdown table rows, code fences, and other non-prose fragments
-    # that a sentence-boundary split can't cleanly separate.
-    sentences = [
-        s.strip() for s in raw
-        if len(s.split()) >= 4 and sum(c.isalpha() for c in s) / len(s) > 0.5
-    ]
+def chunk_document(path: Path = EMBED_DOCUMENT_PATH,
+                    max_words: int = EMBED_CHUNK_MAX_WORDS,
+                    min_words: int = EMBED_CHUNK_MIN_WORDS) -> list[str]:
+    """Split a document into paragraph-sized chunks, each capped at
+    max_words. Paragraphs longer than max_words are packed sentence-by-
+    sentence up to the cap; anything that's still too long after that
+    (e.g. a code block or table with no sentence punctuation) is hard-split
+    by word count so no chunk can ever exceed the cap."""
+    paragraphs = [p.strip() for p in path.read_text().split("\n\n") if p.strip()]
 
-    reps = max(1, -(-target_size // len(sentences)))  # ceil division
-    corpus = (sentences * reps)[:max(target_size, len(sentences))]
-    log(f"Corpus: {len(sentences)} real sentences from {path.name}"
-        + (f", repeated {reps}x to reach {len(corpus)}" if reps > 1 else " (no repetition needed)"))
-    return corpus
+    def split_oversized(words: list[str]) -> list[str]:
+        return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-# Records model/batch-size combos that crashed Ollama's runner repeatedly
+    chunks = []
+    for para in paragraphs:
+        words = " ".join(para.split()).split()
+        if len(words) < min_words:
+            continue
+        if len(words) <= max_words:
+            chunks.append(" ".join(words))
+            continue
+
+        current, current_len = [], 0
+        for sentence in re.split(r"(?<=[.!?])\s+", " ".join(words)):
+            sentence_words = sentence.split()
+            if len(sentence_words) > max_words:
+                if current:
+                    chunks.append(" ".join(current))
+                    current, current_len = [], 0
+                chunks.extend(split_oversized(sentence_words))
+                continue
+            if current_len + len(sentence_words) > max_words and current:
+                chunks.append(" ".join(current))
+                current, current_len = [], 0
+            current.extend(sentence_words)
+            current_len += len(sentence_words)
+        if current:
+            chunks.append(" ".join(current))
+
+    return chunks
+
+# Records model/document combos that crashed Ollama's runner repeatedly
 # (deterministically, not a transient blip) so future runs don't waste time
-# rediscovering the same crash. Delete this file to retry a skipped combo.
+# rediscovering the same crash. Delete this file to retry a skipped model.
 EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")
 
 def _load_crash_cache() -> dict:
@@ -1210,7 +1237,7 @@ def _save_crash_cache(cache: dict) -> None:
     except Exception as e:
         warn(f"Failed to save embedding crash cache: {e}")
 
-def run_embedding_benchmarks(models, batch_sizes):
+def run_embedding_benchmarks(models):
     results = {}
 
     if not ollama_available():
@@ -1218,7 +1245,9 @@ def run_embedding_benchmarks(models, batch_sizes):
         return results
 
     crash_cache = _load_crash_cache()
-    corpus = load_embedding_corpus()
+    chunks = chunk_document()
+    log(f"Corpus: {len(chunks)} chunks from {EMBED_DOCUMENT_PATH.name} "
+        f"(max {EMBED_CHUNK_MAX_WORDS} words/chunk)")
 
     for model in models:
         tag   = model["tag"]
@@ -1234,105 +1263,100 @@ def run_embedding_benchmarks(models, batch_sizes):
 
         ok(f"Using Ollama model: {tag}")
 
-        model_results = {}
-        for bs in batch_sizes:
-            cache_key = f"{tag}:{bs}"
-            if cache_key in crash_cache:
-                detail = crash_cache[cache_key]
-                warn(f"Batch size {bs} previously crashed Ollama's runner repeatedly "
-                     f"on {detail.get('crashed_at', 'an earlier run')} — skipping "
-                     f"(delete {EMBED_CRASH_CACHE} to retry)")
-                model_results[f"batch_{bs}"] = {
-                    "skipped": True,
-                    "skip_reason": "known_crash",
-                    "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
-                }
-                continue
+        if tag in crash_cache:
+            detail = crash_cache[tag]
+            warn(f"{tag} previously crashed Ollama's runner repeatedly on "
+                 f"{detail.get('crashed_at', 'an earlier run')} — skipping "
+                 f"(delete {EMBED_CRASH_CACHE} to retry)")
+            results[short] = {
+                "label": label,
+                "skipped": True,
+                "skip_reason": "known_crash",
+                "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
+            }
+            continue
 
-            log(f"Batch size {bs} — {N_RUNS} runs ...")
-            rates = []
+        log(f"Embedding {len(chunks)} chunks in one call — {N_RUNS} runs ...")
+        rates = []
 
-            MAX_CRASH_RETRIES = 2
-            run_i = 0
-            crash_retries = 0
-            gave_up_from_crashes = False
-            while run_i < N_RUNS:
-                t0 = time.perf_counter()
-                try:
-                    for i in range(0, len(corpus), bs):
-                        batch = corpus[i:i + bs]
-                        resp = requests.post(
-                            f"{OLLAMA_URL}/api/embed",
-                            json={"model": tag, "input": batch},
-                            timeout=120,
-                        )
-                        if not resp.ok:
-                            try:
-                                detail = resp.json()
-                            except Exception:
-                                detail = resp.text[:500]
-                            raise RuntimeError(
-                                f"Ollama rejected embed request (HTTP {resp.status_code}, "
-                                f"batch_size={bs}, batch_items={len(batch)}): {detail}"
-                            )
-                    elapsed = time.perf_counter() - t0
-                    rate = len(corpus) / elapsed
-                    rates.append(rate)
-                    print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} sent/sec")
+        MAX_CRASH_RETRIES = 2
+        run_i = 0
+        crash_retries = 0
+        gave_up_from_crashes = False
+        while run_i < N_RUNS:
+            t0 = time.perf_counter()
+            try:
+                resp = requests.post(
+                    f"{OLLAMA_URL}/api/embed",
+                    json={"model": tag, "input": chunks},
+                    timeout=120,
+                )
+                if not resp.ok:
+                    try:
+                        detail = resp.json()
+                    except Exception:
+                        detail = resp.text[:500]
+                    raise RuntimeError(
+                        f"Ollama rejected embed request (HTTP {resp.status_code}, "
+                        f"n_chunks={len(chunks)}): {detail}"
+                    )
+                elapsed = time.perf_counter() - t0
+                rate = len(chunks) / elapsed
+                rates.append(rate)
+                print(f"    run {run_i+1}/{N_RUNS}: {rate:.0f} chunks/sec")
+                run_i += 1
+            except Exception as e:
+                err(f"Run {run_i+1} failed: {e}")
+                # A connection-refused error means Ollama's model runner
+                # subprocess had already died (commonly OOM) before this
+                # request. Wait for the main Ollama server to notice and
+                # respawn it, then retry this same run — up to a capped
+                # number of attempts, since a deterministic crash on this
+                # document would just recur identically forever.
+                if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                    crash_retries += 1
+                    err(f"Ollama's model runner appears to have crashed embedding {tag} "
+                        f"— last server output:\n{tail_ollama_log()}")
+                    if crash_retries > MAX_CRASH_RETRIES:
+                        err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
+                        gave_up_from_crashes = True
+                        break
+                    warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
+                    recovered = False
+                    wait_t0 = time.perf_counter()
+                    while time.perf_counter() - wait_t0 < 30:
+                        if ollama_available():
+                            recovered = True
+                            break
+                        time.sleep(2)
+                    if not recovered:
+                        warn("Ollama did not become reachable again within 30s — giving up on this model")
+                        break
+                    # don't advance run_i — retry the same run now that Ollama is back
+                else:
                     run_i += 1
-                except Exception as e:
-                    err(f"Run {run_i+1} failed: {e}")
-                    # A connection-refused error means Ollama's model runner
-                    # subprocess had already died (commonly OOM) before this
-                    # request. Wait for the main Ollama server to notice and
-                    # respawn it, then retry this same run — up to a capped
-                    # number of attempts, since a deterministic OOM at this
-                    # batch size would just crash again identically forever.
-                    if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
-                        crash_retries += 1
-                        err(f"Ollama's model runner appears to have crashed at batch size {bs} "
-                            f"— last server output:\n{tail_ollama_log()}")
-                        if crash_retries > MAX_CRASH_RETRIES:
-                            err(f"Ollama's model runner crashed {crash_retries} times at "
-                                f"batch size {bs} — giving up on this batch size")
-                            gave_up_from_crashes = True
-                            break
-                        warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
-                        recovered = False
-                        wait_t0 = time.perf_counter()
-                        while time.perf_counter() - wait_t0 < 30:
-                            if ollama_available():
-                                recovered = True
-                                break
-                            time.sleep(2)
-                        if not recovered:
-                            warn("Ollama did not become reachable again within 30s — giving up on this batch size")
-                            break
-                        # don't advance run_i — retry the same run now that Ollama is back
-                    else:
-                        run_i += 1
 
-            if rates:
-                key = f"batch_{bs}"
-                model_results[key] = {
-                    "sentences_per_sec_mean":  round(mean(rates), 1),
-                    "sentences_per_sec_stdev": round(stdev(rates), 1),
-                    "device":                  "gpu",
-                    "n_runs":                  len(rates),
-                    "runs":                   [round(r, 1) for r in rates],
-                }
-                ok(f"Batch {bs}: {model_results[key]['sentences_per_sec_mean']:.0f} sent/sec")
-            elif gave_up_from_crashes:
-                crashed_at = datetime.now().isoformat(timespec="seconds")
-                crash_cache[cache_key] = {"crashed_at": crashed_at}
-                _save_crash_cache(crash_cache)
-                model_results[f"batch_{bs}"] = {
-                    "skipped": True,
-                    "skip_reason": "known_crash",
-                    "skip_detail": f"Ollama's runner crashed repeatedly at this batch size ({crashed_at})",
-                }
-
-        results[short] = {"label": label, **model_results}
+        if rates:
+            results[short] = {
+                "label": label,
+                "chunks_per_sec_mean":  round(mean(rates), 1),
+                "chunks_per_sec_stdev": round(stdev(rates), 1),
+                "device":               "gpu",
+                "n_chunks":             len(chunks),
+                "n_runs":               len(rates),
+                "runs":                [round(r, 1) for r in rates],
+            }
+            ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
+        elif gave_up_from_crashes:
+            crashed_at = datetime.now().isoformat(timespec="seconds")
+            crash_cache[tag] = {"crashed_at": crashed_at}
+            _save_crash_cache(crash_cache)
+            results[short] = {
+                "label": label,
+                "skipped": True,
+                "skip_reason": "known_crash",
+                "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
+            }
 
     return results
 
@@ -2047,7 +2071,6 @@ def main():
                     _cpu_only_active = True
                     results["embeddings"] = run_embedding_benchmarks(
                         models=EMBED_MODELS,
-                        batch_sizes=EMBED_BATCH_SIZES,
                     )
                     _checkpoint("embeddings done")
                     log("Restoring normal (GPU-enabled) Ollama ...")
@@ -2060,7 +2083,6 @@ def main():
                     ensure_ollama()
                 results["embeddings"] = run_embedding_benchmarks(
                     models=EMBED_MODELS,
-                    batch_sizes=EMBED_BATCH_SIZES,
                 )
                 _checkpoint("embeddings done")
 
