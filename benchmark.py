@@ -46,6 +46,7 @@ import sys
 import tempfile
 import time
 import threading
+import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -511,6 +512,23 @@ def model_pulled(tag):
     except Exception:
         return False
 
+def _ollama_urlopen(req, timeout):
+    """urlopen wrapper that surfaces the response body on HTTP error status.
+
+    Ollama puts the actual failure reason (OOM, backend/driver crash, model
+    load failure, etc.) in a JSON body even on a 500 — the bare HTTPError
+    only says "HTTP Error 500: Internal Server Error" and hides it.
+    """
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        try:
+            detail = json.loads(body).get("error", body)
+        except json.JSONDecodeError:
+            detail = body
+        raise RuntimeError(f"Ollama returned HTTP {e.code}: {detail[:500]}") from None
+
 def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
                     num_ctx: int | None = None):
     """
@@ -554,7 +572,7 @@ def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
     tps     = 0
     eval_count = 0
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _ollama_urlopen(req, timeout) as resp:
         for raw_line in resp:
             if not raw_line.strip():
                 continue
@@ -627,7 +645,7 @@ def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
     response_parts    = []
     thinking_parts    = []
 
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _ollama_urlopen(req, timeout) as resp:
         for raw_line in resp:
             if not raw_line.strip():
                 continue
