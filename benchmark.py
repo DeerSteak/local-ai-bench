@@ -587,11 +587,11 @@ def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
     Generate via Ollama's /api/chat and return timing metrics plus the reply text.
     Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
 
-    prompt_eval_count reflects the number of *new* prompt tokens the backend had
-    to process this turn — when `messages` shares a prefix with a prior call on
-    the same loaded model, llama.cpp's slot cache skips re-processing it, so
-    this is the incremental prefill cost against an already-filled context
-    rather than a cold fill from empty.
+    prompt_eval_count is the *total* number of tokens in this call's prompt
+    (ground truth for how deep the context is), not just the new suffix — even
+    when `messages` shares a prefix with a prior call and llama.cpp's slot
+    cache skips re-processing it. The cache reuse shows up as a low
+    prompt_eval_duration/ttft instead, not a smaller prompt_eval_count.
     """
     options: dict = {"num_predict": num_predict, "temperature": 0.0}
     if num_ctx is not None:
@@ -618,6 +618,7 @@ def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
     eval_count        = 0
     prompt_eval_count = 0
     response_parts    = []
+    thinking_parts    = []
 
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         for raw_line in resp:
@@ -628,14 +629,18 @@ def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
             except json.JSONDecodeError:
                 continue
 
-            content = chunk.get("message", {}).get("content")
+            message  = chunk.get("message", {})
+            content  = message.get("content")
+            thinking = message.get("thinking")
 
-            if ttft is None and content:
+            if ttft is None and (content or thinking):
                 ttft = time.perf_counter() - t_start
 
             if content:
                 tokens += 1
                 response_parts.append(content)
+            if thinking:
+                thinking_parts.append(thinking)
 
             if chunk.get("done"):
                 eval_count        = chunk.get("eval_count", tokens)
@@ -653,7 +658,15 @@ def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
     total = time.perf_counter() - t_start
     if ttft is None:
         ttft = total
-    return ttft, eval_count, tps, prompt_eval_count, "".join(response_parts)
+    # Reasoning models (Qwen3.x, DeepSeek-R1, Gemma-thinking, ...) can stream
+    # their entire turn through message.thinking with message.content left
+    # empty. Fall back to the thinking text so the conversation history we
+    # feed back on the next turn isn't an empty assistant message — otherwise
+    # the growth loop below wildly overcounts how much context actually
+    # persists (eval_count reflects thinking tokens that never make it into
+    # the next turn's prompt at all).
+    response_text = "".join(response_parts) or "".join(thinking_parts)
+    return ttft, eval_count, tps, prompt_eval_count, response_text
 
 # ── Ollama model loading/unloading ────────────────────────────────────────────
 
@@ -963,11 +976,16 @@ def run_conversation_benchmarks(models, context_lengths, warmup_runs):
                 num_predict=num_predict,
             )
             messages.append({"role": "assistant", "content": response_text})
-            # prompt_eval_count is the *total* prompt length for this call, not just
-            # the new suffix — even when the slot cache means only the suffix was
-            # actually recomputed (that's why ttft stays flat as this grows). So the
-            # true context size after this turn is a plain overwrite, not a sum.
-            cumulative_tokens = prompt_eval_count + eval_count
+            # prompt_eval_count is the *total* prompt length Ollama reports for this
+            # call (ground truth of what's actually in context going into it) — even
+            # when the slot cache means only the suffix was actually recomputed
+            # (that's why ttft stays flat as this grows). We deliberately don't add
+            # eval_count on top: for reasoning models a turn's generated tokens can
+            # include large amounts of thinking content that a template silently
+            # drops from history on the next turn, so eval_count doesn't reliably
+            # predict what will actually persist. The next turn's prompt_eval_count
+            # (i.e. this same assignment, one call later) is what tells us the truth.
+            cumulative_tokens = prompt_eval_count
             return ttft, tps
 
         def _next_prompt():
@@ -1144,6 +1162,41 @@ def comfyui_available():
     except Exception:
         return False
 
+def comfyui_free_models(timeout: int = 10) -> None:
+    """Unload whatever checkpoint(s) ComfyUI currently has resident in memory.
+
+    ComfyUI's own automatic model-swap-on-load is the only thing that would
+    otherwise free a previous checkpoint, and on the MPS backend its free-VRAM
+    detection is unreliable — models can stay resident far longer than on
+    CUDA. Call this between models so each one starts from a clean memory
+    state instead of stacking on top of whatever the last one left behind.
+    """
+    try:
+        requests.post(f"{COMFYUI_URL}/free",
+                      json={"unload_models": True, "free_memory": True},
+                      timeout=timeout)
+    except Exception as e:
+        warn(f"Could not unload ComfyUI models: {e}")
+
+def comfyui_interrupt_and_clear(timeout: int = 10) -> None:
+    """Stop ComfyUI's currently running job and drop anything still queued.
+
+    ComfyUI executes one job at a time. If we give up on a job client-side
+    after a timeout without telling the server, it (or whatever we submit
+    next) keeps occupying that single execution slot — every subsequent
+    submission queues silently behind it and can time out in turn without
+    ever actually starting. Call this right after a timeout so the next
+    submission starts from a clean queue.
+    """
+    try:
+        requests.post(f"{COMFYUI_URL}/interrupt", timeout=timeout)
+    except Exception as e:
+        warn(f"Failed to interrupt ComfyUI job: {e}")
+    try:
+        requests.post(f"{COMFYUI_URL}/queue", json={"clear": True}, timeout=timeout)
+    except Exception as e:
+        warn(f"Failed to clear ComfyUI queue: {e}")
+
 def build_flux_workflow(checkpoint, width, height, steps, cfg,
                         sampler, scheduler, seed, prompt, filename_prefix="bench_flux"):
     """
@@ -1313,6 +1366,7 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict
             ).json()
         except Exception:
             if time.perf_counter() - t0 > timeout:
+                comfyui_interrupt_and_clear()
                 raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
             continue
 
@@ -1334,10 +1388,12 @@ def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict
                 return elapsed, images
 
         if time.perf_counter() - t0 > timeout:
+            comfyui_interrupt_and_clear()
             if not seen:
                 raise TimeoutError(
                     f"ComfyUI job never appeared in history after {timeout}s "
-                    f"— workflow may have errored before queuing"
+                    f"— may be queued behind a still-running prior job, or the "
+                    f"workflow errored before queuing"
                 )
             raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
 
@@ -1495,15 +1551,8 @@ def run_image_benchmarks(image_models, resolutions, seed, prompt,
         finally:
             if save_fn:
                 save_fn(results)
-
-    log("Unloading ComfyUI models from VRAM ...")
-    try:
-        requests.post(f"{COMFYUI_URL}/free",
-                      json={"unload_models": True, "free_memory": True},
-                      timeout=10)
-        ok("ComfyUI models unloaded")
-    except Exception as e:
-        warn(f"Could not unload ComfyUI models: {e}")
+            log(f"Unloading {label} from VRAM ...")
+            comfyui_free_models()
 
     return results
 
