@@ -137,7 +137,7 @@ If you select one of these in the model picker, `setup_check.py` finds your HF t
 
 ### Embeddings
 
-Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~19 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
 If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--emb-cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
 
@@ -317,7 +317,7 @@ A model is only excluded from the conversation test if it timed out or was skipp
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation test exclusion | Model excluded if it timed out or was skipped in the single-shot test |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
-| Embedding corpus | `sample_document.txt` chunked into ~150-word paragraph-sized pieces (~190 chunks), embedded in one call |
+| Embedding corpus | `sample_document.txt` chunked into ~150-word paragraph-sized pieces (~290 chunks), embedded in one call |
 | Embedding measured runs | 3, averaged |
 | Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
 | Image resolutions | 1024×1024, 1536×1536 (SD1.5: 512×512, 768×768) |
