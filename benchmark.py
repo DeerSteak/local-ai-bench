@@ -792,6 +792,21 @@ def wait_until_unloaded(model_tag: str, timeout: int = 30):
 
 # ── LLM benchmark ──────────────────────────────────────────────────────────────
 
+def _slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
+    """Shared by the LLM prefill and conversation tests: if the first context
+    depth's decode speed is below SLOW_MODEL_MIN_TPS, mark the model slow and
+    tell the caller to stop testing deeper contexts (unless force_all)."""
+    if not (is_first_ctx and tps_list and mean(tps_list) < SLOW_MODEL_MIN_TPS):
+        return False
+    if force_all:
+        warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
+             f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — --force-all set, continuing anyway")
+        return False
+    warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
+         f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — marking slow, skipping deeper contexts")
+    results[short]["slow_tps"] = label_ctx
+    return True
+
 def run_llm_benchmarks(models, context_lengths, warmup_runs, force_all=False):
     results = {}
 
@@ -907,15 +922,8 @@ def run_llm_benchmarks(models, context_lengths, warmup_runs, force_all=False):
                 break
 
             is_first_ctx = ctx_len == model_ctx_lengths[0]
-            if is_first_ctx and tps_list and mean(tps_list) < SLOW_MODEL_MIN_TPS:
-                if force_all:
-                    warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
-                         f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — --force-all set, continuing anyway")
-                else:
-                    warn(f"{label}: {mean(tps_list):.1f} tok/s at {label_ctx} context is below "
-                         f"{SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — marking slow, skipping deeper contexts")
-                    results[short]["slow_tps"] = label_ctx
-                    break
+            if _slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
+                break
 
         # Unload model and confirm it's gone before moving on
         if model_timed_out:
@@ -978,7 +986,7 @@ def _conv_followup_prompt(section_n: int) -> str:
         "examples, counterarguments, and analysis."
     )
 
-def run_conversation_benchmarks(models, context_lengths, warmup_runs):
+def run_conversation_benchmarks(models, context_lengths, warmup_runs, force_all=False):
     results = {}
 
     if not ollama_available():
@@ -1165,6 +1173,10 @@ def run_conversation_benchmarks(models, context_lengths, warmup_runs):
             if ctx_timed_out:
                 model_timed_out = True
                 results[short]["timed_out"] = label_ctx
+                break
+
+            is_first_ctx = ctx_len == model_ctx_lengths[0]
+            if _slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
                 break
 
         if model_timed_out or model_failed:
@@ -2100,6 +2112,7 @@ def main():
                 models=conv_models,
                 context_lengths=CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
+                force_all=args.force_all,
             )
             results["llm_conversation"].update(llm_conv_skips)
             _checkpoint("LLM conversation done")
