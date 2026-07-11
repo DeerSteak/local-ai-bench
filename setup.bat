@@ -102,7 +102,7 @@ echo.
 echo [Running setup_check.py]
 echo.
 
-%VENV_PYTHON% setup_check.py
+%VENV_PYTHON% scripts\setup_check.py
 if %errorlevel% neq 0 (
     echo.
     echo   X  setup_check.py exited with errors. See above.

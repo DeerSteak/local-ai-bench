@@ -165,7 +165,7 @@ run_windows.bat [options]   # Windows
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
---out filename.json     Output file (default: results_<hostname>_<timestamp>.json)
+--out filename.json     Output file (default: results/results_<hostname>_<timestamp>.json)
 --force-all             Ignore the 15 tok/s slow-model cutoff: run every context
                         length in the LLM single-shot test and always run the
                         conversation test, even for models that would otherwise
@@ -202,15 +202,7 @@ A full run takes 2–4 hours on a Mac; faster on the Spark and Ryzen.
 
 ### Comparing results
 
-Copy result files from all machines to one machine, then:
-
-```bash
-python compare.py results_*.json
-# or explicitly:
-python compare.py results_mac.json results_dgx.json results_ryzen.json
-```
-
-Output is color-coded: green = best, red = slowest. A `compare_results.json` is also saved.
+Copy result files from all machines to one machine, then load them into the [dashboard](#dashboard) below.
 
 ---
 
@@ -340,9 +332,10 @@ A model is only excluded from the conversation test if it timed out or was skipp
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
 | `setup.bat` | One-shot setup for Windows |
-| `setup_check.py` | Called by setup scripts — detects hardware, lets you pick which models to install, then installs everything unattended |
-| `run_linux_mac.sh` | Activates the venv and runs `benchmark.py` on Linux / macOS |
-| `run_windows.bat` | Activates the venv and runs `benchmark.py` on Windows |
-| `benchmark.py` | Main benchmark — produces `results_<hostname>.json` |
-| `compare.py` | Comparison — takes all result JSONs and prints a ranked summary table |
+| `scripts/setup_check.py` | Called by setup scripts — detects hardware, lets you pick which models to install, then installs everything unattended |
+| `run_linux_mac.sh` | Activates the venv and runs `scripts/benchmark.py` on Linux / macOS |
+| `run_windows.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
+| `scripts/benchmark.py` | Main benchmark — produces `results/results_<hostname>_<timestamp>.json` |
+| `scripts/` | Benchmark implementation: `config.py` (shared constants), `shared.py` (logging/server/Ollama helpers), one module per test (`llm_prefill_benchmark.py`, `llm_conversation_benchmark.py`, `embedding_benchmark.py`, `image_benchmark.py`), and `models.py` (model definitions) |
+| `results/` | Benchmark output — `results_*.json` plus `images/<run>/` with the generated sample images for that run |
 | `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |

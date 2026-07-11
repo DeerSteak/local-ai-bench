@@ -122,7 +122,7 @@ ok "Base dependencies installed"
 section "Running setup_check.py"
 info "Using $($VENV_PYTHON --version) from $VENV_PYTHON"
 
-"$VENV_PYTHON" setup_check.py
+"$VENV_PYTHON" scripts/setup_check.py
 
 # ── 5. Done ────────────────────────────────────────────────────────────────────
 echo ""

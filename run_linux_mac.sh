@@ -10,4 +10,4 @@ if [ ! -f "$VENV/bin/activate" ]; then
 fi
 
 source "$VENV/bin/activate"
-exec python "$SCRIPT_DIR/benchmark.py" "$@"
+exec python "$SCRIPT_DIR/scripts/benchmark.py" "$@"

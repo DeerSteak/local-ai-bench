@@ -20,7 +20,9 @@ from pathlib import Path
 
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+# This script lives in scripts/ — every asset it manages (requirements.txt,
+# ComfyUI/, hf.txt, ...) lives at the repo root, one level up.
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -1135,18 +1137,3 @@ else:
     for i, issue in enumerate(issues, 1):
         print(f"  {i}. {issue}")
     print()
-
-# Write machine profile JSON for use by benchmark.py
-profile = {
-    "hostname":  platform.node(),
-    "os":        f"{platform.system()} {platform.release()}",
-    "arch":      platform.machine(),
-    "python":    sys.version.split()[0],
-    "backend":   "cuda" if nvidia_ok else ("rocm" if (rocm_ok or amd_windows) else ("xpu" if intel_windows else ("metal" if metal_ok else "cpu"))),
-    "ollama_up": ollama_up,
-    "issues":    issues,
-}
-
-profile_path = Path("machine_profile.json")
-profile_path.write_text(json.dumps(profile, indent=2))
-info(f"Machine profile saved to {profile_path}")

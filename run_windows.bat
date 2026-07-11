@@ -10,4 +10,4 @@ if not exist "%VENV%\Scripts\activate.bat" (
 )
 
 call "%VENV%\Scripts\activate.bat"
-python "%SCRIPT_DIR%benchmark.py" %*
+python "%SCRIPT_DIR%scripts\benchmark.py" %*
