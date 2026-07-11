@@ -17,8 +17,11 @@ SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
 # Every benchmark run's output — results JSON plus the generated sample images.
-RESULTS_DIR        = SCRIPT_DIR / "results"
-RESULTS_IMAGES_DIR = RESULTS_DIR / "images"
+# Each run's images land in their own results/images_<hostname>_<timestamp>/
+# folder (a sibling of the matching results_<hostname>_<timestamp>.json, not
+# nested under a shared "images" folder) so both can be selected together in
+# a file browser by sorting/filtering on the shared hostname+timestamp.
+RESULTS_DIR = SCRIPT_DIR / "results"
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]

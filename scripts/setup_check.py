@@ -16,6 +16,7 @@ import signal
 import subprocess
 import json
 import shutil
+import time
 from pathlib import Path
 
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
@@ -82,18 +83,23 @@ issues = []
 
 # Approximate download sizes, keyed by filename — used both to show sizes on
 # the model-selection screen and to estimate remaining disk space needed.
+# Every size below is the actual on-disk download size, rounded UP to the next
+# 0.1 GB (not nearest) so the disk-space check in section 8a always errs
+# toward requiring more free space rather than less.
 CHECKPOINT_SIZES_GB = {
-    "v1-5-pruned-emaonly.safetensors": 2.1,
-    "sd_xl_base_1.0.safetensors": 6.9,
-    "sd3.5_large.safetensors":    10.1,
-    "flux1-dev.safetensors":      23.8,
-    "flux2-dev.safetensors":      23.8,
+    "v1-5-pruned-emaonly.safetensors": 4.3,
+    "sd_xl_base_1.0.safetensors": 7.0,
+    "sd3.5_large.safetensors":    16.5,
+    "flux1-dev.safetensors":      23.9,
+    "flux2-dev.safetensors":      64.5,
 }
 ENCODER_SIZES_GB = {
-    "t5xxl_fp16.safetensors": 9.8,
-    "clip_l.safetensors":     0.25,
-    "clip_g.safetensors":     1.4,
-    "ae.safetensors":         0.33,
+    "t5xxl_fp16.safetensors":               9.8,
+    "clip_l.safetensors":                   0.3,
+    "clip_g.safetensors":                   1.4,
+    "ae.safetensors":                       0.4,
+    "flux2-vae.safetensors":                0.4,
+    "mistral_3_small_flux2_fp8.safetensors": 18.1,
 }
 GATED_IMAGE_SHORTS = {"sd35-large", "flux-dev", "flux2-dev"}
 
@@ -431,7 +437,7 @@ def select_models():
 
     def size_label(m, kind):
         if kind in ("llm", "embed"):
-            return f"  ({m['vram']})"
+            return f"  ({m['download_size']})"
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
         return f"  (~{gb:.1f} GB)" if gb else ""
 
@@ -673,27 +679,36 @@ if ollama_up:
     for m in all_llm:
         tag = m["tag"]
         if not (tag in already_pulled or any(tag in a for a in already_pulled)):
-            remaining_gb += _parse_size_gb(m["vram"])
+            remaining_gb += _parse_size_gb(m["download_size"])
 else:
     for m in all_llm:
-        remaining_gb += _parse_size_gb(m["vram"])
+        remaining_gb += _parse_size_gb(m["download_size"])
 
 sd35_selected  = "sd35-large" in selected_image_shorts
-flux_selected  = bool({"flux-dev", "flux2-dev"} & selected_image_shorts)
+flux1_selected = "flux-dev" in selected_image_shorts
+flux2_selected = "flux2-dev" in selected_image_shorts
 
 for m in selected_images:
     ckpt_path = CHECKPOINTS / m["checkpoint"]
     if not ckpt_path.exists():
         remaining_gb += CHECKPOINT_SIZES_GB.get(m["checkpoint"], 0.0)
 
-if (sd35_selected or flux_selected):
+# Shared T5-XXL + CLIP-L text encoders: used by SD3.5 Large and Flux.1-dev,
+# NOT Flux.2-dev (which has its own Mistral-based encoder below).
+if (sd35_selected or flux1_selected):
     for fname in ("t5xxl_fp16.safetensors", "clip_l.safetensors"):
         if not (CLIP_DIR / fname).exists():
             remaining_gb += ENCODER_SIZES_GB[fname]
 if sd35_selected and not (CLIP_DIR / "clip_g.safetensors").exists():
     remaining_gb += ENCODER_SIZES_GB["clip_g.safetensors"]
-if flux_selected and not (VAE_DIR / "ae.safetensors").exists():
+if flux1_selected and not (VAE_DIR / "ae.safetensors").exists():
     remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
+if flux2_selected:
+    text_encoder_dir = COMFYUI_DIR / "models" / "text_encoders"
+    if not (text_encoder_dir / "mistral_3_small_flux2_fp8.safetensors").exists():
+        remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
+    if not (VAE_DIR / "flux2-vae.safetensors").exists():
+        remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
 
 try:
     check_path = "C:\\" if os_name == "Windows" else "/"
@@ -703,12 +718,28 @@ try:
     print(f"  Free:              {free_gb} GB / {total_gb} GB total")
     if remaining_gb > 0:
         print(f"  Still to download: ~{remaining_gb:.0f} GB")
+    def _warn_if_drive_fills_up():
+        # Separate from the absolute-GB checks above: even when there's enough
+        # room for the downloads themselves, warn if so little would be left
+        # afterward that the drive itself gets uncomfortably full.
+        # Informational only — doesn't block or get added to `issues`, just
+        # gives the user a moment to notice before things proceed unattended.
+        projected_free_gb = free_gb - remaining_gb
+        if projected_free_gb < total_gb * 0.10:
+            warn(f"After these downloads, free space would be ~{projected_free_gb:.0f} GB — "
+                 f"less than 10% of your {total_gb:.0f} GB drive. Continuing in 5s ...")
+            time.sleep(5)
+
     if remaining_gb == 0:
         ok("All selected models already downloaded — no additional space needed")
     elif free_gb >= remaining_gb + 10:
         ok(f"Sufficient free space for remaining ~{remaining_gb:.0f} GB of downloads")
+        if total_gb > 0:
+            _warn_if_drive_fills_up()
     elif free_gb >= remaining_gb:
         warn(f"Space is tight — ~{remaining_gb:.0f} GB needed, {free_gb} GB free (less than 10 GB buffer)")
+        if total_gb > 0:
+            _warn_if_drive_fills_up()
     else:
         needed_more = remaining_gb - free_gb
         fail(f"Insufficient space — ~{remaining_gb:.0f} GB needed, only {free_gb} GB free")
@@ -731,7 +762,7 @@ if ollama_up:
     available = {m["name"] for m in tag_data.get("models", [])}
     all_models = selected_embed + selected_llm
     for m in all_models:
-        tag, label, size = m["tag"], m["label"], m["vram"]
+        tag, label, size = m["tag"], m["label"], m["download_size"]
         already = tag in available or any(tag in a for a in available)
         if already:
             ok(f"{label} — already pulled")

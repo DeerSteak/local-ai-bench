@@ -64,6 +64,15 @@ def main():
         help=f"Warmup runs before measuring (default: {config.WARMUP_RUNS})",
     )
     parser.add_argument(
+        "--runs", type=int, default=config.N_RUNS, choices=range(1, 11),
+        metavar="[1-10]",
+        help=f"Measured runs per checkpoint, averaged (default: {config.N_RUNS}). "
+             "Applies separately to every model, context length, and test mode "
+             "that's enabled, so total measured time scales roughly in "
+             "proportion — e.g. going from 3 to 6 runs roughly doubles it "
+             "(warmup time is unaffected; see --warmup).",
+    )
+    parser.add_argument(
         "--timeout", type=int, default=None,
         help="Seconds per run (warmup and measured) before aborting this model (default: 300)",
     )
@@ -102,6 +111,7 @@ def main():
     # Apply CLI overrides to shared config
     if args.timeout is not None:
         config.RUN_TIMEOUT = args.timeout
+    config.N_RUNS = args.runs
 
     # Select model tier — cumulative: --maxtier caps at that tier and includes everything below it
     TIER_MODELS = {
@@ -305,6 +315,15 @@ def main():
                     results["images"] = img_partial
                     _checkpoint()
 
+                # Same hostname+timestamp as the results JSON, so both can be
+                # grabbed together in a file browser — a sibling folder under
+                # results/, not nested inside a shared "images" folder.
+                _out_stem = Path(out_path).stem
+                _images_dirname = (
+                    "images_" + _out_stem[len("results_"):]
+                    if _out_stem.startswith("results_") else f"images_{_out_stem}"
+                )
+
                 results["images"] = ImageBenchmark().run(
                     image_models=image_models,
                     resolutions=config.IMAGE_RESOLUTIONS,
@@ -313,9 +332,7 @@ def main():
                     comfyui_dir=comfyui_dir,
                     timeout=config.RUN_TIMEOUT * 2,
                     save_fn=_img_save,
-                    # Same stem as the results JSON, so each run's images land in
-                    # their own folder alongside the numbers they belong to.
-                    images_dir=config.RESULTS_IMAGES_DIR / Path(out_path).stem,
+                    images_dir=config.RESULTS_DIR / _images_dirname,
                 )
                 # Shut down ComfyUI as soon as image tests are done
                 # to free GPU memory before saving results

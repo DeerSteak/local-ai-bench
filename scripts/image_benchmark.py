@@ -356,7 +356,7 @@ class ImageBenchmark:
         if timeout is None:
             timeout = config.RUN_TIMEOUT
         if images_dir is None:
-            images_dir = config.RESULTS_IMAGES_DIR
+            images_dir = config.RESULTS_DIR / "images"
         results = {}
         Shared.section("Image Generation via ComfyUI")
 
