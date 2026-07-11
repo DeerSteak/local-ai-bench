@@ -2064,7 +2064,8 @@ def main():
                             "skip_reason": "no_llm_data", "skip_detail": detail,
                         }
                         continue
-                    if "timed_out" in llm_data:
+                    first_ctx_label = f"{CONTEXT_LENGTHS[0] // 1024}K"
+                    if llm_data.get("timed_out") == first_ctx_label:
                         detail = f"LLM test timed out at {llm_data['timed_out']} context"
                         warn(f"{model['label']}: skipping conversation test — {detail}")
                         llm_conv_skips[short] = {
@@ -2072,7 +2073,9 @@ def main():
                             "skip_reason": "timed_out", "skip_detail": detail,
                         }
                         continue
-                    first_ctx_label = f"{CONTEXT_LENGTHS[0] // 1024}K"
+                    # A timeout at a deeper context (8K/32K/64K) doesn't disqualify
+                    # the model — it passed the 2K prefill test, so fall through to
+                    # the tok/s check below just like a model that wasn't timed out.
                     slow_ctx = None if args.force_all else llm_data.get("slow_tps") or (
                         first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
                         and llm_data[first_ctx_label].get("tps_mean") is not None
