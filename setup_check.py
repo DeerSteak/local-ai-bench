@@ -543,18 +543,25 @@ def load_token():
             ok("HuggingFace token loaded from hf.txt")
             _hf_token_cache[0] = token
             return token
+    needs_gated = bool(GATED_IMAGE_SHORTS & selected_image_shorts)
     print()
-    print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
-    print(f"  1. Create an account at {link('https://huggingface.co')}")
-    print(f"  2. Accept the licenses at:")
-    print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
-    print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
-    print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
-    print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
+    if needs_gated:
+        print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
+        print(f"  1. Create an account at {link('https://huggingface.co')}")
+        print(f"  2. Accept the licenses at:")
+        print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
+        print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
+        print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
+        print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
+    else:
+        print(f"  {CYAN}A free HuggingFace token isn't required for the models you selected,{RESET}")
+        print(f"  {CYAN}but HuggingFace gives token holders faster downloads.{RESET}")
+        print(f"  Generate one (optional) at {link('https://huggingface.co/settings/tokens')}")
     print()
     try:
+        skip_hint = "skip gated models" if needs_gated else "skip and download without one"
         token = input(
-            f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to skip gated models): "
+            f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to {skip_hint}): "
         ).strip()
     except EOFError:
         token = ""
@@ -569,7 +576,7 @@ def load_token():
     _hf_token_cache[0] = token or ""
     return token
 
-if GATED_IMAGE_SHORTS & selected_image_shorts:
+if selected_image_shorts:
     section("HuggingFace Token")
     load_token()
 
@@ -972,7 +979,7 @@ else:
 
                 if short == "sd15":
                     info("Downloading Stable Diffusion 1.5 (no login required) ...")
-                    if hf_download("Comfy-Org/stable-diffusion-v1-5-archive", ckpt):
+                    if hf_download("Comfy-Org/stable-diffusion-v1-5-archive", ckpt, token=load_token()):
                         ok(f"{ckpt} downloaded")
                         found_ckpts.append(ckpt)
                     else:
@@ -980,7 +987,7 @@ else:
 
                 elif short == "sdxl":
                     info("Downloading SDXL base model (no login required) ...")
-                    if hf_download("stabilityai/stable-diffusion-xl-base-1.0", ckpt):
+                    if hf_download("stabilityai/stable-diffusion-xl-base-1.0", ckpt, token=load_token()):
                         ok(f"{ckpt} downloaded")
                         found_ckpts.append(ckpt)
                     else:
@@ -1039,7 +1046,7 @@ else:
             for fname, dest in shared_clip_files:
                 if not (dest / fname).exists():
                     info(f"Downloading {fname} (public, no token required) ...")
-                    if hf_download("comfyanonymous/flux_text_encoders", fname, dest_dir=dest):
+                    if hf_download("comfyanonymous/flux_text_encoders", fname, token=load_token(), dest_dir=dest):
                         ok(f"{fname} downloaded")
                     else:
                         warn(f"{fname} download failed — image generation will error")
@@ -1090,7 +1097,7 @@ else:
                 info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev",
                                f"split_files/text_encoders/{mistral_file}",
-                               dest_dir=text_encoder_dir, save_as=mistral_file):
+                               token=load_token(), dest_dir=text_encoder_dir, save_as=mistral_file):
                     ok(f"{mistral_file} downloaded")
                 else:
                     warn(f"{mistral_file} download failed — Flux.2-dev image generation will error")
@@ -1101,7 +1108,7 @@ else:
             if not flux2_vae.exists():
                 info("Downloading flux2-vae.safetensors (Flux.2 VAE, public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors",
-                               dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
+                               token=load_token(), dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
                     ok("flux2-vae.safetensors downloaded")
                 else:
                     warn("flux2-vae.safetensors download failed — Flux.2-dev image generation will error")
