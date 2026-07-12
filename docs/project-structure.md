@@ -14,9 +14,12 @@
 | `run_bench.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
 | `dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
 | `dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
+| `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
+| `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `scripts/` | Benchmark implementation — see [How It Works](how-it-works.md#code-organization) for what each module does |
 | `results/` | Benchmark output — `results_*.json` plus a matching `images_*/` folder per run with the generated sample images |
 | `dashboard/` | The results-explorer web app (React + Vite) |
+| `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
@@ -58,4 +61,4 @@ The images folder's name is always the results filename's stem with `results_` s
 
 ---
 
-[← How It Works](how-it-works.md) · [Back to README](../README.md)
+[← How It Works](how-it-works.md) · [Back to README](../README.md) · [Testing →](testing.md)
