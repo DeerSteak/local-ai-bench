@@ -160,12 +160,8 @@ class LLMConversationBenchmark:
             samples_by_label = {}
             timed_out_label = None
             slow_label       = None
-            stop_further_runs = False
 
             for run_i in range(LLMConversationBenchmark.CONV_RUNS):
-                if stop_further_runs:
-                    break
-
                 Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — starting a fresh conversation ...")
 
                 messages          = []
@@ -213,46 +209,57 @@ class LLMConversationBenchmark:
                     print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: 0K  TTFT={ttft:.2f}s  "
                           f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
 
-                    out_of_room = False
-                    for idx, target in enumerate(checkpoints[1:], start=1):
-                        label_ctx = f"{target // 1024}K"
-                        is_last_checkpoint = idx == len(checkpoints) - 1
-                        Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
-                                   f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
+                    # A model already below the cutoff on the very first turn
+                    # isn't worth growing further — every deeper turn only
+                    # costs more of this test's expensive growth budget to
+                    # confirm what the first turn already showed. End the
+                    # conversation here rather than paying to grow it toward
+                    # the context ceiling.
+                    if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
+                        Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at 0K is below "
+                                    f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
+                        slow_label = "0K"
+                    else:
+                        out_of_room = False
+                        for idx, target in enumerate(checkpoints[1:], start=1):
+                            label_ctx = f"{target // 1024}K"
+                            is_last_checkpoint = idx == len(checkpoints) - 1
+                            Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
+                                       f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
 
-                        while cumulative_tokens < target:
-                            remaining = target - cumulative_tokens
-                            is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
-                            step = (remaining if is_final_step else
-                                    max(LLMConversationBenchmark.CONV_STEP_MIN,
-                                        remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
-                            step = max(LLMConversationBenchmark.CONV_STEP_MIN,
-                                       min(LLMConversationBenchmark.CONV_STEP_MAX, step))
+                            while cumulative_tokens < target:
+                                remaining = target - cumulative_tokens
+                                is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
+                                step = (remaining if is_final_step else
+                                        max(LLMConversationBenchmark.CONV_STEP_MIN,
+                                            remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
+                                step = max(LLMConversationBenchmark.CONV_STEP_MIN,
+                                           min(LLMConversationBenchmark.CONV_STEP_MAX, step))
 
-                            # No next turn follows the very last step of the very last
-                            # checkpoint in this run, so it doesn't need margin held back
-                            # for one — it can use every token of room left up to num_ctx.
-                            reserve = 0 if (is_last_checkpoint and is_final_step) \
-                                else LLMConversationBenchmark.CONV_SAFETY_MARGIN
-                            room = num_ctx - cumulative_tokens - reserve
-                            if room < LLMConversationBenchmark.CONV_STEP_MIN:
-                                out_of_room = True
+                                # No next turn follows the very last step of the very last
+                                # checkpoint in this run, so it doesn't need margin held back
+                                # for one — it can use every token of room left up to num_ctx.
+                                reserve = 0 if (is_last_checkpoint and is_final_step) \
+                                    else LLMConversationBenchmark.CONV_SAFETY_MARGIN
+                                room = num_ctx - cumulative_tokens - reserve
+                                if room < LLMConversationBenchmark.CONV_STEP_MIN:
+                                    out_of_room = True
+                                    break
+                                step = min(step, room)
+
+                                ttft, tps = _turn(_next_prompt(), step)
+
+                            if out_of_room:
+                                Shared.warn(f"{label}: run {run_i+1} ran out of context room "
+                                            f"approaching {label_ctx} — stopping this run's growth here")
                                 break
-                            step = min(step, room)
 
-                            ttft, tps = _turn(_next_prompt(), step)
-
-                        if out_of_room:
-                            Shared.warn(f"{label}: run {run_i+1} ran out of context room "
-                                        f"approaching {label_ctx} — stopping this run's growth here")
-                            break
-
-                        # ttft/tps here are from the turn that just crossed `target`
-                        # (the last iteration of the while loop above).
-                        samples_by_label.setdefault(label_ctx, []).append(
-                            (ttft, tps, cumulative_tokens))
-                        print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
-                              f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+                            # ttft/tps here are from the turn that just crossed `target`
+                            # (the last iteration of the while loop above).
+                            samples_by_label.setdefault(label_ctx, []).append(
+                                (ttft, tps, cumulative_tokens))
+                            print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
+                                  f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
 
                 except Exception as e:
                     is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
@@ -266,22 +273,6 @@ class LLMConversationBenchmark:
 
                 if run_timed_out or run_failed:
                     Shared.warn(f"{label}: run {run_i+1} stopped early")
-
-                # No mid-conversation early exit — a run always plays out to its
-                # natural end. Once it's done, though, a model that's clearly too
-                # slow isn't worth repeating: check this run's own 0K sample and
-                # skip scheduling any further runs if it's below the cutoff. The
-                # run(s) already completed are still reported.
-                if not force_all:
-                    zero_samples = samples_by_label.get("0K")
-                    if zero_samples:
-                        _, this_run_tps, _ = zero_samples[-1]
-                        if this_run_tps < config.SLOW_MODEL_MIN_TPS:
-                            Shared.warn(f"{label}: {this_run_tps:.1f} tok/s at 0K is below "
-                                        f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — not "
-                                        f"scheduling further runs")
-                            slow_label = "0K"
-                            stop_further_runs = True
 
             for target in checkpoints:
                 label_ctx = f"{target // 1024}K"
