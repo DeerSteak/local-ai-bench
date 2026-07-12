@@ -516,6 +516,31 @@ class Shared:
             return False
 
     @staticmethod
+    def ollama_model_max_ctx(model_tag, default=131072):
+        """Look up a pulled model's real max context length via /api/show.
+
+        Reads manifest metadata only — doesn't load the model into memory, so
+        this is a cheap call. The context-length key is prefixed by
+        architecture (llama.context_length, phi3.context_length,
+        qwen35.context_length, gemma4.context_length, gptoss.context_length,
+        ...), so scan for any key ending in that suffix rather than guessing
+        the prefix from the tag. Falls back to `default` if the model isn't
+        found, the field is missing, or the request fails for any reason —
+        callers then behave as if the model supports exactly `default`.
+        """
+        try:
+            r = requests.post(f"{config.OLLAMA_URL}/api/show",
+                               json={"model": model_tag}, timeout=15)
+            r.raise_for_status()
+            info = r.json().get("model_info", {})
+            for key, value in info.items():
+                if key.endswith(".context_length") and isinstance(value, int):
+                    return value
+        except Exception:
+            pass
+        return default
+
+    @staticmethod
     def _ollama_urlopen(req, timeout):
         """urlopen wrapper that surfaces the response body on HTTP error status.
 

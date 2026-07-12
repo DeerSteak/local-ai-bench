@@ -33,7 +33,7 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
-VERSION        = "1.2"
+VERSION        = "1.5"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting — overridden by --timeout

@@ -8,12 +8,15 @@ Tests:
      Context lengths: 2K, 8K, 32K, 64K
      Models that exceed the warmup timeout are skipped automatically
 
-  1b. LLM conversation — same models/context depths, but via a real multi-turn
-      chat (/api/chat) instead of one padded single-shot prompt: the model
+  1b. LLM conversation — same models, but via a real multi-turn chat
+      (/api/chat) instead of one padded single-shot prompt: the model
       explains Plato's Allegory of the Cave in sections, then each turn asks
       for more detail on a section. TTFT/tokens-per-sec at each depth reflect
       processing a new turn against an already-filled context (relying on
-      llama.cpp's slot prefix cache), not a cold fill from empty.
+      llama.cpp's slot prefix cache), not a cold fill from empty. Each of
+      --runs repeats is its own independent conversation, grown from scratch
+      up to 128K context (or the model's real max, whichever is lower),
+      sampled at 0, 2K, 4K, 8K, 16K, 32K, 64K, 96K, and 128K.
 
   2. Image generation — SD1.5, SDXL, SD3.5 Large, Flux.1-dev, Flux.2-dev via
      ComfyUI HTTP API
@@ -256,7 +259,6 @@ def main():
 
             results["llm_conversation"] = LLMConversationBenchmark().run(
                 models=conv_models,
-                context_lengths=config.CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
                 force_all=args.force_all,
             )

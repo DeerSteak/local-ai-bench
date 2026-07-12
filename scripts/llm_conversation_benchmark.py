@@ -6,6 +6,15 @@ on one section. Every turn is sent with the full message history via
 /api/chat, so llama.cpp's slot cache carries the prior turns forward —
 TTFT/TPS at each context depth reflect processing the new turn against an
 already-filled context, not a cold fill from empty.
+
+Each of --runs repeats is its own independent conversation, started fresh
+(no shared/continued history across runs), grown from a blank slate up to
+the model's real context ceiling — 128K if the model supports it, otherwise
+whatever it actually supports (looked up live via Shared.ollama_model_max_ctx,
+not hardcoded, so it always matches what's actually pulled). Along the way
+each run samples TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and
+128K (whichever of those the model's ceiling reaches), then those samples are
+averaged across however many runs completed for each depth.
 """
 
 import threading
@@ -16,22 +25,45 @@ from shared import Shared
 
 
 class LLMConversationBenchmark:
-    CONV_NUM_SECTIONS    = 6
-    CONV_MIN_PREDICT     = 64    # measured-phase turn size floor, smallest depths
-    CONV_MAX_PREDICT     = 1024  # measured-phase turn size cap, largest depths —
-                                  # longer, steadier responses reduce turn-to-turn
-                                  # variance. Governs only the N_RUNS measured runs
-                                  # reported per checkpoint (via _conv_turn_budget
-                                  # below) — growth turns are separate, see
-                                  # CONV_GROWTH_PREDICT.
-    CONV_GROWTH_PREDICT  = 2000  # turn size for every growth turn (opening answer
-                                  # and all "give more detail" follow-ups used to
-                                  # build up to each checkpoint) — large so growth
-                                  # is a handful of substantial turns rather than
-                                  # dozens of small ones, more like a real
-                                  # conversation. Doesn't affect what's measured;
-                                  # some overshoot past each checkpoint is expected
-                                  # and fine.
+    CONV_NUM_SECTIONS = 6
+
+    # The context window handed to a model: 128K if it supports at least
+    # that much, otherwise its own real ceiling (see Shared.ollama_model_max_ctx).
+    CONV_TARGET_CTX = 131072
+
+    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus 96K and the
+    # 128K cap. Filtered per model down to whatever its real ceiling actually
+    # reaches.
+    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072]
+
+    # Bounds on any single growth turn's num_predict. Crossing a gap in a
+    # handful of turns (remaining // CONV_STEP_DIVISOR, clamped to this
+    # range) rather than one big jump is what gives the smaller checkpoints
+    # (0->2K, 2K->4K, ...) real resolution instead of one turn blowing
+    # straight past them — while the cap keeps any single generation call,
+    # and the gap-to-128K's turn count, bounded.
+    CONV_STEP_MIN = 32
+    CONV_STEP_MAX = 1024
+    CONV_STEP_DIVISOR = 4
+
+    # Opening turn is a full structured answer, not a small growth step.
+    CONV_OPENING_PREDICT = 2048
+
+    # Extra num_ctx requested beyond the top checkpoint a model will actually
+    # reach, when its real ceiling allows it — growing a turn's prompt right
+    # up against num_ctx with nothing to spare forces Ollama to
+    # truncate/context-shift, corrupting that measurement (see the room
+    # clamp in run() for how this is used).
+    CONV_CTX_HEADROOM = 4096
+
+    # Reserved tokens so a non-final growth turn's own new user message (plus
+    # its generation) can't push the *next* turn's prompt past num_ctx. Not
+    # applied to the very last turn of a run, which has no next turn to
+    # protect and can use the full remaining room up to num_ctx itself —
+    # this matters because most of these models' real ceiling equals our
+    # 128K target exactly (no headroom to spare), so without this exception
+    # the 128K checkpoint would never actually be reachable.
+    CONV_SAFETY_MARGIN = 64
 
     CONV_OPENING_PROMPT = (
         "Explain Plato's Allegory of the Cave in detail. Structure your answer into "
@@ -42,19 +74,6 @@ class LLMConversationBenchmark:
     )
 
     @staticmethod
-    def _conv_turn_budget(ctx_len: int) -> int:
-        """
-        Per-turn generation length, scaled to the depth currently being targeted.
-
-        Small checkpoints (e.g. 2K) use short turns so the crossing overshoot stays
-        a small fraction of the target — otherwise a single 1024-token turn could
-        blow straight past a 2K checkpoint. Large checkpoints (e.g. 64K) use long
-        turns so we're not spending hundreds of tiny turns to get there.
-        """
-        return max(LLMConversationBenchmark.CONV_MIN_PREDICT,
-                   min(LLMConversationBenchmark.CONV_MAX_PREDICT, ctx_len // 32))
-
-    @staticmethod
     def _conv_followup_prompt(section_n: int) -> str:
         section = ((section_n - 1) % LLMConversationBenchmark.CONV_NUM_SECTIONS) + 1
         return (
@@ -62,7 +81,7 @@ class LLMConversationBenchmark:
             "examples, counterarguments, and analysis."
         )
 
-    def run(self, models, context_lengths, warmup_runs, force_all=False):
+    def run(self, models, warmup_runs, force_all=False):
         results = {}
 
         if not Shared.ollama_available():
@@ -82,21 +101,15 @@ class LLMConversationBenchmark:
                 Shared.warn(f"Pull with: ollama pull {tag}")
                 continue
 
-            # Unlike the single-shot test, this session keeps growing past each
-            # checkpoint within the *same* num_ctx for the whole conversation. If
-            # num_ctx == the top checkpoint exactly, growth lands right on the
-            # ceiling with zero headroom — Ollama has to truncate/context-shift and
-            # fully reprocess, which looks like a cache miss (a 100x+ TTFT spike)
-            # rather than the incremental cost we're trying to measure. Pad the
-            # ceiling so the top checkpoint's crossing overshoot (one growth turn,
-            # up to CONV_GROWTH_PREDICT) plus all its measured turns (up to
-            # CONV_MAX_PREDICT each, plus 2 extra turns of buffer) still fit
-            # comfortably inside num_ctx.
-            headroom = (LLMConversationBenchmark.CONV_GROWTH_PREDICT
-                        + (config.N_RUNS + 2) * LLMConversationBenchmark.CONV_MAX_PREDICT)
-            session_ctx_ceiling = max(context_lengths) + headroom
-            max_ctx = min(model.get("max_ctx", session_ctx_ceiling), session_ctx_ceiling)
-            Shared.log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
+            model_max = Shared.ollama_model_max_ctx(tag)
+            target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
+            checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
+            num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+
+            Shared.log(f"{label}: model supports {model_max} ctx — testing up to "
+                       f"{target_ctx} ({len(checkpoints)} checkpoints), num_ctx={num_ctx}")
+
+            Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
             warmup_ok = True
             for warmup_i in range(warmup_runs):
                 result_box = [None]
@@ -105,7 +118,7 @@ class LLMConversationBenchmark:
                 def _warmup():
                     try:
                         result_box[0] = Shared.ollama_generate(
-                            tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=max_ctx)
+                            tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
                     except Exception as e:
                         exc_box[0] = e
 
@@ -132,133 +145,162 @@ class LLMConversationBenchmark:
                 continue
 
             results[short] = {}
+            # label -> list of (ttft, tps, depth_tokens), one entry per run that reached it
+            samples_by_label = {}
+            timed_out_label = None
+            slow_label       = None
+            stop_further_runs = False
 
-            model_ctx_lengths = [c for c in context_lengths
-                                 if c <= model.get("max_ctx", session_ctx_ceiling)]
+            for run_i in range(config.N_RUNS):
+                if stop_further_runs:
+                    break
 
-            messages          = []
-            cumulative_tokens = 0
-            section_n         = 1
-            first_turn_done   = False
-            model_timed_out   = False
-            model_failed      = False
+                Shared.log(f"{label}: run {run_i+1}/{config.N_RUNS} — starting a fresh conversation ...")
 
-            def _turn(prompt_text, num_predict):
-                nonlocal cumulative_tokens
-                messages.append({"role": "user", "content": prompt_text})
-                ttft, eval_count, tps, prompt_eval_count, response_text = Shared.ollama_chat(
-                    tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=max_ctx,
-                    num_predict=num_predict,
-                )
-                messages.append({"role": "assistant", "content": response_text})
-                # prompt_eval_count is the *total* prompt length Ollama reports for this
-                # call (ground truth of what's actually in context going into it) — even
-                # when the slot cache means only the suffix was actually recomputed
-                # (that's why ttft stays flat as this grows). We deliberately don't add
-                # eval_count on top: for reasoning models a turn's generated tokens can
-                # include large amounts of thinking content that a template silently
-                # drops from history on the next turn, so eval_count doesn't reliably
-                # predict what will actually persist. The next turn's prompt_eval_count
-                # (i.e. this same assignment, one call later) is what tells us the truth.
-                cumulative_tokens = prompt_eval_count
-                return ttft, tps
+                messages          = []
+                cumulative_tokens = 0
+                section_n         = 1
+                first_turn_done   = False
+                run_timed_out     = False
+                run_failed        = False
 
-            def _next_prompt():
-                nonlocal section_n, first_turn_done
-                if not first_turn_done:
-                    first_turn_done = True
-                    return LLMConversationBenchmark.CONV_OPENING_PROMPT
-                prompt_text = LLMConversationBenchmark._conv_followup_prompt(section_n)
-                section_n += 1
-                return prompt_text
+                def _turn(prompt_text, num_predict):
+                    nonlocal cumulative_tokens
+                    messages.append({"role": "user", "content": prompt_text})
+                    ttft, eval_count, tps, prompt_eval_count, response_text = Shared.ollama_chat(
+                        tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
+                        num_predict=num_predict,
+                    )
+                    messages.append({"role": "assistant", "content": response_text})
+                    # prompt_eval_count is the *total* prompt length Ollama reports for this
+                    # call (ground truth of what's actually in context going into it) — even
+                    # when the slot cache means only the suffix was actually recomputed
+                    # (that's why ttft stays flat as this grows). We deliberately don't add
+                    # eval_count on top: for reasoning models a turn's generated tokens can
+                    # include large amounts of thinking content that a template silently
+                    # drops from history on the next turn, so eval_count doesn't reliably
+                    # predict what will actually persist. The next turn's prompt_eval_count
+                    # (i.e. this same assignment, one call later) is what tells us the truth.
+                    cumulative_tokens = prompt_eval_count
+                    return ttft, tps
 
-            for ctx_len in model_ctx_lengths:
-                label_ctx = f"{ctx_len // 1024}K"
-                turn_budget = LLMConversationBenchmark._conv_turn_budget(ctx_len)
+                def _next_prompt():
+                    nonlocal section_n, first_turn_done
+                    if not first_turn_done:
+                        first_turn_done = True
+                        return LLMConversationBenchmark.CONV_OPENING_PROMPT
+                    prompt_text = LLMConversationBenchmark._conv_followup_prompt(section_n)
+                    section_n += 1
+                    return prompt_text
 
-                # Grow the conversation (untimed) until we've crossed this depth,
-                # using large CONV_GROWTH_PREDICT turns regardless of this
-                # checkpoint's (much smaller) measured-phase turn_budget — see
-                # CONV_GROWTH_PREDICT above for why. Once within CONV_GROWTH_PREDICT
-                # of the ceiling, shrink num_predict to the remaining gap instead of
-                # blindly using the full budget, so the crossing turn lands close to
-                # the checkpoint rather than potentially overshooting it by up to
-                # CONV_GROWTH_PREDICT tokens. num_predict is a cap, not a target —
-                # a turn can still come in short (early stop) — so this can still
-                # take more than one closing turn; the loop just keeps recomputing
-                # the remaining gap each time.
-                Shared.log(f"Conversation depth {label_ctx} — growing context "
-                           f"(currently ~{cumulative_tokens} tokens) ...")
                 try:
-                    while cumulative_tokens < ctx_len:
-                        remaining = ctx_len - cumulative_tokens
-                        num_predict = (LLMConversationBenchmark.CONV_GROWTH_PREDICT
-                                       if remaining > LLMConversationBenchmark.CONV_GROWTH_PREDICT
-                                       else max(LLMConversationBenchmark.CONV_MIN_PREDICT, remaining))
-                        _turn(_next_prompt(), num_predict)
+                    # Checkpoint 0 is just the opening turn — there's no
+                    # growth to do first, it's the start of the conversation.
+                    ttft, tps = _turn(_next_prompt(),
+                                       LLMConversationBenchmark.CONV_OPENING_PREDICT)
+                    samples_by_label.setdefault("0K", []).append((ttft, tps, cumulative_tokens))
+                    print(f"    run {run_i+1}/{config.N_RUNS}: 0K  TTFT={ttft:.2f}s  "
+                          f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+
+                    out_of_room = False
+                    for idx, target in enumerate(checkpoints[1:], start=1):
+                        label_ctx = f"{target // 1024}K"
+                        is_last_checkpoint = idx == len(checkpoints) - 1
+                        Shared.log(f"{label}: run {run_i+1}/{config.N_RUNS} — growing toward "
+                                   f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
+
+                        while cumulative_tokens < target:
+                            remaining = target - cumulative_tokens
+                            is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
+                            step = (remaining if is_final_step else
+                                    max(LLMConversationBenchmark.CONV_STEP_MIN,
+                                        remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
+                            step = max(LLMConversationBenchmark.CONV_STEP_MIN,
+                                       min(LLMConversationBenchmark.CONV_STEP_MAX, step))
+
+                            # No next turn follows the very last step of the very last
+                            # checkpoint in this run, so it doesn't need margin held back
+                            # for one — it can use every token of room left up to num_ctx.
+                            reserve = 0 if (is_last_checkpoint and is_final_step) \
+                                else LLMConversationBenchmark.CONV_SAFETY_MARGIN
+                            room = num_ctx - cumulative_tokens - reserve
+                            if room < LLMConversationBenchmark.CONV_STEP_MIN:
+                                out_of_room = True
+                                break
+                            step = min(step, room)
+
+                            ttft, tps = _turn(_next_prompt(), step)
+
+                        if out_of_room:
+                            Shared.warn(f"{label}: run {run_i+1} ran out of context room "
+                                        f"approaching {label_ctx} — stopping this run's growth here")
+                            break
+
+                        # ttft/tps here are from the turn that just crossed `target`
+                        # (the last iteration of the while loop above).
+                        samples_by_label.setdefault(label_ctx, []).append(
+                            (ttft, tps, cumulative_tokens))
+                        print(f"    run {run_i+1}/{config.N_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
+                              f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+
                 except Exception as e:
                     is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                     if is_timeout:
-                        Shared.err(f"Timed out growing context for {label} — skipping remaining depths")
-                        model_timed_out = True
+                        Shared.err(f"{label}: run {run_i+1} timed out — stopping this run here")
+                        run_timed_out = True
+                        timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
                     else:
-                        Shared.err(f"Failed growing context for {label}: {e}")
-                        model_failed = True
-                    break
+                        Shared.err(f"{label}: run {run_i+1} failed: {e}")
+                        run_failed = True
 
-                Shared.log(f"Context {label_ctx} (~{cumulative_tokens} tokens actual) — "
-                           f"{config.N_RUNS} runs ...")
+                if run_timed_out or run_failed:
+                    Shared.warn(f"{label}: run {run_i+1} stopped early")
 
-                ttfts, tps_list = [], []
-                ctx_timed_out = False
+                # No mid-conversation early exit — a run always plays out to its
+                # natural end. Once it's done, though, a model that's clearly too
+                # slow isn't worth repeating: check this run's own 0K sample and
+                # skip scheduling any further runs if it's below the cutoff. The
+                # run(s) already completed are still reported.
+                if not force_all:
+                    zero_samples = samples_by_label.get("0K")
+                    if zero_samples:
+                        _, this_run_tps, _ = zero_samples[-1]
+                        if this_run_tps < config.SLOW_MODEL_MIN_TPS:
+                            Shared.warn(f"{label}: {this_run_tps:.1f} tok/s at 0K is below "
+                                        f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — not "
+                                        f"scheduling further runs")
+                            slow_label = "0K"
+                            stop_further_runs = True
 
-                for run_i in range(config.N_RUNS):
-                    try:
-                        ttft, tps = _turn(_next_prompt(), turn_budget)
-                        ttfts.append(ttft)
-                        tps_list.append(tps)
-                        print(
-                            f"    run {run_i+1}/{config.N_RUNS}: "
-                            f"TTFT={ttft:.2f}s  "
-                            f"TPS={tps:.1f}  "
-                            f"(depth~{cumulative_tokens})"
-                        )
-                    except Exception as e:
-                        is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
-                        if is_timeout:
-                            Shared.err(f"Run {run_i+1} timed out — skipping remaining runs and depths for {label}")
-                            ctx_timed_out = True
-                            break
-                        Shared.err(f"Run {run_i+1} failed: {e}")
+            for target in checkpoints:
+                label_ctx = f"{target // 1024}K"
+                samples = samples_by_label.get(label_ctx)
+                if not samples:
+                    continue
+                ttfts  = [s[0] for s in samples]
+                tpss   = [s[1] for s in samples]
+                depths = [s[2] for s in samples]
+                results[short][label_ctx] = {
+                    "ttft_mean_sec":  round(Shared.mean(ttfts), 3),
+                    "ttft_stdev_sec": round(Shared.stdev(ttfts), 3),
+                    "tps_mean":       round(Shared.mean(tpss), 2),
+                    "tps_stdev":      round(Shared.stdev(tpss), 2),
+                    "n_runs":         len(samples),
+                    "ttft_runs":      [round(t, 3) for t in ttfts],
+                    "tps_runs":       [round(t, 2) for t in tpss],
+                    "depth_tokens":   round(Shared.mean(depths)),
+                }
+                Shared.ok(
+                    f"{label_ctx} done ({len(samples)} run(s)): "
+                    f"TTFT={results[short][label_ctx]['ttft_mean_sec']:.2f}s  "
+                    f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
+                )
 
-                if ttfts:
-                    results[short][label_ctx] = {
-                        "ttft_mean_sec":  round(Shared.mean(ttfts),    3),
-                        "ttft_stdev_sec": round(Shared.stdev(ttfts),   3),
-                        "tps_mean":       round(Shared.mean(tps_list), 2),
-                        "tps_stdev":      round(Shared.stdev(tps_list),2),
-                        "n_runs":         len(tps_list),
-                        "ttft_runs":      [round(t, 3) for t in ttfts],
-                        "tps_runs":       [round(t, 2) for t in tps_list],
-                        "depth_tokens":   cumulative_tokens,
-                    }
-                    Shared.ok(
-                        f"Context {label_ctx} done: "
-                        f"TTFT={results[short][label_ctx]['ttft_mean_sec']:.2f}s  "
-                        f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
-                    )
+            if timed_out_label:
+                results[short]["timed_out"] = timed_out_label
+            if slow_label:
+                results[short]["slow_tps"] = slow_label
 
-                if ctx_timed_out:
-                    model_timed_out = True
-                    results[short]["timed_out"] = label_ctx
-                    break
-
-                is_first_ctx = ctx_len == model_ctx_lengths[0]
-                if Shared.slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
-                    break
-
-            if model_timed_out or model_failed:
-                Shared.warn(f"{label}: stopped early — moving to next model")
             Shared.log(f"Unloading {label} ...")
             Shared.unload_model(tag)
             Shared.wait_until_unloaded(tag)
