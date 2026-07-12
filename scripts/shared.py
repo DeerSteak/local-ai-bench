@@ -13,6 +13,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -635,6 +636,42 @@ class Shared:
         if ttft is None:
             ttft = total
         return ttft, eval_count, tps
+
+    @staticmethod
+    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int) -> bool:
+        """
+        Load `tag` into memory with `warmup_runs` blocking generate calls, each
+        watchdogged by a daemon thread so a hung load (model too large for
+        available memory) times out after config.RUN_TIMEOUT instead of hanging
+        the whole benchmark run. Returns False on the first hung or failed run,
+        so the caller can skip this model.
+        """
+        Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
+        for warmup_i in range(warmup_runs):
+            exc_box = [None]
+
+            def _warmup():
+                try:
+                    Shared.ollama_generate(tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
+                except Exception as e:
+                    exc_box[0] = e
+
+            t = threading.Thread(target=_warmup, daemon=True)
+            t_start = time.perf_counter()
+            t.start()
+            t.join(timeout=config.RUN_TIMEOUT)
+
+            if t.is_alive():
+                elapsed = time.perf_counter() - t_start
+                Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
+                Shared.warn(f"{label}: model is likely too large for available memory — skipping")
+                return False
+            elif exc_box[0] is not None:
+                Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
+                return False
+            else:
+                Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+        return True
 
     @staticmethod
     def ollama_chat(model_tag: str, messages: list, timeout: int = 600,

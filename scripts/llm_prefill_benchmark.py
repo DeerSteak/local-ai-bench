@@ -1,8 +1,5 @@
 """llm_prefill_benchmark.py — single-shot LLM prefill/decode benchmark."""
 
-import threading
-import time
-
 import config
 from shared import Shared
 
@@ -33,38 +30,7 @@ class LLMPrefillBenchmark:
                 # Use the largest context this model will actually run so Ollama
                 # pre-allocates the full KV cache once — avoiding a reload at max context.
                 max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
-                Shared.log(f"Warming up {label} at num_ctx={max_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
-                warmup_ok = True
-                for warmup_i in range(warmup_runs):
-                    result_box = [None]   # mutable container so thread can write back
-                    exc_box    = [None]
-
-                    def _warmup():
-                        try:
-                            result_box[0] = Shared.ollama_generate(
-                                tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=max_ctx)
-                        except Exception as e:
-                            exc_box[0] = e
-
-                    t = threading.Thread(target=_warmup, daemon=True)
-                    t_start = time.perf_counter()
-                    t.start()
-                    t.join(timeout=config.RUN_TIMEOUT)
-
-                    if t.is_alive():
-                        elapsed = time.perf_counter() - t_start
-                        Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
-                        Shared.warn(f"{label}: model is likely too large for available memory — skipping")
-                        warmup_ok = False
-                        break
-                    elif exc_box[0] is not None:
-                        Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
-                        warmup_ok = False
-                        break
-                    else:
-                        Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
-
-                if not warmup_ok:
+                if not Shared.warmup_model(tag, label, max_ctx, warmup_runs):
                     Shared.unload_model(tag)
                     continue
 

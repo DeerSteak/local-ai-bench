@@ -21,9 +21,6 @@ where models with an exact 128K native ceiling have no slack left and the
 growth loop's final turns risk tipping over into truncation.
 """
 
-import threading
-import time
-
 import config
 from shared import Shared
 
@@ -121,38 +118,7 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
-                Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
-                warmup_ok = True
-                for warmup_i in range(warmup_runs):
-                    result_box = [None]
-                    exc_box    = [None]
-
-                    def _warmup():
-                        try:
-                            result_box[0] = Shared.ollama_generate(
-                                tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
-                        except Exception as e:
-                            exc_box[0] = e
-
-                    t = threading.Thread(target=_warmup, daemon=True)
-                    t_start = time.perf_counter()
-                    t.start()
-                    t.join(timeout=config.RUN_TIMEOUT)
-
-                    if t.is_alive():
-                        elapsed = time.perf_counter() - t_start
-                        Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
-                        Shared.warn(f"{label}: model is likely too large for available memory — skipping")
-                        warmup_ok = False
-                        break
-                    elif exc_box[0] is not None:
-                        Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
-                        warmup_ok = False
-                        break
-                    else:
-                        Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
-
-                if not warmup_ok:
+                if not Shared.warmup_model(tag, label, num_ctx, warmup_runs):
                     Shared.unload_model(tag)
                     continue
 
