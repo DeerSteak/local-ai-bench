@@ -53,6 +53,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
+| [Testing](docs/testing.md) | How to run tests and detail on what each test file validates |
 
 ---
 
