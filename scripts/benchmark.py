@@ -204,11 +204,16 @@ def main():
             Shared.ensure_ollama()
 
         if "llm" in args.tests:
+            def _llm_save(partial):
+                results["llm"] = partial
+                _checkpoint()
+
             results["llm"] = LLMPrefillBenchmark().run(
                 models=llm_models,
                 context_lengths=config.CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
                 force_all=args.force_all,
+                save_fn=_llm_save,
             )
             _checkpoint("LLM done")
 
@@ -260,16 +265,25 @@ def main():
                         continue
                     conv_models.append(model)
 
+            def _conv_save(partial):
+                results["llm_conversation"] = partial
+                _checkpoint()
+
             results["llm_conversation"] = LLMConversationBenchmark().run(
                 models=conv_models,
                 warmup_runs=args.warmup,
                 force_all=args.force_all,
+                save_fn=_conv_save,
             )
             results["llm_conversation"].update(llm_conv_skips)
             _checkpoint("LLM conversation done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
+            def _emb_save(partial):
+                results["embeddings"] = partial
+                _checkpoint()
+
             if args.emb_cpu_only:
                 Shared.section("Embeddings: forcing CPU-only")
                 Shared.warn("Stopping Ollama to relaunch in CPU-only mode for embeddings ...")
@@ -287,6 +301,7 @@ def main():
                     results["embeddings"] = EmbeddingBenchmark().run(
                         models=EMBED_MODELS,
                         warmup_runs=args.warmup,
+                        save_fn=_emb_save,
                     )
                     _checkpoint("embeddings done")
                     Shared.log("Restoring normal (GPU-enabled) Ollama ...")
@@ -300,6 +315,7 @@ def main():
                 results["embeddings"] = EmbeddingBenchmark().run(
                     models=EMBED_MODELS,
                     warmup_runs=args.warmup,
+                    save_fn=_emb_save,
                 )
                 _checkpoint("embeddings done")
 

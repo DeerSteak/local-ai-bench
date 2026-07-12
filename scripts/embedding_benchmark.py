@@ -89,7 +89,7 @@ class EmbeddingBenchmark:
         except Exception as e:
             Shared.warn(f"Failed to save embedding crash cache: {e}")
 
-    def run(self, models, warmup_runs=config.WARMUP_RUNS):
+    def run(self, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):
         results = {}
 
         if not Shared.ollama_available():
@@ -108,132 +108,136 @@ class EmbeddingBenchmark:
 
             Shared.section(f"Embeddings: {label}")
 
-            if not Shared.model_pulled(tag):
-                Shared.warn(f"{tag} not pulled — skipping")
-                Shared.warn(f"Pull with: ollama pull {tag}")
-                continue
+            try:
+                if not Shared.model_pulled(tag):
+                    Shared.warn(f"{tag} not pulled — skipping")
+                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    continue
 
-            Shared.ok(f"Using Ollama model: {tag}")
+                Shared.ok(f"Using Ollama model: {tag}")
 
-            if tag in crash_cache:
-                detail = crash_cache[tag]
-                Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
-                            f"{detail.get('crashed_at', 'an earlier run')} — skipping "
-                            f"(delete {EmbeddingBenchmark.EMBED_CRASH_CACHE} to retry)")
-                results[short] = {
-                    "label": label,
-                    "skipped": True,
-                    "skip_reason": "known_crash",
-                    "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
-                }
-                continue
+                if tag in crash_cache:
+                    detail = crash_cache[tag]
+                    Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
+                                f"{detail.get('crashed_at', 'an earlier run')} — skipping "
+                                f"(delete {EmbeddingBenchmark.EMBED_CRASH_CACHE} to retry)")
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "known_crash",
+                        "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
+                    }
+                    continue
 
-            # Warm up model (load into memory) before measuring. The first embed
-            # call against a freshly-unloaded model pays a one-time cost, model
-            # weights loading into memory, first-call kernel/graph setup, that
-            # has nothing to do with steady-state throughput — folding it into a
-            # measured run would understate this model's real performance.
-            Shared.log(f"Warming up {label} ...")
-            for warmup_i in range(warmup_runs):
-                try:
-                    resp = requests.post(
-                        f"{config.OLLAMA_URL}/api/embed",
-                        json={"model": tag, "input": chunks},
-                        timeout=120,
-                    )
-                    if not resp.ok:
-                        Shared.warn(f"Warmup run {warmup_i+1} failed: HTTP {resp.status_code}")
-                    else:
-                        Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
-                except Exception as e:
-                    Shared.warn(f"Warmup run {warmup_i+1} failed: {e}")
-                    if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
-                        wait_t0 = time.perf_counter()
-                        while time.perf_counter() - wait_t0 < 30:
-                            if Shared.ollama_available():
-                                break
-                            time.sleep(2)
-
-            Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
-            rates = []
-
-            MAX_CRASH_RETRIES = 2
-            run_i = 0
-            crash_retries = 0
-            gave_up_from_crashes = False
-            while run_i < config.N_RUNS:
-                t0 = time.perf_counter()
-                try:
-                    resp = requests.post(
-                        f"{config.OLLAMA_URL}/api/embed",
-                        json={"model": tag, "input": chunks},
-                        timeout=120,
-                    )
-                    if not resp.ok:
-                        try:
-                            detail = resp.json()
-                        except Exception:
-                            detail = resp.text[:500]
-                        raise RuntimeError(
-                            f"Ollama rejected embed request (HTTP {resp.status_code}, "
-                            f"n_chunks={len(chunks)}): {detail}"
+                # Warm up model (load into memory) before measuring. The first embed
+                # call against a freshly-unloaded model pays a one-time cost, model
+                # weights loading into memory, first-call kernel/graph setup, that
+                # has nothing to do with steady-state throughput — folding it into a
+                # measured run would understate this model's real performance.
+                Shared.log(f"Warming up {label} ...")
+                for warmup_i in range(warmup_runs):
+                    try:
+                        resp = requests.post(
+                            f"{config.OLLAMA_URL}/api/embed",
+                            json={"model": tag, "input": chunks},
+                            timeout=120,
                         )
-                    elapsed = time.perf_counter() - t0
-                    rate = len(chunks) / elapsed
-                    rates.append(rate)
-                    print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
-                    run_i += 1
-                except Exception as e:
-                    Shared.err(f"Run {run_i+1} failed: {e}")
-                    # A connection-refused error means Ollama's model runner
-                    # subprocess had already died (commonly OOM) before this
-                    # request. Wait for the main Ollama server to notice and
-                    # respawn it, then retry this same run — up to a capped
-                    # number of attempts, since a deterministic crash on this
-                    # document would just recur identically forever.
-                    if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
-                        crash_retries += 1
-                        Shared.err(f"Ollama's model runner appears to have crashed embedding {tag} "
-                                   f"— last server output:\n{Shared.tail_ollama_log()}")
-                        if crash_retries > MAX_CRASH_RETRIES:
-                            Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
-                            gave_up_from_crashes = True
-                            break
-                        Shared.warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
-                        recovered = False
-                        wait_t0 = time.perf_counter()
-                        while time.perf_counter() - wait_t0 < 30:
-                            if Shared.ollama_available():
-                                recovered = True
-                                break
-                            time.sleep(2)
-                        if not recovered:
-                            Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
-                            break
-                        # don't advance run_i — retry the same run now that Ollama is back
-                    else:
-                        run_i += 1
+                        if not resp.ok:
+                            Shared.warn(f"Warmup run {warmup_i+1} failed: HTTP {resp.status_code}")
+                        else:
+                            Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+                    except Exception as e:
+                        Shared.warn(f"Warmup run {warmup_i+1} failed: {e}")
+                        if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                            wait_t0 = time.perf_counter()
+                            while time.perf_counter() - wait_t0 < 30:
+                                if Shared.ollama_available():
+                                    break
+                                time.sleep(2)
 
-            if rates:
-                results[short] = {
-                    "label": label,
-                    "chunks_per_sec_mean":  round(Shared.mean(rates), 1),
-                    "chunks_per_sec_stdev": round(Shared.stdev(rates), 1),
-                    "device":               "gpu",
-                    "n_chunks":             len(chunks),
-                    "n_runs":               len(rates),
-                    "runs":                [round(r, 1) for r in rates],
-                }
-                Shared.ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
-            elif gave_up_from_crashes:
-                crashed_at = datetime.now().isoformat(timespec="seconds")
-                crash_cache[tag] = {"crashed_at": crashed_at}
-                EmbeddingBenchmark._save_crash_cache(crash_cache)
-                results[short] = {
-                    "label": label,
-                    "skipped": True,
-                    "skip_reason": "known_crash",
-                    "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
-                }
+                Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
+                rates = []
+
+                MAX_CRASH_RETRIES = 2
+                run_i = 0
+                crash_retries = 0
+                gave_up_from_crashes = False
+                while run_i < config.N_RUNS:
+                    t0 = time.perf_counter()
+                    try:
+                        resp = requests.post(
+                            f"{config.OLLAMA_URL}/api/embed",
+                            json={"model": tag, "input": chunks},
+                            timeout=120,
+                        )
+                        if not resp.ok:
+                            try:
+                                detail = resp.json()
+                            except Exception:
+                                detail = resp.text[:500]
+                            raise RuntimeError(
+                                f"Ollama rejected embed request (HTTP {resp.status_code}, "
+                                f"n_chunks={len(chunks)}): {detail}"
+                            )
+                        elapsed = time.perf_counter() - t0
+                        rate = len(chunks) / elapsed
+                        rates.append(rate)
+                        print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
+                        run_i += 1
+                    except Exception as e:
+                        Shared.err(f"Run {run_i+1} failed: {e}")
+                        # A connection-refused error means Ollama's model runner
+                        # subprocess had already died (commonly OOM) before this
+                        # request. Wait for the main Ollama server to notice and
+                        # respawn it, then retry this same run — up to a capped
+                        # number of attempts, since a deterministic crash on this
+                        # document would just recur identically forever.
+                        if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                            crash_retries += 1
+                            Shared.err(f"Ollama's model runner appears to have crashed embedding {tag} "
+                                       f"— last server output:\n{Shared.tail_ollama_log()}")
+                            if crash_retries > MAX_CRASH_RETRIES:
+                                Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
+                                gave_up_from_crashes = True
+                                break
+                            Shared.warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
+                            recovered = False
+                            wait_t0 = time.perf_counter()
+                            while time.perf_counter() - wait_t0 < 30:
+                                if Shared.ollama_available():
+                                    recovered = True
+                                    break
+                                time.sleep(2)
+                            if not recovered:
+                                Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
+                                break
+                            # don't advance run_i — retry the same run now that Ollama is back
+                        else:
+                            run_i += 1
+
+                if rates:
+                    results[short] = {
+                        "label": label,
+                        "chunks_per_sec_mean":  round(Shared.mean(rates), 1),
+                        "chunks_per_sec_stdev": round(Shared.stdev(rates), 1),
+                        "device":               "gpu",
+                        "n_chunks":             len(chunks),
+                        "n_runs":               len(rates),
+                        "runs":                [round(r, 1) for r in rates],
+                    }
+                    Shared.ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
+                elif gave_up_from_crashes:
+                    crashed_at = datetime.now().isoformat(timespec="seconds")
+                    crash_cache[tag] = {"crashed_at": crashed_at}
+                    EmbeddingBenchmark._save_crash_cache(crash_cache)
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "known_crash",
+                        "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
+                    }
+            finally:
+                if save_fn:
+                    save_fn(results)
 
         return results
