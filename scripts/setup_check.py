@@ -325,7 +325,6 @@ def install_ollama():
             info("Installing Ollama via snap ...")
             result = subprocess.run(["sudo", "snap", "install", "ollama"])
             if result.returncode == 0:
-                import time
                 time.sleep(3)
                 return True
         info("Installing Ollama via official install script ...")
@@ -343,7 +342,6 @@ def install_ollama():
                 "--silent", "--accept-package-agreements", "--accept-source-agreements"
             ])
             if result.returncode == 0:
-                import time
                 time.sleep(5)
                 return True
         else:
@@ -634,7 +632,6 @@ if needs_ollama_start and ollama_found:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        import time
         for _ in range(15):
             time.sleep(1)
             ollama_up, tag_data = ollama_running()

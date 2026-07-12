@@ -3,7 +3,7 @@
 benchmark.py — Cross-platform LLM benchmark suite.
 
 Tests:
-  1. LLM generation — 10 models across small/medium/large tiers via Ollama
+  1. LLM generation — 12 models across xsmall/small/medium/large tiers via Ollama
      Metrics: time-to-first-token (TTFT), tokens/sec
      Context lengths: 2K, 8K, 32K, 64K
      Models that exceed the warmup timeout are skipped automatically
@@ -15,12 +15,14 @@ Tests:
       processing a new turn against an already-filled context (relying on
       llama.cpp's slot prefix cache), not a cold fill from empty.
 
-  2. Image generation — SDXL, SD3.5 Large, Flux.1-dev via ComfyUI HTTP API
-     Metrics: seconds/image at 1024×1024 and 1536×1536
+  2. Image generation — SD1.5, SDXL, SD3.5 Large, Flux.1-dev, Flux.2-dev via
+     ComfyUI HTTP API
+     Metrics: seconds/image at 1024×1024 and 1536×1536 (SD1.5: 512×512, 768×768)
      (models skipped automatically if checkpoint not found)
 
   3. Embeddings — nomic-embed-text and mxbai-embed-large via Ollama
-     Metrics: sentences/sec at batch sizes 32, 128, 512
+     Metrics: chunks/sec chunking one real document and embedding it in a
+     single call
 
 Servers are managed automatically:
   - Ollama: started if not already running, shut down on exit if we started it
@@ -78,7 +80,7 @@ def main():
     )
     parser.add_argument(
         "--out", type=str, default=None,
-        help="Output JSON file (default: results_<hostname>_<timestamp>.json)",
+        help="Output JSON file (default: results/results_<hostname>_<timestamp>.json)",
     )
     parser.add_argument(
         "--comfyui", type=str, default=None,
