@@ -31,7 +31,7 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 
 If a model's single-shot decode speed drops below 15 tok/s at some context length, the single-shot test stops there — deeper context lengths are skipped for that model, since a slower run would just be a longer wait for a data point nobody needs. A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test (e.g. too large to fit in memory) — that pre-flight check only runs when the single-shot test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested there.
 
-Separately, *within* the conversation test itself: its single run always plays out to its natural end — there's no early exit mid-conversation. Pass `--force-all` to ignore the slow-model cutoff and always run every context length (see [CLI Reference](cli-reference.md)).
+Separately, *within* the conversation test itself: if the decode speed at any history depth drops below the slow-model cutoff, the conversation exits early and records results to that point. Pass `--force-all` to ignore this cutoff and always run every context length (see [CLI Reference](cli-reference.md)).
 
 ### Extra-small tier (<6B params)
 

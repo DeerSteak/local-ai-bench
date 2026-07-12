@@ -26,7 +26,7 @@ The single-shot test builds an independent padded prompt for every run. The conv
 
 If the run exceeds the 300-second timeout, it stops wherever it got to — whatever checkpoints it already reached are kept. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
 
-A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself there's no mid-conversation early exit — its one run always plays out to its natural end. See [LLM workload](workloads.md#llm) for the full skip logic.
+A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself, if the decode speed at any history depth drops below the slow-model cutoff, it exits early. See [LLM workload](workloads.md#llm) for the full skip logic.
 
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 

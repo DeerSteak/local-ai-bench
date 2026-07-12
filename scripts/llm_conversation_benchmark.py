@@ -218,28 +218,15 @@ class LLMConversationBenchmark:
                         return prompt_text
 
                     try:
-                        # Checkpoint 0 is just the opening turn — there's no
-                        # growth to do first, it's the start of the conversation.
-                        ttft, tps = _turn(_next_prompt(),
-                                           LLMConversationBenchmark.CONV_OPENING_PREDICT)
-                        samples_by_label.setdefault("0K", []).append((ttft, tps, cumulative_tokens))
-                        print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: 0K  TTFT={ttft:.2f}s  "
-                              f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
-
-                        # A model already below the cutoff on the very first turn
-                        # isn't worth growing further — every deeper turn only
-                        # costs more of this test's expensive growth budget to
-                        # confirm what the first turn already showed. End the
-                        # conversation here rather than paying to grow it toward
-                        # the context ceiling.
-                        if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
-                            Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at 0K is below "
-                                        f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
-                            slow_label = "0K"
-                        else:
-                            out_of_room = False
-                            for idx, target in enumerate(checkpoints[1:], start=1):
-                                label_ctx = f"{target // 1024}K"
+                        out_of_room = False
+                        for idx, target in enumerate(checkpoints):
+                            label_ctx = f"{target // 1024}K" if target > 0 else "0K"
+                            if target == 0:
+                                # Checkpoint 0 is just the opening turn — there's no
+                                # growth to do first, it's the start of the conversation.
+                                ttft, tps = _turn(_next_prompt(),
+                                                   LLMConversationBenchmark.CONV_OPENING_PREDICT)
+                            else:
                                 is_last_checkpoint = idx == len(checkpoints) - 1
                                 Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
                                            f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
@@ -258,12 +245,21 @@ class LLMConversationBenchmark:
                                                 f"approaching {label_ctx} — stopping this run's growth here")
                                     break
 
-                                # ttft/tps here are from the turn that just crossed `target`
-                                # (the last iteration of the while loop above).
-                                samples_by_label.setdefault(label_ctx, []).append(
-                                    (ttft, tps, cumulative_tokens))
-                                print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
-                                      f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+                            # ttft/tps here are from the turn that just crossed `target`
+                            # (or the opening turn for target == 0).
+                            samples_by_label.setdefault(label_ctx, []).append(
+                                (ttft, tps, cumulative_tokens))
+                            print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
+                                  f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+
+                            # A model below the cutoff at any history depth isn't worth growing
+                            # further — every deeper turn only costs more of this test's expensive
+                            # growth budget to confirm what we already showed.
+                            if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
+                                Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at {label_ctx} is below "
+                                            f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
+                                slow_label = label_ctx
+                                break
 
                     except Exception as e:
                         is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
