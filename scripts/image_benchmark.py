@@ -260,6 +260,24 @@ class ImageBenchmark:
         }
 
     @staticmethod
+    def build_workflow(workflow_t, checkpoint, width, height, steps, cfg,
+                       sampler, scheduler, seed, prompt, filename_prefix):
+        """Route to the right workflow builder for `workflow_t` (see models.py's
+        "workflow" field). Unrecognized types fall through to the plain SDXL
+        graph, which is the minimal loader→CLIP→KSampler→VAE shape that also
+        works unchanged for SD1.5 (see models.py's IMAGE_MODELS comment)."""
+        if workflow_t == "flux":
+            builder = ImageBenchmark.build_flux_workflow
+        elif workflow_t == "flux2":
+            builder = ImageBenchmark.build_flux2_workflow
+        elif workflow_t == "sd3":
+            builder = ImageBenchmark.build_sd3_workflow
+        else:
+            builder = ImageBenchmark.build_sdxl_workflow
+        return builder(checkpoint, width, height, steps, cfg, sampler, scheduler,
+                       seed, prompt, filename_prefix=filename_prefix)
+
+    @staticmethod
     def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict]]:
         """Submit a workflow to ComfyUI, poll until done.
 
@@ -395,22 +413,9 @@ class ImageBenchmark:
                 # which would otherwise return near-instantly instead of regenerating.
                 warmup_seed = seed - 1
                 try:
-                    if workflow_t == "flux":
-                        wf = ImageBenchmark.build_flux_workflow(checkpoint, w0, h0, steps, cfg,
-                                                 sampler, scheduler, warmup_seed, prompt,
-                                                 filename_prefix=f"{short}_warmup")
-                    elif workflow_t == "flux2":
-                        wf = ImageBenchmark.build_flux2_workflow(checkpoint, w0, h0, steps, cfg,
-                                                  sampler, scheduler, warmup_seed, prompt,
-                                                  filename_prefix=f"{short}_warmup")
-                    elif workflow_t == "sd3":
-                        wf = ImageBenchmark.build_sd3_workflow(checkpoint, w0, h0, steps, cfg,
-                                                sampler, scheduler, warmup_seed, prompt,
-                                                filename_prefix=f"{short}_warmup")
-                    else:
-                        wf = ImageBenchmark.build_sdxl_workflow(checkpoint, w0, h0, steps, cfg,
-                                                 sampler, scheduler, warmup_seed, prompt,
-                                                 filename_prefix=f"{short}_warmup")
+                    wf = ImageBenchmark.build_workflow(workflow_t, checkpoint, w0, h0, steps, cfg,
+                                                       sampler, scheduler, warmup_seed, prompt,
+                                                       filename_prefix=f"{short}_warmup")
                     ImageBenchmark.comfyui_submit(wf, timeout=timeout)
                     Shared.ok(f"{label}: warmup done")
                 except Exception as e:
@@ -436,26 +441,9 @@ class ImageBenchmark:
                             # ComfyUI cache every node, so repeat runs return near-
                             # instantly instead of re-running generation.
                             run_seed = seed + run_i
-                            if workflow_t == "flux":
-                                wf = ImageBenchmark.build_flux_workflow(
-                                    checkpoint, w, h, steps, cfg,
-                                    sampler, scheduler, run_seed, prompt,
-                                    filename_prefix=prefix)
-                            elif workflow_t == "flux2":
-                                wf = ImageBenchmark.build_flux2_workflow(
-                                    checkpoint, w, h, steps, cfg,
-                                    sampler, scheduler, run_seed, prompt,
-                                    filename_prefix=prefix)
-                            elif workflow_t == "sd3":
-                                wf = ImageBenchmark.build_sd3_workflow(
-                                    checkpoint, w, h, steps, cfg,
-                                    sampler, scheduler, run_seed, prompt,
-                                    filename_prefix=prefix)
-                            else:
-                                wf = ImageBenchmark.build_sdxl_workflow(
-                                    checkpoint, w, h, steps, cfg,
-                                    sampler, scheduler, run_seed, prompt,
-                                    filename_prefix=prefix)
+                            wf = ImageBenchmark.build_workflow(workflow_t, checkpoint, w, h, steps, cfg,
+                                                               sampler, scheduler, run_seed, prompt,
+                                                               filename_prefix=prefix)
 
                             elapsed, images = ImageBenchmark.comfyui_submit(wf, timeout=timeout)
                             times.append(elapsed)

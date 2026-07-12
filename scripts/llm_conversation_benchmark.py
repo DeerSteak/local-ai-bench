@@ -88,6 +88,35 @@ class LLMConversationBenchmark:
     )
 
     @staticmethod
+    def compute_growth_step(cumulative_tokens: int, target: int, num_ctx: int,
+                             is_last_checkpoint: bool) -> tuple[int | None, bool]:
+        """Compute the num_predict for the next growth turn, crossing the gap
+        toward `target` in bounded steps (see CONV_STEP_MIN/MAX/DIVISOR) rather
+        than one big jump, while keeping enough of num_ctx in reserve for the
+        turn that follows (see CONV_SAFETY_MARGIN) — except on the very last
+        step of the very last checkpoint, which has no next turn to protect and
+        can use every token of room left up to num_ctx.
+
+        Returns (step, out_of_room). step is None when out_of_room is True —
+        there isn't enough context room left for another turn of at least
+        CONV_STEP_MIN tokens, and the caller should stop growing this run.
+        """
+        remaining = target - cumulative_tokens
+        is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
+        step = (remaining if is_final_step else
+                max(LLMConversationBenchmark.CONV_STEP_MIN,
+                    remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
+        step = max(LLMConversationBenchmark.CONV_STEP_MIN,
+                   min(LLMConversationBenchmark.CONV_STEP_MAX, step))
+
+        reserve = 0 if (is_last_checkpoint and is_final_step) \
+            else LLMConversationBenchmark.CONV_SAFETY_MARGIN
+        room = num_ctx - cumulative_tokens - reserve
+        if room < LLMConversationBenchmark.CONV_STEP_MIN:
+            return None, True
+        return min(step, room), False
+
+    @staticmethod
     def _conv_followup_prompt(section_n: int) -> str:
         section = ((section_n - 1) % LLMConversationBenchmark.CONV_NUM_SECTIONS) + 1
         return (
@@ -216,24 +245,11 @@ class LLMConversationBenchmark:
                                            f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
 
                                 while cumulative_tokens < target:
-                                    remaining = target - cumulative_tokens
-                                    is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
-                                    step = (remaining if is_final_step else
-                                            max(LLMConversationBenchmark.CONV_STEP_MIN,
-                                                remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
-                                    step = max(LLMConversationBenchmark.CONV_STEP_MIN,
-                                               min(LLMConversationBenchmark.CONV_STEP_MAX, step))
-
-                                    # No next turn follows the very last step of the very last
-                                    # checkpoint in this run, so it doesn't need margin held back
-                                    # for one — it can use every token of room left up to num_ctx.
-                                    reserve = 0 if (is_last_checkpoint and is_final_step) \
-                                        else LLMConversationBenchmark.CONV_SAFETY_MARGIN
-                                    room = num_ctx - cumulative_tokens - reserve
-                                    if room < LLMConversationBenchmark.CONV_STEP_MIN:
+                                    step, ran_out = LLMConversationBenchmark.compute_growth_step(
+                                        cumulative_tokens, target, num_ctx, is_last_checkpoint)
+                                    if ran_out:
                                         out_of_room = True
                                         break
-                                    step = min(step, room)
 
                                     ttft, tps = _turn(_next_prompt(), step)
 

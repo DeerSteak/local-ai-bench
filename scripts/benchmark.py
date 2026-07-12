@@ -60,6 +60,85 @@ from image_benchmark import ImageBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
 
+# Tier selection is cumulative: --maxtier caps at that tier and includes
+# everything below it.
+TIER_MODELS = {
+    "xsmall": LLM_MODELS_XSMALL,
+    "small":  LLM_MODELS_XSMALL + LLM_MODELS_SMALL,
+    "medium": LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM,
+    "large":  LLM_MODELS,
+}
+TIER_LABELS = {
+    "xsmall": "extra-small only (≤4GB)",
+    "small":  "small and below (≤16GB)",
+    "medium": "medium and below (≤32GB)",
+    "large":  "large and below — all tiers (32GB+)",
+}
+TIER_ORDER = ["xsmall", "small", "medium", "large"]
+
+
+def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
+    """Resolve --maxtier into (llm_models, tier_label, image_models), applying
+    the same cumulative cap to both LLM tiers and image-model tiers. No cap
+    (maxtier=None) means every tier."""
+    if maxtier:
+        llm_models = TIER_MODELS[maxtier]
+        tier_label = TIER_LABELS[maxtier]
+        max_idx = TIER_ORDER.index(maxtier)
+        image_models = [m for m in image_models if TIER_ORDER.index(m["tier"]) <= max_idx]
+    else:
+        llm_models = LLM_MODELS
+        tier_label = "all (extra-small + small + medium + large)"
+    return llm_models, tier_label, image_models
+
+
+def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
+    """Decide whether `model` should be skipped from the (expensive) conversation
+    test, based on how it did in the single-shot LLM prefill test. Returns a
+    skip-result dict (the schema written into results["llm_conversation"]) if
+    it should be skipped, or None if it should proceed to the conversation test.
+    """
+    label = model["label"]
+
+    if not llm_data:
+        detail = "no LLM benchmark data (checkpoint skipped or model failed)"
+        return {"label": label, "skipped": True,
+                "skip_reason": "no_llm_data", "skip_detail": detail}
+
+    if llm_data.get("skipped") or llm_data.get("crashed"):
+        detail = llm_data.get("skip_detail") or (
+            f"Ollama's runner crashed repeatedly during the LLM test "
+            f"(at {llm_data['crashed']} context)"
+        )
+        return {"label": label, "skipped": True,
+                "skip_reason": llm_data.get("skip_reason", "known_crash"), "skip_detail": detail}
+
+    if llm_data.get("timed_out") == first_ctx_label:
+        detail = f"LLM test timed out at {llm_data['timed_out']} context"
+        return {"label": label, "skipped": True,
+                "skip_reason": "timed_out", "skip_detail": detail}
+
+    # A timeout at a deeper context (8K/32K/64K) doesn't disqualify the model —
+    # it passed the 2K prefill test, so fall through to the tok/s check below
+    # just like a model that wasn't timed out.
+    slow_ctx = None if force_all else llm_data.get("slow_tps") or (
+        first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
+        and llm_data[first_ctx_label].get("tps_mean") is not None
+        and llm_data[first_ctx_label]["tps_mean"] < config.SLOW_MODEL_MIN_TPS
+        else None
+    )
+    if slow_ctx is not None:
+        ctx_data = llm_data.get(slow_ctx)
+        detail = (f"{ctx_data['tps_mean']:.1f} tok/s at {slow_ctx} "
+                  f"context (below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)"
+                  if isinstance(ctx_data, dict) and ctx_data.get("tps_mean") is not None
+                  else f"below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff at {slow_ctx} context")
+        return {"label": label, "skipped": True,
+                "skip_reason": "slow_tps", "skip_detail": detail}
+
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
@@ -122,29 +201,7 @@ def main():
         config.RUN_TIMEOUT = args.timeout
     config.N_RUNS = args.runs
 
-    # Select model tier — cumulative: --maxtier caps at that tier and includes everything below it
-    TIER_MODELS = {
-        "xsmall": LLM_MODELS_XSMALL,
-        "small":  LLM_MODELS_XSMALL + LLM_MODELS_SMALL,
-        "medium": LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM,
-        "large":  LLM_MODELS,
-    }
-    TIER_LABELS = {
-        "xsmall": "extra-small only (≤4GB)",
-        "small":  "small and below (≤16GB)",
-        "medium": "medium and below (≤32GB)",
-        "large":  "large and below — all tiers (32GB+)",
-    }
-    TIER_ORDER = ["xsmall", "small", "medium", "large"]
-    if args.maxtier:
-        llm_models = TIER_MODELS[args.maxtier]
-        tier_label = TIER_LABELS[args.maxtier]
-        max_idx = TIER_ORDER.index(args.maxtier)
-        image_models = [m for m in IMAGE_MODELS if TIER_ORDER.index(m["tier"]) <= max_idx]
-    else:
-        llm_models = LLM_MODELS
-        tier_label = "all (extra-small + small + medium + large)"
-        image_models = IMAGE_MODELS
+    llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
@@ -223,57 +280,14 @@ def main():
             llm_conv_skips = {}
             if "llm" in args.tests:
                 conv_models = []
+                first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
                 for model in llm_models:
                     short = model["short"]
                     llm_data = results["llm"].get(short)
-                    if not llm_data:
-                        detail = "no LLM benchmark data (checkpoint skipped or model failed)"
-                        Shared.warn(f"{model['label']}: skipping conversation test — {detail}")
-                        llm_conv_skips[short] = {
-                            "label": model["label"], "skipped": True,
-                            "skip_reason": "no_llm_data", "skip_detail": detail,
-                        }
-                        continue
-                    if llm_data.get("skipped") or llm_data.get("crashed"):
-                        detail = llm_data.get("skip_detail") or (
-                            f"Ollama's runner crashed repeatedly during the LLM test "
-                            f"(at {llm_data['crashed']} context)"
-                        )
-                        Shared.warn(f"{model['label']}: skipping conversation test — {detail}")
-                        llm_conv_skips[short] = {
-                            "label": model["label"], "skipped": True,
-                            "skip_reason": llm_data.get("skip_reason", "known_crash"), "skip_detail": detail,
-                        }
-                        continue
-                    first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
-                    if llm_data.get("timed_out") == first_ctx_label:
-                        detail = f"LLM test timed out at {llm_data['timed_out']} context"
-                        Shared.warn(f"{model['label']}: skipping conversation test — {detail}")
-                        llm_conv_skips[short] = {
-                            "label": model["label"], "skipped": True,
-                            "skip_reason": "timed_out", "skip_detail": detail,
-                        }
-                        continue
-                    # A timeout at a deeper context (8K/32K/64K) doesn't disqualify
-                    # the model — it passed the 2K prefill test, so fall through to
-                    # the tok/s check below just like a model that wasn't timed out.
-                    slow_ctx = None if args.force_all else llm_data.get("slow_tps") or (
-                        first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
-                        and llm_data[first_ctx_label].get("tps_mean") is not None
-                        and llm_data[first_ctx_label]["tps_mean"] < config.SLOW_MODEL_MIN_TPS
-                        else None
-                    )
-                    if slow_ctx is not None:
-                        ctx_data = llm_data.get(slow_ctx)
-                        detail = (f"{ctx_data['tps_mean']:.1f} tok/s at {slow_ctx} "
-                                  f"context (below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)"
-                                  if isinstance(ctx_data, dict) and ctx_data.get("tps_mean") is not None
-                                  else f"below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff at {slow_ctx} context")
-                        Shared.warn(f"{model['label']}: skipping conversation test — {detail}")
-                        llm_conv_skips[short] = {
-                            "label": model["label"], "skipped": True,
-                            "skip_reason": "slow_tps", "skip_detail": detail,
-                        }
+                    skip_entry = conv_skip_entry(model, llm_data, first_ctx_label, args.force_all)
+                    if skip_entry is not None:
+                        Shared.warn(f"{model['label']}: skipping conversation test — {skip_entry['skip_detail']}")
+                        llm_conv_skips[short] = skip_entry
                         continue
                     conv_models.append(model)
 
