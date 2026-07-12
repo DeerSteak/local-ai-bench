@@ -108,13 +108,15 @@ const SKIP_REASON_LABELS = {
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
-// llm_conversation both set a "timed_out" field), "{ctx} - Too Slow" for the
-// context at which the model dropped below the tok/s cutoff (llm sets a
-// "slow_tps" field), "{ctx} - Skipped" for every later (larger) context that
-// was consequently never attempted, or a "Skipped - ..." label when the
-// whole model was excluded from the conversation test. Returns null for
-// cells with real data, or earlier contexts that simply weren't reached for
-// unrelated reasons.
+// llm_conversation both set a "timed_out" field), "{ctx} - Skipped ({slowCtx}
+// Too Slow)" for every later (larger) context that was never attempted
+// because the model dropped below the tok/s cutoff at an earlier checkpoint
+// (llm sets a "slow_tps" field), or a "Skipped - ..." label when the whole
+// model was excluded from the conversation test. The slow checkpoint itself
+// still has real data (it's the measurement that triggered the cutoff), so
+// it returns null there — its actual value is shown rather than a status
+// label. Returns null for cells with real data, or earlier contexts that
+// simply weren't reached for unrelated reasons.
 export function getBarStatusLabel(file, model, ctx, section) {
   if (section === "llm_conversation") {
     const skip = getConvSkipInfo(file, model);
@@ -132,8 +134,7 @@ export function getBarStatusLabel(file, model, ctx, section) {
   if (slowTpsCtx) {
     const slowIdx = CTX_ORDER.indexOf(slowTpsCtx);
     const ctxIdx = CTX_ORDER.indexOf(ctx);
-    if (ctxIdx === slowIdx) return `${ctx} - Too Slow`;
-    if (ctxIdx > slowIdx) return `${ctx} - Skipped`;
+    if (ctxIdx > slowIdx) return `${ctx} - Skipped (${slowTpsCtx} Too Slow)`;
   }
   return null;
 }
