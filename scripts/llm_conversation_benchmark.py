@@ -21,11 +21,18 @@ where models with an exact 128K native ceiling have no slack left and the
 growth loop's final turns risk tipping over into truncation.
 """
 
+from pathlib import Path
+
 import config
 from shared import Shared
 
 
 class LLMConversationBenchmark:
+    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # not a transient blip) so future runs don't waste time rediscovering the
+    # same crash. Delete this file to retry a skipped model.
+    CONV_CRASH_CACHE = Path(".conv_crash_cache.json")
+
     CONV_NUM_SECTIONS = 6
 
     # Every conversation run gets a single try — this test is too expensive
@@ -96,6 +103,8 @@ class LLMConversationBenchmark:
             Shared.err("Start with: ollama serve")
             return results
 
+        crash_cache = Shared.load_crash_cache(LLMConversationBenchmark.CONV_CRASH_CACHE)
+
         for model in models:
             tag   = model["tag"]
             label = model["label"]
@@ -107,6 +116,11 @@ class LLMConversationBenchmark:
                 if not Shared.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn(f"Pull with: ollama pull {tag}")
+                    continue
+
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)
+                if skip_entry is not None:
+                    results[short] = skip_entry
                     continue
 
                 model_max = Shared.ollama_model_max_ctx(tag)
@@ -127,6 +141,7 @@ class LLMConversationBenchmark:
                 samples_by_label = {}
                 timed_out_label = None
                 slow_label       = None
+                crashed          = False
 
                 for run_i in range(LLMConversationBenchmark.CONV_RUNS):
                     Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — starting a fresh conversation ...")
@@ -137,6 +152,7 @@ class LLMConversationBenchmark:
                     first_turn_done   = False
                     run_timed_out     = False
                     run_failed        = False
+                    run_crashed       = False
 
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens
@@ -234,11 +250,28 @@ class LLMConversationBenchmark:
                             Shared.err(f"{label}: run {run_i+1} timed out — stopping this run here")
                             run_timed_out = True
                             timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
+                        elif Shared.is_connection_crash(e):
+                            # Ollama's model runner subprocess died mid-conversation
+                            # (commonly OOM). This test only runs one conversation per
+                            # model (CONV_RUNS), and mid-turn state (the message list
+                            # already has this turn's user prompt appended) makes
+                            # retrying the exact turn unsafe, so just stop the run here
+                            # — but wait for the server to recover before moving on to
+                            # the next model, instead of letting that model's own
+                            # warmup discover Ollama is still down.
+                            Shared.err(f"{label}: run {run_i+1} — Ollama's model runner appears to have crashed "
+                                       f"— last server output:\n{Shared.tail_ollama_log()}")
+                            if not Shared.wait_for_ollama_recovery():
+                                Shared.warn("Ollama did not become reachable again within 30s")
+                            run_crashed = True
                         else:
                             Shared.err(f"{label}: run {run_i+1} failed: {e}")
                             run_failed = True
 
-                    if run_timed_out or run_failed:
+                    if run_crashed:
+                        crashed = True
+
+                    if run_timed_out or run_failed or run_crashed:
                         Shared.warn(f"{label}: run {run_i+1} stopped early")
 
                 for target in checkpoints:
@@ -269,6 +302,9 @@ class LLMConversationBenchmark:
                     results[short]["timed_out"] = timed_out_label
                 if slow_label:
                     results[short]["slow_tps"] = slow_label
+                if crashed:
+                    results[short]["crashed_at"] = Shared.record_crash(
+                        tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
 
                 Shared.log(f"Unloading {label} ...")
                 Shared.unload_model(tag)

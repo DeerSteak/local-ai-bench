@@ -189,3 +189,5 @@ hf.txt
 /dashboard/.omc
 /results
 .embed_crash_cache.json
+.llm_crash_cache.json
+.conv_crash_cache.json

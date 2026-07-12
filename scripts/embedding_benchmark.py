@@ -6,10 +6,8 @@ document — rather than sweeping arbitrary "batch sizes" that don't
 correspond to any real client behavior.
 """
 
-import json
 import re
 import time
-from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -75,20 +73,6 @@ class EmbeddingBenchmark:
 
         return chunks
 
-    @staticmethod
-    def _load_crash_cache() -> dict:
-        try:
-            return json.loads(EmbeddingBenchmark.EMBED_CRASH_CACHE.read_text())
-        except Exception:
-            return {}
-
-    @staticmethod
-    def _save_crash_cache(cache: dict) -> None:
-        try:
-            EmbeddingBenchmark.EMBED_CRASH_CACHE.write_text(json.dumps(cache, indent=2))
-        except Exception as e:
-            Shared.warn(f"Failed to save embedding crash cache: {e}")
-
     def run(self, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):
         results = {}
 
@@ -96,7 +80,7 @@ class EmbeddingBenchmark:
             Shared.err("Ollama not running — skipping embedding benchmarks")
             return results
 
-        crash_cache = EmbeddingBenchmark._load_crash_cache()
+        crash_cache = Shared.load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
         chunks = EmbeddingBenchmark.chunk_document()
         Shared.log(f"Corpus: {len(chunks)} chunks from {EmbeddingBenchmark.EMBED_DOCUMENT_PATH.name} "
                    f"(max {EmbeddingBenchmark.EMBED_CHUNK_MAX_WORDS} words/chunk)")
@@ -116,17 +100,9 @@ class EmbeddingBenchmark:
 
                 Shared.ok(f"Using Ollama model: {tag}")
 
-                if tag in crash_cache:
-                    detail = crash_cache[tag]
-                    Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
-                                f"{detail.get('crashed_at', 'an earlier run')} — skipping "
-                                f"(delete {EmbeddingBenchmark.EMBED_CRASH_CACHE} to retry)")
-                    results[short] = {
-                        "label": label,
-                        "skipped": True,
-                        "skip_reason": "known_crash",
-                        "skip_detail": f"Crashed Ollama's runner repeatedly on {detail.get('crashed_at', 'an earlier run')}",
-                    }
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE)
+                if skip_entry is not None:
+                    results[short] = skip_entry
                     continue
 
                 # Warm up model (load into memory) before measuring. The first embed
@@ -148,17 +124,12 @@ class EmbeddingBenchmark:
                             Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
                     except Exception as e:
                         Shared.warn(f"Warmup run {warmup_i+1} failed: {e}")
-                        if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
-                            wait_t0 = time.perf_counter()
-                            while time.perf_counter() - wait_t0 < 30:
-                                if Shared.ollama_available():
-                                    break
-                                time.sleep(2)
+                        if Shared.is_connection_crash(e):
+                            Shared.wait_for_ollama_recovery()
 
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
                 rates = []
 
-                MAX_CRASH_RETRIES = 2
                 run_i = 0
                 crash_retries = 0
                 gave_up_from_crashes = False
@@ -192,24 +163,18 @@ class EmbeddingBenchmark:
                         # respawn it, then retry this same run — up to a capped
                         # number of attempts, since a deterministic crash on this
                         # document would just recur identically forever.
-                        if isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e):
+                        if Shared.is_connection_crash(e):
                             crash_retries += 1
                             Shared.err(f"Ollama's model runner appears to have crashed embedding {tag} "
                                        f"— last server output:\n{Shared.tail_ollama_log()}")
-                            if crash_retries > MAX_CRASH_RETRIES:
+                            if crash_retries > Shared.CRASH_RETRY_MAX:
                                 Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
                                 gave_up_from_crashes = True
                                 break
-                            Shared.warn(f"Waiting for recovery, retry {crash_retries}/{MAX_CRASH_RETRIES} ...")
-                            recovered = False
-                            wait_t0 = time.perf_counter()
-                            while time.perf_counter() - wait_t0 < 30:
-                                if Shared.ollama_available():
-                                    recovered = True
-                                    break
-                                time.sleep(2)
-                            if not recovered:
+                            Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
+                            if not Shared.wait_for_ollama_recovery():
                                 Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
+                                gave_up_from_crashes = True
                                 break
                             # don't advance run_i — retry the same run now that Ollama is back
                         else:
@@ -227,9 +192,8 @@ class EmbeddingBenchmark:
                     }
                     Shared.ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
                 elif gave_up_from_crashes:
-                    crashed_at = datetime.now().isoformat(timespec="seconds")
-                    crash_cache[tag] = {"crashed_at": crashed_at}
-                    EmbeddingBenchmark._save_crash_cache(crash_cache)
+                    crashed_at = Shared.record_crash(tag, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
+                                                      "embedding this document")
                     results[short] = {
                         "label": label,
                         "skipped": True,

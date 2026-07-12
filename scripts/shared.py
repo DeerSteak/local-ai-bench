@@ -42,6 +42,11 @@ class Shared:
     # surfaced later instead of silently discarded.
     _ollama_log_path: Path | None = None
 
+    # Cap on how many times a benchmark retries a request after Ollama's model
+    # runner subprocess crashes (commonly OOM) before giving up on that model —
+    # a deterministic crash would otherwise recur identically forever.
+    CRASH_RETRY_MAX = 2
+
     # ── logging ──
     @staticmethod
     def log(msg):   print(f"  {config.CYAN}→{config.RESET}  {msg}")
@@ -505,6 +510,73 @@ class Shared:
             return r.status_code == 200
         except Exception:
             return False
+
+    @staticmethod
+    def is_connection_crash(e: Exception) -> bool:
+        """True if `e` looks like Ollama's model runner subprocess died
+        (commonly OOM) rather than an ordinary request failure. A connection-
+        refused error surfaces as a different exception type depending on
+        which HTTP client made the call (requests vs urllib), so check both."""
+        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError)):
+            return True
+        return "actively refused" in str(e).lower()
+
+    @staticmethod
+    def wait_for_ollama_recovery(timeout: int = 30) -> bool:
+        """Poll until Ollama's main server answers again after its model
+        runner subprocess crashed — the main server itself stays up and
+        respawns the runner, it just needs a few seconds. Returns False if
+        it doesn't come back within `timeout`."""
+        wait_t0 = time.perf_counter()
+        while time.perf_counter() - wait_t0 < timeout:
+            if Shared.ollama_available():
+                return True
+            time.sleep(2)
+        return False
+
+    @staticmethod
+    def load_crash_cache(path: Path) -> dict:
+        """Load a benchmark's cache of tag -> crash record, so a model that
+        deterministically crashes Ollama's runner on a given test isn't
+        retried forever across separate script invocations."""
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+
+    @staticmethod
+    def save_crash_cache(path: Path, cache: dict) -> None:
+        try:
+            path.write_text(json.dumps(cache, indent=2))
+        except Exception as e:
+            Shared.warn(f"Failed to save crash cache to {path}: {e}")
+
+    @staticmethod
+    def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path) -> dict | None:
+        """Returns a skip-result dict if `tag` is a known repeat-crasher on
+        this test, else None."""
+        detail = crash_cache.get(tag)
+        if detail is None:
+            return None
+        crashed_at = detail.get("crashed_at", "an earlier run")
+        Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
+                    f"{crashed_at} — skipping (delete {cache_path} to retry)")
+        return {
+            "label": label,
+            "skipped": True,
+            "skip_reason": "known_crash",
+            "skip_detail": f"Crashed Ollama's runner repeatedly on {crashed_at}",
+        }
+
+    @staticmethod
+    def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str) -> str:
+        """Records a deterministic crash for `tag` in the cache. Returns the
+        crash timestamp so callers can fold it into their own result detail."""
+        crashed_at = datetime.now().isoformat(timespec="seconds")
+        crash_cache[tag] = {"crashed_at": crashed_at}
+        Shared.save_crash_cache(cache_path, crash_cache)
+        Shared.err(f"Ollama's runner crashed repeatedly {what} — recorded to {cache_path}")
+        return crashed_at
 
     @staticmethod
     def model_pulled(tag):
