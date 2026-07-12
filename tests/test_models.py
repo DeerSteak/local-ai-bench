@@ -1,0 +1,57 @@
+from models import (
+    EMBED_MODELS,
+    IMAGE_MODELS,
+    LLM_MODELS,
+    LLM_MODELS_XSMALL,
+    LLM_MODELS_SMALL,
+    LLM_MODELS_MEDIUM,
+    LLM_MODELS_LARGE,
+)
+
+ALL_LLM_TIERS = [LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE]
+
+
+def test_llm_models_is_concatenation_of_tiers():
+    assert LLM_MODELS == LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+
+
+def test_each_llm_tier_sorted_by_params():
+    for tier in ALL_LLM_TIERS:
+        params = [m["params_b"] for m in tier]
+        assert params == sorted(params)
+
+
+def test_llm_tags_and_shorts_unique():
+    tags = [m["tag"] for m in LLM_MODELS]
+    shorts = [m["short"] for m in LLM_MODELS]
+    assert len(tags) == len(set(tags))
+    assert len(shorts) == len(set(shorts))
+
+
+def test_llm_models_have_required_keys():
+    required = {"tag", "label", "short", "download_size", "params_b"}
+    for m in LLM_MODELS:
+        assert required <= m.keys()
+
+
+def test_embed_models_have_required_keys():
+    required = {"tag", "label", "short", "download_size"}
+    for m in EMBED_MODELS:
+        assert required <= m.keys()
+
+
+def test_image_models_shorts_unique():
+    shorts = [m["short"] for m in IMAGE_MODELS]
+    assert len(shorts) == len(set(shorts))
+
+
+def test_image_models_valid_tier():
+    valid_tiers = {"xsmall", "small", "medium", "large"}
+    for m in IMAGE_MODELS:
+        assert m["tier"] in valid_tiers
+
+
+def test_image_models_have_required_keys():
+    required = {"label", "checkpoint", "workflow", "steps", "cfg", "sampler", "scheduler", "short", "tier"}
+    for m in IMAGE_MODELS:
+        assert required <= m.keys()

@@ -1158,7 +1158,7 @@ section("Summary")
 
 if not issues:
     print(f"\n  {GREEN}{BOLD}All checks passed — ready to benchmark!{RESET}")
-    run_hint = "run_windows.bat" if os_name == "Windows" else "bash run_linux_mac.sh"
+    run_hint = "run_bench.bat" if os_name == "Windows" else "bash run_bench.sh"
     print(f"  Run: {run_hint}\n")
 else:
     print(f"\n  {YELLOW}{BOLD}Action items before benchmarking:{RESET}")

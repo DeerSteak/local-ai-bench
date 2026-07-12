@@ -36,10 +36,10 @@ When setup is complete, run the benchmark:
 
 ```bash
 # Linux / macOS
-bash run_linux_mac.sh
+bash run_bench.sh
 
 # Windows
-run_windows.bat
+run_bench.bat
 ```
 
 These scripts activate the virtual environment automatically and forward any arguments to `scripts/benchmark.py` — see the [CLI Reference](cli-reference.md) for available flags.

@@ -44,6 +44,7 @@ Usage:
 
 import argparse
 import json
+import platform
 import re
 import signal
 import sys
@@ -381,7 +382,8 @@ def main():
     Path(out_path).write_text(json.dumps(results, indent=2))
     Shared.ok(f"Results saved to: {out_path}")
     print(f"\n  Compare it against other machines in the dashboard:")
-    print(f"  python launch_dashboard.py\n")
+    dash_hint = "dashboard.bat" if platform.system() == "Windows" else "bash dashboard.sh"
+    print(f"  {dash_hint}\n")
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")
 

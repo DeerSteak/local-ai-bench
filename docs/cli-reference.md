@@ -8,8 +8,8 @@
 - [Comparing results](#comparing-results)
 
 ```
-run_linux_mac.sh [options]  # Linux / macOS
-run_windows.bat [options]   # Windows
+run_bench.sh [options]  # Linux / macOS
+run_bench.bat [options]   # Windows
 
 --tests llm conv emb img  Tests to run (default: all four)
 --emb-cpu-only          Force CPU-only inference for the embedding tests
@@ -61,24 +61,24 @@ Every test except the LLM conversation test measures `--runs` runs (default 3) p
 
 ```bash
 # Full run — large models skipped automatically if they don't fit
-bash run_linux_mac.sh
+bash run_bench.sh
 
 # LLM only, quick check
-bash run_linux_mac.sh --tests llm
+bash run_bench.sh --tests llm
 
 # Skip image generation
-bash run_linux_mac.sh --tests llm conv emb
+bash run_bench.sh --tests llm conv emb
 
 # Conversation benchmark only
-bash run_linux_mac.sh --tests conv
+bash run_bench.sh --tests conv
 
 # Cap at small-tier models and below — skips medium/large LLMs and
 # medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
 # leaving SD1.5 and SDXL for the image test
-bash run_linux_mac.sh --maxtier small
+bash run_bench.sh --maxtier small
 
 # Give slow hardware more time per run
-bash run_linux_mac.sh --timeout 600
+bash run_bench.sh --timeout 600
 ```
 
 A full run takes several hours, depending on your hardware and which options you select.

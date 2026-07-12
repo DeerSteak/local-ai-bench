@@ -10,9 +10,10 @@
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
 | `setup.bat` | One-shot setup for Windows |
-| `run_linux_mac.sh` | Activates the venv and runs `scripts/benchmark.py` on Linux / macOS |
-| `run_windows.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
-| `launch_dashboard.py` | Builds and serves the dashboard, opens browser automatically |
+| `run_bench.sh` | Activates the venv and runs `scripts/benchmark.py` on Linux / macOS |
+| `run_bench.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
+| `dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
+| `dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
 | `scripts/` | Benchmark implementation — see [How It Works](how-it-works.md#code-organization) for what each module does |
 | `results/` | Benchmark output — `results_*.json` plus a matching `images_*/` folder per run with the generated sample images |
 | `dashboard/` | The results-explorer web app (React + Vite) |

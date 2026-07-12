@@ -23,16 +23,20 @@ Once setup finishes:
 
 ```bash
 # Linux / macOS
-bash run_linux_mac.sh
+bash run_bench.sh
 
 # Windows
-run_windows.bat
+run_bench.bat
 ```
 
 A full run takes several hours, depending on your hardware and which options you select. When it's done, explore the results in the [dashboard](docs/dashboard.md):
 
 ```bash
-python launch_dashboard.py
+# Linux / macOS
+bash dashboard.sh
+
+# Windows
+dashboard.bat
 ```
 
 For platform-specific notes, the HuggingFace token flow, and what setup actually installs, see [Setup](docs/setup.md).

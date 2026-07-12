@@ -13,9 +13,15 @@
 An interactive results explorer for visualising and exporting benchmark output.
 
 ```bash
-python launch_dashboard.py
-python launch_dashboard.py --port 8080   # use a different port
-python launch_dashboard.py --rebuild     # force a fresh npm build
+# Linux / macOS
+bash dashboard.sh
+bash dashboard.sh --port 8080   # use a different port
+bash dashboard.sh --rebuild     # force a fresh npm build
+
+# Windows
+dashboard.bat
+dashboard.bat --port 8080       # use a different port
+dashboard.bat --rebuild         # force a fresh npm build
 ```
 
 Requires Node.js/npm. On first run, installs npm dependencies and builds the app, then starts a local server on port 3000 and opens the browser automatically.
