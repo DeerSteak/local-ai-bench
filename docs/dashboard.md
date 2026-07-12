@@ -29,7 +29,7 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 | Section | Charts |
 |---|---|
 | LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (2K / 8K / 32K / 64K), single-shot cold-prefill test |
-| LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K / 128K each model's context window reached |
+| LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K each model's context window reached |
 | Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 

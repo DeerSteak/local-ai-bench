@@ -179,7 +179,8 @@ export const EMBED_BAR_COLORS = {
 
 // Ordered context length labels (match benchmark.py output). The LLM section
 // only ever uses {2K, 8K, 32K, 64K} (a subsequence of this, in the same
-// relative order); LLM Conversation uses the full set, up to 128K.
+// relative order); LLM Conversation samples up to 96K (128K is kept here
+// only so older result files that still have a 128K checkpoint still render).
 export const CTX_ORDER = ["0K", "2K", "4K", "8K", "16K", "32K", "64K", "96K", "128K"];
 
 // Image resolution order

@@ -13,10 +13,13 @@ Tests:
       explains Plato's Allegory of the Cave in sections, then each turn asks
       for more detail on a section. TTFT/tokens-per-sec at each depth reflect
       processing a new turn against an already-filled context (relying on
-      llama.cpp's slot prefix cache), not a cold fill from empty. Each of
-      --runs repeats is its own independent conversation, grown from scratch
-      up to 128K context (or the model's real max, whichever is lower),
-      sampled at 0, 2K, 4K, 8K, 16K, 32K, 64K, 96K, and 128K.
+      llama.cpp's slot prefix cache), not a cold fill from empty. This test
+      is expensive, so it always runs a single conversation (--runs is
+      ignored here), grown from scratch toward 96K context, sampled at 0,
+      2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever of those the model's
+      real ceiling reaches). The model is still given the full 128K context
+      window (or its real max, whichever is lower) so 96K is reached with
+      headroom to spare rather than scraped against the ceiling.
 
   2. Image generation — SD1.5, SDXL, SD3.5 Large, Flux.1-dev, Flux.2-dev via
      ComfyUI HTTP API

@@ -7,14 +7,18 @@ on one section. Every turn is sent with the full message history via
 TTFT/TPS at each context depth reflect processing the new turn against an
 already-filled context, not a cold fill from empty.
 
-Each of --runs repeats is its own independent conversation, started fresh
-(no shared/continued history across runs), grown from a blank slate up to
-the model's real context ceiling — 128K if the model supports it, otherwise
-whatever it actually supports (looked up live via Shared.ollama_model_max_ctx,
-not hardcoded, so it always matches what's actually pulled). Along the way
-each run samples TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and
-128K (whichever of those the model's ceiling reaches), then those samples are
-averaged across however many runs completed for each depth.
+This test is expensive, so it runs a single conversation per model — the
+--runs flag (which repeats other tests) is deliberately ignored here.
+The conversation is grown from a blank slate up to the model's real context
+ceiling — 128K if the model supports it, otherwise whatever it actually
+supports (looked up live via Shared.ollama_model_max_ctx, not hardcoded, so
+it always matches what's actually pulled). Along the way it samples
+TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever of
+those the model's ceiling reaches). The model is still given the full 128K
+of context room (so 96K is reached with headroom to spare, not scraped
+against the ceiling) — we just stop sampling at 96K, since 96K-to-128K is
+where models with an exact 128K native ceiling have no slack left and the
+growth loop's final turns risk tipping over into truncation.
 """
 
 import threading
@@ -27,14 +31,23 @@ from shared import Shared
 class LLMConversationBenchmark:
     CONV_NUM_SECTIONS = 6
 
+    # Every conversation run gets a single try — this test is too expensive
+    # (many turns growing all the way to the context ceiling) to repeat the
+    # --runs number of times like the other benchmarks do.
+    CONV_RUNS = 1
+
     # The context window handed to a model: 128K if it supports at least
     # that much, otherwise its own real ceiling (see Shared.ollama_model_max_ctx).
+    # This is deliberately higher than the highest checkpoint we sample
+    # (CONV_CHECKPOINTS below tops out at 96K) so the growth loop always has
+    # real headroom left against num_ctx instead of scraping the ceiling.
     CONV_TARGET_CTX = 131072
 
-    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus 96K and the
-    # 128K cap. Filtered per model down to whatever its real ceiling actually
-    # reaches.
-    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072]
+    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus the 96K cap.
+    # Filtered per model down to whatever its real ceiling actually reaches.
+    # Deliberately stops short of the 128K context window given to the model
+    # (CONV_TARGET_CTX) so there's always headroom left to grow into.
+    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 65536, 98304]
 
     # Bounds on any single growth turn's num_predict. Crossing a gap in a
     # handful of turns (remaining // CONV_STEP_DIVISOR, clamped to this
@@ -59,10 +72,7 @@ class LLMConversationBenchmark:
     # Reserved tokens so a non-final growth turn's own new user message (plus
     # its generation) can't push the *next* turn's prompt past num_ctx. Not
     # applied to the very last turn of a run, which has no next turn to
-    # protect and can use the full remaining room up to num_ctx itself —
-    # this matters because most of these models' real ceiling equals our
-    # 128K target exactly (no headroom to spare), so without this exception
-    # the 128K checkpoint would never actually be reachable.
+    # protect and can use the full remaining room up to num_ctx itself.
     CONV_SAFETY_MARGIN = 64
 
     CONV_OPENING_PROMPT = (
@@ -105,9 +115,10 @@ class LLMConversationBenchmark:
             target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
             checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
             num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+            top_checkpoint = checkpoints[-1] if checkpoints else 0
 
-            Shared.log(f"{label}: model supports {model_max} ctx — testing up to "
-                       f"{target_ctx} ({len(checkpoints)} checkpoints), num_ctx={num_ctx}")
+            Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
+                       f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
             Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
             warmup_ok = True
@@ -151,11 +162,11 @@ class LLMConversationBenchmark:
             slow_label       = None
             stop_further_runs = False
 
-            for run_i in range(config.N_RUNS):
+            for run_i in range(LLMConversationBenchmark.CONV_RUNS):
                 if stop_further_runs:
                     break
 
-                Shared.log(f"{label}: run {run_i+1}/{config.N_RUNS} — starting a fresh conversation ...")
+                Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — starting a fresh conversation ...")
 
                 messages          = []
                 cumulative_tokens = 0
@@ -199,14 +210,14 @@ class LLMConversationBenchmark:
                     ttft, tps = _turn(_next_prompt(),
                                        LLMConversationBenchmark.CONV_OPENING_PREDICT)
                     samples_by_label.setdefault("0K", []).append((ttft, tps, cumulative_tokens))
-                    print(f"    run {run_i+1}/{config.N_RUNS}: 0K  TTFT={ttft:.2f}s  "
+                    print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: 0K  TTFT={ttft:.2f}s  "
                           f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
 
                     out_of_room = False
                     for idx, target in enumerate(checkpoints[1:], start=1):
                         label_ctx = f"{target // 1024}K"
                         is_last_checkpoint = idx == len(checkpoints) - 1
-                        Shared.log(f"{label}: run {run_i+1}/{config.N_RUNS} — growing toward "
+                        Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
                                    f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
 
                         while cumulative_tokens < target:
@@ -240,7 +251,7 @@ class LLMConversationBenchmark:
                         # (the last iteration of the while loop above).
                         samples_by_label.setdefault(label_ctx, []).append(
                             (ttft, tps, cumulative_tokens))
-                        print(f"    run {run_i+1}/{config.N_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
+                        print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
                               f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
 
                 except Exception as e:

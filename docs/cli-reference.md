@@ -17,11 +17,15 @@ run_windows.bat [options]   # Windows
                         restores normal GPU mode afterward)
 --warmup N              Warmup runs before measuring (default: 2)
 --runs N                Measured runs per checkpoint, averaged (default: 3,
-                        range: 1-10). Applies separately to every model,
-                        context length, and test mode that's enabled, so
-                        total measured time scales roughly in proportion —
-                        e.g. going from 3 to 6 runs roughly doubles it.
-                        Warmup time is unaffected (see --warmup).
+                        range: 1-10). Applies separately to every model and
+                        context length in the single-shot LLM test, so total
+                        measured time scales roughly in proportion — e.g.
+                        going from 3 to 6 runs roughly doubles it. Ignored by
+                        the LLM conversation test, which always runs a single
+                        conversation regardless of this flag (it's expensive
+                        enough — many turns growing all the way to the
+                        sampling ceiling — that repeating it isn't worth the
+                        time). Warmup time is unaffected (see --warmup).
 --timeout N             Seconds per run before skipping model (default: 300)
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
                         models at this tier and below: xsmall (<6B / +SD1.5),
@@ -37,7 +41,7 @@ run_windows.bat [options]   # Windows
                         default: false
 ```
 
-Every test measures `--runs` runs (default 3) per checkpoint and averages them.
+Every test except the LLM conversation test measures `--runs` runs (default 3) per checkpoint and averages them; the conversation test always runs a single conversation.
 
 ## Flag details
 
@@ -46,7 +50,7 @@ Every test measures `--runs` runs (default 3) per checkpoint and averages them.
 | `--tests` | any of `llm conv emb img` | all four | Space-separated list; order doesn't matter |
 | `--emb-cpu-only` | (flag) | off | Only affects the embeddings test |
 | `--warmup` | integer | `2` | Discarded runs before measured runs, per model/checkpoint |
-| `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model, context length, and test mode that's enabled, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Warmup time is unaffected |
+| `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per run (warmup or measured); exceeding it skips the rest of that model |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |

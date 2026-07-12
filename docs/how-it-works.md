@@ -16,17 +16,17 @@ Each LLM model follows this pattern:
 ```
 warmup (--warmup runs, default 2)
   → measure single-shot   (--runs runs at 2K / 8K / 32K / 64K, default 3)
-  → measure conversation  (--runs independent full conversations, default 3,
-                            each sampled at 0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K / 128K
+  → measure conversation  (a single full conversation, --runs is ignored here,
+                            sampled at 0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K
                             up to the model's real context ceiling)
   → unload → confirm gone
 ```
 
-The single-shot test builds an independent padded prompt for every run. The conversation test is different: each of the `--runs` repeats is its own conversation, started from a blank slate and grown all the way up to 128K context (or the model's real maximum, whichever is lower — looked up live via Ollama's `/api/show`, not hardcoded). Growth happens in small steps (capped and scaled to the size of the gap being crossed) rather than one big jump per checkpoint, so the turn that actually crosses each threshold lands close to it instead of overshooting by a large margin. `num_ctx` is padded a little beyond the top checkpoint a model will reach when its real ceiling allows it; when a model's ceiling is exactly the 128K target (no room to spare), the final approach step is allowed to use the last of that room instead of holding back a safety margin meant for a turn that will never happen.
+The single-shot test builds an independent padded prompt for every run. The conversation test is different: it's a single conversation (this test is expensive enough — many turns growing all the way to the sampling ceiling — that it always runs once, ignoring `--runs`), started from a blank slate and grown toward a 96K sampling ceiling. The model is still given the full 128K context window (or its real maximum, whichever is lower — looked up live via Ollama's `/api/show`, not hardcoded), so there's always headroom left between the top checkpoint and the actual `num_ctx` limit. Growth happens in small steps (capped and scaled to the size of the gap being crossed) rather than one big jump per checkpoint, so the turn that actually crosses each threshold lands close to it instead of overshooting by a large margin.
 
-Any run that exceeds the 300-second timeout causes that run to stop wherever it got to — whatever checkpoints it already reached are kept, and the next run (if any are still scheduled) starts fresh regardless. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
+If the run exceeds the 300-second timeout, it stops wherever it got to — whatever checkpoints it already reached are kept. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
 
-A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself there's no mid-conversation early exit — a run always plays out to its natural end — but if a completed run's first turn (0K) comes in below the slow-model cutoff, no further repeats are scheduled for that model (the run(s) already completed are still reported). See [LLM workload](workloads.md#llm) for the full skip logic.
+A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself there's no mid-conversation early exit — its one run always plays out to its natural end. See [LLM workload](workloads.md#llm) for the full skip logic.
 
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
@@ -55,13 +55,13 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Parameter | Value |
 |---|---|
 | LLM single-shot context lengths | 2K, 8K, 32K, 64K |
-| LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 64K, 96K, 128K — capped per model at its real context ceiling |
-| LLM test modes | Single-shot (cold prefill), Conversation (independent full conversations, one per run) |
+| LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 64K, 96K — capped per model at its real context ceiling (model is still given the full 128K context window, or its real max if lower) |
+| LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
 | LLM warmup runs | `--warmup` (default: 2, discarded) |
-| LLM measured runs | `--runs` — repeated context lengths for single-shot, independent conversations for the conversation test (default: 3, range: 1–10) |
+| LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |
 | Run timeout | `--timeout` per run (default: 300s) — that run stops wherever it got to if exceeded |
 | LLM metrics | TTFT, tokens/sec (TPS) |
-| Conversation test exclusion | Model excluded entirely if it timed out or was already marked too slow in the single-shot test; within the conversation test, a model with a too-slow 0K checkpoint has no further repeats scheduled but keeps whatever run(s) already completed |
+| Conversation test exclusion | Model excluded entirely if it timed out or was already marked too slow in the single-shot test |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
 | Embedding corpus | `sample_document.txt` chunked into ~150-word paragraph-sized pieces (~290 chunks), embedded in one call |
 | Embedding warmup runs | `--warmup` (default: 2, discarded) |
