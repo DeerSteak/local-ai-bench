@@ -73,7 +73,7 @@ class EmbeddingBenchmark:
 
         return chunks
 
-    def run(self, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):
+    def run(self, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
 
         if not Shared.ollama_available():

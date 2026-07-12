@@ -12,7 +12,7 @@ class LLMPrefillBenchmark:
     # same crash. Delete this file to retry a skipped model.
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")
 
-    def run(self, models, context_lengths, warmup_runs, force_all=False, save_fn=None):
+    def run(self, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
 
         if not Shared.ollama_available():

@@ -139,7 +139,7 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
     return None
 
 
-def main():
+def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/ComfyUI runs
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",

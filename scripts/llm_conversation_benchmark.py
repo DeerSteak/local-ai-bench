@@ -124,7 +124,7 @@ class LLMConversationBenchmark:
             "examples, counterarguments, and analysis."
         )
 
-    def run(self, models, warmup_runs, force_all=False, save_fn=None):
+    def run(self, models, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
 
         if not Shared.ollama_available():

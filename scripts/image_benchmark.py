@@ -278,7 +278,7 @@ class ImageBenchmark:
                        seed, prompt, filename_prefix=filename_prefix)
 
     @staticmethod
-    def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict]]:
+    def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict]]:  # pragma: no cover — submits to and polls a real ComfyUI server
         """Submit a workflow to ComfyUI, poll until done.
 
         Returns (elapsed_sec, images) where images is a list of
@@ -354,7 +354,7 @@ class ImageBenchmark:
                 raise TimeoutError(f"ComfyUI job timed out after {timeout}s")
 
     @staticmethod
-    def save_comfyui_image(img: dict, dest: Path) -> None:
+    def save_comfyui_image(img: dict, dest: Path) -> None:  # pragma: no cover — fetches from a real ComfyUI server
         """Fetch a generated image from ComfyUI and save it locally."""
         resp = requests.get(
             f"{config.COMFYUI_URL}/view",
@@ -369,7 +369,7 @@ class ImageBenchmark:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)
 
-    def run(self, image_models, resolutions, seed, prompt,
+    def run(self, image_models, resolutions, seed, prompt,  # pragma: no cover — orchestrates real ComfyUI runs
             comfyui_dir, timeout=None, save_fn=None, images_dir=None):
         if timeout is None:
             timeout = config.RUN_TIMEOUT

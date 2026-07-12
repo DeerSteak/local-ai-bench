@@ -24,6 +24,14 @@ def test_save_and_load_crash_cache_roundtrip(tmp_path):
     assert Shared.load_crash_cache(path) == cache
 
 
+def test_save_crash_cache_swallows_write_failures(tmp_path):
+    # Directory as the target path makes write_text() raise — save_crash_cache
+    # should warn and not propagate the exception.
+    unwritable = tmp_path / "not_a_file"
+    unwritable.mkdir()
+    Shared.save_crash_cache(unwritable, {"tag": {"crashed_at": "now"}})  # should not raise
+
+
 def test_check_crash_cache_returns_none_when_not_present(tmp_path):
     path = tmp_path / "crash.json"
     assert Shared.check_crash_cache("some-tag", "Some Model", {}, path) is None

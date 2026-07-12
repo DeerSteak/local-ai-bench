@@ -73,7 +73,7 @@ class Shared:
     # ── server management ──
 
     @staticmethod
-    def shutdown_managed():
+    def shutdown_managed():  # pragma: no cover — manages real subprocesses
         """Terminate any servers we started."""
         if Shared._cpu_only_active:
             Shared.warn("Exiting while Ollama is in forced CPU-only mode — killing it "
@@ -102,7 +102,7 @@ class Shared:
             return f"(failed to read Ollama log: {e})"
 
     @staticmethod
-    def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:
+    def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:  # pragma: no cover — spawns a real subprocess
         """Start 'ollama serve', optionally with extra/overridden environment
         variables (e.g. HIP_VISIBLE_DEVICES="" to force CPU-only). Tracked in
         _managed_procs for cleanup on exit. Returns True once reachable."""
@@ -141,7 +141,7 @@ class Shared:
         return False
 
     @staticmethod
-    def stop_all_ollama(timeout: int = 15) -> None:
+    def stop_all_ollama(timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Kill any running Ollama server, including one this script didn't
         start itself, so a fresh instance can be launched with different
         environment variables (e.g. to force CPU-only for embeddings)."""
@@ -164,7 +164,7 @@ class Shared:
         Shared.warn(f"Ollama still reachable {timeout}s after attempting to stop it")
 
     @staticmethod
-    def ensure_ollama():
+    def ensure_ollama():  # pragma: no cover — thin live-server orchestration wrapper
         """Start Ollama if not already running. Returns True if available."""
         if Shared.ollama_available():
             Shared.ok("Ollama already running")
@@ -202,7 +202,7 @@ class Shared:
         return sys.executable
 
     @staticmethod
-    def ensure_comfyui(comfyui_dir: Path) -> bool:
+    def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
         """
         Start ComfyUI if not already running.
         Returns True if ComfyUI is available (either was already running or we started it).
@@ -309,7 +309,7 @@ class Shared:
     # ── machine profile ──
 
     @staticmethod
-    def get_hostname():
+    def get_hostname():  # pragma: no cover — shells out to OS-specific hardware profiling tools
         system = platform.system()
         ram_gb = round(Shared.system_ram_gb())
 
@@ -413,7 +413,7 @@ class Shared:
         return platform.node()
 
     @staticmethod
-    def build_profile():
+    def build_profile():  # pragma: no cover — thin wrapper around get_hostname/detect_backend
         os_name = platform.system()
         profile = {
             "hostname":   Shared.get_hostname(),
@@ -427,7 +427,7 @@ class Shared:
         return profile
 
     @staticmethod
-    def detect_backend():
+    def detect_backend():  # pragma: no cover — shells out to GPU-detection tools
         # Nvidia
         try:
             subprocess.check_output(["nvidia-smi"], stderr=subprocess.DEVNULL)
@@ -505,7 +505,7 @@ class Shared:
     # ── Ollama HTTP client ──
 
     @staticmethod
-    def ollama_available():
+    def ollama_available():  # pragma: no cover — real HTTP call; other tests mock this seam directly
         try:
             r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
             return r.status_code == 200
@@ -534,7 +534,7 @@ class Shared:
         return "actively refused" in str(e).lower()
 
     @staticmethod
-    def wait_for_ollama_recovery(timeout: int = 30) -> bool:
+    def wait_for_ollama_recovery(timeout: int = 30) -> bool:  # pragma: no cover — real polling loop; other tests mock this seam directly
         """Poll until Ollama's main server answers again after its model
         runner subprocess crashed — the main server itself stays up and
         respawns the runner, it just needs a few seconds. Returns False if
@@ -789,7 +789,7 @@ class Shared:
         return ttft, eval_count, tps
 
     @staticmethod
-    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int,
+    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real threaded/watchdogged model load
                       crash_cache: dict | None = None, cache_path: Path | None = None) -> bool:
         """
         Load `tag` into memory with `warmup_runs` blocking generate calls, each
@@ -975,7 +975,7 @@ class Shared:
     # ── ComfyUI ──
 
     @staticmethod
-    def comfyui_available():
+    def comfyui_available():  # pragma: no cover — real HTTP call
         try:
             r = requests.get(f"{config.COMFYUI_URL}/system_stats", timeout=5)
             return r.status_code == 200
