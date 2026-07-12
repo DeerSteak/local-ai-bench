@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import {
   buildLLMBarDataByModel, buildLLMBarConfigsByModel,
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
-  getAllLLMModels, sortBarData, getModelSizeTier, getConvSkipInfo, modelLabel,
+  getAllLLMModels, sortBarData, getModelSizeTier, getSkipInfo, modelLabel,
 } from "../../utils";
 import { SECTION_LABELS, SIZE_TIER_ORDER, SIZE_TIER_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -49,9 +49,9 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       return { tier, tpsBarData, ttftBarData, tpsBarConfigs, ttftBarConfigs, tpsLineData, ttftLineData, tpsLineConfigs, ttftLineConfigs, hasTps, hasTtft };
     }).filter(Boolean);
 
-    const skipEntries = isConv
-      ? allModels.map(m => ({ model: m, info: getConvSkipInfo(f, m) })).filter(e => e.info)
-      : [];
+    const skipEntries = allModels
+      .map(m => ({ model: m, info: getSkipInfo(f, m, section) }))
+      .filter(e => e.info);
     if (!groups.length && !skipEntries.length) return null;
 
     const allTtftVals = (isBar

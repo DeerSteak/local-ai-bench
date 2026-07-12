@@ -233,6 +233,17 @@ def main():
                             "skip_reason": "no_llm_data", "skip_detail": detail,
                         }
                         continue
+                    if llm_data.get("skipped") or llm_data.get("crashed"):
+                        detail = llm_data.get("skip_detail") or (
+                            f"Ollama's runner crashed repeatedly during the LLM test "
+                            f"(at {llm_data['crashed']} context)"
+                        )
+                        Shared.warn(f"{model['label']}: skipping conversation test — {detail}")
+                        llm_conv_skips[short] = {
+                            "label": model["label"], "skipped": True,
+                            "skip_reason": llm_data.get("skip_reason", "known_crash"), "skip_detail": detail,
+                        }
+                        continue
                     first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
                     if llm_data.get("timed_out") == first_ctx_label:
                         detail = f"LLM test timed out at {llm_data['timed_out']} context"

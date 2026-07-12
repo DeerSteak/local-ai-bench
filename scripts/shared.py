@@ -6,6 +6,7 @@ bookkeeping (used to shut down servers this script itself started), so
 methods are static and state lives on the class rather than an instance.
 """
 
+import http.client
 import json
 import os
 import platform
@@ -514,10 +515,21 @@ class Shared:
     @staticmethod
     def is_connection_crash(e: Exception) -> bool:
         """True if `e` looks like Ollama's model runner subprocess died
-        (commonly OOM) rather than an ordinary request failure. A connection-
-        refused error surfaces as a different exception type depending on
-        which HTTP client made the call (requests vs urllib), so check both."""
-        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError)):
+        (commonly OOM) rather than an ordinary request failure.
+
+        Two distinct timings surface as different exception shapes:
+        - Connection-refused (the runner is already dead before the request
+          starts) surfaces as a different exception type depending on which
+          HTTP client made the call (requests vs urllib), so check both.
+        - Mid-stream (the runner dies while a response is being streamed,
+          e.g. partway through generating tokens at a large context depth —
+          the realistic OOM timing these long-running tests actually hit)
+          surfaces as a truncated/reset read instead: http.client.IncompleteRead,
+          or a builtin ConnectionError (BrokenPipeError/ConnectionResetError/
+          ConnectionAbortedError) from the socket itself.
+        """
+        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
+                          http.client.IncompleteRead, ConnectionError)):
             return True
         return "actively refused" in str(e).lower()
 
@@ -532,6 +544,20 @@ class Shared:
             if Shared.ollama_available():
                 return True
             time.sleep(2)
+        return False
+
+    @staticmethod
+    def ollama_reachable_or_abort() -> bool:
+        """True if Ollama is reachable. Callers looping over models should stop
+        processing the remaining ones when this is False, rather than
+        continuing into model_pulled() — which swallows connection errors and
+        returns False indistinguishably from "genuinely not pulled", so a
+        server that's still down after a failed wait_for_ollama_recovery()
+        would otherwise get every remaining model misreported as not pulled
+        instead of surfacing the real problem."""
+        if Shared.ollama_available():
+            return True
+        Shared.err("Ollama is not reachable — stopping remaining models in this test")
         return False
 
     @staticmethod
@@ -577,6 +603,59 @@ class Shared:
         Shared.save_crash_cache(cache_path, crash_cache)
         Shared.err(f"Ollama's runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
+
+    @staticmethod
+    def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
+                            what: str) -> tuple[list, str]:
+        """
+        Call `call(run_i)` up to `n_runs` times, collecting each return value
+        into a list — the shared shape behind every benchmark's "N measured
+        runs" loop (embedding throughput, LLM prefill TTFT/TPS, ...).
+
+        A timeout stops immediately (the caller decides what a partial result
+        means). A crash (Shared.is_connection_crash) retries the *same* run,
+        without counting it, after waiting for Ollama's main server to notice
+        and respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since
+        a deterministic crash on this tag/workload would just recur
+        identically forever. Any other exception counts as a failed run and
+        moves on to the next one. A crash that exhausts its retries is
+        recorded to `cache_path` so future invocations skip this tag/test
+        combo instead of rediscovering the same crash.
+
+        Returns (samples, status) where status is "ok", "timed_out", or
+        "crashed" — `samples` may be non-empty even when status != "ok" (e.g.
+        earlier runs succeeded before a later one crashed or timed out).
+        """
+        samples = []
+        run_i = 0
+        crash_retries = 0
+        while run_i < n_runs:
+            try:
+                samples.append(call(run_i))
+                run_i += 1
+            except Exception as e:
+                is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
+                if is_timeout:
+                    Shared.err(f"Run {run_i+1} timed out — stopping remaining runs for {tag}")
+                    return samples, "timed_out"
+                Shared.err(f"Run {run_i+1} failed: {e}")
+                if not Shared.is_connection_crash(e):
+                    run_i += 1
+                    continue
+                crash_retries += 1
+                Shared.err(f"Ollama's model runner appears to have crashed {what} "
+                           f"— last server output:\n{Shared.tail_ollama_log()}")
+                if crash_retries > Shared.CRASH_RETRY_MAX:
+                    Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
+                    Shared.record_crash(tag, crash_cache, cache_path, what)
+                    return samples, "crashed"
+                Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
+                if not Shared.wait_for_ollama_recovery():
+                    Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
+                    Shared.record_crash(tag, crash_cache, cache_path, what)
+                    return samples, "crashed"
+                # don't advance run_i — retry the same run now that Ollama is back
+        return samples, "ok"
 
     @staticmethod
     def model_pulled(tag):
@@ -710,13 +789,21 @@ class Shared:
         return ttft, eval_count, tps
 
     @staticmethod
-    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int) -> bool:
+    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int,
+                      crash_cache: dict | None = None, cache_path: Path | None = None) -> bool:
         """
         Load `tag` into memory with `warmup_runs` blocking generate calls, each
         watchdogged by a daemon thread so a hung load (model too large for
         available memory) times out after config.RUN_TIMEOUT instead of hanging
         the whole benchmark run. Returns False on the first hung or failed run,
         so the caller can skip this model.
+
+        A hang, or an exception that looks like Ollama's runner crashing
+        outright, is exactly the kind of deterministic failure the crash cache
+        exists to remember — warmup is often where an oversized model's OOM
+        first shows up, before a single measured run ever gets a chance to
+        record it. Pass `crash_cache`/`cache_path` (from Shared.load_crash_cache)
+        to have that case recorded here too.
         """
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
@@ -737,9 +824,16 @@ class Shared:
                 elapsed = time.perf_counter() - t_start
                 Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
                 Shared.warn(f"{label}: model is likely too large for available memory — skipping")
+                if crash_cache is not None and cache_path is not None:
+                    Shared.record_crash(tag, crash_cache, cache_path,
+                                         f"warming up (hung past {config.RUN_TIMEOUT}s at num_ctx={num_ctx})")
                 return False
             elif exc_box[0] is not None:
                 Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
+                if crash_cache is not None and cache_path is not None and Shared.is_connection_crash(exc_box[0]):
+                    Shared.wait_for_ollama_recovery()
+                    Shared.record_crash(tag, crash_cache, cache_path,
+                                         f"warming up at num_ctx={num_ctx}")
                 return False
             else:
                 Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")

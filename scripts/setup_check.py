@@ -19,20 +19,20 @@ import shutil
 import time
 from pathlib import Path
 
+import config
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 
 # This script lives in scripts/ — every asset it manages (requirements.txt,
-# ComfyUI/, hf.txt, ...) lives at the repo root, one level up.
-SCRIPT_DIR = Path(__file__).resolve().parent.parent
+# ComfyUI/, hf.txt, ...) lives at the repo root, one level up. Sourced from
+# config.py (the single place these live) rather than redefined here.
+SCRIPT_DIR  = config.SCRIPT_DIR
+COMFYUI_DIR = config.COMFYUI_DIR
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
-GREEN  = "\033[92m"
-YELLOW = "\033[93m"
-RED    = "\033[91m"
-CYAN   = "\033[96m"
-RESET  = "\033[0m"
-BOLD   = "\033[1m"
+GREEN, YELLOW, RED, CYAN, RESET, BOLD = (
+    config.GREEN, config.YELLOW, config.RED, config.CYAN, config.RESET, config.BOLD
+)
 
 def ok(msg):    print(f"  {GREEN}✓{RESET}  {msg}")
 def warn(msg):  print(f"  {YELLOW}!{RESET}  {msg}")
@@ -663,7 +663,6 @@ def _parse_size_gb(s):
         pass
     return 0.0
 
-COMFYUI_DIR = SCRIPT_DIR / "ComfyUI"
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 CLIP_DIR    = COMFYUI_DIR / "models" / "clip"
 VAE_DIR     = COMFYUI_DIR / "models" / "vae"
@@ -1159,7 +1158,8 @@ section("Summary")
 
 if not issues:
     print(f"\n  {GREEN}{BOLD}All checks passed — ready to benchmark!{RESET}")
-    print(f"  Run: python benchmark.py\n")
+    run_hint = "run_windows.bat" if os_name == "Windows" else "bash run_linux_mac.sh"
+    print(f"  Run: {run_hint}\n")
 else:
     print(f"\n  {YELLOW}{BOLD}Action items before benchmarking:{RESET}")
     for i, issue in enumerate(issues, 1):

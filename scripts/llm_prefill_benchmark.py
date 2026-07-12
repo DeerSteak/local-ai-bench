@@ -29,6 +29,9 @@ class LLMPrefillBenchmark:
 
             Shared.section(f"LLM: {label}")
 
+            if not Shared.ollama_reachable_or_abort():
+                break
+
             try:
                 if not Shared.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -44,7 +47,8 @@ class LLMPrefillBenchmark:
                 # Use the largest context this model will actually run so Ollama
                 # pre-allocates the full KV cache once — avoiding a reload at max context.
                 max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
-                if not Shared.warmup_model(tag, label, max_ctx, warmup_runs):
+                if not Shared.warmup_model(tag, label, max_ctx, warmup_runs,
+                                           crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
                     Shared.unload_model(tag)
                     continue
 
@@ -58,55 +62,23 @@ class LLMPrefillBenchmark:
                     label_ctx = f"{ctx_len // 1024}K"
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
 
-                    ttfts, tps_list = [], []
-                    ctx_timed_out = False
-                    ctx_crashed = False
+                    def _prefill_once(run_i):
+                        prompt = Shared.build_prompt_for_context(ctx_len)
+                        ttft, tokens, tps = Shared.ollama_generate(
+                            tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=ctx_len
+                        )
+                        print(
+                            f"    run {run_i+1}/{config.N_RUNS}: "
+                            f"TTFT={ttft:.2f}s  "
+                            f"TPS={tps:.1f}"
+                        )
+                        return ttft, tps
 
-                    run_i = 0
-                    crash_retries = 0
-                    while run_i < config.N_RUNS:
-                        try:
-                            prompt = Shared.build_prompt_for_context(ctx_len)
-                            ttft, tokens, tps = Shared.ollama_generate(
-                                tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=ctx_len
-                            )
-                            ttfts.append(ttft)
-                            tps_list.append(tps)
-                            print(
-                                f"    run {run_i+1}/{config.N_RUNS}: "
-                                f"TTFT={ttft:.2f}s  "
-                                f"TPS={tps:.1f}"
-                            )
-                            run_i += 1
-                        except Exception as e:
-                            is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
-                            if is_timeout:
-                                Shared.err(f"Run {run_i+1} timed out — skipping remaining runs and context lengths for {label}")
-                                ctx_timed_out = True
-                                break
-                            Shared.err(f"Run {run_i+1} failed: {e}")
-                            # A connection-refused error means Ollama's model runner
-                            # subprocess had already died (commonly OOM) before this
-                            # request. Wait for the main Ollama server to notice and
-                            # respawn it, then retry this same run — up to a capped
-                            # number of attempts, since a deterministic crash on this
-                            # model would just recur identically forever.
-                            if not Shared.is_connection_crash(e):
-                                run_i += 1
-                                continue
-                            crash_retries += 1
-                            Shared.err(f"Ollama's model runner appears to have crashed running {tag} "
-                                       f"— last server output:\n{Shared.tail_ollama_log()}")
-                            if crash_retries > Shared.CRASH_RETRY_MAX:
-                                Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
-                                ctx_crashed = True
-                                break
-                            Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
-                            if not Shared.wait_for_ollama_recovery():
-                                Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
-                                ctx_crashed = True
-                                break
-                            # don't advance run_i — retry the same run now that Ollama is back
+                    samples, status = Shared.run_measured_calls(
+                        config.N_RUNS, _prefill_once, tag, crash_cache,
+                        LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}")
+                    ttfts    = [s[0] for s in samples]
+                    tps_list = [s[1] for s in samples]
 
                     if ttfts:
                         results[short][label_ctx] = {
@@ -124,14 +96,14 @@ class LLMPrefillBenchmark:
                             f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
                         )
 
-                    if ctx_timed_out:
+                    if status == "timed_out":
+                        Shared.err(f"Skipping remaining runs and context lengths for {label}")
                         model_timed_out = True
                         results[short]["timed_out"] = label_ctx
                         break
 
-                    if ctx_crashed:
-                        crashed_at = Shared.record_crash(tag, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE,
-                                                          f"running {label}")
+                    if status == "crashed":
+                        crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                         results[short]["crashed"] = label_ctx
                         results[short]["crashed_at"] = crashed_at
                         break

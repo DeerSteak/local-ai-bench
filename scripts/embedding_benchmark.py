@@ -92,6 +92,9 @@ class EmbeddingBenchmark:
 
             Shared.section(f"Embeddings: {label}")
 
+            if not Shared.ollama_reachable_or_abort():
+                break
+
             try:
                 if not Shared.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -128,57 +131,31 @@ class EmbeddingBenchmark:
                             Shared.wait_for_ollama_recovery()
 
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
-                rates = []
 
-                run_i = 0
-                crash_retries = 0
-                gave_up_from_crashes = False
-                while run_i < config.N_RUNS:
+                def _embed_once(run_i):
                     t0 = time.perf_counter()
-                    try:
-                        resp = requests.post(
-                            f"{config.OLLAMA_URL}/api/embed",
-                            json={"model": tag, "input": chunks},
-                            timeout=120,
+                    resp = requests.post(
+                        f"{config.OLLAMA_URL}/api/embed",
+                        json={"model": tag, "input": chunks},
+                        timeout=120,
+                    )
+                    if not resp.ok:
+                        try:
+                            detail = resp.json()
+                        except Exception:
+                            detail = resp.text[:500]
+                        raise RuntimeError(
+                            f"Ollama rejected embed request (HTTP {resp.status_code}, "
+                            f"n_chunks={len(chunks)}): {detail}"
                         )
-                        if not resp.ok:
-                            try:
-                                detail = resp.json()
-                            except Exception:
-                                detail = resp.text[:500]
-                            raise RuntimeError(
-                                f"Ollama rejected embed request (HTTP {resp.status_code}, "
-                                f"n_chunks={len(chunks)}): {detail}"
-                            )
-                        elapsed = time.perf_counter() - t0
-                        rate = len(chunks) / elapsed
-                        rates.append(rate)
-                        print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
-                        run_i += 1
-                    except Exception as e:
-                        Shared.err(f"Run {run_i+1} failed: {e}")
-                        # A connection-refused error means Ollama's model runner
-                        # subprocess had already died (commonly OOM) before this
-                        # request. Wait for the main Ollama server to notice and
-                        # respawn it, then retry this same run — up to a capped
-                        # number of attempts, since a deterministic crash on this
-                        # document would just recur identically forever.
-                        if Shared.is_connection_crash(e):
-                            crash_retries += 1
-                            Shared.err(f"Ollama's model runner appears to have crashed embedding {tag} "
-                                       f"— last server output:\n{Shared.tail_ollama_log()}")
-                            if crash_retries > Shared.CRASH_RETRY_MAX:
-                                Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
-                                gave_up_from_crashes = True
-                                break
-                            Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
-                            if not Shared.wait_for_ollama_recovery():
-                                Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
-                                gave_up_from_crashes = True
-                                break
-                            # don't advance run_i — retry the same run now that Ollama is back
-                        else:
-                            run_i += 1
+                    elapsed = time.perf_counter() - t0
+                    rate = len(chunks) / elapsed
+                    print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
+                    return rate
+
+                rates, status = Shared.run_measured_calls(
+                    config.N_RUNS, _embed_once, tag, crash_cache,
+                    EmbeddingBenchmark.EMBED_CRASH_CACHE, "embedding this document")
 
                 if rates:
                     results[short] = {
@@ -191,14 +168,27 @@ class EmbeddingBenchmark:
                         "runs":                [round(r, 1) for r in rates],
                     }
                     Shared.ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
-                elif gave_up_from_crashes:
-                    crashed_at = Shared.record_crash(tag, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
-                                                      "embedding this document")
+                elif status == "crashed":
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                     results[short] = {
                         "label": label,
                         "skipped": True,
                         "skip_reason": "known_crash",
                         "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
+                    }
+                elif status == "timed_out":
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "timed_out",
+                        "skip_detail": "Embedding run timed out (120s)",
+                    }
+                else:
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "failed",
+                        "skip_detail": "All embedding runs failed",
                     }
             finally:
                 if save_fn:

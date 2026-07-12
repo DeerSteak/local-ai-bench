@@ -1,6 +1,6 @@
 import {
   buildLLMDataForModel, buildFileLineConfigs, buildLLMBarConfigs, buildLLMBarData,
-  getAllLLMModels, modelLabel, sortBarData, getConvSkipInfo,
+  getAllLLMModels, modelLabel, sortBarData, getSkipInfo,
 } from "../../utils";
 import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -37,10 +37,9 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
     const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
     const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
-    const skipEntries = isConv
-      ? files.map(f => ({ hostname: f.hostname, info: getConvSkipInfo(f, model) }))
-             .filter(e => e.info)
-      : [];
+    const skipEntries = files
+      .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
+      .filter(e => e.info);
     if (!hasTps && !hasTtft && !skipEntries.length) return null;
     return { model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, skipEntries };
   }).filter(Boolean);

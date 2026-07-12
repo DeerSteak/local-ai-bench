@@ -112,6 +112,9 @@ class LLMConversationBenchmark:
 
             Shared.section(f"LLM Conversation: {label}")
 
+            if not Shared.ollama_reachable_or_abort():
+                break
+
             try:
                 if not Shared.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -132,7 +135,8 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
-                if not Shared.warmup_model(tag, label, num_ctx, warmup_runs):
+                if not Shared.warmup_model(tag, label, num_ctx, warmup_runs,
+                                           crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE):
                     Shared.unload_model(tag)
                     continue
 
@@ -142,6 +146,7 @@ class LLMConversationBenchmark:
                 timed_out_label = None
                 slow_label       = None
                 crashed          = False
+                crashed_label    = None
 
                 for run_i in range(LLMConversationBenchmark.CONV_RUNS):
                     Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — starting a fresh conversation ...")
@@ -264,6 +269,7 @@ class LLMConversationBenchmark:
                             if not Shared.wait_for_ollama_recovery():
                                 Shared.warn("Ollama did not become reachable again within 30s")
                             run_crashed = True
+                            crashed_label = crashed_label or f"{cumulative_tokens // 1024}K"
                         else:
                             Shared.err(f"{label}: run {run_i+1} failed: {e}")
                             run_failed = True
@@ -303,6 +309,7 @@ class LLMConversationBenchmark:
                 if slow_label:
                     results[short]["slow_tps"] = slow_label
                 if crashed:
+                    results[short]["crashed"] = crashed_label or "0K"
                     results[short]["crashed_at"] = Shared.record_crash(
                         tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
 

@@ -91,11 +91,14 @@ export function getModelSizeTier(model) {
   return "large";
 }
 
-// Conversation-test skip info for one (file, model) pair — non-null only when
-// benchmark.py intentionally excluded this model from the conversation test
-// (too slow, timed out in the single-shot test, or had no single-shot data).
-export function getConvSkipInfo(file, model) {
-  const d = file.data.llm_conversation?.[model];
+// Skip info for one (file, model) pair in a given LLM section — non-null
+// only when benchmark.py intentionally excluded this model from that section
+// entirely (too slow, timed out on a prior test, no single-shot data, or a
+// known repeat-crasher skipped via the crash cache). Defaults to
+// "llm_conversation" for existing call sites that predate the "llm" section
+// also being able to produce a whole-model skip (via Shared.check_crash_cache).
+export function getSkipInfo(file, model, section = "llm_conversation") {
+  const d = file.data[section]?.[model];
   if (!d?.skipped) return null;
   return { reason: d.skip_reason, detail: d.skip_detail };
 }
@@ -104,25 +107,35 @@ const SKIP_REASON_LABELS = {
   timed_out: "Skipped - LLM Timed Out",
   slow_tps: "Skipped - LLM Too Slow",
   no_llm_data: "Skipped - No LLM Data",
+  known_crash: "Skipped - Ollama Crashed",
 };
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
-// llm_conversation both set a "timed_out" field), "{ctx} - Skipped ({slowCtx}
-// Too Slow)" for every later (larger) context that was never attempted
-// because the model dropped below the tok/s cutoff at an earlier checkpoint
-// (llm sets a "slow_tps" field), or a "Skipped - ..." label when the whole
-// model was excluded from the conversation test. The slow checkpoint itself
-// still has real data (it's the measurement that triggered the cutoff), so
-// it returns null there — its actual value is shown rather than a status
-// label. Returns null for cells with real data, or earlier contexts that
-// simply weren't reached for unrelated reasons.
+// llm_conversation both set a "timed_out" field), "{ctx} - Crashed" for the
+// context at which Ollama's model runner crashed (a "crashed" field, set by
+// the llm and llm_conversation tests when they give up retrying after a
+// repeat crash), "{ctx} - Skipped ({slowCtx} Too Slow)" for every later
+// (larger) context that was never attempted because the model dropped below
+// the tok/s cutoff at an earlier checkpoint (a "slow_tps" field), or a
+// "Skipped - ..." label when the whole model was excluded from this section
+// (a "skipped"/"skip_reason" pair, from either a slow/timed-out gate in
+// benchmark.py or a known-crasher skip in the section's own crash cache). The
+// slow checkpoint itself still has real data (it's the measurement that
+// triggered the cutoff), so it returns null there — its actual value is shown
+// rather than a status label. Returns null for cells with real data, or
+// earlier contexts that simply weren't reached for unrelated reasons.
 export function getBarStatusLabel(file, model, ctx, section) {
-  if (section === "llm_conversation") {
-    const skip = getConvSkipInfo(file, model);
-    if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
-  }
+  const skip = getSkipInfo(file, model, section);
+  if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
   const sectionData = file.data[section]?.[model];
+  const crashedCtx = sectionData?.crashed;
+  if (crashedCtx) {
+    const crashedIdx = CTX_ORDER.indexOf(crashedCtx);
+    const ctxIdx = CTX_ORDER.indexOf(ctx);
+    if (ctxIdx === crashedIdx) return `${ctx} - Crashed`;
+    if (ctxIdx > crashedIdx) return `${ctx} - Skipped`;
+  }
   const timedOutCtx = sectionData?.timed_out;
   if (timedOutCtx) {
     const timedOutIdx = CTX_ORDER.indexOf(timedOutCtx);
@@ -389,6 +402,8 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = f.data[section]?.[model]?.timed_out;
     if (timedOutCtx) ctxSet.add(timedOutCtx);
+    const crashedCtx = f.data[section]?.[model]?.crashed;
+    if (crashedCtx) ctxSet.add(crashedCtx);
     const slowTpsCtx = f.data[section]?.[model]?.slow_tps;
     if (slowTpsCtx) ctxSet.add(slowTpsCtx);
   }
@@ -474,6 +489,8 @@ export function buildLLMBarConfigsByModel(file, models, section = "llm") {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = file.data[section]?.[model]?.timed_out;
     if (timedOutCtx) ctxSet.add(timedOutCtx);
+    const crashedCtx = file.data[section]?.[model]?.crashed;
+    if (crashedCtx) ctxSet.add(crashedCtx);
     const slowTpsCtx = file.data[section]?.[model]?.slow_tps;
     if (slowTpsCtx) ctxSet.add(slowTpsCtx);
   }
