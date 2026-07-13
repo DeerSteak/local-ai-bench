@@ -126,6 +126,51 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
     return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
 
 
+def strip_implicit_latest(tag: str) -> str:
+    """Ollama's /api/tags always reports an explicit ":latest" for models
+    pulled without a tag suffix, but models.py stores those same models under
+    their bare tag ("phi4-mini", not "phi4-mini:latest"). Normalize before
+    comparing an installed tag against the catalog so those aren't
+    misidentified as "custom"."""
+    return tag[:-len(":latest")] if tag.endswith(":latest") else tag
+
+
+def sanitize_tag_to_short(tag: str) -> str:
+    """Turn a raw Ollama tag ("qwen3.5:4b-instruct") into a filesystem/JSON-key
+    -safe "short" identifier ("qwen3.5-4b-instruct"), mirroring the style of
+    the hand-picked "short" values in models.py for catalog entries."""
+    return re.sub(r'[:/]', '-', tag)
+
+
+def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str]) -> list[dict]:
+    """Extend `filter_models_by_pattern`'s catalog-only matching so a pattern
+    that doesn't match anything in the curated catalog (models.py) can still
+    resolve to a model — as long as it's actually pulled in Ollama. This lets
+    someone benchmark a model they installed themselves (extra fine-tune,
+    newer quant, etc.) without needing us to add it to the catalog first;
+    it just runs without curated tier/label/params_b metadata.
+
+    Only patterns with zero catalog matches fall through to the installed-tag
+    lookup, so an existing wildcard that already matches curated models keeps
+    behaving exactly as before (no surprise extra entries mixed in).
+    """
+    catalog_tags = {m["tag"] for m in catalog}
+    resolved = list(filter_models_by_pattern(catalog, patterns))
+    seen = {m["tag"] for m in resolved}
+
+    for pattern in patterns:
+        if any(fnmatch.fnmatchcase(t, pattern) for t in catalog_tags):
+            continue  # already satisfied by the catalog match above
+        for tag in installed_tags:
+            if tag in seen or strip_implicit_latest(tag) in catalog_tags:
+                continue
+            if fnmatch.fnmatchcase(tag, pattern):
+                resolved.append({"tag": tag, "label": f"{tag} (custom)", "short": sanitize_tag_to_short(tag)})
+                seen.add(tag)
+
+    return resolved
+
+
 ACCURACY_TESTS = ["mcq", "math", "code"]
 
 
@@ -245,8 +290,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         help="Only test these LLM models (llm, conv, mcq, math, and code tests) — exact Ollama "
              "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
              "starting with 'llama' (default: every model in the selected tier). "
-             "Applied after --maxtier, so it can only narrow that selection further, "
-             "not add models outside the capped tier.",
+             "Applied after --maxtier, so it can only narrow that selection further "
+             "within the catalog — but a pattern that matches nothing in the catalog "
+             "falls back to matching against models actually pulled in Ollama, so a "
+             "model outside our curated catalog can still be tested (see --list-models). "
+             "Quote wildcards (e.g. \"llama*\") so your shell doesn't glob-expand them first.",
+    )
+    parser.add_argument(
+        "--list-models", action="store_true",
+        help="List every Ollama model actually installed locally, marking which are in "
+             "the curated catalog (models.py) vs custom/extra, then exit without running "
+             "anything. Useful for finding the exact tag to pass to --models.",
     )
     parser.add_argument(
         "--force-all", action="store_true",
@@ -256,6 +310,27 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
     args = parser.parse_args()
+
+    if args.list_models:
+        if not Shared.ensure_ollama():
+            Shared.err("Could not start Ollama — install from https://ollama.com/download "
+                       "or start it manually with: ollama serve")
+            sys.exit(1)
+        installed = Shared.list_installed_models()
+        if not installed:
+            Shared.warn("Ollama is running but no models are installed — pull one with: ollama pull <tag>")
+            sys.exit(0)
+        catalog_tags = {m["tag"] for m in LLM_MODELS} | {m["tag"] for m in EMBED_MODELS}
+        print(f"\n{config.BOLD}Installed Ollama models{config.RESET}")
+        n_catalog = 0
+        for m in sorted(installed, key=lambda m: m["tag"]):
+            in_catalog = strip_implicit_latest(m["tag"]) in catalog_tags
+            n_catalog += in_catalog
+            size_gb = f"{m['size'] / 1e9:.1f} GB" if m.get("size") else "? GB"
+            print(f"  {m['tag']:<40} {size_gb:>10}   ({'catalog' if in_catalog else 'custom'})")
+        print(f"\n  {len(installed)} installed, {n_catalog} in catalog, {len(installed) - n_catalog} custom")
+        sys.exit(0)
+
     args.tests = expand_tests(args.tests)
 
     # Apply CLI overrides to shared config
@@ -266,11 +341,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
     if args.models:
-        llm_models = filter_models_by_pattern(llm_models, args.models)
+        Shared.ensure_ollama()  # so a custom (non-catalog) tag can resolve against what's actually pulled
+        installed_tags = [m["tag"] for m in Shared.list_installed_models()]
+        llm_models = resolve_custom_models(args.models, llm_models, installed_tags)
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
-                       f"in the selected tier ({tier_label}) — llm/conv/mcq/math/code tests "
-                       "will have nothing to run")
+                       f"in the selected tier ({tier_label}) or installed in Ollama — "
+                       "llm/conv/mcq/math/code tests will have nothing to run")
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 

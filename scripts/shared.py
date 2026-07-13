@@ -694,6 +694,32 @@ class Shared:
             return False
 
     @staticmethod
+    def list_installed_models() -> list[dict]:
+        """Every Ollama tag actually pulled locally, straight from /api/tags —
+        including ones outside models.py's curated catalog. Returns [] (not an
+        exception) if Ollama isn't reachable, so callers can treat "can't
+        reach Ollama" and "no models installed" the same way for listing
+        purposes."""
+        try:
+            r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
+            return [{"tag": m["name"], "size": m.get("size")} for m in r.json().get("models", [])]
+        except Exception:
+            return []
+
+    @staticmethod
+    def write_answers_sidecar(path: Path, data: dict) -> None:
+        """Write an accuracy test's per-model raw-answer sidecar file (the
+        wrong answers' full raw_response text) to `path`, overwriting it each
+        call so it can be updated incrementally as each model finishes — same
+        checkpoint-as-you-go approach as the main results JSON, so a crash
+        mid-run doesn't lose answers already collected. Kept out of the main
+        results JSON since raw model output is large relative to everything
+        else in there and bloats it fast, especially at a generous
+        num_predict budget."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2))
+
+    @staticmethod
     def ollama_model_max_ctx(model_tag, default=131072):
         """Look up a pulled model's real max context length via /api/show.
 

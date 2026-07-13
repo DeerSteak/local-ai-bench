@@ -21,11 +21,12 @@ class MathBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MATH_CRASH_CACHE = Path(".math_crash_cache.json")
 
-    # Larger than MCQ's budget (16): a numeric answer is still short, but
-    # models are more likely to show a step of work before it despite being
-    # told not to, so this leaves room for the actual number to still appear
-    # before generation is cut off.
-    MATH_NUM_PREDICT = 32
+    # A numeric answer is still short, but reasoning-style models show a
+    # chain-of-thought preamble before it despite being told not to, so this
+    # leaves room for the actual number to still appear before generation is
+    # cut off — too small and parse_answer's "last number in the text" grabs
+    # an incidental number from mid-reasoning instead of the real answer.
+    MATH_NUM_PREDICT = 512
 
     # Matches an optionally-negative, optionally-decimal number, with commas
     # allowed as thousands separators (stripped before parsing).
@@ -113,8 +114,10 @@ class MathBenchmark:
             "incorrect":    incorrect,
         }
 
-    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
+        answers_out: dict = {}
         questions = questions if questions is not None else MathBenchmark.load_questions()
 
         if not Shared.ollama_available():

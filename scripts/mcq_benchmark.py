@@ -21,9 +21,12 @@ class MCQBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
 
-    # A short free-form reply is expected ("B" or "The answer is B."), so this
-    # is generous headroom, not a real generation budget like the other tests.
-    MCQ_NUM_PREDICT = 16
+    # A short free-form reply is expected ("B" or "The answer is B."), but
+    # reasoning-style models emit a chain-of-thought preamble before the
+    # letter, so this needs enough headroom for that preamble too — too
+    # small and the response gets truncated before the actual answer ever
+    # appears, scored as unanswered.
+    MCQ_NUM_PREDICT = 512
 
     # Deliberately uppercase-only: models answer letter choices in uppercase
     # ("B", "the answer is C"), so restricting the scan to A-D as written
@@ -117,8 +120,10 @@ class MCQBenchmark:
             "incorrect":    incorrect,
         }
 
-    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
+        answers_out: dict = {}
         questions = questions if questions is not None else MCQBenchmark.load_questions()
 
         if not Shared.ollama_available():
@@ -179,8 +184,13 @@ class MCQBenchmark:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
 
                 scored = MCQBenchmark.score(questions, answers)
-                for entry in scored["incorrect"]:
-                    entry["raw_response"] = raw_responses.get(entry["id"], "")
+                answers_out[short] = {
+                    "label": label,
+                    "incorrect": [
+                        {**entry, "raw_response": raw_responses.get(entry["id"], "")}
+                        for entry in scored["incorrect"]
+                    ],
+                }
                 results[short] = {"label": label, **scored}
 
                 if stopped_early == "timed_out":
@@ -199,5 +209,7 @@ class MCQBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
+                if answers_path:
+                    Shared.write_answers_sidecar(answers_path, answers_out)
 
         return results
