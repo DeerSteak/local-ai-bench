@@ -26,7 +26,7 @@ class MathBenchmark:
     # leaves room for the actual number to still appear before generation is
     # cut off — too small and parse_answer's "last number in the text" grabs
     # an incidental number from mid-reasoning instead of the real answer.
-    MATH_NUM_PREDICT = 512
+    MATH_NUM_PREDICT = 1024
 
     # Matches an optionally-negative, optionally-decimal number, with commas
     # allowed as thousands separators (stripped before parsing).

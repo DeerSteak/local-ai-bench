@@ -26,7 +26,7 @@ class MCQBenchmark:
     # letter, so this needs enough headroom for that preamble too — too
     # small and the response gets truncated before the actual answer ever
     # appears, scored as unanswered.
-    MCQ_NUM_PREDICT = 512
+    MCQ_NUM_PREDICT = 1024
 
     # Deliberately uppercase-only: models answer letter choices in uppercase
     # ("B", "the answer is C"), so restricting the scan to A-D as written

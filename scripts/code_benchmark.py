@@ -25,9 +25,11 @@ class CodeBenchmark:
     # same crash. Delete this file to retry a skipped model.
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")
 
-    # Larger than MCQ/math's budget — an actual function body needs room to
-    # be written out, not just a short answer.
-    CODE_NUM_PREDICT = 400
+    # Needs room for both a reasoning-style model's chain-of-thought preamble
+    # and a full function body afterward — too small and the response gets
+    # truncated mid-function, producing a SyntaxError (unterminated string,
+    # mismatched parens, ...) rather than a real logic error.
+    CODE_NUM_PREDICT = 1024
 
     # Wall-clock budget for running a model's generated code against one
     # problem's test cases, in the subprocess spawned by execute_tests(). Not
