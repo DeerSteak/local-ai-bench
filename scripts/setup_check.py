@@ -829,8 +829,15 @@ else:
 
         warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
              f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
+        # --force-reinstall is required, not just --upgrade: pip treats an
+        # already-installed torch+cu126 as "satisfying" a bare "torch"
+        # requirement and skips it, while torchvision/torchaudio (whose
+        # installed version differs) do get swapped to +cu128 — leaving a
+        # mismatched trio that torchaudio's _check_cuda_version() then
+        # refuses to import. Forcing reinstall keeps all three in lockstep.
         result = subprocess.run(
-            [str(python_exe), "-s", "-m", "pip", "install", "--upgrade",
+            [str(python_exe), "-s", "-m", "pip", "install",
+             "--force-reinstall", "--no-deps",
              "torch", "torchvision", "torchaudio",
              "--index-url", "https://download.pytorch.org/whl/cu128"],
             capture_output=True, text=True,
