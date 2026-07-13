@@ -47,11 +47,14 @@ class LLMConversationBenchmark:
     # real headroom left against num_ctx instead of scraping the ceiling.
     CONV_TARGET_CTX = 131072
 
-    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus the 96K cap.
-    # Filtered per model down to whatever its real ceiling actually reaches.
-    # Deliberately stops short of the 128K context window given to the model
-    # (CONV_TARGET_CTX) so there's always headroom left to grow into.
-    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 65536, 98304]
+    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus 48K/80K in
+    # between the higher steps (where an early-exiting model is most likely
+    # to drop out, so those gaps benefit most from an extra data point) and
+    # the 96K cap. Filtered per model down to whatever its real ceiling
+    # actually reaches. Deliberately stops short of the 128K context window
+    # given to the model (CONV_TARGET_CTX) so there's always headroom left
+    # to grow into.
+    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
     # Bounds on any single growth turn's num_predict. Crossing a gap in a
     # handful of turns (remaining // CONV_STEP_DIVISOR, clamped to this
