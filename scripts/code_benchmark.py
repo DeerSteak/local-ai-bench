@@ -201,8 +201,10 @@ class CodeBenchmark:
             "incorrect":    incorrect,
         }
 
-    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
         results = {}
+        answers_out: dict = {}
         questions = questions if questions is not None else CodeBenchmark.load_questions()
 
         if not Shared.ollama_available():
@@ -263,8 +265,13 @@ class CodeBenchmark:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
 
                 scored = CodeBenchmark.score(questions, answers)
-                for entry in scored["incorrect"]:
-                    entry["raw_response"] = raw_responses.get(entry["id"], "")
+                answers_out[short] = {
+                    "label": label,
+                    "incorrect": [
+                        {**entry, "raw_response": raw_responses.get(entry["id"], "")}
+                        for entry in scored["incorrect"]
+                    ],
+                }
                 results[short] = {"label": label, **scored}
 
                 if stopped_early == "timed_out":
@@ -283,5 +290,7 @@ class CodeBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
+                if answers_path:
+                    Shared.write_answers_sidecar(answers_path, answers_out)
 
         return results

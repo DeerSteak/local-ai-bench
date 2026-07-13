@@ -171,6 +171,17 @@ def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_ta
     return resolved
 
 
+def sidecar_path(out_path: str, prefix: str) -> Path:
+    """Build a sidecar file path alongside the main results JSON, swapping
+    its "results_" stem prefix for `prefix` (or just prepending `prefix` if
+    the stem doesn't start with "results_", e.g. after --out) so hostname and
+    timestamp stay identical between the two, letter for letter — same
+    convention as the images_*/ folder (see docs/project-structure.md)."""
+    stem = Path(out_path).stem
+    name = prefix + stem[len("results_"):] if stem.startswith("results_") else f"{prefix}{stem}"
+    return config.RESULTS_DIR / f"{name}.json"
+
+
 ACCURACY_TESTS = ["mcq", "math", "code"]
 
 

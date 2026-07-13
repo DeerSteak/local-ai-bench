@@ -178,8 +178,13 @@ class MathBenchmark:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
 
                 scored = MathBenchmark.score(questions, answers)
-                for entry in scored["incorrect"]:
-                    entry["raw_response"] = raw_responses.get(entry["id"], "")
+                answers_out[short] = {
+                    "label": label,
+                    "incorrect": [
+                        {**entry, "raw_response": raw_responses.get(entry["id"], "")}
+                        for entry in scored["incorrect"]
+                    ],
+                }
                 results[short] = {"label": label, **scored}
 
                 if stopped_early == "timed_out":
@@ -198,5 +203,7 @@ class MathBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
+                if answers_path:
+                    Shared.write_answers_sidecar(answers_path, answers_out)
 
         return results
