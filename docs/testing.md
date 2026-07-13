@@ -102,7 +102,7 @@ The test suite consists of **16 test modules** validating different components o
 
 - **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
   Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
-  - `acc` expands to `ACCURACY_TESTS` (currently just `mcq`).
+  - `acc` expands to `ACCURACY_TESTS` (currently `mcq` and `math`).
   - Ordinary test names pass through unchanged.
   - Order is preserved when `acc` is mixed with other test names.
   - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
@@ -161,6 +161,13 @@ The test suite consists of **16 test modules** validating different components o
   - `parse_answer` extracts a model's chosen letter from free-form text — bare letters, punctuated letters (`"B."`, `"(B)"`), and letters embedded in a reasoning sentence ("...so the answer is B") — while rejecting letters that aren't among the question's valid choices and not false-positiving on ordinary words/contractions that happen to contain a letter (e.g. the "d" in "I'd").
   - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/mcq_questions.json` file — unique IDs, and every question's answer is one of its own choices.
+
+- **[test_math_benchmark.py](../tests/test_math_benchmark.py)**
+  Tests the pure logic in `MathBenchmark`. It verifies:
+  - `build_prompt` includes the question text and asks for a numeric-only answer.
+  - `parse_answer` extracts a model's final numeric answer from free-form text — bare integers, decimals, negative numbers, thousands-comma-separated numbers, and numbers with a trailing `%` — taking the *last* number stated rather than the first, so a model that reasons out loud before answering is still scored on its final answer, and returning `None` when no number (or only a bare `-`) is found.
+  - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list.
+  - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
 ---
 

@@ -2,7 +2,7 @@
 
 # Workloads
 
-Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering and math word problems). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -16,6 +16,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 - [Image Generation](#image-generation)
 - [Embeddings](#embeddings)
 - [Accuracy](#accuracy)
+  - [Math](#math)
 
 ## LLM
 
@@ -121,7 +122,19 @@ The question bank (`scripts/data/mcq_questions.json`) covers eight categories �
 
 Results report overall accuracy plus a per-category breakdown, so a model that's strong on arithmetic but weak on commonsense reasoning (or vice versa) is visible rather than averaged away.
 
-Run just this test with `--tests mcq`, or `--tests acc` — shorthand for every accuracy-style test (currently just MCQ; more question-bank benchmarks, e.g. math or code, are expected to join this group later without changing how `--tests acc` is invoked). See [CLI Reference](cli-reference.md).
+Run just this test with `--tests mcq`.
+
+### Math
+
+Every LLM model answers a fixed bank of 40 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) covers eight categories — arithmetic, algebra, geometry, percentages, probability, sequences, logic, and word problems.
+
+A model's free-form reply is scanned for the *last* number it states, not the first — a model that reasons out loud before answering ("347 + 589 = 936, so the answer is 936") states its final answer last, and intermediate numbers earlier in the reasoning shouldn't be mistaken for it. Each answer is checked against the question's known numeric answer within its own per-question tolerance (most are exact); a reply with no number counts as unanswered (wrong).
+
+Results report overall accuracy plus a per-category breakdown, same as MCQ.
+
+Run just this test with `--tests math`.
+
+More question-bank benchmarks, e.g. code, are expected to join this group later. Run every accuracy-style test at once with `--tests acc` — currently expands to MCQ and math, and de-duplicates against either of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join. See [CLI Reference](cli-reference.md).
 
 ---
 
