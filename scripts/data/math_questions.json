@@ -1,0 +1,282 @@
+[
+  {
+    "id": "math_001",
+    "category": "arithmetic",
+    "prompt": "What is 347 + 589?",
+    "answer": 936,
+    "tolerance": 0
+  },
+  {
+    "id": "math_002",
+    "category": "arithmetic",
+    "prompt": "What is 812 - 356?",
+    "answer": 456,
+    "tolerance": 0
+  },
+  {
+    "id": "math_003",
+    "category": "arithmetic",
+    "prompt": "What is 23 * 17?",
+    "answer": 391,
+    "tolerance": 0
+  },
+  {
+    "id": "math_004",
+    "category": "arithmetic",
+    "prompt": "What is 144 / 12?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_005",
+    "category": "arithmetic",
+    "prompt": "What is 2 raised to the power of 10 (2^10)?",
+    "answer": 1024,
+    "tolerance": 0
+  },
+  {
+    "id": "math_006",
+    "category": "algebra",
+    "prompt": "Solve for x: 3x + 5 = 20.",
+    "answer": 5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_007",
+    "category": "algebra",
+    "prompt": "Solve for x: 2x - 7 = 15.",
+    "answer": 11,
+    "tolerance": 0
+  },
+  {
+    "id": "math_008",
+    "category": "algebra",
+    "prompt": "If x + y = 10 and x - y = 4, what is x?",
+    "answer": 7,
+    "tolerance": 0
+  },
+  {
+    "id": "math_009",
+    "category": "algebra",
+    "prompt": "Solve for x: 5(x - 2) = 25.",
+    "answer": 7,
+    "tolerance": 0
+  },
+  {
+    "id": "math_010",
+    "category": "algebra",
+    "prompt": "If 4x = 36, what is x?",
+    "answer": 9,
+    "tolerance": 0
+  },
+  {
+    "id": "math_011",
+    "category": "geometry",
+    "prompt": "A rectangle has length 8 and width 5. What is its area?",
+    "answer": 40,
+    "tolerance": 0
+  },
+  {
+    "id": "math_012",
+    "category": "geometry",
+    "prompt": "A square has a perimeter of 24. What is the length of one side?",
+    "answer": 6,
+    "tolerance": 0
+  },
+  {
+    "id": "math_013",
+    "category": "geometry",
+    "prompt": "A circle has radius 7. Using pi = 3.14, what is its area, rounded to the nearest whole number?",
+    "answer": 154,
+    "tolerance": 0
+  },
+  {
+    "id": "math_014",
+    "category": "geometry",
+    "prompt": "A triangle has a base of 10 and a height of 6. What is its area?",
+    "answer": 30,
+    "tolerance": 0
+  },
+  {
+    "id": "math_015",
+    "category": "geometry",
+    "prompt": "A cube has side length 3. What is its volume?",
+    "answer": 27,
+    "tolerance": 0
+  },
+  {
+    "id": "math_016",
+    "category": "word_problems",
+    "prompt": "Sarah has 24 apples. She gives 1/3 of them to her friend. How many apples does she have left?",
+    "answer": 16,
+    "tolerance": 0
+  },
+  {
+    "id": "math_017",
+    "category": "word_problems",
+    "prompt": "A car travels at 60 mph for 3.5 hours. How many miles does it travel?",
+    "answer": 210,
+    "tolerance": 0
+  },
+  {
+    "id": "math_018",
+    "category": "word_problems",
+    "prompt": "If 3 notebooks cost $12, how much do 7 notebooks cost, at the same price per notebook?",
+    "answer": 28,
+    "tolerance": 0
+  },
+  {
+    "id": "math_019",
+    "category": "word_problems",
+    "prompt": "A recipe requires 2 cups of flour for 12 cookies. How many cups of flour are needed for 30 cookies, at the same ratio?",
+    "answer": 5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_020",
+    "category": "word_problems",
+    "prompt": "John is twice as old as his sister. If his sister is 14, how old is John?",
+    "answer": 28,
+    "tolerance": 0
+  },
+  {
+    "id": "math_021",
+    "category": "logic",
+    "prompt": "In a race, Amy finished 3 places ahead of Ben. Ben finished 5th. What place did Amy finish?",
+    "answer": 2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_022",
+    "category": "logic",
+    "prompt": "Five friends split a $60 bill evenly. How much does each person pay?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_023",
+    "category": "logic",
+    "prompt": "A task starts on day 1 and repeats every 3 days after that (day 1, day 4, day 7, ...). On which day number does the task occur for the 5th time?",
+    "answer": 13,
+    "tolerance": 0
+  },
+  {
+    "id": "math_024",
+    "category": "logic",
+    "prompt": "A ladder's base is placed 6 feet from a wall, and it reaches 8 feet up the wall. How long is the ladder, in feet?",
+    "answer": 10,
+    "tolerance": 0
+  },
+  {
+    "id": "math_025",
+    "category": "logic",
+    "prompt": "Three consecutive integers sum to 72. What is the largest one?",
+    "answer": 25,
+    "tolerance": 0
+  },
+  {
+    "id": "math_026",
+    "category": "percentages",
+    "prompt": "What is 20% of 150?",
+    "answer": 30,
+    "tolerance": 0
+  },
+  {
+    "id": "math_027",
+    "category": "percentages",
+    "prompt": "An $80 jacket is on sale for 30% off. What is the sale price, in dollars?",
+    "answer": 56,
+    "tolerance": 0
+  },
+  {
+    "id": "math_028",
+    "category": "percentages",
+    "prompt": "A population grows from 200 to 250. What is the percent increase?",
+    "answer": 25,
+    "tolerance": 0
+  },
+  {
+    "id": "math_029",
+    "category": "percentages",
+    "prompt": "A test has 80 questions. A student answers 68 correctly. What percentage did they get right?",
+    "answer": 85,
+    "tolerance": 0
+  },
+  {
+    "id": "math_030",
+    "category": "percentages",
+    "prompt": "An item's price increased from $50 to $65. What is the percent increase?",
+    "answer": 30,
+    "tolerance": 0
+  },
+  {
+    "id": "math_031",
+    "category": "sequences",
+    "prompt": "What is the next number in the sequence: 1, 1, 2, 3, 5, 8, ?",
+    "answer": 13,
+    "tolerance": 0
+  },
+  {
+    "id": "math_032",
+    "category": "sequences",
+    "prompt": "What is the next number in the sequence: 5, 10, 20, 40, ?",
+    "answer": 80,
+    "tolerance": 0
+  },
+  {
+    "id": "math_033",
+    "category": "sequences",
+    "prompt": "The sequence decreases by 10, then 9, then 8, and so on. What is the next number: 100, 90, 81, 73, ?",
+    "answer": 66,
+    "tolerance": 0
+  },
+  {
+    "id": "math_034",
+    "category": "sequences",
+    "prompt": "What is the next number in the sequence: 2, 6, 12, 20, 30, ?",
+    "answer": 42,
+    "tolerance": 0
+  },
+  {
+    "id": "math_035",
+    "category": "sequences",
+    "prompt": "What is the next number in the sequence: 3, 9, 27, 81, ?",
+    "answer": 243,
+    "tolerance": 0
+  },
+  {
+    "id": "math_036",
+    "category": "probability",
+    "prompt": "A bag has 4 red balls and 6 blue balls. If you pick one ball at random, what is the probability (as a percent) that it is red?",
+    "answer": 40,
+    "tolerance": 0
+  },
+  {
+    "id": "math_037",
+    "category": "probability",
+    "prompt": "A fair six-sided die is rolled once. What is the probability (as a percent, one decimal place) of rolling a number greater than 4?",
+    "answer": 33.3,
+    "tolerance": 0.1
+  },
+  {
+    "id": "math_038",
+    "category": "probability",
+    "prompt": "A fair coin is flipped twice. What is the probability (as a percent) of getting heads both times?",
+    "answer": 25,
+    "tolerance": 0
+  },
+  {
+    "id": "math_039",
+    "category": "probability",
+    "prompt": "A standard deck of 52 cards has 4 aces. What is the probability (as a percent, one decimal place) of drawing an ace on a single draw?",
+    "answer": 7.7,
+    "tolerance": 0.1
+  },
+  {
+    "id": "math_040",
+    "category": "probability",
+    "prompt": "A jar has 3 green, 3 red, and 4 yellow marbles (10 total). What is the probability (as a percent) of picking a yellow marble at random?",
+    "answer": 40,
+    "tolerance": 0
+  }
+]

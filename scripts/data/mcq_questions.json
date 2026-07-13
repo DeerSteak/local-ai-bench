@@ -1,0 +1,422 @@
+[
+  {
+    "id": "mcq_001",
+    "category": "science",
+    "prompt": "What is the chemical symbol for gold?",
+    "choices": {"A": "Ag", "B": "Au", "C": "Gd", "D": "Go"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_002",
+    "category": "science",
+    "prompt": "How many planets are in our solar system?",
+    "choices": {"A": "7", "B": "8", "C": "9", "D": "10"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_003",
+    "category": "science",
+    "prompt": "What gas do plants primarily absorb for photosynthesis?",
+    "choices": {"A": "Oxygen", "B": "Nitrogen", "C": "Carbon dioxide", "D": "Hydrogen"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_004",
+    "category": "science",
+    "prompt": "What is the powerhouse of the cell?",
+    "choices": {"A": "Nucleus", "B": "Ribosome", "C": "Mitochondria", "D": "Golgi apparatus"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_005",
+    "category": "science",
+    "prompt": "At sea level, water boils at approximately what temperature in Celsius?",
+    "choices": {"A": "90", "B": "100", "C": "110", "D": "120"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_006",
+    "category": "science",
+    "prompt": "What is the hardest naturally occurring substance on Earth?",
+    "choices": {"A": "Quartz", "B": "Diamond", "C": "Titanium", "D": "Steel"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_007",
+    "category": "science",
+    "prompt": "Which planet is known as the Red Planet?",
+    "choices": {"A": "Venus", "B": "Jupiter", "C": "Mars", "D": "Saturn"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_008",
+    "category": "science",
+    "prompt": "What force keeps planets in orbit around the sun?",
+    "choices": {"A": "Magnetism", "B": "Gravity", "C": "Friction", "D": "Inertia"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_009",
+    "category": "history",
+    "prompt": "In what year did World War II end?",
+    "choices": {"A": "1943", "B": "1945", "C": "1947", "D": "1950"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_010",
+    "category": "history",
+    "prompt": "Who was the first President of the United States?",
+    "choices": {"A": "Thomas Jefferson", "B": "John Adams", "C": "George Washington", "D": "Benjamin Franklin"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_011",
+    "category": "history",
+    "prompt": "The Great Wall is located in which country?",
+    "choices": {"A": "Japan", "B": "China", "C": "Mongolia", "D": "South Korea"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_012",
+    "category": "history",
+    "prompt": "Which ancient civilization built the pyramids at Giza?",
+    "choices": {"A": "Roman", "B": "Greek", "C": "Egyptian", "D": "Mesopotamian"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_013",
+    "category": "history",
+    "prompt": "The French Revolution began in which year?",
+    "choices": {"A": "1776", "B": "1789", "C": "1804", "D": "1812"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_014",
+    "category": "history",
+    "prompt": "Who was the primary author of the United States Declaration of Independence?",
+    "choices": {"A": "George Washington", "B": "Thomas Jefferson", "C": "John Adams", "D": "Alexander Hamilton"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_015",
+    "category": "history",
+    "prompt": "Julius Caesar was a leader of which ancient civilization?",
+    "choices": {"A": "Persian", "B": "Ottoman", "C": "Roman", "D": "Byzantine"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_016",
+    "category": "history",
+    "prompt": "The Berlin Wall fell in which year?",
+    "choices": {"A": "1985", "B": "1987", "C": "1989", "D": "1991"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_017",
+    "category": "geography",
+    "prompt": "Which river is traditionally considered the longest in the world?",
+    "choices": {"A": "Amazon", "B": "Nile", "C": "Yangtze", "D": "Mississippi"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_018",
+    "category": "geography",
+    "prompt": "What is the capital of Australia?",
+    "choices": {"A": "Sydney", "B": "Melbourne", "C": "Canberra", "D": "Perth"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_019",
+    "category": "geography",
+    "prompt": "Which is the largest desert in the world by total area?",
+    "choices": {"A": "Sahara", "B": "Arabian", "C": "Gobi", "D": "Antarctic"},
+    "answer": "D"
+  },
+  {
+    "id": "mcq_020",
+    "category": "geography",
+    "prompt": "Mount Everest is located in which mountain range?",
+    "choices": {"A": "Andes", "B": "Alps", "C": "Himalayas", "D": "Rockies"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_021",
+    "category": "geography",
+    "prompt": "The Sahara Desert is located on which continent?",
+    "choices": {"A": "Asia", "B": "Africa", "C": "South America", "D": "Australia"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_022",
+    "category": "geography",
+    "prompt": "What is the smallest country in the world by area?",
+    "choices": {"A": "Monaco", "B": "San Marino", "C": "Vatican City", "D": "Liechtenstein"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_023",
+    "category": "geography",
+    "prompt": "Which strait separates Europe and Africa?",
+    "choices": {"A": "Bering Strait", "B": "Strait of Gibraltar", "C": "Strait of Hormuz", "D": "Bosphorus"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_024",
+    "category": "geography",
+    "prompt": "What is the capital of Japan?",
+    "choices": {"A": "Osaka", "B": "Kyoto", "C": "Tokyo", "D": "Yokohama"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_025",
+    "category": "logic",
+    "prompt": "All roses are flowers. All flowers need water. Which statement must be true?",
+    "choices": {"A": "All flowers are roses", "B": "All roses need water", "C": "Some water needs flowers", "D": "No roses need water"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_026",
+    "category": "logic",
+    "prompt": "A train travels 60 miles in 1 hour at constant speed. How long does it take to travel 150 miles?",
+    "choices": {"A": "2 hours", "B": "2.5 hours", "C": "3 hours", "D": "3.5 hours"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_027",
+    "category": "logic",
+    "prompt": "What number comes next in the sequence: 2, 4, 8, 16, ?",
+    "choices": {"A": "20", "B": "24", "C": "32", "D": "30"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_028",
+    "category": "logic",
+    "prompt": "If today is Wednesday, what day of the week will it be in 10 days?",
+    "choices": {"A": "Friday", "B": "Saturday", "C": "Sunday", "D": "Monday"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_029",
+    "category": "logic",
+    "prompt": "Tom is taller than Jerry. Jerry is taller than Sam. Who is the shortest?",
+    "choices": {"A": "Tom", "B": "Jerry", "C": "Sam", "D": "Cannot be determined"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_030",
+    "category": "logic",
+    "prompt": "Which word does not belong with the others: Apple, Banana, Carrot, Grape?",
+    "choices": {"A": "Apple", "B": "Banana", "C": "Carrot", "D": "Grape"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_031",
+    "category": "logic",
+    "prompt": "If 5 machines make 5 widgets in 5 minutes, how long does it take 100 machines to make 100 widgets?",
+    "choices": {"A": "5 minutes", "B": "20 minutes", "C": "100 minutes", "D": "500 minutes"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_032",
+    "category": "logic",
+    "prompt": "A is the brother of B. B is the sister of C. What is A to C?",
+    "choices": {"A": "Sister", "B": "Brother", "C": "Father", "D": "Cannot be determined"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_033",
+    "category": "literature",
+    "prompt": "Who wrote \"Romeo and Juliet\"?",
+    "choices": {"A": "Charles Dickens", "B": "William Shakespeare", "C": "Mark Twain", "D": "Jane Austen"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_034",
+    "category": "literature",
+    "prompt": "\"Call me Ishmael\" is the opening line of which novel?",
+    "choices": {"A": "Moby-Dick", "B": "The Great Gatsby", "C": "War and Peace", "D": "1984"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_035",
+    "category": "literature",
+    "prompt": "Who wrote the \"Harry Potter\" series?",
+    "choices": {"A": "J.R.R. Tolkien", "B": "J.K. Rowling", "C": "C.S. Lewis", "D": "Roald Dahl"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_036",
+    "category": "literature",
+    "prompt": "\"1984\" and \"Animal Farm\" were written by which author?",
+    "choices": {"A": "Aldous Huxley", "B": "George Orwell", "C": "Ray Bradbury", "D": "H.G. Wells"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_037",
+    "category": "literature",
+    "prompt": "Who wrote \"Pride and Prejudice\"?",
+    "choices": {"A": "Charlotte Bronte", "B": "Emily Bronte", "C": "Jane Austen", "D": "Mary Shelley"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_038",
+    "category": "literature",
+    "prompt": "What is the name of the fictional wizarding school in the Harry Potter series?",
+    "choices": {"A": "Hogwarts", "B": "Durmstrang", "C": "Beauxbatons", "D": "Ilvermorny"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_039",
+    "category": "literature",
+    "prompt": "Who is traditionally credited as the author of \"The Odyssey\"?",
+    "choices": {"A": "Sophocles", "B": "Homer", "C": "Plato", "D": "Aristotle"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_040",
+    "category": "arithmetic",
+    "prompt": "What is 15% of 200?",
+    "choices": {"A": "20", "B": "30", "C": "25", "D": "40"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_041",
+    "category": "arithmetic",
+    "prompt": "What is 7 x 8?",
+    "choices": {"A": "54", "B": "56", "C": "58", "D": "64"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_042",
+    "category": "arithmetic",
+    "prompt": "What is the square root of 144?",
+    "choices": {"A": "11", "B": "12", "C": "13", "D": "14"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_043",
+    "category": "arithmetic",
+    "prompt": "A shirt costs $40 and is discounted 25%. What is the sale price?",
+    "choices": {"A": "$28", "B": "$30", "C": "$32", "D": "$35"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_044",
+    "category": "arithmetic",
+    "prompt": "What is 100 divided by 4?",
+    "choices": {"A": "20", "B": "25", "C": "30", "D": "40"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_045",
+    "category": "arithmetic",
+    "prompt": "What is the sum of the interior angles of a triangle, in degrees?",
+    "choices": {"A": "90", "B": "180", "C": "270", "D": "360"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_046",
+    "category": "arithmetic",
+    "prompt": "What is 9 squared?",
+    "choices": {"A": "18", "B": "72", "C": "81", "D": "90"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_047",
+    "category": "commonsense",
+    "prompt": "What do you typically use to cut paper?",
+    "choices": {"A": "Hammer", "B": "Scissors", "C": "Spoon", "D": "Wrench"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_048",
+    "category": "commonsense",
+    "prompt": "Which of these is most commonly eaten for breakfast?",
+    "choices": {"A": "Steak dinner", "B": "Cereal", "C": "Birthday cake", "D": "Soup course"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_049",
+    "category": "commonsense",
+    "prompt": "What should you do before crossing a street?",
+    "choices": {"A": "Close your eyes", "B": "Look both ways", "C": "Run quickly without looking", "D": "Call a friend"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_050",
+    "category": "commonsense",
+    "prompt": "Which of these is a natural source of light?",
+    "choices": {"A": "Rock", "B": "Sun", "C": "Pillow", "D": "Book"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_051",
+    "category": "commonsense",
+    "prompt": "What is the primary purpose of a refrigerator?",
+    "choices": {"A": "Heat food", "B": "Keep food cold", "C": "Cook food", "D": "Clean dishes"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_052",
+    "category": "commonsense",
+    "prompt": "If it is raining outside, what should you bring with you?",
+    "choices": {"A": "Sunglasses", "B": "Umbrella", "C": "Swimsuit", "D": "Skis"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_053",
+    "category": "commonsense",
+    "prompt": "Which animal is known for barking?",
+    "choices": {"A": "Cat", "B": "Dog", "C": "Bird", "D": "Fish"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_054",
+    "category": "language",
+    "prompt": "Which word is a synonym for \"happy\"?",
+    "choices": {"A": "Sad", "B": "Joyful", "C": "Angry", "D": "Tired"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_055",
+    "category": "language",
+    "prompt": "Which word is an antonym for \"hot\"?",
+    "choices": {"A": "Warm", "B": "Cold", "C": "Mild", "D": "Humid"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_056",
+    "category": "language",
+    "prompt": "Which word means \"to make something clear or easy to understand\"?",
+    "choices": {"A": "Obscure", "B": "Clarify", "C": "Confuse", "D": "Complicate"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_057",
+    "category": "language",
+    "prompt": "What is the plural form of \"child\"?",
+    "choices": {"A": "Childs", "B": "Childes", "C": "Children", "D": "Childrens"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_058",
+    "category": "language",
+    "prompt": "Which word means \"extremely large\"?",
+    "choices": {"A": "Tiny", "B": "Enormous", "C": "Petite", "D": "Modest"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_059",
+    "category": "language",
+    "prompt": "Which word is a synonym for \"quickly\"?",
+    "choices": {"A": "Slowly", "B": "Rapidly", "C": "Lazily", "D": "Gradually"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_060",
+    "category": "language",
+    "prompt": "In the sentence \"I run every morning,\" what part of speech is the word \"run\"?",
+    "choices": {"A": "Noun", "B": "Verb", "C": "Adjective", "D": "Adverb"},
+    "answer": "B"
+  }
+]

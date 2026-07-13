@@ -1,0 +1,302 @@
+[
+  {
+    "id": "code_001",
+    "category": "arithmetic",
+    "function_name": "sum_two",
+    "prompt": "Write a function sum_two(a, b) that returns the sum of two numbers.",
+    "visible_tests": [
+      {"args": [2, 3], "expected": 5},
+      {"args": [-1, 1], "expected": 0},
+      {"args": [0, 0], "expected": 0}
+    ],
+    "hidden_tests": [
+      {"args": [100, 200], "expected": 300}
+    ]
+  },
+  {
+    "id": "code_002",
+    "category": "arithmetic",
+    "function_name": "is_even",
+    "prompt": "Write a function is_even(n) that returns True if n is even, False otherwise.",
+    "visible_tests": [
+      {"args": [4], "expected": true},
+      {"args": [7], "expected": false},
+      {"args": [0], "expected": true}
+    ],
+    "hidden_tests": [
+      {"args": [-2], "expected": true}
+    ]
+  },
+  {
+    "id": "code_003",
+    "category": "string",
+    "function_name": "reverse_string",
+    "prompt": "Write a function reverse_string(s) that returns the input string reversed.",
+    "visible_tests": [
+      {"args": ["hello"], "expected": "olleh"},
+      {"args": [""], "expected": ""},
+      {"args": ["a"], "expected": "a"}
+    ],
+    "hidden_tests": [
+      {"args": ["Python"], "expected": "nohtyP"}
+    ]
+  },
+  {
+    "id": "code_004",
+    "category": "algorithms",
+    "function_name": "factorial",
+    "prompt": "Write a function factorial(n) that returns the factorial of a non-negative integer n (factorial(0) is 1).",
+    "visible_tests": [
+      {"args": [0], "expected": 1},
+      {"args": [5], "expected": 120},
+      {"args": [3], "expected": 6}
+    ],
+    "hidden_tests": [
+      {"args": [7], "expected": 5040}
+    ]
+  },
+  {
+    "id": "code_005",
+    "category": "string",
+    "function_name": "is_palindrome",
+    "prompt": "Write a function is_palindrome(s) that returns True if s reads the same forwards and backwards using an exact, case-sensitive character comparison. Spaces and punctuation are treated as ordinary characters.",
+    "visible_tests": [
+      {"args": ["racecar"], "expected": true},
+      {"args": ["hello"], "expected": false},
+      {"args": [""], "expected": true}
+    ],
+    "hidden_tests": [
+      {"args": ["noon"], "expected": true},
+      {"args": ["Racecar"], "expected": false},
+      {"args": ["a a"], "expected": true}
+    ]
+  },
+  {
+    "id": "code_006",
+    "category": "list",
+    "function_name": "max_of_list",
+    "prompt": "Write a function max_of_list(lst) that returns the largest value in a non-empty list of numbers.",
+    "visible_tests": [
+      {"args": [[1, 5, 3]], "expected": 5},
+      {"args": [[-2, -5, -1]], "expected": -1},
+      {"args": [[7]], "expected": 7}
+    ],
+    "hidden_tests": [
+      {"args": [[3, 3, 3]], "expected": 3}
+    ]
+  },
+  {
+    "id": "code_007",
+    "category": "string",
+    "function_name": "count_vowels",
+    "prompt": "Write a function count_vowels(s) that returns the number of vowels (a, e, i, o, u, case-insensitive) in the string s.",
+    "visible_tests": [
+      {"args": ["hello"], "expected": 2},
+      {"args": ["xyz"], "expected": 0},
+      {"args": ["AEIOU"], "expected": 5}
+    ],
+    "hidden_tests": [
+      {"args": ["Programming"], "expected": 3},
+      {"args": ["ApplE Pie"], "expected": 4}
+    ]
+  },
+  {
+    "id": "code_008",
+    "category": "algorithms",
+    "function_name": "fibonacci",
+    "prompt": "Write a function fibonacci(n) that returns the nth Fibonacci number, 0-indexed, where fibonacci(0) = 0 and fibonacci(1) = 1. n is a non-negative integer.",
+    "visible_tests": [
+      {"args": [0], "expected": 0},
+      {"args": [1], "expected": 1},
+      {"args": [6], "expected": 8}
+    ],
+    "hidden_tests": [
+      {"args": [10], "expected": 55}
+    ]
+  },
+  {
+    "id": "code_009",
+    "category": "number_theory",
+    "function_name": "is_prime",
+    "prompt": "Write a function is_prime(n) that returns True if n is a prime number, False otherwise. n is an integer and may be less than 2.",
+    "visible_tests": [
+      {"args": [7], "expected": true},
+      {"args": [8], "expected": false},
+      {"args": [1], "expected": false}
+    ],
+    "hidden_tests": [
+      {"args": [97], "expected": true},
+      {"args": [-7], "expected": false},
+      {"args": [2], "expected": true},
+      {"args": [9], "expected": false}
+    ]
+  },
+  {
+    "id": "code_010",
+    "category": "list",
+    "function_name": "flatten_list",
+    "prompt": "Write a function flatten_list(lst) that takes a list of lists (one level of nesting; each inner list may be empty) and returns a single flat list with all elements in order.",
+    "visible_tests": [
+      {"args": [[[1, 2], [3, 4]]], "expected": [1, 2, 3, 4]},
+      {"args": [[[]]], "expected": []},
+      {"args": [[[1], [2], [3]]], "expected": [1, 2, 3]}
+    ],
+    "hidden_tests": [
+      {"args": [[[5, 6], [7]]], "expected": [5, 6, 7]},
+      {"args": [[[], [1, 2], [], [3]]], "expected": [1, 2, 3]}
+    ]
+  },
+  {
+    "id": "code_011",
+    "category": "string",
+    "function_name": "count_words",
+    "prompt": "Write a function count_words(s) that returns the number of words in s, where words are separated by any run of whitespace (spaces, tabs, or newlines), ignoring any leading, trailing, or repeated whitespace.",
+    "visible_tests": [
+      {"args": ["hello world"], "expected": 2},
+      {"args": [""], "expected": 0},
+      {"args": ["one two three four"], "expected": 4}
+    ],
+    "hidden_tests": [
+      {"args": ["  spaced   out  "], "expected": 2},
+      {"args": ["one\ttwo\nthree"], "expected": 3},
+      {"args": ["   \t\n  "], "expected": 0}
+    ]
+  },
+  {
+    "id": "code_012",
+    "category": "number_theory",
+    "function_name": "gcd",
+    "prompt": "Write a function gcd(a, b) that returns the greatest common divisor of two non-negative integers a and b (at least one is greater than 0).",
+    "visible_tests": [
+      {"args": [12, 18], "expected": 6},
+      {"args": [7, 13], "expected": 1},
+      {"args": [0, 5], "expected": 5}
+    ],
+    "hidden_tests": [
+      {"args": [48, 18], "expected": 6}
+    ]
+  },
+  {
+    "id": "code_013",
+    "category": "list",
+    "function_name": "unique_elements",
+    "prompt": "Write a function unique_elements(lst) that returns a list of the unique elements in lst, preserving the order of their first occurrence. Elements in lst will be hashable (e.g. numbers or strings).",
+    "visible_tests": [
+      {"args": [[1, 2, 2, 3, 1]], "expected": [1, 2, 3]},
+      {"args": [[]], "expected": []},
+      {"args": [[5, 5, 5]], "expected": [5]}
+    ],
+    "hidden_tests": [
+      {"args": [[1, 3, 2, 3, 1, 4]], "expected": [1, 3, 2, 4]}
+    ]
+  },
+  {
+    "id": "code_014",
+    "category": "arithmetic",
+    "function_name": "sum_digits",
+    "prompt": "Write a function sum_digits(n) that returns the sum of the decimal digits of a non-negative integer n.",
+    "visible_tests": [
+      {"args": [123], "expected": 6},
+      {"args": [0], "expected": 0},
+      {"args": [9999], "expected": 36}
+    ],
+    "hidden_tests": [
+      {"args": [4567], "expected": 22}
+    ]
+  },
+  {
+    "id": "code_015",
+    "category": "string",
+    "function_name": "is_anagram",
+    "prompt": "Write a function is_anagram(s1, s2) that returns True when s1 and s2 contain exactly the same characters with the same frequencies, in any order. Comparison is case-sensitive, and spaces and punctuation count as characters.",
+    "visible_tests": [
+      {"args": ["listen", "silent"], "expected": true},
+      {"args": ["hello", "world"], "expected": false},
+      {"args": ["", ""], "expected": true},
+      {"args": ["Listen", "silent"], "expected": false},
+      {"args": ["dormitory", "dirty room"], "expected": false}
+    ],
+    "hidden_tests": [
+      {"args": ["night", "thing"], "expected": true},
+      {"args": ["aab", "abb"], "expected": false}
+    ]
+  },
+  {
+    "id": "code_016",
+    "category": "list",
+    "function_name": "second_largest",
+    "prompt": "Write a function second_largest(lst) that returns the second largest distinct value in a list of numbers (lst has at least two distinct values).",
+    "visible_tests": [
+      {"args": [[1, 3, 2]], "expected": 2},
+      {"args": [[5, 5, 4, 3]], "expected": 4},
+      {"args": [[10, 20, 30, 40]], "expected": 30}
+    ],
+    "hidden_tests": [
+      {"args": [[1, 1, 2, 2, 3, 3]], "expected": 2}
+    ]
+  },
+  {
+    "id": "code_017",
+    "category": "search",
+    "function_name": "binary_search",
+    "prompt": "Write a function binary_search(lst, target) that returns the index of the first (leftmost) occurrence of target in the sorted ascending list lst, or -1 if target is not present. lst may contain duplicate values.",
+    "visible_tests": [
+      {"args": [[1, 3, 5, 7, 9], 5], "expected": 2},
+      {"args": [[1, 2, 3], 4], "expected": -1},
+      {"args": [[], 1], "expected": -1}
+    ],
+    "hidden_tests": [
+      {"args": [[2, 4, 6, 8, 10], 10], "expected": 4},
+      {"args": [[1, 2, 2, 2, 3], 2], "expected": 1},
+      {"args": [[2, 2, 2, 2], 2], "expected": 0}
+    ]
+  },
+  {
+    "id": "code_018",
+    "category": "string",
+    "function_name": "caesar_encrypt",
+    "prompt": "Write a function caesar_encrypt(s, shift) that applies a Caesar cipher to s: each ASCII English letter (A-Z, a-z) is shifted by shift positions in the alphabet, preserving case; all other characters (including non-ASCII letters) are unchanged. shift is any integer (positive, negative, or greater than 25); normalize it modulo 26, with negative values shifting backward.",
+    "visible_tests": [
+      {"args": ["abc", 1], "expected": "bcd"},
+      {"args": ["xyz", 3], "expected": "abc"},
+      {"args": ["Hello", 0], "expected": "Hello"}
+    ],
+    "hidden_tests": [
+      {"args": ["Zebra", 2], "expected": "Bgdtc"},
+      {"args": ["abc", 27], "expected": "bcd"},
+      {"args": ["abc", -1], "expected": "zab"},
+      {"args": ["Hello, World!", 1], "expected": "Ifmmp, Xpsme!"}
+    ]
+  },
+  {
+    "id": "code_019",
+    "category": "matrix",
+    "function_name": "transpose",
+    "prompt": "Write a function transpose(matrix) that returns the transpose of a 2D list (list of lists) matrix. matrix is a non-empty rectangular list of non-empty rows (every row has the same length).",
+    "visible_tests": [
+      {"args": [[[1, 2], [3, 4]]], "expected": [[1, 3], [2, 4]]},
+      {"args": [[[1, 2, 3]]], "expected": [[1], [2], [3]]},
+      {"args": [[[1]]], "expected": [[1]]}
+    ],
+    "hidden_tests": [
+      {"args": [[[1, 2], [3, 4], [5, 6]]], "expected": [[1, 3, 5], [2, 4, 6]]}
+    ]
+  },
+  {
+    "id": "code_020",
+    "category": "stack",
+    "function_name": "is_balanced",
+    "prompt": "Write a function is_balanced(s) that returns True if every (), [], and {} bracket in s is properly opened, closed, and nested, False otherwise. Non-bracket characters are ignored.",
+    "visible_tests": [
+      {"args": ["()"], "expected": true},
+      {"args": ["([)]"], "expected": false},
+      {"args": ["{[()]}"], "expected": true}
+    ],
+    "hidden_tests": [
+      {"args": ["(()"], "expected": false},
+      {"args": ["a(b[c]{d})"], "expected": true},
+      {"args": [""], "expected": true},
+      {"args": ["]["], "expected": false}
+    ]
+  }
+]
