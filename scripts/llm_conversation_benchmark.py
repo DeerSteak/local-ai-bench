@@ -61,6 +61,7 @@ class LLMConversationBenchmark:
     # and the gap-to-128K's turn count, bounded.
     CONV_STEP_MIN = 32
     CONV_STEP_MAX = 1024
+    CONV_STEP_MAX_FAR = 4096
     CONV_STEP_DIVISOR = 4
 
     # Opening turn is a full structured answer, not a small growth step.
@@ -102,12 +103,15 @@ class LLMConversationBenchmark:
         CONV_STEP_MIN tokens, and the caller should stop growing this run.
         """
         remaining = target - cumulative_tokens
-        is_final_step = remaining <= LLMConversationBenchmark.CONV_STEP_MAX
+        step_max = (LLMConversationBenchmark.CONV_STEP_MAX_FAR
+                    if remaining > 8192
+                    else LLMConversationBenchmark.CONV_STEP_MAX)
+        is_final_step = remaining <= step_max
         step = (remaining if is_final_step else
                 max(LLMConversationBenchmark.CONV_STEP_MIN,
                     remaining // LLMConversationBenchmark.CONV_STEP_DIVISOR))
         step = max(LLMConversationBenchmark.CONV_STEP_MIN,
-                   min(LLMConversationBenchmark.CONV_STEP_MAX, step))
+                   min(step_max, step))
 
         reserve = 0 if (is_last_checkpoint and is_final_step) \
             else LLMConversationBenchmark.CONV_SAFETY_MARGIN
@@ -231,9 +235,11 @@ class LLMConversationBenchmark:
                                 Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
                                            f"{label_ctx} (currently ~{cumulative_tokens} tokens) ...")
 
-                                while cumulative_tokens < target:
+                                # Stop growing if we are within 0.5% of the target context length
+                                target_threshold = int(target * 0.995)
+                                while cumulative_tokens < target_threshold:
                                     step, ran_out = LLMConversationBenchmark.compute_growth_step(
-                                        cumulative_tokens, target, num_ctx, is_last_checkpoint)
+                                        cumulative_tokens, target_threshold, num_ctx, is_last_checkpoint)
                                     if ran_out:
                                         out_of_room = True
                                         break

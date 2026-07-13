@@ -37,15 +37,25 @@ def test_growth_step_divides_a_large_gap_by_the_divisor():
     assert out_of_room is False
     remaining = 65536
     expected = max(Conv.CONV_STEP_MIN, remaining // Conv.CONV_STEP_DIVISOR)
-    expected = min(expected, Conv.CONV_STEP_MAX)
+    expected = min(expected, Conv.CONV_STEP_MAX_FAR)
     assert step == expected
 
 
-def test_growth_step_never_exceeds_step_max():
+def test_growth_step_never_exceeds_step_max_far():
     step, out_of_room = Conv.compute_growth_step(
         cumulative_tokens=0, target=1_000_000, num_ctx=2_000_000, is_last_checkpoint=False)
     assert out_of_room is False
-    assert step <= Conv.CONV_STEP_MAX
+    assert step <= Conv.CONV_STEP_MAX_FAR
+
+
+def test_growth_step_uses_smaller_step_max_when_close_to_target():
+    # When remaining <= 8192, step_max should be CONV_STEP_MAX (1024), not CONV_STEP_MAX_FAR (4096)
+    step, out_of_room = Conv.compute_growth_step(
+        cumulative_tokens=0, target=8192, num_ctx=100_000, is_last_checkpoint=False)
+    assert out_of_room is False
+    # remaining // divisor = 8192 // 4 = 2048, which is larger than CONV_STEP_MAX (1024),
+    # so it should be clamped to CONV_STEP_MAX (1024)
+    assert step == Conv.CONV_STEP_MAX
 
 
 def test_growth_step_never_below_step_min_when_room_allows():
