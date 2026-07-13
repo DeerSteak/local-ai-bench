@@ -12,13 +12,13 @@ from shared import Shared
 class ImageBenchmark:
     @staticmethod
     def comfyui_free_models(timeout: int = 10) -> None:
-        """Unload whatever checkpoint(s) ComfyUI currently has resident in memory.
+        """Unload whatever checkpoint(s) ComfyUI currently has resident.
 
-        ComfyUI's own automatic model-swap-on-load is the only thing that would
-        otherwise free a previous checkpoint, and on the MPS backend its free-VRAM
-        detection is unreliable — models can stay resident far longer than on
-        CUDA. Call this between models so each one starts from a clean memory
-        state instead of stacking on top of whatever the last one left behind.
+        ComfyUI's automatic model-swap-on-load is the only thing that would
+        otherwise free a previous checkpoint, and on the MPS backend its
+        free-VRAM detection is unreliable — models can stay resident far longer
+        than on CUDA. Call this between models so each starts from a clean
+        memory state.
         """
         try:
             requests.post(f"{config.COMFYUI_URL}/free",
@@ -31,16 +31,15 @@ class ImageBenchmark:
     def comfyui_interrupt_and_clear(timeout: int = 10, confirm_timeout: int = 15) -> None:
         """Stop ComfyUI's currently running job and drop anything still queued.
 
-        ComfyUI executes one job at a time. If we give up on a job client-side
-        after a timeout without telling the server, it (or whatever we submit
-        next) keeps occupying that single execution slot — every subsequent
-        submission queues silently behind it and can time out in turn without
-        ever actually starting. Call this right after a timeout so the next
-        submission starts from a clean queue.
+        ComfyUI executes one job at a time. Giving up client-side after a
+        timeout without telling the server leaves that job occupying the single
+        execution slot — every later submission queues silently behind it and
+        can time out without ever starting. Call this after a timeout so the
+        next submission starts from a clean queue.
 
-        /interrupt and /queue clear only signal ComfyUI — they return before the
-        running job has actually unwound, so we poll /queue afterward until both
-        queue_running and queue_pending are actually empty (or we give up and warn).
+        /interrupt and /queue clear only signal ComfyUI and return before the
+        running job unwinds, so we poll /queue until both queue_running and
+        queue_pending are empty (or give up and warn).
         """
         try:
             requests.post(f"{config.COMFYUI_URL}/interrupt", timeout=timeout)
@@ -284,10 +283,10 @@ class ImageBenchmark:
         Returns (elapsed_sec, images) where images is a list of
         {"filename": str, "subfolder": str, "type": str} dicts from all output nodes.
         """
-        # A prior job (from an earlier model/test) can be left running or queued
-        # if its own timeout handling didn't fully clear it — e.g. the interrupt
-        # or queue-clear request itself failed. Check first so a stuck job never
-        # silently eats our execution slot and causes a fresh, unrelated timeout.
+        # A prior job can still be running or queued if its own timeout handling
+        # didn't clear it (e.g. the interrupt/queue-clear failed). Check first so
+        # a stuck job doesn't silently eat our slot and cause a fresh, unrelated
+        # timeout.
         try:
             queue_status = requests.get(f"{config.COMFYUI_URL}/queue", timeout=10).json()
             if queue_status.get("queue_running") or queue_status.get("queue_pending"):
@@ -331,7 +330,6 @@ class ImageBenchmark:
                 job = status[prompt_id]
                 job_status = job.get("status", {})
 
-                # Check for errors first
                 if job_status.get("status_str") == "error" or job.get("error"):
                     msgs = job.get("error") or job_status.get("messages", [])
                     raise RuntimeError(f"ComfyUI job failed: {msgs}")
@@ -392,7 +390,6 @@ class ImageBenchmark:
             model_resolutions = model.get("resolutions", resolutions)
 
             try:
-                # Skip if checkpoint not present
                 ckpt_path = checkpoints_dir / checkpoint
                 if not ckpt_path.exists():
                     Shared.warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")

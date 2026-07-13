@@ -1,9 +1,8 @@
 """code_benchmark.py — coding accuracy benchmark: each model answers every
-problem in scripts/data/code_problems.json once (temperature 0, so a single
-pass is representative — repeating it wouldn't change the answers) by writing
-a Python function, which is then run against that problem's visible and
-hidden test cases in an isolated subprocess. A problem counts as correct only
-if every one of its test cases passes. Scored overall and broken down by
+problem in scripts/data/code_problems.json once at temperature 0 by writing a
+Python function, which is then run against that problem's visible and hidden
+test cases in an isolated subprocess. A problem counts as correct only if
+every one of its test cases passes. Scored overall and broken down by
 category, same shape as MCQBenchmark/MathBenchmark.
 """
 
@@ -32,13 +31,10 @@ class CodeBenchmark:
     CODE_NUM_PREDICT = 1024
 
     # Wall-clock budget for running a model's generated code against one
-    # problem's test cases, in the subprocess spawned by execute_tests(). Not
-    # a security sandbox (no resource/network restrictions) — just enough
-    # isolation that a model's bad code (infinite loop, crash, stray print)
-    # can't hang or corrupt the benchmark process itself, the same tradeoff
-    # HumanEval-style code-eval harnesses make for trusted-ish, locally-run
-    # models. Generous for these problems' scale (nothing here is meant to be
-    # slow), so a real timeout is treated as the generated code being wrong.
+    # problem's tests in the execute_tests() subprocess. Not a security sandbox
+    # — just enough isolation that bad code (infinite loop, crash, stray print)
+    # can't hang or corrupt the benchmark process. Generous for these problems'
+    # scale, so a real timeout is treated as the code being wrong.
     CODE_EXEC_TIMEOUT = 5
 
     # Pulls the code out of a fenced block (```python ... ``` or ``` ... ```);
@@ -61,9 +57,9 @@ class CodeBenchmark:
     def extract_code(response_text: str) -> str:
         """Pull the model's code out of its free-form reply.
 
-        Prefers the contents of a fenced code block if one is present (the
-        requested format); falls back to the whole (stripped) reply for
-        models that ignore the fencing instruction and just write bare code.
+        Prefers a fenced code block if present (the requested format); falls
+        back to the whole stripped reply for models that ignore the fencing
+        instruction and write bare code.
         """
         if not response_text:
             return ""
@@ -76,13 +72,12 @@ class CodeBenchmark:
     def execute_tests(code: str, function_name: str, tests: list[dict],
                        timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
         """Run every test case in `tests` (each {"args": [...], "expected": ...})
-        against `function_name` as defined by `code`, in a separate Python
-        subprocess — so a model's generated code can't hang, crash, or leak
-        side effects into the benchmark process itself. Returns one
-        {"passed": bool, "got": ..., "error": str|None} entry per test, in
-        the same order as `tests`. A subprocess-level failure (syntax error,
-        timeout, non-JSON-serializable return value, ...) marks every test in
-        this call as failed with the same error, rather than raising.
+        against `function_name` as defined by `code`, in a separate subprocess
+        so generated code can't hang, crash, or leak into the benchmark
+        process. Returns one {"passed": bool, "got": ..., "error": str|None}
+        per test, in order. A subprocess-level failure (syntax error, timeout,
+        non-serializable return, ...) marks every test in the call failed with
+        the same error rather than raising.
         """
         harness = (
             "import json, sys\n\n"
@@ -127,12 +122,10 @@ class CodeBenchmark:
 
     @staticmethod
     def evaluate_question(question: dict, code: str | None) -> dict:
-        """Run every visible+hidden test for `question` against `code` (already
-        extracted from a model's reply) and summarize the outcome:
-        {"correct": bool, "tests_passed": int, "tests_total": int, "error":
-        str|None}. `code` being empty/None (no code could be extracted from
-        the reply) short-circuits to every test failing, without spending a
-        subprocess call.
+        """Run every visible+hidden test for `question` against `code` and
+        summarize: {"correct": bool, "tests_passed": int, "tests_total": int,
+        "error": str|None}. Empty/None `code` short-circuits to every test
+        failing, without a subprocess call.
         """
         tests = question["visible_tests"] + question["hidden_tests"]
         if not code:
@@ -161,8 +154,7 @@ class CodeBenchmark:
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
-        evaluate_question_result_or_None} map. Pure so the scoring logic
-        (independent of how the answers were collected) is directly
+        evaluate_question_result_or_None} map. Pure, so it's directly
         testable."""
         by_category: dict[str, dict] = {}
         incorrect = []

@@ -1,6 +1,5 @@
 """mcq_benchmark.py — multiple-choice accuracy benchmark: each model answers
-every question in scripts/data/mcq_questions.json once (temperature 0, so a
-single pass is representative — repeating it wouldn't change the answers),
+every question in scripts/data/mcq_questions.json once at temperature 0,
 scored right/wrong against the dataset's known answer and broken down by
 category.
 """
@@ -28,10 +27,9 @@ class MCQBenchmark:
     # appears, scored as unanswered.
     MCQ_NUM_PREDICT = 1024
 
-    # Deliberately uppercase-only: models answer letter choices in uppercase
-    # ("B", "the answer is C"), so restricting the scan to A-D as written
-    # avoids false hits on ordinary lowercase words/contractions the case-
-    # insensitive version would catch (e.g. the "d" in "I'd", the article "a").
+    # Uppercase-only: models answer in uppercase ("B"), so scanning for A-D as
+    # written avoids false hits on lowercase words/contractions a case-
+    # insensitive scan would catch (the "d" in "I'd", the article "a").
     _LETTER_RE = re.compile(r"\b([A-D])\b")
 
     @staticmethod
@@ -48,22 +46,19 @@ class MCQBenchmark:
 
     @staticmethod
     def parse_answer(response_text: str, valid_choices) -> str | None:
-        """Extract the model's chosen letter from free-form response text.
+        """Extract the model's chosen letter from free-form text, or None.
 
-        Returns None if no valid choice letter can be found. Scans for the
-        first standalone letter that's actually one of this question's valid
-        choices, so a model that reasons out loud before answering ("... so
-        the answer is B") is still scored correctly, while a stray letter
-        from unrelated text ("A" inside "As an AI...") that isn't a valid
-        choice is skipped rather than accepted.
+        Scans for the first standalone letter that's a valid choice, so a
+        model reasoning out loud before answering ("... so the answer is B")
+        still scores, while a stray letter that isn't a valid choice ("A" in
+        "As an AI...") is skipped.
         """
         if not response_text:
             return None
         valid = {c.upper() for c in valid_choices}
 
-        # A bare (possibly punctuated) single letter is the common case —
-        # handle it case-insensitively before falling back to the uppercase-
-        # only scan below, so a lowercase "b" or "(b)" reply still counts.
+        # Handle a bare single letter case-insensitively (before the
+        # uppercase-only scan below), so a lowercase "b" or "(b)" still counts.
         stripped = response_text.strip().strip(".()[]:*").strip()
         if len(stripped) == 1 and stripped.upper() in valid:
             return stripped.upper()
@@ -86,8 +81,7 @@ class MCQBenchmark:
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
-        given_letter_or_None} map. Pure so the scoring logic (independent of
-        how the answers were collected) is directly testable."""
+        given_letter_or_None} map. Pure, so it's directly testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
         correct = 0

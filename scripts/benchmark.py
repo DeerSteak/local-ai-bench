@@ -11,15 +11,13 @@ Tests:
   1b. LLM conversation — same models, but via a real multi-turn chat
       (/api/chat) instead of one padded single-shot prompt: the model
       explains Plato's Allegory of the Cave in sections, then each turn asks
-      for more detail on a section. TTFT/tokens-per-sec at each depth reflect
-      processing a new turn against an already-filled context (relying on
-      llama.cpp's slot prefix cache), not a cold fill from empty. This test
-      is expensive, so it always runs a single conversation (--runs is
-      ignored here), grown from scratch toward 96K context, sampled at 0,
-      2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever of those the model's
-      real ceiling reaches). The model is still given the full 128K context
-      window (or its real max, whichever is lower) so 96K is reached with
-      headroom to spare rather than scraped against the ceiling.
+      for more detail. TTFT/tokens-per-sec at each depth reflect processing a
+      new turn against an already-filled context (llama.cpp's slot prefix
+      cache), not a cold fill. Expensive, so it always runs a single
+      conversation (--runs ignored), grown from scratch toward 96K, sampled at
+      0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever the model's real ceiling
+      reaches). The model gets the full 128K window (or its real max) so 96K
+      is reached with headroom.
 
   2. Image generation — SD1.5, SDXL, SD3.5 Large, Flux.1-dev, Flux.2-dev via
      ComfyUI HTTP API
@@ -113,14 +111,11 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 
 
 def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
-    """Filter `models` (LLM_MODELS entries) down to those whose tag matches
-    any of `patterns` — each pattern is either an exact Ollama tag or a
-    shell-style wildcard (fnmatch), e.g. "llama*" matches every tag starting
-    with "llama". Case-sensitive (`fnmatchcase`, not `fnmatch`) so behavior
-    is identical across platforms — tags are always written lowercase, and
-    plain `fnmatch.fnmatch` case-normalizes on Windows but not elsewhere.
-    `patterns=None` or an empty list disables filtering (returns `models`
-    unchanged) — this is what makes --models optional."""
+    """Filter `models` down to those whose tag matches any of `patterns` —
+    each an exact Ollama tag or a shell-style wildcard (fnmatch), e.g. "llama*".
+    Case-sensitive (`fnmatchcase`) so behavior is identical across platforms
+    (plain `fnmatch` case-normalizes on Windows only). `patterns=None` or empty
+    disables filtering, which is what makes --models optional."""
     if not patterns:
         return models
     return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
@@ -144,15 +139,14 @@ def sanitize_tag_to_short(tag: str) -> str:
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str]) -> list[dict]:
     """Extend `filter_models_by_pattern`'s catalog-only matching so a pattern
-    that doesn't match anything in the curated catalog (models.py) can still
-    resolve to a model — as long as it's actually pulled in Ollama. This lets
-    someone benchmark a model they installed themselves (extra fine-tune,
-    newer quant, etc.) without needing us to add it to the catalog first;
-    it just runs without curated tier/label/params_b metadata.
+    that matches nothing in the curated catalog (models.py) can still resolve
+    to a model, as long as it's actually pulled in Ollama. Lets someone
+    benchmark a self-installed model without adding it to the catalog first; it
+    just runs without curated tier/label/params_b metadata.
 
     Only patterns with zero catalog matches fall through to the installed-tag
-    lookup, so an existing wildcard that already matches curated models keeps
-    behaving exactly as before (no surprise extra entries mixed in).
+    lookup, so an existing wildcard that already matches curated models behaves
+    exactly as before.
     """
     catalog_tags = {m["tag"] for m in catalog}
     resolved = list(filter_models_by_pattern(catalog, patterns))
@@ -172,11 +166,11 @@ def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_ta
 
 
 def sidecar_path(out_path: str, prefix: str) -> Path:
-    """Build a sidecar file path alongside the main results JSON, swapping
-    its "results_" stem prefix for `prefix` (or just prepending `prefix` if
-    the stem doesn't start with "results_", e.g. after --out) so hostname and
-    timestamp stay identical between the two, letter for letter — same
-    convention as the images_*/ folder (see docs/project-structure.md)."""
+    """Build a sidecar file path alongside the main results JSON, swapping its
+    "results_" stem prefix for `prefix` (or prepending `prefix` if the stem
+    doesn't start with "results_", e.g. after --out) so hostname and timestamp
+    stay identical between the two — same convention as the images_*/ folder
+    (see docs/project-structure.md)."""
     stem = Path(out_path).stem
     name = prefix + stem[len("results_"):] if stem.startswith("results_") else f"{prefix}{stem}"
     return config.RESULTS_DIR / f"{name}.json"
@@ -224,8 +218,7 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
                 "skip_reason": "timed_out", "skip_detail": detail}
 
     # A timeout at a deeper context (8K/32K/64K) doesn't disqualify the model —
-    # it passed the 2K prefill test, so fall through to the tok/s check below
-    # just like a model that wasn't timed out.
+    # it passed the 2K prefill test, so fall through to the tok/s check below.
     slow_ctx = None if force_all else llm_data.get("slow_tps") or (
         first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
         and llm_data[first_ctx_label].get("tps_mean") is not None
@@ -550,11 +543,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         # ── Image generation ───────────────────────────────────────────────────
         if "img" in args.tests:
             Shared.section("Starting Servers")
-            # Hard guarantee: nothing from Ollama in memory before ComfyUI loads.
-            # Image generation is always the last phase (see phase order above),
-            # so there's nothing left in this run that needs Ollama afterward —
-            # kill the whole server rather than just unloading its models, to
-            # free up whatever memory the idle process itself still holds.
+            # Nothing from Ollama in memory before ComfyUI loads. Image
+            # generation is always the last phase, so nothing later needs
+            # Ollama — kill the whole server rather than just unloading its
+            # models, to free the memory the idle process itself still holds.
             if Shared.ollama_available():
                 Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
                 Shared.stop_all_ollama()

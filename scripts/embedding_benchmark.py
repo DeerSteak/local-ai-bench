@@ -1,9 +1,8 @@
 """
-embedding_benchmark.py — real document-ingestion workload: chunk one real
-document the way a RAG pipeline would (paragraph-sized pieces), then embed
-every chunk from it in a single call, the way an app actually ingests one
-document — rather than sweeping arbitrary "batch sizes" that don't
-correspond to any real client behavior.
+embedding_benchmark.py — real document-ingestion workload: chunk one document
+into paragraph-sized pieces (as a RAG pipeline would), then embed every chunk
+in a single call, the way an app ingests one document — rather than sweeping
+arbitrary batch sizes that match no real client behavior.
 """
 
 import re
@@ -18,10 +17,9 @@ from shared import Shared
 
 class EmbeddingBenchmark:
     # max_words caps every chunk well under any embedding model's context
-    # length (mxbai-embed-large's is 512 tokens) regardless of how the source
-    # document is formatted — this is also what fixes "content length exceeds
-    # context length" errors that an unbounded chunker can produce when it
-    # runs into a document's own markdown tables/code blocks.
+    # length (mxbai-embed-large's is 512 tokens), which also avoids "content
+    # length exceeds context length" errors an unbounded chunker hits on a
+    # document's own markdown tables/code blocks.
     EMBED_DOCUMENT_PATH = config.SCRIPT_DIR / "sample_document.txt"
     EMBED_CHUNK_MAX_WORDS = 150
     EMBED_CHUNK_MIN_WORDS = 6
@@ -108,11 +106,10 @@ class EmbeddingBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up model (load into memory) before measuring. The first embed
-                # call against a freshly-unloaded model pays a one-time cost, model
-                # weights loading into memory, first-call kernel/graph setup, that
-                # has nothing to do with steady-state throughput — folding it into a
-                # measured run would understate this model's real performance.
+                # Warm up before measuring: the first embed call against a
+                # freshly-unloaded model pays a one-time load/setup cost unrelated
+                # to steady-state throughput, and folding it into a measured run
+                # would understate performance.
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:

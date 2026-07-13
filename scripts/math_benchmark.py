@@ -1,7 +1,6 @@
 """math_benchmark.py — math word-problem accuracy benchmark: each model
-answers every question in scripts/data/math_questions.json once (temperature
-0, so a single pass is representative — repeating it wouldn't change the
-answers), scored right/wrong against the dataset's known numeric answer
+answers every question in scripts/data/math_questions.json once at
+temperature 0, scored right/wrong against the dataset's known numeric answer
 (within its per-question tolerance) and broken down by category.
 """
 
@@ -45,13 +44,11 @@ class MathBenchmark:
 
     @staticmethod
     def parse_answer(response_text: str) -> float | None:
-        """Extract the model's numeric answer from free-form response text.
+        """Extract the model's numeric answer from free-form text, or None.
 
-        Returns None if no number can be found. Takes the *last* number in
-        the text rather than the first — a model that reasons out loud before
-        answering ("347 + 589 = 936, so the answer is 936") states its final
-        answer last, and intermediate numbers earlier in the reasoning
-        shouldn't be mistaken for it.
+        Takes the *last* number, not the first — a model reasoning out loud
+        ("347 + 589 = 936, so the answer is 936") states its final answer
+        last, and intermediate numbers shouldn't be mistaken for it.
         """
         if not response_text:
             return None
@@ -79,8 +76,7 @@ class MathBenchmark:
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
         given_number_or_None} map, comparing each answer against its own
-        question's tolerance. Pure so the scoring logic (independent of how
-        the answers were collected) is directly testable."""
+        question's tolerance. Pure, so it's directly testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
         correct = 0

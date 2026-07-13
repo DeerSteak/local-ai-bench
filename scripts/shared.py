@@ -277,10 +277,8 @@ class Shared:
         if portable_windows and Shared.detect_backend() == "rocm":
             env["TRITON_INTERPRET"] = "1"
 
-        # Capture stdout+stderr to a log file kept for the whole process lifetime
-        # (not just startup) so a crash later in the run — e.g. an OOM while
-        # loading a large checkpoint — still has real output to inspect instead
-        # of going silent.
+        # Capture stdout+stderr to a log kept for the whole process lifetime,
+        # so a crash later in the run still has real output to inspect.
         try:
             log_fh = tempfile.NamedTemporaryFile(
                 mode="w", suffix="-comfyui-server.log", delete=False
@@ -468,12 +466,10 @@ class Shared:
                     return "xpu"
             except Exception:
                 pass
-        # Intel Arc on Linux — no equivalent of xpu-smi is guaranteed installed,
-        # so reuse the same "Intel" + "Arc" name heuristic as the Windows check
-        # above, applied to lspci's GPU line (already used as get_hostname()'s
-        # Linux GPU fallback). Requiring "Arc" in the name, not just "Intel",
-        # avoids misreporting integrated graphics (e.g. "Intel Iris Xe") that
-        # have no discrete GPU acceleration path.
+        # Intel Arc on Linux — no guaranteed xpu-smi, so reuse the "Intel"+"Arc"
+        # name heuristic from the Windows check on lspci's GPU line. Requiring
+        # "Arc", not just "Intel", avoids misreporting integrated graphics
+        # (e.g. "Intel Iris Xe") with no discrete acceleration path.
         if platform.system() == "Linux":
             try:
                 out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
@@ -510,13 +506,10 @@ class Shared:
         """
         Pad a prompt to approximate a target context length (1 token ≈ 4 chars).
 
-        Prepends a unique per-call nonce so repeated calls at the same context
-        length don't share an identical prefix — without it, Ollama's slot cache
-        recognizes the exact same prompt on every subsequent run and serves a
-        cache hit instead of genuinely reprocessing it, making every run after
-        the first measure cache-hit latency rather than real prompt-processing
-        time (the one real cold-prefill measurement then gets discarded as the
-        "slow outlier").
+        Prepends a unique per-call nonce so repeated calls at the same length
+        don't share a prefix — without it Ollama's slot cache serves a cache
+        hit on every rerun, so every run after the first measures cache-hit
+        latency rather than real prompt-processing time.
         """
         nonce = uuid.uuid4().hex
         prefix = f"[run {nonce}] "
@@ -543,16 +536,12 @@ class Shared:
         """True if `e` looks like Ollama's model runner subprocess died
         (commonly OOM) rather than an ordinary request failure.
 
-        Two distinct timings surface as different exception shapes:
-        - Connection-refused (the runner is already dead before the request
-          starts) surfaces as a different exception type depending on which
-          HTTP client made the call (requests vs urllib), so check both.
-        - Mid-stream (the runner dies while a response is being streamed,
-          e.g. partway through generating tokens at a large context depth —
-          the realistic OOM timing these long-running tests actually hit)
-          surfaces as a truncated/reset read instead: http.client.IncompleteRead,
-          or a builtin ConnectionError (BrokenPipeError/ConnectionResetError/
-          ConnectionAbortedError) from the socket itself.
+        Two timings surface as different exception shapes: connection-refused
+        (runner already dead before the request) varies by HTTP client
+        (requests vs urllib), so check both; mid-stream death (runner dies
+        while streaming — the realistic OOM timing here) surfaces as a
+        truncated read — http.client.IncompleteRead, or a builtin
+        ConnectionError from the socket.
         """
         if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
                           http.client.IncompleteRead, ConnectionError)):
@@ -575,12 +564,10 @@ class Shared:
     @staticmethod
     def ollama_reachable_or_abort() -> bool:
         """True if Ollama is reachable. Callers looping over models should stop
-        processing the remaining ones when this is False, rather than
-        continuing into model_pulled() — which swallows connection errors and
-        returns False indistinguishably from "genuinely not pulled", so a
-        server that's still down after a failed wait_for_ollama_recovery()
-        would otherwise get every remaining model misreported as not pulled
-        instead of surfacing the real problem."""
+        when this is False rather than continuing into model_pulled() — which
+        swallows connection errors and returns False indistinguishably from
+        "genuinely not pulled", so a still-down server would misreport every
+        remaining model as not pulled."""
         if Shared.ollama_available():
             return True
         Shared.err("Ollama is not reachable — stopping remaining models in this test")
@@ -634,23 +621,18 @@ class Shared:
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str) -> tuple[list, str]:
         """
-        Call `call(run_i)` up to `n_runs` times, collecting each return value
-        into a list — the shared shape behind every benchmark's "N measured
-        runs" loop (embedding throughput, LLM prefill TTFT/TPS, ...).
+        Call `call(run_i)` up to `n_runs` times, collecting each return value —
+        the shared shape behind every benchmark's "N measured runs" loop.
 
-        A timeout stops immediately (the caller decides what a partial result
-        means). A crash (Shared.is_connection_crash) retries the *same* run,
-        without counting it, after waiting for Ollama's main server to notice
-        and respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since
-        a deterministic crash on this tag/workload would just recur
-        identically forever. Any other exception counts as a failed run and
-        moves on to the next one. A crash that exhausts its retries is
-        recorded to `cache_path` so future invocations skip this tag/test
-        combo instead of rediscovering the same crash.
+        A timeout stops immediately. A crash (Shared.is_connection_crash)
+        retries the *same* run without counting it, after waiting for Ollama to
+        respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since a
+        deterministic crash would recur forever. Any other exception counts as
+        a failed run and moves on. A crash that exhausts its retries is recorded
+        to `cache_path` so future invocations skip this tag/test.
 
         Returns (samples, status) where status is "ok", "timed_out", or
-        "crashed" — `samples` may be non-empty even when status != "ok" (e.g.
-        earlier runs succeeded before a later one crashed or timed out).
+        "crashed"; `samples` may be non-empty even when status != "ok".
         """
         samples = []
         run_i = 0
@@ -696,10 +678,9 @@ class Shared:
     @staticmethod
     def list_installed_models() -> list[dict]:
         """Every Ollama tag actually pulled locally, straight from /api/tags —
-        including ones outside models.py's curated catalog. Returns [] (not an
-        exception) if Ollama isn't reachable, so callers can treat "can't
-        reach Ollama" and "no models installed" the same way for listing
-        purposes."""
+        including ones outside models.py's catalog. Returns [] (not an
+        exception) if Ollama isn't reachable, so callers treat "can't reach"
+        and "none installed" the same for listing."""
         try:
             r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
             return [{"tag": m["name"], "size": m.get("size")} for m in r.json().get("models", [])]
@@ -708,14 +689,11 @@ class Shared:
 
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
-        """Write an accuracy test's per-model raw-answer sidecar file (the
-        wrong answers' full raw_response text) to `path`, overwriting it each
-        call so it can be updated incrementally as each model finishes — same
-        checkpoint-as-you-go approach as the main results JSON, so a crash
-        mid-run doesn't lose answers already collected. Kept out of the main
-        results JSON since raw model output is large relative to everything
-        else in there and bloats it fast, especially at a generous
-        num_predict budget."""
+        """Write an accuracy test's per-model raw-answer sidecar (wrong answers'
+        full raw_response text) to `path`, overwriting each call so it updates
+        incrementally as models finish — same checkpoint-as-you-go as the main
+        results JSON, so a crash mid-run doesn't lose collected answers. Kept
+        out of that JSON since raw model output is large and bloats it fast."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2))
 
@@ -723,14 +701,12 @@ class Shared:
     def ollama_model_max_ctx(model_tag, default=131072):
         """Look up a pulled model's real max context length via /api/show.
 
-        Reads manifest metadata only — doesn't load the model into memory, so
-        this is a cheap call. The context-length key is prefixed by
-        architecture (llama.context_length, phi3.context_length,
-        qwen35.context_length, gemma4.context_length, gptoss.context_length,
-        ...), so scan for any key ending in that suffix rather than guessing
-        the prefix from the tag. Falls back to `default` if the model isn't
-        found, the field is missing, or the request fails for any reason —
-        callers then behave as if the model supports exactly `default`.
+        Reads manifest metadata only (no model load), so it's cheap. The
+        context-length key is architecture-prefixed (llama.context_length,
+        qwen35.context_length, gptoss.context_length, ...), so scan for any key
+        ending in that suffix rather than guessing the prefix. Falls back to
+        `default` if the model isn't found, the field is missing, or the
+        request fails — callers then behave as if it supports exactly `default`.
         """
         try:
             r = requests.post(f"{config.OLLAMA_URL}/api/show",
@@ -769,18 +745,14 @@ class Shared:
         Generate via Ollama and return timing metrics.
         Returns: (ttft_sec, tokens_generated, tokens_per_sec)
 
-        Uses urllib instead of requests for streaming to avoid TCP buffering
-        that causes iter_lines() to batch all chunks and inflate TTFT.
+        Uses urllib rather than requests so streaming isn't TCP-buffered (which
+        batches chunks and inflates TTFT). Ollama's final chunk carries
+        server-side timing (prompt_eval_duration, eval_count, eval_duration in
+        ns), preferred over wall-clock where available.
 
-        Ollama's final chunk includes server-side timing fields:
-          prompt_eval_duration  — time to process the prompt (nanoseconds)
-          eval_count            — tokens generated
-          eval_duration         — time spent generating (nanoseconds)
-        These are authoritative and used in preference to wall-clock where available.
-
-        num_ctx must match the context length being tested. Without it, Ollama uses
-        the model's default, and sending a prompt longer than that default triggers a
-        full model reload — inflating TTFT by minutes rather than seconds.
+        num_ctx must match the context length being tested — without it Ollama
+        uses the model default, and a prompt longer than that triggers a full
+        model reload, inflating TTFT by minutes.
         """
         options: dict = {"num_predict": 512, "temperature": 0.0}
         if num_ctx is not None:
@@ -846,16 +818,14 @@ class Shared:
         """
         Load `tag` into memory with `warmup_runs` blocking generate calls, each
         watchdogged by a daemon thread so a hung load (model too large for
-        available memory) times out after config.RUN_TIMEOUT instead of hanging
-        the whole benchmark run. Returns False on the first hung or failed run,
-        so the caller can skip this model.
+        memory) times out after config.RUN_TIMEOUT instead of hanging the whole
+        run. Returns False on the first hung or failed run so the caller can
+        skip this model.
 
-        A hang, or an exception that looks like Ollama's runner crashing
-        outright, is exactly the kind of deterministic failure the crash cache
-        exists to remember — warmup is often where an oversized model's OOM
-        first shows up, before a single measured run ever gets a chance to
-        record it. Pass `crash_cache`/`cache_path` (from Shared.load_crash_cache)
-        to have that case recorded here too.
+        A hang or a runner-crash exception is exactly the deterministic failure
+        the crash cache exists to remember — warmup is often where an oversized
+        model's OOM first shows up. Pass `crash_cache`/`cache_path` to record
+        that case here too.
         """
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
@@ -898,11 +868,11 @@ class Shared:
         Generate via Ollama's /api/chat and return timing metrics plus the reply text.
         Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
 
-        prompt_eval_count is the *total* number of tokens in this call's prompt
-        (ground truth for how deep the context is), not just the new suffix — even
-        when `messages` shares a prefix with a prior call and llama.cpp's slot
-        cache skips re-processing it. The cache reuse shows up as a low
-        prompt_eval_duration/ttft instead, not a smaller prompt_eval_count.
+        prompt_eval_count is the *total* prompt token count for this call
+        (ground truth for context depth), not just the new suffix — even when
+        `messages` shares a prefix with a prior call and llama.cpp's slot cache
+        skips re-processing it (that shows up as low prompt_eval_duration/ttft
+        instead).
         """
         options: dict = {"num_predict": num_predict, "temperature": 0.0}
         if num_ctx is not None:
@@ -970,12 +940,10 @@ class Shared:
         if ttft is None:
             ttft = total
         # Reasoning models (Qwen3.x, DeepSeek-R1, Gemma-thinking, ...) can stream
-        # their entire turn through message.thinking with message.content left
-        # empty. Fall back to the thinking text so the conversation history we
-        # feed back on the next turn isn't an empty assistant message — otherwise
-        # the growth loop below wildly overcounts how much context actually
-        # persists (eval_count reflects thinking tokens that never make it into
-        # the next turn's prompt at all).
+        # their whole turn through message.thinking with message.content empty.
+        # Fall back to the thinking text so the history we feed back next turn
+        # isn't an empty assistant message — otherwise the growth loop overcounts
+        # how much context actually persists.
         response_text = "".join(response_parts) or "".join(thinking_parts)
         return ttft, eval_count, tps, prompt_eval_count, response_text
 

@@ -5,10 +5,8 @@ No external dependencies: safe to import before packages are installed.
 Both benchmark.py and setup_check.py import from here.
 """
 
-# "download_size" is each model's on-disk download size, rounded UP to the
-# next 0.1 GB (not nearest) so setup's disk-space check always errs toward
-# requiring more free space rather than less. Verified against actual
-# downloaded sizes.
+# "download_size" is each model's on-disk size, rounded UP to the next 0.1 GB
+# so setup's disk-space check errs toward requiring more free space, not less.
 EMBED_MODELS = [
     {
         "tag":            "nomic-embed-text",
@@ -39,10 +37,9 @@ IMAGE_MODELS = [
         "scheduler":   "normal",
         "short":       "sd15",
         "tier":        "xsmall",  # ~4.3 GB
-        # SD1.5 was trained at 512x512; the project's default 1024/1536 test
-        # resolutions push it well outside that range and produce visibly
-        # degraded (duplicated-subject) output, so it gets its own native-range
-        # pair instead: base resolution and the same 1.5x step used elsewhere.
+        # SD1.5 was trained at 512x512; the default 1024/1536 resolutions push
+        # it far outside that range and produce degraded (duplicated-subject)
+        # output, so it gets its own native-range pair instead.
         "resolutions": [(512, 512), (768, 768)],
     },
     {
@@ -120,8 +117,8 @@ LLM_MODELS_XSMALL = sorted([
 # Small-tier models (≤20B parameters).
 # Tags verified against ollama.com/library June 2026.
 # "params_b" is total parameter count in billions (not active/effective count
-# for MoE models — e.g. Qwen3.6 35B-A3B has 3B active but 35B total) and is
-# what determines test order below, not download size or list position.
+# for MoE models — e.g. Qwen3.6 35B-A3B has 3B active but 35B total) and sets
+# the test order below, not download size or list position.
 LLM_MODELS_SMALL = sorted([
     {
         "tag":            "llama3.1:8b-instruct-q4_K_M",

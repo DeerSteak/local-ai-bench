@@ -43,9 +43,8 @@ class LLMPrefillBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up model (load into memory), with a timeout so we don't get stuck.
-                # Use the largest context this model will actually run so Ollama
-                # pre-allocates the full KV cache once — avoiding a reload at max context.
+                # Warm up at the largest context this model will run so Ollama
+                # pre-allocates the full KV cache once, avoiding a reload at max context.
                 max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
                 if not Shared.warmup_model(tag, label, max_ctx, warmup_runs,
                                            crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
@@ -112,7 +111,6 @@ class LLMPrefillBenchmark:
                     if Shared.slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
                         break
 
-                # Unload model and confirm it's gone before moving on
                 if model_timed_out:
                     Shared.warn(f"{label}: timed out — moving to next model")
                 Shared.log(f"Unloading {label} ...")

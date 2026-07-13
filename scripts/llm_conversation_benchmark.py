@@ -1,24 +1,19 @@
 """
 llm_conversation_benchmark.py — simulates a real multi-turn chat (rather than
 one huge padded single-shot prompt): the model explains Plato's Allegory of
-the Cave in numbered sections, then each subsequent turn asks for more detail
-on one section. Every turn is sent with the full message history via
-/api/chat, so llama.cpp's slot cache carries the prior turns forward —
-TTFT/TPS at each context depth reflect processing the new turn against an
-already-filled context, not a cold fill from empty.
+the Cave in numbered sections, then each turn asks for more detail on one
+section. Every turn is sent with the full message history via /api/chat, so
+llama.cpp's slot cache carries prior turns forward — TTFT/TPS at each depth
+reflect processing the new turn against an already-filled context, not a cold
+fill from empty.
 
-This test is expensive, so it runs a single conversation per model — the
---runs flag (which repeats other tests) is deliberately ignored here.
-The conversation is grown from a blank slate up to the model's real context
-ceiling — 128K if the model supports it, otherwise whatever it actually
-supports (looked up live via Shared.ollama_model_max_ctx, not hardcoded, so
-it always matches what's actually pulled). Along the way it samples
-TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever of
-those the model's ceiling reaches). The model is still given the full 128K
-of context room (so 96K is reached with headroom to spare, not scraped
-against the ceiling) — we just stop sampling at 96K, since 96K-to-128K is
-where models with an exact 128K native ceiling have no slack left and the
-growth loop's final turns risk tipping over into truncation.
+Expensive, so it runs a single conversation per model (the --runs flag is
+ignored here). The conversation grows from empty up to the model's real
+context ceiling (looked up live via Shared.ollama_model_max_ctx), sampling
+TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever the
+ceiling reaches). The model gets the full 128K of room, but sampling stops at
+96K, since 96K-to-128K is where models with an exact 128K native ceiling have
+no slack left and the growth loop's final turns risk tipping into truncation.
 """
 
 from pathlib import Path
@@ -35,33 +30,27 @@ class LLMConversationBenchmark:
 
     CONV_NUM_SECTIONS = 6
 
-    # Every conversation run gets a single try — this test is too expensive
-    # (many turns growing all the way to the context ceiling) to repeat the
-    # --runs number of times like the other benchmarks do.
+    # Single try per model — too expensive (many turns growing to the context
+    # ceiling) to repeat --runs times like the other benchmarks.
     CONV_RUNS = 1
 
-    # The context window handed to a model: 128K if it supports at least
-    # that much, otherwise its own real ceiling (see Shared.ollama_model_max_ctx).
-    # This is deliberately higher than the highest checkpoint we sample
-    # (CONV_CHECKPOINTS below tops out at 96K) so the growth loop always has
-    # real headroom left against num_ctx instead of scraping the ceiling.
+    # Context window handed to a model: 128K if supported, else its real
+    # ceiling (see Shared.ollama_model_max_ctx). Higher than the top sampled
+    # checkpoint (96K) so the growth loop always has headroom against num_ctx
+    # instead of scraping the ceiling.
     CONV_TARGET_CTX = 131072
 
-    # Checkpoints to sample: 0, then 2K doubling up to 64K, plus 48K/80K in
-    # between the higher steps (where an early-exiting model is most likely
-    # to drop out, so those gaps benefit most from an extra data point) and
-    # the 96K cap. Filtered per model down to whatever its real ceiling
-    # actually reaches. Deliberately stops short of the 128K context window
-    # given to the model (CONV_TARGET_CTX) so there's always headroom left
-    # to grow into.
+    # Checkpoints to sample: 0, then 2K doubling to 64K, plus 48K/80K in the
+    # higher gaps (where an early-exiting model most likely drops out) and the
+    # 96K cap. Filtered per model to its real ceiling. Stops short of the 128K
+    # window (CONV_TARGET_CTX) so there's always headroom to grow into.
     CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
-    # Bounds on any single growth turn's num_predict. Crossing a gap in a
-    # handful of turns (remaining // CONV_STEP_DIVISOR, clamped to this
-    # range) rather than one big jump is what gives the smaller checkpoints
-    # (0->2K, 2K->4K, ...) real resolution instead of one turn blowing
-    # straight past them — while the cap keeps any single generation call,
-    # and the gap-to-128K's turn count, bounded.
+    # Bounds on any single growth turn's num_predict. Crossing a gap in
+    # several turns (remaining // CONV_STEP_DIVISOR, clamped here) rather than
+    # one big jump gives the smaller checkpoints (0->2K, 2K->4K, ...) real
+    # resolution instead of overshooting them, while the cap bounds any single
+    # generation call.
     CONV_STEP_MIN = 32
     CONV_STEP_MAX = 1024
     CONV_STEP_MAX_FAR = 4096
@@ -70,17 +59,14 @@ class LLMConversationBenchmark:
     # Opening turn is a full structured answer, not a small growth step.
     CONV_OPENING_PREDICT = 2048
 
-    # Extra num_ctx requested beyond the top checkpoint a model will actually
-    # reach, when its real ceiling allows it — growing a turn's prompt right
-    # up against num_ctx with nothing to spare forces Ollama to
-    # truncate/context-shift, corrupting that measurement (see the room
-    # clamp in run() for how this is used).
+    # Extra num_ctx beyond the top checkpoint reached, when the real ceiling
+    # allows it — growing a prompt right up against num_ctx forces Ollama to
+    # truncate/context-shift, corrupting that measurement.
     CONV_CTX_HEADROOM = 4096
 
-    # Reserved tokens so a non-final growth turn's own new user message (plus
-    # its generation) can't push the *next* turn's prompt past num_ctx. Not
-    # applied to the very last turn of a run, which has no next turn to
-    # protect and can use the full remaining room up to num_ctx itself.
+    # Reserved tokens so a non-final growth turn's new user message plus its
+    # generation can't push the *next* turn's prompt past num_ctx. Not applied
+    # to the last turn of a run, which has no next turn to protect.
     CONV_SAFETY_MARGIN = 64
 
     CONV_OPENING_PROMPT = (
@@ -94,16 +80,15 @@ class LLMConversationBenchmark:
     @staticmethod
     def compute_growth_step(cumulative_tokens: int, target: int, num_ctx: int,
                              is_last_checkpoint: bool) -> tuple[int | None, bool]:
-        """Compute the num_predict for the next growth turn, crossing the gap
+        """Compute num_predict for the next growth turn, crossing the gap
         toward `target` in bounded steps (see CONV_STEP_MIN/MAX/DIVISOR) rather
-        than one big jump, while keeping enough of num_ctx in reserve for the
-        turn that follows (see CONV_SAFETY_MARGIN) — except on the very last
-        step of the very last checkpoint, which has no next turn to protect and
-        can use every token of room left up to num_ctx.
+        than one big jump, keeping enough num_ctx in reserve for the next turn
+        (see CONV_SAFETY_MARGIN) — except on the last step of the last
+        checkpoint, which can use every token of room left.
 
-        Returns (step, out_of_room). step is None when out_of_room is True —
-        there isn't enough context room left for another turn of at least
-        CONV_STEP_MIN tokens, and the caller should stop growing this run.
+        Returns (step, out_of_room). step is None when out_of_room is True
+        (less than CONV_STEP_MIN tokens of room left), and the caller should
+        stop growing this run.
         """
         remaining = target - cumulative_tokens
         step_max = (LLMConversationBenchmark.CONV_STEP_MAX_FAR
@@ -204,14 +189,12 @@ class LLMConversationBenchmark:
                         )
                         messages.append({"role": "assistant", "content": response_text})
                         # prompt_eval_count is the *total* prompt length Ollama reports for this
-                        # call (ground truth of what's actually in context going into it) — even
-                        # when the slot cache means only the suffix was actually recomputed
-                        # (that's why ttft stays flat as this grows). We deliberately don't add
-                        # eval_count on top: for reasoning models a turn's generated tokens can
-                        # include large amounts of thinking content that a template silently
-                        # drops from history on the next turn, so eval_count doesn't reliably
-                        # predict what will actually persist. The next turn's prompt_eval_count
-                        # (i.e. this same assignment, one call later) is what tells us the truth.
+                        # call — ground truth of what's in context, even when the slot cache
+                        # recomputed only the suffix (why ttft stays flat as this grows). We don't
+                        # add eval_count: for reasoning models a turn's generated tokens can
+                        # include thinking content a template silently drops from history next
+                        # turn, so eval_count doesn't predict what persists. The next turn's
+                        # prompt_eval_count is what tells the truth.
                         cumulative_tokens = prompt_eval_count
                         return ttft, tps
 
@@ -229,8 +212,7 @@ class LLMConversationBenchmark:
                         for idx, target in enumerate(checkpoints):
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
                             if target == 0:
-                                # Checkpoint 0 is just the opening turn — there's no
-                                # growth to do first, it's the start of the conversation.
+                                # Checkpoint 0 is just the opening turn — no growth to do first.
                                 ttft, tps = _turn(_next_prompt(),
                                                    LLMConversationBenchmark.CONV_OPENING_PREDICT)
                             else:
@@ -261,9 +243,9 @@ class LLMConversationBenchmark:
                             print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
                                   f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
 
-                            # A model below the cutoff at any history depth isn't worth growing
-                            # further — every deeper turn only costs more of this test's expensive
-                            # growth budget to confirm what we already showed.
+                            # A model below the cutoff at any depth isn't worth growing further —
+                            # deeper turns only spend more of the expensive growth budget to
+                            # confirm what we've already shown.
                             if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
                                 Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at {label_ctx} is below "
                                             f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
@@ -277,14 +259,11 @@ class LLMConversationBenchmark:
                             run_timed_out = True
                             timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
                         elif Shared.is_connection_crash(e):
-                            # Ollama's model runner subprocess died mid-conversation
-                            # (commonly OOM). This test only runs one conversation per
-                            # model (CONV_RUNS), and mid-turn state (the message list
-                            # already has this turn's user prompt appended) makes
-                            # retrying the exact turn unsafe, so just stop the run here
-                            # — but wait for the server to recover before moving on to
-                            # the next model, instead of letting that model's own
-                            # warmup discover Ollama is still down.
+                            # Ollama's model runner died mid-conversation (commonly OOM).
+                            # Mid-turn state (this turn's user prompt is already appended)
+                            # makes retrying unsafe, so stop the run here — but wait for
+                            # the server to recover before the next model, rather than
+                            # letting its warmup discover Ollama is still down.
                             Shared.err(f"{label}: run {run_i+1} — Ollama's model runner appears to have crashed "
                                        f"— last server output:\n{Shared.tail_ollama_log()}")
                             if not Shared.wait_for_ollama_recovery():

@@ -16,16 +16,15 @@ COMFYUI_URL  = "http://localhost:8188"
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 
-# Every benchmark run's output — results JSON plus the generated sample images.
-# Each run's images land in their own results/images_<hostname>_<timestamp>/
-# folder (a sibling of the matching results_<hostname>_<timestamp>.json, not
-# nested under a shared "images" folder) so both can be selected together in
-# a file browser by sorting/filtering on the shared hostname+timestamp.
+# Benchmark output — results JSON plus generated images. Each run's images
+# land in results/images_<hostname>_<timestamp>/, a sibling of the matching
+# results_<hostname>_<timestamp>.json, so both sort together by the shared
+# hostname+timestamp.
 RESULTS_DIR = SCRIPT_DIR / "results"
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
-# Steps are now per-model in IMAGE_MODELS
+# Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42
 IMAGE_PROMPT = (
     "A photorealistic high-end gaming PC build with RGB lighting, "
@@ -38,11 +37,10 @@ WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting — overridden by --timeout
 
-# Tokens/sec below which a model is considered unusable for real conversation
-# use and skipped from the (expensive) conversation test — decode speed this
-# low means every turn of a real back-and-forth chat is a slog, regardless of
-# how the single-shot test's TTFT looked. Checked against every context depth
-# the single-shot LLM test reported, not just one.
+# Tokens/sec below which a model is skipped from the (expensive) conversation
+# test — too slow for usable back-and-forth chat regardless of single-shot
+# TTFT. Checked against every context depth the single-shot LLM test reported,
+# not just one.
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec
 
 GREEN  = "\033[92m"
