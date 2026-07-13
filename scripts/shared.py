@@ -243,6 +243,15 @@ class Shared:
             cmd = [python_exe, str(main_py), "--listen"]
             launch_cwd = str(comfyui_dir)
 
+        # ComfyUI's Dynamic VRAM (comfy-aimdo) has an unresolved upstream bug that
+        # raises "hostbuf_file_reader_read failed" while streaming weights straight
+        # from combined checkpoint files (e.g. SDXL's CheckpointLoaderSimple, which
+        # packs unet+clip+vae into one .safetensors) — see Comfy-Org/ComfyUI#14239
+        # and #14281. Flux/Flux2 load CLIP/VAE from separate files and are unaffected,
+        # so disabling it globally trades away Dynamic VRAM's memory savings for
+        # correctness across all image models rather than only the ones that need it.
+        cmd.append("--disable-dynamic-vram")
+
         Shared.log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
 
         env = os.environ.copy()
