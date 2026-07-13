@@ -10,6 +10,14 @@ def test_build_prompt_includes_question_text_and_function_name():
     assert "sum_two" in prompt
 
 
+def test_build_prompt_dispatches_to_class_definition_for_stateful_question():
+    q = {"prompt": "Implement a class Stack ...", "class_name": "Stack"}
+    prompt = CodeBenchmark.build_prompt(q)
+    assert "Implement a class Stack ..." in prompt
+    assert "class definition for Stack" in prompt
+    assert "function definition" not in prompt
+
+
 # ── extract_code ──
 
 def test_extract_code_pulls_fenced_python_block():
@@ -82,6 +90,101 @@ def test_execute_tests_missing_function_name_fails_with_error():
     assert results == [{"passed": False, "got": None, "error": "name 'sum_two' is not defined"}]
 
 
+# ── execute_stateful_tests ──
+
+_STACK_CODE = (
+    "class Stack:\n"
+    "    def __init__(self):\n"
+    "        self._items = []\n"
+    "    def push(self, x):\n"
+    "        self._items.append(x)\n"
+    "    def pop(self):\n"
+    "        return self._items.pop() if self._items else None\n"
+    "    def peek(self):\n"
+    "        return self._items[-1] if self._items else None\n"
+    "    def is_empty(self):\n"
+    "        return len(self._items) == 0\n"
+)
+
+
+def test_execute_stateful_tests_all_pass():
+    tests = [
+        {"ops": [["push", [1]], ["push", [2]], ["pop", []], ["peek", []]], "expected": [None, None, 2, 1]},
+        {"ops": [["is_empty", []]], "expected": [True]},
+    ]
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "Stack", tests)
+    assert results == [
+        {"passed": True, "got": [None, None, 2, 1], "error": None},
+        {"passed": True, "got": [True], "error": None},
+    ]
+
+
+def test_execute_stateful_tests_fresh_instance_per_test():
+    # A stray push in one scenario must not leak into the next.
+    tests = [
+        {"ops": [["push", [1]], ["push", [2]]], "expected": [None, None]},
+        {"ops": [["is_empty", []]], "expected": [True]},
+    ]
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "Stack", tests)
+    assert results[1] == {"passed": True, "got": [True], "error": None}
+
+
+def test_execute_stateful_tests_respects_init_args():
+    code = (
+        "class Box:\n"
+        "    def __init__(self, cap):\n"
+        "        self.cap = cap\n"
+        "    def get_cap(self):\n"
+        "        return self.cap\n"
+    )
+    tests = [{"init": [5], "ops": [["get_cap", []]], "expected": [5]}]
+    results = CodeBenchmark.execute_stateful_tests(code, "Box", tests)
+    assert results == [{"passed": True, "got": [5], "error": None}]
+
+
+def test_execute_stateful_tests_defaults_init_to_no_args():
+    tests = [{"ops": [["is_empty", []]], "expected": [True]}]  # no "init" key
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "Stack", tests)
+    assert results == [{"passed": True, "got": [True], "error": None}]
+
+
+def test_execute_stateful_tests_wrong_output_fails_that_test_only():
+    tests = [{"ops": [["push", [1]], ["pop", []]], "expected": [None, 999]}]
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "Stack", tests)
+    assert results == [{"passed": False, "got": [None, 1], "error": None}]
+
+
+def test_execute_stateful_tests_exception_mid_sequence_fails_that_scenario_only():
+    tests = [
+        {"ops": [["nonexistent_method", []]], "expected": [None]},
+        {"ops": [["is_empty", []]], "expected": [True]},
+    ]
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "Stack", tests)
+    assert results[0]["passed"] is False
+    assert results[0]["error"] is not None
+    assert results[1] == {"passed": True, "got": [True], "error": None}
+
+
+def test_execute_stateful_tests_missing_class_name_fails_with_error():
+    tests = [{"ops": [["push", [1]]], "expected": [None]}]
+    results = CodeBenchmark.execute_stateful_tests(_STACK_CODE, "NoSuchClass", tests)
+    assert results == [{"passed": False, "got": None, "error": "name 'NoSuchClass' is not defined"}]
+
+
+def test_execute_stateful_tests_infinite_loop_times_out_instead_of_hanging():
+    code = (
+        "class Loopy:\n"
+        "    def __init__(self):\n"
+        "        pass\n"
+        "    def go(self):\n"
+        "        while True:\n"
+        "            pass\n"
+    )
+    tests = [{"ops": [["go", []]], "expected": [None]}]
+    results = CodeBenchmark.execute_stateful_tests(code, "Loopy", tests, timeout=1)
+    assert results == [{"passed": False, "got": None, "error": "timeout"}]
+
+
 # ── evaluate_question ──
 
 def _question():
@@ -112,6 +215,39 @@ def test_evaluate_question_no_code_short_circuits_without_running():
     assert result == {"correct": False, "tests_passed": 0, "tests_total": 2, "error": "no code found"}
     result_none = CodeBenchmark.evaluate_question(_question(), None)
     assert result_none["error"] == "no code found"
+
+
+def _stateful_question():
+    return {
+        "id": "code_026", "category": "stateful", "class_name": "Stack",
+        "prompt": "...",
+        "visible_tests": [{"ops": [["push", [1]], ["pop", []]], "expected": [None, 1]}],
+        "hidden_tests": [{"ops": [["is_empty", []]], "expected": [True]}],
+    }
+
+
+def test_evaluate_question_dispatches_to_stateful_execution_for_class_name_question():
+    result = CodeBenchmark.evaluate_question(_stateful_question(), _STACK_CODE)
+    assert result == {"correct": True, "tests_passed": 2, "tests_total": 2, "error": None}
+
+
+def test_evaluate_question_stateful_partial_pass_is_not_correct():
+    # A Stack that never actually stores anything: push does nothing, pop is always None.
+    code = (
+        "class Stack:\n"
+        "    def __init__(self):\n"
+        "        pass\n"
+        "    def push(self, x):\n"
+        "        pass\n"
+        "    def pop(self):\n"
+        "        return None\n"
+        "    def is_empty(self):\n"
+        "        return True\n"
+    )
+    result = CodeBenchmark.evaluate_question(_stateful_question(), code)
+    assert result["correct"] is False
+    assert result["tests_passed"] == 1  # only the is_empty hidden test passes
+    assert result["tests_total"] == 2
 
 
 # ── score ──
@@ -181,8 +317,18 @@ def test_load_questions_returns_well_formed_dataset():
     ids = [q["id"] for q in questions]
     assert len(ids) == len(set(ids))  # unique ids
     for q in questions:
-        assert q["function_name"]
+        assert bool(q.get("function_name")) != bool(q.get("class_name"))  # exactly one
         assert len(q["visible_tests"]) > 0
         assert len(q["hidden_tests"]) > 0
         for test in q["visible_tests"] + q["hidden_tests"]:
-            assert "args" in test and "expected" in test
+            if "class_name" in q:
+                assert "ops" in test and "expected" in test
+            else:
+                assert "args" in test and "expected" in test
+
+
+def test_load_questions_dataset_has_stateful_problems():
+    questions = CodeBenchmark.load_questions()
+    stateful = [q for q in questions if "class_name" in q]
+    assert len(stateful) > 0
+    assert {q["category"] for q in stateful} == {"stateful"}

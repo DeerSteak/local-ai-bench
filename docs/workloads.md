@@ -137,7 +137,11 @@ Run just this test with `--tests math`.
 
 ### Code
 
-Every LLM model answers a fixed bank of 25 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`), asked to write a single Python function matching a given name and signature. The question bank (`scripts/data/code_problems.json`) covers eight categories — arithmetic, string, algorithms, list, number_theory, search, matrix, and stack — each problem with a handful of visible test cases (shown in the prompt as `args`/`expected` pairs the function should satisfy) plus additional hidden test cases the model never sees.
+Every LLM model answers a fixed bank of 28 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`). The question bank (`scripts/data/code_problems.json`) covers nine categories — arithmetic, string, algorithms, list, number_theory, search, matrix, stack, and stateful — each problem with a handful of visible test cases the model can see plus additional hidden test cases it can't.
+
+Problems come in two shapes:
+- **Function problems** (most of the bank): the model writes one function matching a given name and signature. Each test case is an `args`/`expected` pair.
+- **Stateful problems** (category `stateful` — a stack, a queue, an LRU cache): the model writes a class instead, and each test case is a scenario: construct a fresh instance, call a sequence of methods in order, and compare every return value against an expected sequence. A fresh instance is used per test case, so one scenario's state can never leak into another.
 
 The model's reply is parsed for a fenced Python code block (falling back to the whole reply if it wrote bare code without fencing), then that code is run against every one of the problem's visible *and* hidden test cases in an isolated subprocess — so a model's bad output (infinite loop, crash, syntax error) can't hang or corrupt the benchmark itself, using the same process-isolation-plus-timeout approach as HumanEval-style code-eval harnesses rather than a hardened security sandbox. A problem counts as correct only if every test case passes; a reply with no extractable code, or code that fails even one test case, counts as wrong.
 

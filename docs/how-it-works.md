@@ -84,7 +84,7 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Code question bank | `scripts/data/code_problems.json` — 25 problems across 8 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack) |
+| Code question bank | `scripts/data/code_problems.json` — 28 problems across 9 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack, stateful) |
 | Code warmup runs | `--warmup` (default: 2, discarded) |
 | Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes |

@@ -1,9 +1,18 @@
 """code_benchmark.py — coding accuracy benchmark: each model answers every
-problem in scripts/data/code_problems.json once at temperature 0 by writing a
-Python function, which is then run against that problem's visible and hidden
-test cases in an isolated subprocess. A problem counts as correct only if
-every one of its test cases passes. Scored overall and broken down by
-category, same shape as MCQBenchmark/MathBenchmark.
+problem in scripts/data/code_problems.json once at temperature 0, then that
+answer is run against the problem's visible and hidden test cases in an
+isolated subprocess. A problem counts as correct only if every one of its
+test cases passes. Scored overall and broken down by category, same shape
+as MCQBenchmark/MathBenchmark.
+
+Two problem shapes:
+- Function problems (`function_name`): the model writes one function; each
+  test is {"args": [...], "expected": ...}, called as function_name(*args).
+- Stateful problems (`class_name`): the model writes a class; each test is
+  {"init": [...] (optional, default []), "ops": [[method, args], ...],
+  "expected": [...]} — a fresh instance per test, constructed as
+  class_name(*init), then each method called in sequence and every return
+  value collected and compared to `expected` as a whole.
 """
 
 import json
@@ -45,6 +54,12 @@ class CodeBenchmark:
 
     @staticmethod
     def build_prompt(question: dict) -> str:
+        if "class_name" in question:
+            return (
+                f"{question['prompt']}\n\n"
+                f"Respond with only the class definition for {question['class_name']}, "
+                "as a single Python code block, with no explanation."
+            )
         return (
             f"{question['prompt']}\n\n"
             f"Respond with only the function definition for {question['function_name']}, "
@@ -67,30 +82,17 @@ class CodeBenchmark:
         return response_text.strip()
 
     @staticmethod
-    def execute_tests(code: str, function_name: str, tests: list[dict],
-                       timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
-        """Run every test case in `tests` (each {"args": [...], "expected": ...})
-        against `function_name` as defined by `code`, in a separate subprocess
-        so generated code can't hang, crash, or leak into the benchmark
-        process. Returns one {"passed": bool, "got": ..., "error": str|None}
-        per test, in order. A subprocess-level failure (syntax error, timeout,
-        non-serializable return, ...) marks every test in the call failed with
-        the same error rather than raising.
+    def _run_harness(harness: str, payload: str, tests: list[dict],
+                      timeout: int) -> list[dict]:
+        """Run `harness` (candidate code plus a driver that prints one JSON
+        {"ok": bool, "got"|"error": ...} object per test) against `payload`
+        on stdin, in a separate subprocess so generated code can't hang,
+        crash, or leak into the benchmark process. Returns one {"passed":
+        bool, "got": ..., "error": str|None} entry per test, in order. A
+        subprocess-level failure (syntax error, timeout, non-serializable
+        return, ...) marks every test failed with the same error rather than
+        raising.
         """
-        harness = (
-            "import json, sys\n\n"
-            + code + "\n\n"
-            "_args_list = json.loads(sys.stdin.read())\n"
-            "_results = []\n"
-            "for _args in _args_list:\n"
-            "    try:\n"
-            "        _results.append({'ok': True, 'got': " + function_name + "(*_args)})\n"
-            "    except Exception as _e:\n"
-            "        _results.append({'ok': False, 'error': str(_e)})\n"
-            "print(json.dumps(_results))\n"
-        )
-        payload = json.dumps([t["args"] for t in tests])
-
         try:
             proc = subprocess.run(
                 [sys.executable, "-c", harness],
@@ -119,17 +121,72 @@ class CodeBenchmark:
         return results
 
     @staticmethod
+    def execute_tests(code: str, function_name: str, tests: list[dict],
+                       timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
+        """Run every test case in `tests` (each {"args": [...], "expected": ...})
+        against `function_name` as defined by `code`. See `_run_harness` for
+        the isolation/failure-handling contract.
+        """
+        harness = (
+            "import json, sys\n\n"
+            + code + "\n\n"
+            "_args_list = json.loads(sys.stdin.read())\n"
+            "_results = []\n"
+            "for _args in _args_list:\n"
+            "    try:\n"
+            "        _results.append({'ok': True, 'got': " + function_name + "(*_args)})\n"
+            "    except Exception as _e:\n"
+            "        _results.append({'ok': False, 'error': str(_e)})\n"
+            "print(json.dumps(_results))\n"
+        )
+        payload = json.dumps([t["args"] for t in tests])
+        return CodeBenchmark._run_harness(harness, payload, tests, timeout)
+
+    @staticmethod
+    def execute_stateful_tests(code: str, class_name: str, tests: list[dict],
+                                timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
+        """Run every test case in `tests` (each {"init": [...] (optional,
+        default []), "ops": [[method, args], ...], "expected": [...]})
+        against `class_name` as defined by `code`: construct a fresh instance
+        per test as class_name(*init), call each method in `ops` in order,
+        and collect every return value into a list compared as a whole
+        against `expected`. See `_run_harness` for the isolation/
+        failure-handling contract.
+        """
+        harness = (
+            "import json, sys\n\n"
+            + code + "\n\n"
+            "_scenarios = json.loads(sys.stdin.read())\n"
+            "_results = []\n"
+            "for _scenario in _scenarios:\n"
+            "    try:\n"
+            "        _obj = " + class_name + "(*_scenario.get('init', []))\n"
+            "        _outputs = [getattr(_obj, _m)(*_a) for _m, _a in _scenario['ops']]\n"
+            "        _results.append({'ok': True, 'got': _outputs})\n"
+            "    except Exception as _e:\n"
+            "        _results.append({'ok': False, 'error': str(_e)})\n"
+            "print(json.dumps(_results))\n"
+        )
+        payload = json.dumps([{"init": t.get("init", []), "ops": t["ops"]} for t in tests])
+        return CodeBenchmark._run_harness(harness, payload, tests, timeout)
+
+    @staticmethod
     def evaluate_question(question: dict, code: str | None) -> dict:
         """Run every visible+hidden test for `question` against `code` and
         summarize: {"correct": bool, "tests_passed": int, "tests_total": int,
         "error": str|None}. Empty/None `code` short-circuits to every test
-        failing, without a subprocess call.
+        failing, without a subprocess call. Dispatches to
+        `execute_stateful_tests` for a class-based problem (`class_name`
+        present), `execute_tests` otherwise.
         """
         tests = question["visible_tests"] + question["hidden_tests"]
         if not code:
             return {"correct": False, "tests_passed": 0, "tests_total": len(tests), "error": "no code found"}
 
-        results = CodeBenchmark.execute_tests(code, question["function_name"], tests)
+        if "class_name" in question:
+            results = CodeBenchmark.execute_stateful_tests(code, question["class_name"], tests)
+        else:
+            results = CodeBenchmark.execute_tests(code, question["function_name"], tests)
         passed = sum(1 for r in results if r["passed"])
         first_error = next((r["error"] for r in results if r["error"]), None)
         return {

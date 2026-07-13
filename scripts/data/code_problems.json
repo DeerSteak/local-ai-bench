@@ -5,12 +5,57 @@
     "function_name": "sum_two",
     "prompt": "Write a function sum_two(a, b) that returns the sum of two numbers.",
     "visible_tests": [
-      {"args": [2, 3], "expected": 5},
-      {"args": [-1, 1], "expected": 0},
-      {"args": [0, 0], "expected": 0}
+      {
+        "args": [
+          2,
+          3
+        ],
+        "expected": 5
+      },
+      {
+        "args": [
+          -1,
+          1
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          0,
+          0
+        ],
+        "expected": 0
+      }
     ],
     "hidden_tests": [
-      {"args": [100, 200], "expected": 300}
+      {
+        "args": [
+          100,
+          200
+        ],
+        "expected": 300
+      },
+      {
+        "args": [
+          -10,
+          -20
+        ],
+        "expected": -30
+      },
+      {
+        "args": [
+          1.5,
+          2.25
+        ],
+        "expected": 3.75
+      },
+      {
+        "args": [
+          1000000000000,
+          -1000000000000
+        ],
+        "expected": 0
+      }
     ]
   },
   {
@@ -19,26 +64,102 @@
     "function_name": "is_even",
     "prompt": "Write a function is_even(n) that returns True if n is even, False otherwise.",
     "visible_tests": [
-      {"args": [4], "expected": true},
-      {"args": [7], "expected": false},
-      {"args": [0], "expected": true}
+      {
+        "args": [
+          4
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          7
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          0
+        ],
+        "expected": true
+      }
     ],
     "hidden_tests": [
-      {"args": [-2], "expected": true}
+      {
+        "args": [
+          -2
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          -3
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          1000000000
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          1000000001
+        ],
+        "expected": false
+      }
     ]
   },
   {
     "id": "code_003",
     "category": "string",
     "function_name": "reverse_string",
-    "prompt": "Write a function reverse_string(s) that returns the input string reversed.",
+    "prompt": "Write a function reverse_string(s) that returns the input Python string reversed by Unicode code points.",
     "visible_tests": [
-      {"args": ["hello"], "expected": "olleh"},
-      {"args": [""], "expected": ""},
-      {"args": ["a"], "expected": "a"}
+      {
+        "args": [
+          "hello"
+        ],
+        "expected": "olleh"
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": ""
+      },
+      {
+        "args": [
+          "a"
+        ],
+        "expected": "a"
+      }
     ],
     "hidden_tests": [
-      {"args": ["Python"], "expected": "nohtyP"}
+      {
+        "args": [
+          "Python"
+        ],
+        "expected": "nohtyP"
+      },
+      {
+        "args": [
+          "ab cd"
+        ],
+        "expected": "dc ba"
+      },
+      {
+        "args": [
+          "123!"
+        ],
+        "expected": "!321"
+      },
+      {
+        "args": [
+          "åßç"
+        ],
+        "expected": "çßå"
+      }
     ]
   },
   {
@@ -47,12 +168,50 @@
     "function_name": "factorial",
     "prompt": "Write a function factorial(n) that returns the factorial of a non-negative integer n (factorial(0) is 1).",
     "visible_tests": [
-      {"args": [0], "expected": 1},
-      {"args": [5], "expected": 120},
-      {"args": [3], "expected": 6}
+      {
+        "args": [
+          0
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          5
+        ],
+        "expected": 120
+      },
+      {
+        "args": [
+          3
+        ],
+        "expected": 6
+      }
     ],
     "hidden_tests": [
-      {"args": [7], "expected": 5040}
+      {
+        "args": [
+          7
+        ],
+        "expected": 5040
+      },
+      {
+        "args": [
+          1
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          10
+        ],
+        "expected": 3628800
+      },
+      {
+        "args": [
+          20
+        ],
+        "expected": 2432902008176640000
+      }
     ]
   },
   {
@@ -61,14 +220,62 @@
     "function_name": "is_palindrome",
     "prompt": "Write a function is_palindrome(s) that returns True if s reads the same forwards and backwards using an exact, case-sensitive character comparison. Spaces and punctuation are treated as ordinary characters.",
     "visible_tests": [
-      {"args": ["racecar"], "expected": true},
-      {"args": ["hello"], "expected": false},
-      {"args": [""], "expected": true}
+      {
+        "args": [
+          "racecar"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "hello"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": true
+      }
     ],
     "hidden_tests": [
-      {"args": ["noon"], "expected": true},
-      {"args": ["Racecar"], "expected": false},
-      {"args": ["a a"], "expected": true}
+      {
+        "args": [
+          "noon"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "Racecar"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "a a"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "ab"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "!!"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "A man a plan"
+        ],
+        "expected": false
+      }
     ]
   },
   {
@@ -77,12 +284,75 @@
     "function_name": "max_of_list",
     "prompt": "Write a function max_of_list(lst) that returns the largest value in a non-empty list of numbers.",
     "visible_tests": [
-      {"args": [[1, 5, 3]], "expected": 5},
-      {"args": [[-2, -5, -1]], "expected": -1},
-      {"args": [[7]], "expected": 7}
+      {
+        "args": [
+          [
+            1,
+            5,
+            3
+          ]
+        ],
+        "expected": 5
+      },
+      {
+        "args": [
+          [
+            -2,
+            -5,
+            -1
+          ]
+        ],
+        "expected": -1
+      },
+      {
+        "args": [
+          [
+            7
+          ]
+        ],
+        "expected": 7
+      }
     ],
     "hidden_tests": [
-      {"args": [[3, 3, 3]], "expected": 3}
+      {
+        "args": [
+          [
+            3,
+            3,
+            3
+          ]
+        ],
+        "expected": 3
+      },
+      {
+        "args": [
+          [
+            0,
+            -1,
+            -2
+          ]
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          [
+            1.5,
+            3.25,
+            2.75
+          ]
+        ],
+        "expected": 3.25
+      },
+      {
+        "args": [
+          [
+            -1000000000000,
+            -1
+          ]
+        ],
+        "expected": -1
+      }
     ]
   },
   {
@@ -91,13 +361,62 @@
     "function_name": "count_vowels",
     "prompt": "Write a function count_vowels(s) that returns the number of vowels (a, e, i, o, u, case-insensitive) in the string s.",
     "visible_tests": [
-      {"args": ["hello"], "expected": 2},
-      {"args": ["xyz"], "expected": 0},
-      {"args": ["AEIOU"], "expected": 5}
+      {
+        "args": [
+          "hello"
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          "xyz"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          "AEIOU"
+        ],
+        "expected": 5
+      }
     ],
     "hidden_tests": [
-      {"args": ["Programming"], "expected": 3},
-      {"args": ["ApplE Pie"], "expected": 4}
+      {
+        "args": [
+          "Programming"
+        ],
+        "expected": 3
+      },
+      {
+        "args": [
+          "ApplE Pie"
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          "rhythm"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          "AaEeIiOoUu"
+        ],
+        "expected": 10
+      },
+      {
+        "args": [
+          "café"
+        ],
+        "expected": 1
+      }
     ]
   },
   {
@@ -106,12 +425,50 @@
     "function_name": "fibonacci",
     "prompt": "Write a function fibonacci(n) that returns the nth Fibonacci number, 0-indexed, where fibonacci(0) = 0 and fibonacci(1) = 1. n is a non-negative integer.",
     "visible_tests": [
-      {"args": [0], "expected": 0},
-      {"args": [1], "expected": 1},
-      {"args": [6], "expected": 8}
+      {
+        "args": [
+          0
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          6
+        ],
+        "expected": 8
+      }
     ],
     "hidden_tests": [
-      {"args": [10], "expected": 55}
+      {
+        "args": [
+          10
+        ],
+        "expected": 55
+      },
+      {
+        "args": [
+          2
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          20
+        ],
+        "expected": 6765
+      },
+      {
+        "args": [
+          50
+        ],
+        "expected": 12586269025
+      }
     ]
   },
   {
@@ -120,15 +477,74 @@
     "function_name": "is_prime",
     "prompt": "Write a function is_prime(n) that returns True if n is a prime number, False otherwise. n is an integer and may be less than 2.",
     "visible_tests": [
-      {"args": [7], "expected": true},
-      {"args": [8], "expected": false},
-      {"args": [1], "expected": false}
+      {
+        "args": [
+          7
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          8
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          1
+        ],
+        "expected": false
+      }
     ],
     "hidden_tests": [
-      {"args": [97], "expected": true},
-      {"args": [-7], "expected": false},
-      {"args": [2], "expected": true},
-      {"args": [9], "expected": false}
+      {
+        "args": [
+          97
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          -7
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          2
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          9
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          0
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          3
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          49
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          9973
+        ],
+        "expected": true
+      }
     ]
   },
   {
@@ -137,29 +553,209 @@
     "function_name": "flatten_list",
     "prompt": "Write a function flatten_list(lst) that takes a list of lists (one level of nesting; each inner list may be empty) and returns a single flat list with all elements in order.",
     "visible_tests": [
-      {"args": [[[1, 2], [3, 4]]], "expected": [1, 2, 3, 4]},
-      {"args": [[[]]], "expected": []},
-      {"args": [[[1], [2], [3]]], "expected": [1, 2, 3]}
+      {
+        "args": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ]
+        ],
+        "expected": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "args": [
+          [
+            []
+          ]
+        ],
+        "expected": []
+      },
+      {
+        "args": [
+          [
+            [
+              1
+            ],
+            [
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        ],
+        "expected": [
+          1,
+          2,
+          3
+        ]
+      }
     ],
     "hidden_tests": [
-      {"args": [[[5, 6], [7]]], "expected": [5, 6, 7]},
-      {"args": [[[], [1, 2], [], [3]]], "expected": [1, 2, 3]}
+      {
+        "args": [
+          [
+            [
+              5,
+              6
+            ],
+            [
+              7
+            ]
+          ]
+        ],
+        "expected": [
+          5,
+          6,
+          7
+        ]
+      },
+      {
+        "args": [
+          [
+            [],
+            [
+              1,
+              2
+            ],
+            [],
+            [
+              3
+            ]
+          ]
+        ],
+        "expected": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              "a"
+            ],
+            [],
+            [
+              "b",
+              "c"
+            ]
+          ]
+        ],
+        "expected": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              [
+                2
+              ]
+            ],
+            [
+              3
+            ]
+          ]
+        ],
+        "expected": [
+          1,
+          [
+            2
+          ],
+          3
+        ]
+      },
+      {
+        "args": [
+          [
+            [],
+            [],
+            []
+          ]
+        ],
+        "expected": []
+      }
     ]
   },
   {
     "id": "code_011",
     "category": "string",
     "function_name": "count_words",
-    "prompt": "Write a function count_words(s) that returns the number of words in s, where words are separated by any run of whitespace (spaces, tabs, or newlines), ignoring any leading, trailing, or repeated whitespace.",
+    "prompt": "Write a function count_words(s) that returns the number of words in s, where words are maximal runs of non-whitespace characters. Treat any character recognized by Python str.isspace() as whitespace, and ignore leading, trailing, or repeated whitespace.",
     "visible_tests": [
-      {"args": ["hello world"], "expected": 2},
-      {"args": [""], "expected": 0},
-      {"args": ["one two three four"], "expected": 4}
+      {
+        "args": [
+          "hello world"
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          "one two three four"
+        ],
+        "expected": 4
+      }
     ],
     "hidden_tests": [
-      {"args": ["  spaced   out  "], "expected": 2},
-      {"args": ["one\ttwo\nthree"], "expected": 3},
-      {"args": ["   \t\n  "], "expected": 0}
+      {
+        "args": [
+          "  spaced   out  "
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          "one\ttwo\nthree"
+        ],
+        "expected": 3
+      },
+      {
+        "args": [
+          "   \t\n  "
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          "single"
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          "a  b\tc\nd"
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          " one two "
+        ],
+        "expected": 2
+      }
     ]
   },
   {
@@ -168,12 +764,57 @@
     "function_name": "gcd",
     "prompt": "Write a function gcd(a, b) that returns the greatest common divisor of two non-negative integers a and b (at least one is greater than 0).",
     "visible_tests": [
-      {"args": [12, 18], "expected": 6},
-      {"args": [7, 13], "expected": 1},
-      {"args": [0, 5], "expected": 5}
+      {
+        "args": [
+          12,
+          18
+        ],
+        "expected": 6
+      },
+      {
+        "args": [
+          7,
+          13
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          0,
+          5
+        ],
+        "expected": 5
+      }
     ],
     "hidden_tests": [
-      {"args": [48, 18], "expected": 6}
+      {
+        "args": [
+          48,
+          18
+        ],
+        "expected": 6
+      },
+      {
+        "args": [
+          5,
+          0
+        ],
+        "expected": 5
+      },
+      {
+        "args": [
+          270,
+          192
+        ],
+        "expected": 6
+      },
+      {
+        "args": [
+          123456,
+          7890
+        ],
+        "expected": 6
+      }
     ]
   },
   {
@@ -182,12 +823,102 @@
     "function_name": "unique_elements",
     "prompt": "Write a function unique_elements(lst) that returns a list of the unique elements in lst, preserving the order of their first occurrence. Elements in lst will be hashable (e.g. numbers or strings).",
     "visible_tests": [
-      {"args": [[1, 2, 2, 3, 1]], "expected": [1, 2, 3]},
-      {"args": [[]], "expected": []},
-      {"args": [[5, 5, 5]], "expected": [5]}
+      {
+        "args": [
+          [
+            1,
+            2,
+            2,
+            3,
+            1
+          ]
+        ],
+        "expected": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "args": [
+          []
+        ],
+        "expected": []
+      },
+      {
+        "args": [
+          [
+            5,
+            5,
+            5
+          ]
+        ],
+        "expected": [
+          5
+        ]
+      }
     ],
     "hidden_tests": [
-      {"args": [[1, 3, 2, 3, 1, 4]], "expected": [1, 3, 2, 4]}
+      {
+        "args": [
+          [
+            1,
+            3,
+            2,
+            3,
+            1,
+            4
+          ]
+        ],
+        "expected": [
+          1,
+          3,
+          2,
+          4
+        ]
+      },
+      {
+        "args": [
+          [
+            "a",
+            "b",
+            "a",
+            "c"
+          ]
+        ],
+        "expected": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      {
+        "args": [
+          [
+            0,
+            false,
+            1,
+            true
+          ]
+        ],
+        "expected": [
+          0,
+          1
+        ]
+      },
+      {
+        "args": [
+          [
+            null,
+            null,
+            "x"
+          ]
+        ],
+        "expected": [
+          null,
+          "x"
+        ]
+      }
     ]
   },
   {
@@ -196,12 +927,50 @@
     "function_name": "sum_digits",
     "prompt": "Write a function sum_digits(n) that returns the sum of the decimal digits of a non-negative integer n.",
     "visible_tests": [
-      {"args": [123], "expected": 6},
-      {"args": [0], "expected": 0},
-      {"args": [9999], "expected": 36}
+      {
+        "args": [
+          123
+        ],
+        "expected": 6
+      },
+      {
+        "args": [
+          0
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          9999
+        ],
+        "expected": 36
+      }
     ],
     "hidden_tests": [
-      {"args": [4567], "expected": 22}
+      {
+        "args": [
+          4567
+        ],
+        "expected": 22
+      },
+      {
+        "args": [
+          10
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          1000001
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          9876543210
+        ],
+        "expected": 45
+      }
     ]
   },
   {
@@ -210,15 +979,78 @@
     "function_name": "is_anagram",
     "prompt": "Write a function is_anagram(s1, s2) that returns True when s1 and s2 contain exactly the same characters with the same frequencies, in any order. Comparison is case-sensitive, and spaces and punctuation count as characters.",
     "visible_tests": [
-      {"args": ["listen", "silent"], "expected": true},
-      {"args": ["hello", "world"], "expected": false},
-      {"args": ["", ""], "expected": true},
-      {"args": ["Listen", "silent"], "expected": false},
-      {"args": ["dormitory", "dirty room"], "expected": false}
+      {
+        "args": [
+          "listen",
+          "silent"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "hello",
+          "world"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "",
+          ""
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "Listen",
+          "silent"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "dormitory",
+          "dirty room"
+        ],
+        "expected": false
+      }
     ],
     "hidden_tests": [
-      {"args": ["night", "thing"], "expected": true},
-      {"args": ["aab", "abb"], "expected": false}
+      {
+        "args": [
+          "night",
+          "thing"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "aab",
+          "abb"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "a!",
+          "!a"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "åb",
+          "bå"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "abc",
+          "abcc"
+        ],
+        "expected": false
+      }
     ]
   },
   {
@@ -227,12 +1059,85 @@
     "function_name": "second_largest",
     "prompt": "Write a function second_largest(lst) that returns the second largest distinct value in a list of numbers (lst has at least two distinct values).",
     "visible_tests": [
-      {"args": [[1, 3, 2]], "expected": 2},
-      {"args": [[5, 5, 4, 3]], "expected": 4},
-      {"args": [[10, 20, 30, 40]], "expected": 30}
+      {
+        "args": [
+          [
+            1,
+            3,
+            2
+          ]
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          [
+            5,
+            5,
+            4,
+            3
+          ]
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          [
+            10,
+            20,
+            30,
+            40
+          ]
+        ],
+        "expected": 30
+      }
     ],
     "hidden_tests": [
-      {"args": [[1, 1, 2, 2, 3, 3]], "expected": 2}
+      {
+        "args": [
+          [
+            1,
+            1,
+            2,
+            2,
+            3,
+            3
+          ]
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          [
+            -1,
+            -2,
+            -3
+          ]
+        ],
+        "expected": -2
+      },
+      {
+        "args": [
+          [
+            2,
+            1,
+            2,
+            1
+          ]
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          [
+            1.5,
+            2.5,
+            2.5,
+            0.5
+          ]
+        ],
+        "expected": 1.5
+      }
     ]
   },
   {
@@ -241,14 +1146,120 @@
     "function_name": "binary_search",
     "prompt": "Write a function binary_search(lst, target) that returns the index of the first (leftmost) occurrence of target in the sorted ascending list lst, or -1 if target is not present. lst may contain duplicate values.",
     "visible_tests": [
-      {"args": [[1, 3, 5, 7, 9], 5], "expected": 2},
-      {"args": [[1, 2, 3], 4], "expected": -1},
-      {"args": [[], 1], "expected": -1}
+      {
+        "args": [
+          [
+            1,
+            3,
+            5,
+            7,
+            9
+          ],
+          5
+        ],
+        "expected": 2
+      },
+      {
+        "args": [
+          [
+            1,
+            2,
+            3
+          ],
+          4
+        ],
+        "expected": -1
+      },
+      {
+        "args": [
+          [],
+          1
+        ],
+        "expected": -1
+      }
     ],
     "hidden_tests": [
-      {"args": [[2, 4, 6, 8, 10], 10], "expected": 4},
-      {"args": [[1, 2, 2, 2, 3], 2], "expected": 1},
-      {"args": [[2, 2, 2, 2], 2], "expected": 0}
+      {
+        "args": [
+          [
+            2,
+            4,
+            6,
+            8,
+            10
+          ],
+          10
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          [
+            1,
+            2,
+            2,
+            2,
+            3
+          ],
+          2
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          [
+            2,
+            2,
+            2,
+            2
+          ],
+          2
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          [
+            1
+          ],
+          1
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          [
+            1
+          ],
+          0
+        ],
+        "expected": -1
+      },
+      {
+        "args": [
+          [
+            -5,
+            -2,
+            -2,
+            0,
+            3
+          ],
+          -2
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          [
+            1,
+            1,
+            1,
+            2
+          ],
+          1
+        ],
+        "expected": 0
+      }
     ]
   },
   {
@@ -257,29 +1268,239 @@
     "function_name": "caesar_encrypt",
     "prompt": "Write a function caesar_encrypt(s, shift) that applies a Caesar cipher to s: each ASCII English letter (A-Z, a-z) is shifted by shift positions in the alphabet, preserving case; all other characters (including non-ASCII letters) are unchanged. shift is any integer (positive, negative, or greater than 25); normalize it modulo 26, with negative values shifting backward.",
     "visible_tests": [
-      {"args": ["abc", 1], "expected": "bcd"},
-      {"args": ["xyz", 3], "expected": "abc"},
-      {"args": ["Hello", 0], "expected": "Hello"}
+      {
+        "args": [
+          "abc",
+          1
+        ],
+        "expected": "bcd"
+      },
+      {
+        "args": [
+          "xyz",
+          3
+        ],
+        "expected": "abc"
+      },
+      {
+        "args": [
+          "Hello",
+          0
+        ],
+        "expected": "Hello"
+      }
     ],
     "hidden_tests": [
-      {"args": ["Zebra", 2], "expected": "Bgdtc"},
-      {"args": ["abc", 27], "expected": "bcd"},
-      {"args": ["abc", -1], "expected": "zab"},
-      {"args": ["Hello, World!", 1], "expected": "Ifmmp, Xpsme!"}
+      {
+        "args": [
+          "Zebra",
+          2
+        ],
+        "expected": "Bgdtc"
+      },
+      {
+        "args": [
+          "abc",
+          27
+        ],
+        "expected": "bcd"
+      },
+      {
+        "args": [
+          "abc",
+          -1
+        ],
+        "expected": "zab"
+      },
+      {
+        "args": [
+          "Hello, World!",
+          1
+        ],
+        "expected": "Ifmmp, Xpsme!"
+      },
+      {
+        "args": [
+          "AbZ",
+          1
+        ],
+        "expected": "BcA"
+      },
+      {
+        "args": [
+          "abc",
+          -27
+        ],
+        "expected": "zab"
+      },
+      {
+        "args": [
+          "éΩz",
+          2
+        ],
+        "expected": "éΩb"
+      },
+      {
+        "args": [
+          "Test 123",
+          52
+        ],
+        "expected": "Test 123"
+      }
     ]
   },
   {
     "id": "code_019",
     "category": "matrix",
     "function_name": "transpose",
-    "prompt": "Write a function transpose(matrix) that returns the transpose of a 2D list (list of lists) matrix. matrix is a non-empty rectangular list of non-empty rows (every row has the same length).",
+    "prompt": "Write a function transpose(matrix) that returns a new 2D list containing the transpose of matrix. matrix is a non-empty rectangular list of non-empty rows (every row has the same length). Do not mutate the input.",
     "visible_tests": [
-      {"args": [[[1, 2], [3, 4]]], "expected": [[1, 3], [2, 4]]},
-      {"args": [[[1, 2, 3]]], "expected": [[1], [2], [3]]},
-      {"args": [[[1]]], "expected": [[1]]}
+      {
+        "args": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1,
+            3
+          ],
+          [
+            2,
+            4
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              2,
+              3
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1
+          ]
+        ]
+      }
     ],
     "hidden_tests": [
-      {"args": [[[1, 2], [3, 4], [5, 6]]], "expected": [[1, 3, 5], [2, 4, 6]]}
+      {
+        "args": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              5,
+              6
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1,
+            3,
+            5
+          ],
+          [
+            2,
+            4,
+            6
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              2,
+              3
+            ],
+            [
+              4,
+              5,
+              6
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1,
+            4
+          ],
+          [
+            2,
+            5
+          ],
+          [
+            3,
+            6
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              "a",
+              "b"
+            ],
+            [
+              "c",
+              "d"
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            "a",
+            "c"
+          ],
+          [
+            "b",
+            "d"
+          ]
+        ]
+      }
     ]
   },
   {
@@ -288,45 +1509,407 @@
     "function_name": "is_balanced",
     "prompt": "Write a function is_balanced(s) that returns True if every (), [], and {} bracket in s is properly opened, closed, and nested, False otherwise. Non-bracket characters are ignored.",
     "visible_tests": [
-      {"args": ["()"], "expected": true},
-      {"args": ["([)]"], "expected": false},
-      {"args": ["{[()]}"], "expected": true}
+      {
+        "args": [
+          "()"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "([)]"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "{[()]}"
+        ],
+        "expected": true
+      }
     ],
     "hidden_tests": [
-      {"args": ["(()"], "expected": false},
-      {"args": ["a(b[c]{d})"], "expected": true},
-      {"args": [""], "expected": true},
-      {"args": ["]["], "expected": false}
+      {
+        "args": [
+          "(()"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "a(b[c]{d})"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "]["
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "([{}])"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "((()))[]{}"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "(]"
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          "abc"
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          "{[(])}"
+        ],
+        "expected": false
+      }
     ]
   },
   {
     "id": "code_021",
     "category": "string",
     "function_name": "run_length_encode",
-    "prompt": "Write a function run_length_encode(s) that returns the run-length encoding of s: each maximal run of identical consecutive characters is replaced by that character followed by its run length, e.g. 'aaabbc' -> 'a3b2c1'. An empty string returns an empty string.",
+    "prompt": "Write a function run_length_encode(s) that returns the run-length encoding of s: each maximal run of identical consecutive Unicode characters is replaced by that character followed by its base-10 run length, e.g. 'aaabbc' -> 'a3b2c1'. An empty string returns an empty string.",
     "visible_tests": [
-      {"args": ["aaabbc"], "expected": "a3b2c1"},
-      {"args": ["abcd"], "expected": "a1b1c1d1"},
-      {"args": [""], "expected": ""}
+      {
+        "args": [
+          "aaabbc"
+        ],
+        "expected": "a3b2c1"
+      },
+      {
+        "args": [
+          "abcd"
+        ],
+        "expected": "a1b1c1d1"
+      },
+      {
+        "args": [
+          ""
+        ],
+        "expected": ""
+      }
     ],
     "hidden_tests": [
-      {"args": ["aaaa"], "expected": "a4"},
-      {"args": ["aabbaa"], "expected": "a2b2a2"}
+      {
+        "args": [
+          "aaaa"
+        ],
+        "expected": "a4"
+      },
+      {
+        "args": [
+          "aabbaa"
+        ],
+        "expected": "a2b2a2"
+      },
+      {
+        "args": [
+          "111"
+        ],
+        "expected": "13"
+      },
+      {
+        "args": [
+          "  "
+        ],
+        "expected": " 2"
+      },
+      {
+        "args": [
+          "ääb"
+        ],
+        "expected": "ä2b1"
+      },
+      {
+        "args": [
+          "aaaaaaaaaaaa"
+        ],
+        "expected": "a12"
+      }
     ]
   },
   {
     "id": "code_022",
     "category": "matrix",
     "function_name": "matrix_multiply",
-    "prompt": "Write a function matrix_multiply(a, b) that returns the matrix product of a (an m x n matrix) and b (an n x p matrix), both given as lists of lists, using standard matrix multiplication. Dimensions are always compatible.",
+    "prompt": "Write a function matrix_multiply(a, b) that returns a new matrix equal to the standard matrix product of a (m x n) and b (n x p). Both inputs are non-empty rectangular lists of non-empty numeric rows, dimensions are compatible, and inputs must not be mutated.",
     "visible_tests": [
-      {"args": [[[1, 2], [3, 4]], [[5, 6], [7, 8]]], "expected": [[19, 22], [43, 50]]},
-      {"args": [[[1, 2, 3]], [[1], [1], [1]]], "expected": [[6]]},
-      {"args": [[[2, 0], [0, 2]], [[1, 2], [3, 4]]], "expected": [[2, 4], [6, 8]]}
+      {
+        "args": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ],
+          [
+            [
+              5,
+              6
+            ],
+            [
+              7,
+              8
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            19,
+            22
+          ],
+          [
+            43,
+            50
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              2,
+              3
+            ]
+          ],
+          [
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            6
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              2,
+              0
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            2,
+            4
+          ],
+          [
+            6,
+            8
+          ]
+        ]
+      }
     ],
     "hidden_tests": [
-      {"args": [[[1, 0], [0, 1]], [[9, 8], [7, 6]]], "expected": [[9, 8], [7, 6]]},
-      {"args": [[[1, 2], [3, 4], [5, 6]], [[1, 0], [0, 1]]], "expected": [[1, 2], [3, 4], [5, 6]]}
+      {
+        "args": [
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ],
+          [
+            [
+              9,
+              8
+            ],
+            [
+              7,
+              6
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            9,
+            8
+          ],
+          [
+            7,
+            6
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              4
+            ],
+            [
+              5,
+              6
+            ]
+          ],
+          [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            5,
+            6
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              1,
+              2,
+              3
+            ],
+            [
+              4,
+              5,
+              6
+            ]
+          ],
+          [
+            [
+              7,
+              8
+            ],
+            [
+              9,
+              10
+            ],
+            [
+              11,
+              12
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            58,
+            64
+          ],
+          [
+            139,
+            154
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              0
+            ]
+          ],
+          [
+            [
+              5
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            0
+          ]
+        ]
+      },
+      {
+        "args": [
+          [
+            [
+              -1,
+              2
+            ]
+          ],
+          [
+            [
+              3
+            ],
+            [
+              4
+            ]
+          ]
+        ],
+        "expected": [
+          [
+            5
+          ]
+        ]
+      }
     ]
   },
   {
@@ -335,14 +1918,68 @@
     "function_name": "is_perfect_number",
     "prompt": "Write a function is_perfect_number(n) that returns True if n is a perfect number (a positive integer equal to the sum of its proper positive divisors, excluding itself), False otherwise. n may be less than 1.",
     "visible_tests": [
-      {"args": [6], "expected": true},
-      {"args": [28], "expected": true},
-      {"args": [12], "expected": false}
+      {
+        "args": [
+          6
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          28
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          12
+        ],
+        "expected": false
+      }
     ],
     "hidden_tests": [
-      {"args": [1], "expected": false},
-      {"args": [496], "expected": true},
-      {"args": [0], "expected": false}
+      {
+        "args": [
+          1
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          496
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          0
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          -6
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          2
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          8128
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          100
+        ],
+        "expected": false
+      }
     ]
   },
   {
@@ -351,28 +1988,247 @@
     "function_name": "longest_common_prefix",
     "prompt": "Write a function longest_common_prefix(strs) that returns the longest common prefix string among all strings in the list strs. If there is no common prefix, or strs is empty, return an empty string.",
     "visible_tests": [
-      {"args": [["flower", "flow", "flight"]], "expected": "fl"},
-      {"args": [["dog", "racecar", "car"]], "expected": ""},
-      {"args": [[]], "expected": ""}
+      {
+        "args": [
+          [
+            "flower",
+            "flow",
+            "flight"
+          ]
+        ],
+        "expected": "fl"
+      },
+      {
+        "args": [
+          [
+            "dog",
+            "racecar",
+            "car"
+          ]
+        ],
+        "expected": ""
+      },
+      {
+        "args": [
+          []
+        ],
+        "expected": ""
+      }
     ],
     "hidden_tests": [
-      {"args": [["interspecies", "interstellar", "interstate"]], "expected": "inters"},
-      {"args": [["same", "same"]], "expected": "same"}
+      {
+        "args": [
+          [
+            "interspecies",
+            "interstellar",
+            "interstate"
+          ]
+        ],
+        "expected": "inters"
+      },
+      {
+        "args": [
+          [
+            "same",
+            "same"
+          ]
+        ],
+        "expected": "same"
+      },
+      {
+        "args": [
+          [
+            "",
+            "abc"
+          ]
+        ],
+        "expected": ""
+      },
+      {
+        "args": [
+          [
+            "prefix"
+          ]
+        ],
+        "expected": "prefix"
+      },
+      {
+        "args": [
+          [
+            "Case",
+            "case"
+          ]
+        ],
+        "expected": ""
+      },
+      {
+        "args": [
+          [
+            "ab",
+            "abc",
+            "abcd"
+          ]
+        ],
+        "expected": "ab"
+      }
     ]
   },
   {
     "id": "code_025",
     "category": "algorithms",
     "function_name": "longest_increasing_subsequence_length",
-    "prompt": "Write a function longest_increasing_subsequence_length(lst) that returns the length of the longest strictly increasing subsequence of the list of numbers lst (elements need not be contiguous, but must appear in the same relative order).",
+    "prompt": "Write a function longest_increasing_subsequence_length(lst) that returns the length of the longest strictly increasing subsequence of the list of numbers lst. Elements need not be contiguous, but must remain in their original relative order. Return 0 for an empty list.",
     "visible_tests": [
-      {"args": [[10, 9, 2, 5, 3, 7, 101, 18]], "expected": 4},
-      {"args": [[0, 1, 0, 3, 2, 3]], "expected": 4},
-      {"args": [[7, 7, 7, 7]], "expected": 1}
+      {
+        "args": [
+          [
+            10,
+            9,
+            2,
+            5,
+            3,
+            7,
+            101,
+            18
+          ]
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          [
+            0,
+            1,
+            0,
+            3,
+            2,
+            3
+          ]
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          [
+            7,
+            7,
+            7,
+            7
+          ]
+        ],
+        "expected": 1
+      }
     ],
     "hidden_tests": [
-      {"args": [[1, 2, 3, 4]], "expected": 4},
-      {"args": [[]], "expected": 0}
+      {
+        "args": [
+          [
+            1,
+            2,
+            3,
+            4
+          ]
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          []
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          [
+            5,
+            4,
+            3,
+            2,
+            1
+          ]
+        ],
+        "expected": 1
+      },
+      {
+        "args": [
+          [
+            1,
+            3,
+            2,
+            4,
+            3,
+            5
+          ]
+        ],
+        "expected": 4
+      },
+      {
+        "args": [
+          [
+            -3,
+            -2,
+            -1
+          ]
+        ],
+        "expected": 3
+      },
+      {
+        "args": [
+          [
+            2,
+            2,
+            1,
+            2,
+            3
+          ]
+        ],
+        "expected": 3
+      }
+    ]
+  },
+  {
+    "id": "code_026",
+    "category": "stateful",
+    "class_name": "Stack",
+    "prompt": "Implement a class Stack, constructed with no arguments, starting empty. It has methods: push(x) adds x to the top and returns None; pop() removes and returns the top item, or returns None if the stack is empty; peek() returns the top item without removing it, or None if empty; is_empty() returns True if the stack has no items, False otherwise.",
+    "visible_tests": [
+      {"ops": [["push", [1]], ["push", [2]], ["pop", []], ["peek", []]], "expected": [null, null, 2, 1]},
+      {"ops": [["is_empty", []]], "expected": [true]},
+      {"ops": [["push", [5]], ["is_empty", []], ["pop", []], ["is_empty", []]], "expected": [null, false, 5, true]}
+    ],
+    "hidden_tests": [
+      {"ops": [["pop", []]], "expected": [null]},
+      {"ops": [["push", [1]], ["push", [2]], ["push", [3]], ["pop", []], ["pop", []], ["pop", []], ["pop", []]], "expected": [null, null, null, 3, 2, 1, null]},
+      {"ops": [["push", ["a"]], ["peek", []], ["push", ["b"]], ["peek", []]], "expected": [null, "a", null, "b"]}
+    ]
+  },
+  {
+    "id": "code_027",
+    "category": "stateful",
+    "class_name": "Queue",
+    "prompt": "Implement a class Queue (FIFO), constructed with no arguments, starting empty. It has methods: enqueue(x) adds x to the back and returns None; dequeue() removes and returns the front item, or returns None if the queue is empty; peek() returns the front item without removing it, or None if empty; is_empty() returns True if the queue has no items, False otherwise.",
+    "visible_tests": [
+      {"ops": [["enqueue", [1]], ["enqueue", [2]], ["dequeue", []], ["peek", []]], "expected": [null, null, 1, 2]},
+      {"ops": [["is_empty", []]], "expected": [true]},
+      {"ops": [["enqueue", [5]], ["is_empty", []], ["dequeue", []], ["is_empty", []]], "expected": [null, false, 5, true]}
+    ],
+    "hidden_tests": [
+      {"ops": [["dequeue", []]], "expected": [null]},
+      {"ops": [["enqueue", [1]], ["enqueue", [2]], ["enqueue", [3]], ["dequeue", []], ["dequeue", []], ["dequeue", []], ["dequeue", []]], "expected": [null, null, null, 1, 2, 3, null]},
+      {"ops": [["enqueue", ["a"]], ["enqueue", ["b"]], ["dequeue", []], ["peek", []]], "expected": [null, null, "a", "b"]}
+    ]
+  },
+  {
+    "id": "code_028",
+    "category": "stateful",
+    "class_name": "LRUCache",
+    "prompt": "Implement a class LRUCache(capacity) — a fixed-size least-recently-used cache. get(key) returns the value for key if present (marking it as most recently used) or -1 if not present. put(key, value) inserts or updates key's value (marking it most recently used); if inserting a new key would exceed capacity, evict the least recently used key first. put returns None; get returns the value or -1.",
+    "visible_tests": [
+      {"init": [2], "ops": [["put", [1, 1]], ["put", [2, 2]], ["get", [1]], ["put", [3, 3]], ["get", [2]], ["put", [4, 4]], ["get", [1]], ["get", [3]], ["get", [4]]], "expected": [null, null, 1, null, -1, null, -1, 3, 4]},
+      {"init": [1], "ops": [["put", [1, 10]], ["put", [2, 20]], ["get", [1]], ["get", [2]]], "expected": [null, null, -1, 20]}
+    ],
+    "hidden_tests": [
+      {"init": [2], "ops": [["put", [1, 1]], ["put", [2, 2]], ["put", [1, 100]], ["put", [3, 3]], ["get", [2]], ["get", [1]], ["get", [3]]], "expected": [null, null, null, null, -1, 100, 3]}
     ]
   }
 ]
