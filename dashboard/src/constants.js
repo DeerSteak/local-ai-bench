@@ -158,7 +158,9 @@ export const CTX_COLORS = {
   "8K":   "#0969da",
   "16K":  "#f9a825",
   "32K":  "#e36209",
+  "48K":  "#00897b",
   "64K":  "#1a7f37",
+  "80K":  "#6a1b9a",
   "96K":  "#8d6e63",
   "128K": "#c2185b",
 };
@@ -179,9 +181,10 @@ export const EMBED_BAR_COLORS = {
 
 // Ordered context length labels (match benchmark.py output). The LLM section
 // only ever uses {2K, 8K, 32K, 64K} (a subsequence of this, in the same
-// relative order); LLM Conversation samples up to 96K (128K is kept here
-// only so older result files that still have a 128K checkpoint still render).
-export const CTX_ORDER = ["0K", "2K", "4K", "8K", "16K", "32K", "64K", "96K", "128K"];
+// relative order); LLM Conversation samples up to 96K, including the 48K and
+// 80K checkpoints added between the wider steps (128K is kept here only so
+// older result files that still have a 128K checkpoint still render).
+export const CTX_ORDER = ["0K", "2K", "4K", "8K", "16K", "32K", "48K", "64K", "80K", "96K", "128K"];
 
 // Image resolution order
 export const RES_ORDER = ["1024x1024", "1536x1536"];
