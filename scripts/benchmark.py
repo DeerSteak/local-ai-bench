@@ -39,6 +39,13 @@ Tests:
      Metrics: overall and per-category accuracy (% correct, within each
      question's own numeric tolerance)
 
+  6. Code accuracy — every LLM model answers the coding-problem bank
+     (scripts/data/code_problems.json) once via Ollama's /api/chat, and the
+     generated function is run against each problem's test cases in an
+     isolated subprocess
+     Metrics: overall and per-category accuracy (% of problems where every
+     test case passed)
+
 Servers are managed automatically:
   - Ollama: started if not already running, shut down on exit if we started it
   - ComfyUI: started before image tests, shut down cleanly when done
@@ -69,6 +76,7 @@ from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
+from code_benchmark import CodeBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
 
@@ -118,9 +126,7 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
     return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
 
 
-# "acc" is shorthand for every accuracy-style test — MCQ and math so far,
-# with a code question-bank benchmark expected to join this list later.
-ACCURACY_TESTS = ["mcq", "math"]
+ACCURACY_TESTS = ["mcq", "math", "code"]
 
 
 def expand_tests(tests: list[str]) -> list[str]:
@@ -186,10 +192,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "math", "acc"],
-        default=["llm", "conv", "emb", "img", "mcq", "math"],
+        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc"],
+        default=["llm", "conv", "emb", "img", "mcq", "math", "code"],
         help="Which benchmarks to run (default: all). 'acc' is shorthand for "
-             "every accuracy-style test ('mcq' and 'math').",
+             "every accuracy-style test ('mcq', 'math', and 'code').",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -219,7 +225,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     parser.add_argument(
         "--cpu-only", action="store_true",
         help="Force CPU-only inference for every Ollama-backed test (llm, conv, "
-             "mcq, emb) by restarting Ollama with GPU devices hidden "
+             "mcq, math, code, emb) by restarting Ollama with GPU devices hidden "
              "(HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES / ROCR_VISIBLE_DEVICES "
              "set empty). Stops any running Ollama server (even one this script "
              "didn't start) and restores normal GPU mode afterward. Useful on GPU "
@@ -236,7 +242,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     parser.add_argument(
         "--models", nargs="+", default=None,
-        help="Only test these LLM models (llm, conv, and mcq tests) — exact Ollama "
+        help="Only test these LLM models (llm, conv, mcq, math, and code tests) — exact Ollama "
              "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
              "starting with 'llama' (default: every model in the selected tier). "
              "Applied after --maxtier, so it can only narrow that selection further, "
@@ -263,7 +269,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         llm_models = filter_models_by_pattern(llm_models, args.models)
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
-                       f"in the selected tier ({tier_label}) — llm/conv/mcq tests "
+                       f"in the selected tier ({tier_label}) — llm/conv/mcq/math/code tests "
                        "will have nothing to run")
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
@@ -315,6 +321,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         "images":          {},
         "mcq":             {},
         "math":            {},
+        "code":            {},
     }
 
     def _checkpoint(label=""):
@@ -323,8 +330,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             Shared.log(f"Partial results saved to {out_path} ({label})")
 
     try:
-        # ── Ollama-backed tests (llm, conv, mcq, math, emb) share one server lifecycle
-        ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "emb") if t in args.tests]
+        # ── Ollama-backed tests (llm, conv, mcq, math, code, emb) share one server lifecycle
+        ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb") if t in args.tests]
         if ollama_tests:
             Shared.section("Starting Servers")
             if args.cpu_only:
@@ -413,6 +420,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 save_fn=_math_save,
             )
             _checkpoint("Math done")
+
+        # ── Code accuracy ──────────────────────────────────────────────────────
+        if "code" in args.tests:
+            def _code_save(partial):
+                results["code"] = partial
+                _checkpoint()
+
+            results["code"] = CodeBenchmark().run(
+                models=llm_models,
+                warmup_runs=args.warmup,
+                save_fn=_code_save,
+            )
+            _checkpoint("Code done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:

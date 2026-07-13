@@ -1,0 +1,282 @@
+"""code_benchmark.py — coding accuracy benchmark: each model answers every
+problem in scripts/data/code_problems.json once (temperature 0, so a single
+pass is representative — repeating it wouldn't change the answers) by writing
+a Python function, which is then run against that problem's visible and
+hidden test cases in an isolated subprocess. A problem counts as correct only
+if every one of its test cases passes. Scored overall and broken down by
+category, same shape as MCQBenchmark/MathBenchmark.
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import config
+from shared import Shared
+
+
+class CodeBenchmark:
+    CODE_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "code_problems.json"
+
+    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # not a transient blip) so future runs don't waste time rediscovering the
+    # same crash. Delete this file to retry a skipped model.
+    CODE_CRASH_CACHE = Path(".code_crash_cache.json")
+
+    # Larger than MCQ/math's budget — an actual function body needs room to
+    # be written out, not just a short answer.
+    CODE_NUM_PREDICT = 400
+
+    # Wall-clock budget for running a model's generated code against one
+    # problem's test cases, in the subprocess spawned by execute_tests(). Not
+    # a security sandbox (no resource/network restrictions) — just enough
+    # isolation that a model's bad code (infinite loop, crash, stray print)
+    # can't hang or corrupt the benchmark process itself, the same tradeoff
+    # HumanEval-style code-eval harnesses make for trusted-ish, locally-run
+    # models. Generous for these problems' scale (nothing here is meant to be
+    # slow), so a real timeout is treated as the generated code being wrong.
+    CODE_EXEC_TIMEOUT = 5
+
+    # Pulls the code out of a fenced block (```python ... ``` or ``` ... ```);
+    # DOTALL so the body can span multiple lines.
+    _FENCE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+
+    @staticmethod
+    def load_questions(path: Path = CODE_DATA_PATH) -> list[dict]:
+        return json.loads(Path(path).read_text())
+
+    @staticmethod
+    def build_prompt(question: dict) -> str:
+        return (
+            f"{question['prompt']}\n\n"
+            f"Respond with only the function definition for {question['function_name']}, "
+            "as a single Python code block, with no explanation."
+        )
+
+    @staticmethod
+    def extract_code(response_text: str) -> str:
+        """Pull the model's code out of its free-form reply.
+
+        Prefers the contents of a fenced code block if one is present (the
+        requested format); falls back to the whole (stripped) reply for
+        models that ignore the fencing instruction and just write bare code.
+        """
+        if not response_text:
+            return ""
+        match = CodeBenchmark._FENCE_RE.search(response_text)
+        if match:
+            return match.group(1).strip()
+        return response_text.strip()
+
+    @staticmethod
+    def execute_tests(code: str, function_name: str, tests: list[dict],
+                       timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
+        """Run every test case in `tests` (each {"args": [...], "expected": ...})
+        against `function_name` as defined by `code`, in a separate Python
+        subprocess — so a model's generated code can't hang, crash, or leak
+        side effects into the benchmark process itself. Returns one
+        {"passed": bool, "got": ..., "error": str|None} entry per test, in
+        the same order as `tests`. A subprocess-level failure (syntax error,
+        timeout, non-JSON-serializable return value, ...) marks every test in
+        this call as failed with the same error, rather than raising.
+        """
+        harness = (
+            "import json, sys\n\n"
+            + code + "\n\n"
+            "_args_list = json.loads(sys.stdin.read())\n"
+            "_results = []\n"
+            "for _args in _args_list:\n"
+            "    try:\n"
+            "        _results.append({'ok': True, 'got': " + function_name + "(*_args)})\n"
+            "    except Exception as _e:\n"
+            "        _results.append({'ok': False, 'error': str(_e)})\n"
+            "print(json.dumps(_results))\n"
+        )
+        payload = json.dumps([t["args"] for t in tests])
+
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", harness],
+                input=payload, capture_output=True, text=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return [{"passed": False, "got": None, "error": "timeout"} for _ in tests]
+
+        if proc.returncode != 0 or not proc.stdout.strip():
+            stderr_lines = (proc.stderr or "").strip().splitlines()
+            err = stderr_lines[-1] if stderr_lines else "process failed"
+            return [{"passed": False, "got": None, "error": err} for _ in tests]
+
+        try:
+            raw_results = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return [{"passed": False, "got": None, "error": "malformed output"} for _ in tests]
+
+        results = []
+        for test, raw in zip(tests, raw_results):
+            if not raw.get("ok"):
+                results.append({"passed": False, "got": None, "error": raw.get("error")})
+            else:
+                got = raw.get("got")
+                results.append({"passed": got == test["expected"], "got": got, "error": None})
+        return results
+
+    @staticmethod
+    def evaluate_question(question: dict, code: str | None) -> dict:
+        """Run every visible+hidden test for `question` against `code` (already
+        extracted from a model's reply) and summarize the outcome:
+        {"correct": bool, "tests_passed": int, "tests_total": int, "error":
+        str|None}. `code` being empty/None (no code could be extracted from
+        the reply) short-circuits to every test failing, without spending a
+        subprocess call.
+        """
+        tests = question["visible_tests"] + question["hidden_tests"]
+        if not code:
+            return {"correct": False, "tests_passed": 0, "tests_total": len(tests), "error": "no code found"}
+
+        results = CodeBenchmark.execute_tests(code, question["function_name"], tests)
+        passed = sum(1 for r in results if r["passed"])
+        first_error = next((r["error"] for r in results if r["error"]), None)
+        return {
+            "correct":      passed == len(tests),
+            "tests_passed": passed,
+            "tests_total":  len(tests),
+            "error":        first_error,
+        }
+
+    @staticmethod
+    def _ask(tag: str, question: dict) -> dict:
+        prompt = CodeBenchmark.build_prompt(question)
+        _, _, _, _, response_text = Shared.ollama_chat(
+            tag, [{"role": "user", "content": prompt}],
+            timeout=config.RUN_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
+        )
+        code = CodeBenchmark.extract_code(response_text)
+        return CodeBenchmark.evaluate_question(question, code)
+
+    @staticmethod
+    def score(questions: list[dict], answers: dict) -> dict:
+        """Tally correct/total overall and per category from a {question_id:
+        evaluate_question_result_or_None} map. Pure so the scoring logic
+        (independent of how the answers were collected) is directly
+        testable."""
+        by_category: dict[str, dict] = {}
+        incorrect = []
+        correct = 0
+        answered = 0
+
+        for q in questions:
+            qid, category = q["id"], q["category"]
+            result = answers.get(qid)
+            cat = by_category.setdefault(category, {"correct": 0, "total": 0})
+            cat["total"] += 1
+            if result is not None:
+                answered += 1
+            is_correct = result is not None and result["correct"]
+            if is_correct:
+                correct += 1
+                cat["correct"] += 1
+            else:
+                total_tests = len(q["visible_tests"]) + len(q["hidden_tests"])
+                incorrect.append({
+                    "id":           qid,
+                    "category":     category,
+                    "tests_passed": result["tests_passed"] if result else 0,
+                    "tests_total":  result["tests_total"] if result else total_tests,
+                    "error":        result["error"] if result else "unanswered",
+                })
+
+        for cat in by_category.values():
+            cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
+
+        total = len(questions)
+        return {
+            "correct":      correct,
+            "total":        total,
+            "answered":     answered,
+            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
+            "by_category":  by_category,
+            "incorrect":    incorrect,
+        }
+
+    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+        results = {}
+        questions = questions if questions is not None else CodeBenchmark.load_questions()
+
+        if not Shared.ollama_available():
+            Shared.err("Ollama server not reachable — skipping code benchmark")
+            Shared.err("Start with: ollama serve")
+            return results
+
+        crash_cache = Shared.load_crash_cache(CodeBenchmark.CODE_CRASH_CACHE)
+
+        for model in models:
+            tag   = model["tag"]
+            label = model["label"]
+            short = model["short"]
+
+            Shared.section(f"Code: {label}")
+
+            if not Shared.ollama_reachable_or_abort():
+                break
+
+            try:
+                if not Shared.model_pulled(tag):
+                    Shared.warn(f"{tag} not pulled — skipping")
+                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    continue
+
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, CodeBenchmark.CODE_CRASH_CACHE)
+                if skip_entry is not None:
+                    results[short] = skip_entry
+                    continue
+
+                if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                                           crash_cache, CodeBenchmark.CODE_CRASH_CACHE):
+                    Shared.unload_model(tag)
+                    continue
+
+                Shared.log(f"Answering {len(questions)} coding problems ...")
+                answers: dict[str, dict | None] = {}
+                stopped_early = None
+
+                for i, q in enumerate(questions):
+                    samples, status = Shared.run_measured_calls(
+                        1, lambda run_i, q=q: CodeBenchmark._ask(tag, q), tag, crash_cache,
+                        CodeBenchmark.CODE_CRASH_CACHE, f"answering {q['id']}")
+                    answers[q["id"]] = samples[0] if samples else None
+
+                    if status == "timed_out":
+                        Shared.err(f"Skipping remaining questions for {label}")
+                        stopped_early = "timed_out"
+                        break
+                    if status == "crashed":
+                        stopped_early = "crashed"
+                        break
+
+                    if (i + 1) % 10 == 0:
+                        Shared.log(f"  {i+1}/{len(questions)} answered ...")
+
+                scored = CodeBenchmark.score(questions, answers)
+                results[short] = {"label": label, **scored}
+
+                if stopped_early == "timed_out":
+                    results[short]["timed_out"] = True
+                elif stopped_early == "crashed":
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
+                    results[short]["crashed"] = True
+                    results[short]["crashed_at"] = crashed_at
+
+                Shared.ok(f"{label}: {scored['accuracy_pct']:.1f}% "
+                          f"({scored['correct']}/{scored['total']})")
+
+                Shared.log(f"Unloading {label} ...")
+                Shared.unload_model(tag)
+                Shared.wait_until_unloaded(tag)
+            finally:
+                if save_fn:
+                    save_fn(results)
+
+        return results
