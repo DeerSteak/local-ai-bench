@@ -182,6 +182,17 @@ def check_nvidia():
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
+def get_nvidia_compute_cap():
+    """Return the GPU's CUDA compute capability (e.g. '12.0'), or None."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            text=True, stderr=subprocess.DEVNULL
+        )
+        return out.strip().splitlines()[0].strip()
+    except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
+        return None
+
 def check_rocm():
     try:
         out = subprocess.check_output(
@@ -287,6 +298,7 @@ def check_linux_intel_gpu_runtime():
     return True
 
 nvidia_ok           = check_nvidia()
+nvidia_compute_cap  = get_nvidia_compute_cap() if nvidia_ok else None
 rocm_ok             = False
 metal_ok            = False
 amd_windows         = False
@@ -914,6 +926,92 @@ else:
     PORTABLE_PYTHON = SCRIPT_DIR / "python_embeded" / "python.exe"
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
+    def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
+        """
+        ComfyUI's Windows portable build bundles a pinned torch wheel. New GPU
+        architectures (e.g. Blackwell / RTX 50-series, compute capability 12.0)
+        aren't recognized by older cu12x wheels, so every CUDA kernel launch
+        fails with "no kernel image is available for execution on the device"
+        — surfaces first during CLIP text encoding in warmup, on every model.
+        Compare the GPU's reported compute capability against what the bundled
+        torch build was compiled for, and reinstall from the cu128 wheel index
+        (which covers Blackwell) if the GPU's architecture isn't listed.
+        """
+        if not compute_cap:
+            return
+        major, minor = compute_cap.split(".")
+        sm = f"sm_{major}{minor}"
+        check_script = "import torch; print(','.join(torch.cuda.get_arch_list()))"
+        try:
+            out = subprocess.check_output(
+                [str(python_exe), "-c", check_script],
+                text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception as e:
+            warn(f"Could not check torch CUDA architecture support: {e}")
+            return
+        arch_list = out.split(",") if out else []
+        if sm in arch_list:
+            ok(f"torch build supports {sm} (GPU compute capability {compute_cap})")
+            return
+
+        warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
+             f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
+        # --force-reinstall is required, not just --upgrade: pip treats an
+        # already-installed torch+cu126 as "satisfying" a bare "torch"
+        # requirement and skips it, while torchvision/torchaudio (whose
+        # installed version differs) do get swapped to +cu128 — leaving a
+        # mismatched trio that torchaudio's _check_cuda_version() then
+        # refuses to import. Forcing reinstall keeps all three in lockstep.
+        # These wheels run ~800MB-2GB each, so stream pip's own progress lines
+        # live instead of capturing silently — otherwise it looks hung for
+        # several minutes on a slow connection.
+        proc = subprocess.Popen(
+            [str(python_exe), "-s", "-m", "pip", "install",
+             "--force-reinstall", "--no-deps", "--progress-bar", "raw",
+             "torch", "torchvision", "torchaudio",
+             "--index-url", "https://download.pytorch.org/whl/cu128"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        tail = []
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            print(f"      {line}")
+            tail.append(line)
+            tail = tail[-5:]
+        proc.wait()
+        if proc.returncode != 0:
+            fail("torch reinstall failed")
+            if tail:
+                info(tail[-1])
+            issues.append(
+                f"Reinstall torch manually: {python_exe} -s -m pip install --force-reinstall "
+                "--no-deps torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
+            )
+            return
+
+        try:
+            out2 = subprocess.check_output(
+                [str(python_exe), "-c", check_script],
+                text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+            arch_list2 = out2.split(",") if out2 else []
+        except Exception:
+            arch_list2 = []
+
+        if sm in arch_list2:
+            ok(f"torch reinstalled — {sm} now supported")
+        else:
+            warn(f"torch reinstalled but {sm} still not listed — may need a newer/nightly build")
+            issues.append(
+                f"GPU compute capability {compute_cap} may need a PyTorch nightly build: "
+                f"{python_exe} -s -m pip install --pre --upgrade torch torchvision torchaudio "
+                "--index-url https://download.pytorch.org/whl/nightly/cu128"
+            )
+
     def download_comfyui_portable(asset_filter, label):
         """Download and extract an official ComfyUI Windows portable build."""
         import urllib.request
@@ -1023,6 +1121,8 @@ else:
             info("NVIDIA GPU detected on Windows — downloading official ComfyUI NVIDIA portable build ...")
             if not download_comfyui_portable("nvidia_cu", "NVIDIA"):
                 issues.append("Download ComfyUI NVIDIA portable from https://github.com/Comfy-Org/ComfyUI/releases")
+            elif PORTABLE_PYTHON.exists():
+                check_and_fix_torch_cuda_arch(PORTABLE_PYTHON, nvidia_compute_cap)
         elif intel_windows:
             info("Intel Arc GPU detected on Windows — downloading official ComfyUI Intel portable build ...")
             if not download_comfyui_portable("intel", "Intel"):
@@ -1045,6 +1145,8 @@ else:
                 issues.append(f"Delete {COMFYUI_DIR} and re-run setup ({gpu_label} portable build required)")
             else:
                 ok(f"ComfyUI found at {COMFYUI_DIR} ({gpu_label} portable)")
+                if nvidia_windows:
+                    check_and_fix_torch_cuda_arch(PORTABLE_PYTHON, nvidia_compute_cap)
         else:
             ok(f"ComfyUI found at {COMFYUI_DIR}")
 
