@@ -200,5 +200,6 @@ export const BACKEND_COLORS = {
   cuda:  { bg: "#dafbe1", color: "#3fb950", border: "#aceebb" },
   rocm:  { bg: "#f0ebff", color: "#7c4dff", border: "#c8b8f8" },
   metal: { bg: "#dff0ff", color: "#0969da", border: "#b6d4fb" },
+  xpu:   { bg: "#e0f7f7", color: "#0e8a8a", border: "#a8e6e6" },
   cpu:   { bg: "#f6f8fa", color: "#8c959f", border: "#d0d7de" },
 };

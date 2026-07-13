@@ -12,6 +12,7 @@ everything with no further prompts.
 import sys
 import os
 import platform
+import re
 import signal
 import subprocess
 import json
@@ -238,8 +239,12 @@ def check_windows_gpu():
 def check_linux_intel_gpu():
     """Detect an Intel Arc GPU on Linux via lspci. Detection/labeling only —
     unlike the AMD/NVIDIA paths, this does NOT unlock a GPU-accelerated
-    install path: Ollama has no official Intel GPU (SYCL) backend, so LLM
-    tests still run on CPU even when this returns True. Requires 'Arc' in
+    install path here: whether LLM tests actually use the GPU depends on the
+    user's own Ollama version, not anything this script installs. Ollama
+    gained native Intel GPU (SYCL) support in v0.17 (Feb 2026) —
+    https://github.com/ollama/ollama/pull/11160 — so a recent Ollama install
+    should already use the GPU; don't install IPEX-LLM instead, Intel
+    archived that repo in Jan 2026 citing security issues. Requires 'Arc' in
     the device name (not just 'Intel') so integrated graphics with no
     discrete acceleration aren't misreported."""
     if platform.system() != "Linux":
@@ -255,12 +260,39 @@ def check_linux_intel_gpu():
         pass
     return False
 
-nvidia_ok     = check_nvidia()
-rocm_ok       = False
-metal_ok      = False
-amd_windows   = False
-intel_windows = False
-intel_linux   = False
+# Intel's Level Zero / OpenCL GPU compute runtime — the actual missing piece
+# for XPU-accelerated PyTorch/ComfyUI on Linux, distinct from the GPU simply
+# being present in lspci. These are the packages Intel's own install guide
+# requires (https://dgpu-docs.intel.com/driver/installation.html), from a
+# third-party APT repository this script deliberately does NOT add itself
+# (see check_linux_intel_gpu_runtime()'s docstring for why).
+INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
+
+def check_linux_intel_gpu_runtime():
+    """Check whether Intel's GPU compute runtime is installed on Linux, via
+    dpkg (Debian/Ubuntu — same convention as this script's other apt-based
+    checks). Deliberately detection-only: installing it means adding a
+    third-party APT repository + GPG key (Intel's graphics PPA), which is a
+    more invasive, harder-to-reverse system change than the plain-package
+    installs (python3.11, ollama) this script already automates from distro
+    repos — so this script tells the user the exact commands to run
+    themselves rather than modifying apt sources unattended."""
+    if platform.system() != "Linux" or not shutil.which("dpkg"):
+        return False
+    for pkg in INTEL_GPU_RUNTIME_PACKAGES:
+        result = subprocess.run(["dpkg", "-s", pkg],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0:
+            return False
+    return True
+
+nvidia_ok           = check_nvidia()
+rocm_ok             = False
+metal_ok            = False
+amd_windows         = False
+intel_windows       = False
+intel_linux         = False
+intel_linux_runtime = False
 
 if not nvidia_ok:
     rocm_ok = check_rocm()
@@ -272,6 +304,8 @@ if not nvidia_ok and os_name == "Windows":
     intel_windows = _win_vendor == "intel"
 if not nvidia_ok and not rocm_ok and os_name == "Linux":
     intel_linux = check_linux_intel_gpu()
+    if intel_linux:
+        intel_linux_runtime = check_linux_intel_gpu_runtime()
 
 if nvidia_ok:
     ok("CUDA / Nvidia GPU detected")
@@ -281,12 +315,25 @@ elif amd_windows:
     ok("AMD/Radeon GPU detected on Windows")
 elif intel_windows:
     ok("Intel Arc GPU detected on Windows")
-    warn("Ollama has no official Intel GPU backend yet — LLM tests will run on "
-         "CPU unless you install an Intel-GPU-enabled Ollama build yourself")
+    info("Intel Arc support is experimental — this project's maintainers don't have "
+         "Arc hardware to test against, so the Ollama version check below is unverified")
+    # Whether Ollama actually accelerates on this GPU depends on its version —
+    # reported precisely against the installed Ollama below, once it's found.
 elif intel_linux:
     ok("Intel Arc GPU detected on Linux")
-    warn("Ollama has no official Intel GPU backend yet — LLM tests will run on "
-         "CPU unless you install an Intel-GPU-enabled Ollama build yourself")
+    info("Intel Arc support is experimental — this project's maintainers don't have "
+         "Arc hardware to test against, so everything below (runtime check, XPU "
+         "PyTorch install, Ollama version check) is unverified. Please report back "
+         "if you try it: https://github.com/DeerSteak/local-ai-bench/issues")
+    # Same as above for Ollama — see report_gpu_acceleration_status() below.
+    if intel_linux_runtime:
+        ok("Intel GPU compute runtime (Level Zero/OpenCL) detected — ready for XPU-accelerated PyTorch")
+    else:
+        warn("Intel GPU compute runtime not installed — image generation will run on "
+             "CPU until it is. This script won't add a third-party APT repo for you; "
+             "install it yourself:")
+        warn("  https://dgpu-docs.intel.com/driver/installation.html")
+        warn(f"  (adds Intel's graphics APT repo, then: {' '.join(INTEL_GPU_RUNTIME_PACKAGES)})")
 elif metal_ok:
     ok("Apple Metal detected")
 else:
@@ -295,6 +342,55 @@ else:
 # ── 4. Ollama detection (read-only — nothing is installed or started here) ────
 
 section("Ollama")
+
+def parse_ollama_version(ver_string):
+    """Extract a (major, minor, patch) tuple from an 'ollama version X.Y.Z'
+    string (or any string containing a dotted version number). Returns None
+    if no version number can be found, e.g. malformed --version output."""
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", ver_string)
+    if not m:
+        return None
+    return tuple(int(g) for g in m.groups())
+
+# Ollama's native Intel GPU (SYCL) backend landed in this release — an Intel
+# Arc GPU needs at least this Ollama version for LLM tests to run on the GPU
+# rather than silently falling back to CPU. Don't treat an older Ollama as a
+# reason to install IPEX-LLM instead: Intel archived that repo in Jan 2026,
+# citing security issues, in favor of this upstream support. Source:
+# https://github.com/ollama/ollama/pull/11160
+OLLAMA_INTEL_SYCL_MIN_VERSION = (0, 17, 0)
+
+def report_gpu_acceleration_status(ollama_version):
+    """Print whether the already-detected GPU backend (nvidia_ok / rocm_ok /
+    amd_windows / metal_ok / intel_windows / intel_linux, set during GPU
+    detection above) is actually accelerated by the installed Ollama version.
+    NVIDIA, AMD, and Apple Metal acceleration in Ollama isn't version-gated
+    for any Ollama version this project expects users to have, so those are
+    reported unconditionally; Intel Arc is the one case that depends on
+    OLLAMA_INTEL_SYCL_MIN_VERSION. Prints nothing if no GPU was detected at
+    all — that's already been warned about."""
+    if nvidia_ok:
+        ok("GPU acceleration: CUDA/NVIDIA — supported")
+    elif rocm_ok or amd_windows:
+        ok("GPU acceleration: ROCm/AMD — supported")
+    elif metal_ok:
+        ok("GPU acceleration: Apple Metal — supported")
+    elif intel_windows or intel_linux:
+        min_str = ".".join(map(str, OLLAMA_INTEL_SYCL_MIN_VERSION))
+        if ollama_version is None:
+            warn(f"GPU acceleration: Intel Arc — could not determine Ollama version; "
+                 f"native SYCL support requires >= {min_str} "
+                 "(https://github.com/ollama/ollama/pull/11160)")
+        elif ollama_version >= OLLAMA_INTEL_SYCL_MIN_VERSION:
+            ver_str = ".".join(map(str, ollama_version))
+            ok(f"GPU acceleration: Intel Arc — supported (Ollama {ver_str} has native SYCL support)")
+        else:
+            ver_str = ".".join(map(str, ollama_version))
+            warn(f"GPU acceleration: Intel Arc — NOT supported by Ollama {ver_str} "
+                 f"(native SYCL support requires >= {min_str}, added Feb 2026: "
+                 "https://github.com/ollama/ollama/pull/11160). LLM tests will run on "
+                 "CPU until you update Ollama — don't install IPEX-LLM instead, Intel "
+                 "archived that repo in Jan 2026 citing security issues.")
 
 def ollama_running():
     try:
@@ -384,6 +480,7 @@ OLLAMA_BIN = find_ollama_binary()
 ollama_found = OLLAMA_BIN is not None
 
 if ollama_found:
+    ollama_version = None
     try:
         ver_out = subprocess.check_output(
             [OLLAMA_BIN, "--version"], text=True,
@@ -394,9 +491,11 @@ if ollama_found:
             ver_out.splitlines()[0] if ver_out else "unknown"
         )
         print(f"  Binary:  {ver_line.strip()}")
+        ollama_version = parse_ollama_version(ver_line)
         ok("Ollama binary found")
     except Exception:
         ok("Ollama binary found")
+    report_gpu_acceleration_status(ollama_version)
 else:
     warn("Ollama not found in PATH — will need to be installed")
 
@@ -973,6 +1072,39 @@ else:
                     issues.append(f"pip install -r {comfy_req_file}")
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
+
+        # Intel Arc on Linux: ComfyUI's own requirements.txt pulls in a plain
+        # (non-XPU) torch build, so it has to be overwritten with Intel's XPU
+        # wheels afterward — a plain pip install from a public index, same
+        # trust level as everything else this script already pip installs
+        # (unlike the GPU compute runtime above, this needs no sudo or new
+        # APT repo). torch.xpu support requires PyTorch >= 2.5; no IPEX
+        # involved (Intel is winding that down — see check_linux_intel_gpu()).
+        if intel_linux and not PORTABLE_PYTHON.exists():
+            torch_show = subprocess.run(
+                [sys.executable, "-m", "pip", "show", "torch"],
+                capture_output=True, text=True
+            )
+            torch_is_xpu = torch_show.returncode == 0 and "+xpu" in torch_show.stdout.lower()
+
+            if torch_is_xpu:
+                ok("XPU-enabled PyTorch already installed")
+            else:
+                info("Intel Arc detected — installing XPU-enabled PyTorch "
+                     "(https://download.pytorch.org/whl/xpu) so ComfyUI uses the GPU ...")
+                result = subprocess.run([
+                    sys.executable, "-m", "pip", "install", "--upgrade",
+                    "--index-url", "https://download.pytorch.org/whl/xpu",
+                    "torch", "torchvision", "torchaudio",
+                ])
+                if result.returncode == 0:
+                    ok("XPU-enabled PyTorch installed")
+                else:
+                    fail("XPU-enabled PyTorch install failed — image tests will run on CPU")
+                    issues.append(
+                        "pip install --upgrade --index-url https://download.pytorch.org/whl/xpu "
+                        "torch torchvision torchaudio"
+                    )
 
         found_ckpts = []
         if CHECKPOINTS.exists():

@@ -13,7 +13,7 @@
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Homebrew, Python |
-| Linux / DGX Spark | `bash setup.sh` | Python, Ollama |
+| Linux / DGX Spark | `bash setup.sh` | Python, Ollama, XPU-enabled PyTorch (Intel Arc — experimental, see [Platform notes](#platform-notes)) |
 | Windows | `setup.bat` | Python, Ollama, ComfyUI portable |
 
 `setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
@@ -78,7 +78,14 @@ Close other apps before running — GPU memory contention affects results.
 
 **Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
-**Linux (Intel Arc)** — `setup_check.py` detects the GPU (via `lspci`) and labels it correctly in the hardware summary and results JSON (`"backend": "xpu"`), but this is detection only, not acceleration: Ollama has no official Intel GPU backend, so LLM tests still run on CPU. GPU-accelerated inference would require a third-party Intel-GPU-enabled Ollama build installed manually — `setup_check.py` doesn't install or switch to one.
+**Linux (Intel Arc) — experimental, untested on real hardware** — this project's maintainers don't have access to an Intel Arc machine, so everything below is implemented against Intel's and Ollama's published documentation, not verified against a real run. Package names, version numbers, and the `+xpu` detection logic may be wrong or out of date. If you have Arc hardware and try this, please report back (open an issue) with what did or didn't work — that's how this graduates out of experimental.
+
+`setup_check.py` detects the GPU (via `lspci`) and labels it correctly in the hardware summary and results JSON (`"backend": "xpu"`). It also checks your installed Ollama version against the [v0.17](https://github.com/ollama/ollama/pull/11160) (Feb 2026) release that added native Intel GPU (SYCL) support, and tells you plainly whether LLM tests will actually run on the GPU or fall back to CPU — it doesn't install or switch Ollama versions for you, just reports the real status. Don't install IPEX-LLM as a fix for an older Ollama: Intel archived that repo in January 2026, citing security issues, in favor of this upstream support.
+
+For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfyanonymous/ComfyUI/pull/409) is already merged into the main repo this project clones — the same clone used for AMD/NVIDIA on Linux, no fork or custom node needed. Two things have to be true for it to actually use the GPU:
+
+- **The Intel GPU compute runtime** (Level Zero/OpenCL) — `setup_check.py` checks for it via `dpkg` and, if missing, prints the exact commands rather than installing it for you: it requires adding [Intel's graphics APT repository](https://dgpu-docs.intel.com/driver/installation.html) and a GPG key, which is a bigger, harder-to-reverse system change than the plain-package installs (Python, Ollama) this script automates from your distro's own repos.
+- **An XPU-enabled PyTorch build** — `setup_check.py` *does* install this automatically (if an image model is selected): ComfyUI's `requirements.txt` normally pulls in a plain torch build, so after installing it, this script reinstalls `torch`/`torchvision`/`torchaudio` from [Intel's XPU wheel index](https://download.pytorch.org/whl/xpu). This is a plain `pip install` — no sudo, no new package source — so it's automated like every other pip install this script does. No IPEX involved: Intel is winding that down (EOL end of March 2026) in favor of PyTorch's native XPU support (mainline since PyTorch 2.5).
 
 **DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
@@ -88,7 +95,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc)** — The setup script detects the GPU, labels it correctly (`"backend": "xpu"`), and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated. Ollama has no official Intel GPU backend, though, so LLM tests still run on CPU — a third-party Intel-GPU-enabled Ollama build would be needed for that, and `setup_check.py` doesn't install or switch to one.
+**Windows (Intel Arc)** — The setup script detects the GPU, labels it correctly (`"backend": "xpu"`), and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated (this part is Intel's own official build, not something built for this project). For LLM tests, it checks your installed Ollama version against the [v0.17](https://github.com/ollama/ollama/pull/11160) (Feb 2026) release that added native Intel GPU (SYCL) support, and tells you plainly whether LLM tests will run on the GPU or fall back to CPU; it doesn't manage the Ollama install itself. Don't install IPEX-LLM as a fix for an older Ollama: Intel archived that repo in January 2026, citing security issues, in favor of this upstream support. **The Ollama version check itself is experimental** — like the Linux Intel Arc path above, this project's maintainers don't have Arc hardware to verify it against a real run.
 
 **Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
