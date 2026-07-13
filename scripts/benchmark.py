@@ -34,6 +34,11 @@ Tests:
      bank (scripts/data/mcq_questions.json) once via Ollama's /api/chat
      Metrics: overall and per-category accuracy (% correct)
 
+  5. Math accuracy — every LLM model answers the math word-problem bank
+     (scripts/data/math_questions.json) once via Ollama's /api/chat
+     Metrics: overall and per-category accuracy (% correct, within each
+     question's own numeric tolerance)
+
 Servers are managed automatically:
   - Ollama: started if not already running, shut down on exit if we started it
   - ComfyUI: started before image tests, shut down cleanly when done
@@ -63,6 +68,7 @@ from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
+from math_benchmark import MathBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
 
@@ -112,9 +118,9 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
     return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
 
 
-# "acc" is shorthand for every accuracy-style test — currently just MCQ, with
-# math/code question-bank benchmarks expected to join this list later.
-ACCURACY_TESTS = ["mcq"]
+# "acc" is shorthand for every accuracy-style test — MCQ and math so far,
+# with a code question-bank benchmark expected to join this list later.
+ACCURACY_TESTS = ["mcq", "math"]
 
 
 def expand_tests(tests: list[str]) -> list[str]:
@@ -180,10 +186,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "acc"],
-        default=["llm", "conv", "emb", "img", "mcq"],
+        choices=["llm", "conv", "emb", "img", "mcq", "math", "acc"],
+        default=["llm", "conv", "emb", "img", "mcq", "math"],
         help="Which benchmarks to run (default: all). 'acc' is shorthand for "
-             "every accuracy-style test (currently just 'mcq').",
+             "every accuracy-style test ('mcq' and 'math').",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -308,6 +314,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         "embeddings":      {},
         "images":          {},
         "mcq":             {},
+        "math":            {},
     }
 
     def _checkpoint(label=""):
@@ -316,8 +323,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             Shared.log(f"Partial results saved to {out_path} ({label})")
 
     try:
-        # ── Ollama-backed tests (llm, conv, mcq, emb) share one server lifecycle
-        ollama_tests = [t for t in ("llm", "conv", "mcq", "emb") if t in args.tests]
+        # ── Ollama-backed tests (llm, conv, mcq, math, emb) share one server lifecycle
+        ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "emb") if t in args.tests]
         if ollama_tests:
             Shared.section("Starting Servers")
             if args.cpu_only:
@@ -393,6 +400,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 save_fn=_mcq_save,
             )
             _checkpoint("MCQ done")
+
+        # ── Math accuracy ──────────────────────────────────────────────────────
+        if "math" in args.tests:
+            def _math_save(partial):
+                results["math"] = partial
+                _checkpoint()
+
+            results["math"] = MathBenchmark().run(
+                models=llm_models,
+                warmup_runs=args.warmup,
+                save_fn=_math_save,
+            )
+            _checkpoint("Math done")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
