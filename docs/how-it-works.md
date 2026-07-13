@@ -9,7 +9,7 @@
 
 ## Execution order
 
-LLM benchmarks run first (small → medium → large), followed by embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
+LLM benchmarks run first (small → medium → large), followed by the MCQ accuracy test (same models, same running Ollama server), then embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
 
 Each LLM model follows this pattern:
 
@@ -28,6 +28,8 @@ If the run exceeds the 300-second timeout, it stops wherever it got to — whate
 
 A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself, if the decode speed at any history depth drops below the slow-model cutoff, it exits early. See [LLM workload](workloads.md#llm) for the full skip logic.
 
+The MCQ accuracy test follows a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. It reuses the same crash-cache/timeout machinery as the other Ollama-backed tests, applied per question instead of per measured run. See [Accuracy workload](workloads.md#accuracy).
+
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
 **ComfyUI** is started just before the image tests and shut down immediately after. A signal handler and `finally` block ensure clean shutdown on Ctrl-C or crash.
@@ -45,6 +47,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/llm_conversation_benchmark.py` | The multi-turn conversation test |
 | `scripts/embedding_benchmark.py` | The embeddings test |
 | `scripts/image_benchmark.py` | The image generation test (ComfyUI workflow builders + submission) |
+| `scripts/mcq_benchmark.py` | The MCQ accuracy test |
 | `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
 | `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
 
@@ -71,6 +74,10 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |
 | Image measured runs | `--runs` per resolution, averaged (default: 3, range: 1–10) |
+| MCQ question bank | `scripts/data/mcq_questions.json` — 60 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language) |
+| MCQ warmup runs | `--warmup` (default: 2, discarded) |
+| MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
+| MCQ metrics | Overall accuracy (%), plus accuracy (%) per category |
 
 ---
 

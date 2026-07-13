@@ -30,6 +30,10 @@ Tests:
      Metrics: chunks/sec chunking one real document and embedding it in a
      single call
 
+  4. MCQ accuracy — every LLM model answers the multiple-choice question
+     bank (scripts/data/mcq_questions.json) once via Ollama's /api/chat
+     Metrics: overall and per-category accuracy (% correct)
+
 Servers are managed automatically:
   - Ollama: started if not already running, shut down on exit if we started it
   - ComfyUI: started before image tests, shut down cleanly when done
@@ -43,6 +47,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import json
 import platform
 import re
@@ -57,6 +62,7 @@ from llm_prefill_benchmark import LLMPrefillBenchmark
 from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
+from mcq_benchmark import MCQBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
 
@@ -90,6 +96,37 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
         llm_models = LLM_MODELS
         tier_label = "all (extra-small + small + medium + large)"
     return llm_models, tier_label, image_models
+
+
+def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
+    """Filter `models` (LLM_MODELS entries) down to those whose tag matches
+    any of `patterns` — each pattern is either an exact Ollama tag or a
+    shell-style wildcard (fnmatch), e.g. "llama*" matches every tag starting
+    with "llama". Case-sensitive (`fnmatchcase`, not `fnmatch`) so behavior
+    is identical across platforms — tags are always written lowercase, and
+    plain `fnmatch.fnmatch` case-normalizes on Windows but not elsewhere.
+    `patterns=None` or an empty list disables filtering (returns `models`
+    unchanged) — this is what makes --models optional."""
+    if not patterns:
+        return models
+    return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
+
+
+# "acc" is shorthand for every accuracy-style test — currently just MCQ, with
+# math/code question-bank benchmarks expected to join this list later.
+ACCURACY_TESTS = ["mcq"]
+
+
+def expand_tests(tests: list[str]) -> list[str]:
+    """Expand shorthand groups (currently just "acc") in --tests into their
+    underlying individual test names, preserving order and de-duplicating so
+    e.g. --tests acc mcq doesn't run the MCQ benchmark twice."""
+    expanded = []
+    for t in tests:
+        for name in (ACCURACY_TESTS if t == "acc" else [t]):
+            if name not in expanded:
+                expanded.append(name)
+    return expanded
 
 
 def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
@@ -143,9 +180,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img"],
-        default=["llm", "conv", "emb", "img"],
-        help="Which benchmarks to run (default: all)",
+        choices=["llm", "conv", "emb", "img", "mcq", "acc"],
+        default=["llm", "conv", "emb", "img", "mcq"],
+        help="Which benchmarks to run (default: all). 'acc' is shorthand for "
+             "every accuracy-style test (currently just 'mcq').",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -173,12 +211,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         help=f"Path to ComfyUI directory (default: {config.COMFYUI_DIR})",
     )
     parser.add_argument(
-        "--emb-cpu-only", action="store_true",
-        help="Force CPU-only inference for the embedding benchmarks by restarting "
-             "Ollama with GPU devices hidden (HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES "
-             "/ ROCR_VISIBLE_DEVICES set empty). Stops any running Ollama server "
-             "(even one this script didn't start) and restores normal GPU mode "
-             "afterward. Useful on GPU backends unstable under embedding batching.",
+        "--cpu-only", action="store_true",
+        help="Force CPU-only inference for every Ollama-backed test (llm, conv, "
+             "mcq, emb) by restarting Ollama with GPU devices hidden "
+             "(HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES / ROCR_VISIBLE_DEVICES "
+             "set empty). Stops any running Ollama server (even one this script "
+             "didn't start) and restores normal GPU mode afterward. Useful on GPU "
+             "backends unstable under one of those workloads (originally added "
+             "for embedding batching, but the same instability can hit LLM/MCQ "
+             "inference on some backends too).",
     )
     parser.add_argument(
         "--maxtier", type=str, default=None,
@@ -188,6 +229,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "medium: adds 26-35B. large: adds 70B+ (i.e. no cap).",
     )
     parser.add_argument(
+        "--models", nargs="+", default=None,
+        help="Only test these LLM models (llm, conv, and mcq tests) — exact Ollama "
+             "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
+             "starting with 'llama' (default: every model in the selected tier). "
+             "Applied after --maxtier, so it can only narrow that selection further, "
+             "not add models outside the capped tier.",
+    )
+    parser.add_argument(
         "--force-all", action="store_true",
         help=f"Ignore the {config.SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
              "context length in the LLM prefill test and always run the conversation "
@@ -195,6 +244,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
     args = parser.parse_args()
+    args.tests = expand_tests(args.tests)
 
     # Apply CLI overrides to shared config
     if args.timeout is not None:
@@ -202,6 +252,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     config.N_RUNS = args.runs
 
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
+
+    if args.models:
+        llm_models = filter_models_by_pattern(llm_models, args.models)
+        if not llm_models:
+            Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
+                       f"in the selected tier ({tier_label}) — llm/conv/mcq tests "
+                       "will have nothing to run")
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
@@ -219,6 +276,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
     print(f"  Timeout:   {config.RUN_TIMEOUT}s per run")
     print(f"  Models:    {tier_label}")
+    if args.models:
+        print(f"  --models:  {', '.join(m['label'] for m in llm_models) or '(none matched)'}")
     if args.maxtier:
         print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
     print(f"  Tests:     {', '.join(args.tests)}")
@@ -248,6 +307,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         "llm_conversation": {},
         "embeddings":      {},
         "images":          {},
+        "mcq":             {},
     }
 
     def _checkpoint(label=""):
@@ -256,11 +316,28 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             Shared.log(f"Partial results saved to {out_path} ({label})")
 
     try:
-        # ── LLM ───────────────────────────────────────────────────────────────
-        if "llm" in args.tests or "conv" in args.tests:
+        # ── Ollama-backed tests (llm, conv, mcq, emb) share one server lifecycle
+        ollama_tests = [t for t in ("llm", "conv", "mcq", "emb") if t in args.tests]
+        if ollama_tests:
             Shared.section("Starting Servers")
-            Shared.ensure_ollama()
+            if args.cpu_only:
+                Shared.warn("Stopping Ollama to relaunch in CPU-only mode "
+                            f"(applies to: {', '.join(ollama_tests)}) ...")
+                Shared.stop_all_ollama()
+                cpu_env = {
+                    "HIP_VISIBLE_DEVICES": "",
+                    "CUDA_VISIBLE_DEVICES": "",
+                    "ROCR_VISIBLE_DEVICES": "",
+                }
+                if not Shared.start_ollama(extra_env=cpu_env):
+                    Shared.err("Failed to start Ollama in CPU-only mode — "
+                               f"{', '.join(ollama_tests)} tests will be skipped")
+                else:
+                    Shared._cpu_only_active = True
+            else:
+                Shared.ensure_ollama()
 
+        # ── LLM ───────────────────────────────────────────────────────────────
         if "llm" in args.tests:
             def _llm_save(partial):
                 results["llm"] = partial
@@ -304,46 +381,40 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             results["llm_conversation"].update(llm_conv_skips)
             _checkpoint("LLM conversation done")
 
+        # ── MCQ accuracy ───────────────────────────────────────────────────────
+        if "mcq" in args.tests:
+            def _mcq_save(partial):
+                results["mcq"] = partial
+                _checkpoint()
+
+            results["mcq"] = MCQBenchmark().run(
+                models=llm_models,
+                warmup_runs=args.warmup,
+                save_fn=_mcq_save,
+            )
+            _checkpoint("MCQ done")
+
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
             def _emb_save(partial):
                 results["embeddings"] = partial
                 _checkpoint()
 
-            if args.emb_cpu_only:
-                Shared.section("Embeddings: forcing CPU-only")
-                Shared.warn("Stopping Ollama to relaunch in CPU-only mode for embeddings ...")
-                Shared.stop_all_ollama()
-                cpu_env = {
-                    "HIP_VISIBLE_DEVICES": "",
-                    "CUDA_VISIBLE_DEVICES": "",
-                    "ROCR_VISIBLE_DEVICES": "",
-                }
-                if not Shared.start_ollama(extra_env=cpu_env):
-                    Shared.err("Failed to start Ollama in CPU-only mode — skipping embeddings")
-                    results["embeddings"] = {}
-                else:
-                    Shared._cpu_only_active = True
-                    results["embeddings"] = EmbeddingBenchmark().run(
-                        models=EMBED_MODELS,
-                        warmup_runs=args.warmup,
-                        save_fn=_emb_save,
-                    )
-                    _checkpoint("embeddings done")
-                    Shared.log("Restoring normal (GPU-enabled) Ollama ...")
-                    Shared.stop_all_ollama()
-                    Shared._cpu_only_active = False
-                    Shared.start_ollama()
-            else:
-                if not Shared.ollama_available():
-                    Shared.section("Starting Servers")
-                    Shared.ensure_ollama()
-                results["embeddings"] = EmbeddingBenchmark().run(
-                    models=EMBED_MODELS,
-                    warmup_runs=args.warmup,
-                    save_fn=_emb_save,
-                )
-                _checkpoint("embeddings done")
+            results["embeddings"] = EmbeddingBenchmark().run(
+                models=EMBED_MODELS,
+                warmup_runs=args.warmup,
+                save_fn=_emb_save,
+            )
+            _checkpoint("embeddings done")
+
+        # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
+        # if this run forced CPU-only, so the machine isn't left in that state
+        # (and so image generation, if it runs next, starts from a clean state).
+        if ollama_tests and args.cpu_only and Shared._cpu_only_active:
+            Shared.log("Restoring normal (GPU-enabled) Ollama ...")
+            Shared.stop_all_ollama()
+            Shared._cpu_only_active = False
+            Shared.start_ollama()
 
         # ── Image generation ───────────────────────────────────────────────────
         if "img" in args.tests:

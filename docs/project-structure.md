@@ -24,11 +24,13 @@
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
+| `scripts/data/` | Question banks used by accuracy tests — `mcq_questions.json` (60 multiple-choice questions across 8 categories) is used today; `math_questions.json` and `code_problems.json` are present for future accuracy benchmarks not yet wired up |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed Ollama's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed Ollama's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
+| `.mcq_crash_cache.json` | Same as above, for the MCQ accuracy test |
 
 The old `compare.py` CLI tool has been dropped — it's been replaced by the [dashboard](dashboard.md).
 
@@ -43,8 +45,10 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
 | `embedding_benchmark.py` | Embeddings test |
 | `image_benchmark.py` | Image generation test (ComfyUI workflow builders + submission) |
+| `mcq_benchmark.py` | MCQ accuracy test |
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
+| `data/` | Question banks used by accuracy tests (see above) |
 
 ## `results/` in detail
 

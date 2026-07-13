@@ -82,7 +82,7 @@ With that config in place, coverage sits around 95% for the code the suite targe
 
 ## Test Suite Breakdown
 
-The test suite consists of **13 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
+The test suite consists of **16 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -99,6 +99,23 @@ The test suite consists of **13 test modules** validating different components o
   - Smaller tier caps function cumulatively (e.g., `medium` includes `xsmall`, `small`, and `medium` workloads).
   - Tiers correctly filter both LLM models and ComfyUI image models.
   - Human-readable tier label descriptions are returned and distinct.
+
+- **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
+  Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
+  - `acc` expands to `ACCURACY_TESTS` (currently just `mcq`).
+  - Ordinary test names pass through unchanged.
+  - Order is preserved when `acc` is mixed with other test names.
+  - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
+
+- **[test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py)**
+  Tests the `--models` filtering logic (`filter_models_by_pattern` in `benchmark.py`). It verifies:
+  - No patterns (`None` or `[]`) returns the model list unchanged.
+  - An exact tag matches only that model.
+  - A wildcard (`llama*`) matches every tag sharing that prefix.
+  - Matching is case-sensitive — an uppercase pattern against lowercase tags matches nothing.
+  - Multiple overlapping patterns union their matches without duplicating a model that satisfies more than one.
+  - A pattern matching nothing returns an empty list rather than erroring.
+  - Filtering preserves the original model order.
 
 - **[test_config.py](../tests/test_config.py)**
   Performs structural sanity checks on the constants in `config.py`. It verifies that:
@@ -137,6 +154,13 @@ The test suite consists of **13 test modules** validating different components o
   - Follow-up prompts cycle sequentially through sections of the conversation prompt text, wrapping around cleanly.
   - Growth checkpoints (`CONV_CHECKPOINTS`) are sorted and fit within the target ceiling.
   - The step-size calculator (`compute_growth_step`) takes larger steps (`CONV_STEP_MAX_FAR`) when far from the target and smaller ones (`CONV_STEP_MAX`) once within 8K tokens of it, clamps to `CONV_STEP_MIN`, enforces context safety margins (`CONV_SAFETY_MARGIN`) for non-final checks, consumes the full context room on the final step, and signals when the context is full.
+
+- **[test_mcq_benchmark.py](../tests/test_mcq_benchmark.py)**
+  Tests the pure logic in `MCQBenchmark`. It verifies:
+  - `build_prompt` includes the question text and every answer choice.
+  - `parse_answer` extracts a model's chosen letter from free-form text — bare letters, punctuated letters (`"B."`, `"(B)"`), and letters embedded in a reasoning sentence ("...so the answer is B") — while rejecting letters that aren't among the question's valid choices and not false-positiving on ordinary words/contractions that happen to contain a letter (e.g. the "d" in "I'd").
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `load_questions` returns a well-formed dataset from the real `scripts/data/mcq_questions.json` file — unique IDs, and every question's answer is one of its own choices.
 
 ---
 

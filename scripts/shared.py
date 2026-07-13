@@ -33,7 +33,7 @@ class Shared:
     # Tracks processes we started so we can shut them down cleanly
     _managed_procs: list[subprocess.Popen] = []
 
-    # True while Ollama is running with GPU devices hidden (--emb-cpu-only). If
+    # True while Ollama is running with GPU devices hidden (--cpu-only). If
     # the script dies before it restores normal mode, shutdown_managed() must
     # not leave that GPU-hidden process running silently in the background.
     _cpu_only_active = False

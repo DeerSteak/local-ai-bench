@@ -1,0 +1,198 @@
+"""mcq_benchmark.py — multiple-choice accuracy benchmark: each model answers
+every question in scripts/data/mcq_questions.json once (temperature 0, so a
+single pass is representative — repeating it wouldn't change the answers),
+scored right/wrong against the dataset's known answer and broken down by
+category.
+"""
+
+import json
+import re
+from pathlib import Path
+
+import config
+from shared import Shared
+
+
+class MCQBenchmark:
+    MCQ_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "mcq_questions.json"
+
+    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # not a transient blip) so future runs don't waste time rediscovering the
+    # same crash. Delete this file to retry a skipped model.
+    MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
+
+    # A short free-form reply is expected ("B" or "The answer is B."), so this
+    # is generous headroom, not a real generation budget like the other tests.
+    MCQ_NUM_PREDICT = 16
+
+    # Deliberately uppercase-only: models answer letter choices in uppercase
+    # ("B", "the answer is C"), so restricting the scan to A-D as written
+    # avoids false hits on ordinary lowercase words/contractions the case-
+    # insensitive version would catch (e.g. the "d" in "I'd", the article "a").
+    _LETTER_RE = re.compile(r"\b([A-D])\b")
+
+    @staticmethod
+    def load_questions(path: Path = MCQ_DATA_PATH) -> list[dict]:
+        return json.loads(Path(path).read_text())
+
+    @staticmethod
+    def build_prompt(question: dict) -> str:
+        choices_text = "\n".join(f"{letter}. {text}" for letter, text in question["choices"].items())
+        return (
+            f"{question['prompt']}\n\n{choices_text}\n\n"
+            "Respond with only the letter of the correct answer."
+        )
+
+    @staticmethod
+    def parse_answer(response_text: str, valid_choices) -> str | None:
+        """Extract the model's chosen letter from free-form response text.
+
+        Returns None if no valid choice letter can be found. Scans for the
+        first standalone letter that's actually one of this question's valid
+        choices, so a model that reasons out loud before answering ("... so
+        the answer is B") is still scored correctly, while a stray letter
+        from unrelated text ("A" inside "As an AI...") that isn't a valid
+        choice is skipped rather than accepted.
+        """
+        if not response_text:
+            return None
+        valid = {c.upper() for c in valid_choices}
+
+        # A bare (possibly punctuated) single letter is the common case —
+        # handle it case-insensitively before falling back to the uppercase-
+        # only scan below, so a lowercase "b" or "(b)" reply still counts.
+        stripped = response_text.strip().strip(".()[]:*").strip()
+        if len(stripped) == 1 and stripped.upper() in valid:
+            return stripped.upper()
+
+        for match in MCQBenchmark._LETTER_RE.finditer(response_text):
+            letter = match.group(1)
+            if letter in valid:
+                return letter
+        return None
+
+    @staticmethod
+    def _ask(tag: str, question: dict) -> str | None:
+        prompt = MCQBenchmark.build_prompt(question)
+        _, _, _, _, response_text = Shared.ollama_chat(
+            tag, [{"role": "user", "content": prompt}],
+            timeout=config.RUN_TIMEOUT, num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
+        )
+        return MCQBenchmark.parse_answer(response_text, question["choices"].keys())
+
+    @staticmethod
+    def score(questions: list[dict], answers: dict) -> dict:
+        """Tally correct/total overall and per category from a {question_id:
+        given_letter_or_None} map. Pure so the scoring logic (independent of
+        how the answers were collected) is directly testable."""
+        by_category: dict[str, dict] = {}
+        incorrect = []
+        correct = 0
+        answered = 0
+
+        for q in questions:
+            qid, category, expected = q["id"], q["category"], q["answer"]
+            given = answers.get(qid)
+            cat = by_category.setdefault(category, {"correct": 0, "total": 0})
+            cat["total"] += 1
+            if given is not None:
+                answered += 1
+            is_correct = given == expected
+            if is_correct:
+                correct += 1
+                cat["correct"] += 1
+            else:
+                incorrect.append({"id": qid, "category": category, "given": given, "expected": expected})
+
+        for cat in by_category.values():
+            cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
+
+        total = len(questions)
+        return {
+            "correct":      correct,
+            "total":        total,
+            "answered":     answered,
+            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
+            "by_category":  by_category,
+            "incorrect":    incorrect,
+        }
+
+    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+        results = {}
+        questions = questions if questions is not None else MCQBenchmark.load_questions()
+
+        if not Shared.ollama_available():
+            Shared.err("Ollama server not reachable — skipping MCQ benchmark")
+            Shared.err("Start with: ollama serve")
+            return results
+
+        crash_cache = Shared.load_crash_cache(MCQBenchmark.MCQ_CRASH_CACHE)
+
+        for model in models:
+            tag   = model["tag"]
+            label = model["label"]
+            short = model["short"]
+
+            Shared.section(f"MCQ: {label}")
+
+            if not Shared.ollama_reachable_or_abort():
+                break
+
+            try:
+                if not Shared.model_pulled(tag):
+                    Shared.warn(f"{tag} not pulled — skipping")
+                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    continue
+
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, MCQBenchmark.MCQ_CRASH_CACHE)
+                if skip_entry is not None:
+                    results[short] = skip_entry
+                    continue
+
+                if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                                           crash_cache, MCQBenchmark.MCQ_CRASH_CACHE):
+                    Shared.unload_model(tag)
+                    continue
+
+                Shared.log(f"Answering {len(questions)} MCQ questions ...")
+                answers: dict[str, str | None] = {}
+                stopped_early = None
+
+                for i, q in enumerate(questions):
+                    samples, status = Shared.run_measured_calls(
+                        1, lambda run_i, q=q: MCQBenchmark._ask(tag, q), tag, crash_cache,
+                        MCQBenchmark.MCQ_CRASH_CACHE, f"answering {q['id']}")
+                    answers[q["id"]] = samples[0] if samples else None
+
+                    if status == "timed_out":
+                        Shared.err(f"Skipping remaining questions for {label}")
+                        stopped_early = "timed_out"
+                        break
+                    if status == "crashed":
+                        stopped_early = "crashed"
+                        break
+
+                    if (i + 1) % 10 == 0:
+                        Shared.log(f"  {i+1}/{len(questions)} answered ...")
+
+                scored = MCQBenchmark.score(questions, answers)
+                results[short] = {"label": label, **scored}
+
+                if stopped_early == "timed_out":
+                    results[short]["timed_out"] = True
+                elif stopped_early == "crashed":
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
+                    results[short]["crashed"] = True
+                    results[short]["crashed_at"] = crashed_at
+
+                Shared.ok(f"{label}: {scored['accuracy_pct']:.1f}% "
+                          f"({scored['correct']}/{scored['total']})")
+
+                Shared.log(f"Unloading {label} ...")
+                Shared.unload_model(tag)
+                Shared.wait_until_unloaded(tag)
+            finally:
+                if save_fn:
+                    save_fn(results)
+
+        return results

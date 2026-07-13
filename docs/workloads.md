@@ -2,7 +2,7 @@
 
 # Workloads
 
-Three workload types are benchmarked: LLM generation (two test modes), image generation, and embeddings. Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -15,6 +15,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Dense vs. Mixture-of-Experts (MoE)](#dense-vs-mixture-of-experts-moe)
 - [Image Generation](#image-generation)
 - [Embeddings](#embeddings)
+- [Accuracy](#accuracy)
 
 ## LLM
 
@@ -75,7 +76,7 @@ Because decode speed tracks active parameters far more closely than total size o
 
 **Llama versions:** Llama 3.2 tops out at 3B parameters. The 8B slot uses Llama 3.1; the 70B slot uses Llama 3.3, the most recent 70B instruction model.
 
-`--maxtier` caps LLM models (and image models, see below) at a given tier and below — see [CLI Reference](cli-reference.md).
+`--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--models` narrows further to specific tags or wildcards (e.g. `--models "llama*"`) within whatever tier is selected — see [CLI Reference](cli-reference.md).
 
 ## Image Generation
 
@@ -105,12 +106,22 @@ Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — measur
 
 Like the other test types, each model gets `--warmup` discarded runs first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it's absorbed before the `--runs` measured runs (default 3) rather than skewing them. Ollama uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
-If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--emb-cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for the duration of the embedding tests, then restores normal GPU mode afterward.
+If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts Ollama with GPU devices hidden for every Ollama-backed test in the run (`llm`/`conv`/`mcq`/`emb`, not just embeddings), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
 
 | Model | Ollama tag | Size |
 |---|---|---|
 | Nomic Embed Text | `nomic-embed-text` | ~0.3 GB |
 | MixedBread Embed Large | `mxbai-embed-large` | ~0.7 GB |
+
+## Accuracy
+
+Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 60 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+
+The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — each with 7–8 questions. A model's free-form reply is scanned for the first standalone letter (A–D) that's actually one of that question's choices, so a model that reasons out loud before answering ("...so the answer is B") is still scored correctly; a reply with no matching letter counts as unanswered (wrong).
+
+Results report overall accuracy plus a per-category breakdown, so a model that's strong on arithmetic but weak on commonsense reasoning (or vice versa) is visible rather than averaged away.
+
+Run just this test with `--tests mcq`, or `--tests acc` — shorthand for every accuracy-style test (currently just MCQ; more question-bank benchmarks, e.g. math or code, are expected to join this group later without changing how `--tests acc` is invoked). See [CLI Reference](cli-reference.md).
 
 ---
 

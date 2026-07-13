@@ -1,6 +1,6 @@
 # Local AI Bench v1.5
 
-Cross-platform benchmarking for LLM generation, image generation, and embeddings. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
+Cross-platform benchmarking for LLM generation, image generation, embeddings, and accuracy (multiple-choice question answering). Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 
 ---
 
@@ -48,7 +48,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | Doc | Covers |
 |---|---|
 | [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
-| [Workloads](docs/workloads.md) | What's tested — LLM tiers and test modes, image models, embedding models |
+| [Workloads](docs/workloads.md) | What's tested — LLM tiers and test modes, image models, embedding models, MCQ accuracy |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |
