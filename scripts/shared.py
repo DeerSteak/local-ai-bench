@@ -43,6 +43,12 @@ class Shared:
     # surfaced later instead of silently discarded.
     _ollama_log_path: Path | None = None
 
+    # Same as _ollama_log_path but for the ComfyUI server process. Kept for the
+    # life of the process (not deleted on successful startup) so a crash later
+    # in the run — e.g. an OOM while loading a large checkpoint — still has a
+    # log to inspect instead of going silent.
+    _comfyui_log_path: Path | None = None
+
     # Cap on how many times a benchmark retries a request after Ollama's model
     # runner subprocess crashes (commonly OOM) before giving up on that model —
     # a deterministic crash would otherwise recur identically forever.
@@ -100,6 +106,18 @@ class Shared:
             return "\n".join(lines[-n_lines:]) or "(log file is empty)"
         except Exception as e:
             return f"(failed to read Ollama log: {e})"
+
+    @staticmethod
+    def tail_comfyui_log(n_lines: int = 40) -> str:
+        """Return the last n_lines of the current ComfyUI server's captured
+        output, for surfacing the real crash reason instead of guessing."""
+        if Shared._comfyui_log_path is None:
+            return "(no ComfyUI log captured this session)"
+        try:
+            lines = Shared._comfyui_log_path.read_text(errors="replace").splitlines()
+            return "\n".join(lines[-n_lines:]) or "(log file is empty)"
+        except Exception as e:
+            return f"(failed to read ComfyUI log: {e})"
 
     @staticmethod
     def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:  # pragma: no cover — spawns a real subprocess
@@ -259,20 +277,23 @@ class Shared:
         if portable_windows and Shared.detect_backend() == "rocm":
             env["TRITON_INTERPRET"] = "1"
 
-        # Capture stderr to a temp file so we can show it if ComfyUI exits unexpectedly
+        # Capture stdout+stderr to a log file kept for the whole process lifetime
+        # (not just startup) so a crash later in the run — e.g. an OOM while
+        # loading a large checkpoint — still has real output to inspect instead
+        # of going silent.
         try:
-            stderr_fh = tempfile.NamedTemporaryFile(
-                mode="w", suffix="-comfyui-stderr.log", delete=False
+            log_fh = tempfile.NamedTemporaryFile(
+                mode="w", suffix="-comfyui-server.log", delete=False
             )
-            stderr_log = Path(stderr_fh.name)
+            Shared._comfyui_log_path = Path(log_fh.name)
             proc = subprocess.Popen(
                 cmd,
                 cwd=launch_cwd,
-                stdout=subprocess.DEVNULL,
-                stderr=stderr_fh,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
                 env=env,
             )
-            stderr_fh.close()
+            log_fh.close()
             Shared._managed_procs.append(proc)
         except Exception as e:
             Shared.err(f"Failed to start ComfyUI: {e}")
@@ -283,36 +304,17 @@ class Shared:
         for i in range(60):
             time.sleep(1)
             if Shared.comfyui_available():
-                Shared.ok(f"ComfyUI started (pid {proc.pid})")
-                try:
-                    stderr_log.unlink()
-                except Exception:
-                    pass
+                Shared.ok(f"ComfyUI started (pid {proc.pid}) — log: {Shared._comfyui_log_path}")
                 return True
             if proc.poll() is not None:
                 Shared.err(f"ComfyUI exited unexpectedly (code {proc.returncode})")
-                try:
-                    lines = stderr_log.read_text(errors="replace").strip().splitlines()
-                    if lines:
-                        Shared.err("Last output from ComfyUI:")
-                        for line in lines[-8:]:
-                            Shared.err(f"  {line}")
-                except Exception:
-                    pass
-                try:
-                    stderr_log.unlink()
-                except Exception:
-                    pass
+                Shared.err(f"Last output from ComfyUI:\n{Shared.tail_comfyui_log()}")
                 Shared.err(f"Try starting manually: cd {comfyui_dir} && python main.py {' '.join(cmd[2:])}")
                 return False
             if (i + 1) % 10 == 0:
                 Shared.log(f"Still waiting ... ({i+1}s)")
 
         Shared.err("ComfyUI did not respond within 60 seconds")
-        try:
-            stderr_log.unlink()
-        except Exception:
-            pass
         return False
 
     # ── machine profile ──

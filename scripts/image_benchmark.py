@@ -420,6 +420,8 @@ class ImageBenchmark:
                     Shared.ok(f"{label}: warmup done")
                 except Exception as e:
                     Shared.warn(f"{label}: warmup failed ({e}) — skipping")
+                    if not Shared.comfyui_available():
+                        Shared.warn(f"ComfyUI appears to have crashed — last output:\n{Shared.tail_comfyui_log()}")
                     warmup_ok = False
 
                 if not warmup_ok:
