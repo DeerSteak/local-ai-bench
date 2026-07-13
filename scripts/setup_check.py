@@ -835,19 +835,33 @@ else:
         # installed version differs) do get swapped to +cu128 — leaving a
         # mismatched trio that torchaudio's _check_cuda_version() then
         # refuses to import. Forcing reinstall keeps all three in lockstep.
-        result = subprocess.run(
+        # These wheels run ~800MB-2GB each, so stream pip's own progress lines
+        # live instead of capturing silently — otherwise it looks hung for
+        # several minutes on a slow connection.
+        proc = subprocess.Popen(
             [str(python_exe), "-s", "-m", "pip", "install",
-             "--force-reinstall", "--no-deps",
+             "--force-reinstall", "--no-deps", "--progress-bar", "raw",
              "torch", "torchvision", "torchaudio",
              "--index-url", "https://download.pytorch.org/whl/cu128"],
-            capture_output=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
         )
-        if result.returncode != 0:
+        tail = []
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            print(f"      {line}")
+            tail.append(line)
+            tail = tail[-5:]
+        proc.wait()
+        if proc.returncode != 0:
             fail("torch reinstall failed")
-            info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
+            if tail:
+                info(tail[-1])
             issues.append(
-                f"Reinstall torch manually: {python_exe} -s -m pip install --upgrade "
-                "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
+                f"Reinstall torch manually: {python_exe} -s -m pip install --force-reinstall "
+                "--no-deps torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
             )
             return
 
