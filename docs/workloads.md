@@ -127,7 +127,7 @@ Run just this test with `--tests mcq`.
 
 ### Math
 
-Every LLM model answers a fixed bank of 50 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) covers eight categories — arithmetic, algebra, geometry, percentages, probability, sequences, logic, and word problems.
+Every LLM model answers a fixed bank of 82 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) spans 24 categories from easy arithmetic/algebra/geometry through harder combinatorics, Bayesian ("disease test") probability, optimization, and reasoning-trap word problems (e.g. the classic bat-and-ball).
 
 A model's free-form reply is scanned for the *last* number it states, not the first — a model that reasons out loud before answering ("347 + 589 = 936, so the answer is 936") states its final answer last, and intermediate numbers earlier in the reasoning shouldn't be mistaken for it. Each answer is checked against the question's known numeric answer within its own per-question tolerance (most are exact); a reply with no number counts as unanswered (wrong).
 

@@ -80,7 +80,7 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | MCQ warmup runs | `--warmup` (default: 2, discarded) |
 | MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | MCQ metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Math question bank | `scripts/data/math_questions.json` — 50 questions across 8 categories (arithmetic, algebra, geometry, percentages, probability, sequences, logic, word problems) |
+| Math question bank | `scripts/data/math_questions.json` — 82 questions across 24 categories, spanning easy arithmetic/algebra/geometry through harder combinatorics, Bayesian probability, optimization, and reasoning-trap word problems |
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall accuracy (%), plus accuracy (%) per category |
