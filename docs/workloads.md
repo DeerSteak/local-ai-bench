@@ -2,7 +2,7 @@
 
 # Workloads
 
-Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering and math word problems). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering, math word problems, and coding problems). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -17,6 +17,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 - [Embeddings](#embeddings)
 - [Accuracy](#accuracy)
   - [Math](#math)
+  - [Code](#code)
 
 ## LLM
 
@@ -134,7 +135,17 @@ Results report overall accuracy plus a per-category breakdown, same as MCQ.
 
 Run just this test with `--tests math`.
 
-More question-bank benchmarks, e.g. code, are expected to join this group later. Run every accuracy-style test at once with `--tests acc` — currently expands to MCQ and math, and de-duplicates against either of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join. See [CLI Reference](cli-reference.md).
+### Code
+
+Every LLM model answers a fixed bank of 20 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`), asked to write a single Python function matching a given name and signature. The question bank (`scripts/data/code_problems.json`) covers eight categories — arithmetic, string, algorithms, list, number_theory, search, matrix, and stack — each problem with a handful of visible test cases (shown in the prompt as `args`/`expected` pairs the function should satisfy) plus additional hidden test cases the model never sees.
+
+The model's reply is parsed for a fenced Python code block (falling back to the whole reply if it wrote bare code without fencing), then that code is run against every one of the problem's visible *and* hidden test cases in an isolated subprocess — so a model's bad output (infinite loop, crash, syntax error) can't hang or corrupt the benchmark itself, using the same process-isolation-plus-timeout approach as HumanEval-style code-eval harnesses rather than a hardened security sandbox. A problem counts as correct only if every test case passes; a reply with no extractable code, or code that fails even one test case, counts as wrong.
+
+Results report overall accuracy plus a per-category breakdown, same as MCQ/math.
+
+Run just this test with `--tests code`.
+
+Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, and code, and de-duplicates against any of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join this group in the future. See [CLI Reference](cli-reference.md).
 
 ---
 

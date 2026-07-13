@@ -102,7 +102,7 @@ The test suite consists of **16 test modules** validating different components o
 
 - **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
   Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
-  - `acc` expands to `ACCURACY_TESTS` (currently `mcq` and `math`).
+  - `acc` expands to `ACCURACY_TESTS` (currently `mcq`, `math`, and `code`).
   - Ordinary test names pass through unchanged.
   - Order is preserved when `acc` is mixed with other test names.
   - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
@@ -168,6 +168,15 @@ The test suite consists of **16 test modules** validating different components o
   - `parse_answer` extracts a model's final numeric answer from free-form text — bare integers, decimals, negative numbers, thousands-comma-separated numbers, and numbers with a trailing `%` — taking the *last* number stated rather than the first, so a model that reasons out loud before answering is still scored on its final answer, and returning `None` when no number (or only a bare `-`) is found.
   - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
+
+- **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
+  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no Ollama server needed. It verifies:
+  - `build_prompt` includes the question text and the target function name.
+  - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
+  - `execute_tests` runs a candidate function against a list of test cases in an isolated subprocess: correct/incorrect results score independently per test case, a runtime error in one test case doesn't abort the others, a syntax error or reference to an undefined function name fails every test case with an error message, and an infinite loop is killed and reported as a `"timeout"` rather than hanging the test run.
+  - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `load_questions` returns a well-formed dataset from the real `scripts/data/code_problems.json` file — unique IDs, and every problem has a function name and at least one visible and one hidden test case, each with `args` and `expected`.
 
 ---
 

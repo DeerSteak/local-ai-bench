@@ -9,7 +9,7 @@
 
 ## Execution order
 
-LLM benchmarks run first (small → medium → large), followed by the accuracy-style tests (MCQ, then math — same models, same running Ollama server), then embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
+LLM benchmarks run first (small → medium → large), followed by the accuracy-style tests (MCQ, then math, then code — same models, same running Ollama server), then embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
 
 Each LLM model follows this pattern:
 
@@ -28,7 +28,7 @@ If the run exceeds the 300-second timeout, it stops wherever it got to — whate
 
 A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself, if the decode speed at any history depth drops below the slow-model cutoff, it exits early. See [LLM workload](workloads.md#llm) for the full skip logic.
 
-The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache/timeout machinery as the other Ollama-backed tests, applied per question instead of per measured run. See [Accuracy workload](workloads.md#accuracy).
+The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache/timeout machinery as the other Ollama-backed tests, applied per question instead of per measured run. The code accuracy test follows the same per-model pattern, but scoring each reply is more involved: the generated function is run against that problem's visible and hidden test cases in an isolated Python subprocess (with its own wall-clock timeout, separate from the Ollama call timeout), and the problem only counts as correct if every test case passes. See [Accuracy workload](workloads.md#accuracy).
 
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
@@ -49,6 +49,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/image_benchmark.py` | The image generation test (ComfyUI workflow builders + submission) |
 | `scripts/mcq_benchmark.py` | The MCQ accuracy test |
 | `scripts/math_benchmark.py` | The math accuracy test |
+| `scripts/code_benchmark.py` | The code accuracy test |
 | `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
 | `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
 
@@ -83,6 +84,10 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall accuracy (%), plus accuracy (%) per category |
+| Code question bank | `scripts/data/code_problems.json` — 20 problems across 8 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack) |
+| Code warmup runs | `--warmup` (default: 2, discarded) |
+| Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
+| Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes |
 
 ---
 

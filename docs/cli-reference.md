@@ -11,13 +11,13 @@
 run_bench.sh [options]  # Linux / macOS
 run_bench.bat [options]   # Windows
 
---tests TESTS           Tests to run: any of llm conv, emb, img, mcq, math, or
-                        acc as shorthand for every accuracy-style test
-                        (currently mcq and math) (default: all six — llm conv
-                        emb img mcq math)
+--tests TESTS           Tests to run: any of llm conv, emb, img, mcq, math,
+                        code, or acc as shorthand for every accuracy-style
+                        test (currently mcq, math, and code) (default: all
+                        seven — llm conv emb img mcq math code)
 --cpu-only              Force CPU-only inference for every Ollama-backed test
-                        (llm, conv, mcq, math, emb) by restarting Ollama with
-                        GPU devices hidden, then restores normal GPU mode
+                        (llm, conv, mcq, math, code, emb) by restarting Ollama
+                        with GPU devices hidden, then restores normal GPU mode
                         afterward
 --warmup N              Warmup runs before measuring (default: 2)
 --runs N                Measured runs per checkpoint, averaged (default: 3,
@@ -35,7 +35,7 @@ run_bench.bat [options]   # Windows
                         models at this tier and below: xsmall (<6B / +SD1.5),
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
---models TAGS           Only test these LLM models (llm/conv/mcq/math tests) —
+--models TAGS           Only test these LLM models (llm/conv/mcq/math/code tests) —
                         exact Ollama tags or wildcards, e.g. 'llama*' matches
                         every tag starting with 'llama'. Applied after
                         --maxtier, so it can only narrow that tier's models
@@ -50,19 +50,19 @@ run_bench.bat [options]   # Windows
                         default: false
 ```
 
-Every test except the LLM conversation test and the accuracy-style tests (MCQ, math) measures `--runs` runs (default 3) per checkpoint and averages them; the conversation test always runs a single conversation, and the accuracy-style tests always answer their question bank once (deterministic decoding makes repeats pointless).
+Every test except the LLM conversation test and the accuracy-style tests (MCQ, math, code) measures `--runs` runs (default 3) per checkpoint and averages them; the conversation test always runs a single conversation, and the accuracy-style tests always answer their question bank once (deterministic decoding makes repeats pointless).
 
 ## Flag details
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
-| `--tests` | any of `llm conv emb img mcq math`, plus `acc` | all six (`llm conv emb img mcq math`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (currently `mcq` and `math`) and de-duplicates against any of them also listed explicitly |
-| `--cpu-only` | (flag) | off | Restarts Ollama with GPU devices hidden for every Ollama-backed test that's running (`llm`/`conv`/`mcq`/`math`/`emb`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
+| `--tests` | any of `llm conv emb img mcq math code`, plus `acc` | all seven (`llm conv emb img mcq math code`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (currently `mcq`, `math`, and `code`) and de-duplicates against any of them also listed explicitly |
+| `--cpu-only` | (flag) | off | Restarts Ollama with GPU devices hidden for every Ollama-backed test that's running (`llm`/`conv`/`mcq`/`math`/`code`/`emb`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
 | `--warmup` | integer | `2` | Discarded runs before measured runs, per model/checkpoint |
 | `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per run (warmup or measured); exceeding it skips the rest of that model |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it |
-| `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every model in the selected tier) | Only affects `llm`/`conv`/`mcq`/`math` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier`, so it narrows that tier's models rather than adding models outside it |
+| `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every model in the selected tier) | Only affects `llm`/`conv`/`mcq`/`math`/`code` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier`, so it narrows that tier's models rather than adding models outside it |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the auto-generated path entirely — an explicit path is used as-is, not placed under `results/`. Generated images (`--tests img`) still land under `results/`, in an `images_<name>` folder alongside it (see [Project Structure](project-structure.md)) |
 | `--force-all` | (flag) | off | See [LLM workload](workloads.md#llm) for what the slow-model cutoff normally skips |
@@ -82,8 +82,8 @@ bash run_bench.sh --tests llm conv emb
 # Conversation benchmark only
 bash run_bench.sh --tests conv
 
-# Accuracy tests only — MCQ and math (also: --tests acc)
-bash run_bench.sh --tests mcq math
+# Accuracy tests only — MCQ, math, and code (also: --tests acc)
+bash run_bench.sh --tests mcq math code
 
 # Cap at small-tier models and below — skips medium/large LLMs and
 # medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
