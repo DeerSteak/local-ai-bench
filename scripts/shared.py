@@ -457,6 +457,21 @@ class Shared:
                     return "xpu"
             except Exception:
                 pass
+        # Intel Arc on Linux — no equivalent of xpu-smi is guaranteed installed,
+        # so reuse the same "Intel" + "Arc" name heuristic as the Windows check
+        # above, applied to lspci's GPU line (already used as get_hostname()'s
+        # Linux GPU fallback). Requiring "Arc" in the name, not just "Intel",
+        # avoids misreporting integrated graphics (e.g. "Intel Iris Xe") that
+        # have no discrete GPU acceleration path.
+        if platform.system() == "Linux":
+            try:
+                out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+                for line in out.splitlines():
+                    if (any(k in line for k in ("VGA", "3D controller", "Display"))
+                            and "Intel" in line and "Arc" in line):
+                        return "xpu"
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass
         # Metal
         if platform.system() == "Darwin":
             return "metal"

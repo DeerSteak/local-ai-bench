@@ -235,11 +235,32 @@ def check_windows_gpu():
 
     return None
 
+def check_linux_intel_gpu():
+    """Detect an Intel Arc GPU on Linux via lspci. Detection/labeling only —
+    unlike the AMD/NVIDIA paths, this does NOT unlock a GPU-accelerated
+    install path: Ollama has no official Intel GPU (SYCL) backend, so LLM
+    tests still run on CPU even when this returns True. Requires 'Arc' in
+    the device name (not just 'Intel') so integrated graphics with no
+    discrete acceleration aren't misreported."""
+    if platform.system() != "Linux":
+        return False
+    try:
+        out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+        for line in out.splitlines():
+            if (any(k in line for k in ("VGA", "3D controller", "Display"))
+                    and "Intel" in line and "Arc" in line):
+                print(f"  GPU:     {line.split(':', 2)[-1].strip()}")
+                return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    return False
+
 nvidia_ok     = check_nvidia()
 rocm_ok       = False
 metal_ok      = False
 amd_windows   = False
 intel_windows = False
+intel_linux   = False
 
 if not nvidia_ok:
     rocm_ok = check_rocm()
@@ -249,6 +270,8 @@ if not nvidia_ok and os_name == "Windows":
     _win_vendor   = check_windows_gpu()
     amd_windows   = _win_vendor == "amd"
     intel_windows = _win_vendor == "intel"
+if not nvidia_ok and not rocm_ok and os_name == "Linux":
+    intel_linux = check_linux_intel_gpu()
 
 if nvidia_ok:
     ok("CUDA / Nvidia GPU detected")
@@ -258,6 +281,12 @@ elif amd_windows:
     ok("AMD/Radeon GPU detected on Windows")
 elif intel_windows:
     ok("Intel Arc GPU detected on Windows")
+    warn("Ollama has no official Intel GPU backend yet — LLM tests will run on "
+         "CPU unless you install an Intel-GPU-enabled Ollama build yourself")
+elif intel_linux:
+    ok("Intel Arc GPU detected on Linux")
+    warn("Ollama has no official Intel GPU backend yet — LLM tests will run on "
+         "CPU unless you install an Intel-GPU-enabled Ollama build yourself")
 elif metal_ok:
     ok("Apple Metal detected")
 else:

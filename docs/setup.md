@@ -78,6 +78,8 @@ Close other apps before running — GPU memory contention affects results.
 
 **Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify Ollama sees your GPU before running: `ollama run llama3.1:8b-instruct-q4_K_M "hello"` and confirm it loads on GPU in `nvidia-smi`.
 
+**Linux (Intel Arc)** — `setup_check.py` detects the GPU (via `lspci`) and labels it correctly in the hardware summary and results JSON (`"backend": "xpu"`), but this is detection only, not acceleration: Ollama has no official Intel GPU backend, so LLM tests still run on CPU. GPU-accelerated inference would require a third-party Intel-GPU-enabled Ollama build installed manually — `setup_check.py` doesn't install or switch to one.
+
 **DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
 **macOS and Linux** — If the script fails with a permissions error, run `sudo bash setup.sh` instead.
@@ -86,7 +88,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc)** — The setup script downloads the latest official ComfyUI Intel portable build with XPU support.
+**Windows (Intel Arc)** — The setup script detects the GPU, labels it correctly (`"backend": "xpu"`), and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated. Ollama has no official Intel GPU backend, though, so LLM tests still run on CPU — a third-party Intel-GPU-enabled Ollama build would be needed for that, and `setup_check.py` doesn't install or switch to one.
 
 **Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
