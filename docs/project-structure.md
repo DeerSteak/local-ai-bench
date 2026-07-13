@@ -30,6 +30,8 @@
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed Ollama's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 
+The old `compare.py` CLI tool has been dropped — it's been replaced by the [dashboard](dashboard.md).
+
 ## `scripts/` in detail
 
 | Module | Purpose |
