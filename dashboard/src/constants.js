@@ -152,10 +152,15 @@ export const LLM_METRIC_LABELS = { tps: "Tokens/sec", ttft: "TTFT (sec)" };
 
 // Colors per context length (used in bar chart mode)
 export const CTX_COLORS = {
-  "2K":  "#9a3078",
-  "8K":  "#0969da",
-  "32K": "#e36209",
-  "64K": "#1a7f37",
+  "0K":   "#5c6bc0",
+  "2K":   "#9a3078",
+  "4K":   "#00acc1",
+  "8K":   "#0969da",
+  "16K":  "#f9a825",
+  "32K":  "#e36209",
+  "64K":  "#1a7f37",
+  "96K":  "#8d6e63",
+  "128K": "#c2185b",
 };
 
 // Colors per image model (used in bar chart mode — matches CTX palette)
@@ -172,8 +177,11 @@ export const EMBED_BAR_COLORS = {
   "mxbai-embed-large": "#e36209",
 };
 
-// Ordered context length labels (match benchmark.py output)
-export const CTX_ORDER = ["2K", "8K", "32K", "64K"];
+// Ordered context length labels (match benchmark.py output). The LLM section
+// only ever uses {2K, 8K, 32K, 64K} (a subsequence of this, in the same
+// relative order); LLM Conversation samples up to 96K (128K is kept here
+// only so older result files that still have a 128K checkpoint still render).
+export const CTX_ORDER = ["0K", "2K", "4K", "8K", "16K", "32K", "64K", "96K", "128K"];
 
 // Image resolution order
 export const RES_ORDER = ["1024x1024", "1536x1536"];

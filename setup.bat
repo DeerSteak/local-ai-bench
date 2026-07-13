@@ -102,7 +102,7 @@ echo.
 echo [Running setup_check.py]
 echo.
 
-%VENV_PYTHON% setup_check.py
+%VENV_PYTHON% scripts\setup_check.py
 if %errorlevel% neq 0 (
     echo.
     echo   X  setup_check.py exited with errors. See above.
@@ -117,9 +117,9 @@ echo   Setup complete.
 echo ==================================================
 echo.
 echo   To run benchmarks:
-echo     run_windows.bat
+echo     run_bench.bat
 echo.
 set /p _REPLY="  Run the benchmark now? [y/N] "
 echo.
-if /i "%_REPLY%"=="y"   call "%~dp0run_windows.bat"
-if /i "%_REPLY%"=="yes" call "%~dp0run_windows.bat"
+if /i "%_REPLY%"=="y"   call "%~dp0run_bench.bat"
+if /i "%_REPLY%"=="yes" call "%~dp0run_bench.bat"

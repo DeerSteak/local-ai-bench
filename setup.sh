@@ -122,17 +122,17 @@ ok "Base dependencies installed"
 section "Running setup_check.py"
 info "Using $($VENV_PYTHON --version) from $VENV_PYTHON"
 
-"$VENV_PYTHON" setup_check.py
+"$VENV_PYTHON" scripts/setup_check.py
 
 # ── 5. Done ────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}Setup complete.${RESET}"
 echo ""
 echo -e "  To run benchmarks:"
-echo -e "    ${CYAN}bash run_linux_mac.sh${RESET}"
+echo -e "    ${CYAN}bash run_bench.sh${RESET}"
 echo ""
 read -r -p "  Run the benchmark now? [y/N] " _reply
 echo ""
 if [[ "$_reply" =~ ^[Yy](es)?$ ]]; then
-    bash "$(dirname "$0")/run_linux_mac.sh"
+    bash "$(dirname "$0")/run_bench.sh"
 fi

@@ -1,0 +1,10 @@
+[run]
+source = scripts
+omit =
+    # No __main__ guard — importing it runs the whole interactive setup flow
+    # (prompts, downloads), so it can't be safely covered by unit tests.
+    scripts/setup_check.py
+
+[report]
+exclude_also =
+    if __name__ == .__main__.:

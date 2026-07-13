@@ -183,11 +183,11 @@ ComfyUI/
 bench-env/
 .DS_Store
 hf.txt
-machine_profile.json
 **/node_modules
 7zr.exe
 /.omc
-/benchmark_images
 /dashboard/.omc
-results*.json
+/results
 .embed_crash_cache.json
+.llm_crash_cache.json
+.conv_crash_cache.json
