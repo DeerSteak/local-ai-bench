@@ -493,6 +493,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 models=llm_models,
                 warmup_runs=args.warmup,
                 save_fn=_mcq_save,
+                answers_path=sidecar_path(out_path, "answers_mcq_"),
             )
             _checkpoint("MCQ done")
 
@@ -506,6 +507,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 models=llm_models,
                 warmup_runs=args.warmup,
                 save_fn=_math_save,
+                answers_path=sidecar_path(out_path, "answers_math_"),
             )
             _checkpoint("Math done")
 
@@ -519,6 +521,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 models=llm_models,
                 warmup_runs=args.warmup,
                 save_fn=_code_save,
+                answers_path=sidecar_path(out_path, "answers_code_"),
             )
             _checkpoint("Code done")
 
