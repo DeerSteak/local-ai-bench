@@ -25,6 +25,9 @@
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
+| `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
+| `.llm_crash_cache.json` | Records LLM models that crashed Ollama's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
+| `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed Ollama's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 
 ## `scripts/` in detail
