@@ -2,7 +2,7 @@
 
 # Testing
 
-This document provides a guide to the test suite of `local-ai-bench`, explaining how to run the tests and describing what each test module validates.
+This document provides a guide to the test suite of `local-ai-bench` — both the Python benchmark suite (`pytest`, in `tests/`) and the dashboard (`vitest`, in `dashboard/src/`) — explaining how to run each and describing what each test module validates.
 
 **Contents**
 - [Running Tests](#running-tests)
@@ -10,12 +10,15 @@ This document provides a guide to the test suite of `local-ai-bench`, explaining
 - [Test Infrastructure Configuration](#test-infrastructure-configuration)
 - [Coverage](#coverage)
 - [Test Suite Breakdown](#test-suite-breakdown)
+- [Dashboard Tests](#dashboard-tests)
 
 ---
 
 ## Running Tests
 
-Tests are written using [pytest](https://docs.pytest.org/) and can be run using the platform-specific wrapper scripts:
+This section and the next four cover the Python benchmark suite's tests (`tests/`, pytest). See [Dashboard Tests](#dashboard-tests) at the end for the separate `dashboard/` test suite (vitest).
+
+Python tests are written using [pytest](https://docs.pytest.org/) and can be run using the platform-specific wrapper scripts:
 
 **Linux / macOS**
 ```bash
@@ -184,6 +187,39 @@ The test suite consists of **13 test modules** validating different components o
   Validates general helpers in `Shared`:
   - `mean` and `stdev` mathematical routines (including handling empty lists or single-element inputs).
   - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
+
+---
+
+## Dashboard Tests
+
+The dashboard (`dashboard/`) has its own, separate test suite using [Vitest](https://vitest.dev/) — it doesn't share `bench-env` or pytest, since it's a JavaScript/React project with its own `node_modules`.
+
+**Running:**
+
+```bash
+cd dashboard
+npm test              # runs the suite once
+npx vitest            # watch mode, reruns on file changes
+npx vitest -t "getBarStatusLabel"   # filter by test name
+```
+
+`npm run lint` (ESLint) should also pass after any change to `dashboard/src`.
+
+**Scope:** this suite covers `dashboard/src/utils.js` (chart data builders, status-label logic, formatting, model-registry lookups) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
+
+- **[utils.test.js](../dashboard/src/utils.test.js)**
+  Tests the pure data-transformation and formatting functions in `utils.js`. Notably:
+  - `getBarStatusLabel` — the crashed/timed-out/slow-tps precedence and "which checkpoints get relabeled Skipped vs. show real data" logic (the slow checkpoint's own value is always shown, never hidden behind a status label; only checkpoints *after* it get relabeled).
+  - `getImageBarStatusLabel` — the equivalent for image generation timeouts.
+  - `buildLLMBarData`/`buildLLMBarConfigs` — that per-checkpoint values and status overlays are correctly assembled, and that a file which stopped early still gets chart columns for depths another compared file reached.
+  - `sortBarData`/`findMostStrenuousKey` — ranking rows by the deepest metric with real data, in both directions (higher/lower is better), with missing values always sorted last regardless of direction.
+  - `getModelSizeTier` — the known-model lookup and the param-count-parsed fallback for unrecognized models, including its tier boundaries.
+  - `fmt` — unit-specific formatting (ms/sec/tps/sps thresholds, K-notation cutoffs, null handling).
+  - `sanitizeForFilename` — collapsing special characters for PNG export filenames.
+  - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
+
+- **[constants.test.js](../dashboard/src/constants.test.js)**
+  Cross-checks the model registries in `constants.js` against each other — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), and none of the order lists contain duplicates. This catches the most common maintenance mistake here: adding a model to one registry without adding it to the others it's expected to appear in.
 
 ---
 

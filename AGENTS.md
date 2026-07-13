@@ -16,6 +16,7 @@ Full docs live in [`docs/`](docs/) — [Project Structure](docs/project-structur
 scripts/            Python benchmark implementation (see below)
 tests/               pytest suite — one test module roughly per scripts/ module
 dashboard/           React + Vite results-explorer web app
+dashboard/src/*.test.js  Vitest suite for utils.js/constants.js — run via `cd dashboard && npm test`
 docs/                 Detailed docs (see links above)
 samples/             Sample results_*.json for trying the dashboard without a real run
 bench-env/           Project venv (gitignored) — created by setup.sh/setup.bat
@@ -85,7 +86,9 @@ The reasoning below isn't fully written down anywhere else — the docs describe
 
 ## Testing conventions
 
-This is the part to get right — **write comprehensive, valuable tests for anything you touch in `scripts/`**, not superficial ones.
+This is the part to get right — **write comprehensive, valuable tests for anything you touch in `scripts/` or `dashboard/src`**, not superficial ones. The Python suite (`tests/`, pytest) and the dashboard suite (`dashboard/src/*.test.js`, Vitest) are separate and covered in turn below.
+
+**Rule, not a preference: any new business logic — a new function, a new decision/branch, a new calculation — ships with a new or updated test in the same change.** This isn't limited to "if it's easy to test" or "if you happen to touch a file that already has tests." If the logic lands somewhere untestable (inside `main()`, a `run()` method, or similar), extract it first (see below) — don't leave new logic untested because of where it happened to be written. If you're genuinely unsure whether something counts as "business logic" worth testing (formatting/logging glue usually doesn't; a decision, calculation, or dispatch usually does), err toward writing the test.
 
 **Structure:**
 - `tests/conftest.py` puts `scripts/` on `sys.path`, so tests import modules the same way the scripts import each other (`import config`, `from shared import Shared`, etc.) — bare top-level imports, not `scripts.foo`.
@@ -103,11 +106,13 @@ This is the part to get right — **write comprehensive, valuable tests for anyt
 - `compute_growth_step()` in `llm_conversation_benchmark.py` — the conversation-growth step-sizing math, pulled out of `run()`
 - `ImageBenchmark.build_workflow()` — the flux/flux2/sd3/sdxl dispatch, deduplicated out of two copies inside `run()`
 
-When you find similar buried logic (a decision, a calculation, a dispatch) inside an orchestration method that's otherwise untestable, prefer extracting it to a `@staticmethod`/module-level function and testing *that*, over leaving it untested or writing a heavy integration-style test.
+When you write similar logic (a decision, a calculation, a dispatch) inside an orchestration method that's otherwise untestable, extract it to a `@staticmethod`/module-level function and test *that* — this is the required move, not a nice-to-have, for the same reason stated above: new business logic doesn't get to skip tests just because of where it's called from.
 
 **When a bug or edge case isn't obvious from reading the code, verify empirically before trusting your own trace.** For non-trivial control flow (e.g. does a growth loop actually terminate, does it overshoot a bound, does an early-exit fire at the right point), write a throwaway script that imports the real function and runs it against representative inputs — using `bench-env/bin/python`, not a scratch venv — rather than relying purely on hand-tracing. This caught nothing wrong so far, but it's the standard this project holds review to.
 
-**The dashboard (`dashboard/`) has no automated test suite** — `package.json` only has `dev`/`build`/`lint`/`preview` scripts, no Jest/Vitest/Testing Library. Don't assume one exists or silently skip verifying a dashboard change either — run `npm run lint` from `dashboard/` after touching `dashboard/src`, and manually trace/verify logic changes (e.g. against a sample file in `samples/`) the way this project's growth-loop and dashboard-rendering logic were verified in review: by tracing the actual code path, not just reading it. If a dashboard change is complex enough that a real test would be valuable, say so to the user rather than adding a test framework unasked.
+**The dashboard (`dashboard/`) has its own separate test suite using Vitest** (`dashboard/src/*.test.js`, run via `cd dashboard && npm test`) — it does not share `bench-env`/pytest, and it does not extend the coverage boundary or conventions above, which are specific to `scripts/`. It covers the pure data-transformation logic in `utils.js` (chart data/status-label builders, formatting, model lookups) and the model-registry consistency in `constants.js` — deliberately **not** React component rendering (no React Testing Library/jsdom). If you add or change a pure function in `dashboard/src/utils.js` or `constants.js`, add or update a Vitest test for it the same way you would for `scripts/` — write real assertions against representative inputs, including edge cases (missing/null fields, unknown models, boundary values), not just a happy-path smoke test. If you change a React component's rendering behavior, there's no test harness for that — run `npm run lint` from `dashboard/` after touching `dashboard/src`, and manually trace/verify the change (e.g. against a sample file in `samples/`) the way this project's growth-loop and dashboard-rendering logic were verified in review. If a component change is complex enough that real component tests would be valuable, say so to the user rather than adding React Testing Library unasked.
+
+**The user wants to actually see chart/dashboard changes previewed, not just have the code traced or described.** For any change to `dashboard/src` that affects chart output, layout, or styling, start the dashboard (`bash dashboard.sh`, or `npm run dev` from `dashboard/` for hot-reload during iteration) and load a sample file from `samples/` (or a relevant `results_*.json`) so the actual rendered charts are visible before calling the change done — a screenshot or an interactive preview, not a text description of what it should look like.
 
 **Coverage:** `pytest-cov` isn't installed by default — `bench-env/bin/pip install pytest-cov` first. Run via `bash tests.sh --cov=scripts --cov-report=term-missing`. `.coveragerc` shapes the report to reflect only the code meant to be unit-tested (see above); with it in place, coverage sits around 95%. Don't chase the exact number — the remaining gaps are fine-grained exception branches, not whole untested subsystems. If you add a new `run()`-style orchestration method or similarly untestable function, mark it `# pragma: no cover` at the `def` line rather than leaving it to silently drag the coverage number down without explanation.
 
@@ -148,8 +153,8 @@ This project's docs have accumulated real staleness before — broken relative l
 
 ## Before considering a change done
 
-1. Run `bash tests.sh` — must pass.
-2. If you touched anything in `scripts/`, make sure new logic has real unit test coverage per the conventions above (extract-then-test, not left inside an untested orchestration loop).
+1. Run `bash tests.sh` — must pass. If you touched `dashboard/src`, also run `cd dashboard && npm test && npm run lint` — must pass.
+2. If you touched anything in `scripts/` or a pure function in `dashboard/src/utils.js`/`constants.js`, make sure new logic has real unit test coverage per the conventions above (extract-then-test on the Python side, a real Vitest test on the dashboard side — not left untested either way).
 3. Ask explicitly: does this change alter the results JSON shape, a CLI flag, a default, model/tier definitions, or documented behavior? If yes, update the dashboard and/or the relevant doc(s) per "Keeping docs and the dashboard in sync" above — don't wait to be asked.
 4. Check for now-broken relative links and stale references to renamed/removed files in anything you touched or that references what you touched.
 5. Don't run `setup.sh`, `setup.bat`, or a real `run_bench.sh` invocation to "verify" — see Critical safety rules.
