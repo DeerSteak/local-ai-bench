@@ -147,14 +147,14 @@ class CodeBenchmark:
         }
 
     @staticmethod
-    def _ask(tag: str, question: dict) -> dict:
+    def _ask(tag: str, question: dict) -> tuple[dict, str]:
         prompt = CodeBenchmark.build_prompt(question)
         _, _, _, _, response_text = Shared.ollama_chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.RUN_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
         )
         code = CodeBenchmark.extract_code(response_text)
-        return CodeBenchmark.evaluate_question(question, code)
+        return CodeBenchmark.evaluate_question(question, code), response_text
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
@@ -240,13 +240,16 @@ class CodeBenchmark:
 
                 Shared.log(f"Answering {len(questions)} coding problems ...")
                 answers: dict[str, dict | None] = {}
+                raw_responses: dict[str, str] = {}
                 stopped_early = None
 
                 for i, q in enumerate(questions):
                     samples, status = Shared.run_measured_calls(
                         1, lambda run_i, q=q: CodeBenchmark._ask(tag, q), tag, crash_cache,
                         CodeBenchmark.CODE_CRASH_CACHE, f"answering {q['id']}")
-                    answers[q["id"]] = samples[0] if samples else None
+                    result, raw = samples[0] if samples else (None, "")
+                    answers[q["id"]] = result
+                    raw_responses[q["id"]] = raw
 
                     if status == "timed_out":
                         Shared.err(f"Skipping remaining questions for {label}")
@@ -260,6 +263,8 @@ class CodeBenchmark:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
 
                 scored = CodeBenchmark.score(questions, answers)
+                for entry in scored["incorrect"]:
+                    entry["raw_response"] = raw_responses.get(entry["id"], "")
                 results[short] = {"label": label, **scored}
 
                 if stopped_early == "timed_out":
