@@ -24,11 +24,9 @@ class CodeBenchmark:
     # same crash. Delete this file to retry a skipped model.
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")
 
-    # Needs room for both a reasoning-style model's chain-of-thought preamble
-    # and a full function body afterward — too small and the response gets
-    # truncated mid-function, producing a SyntaxError (unterminated string,
-    # mismatched parens, ...) rather than a real logic error.
-    CODE_NUM_PREDICT = 1024
+    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
+    # answer. The wall-clock timeout in Shared.ollama_chat is the real bound.
+    CODE_NUM_PREDICT = -1
 
     # Wall-clock budget for running a model's generated code against one
     # problem's tests in the execute_tests() subprocess. Not a security sandbox

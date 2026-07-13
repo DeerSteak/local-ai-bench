@@ -298,5 +298,81 @@
       {"args": [""], "expected": true},
       {"args": ["]["], "expected": false}
     ]
+  },
+  {
+    "id": "code_021",
+    "category": "string",
+    "function_name": "run_length_encode",
+    "prompt": "Write a function run_length_encode(s) that returns the run-length encoding of s: each maximal run of identical consecutive characters is replaced by that character followed by its run length, e.g. 'aaabbc' -> 'a3b2c1'. An empty string returns an empty string.",
+    "visible_tests": [
+      {"args": ["aaabbc"], "expected": "a3b2c1"},
+      {"args": ["abcd"], "expected": "a1b1c1d1"},
+      {"args": [""], "expected": ""}
+    ],
+    "hidden_tests": [
+      {"args": ["aaaa"], "expected": "a4"},
+      {"args": ["aabbaa"], "expected": "a2b2a2"}
+    ]
+  },
+  {
+    "id": "code_022",
+    "category": "matrix",
+    "function_name": "matrix_multiply",
+    "prompt": "Write a function matrix_multiply(a, b) that returns the matrix product of a (an m x n matrix) and b (an n x p matrix), both given as lists of lists, using standard matrix multiplication. Dimensions are always compatible.",
+    "visible_tests": [
+      {"args": [[[1, 2], [3, 4]], [[5, 6], [7, 8]]], "expected": [[19, 22], [43, 50]]},
+      {"args": [[[1, 2, 3]], [[1], [1], [1]]], "expected": [[6]]},
+      {"args": [[[2, 0], [0, 2]], [[1, 2], [3, 4]]], "expected": [[2, 4], [6, 8]]}
+    ],
+    "hidden_tests": [
+      {"args": [[[1, 0], [0, 1]], [[9, 8], [7, 6]]], "expected": [[9, 8], [7, 6]]},
+      {"args": [[[1, 2], [3, 4], [5, 6]], [[1, 0], [0, 1]]], "expected": [[1, 2], [3, 4], [5, 6]]}
+    ]
+  },
+  {
+    "id": "code_023",
+    "category": "number_theory",
+    "function_name": "is_perfect_number",
+    "prompt": "Write a function is_perfect_number(n) that returns True if n is a perfect number (a positive integer equal to the sum of its proper positive divisors, excluding itself), False otherwise. n may be less than 1.",
+    "visible_tests": [
+      {"args": [6], "expected": true},
+      {"args": [28], "expected": true},
+      {"args": [12], "expected": false}
+    ],
+    "hidden_tests": [
+      {"args": [1], "expected": false},
+      {"args": [496], "expected": true},
+      {"args": [0], "expected": false}
+    ]
+  },
+  {
+    "id": "code_024",
+    "category": "string",
+    "function_name": "longest_common_prefix",
+    "prompt": "Write a function longest_common_prefix(strs) that returns the longest common prefix string among all strings in the list strs. If there is no common prefix, or strs is empty, return an empty string.",
+    "visible_tests": [
+      {"args": [["flower", "flow", "flight"]], "expected": "fl"},
+      {"args": [["dog", "racecar", "car"]], "expected": ""},
+      {"args": [[]], "expected": ""}
+    ],
+    "hidden_tests": [
+      {"args": [["interspecies", "interstellar", "interstate"]], "expected": "inters"},
+      {"args": [["same", "same"]], "expected": "same"}
+    ]
+  },
+  {
+    "id": "code_025",
+    "category": "algorithms",
+    "function_name": "longest_increasing_subsequence_length",
+    "prompt": "Write a function longest_increasing_subsequence_length(lst) that returns the length of the longest strictly increasing subsequence of the list of numbers lst (elements need not be contiguous, but must appear in the same relative order).",
+    "visible_tests": [
+      {"args": [[10, 9, 2, 5, 3, 7, 101, 18]], "expected": 4},
+      {"args": [[0, 1, 0, 3, 2, 3]], "expected": 4},
+      {"args": [[7, 7, 7, 7]], "expected": 1}
+    ],
+    "hidden_tests": [
+      {"args": [[1, 2, 3, 4]], "expected": 4},
+      {"args": [[]], "expected": 0}
+    ]
   }
 ]

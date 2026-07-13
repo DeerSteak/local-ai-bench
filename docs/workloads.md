@@ -117,7 +117,7 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 ## Accuracy
 
-Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 60 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 75 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
 
 The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — each with 7–8 questions. A model's free-form reply is scanned for the first standalone letter (A–D) that's actually one of that question's choices, so a model that reasons out loud before answering ("...so the answer is B") is still scored correctly; a reply with no matching letter counts as unanswered (wrong).
 
@@ -127,7 +127,7 @@ Run just this test with `--tests mcq`.
 
 ### Math
 
-Every LLM model answers a fixed bank of 40 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) covers eight categories — arithmetic, algebra, geometry, percentages, probability, sequences, logic, and word problems.
+Every LLM model answers a fixed bank of 50 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) covers eight categories — arithmetic, algebra, geometry, percentages, probability, sequences, logic, and word problems.
 
 A model's free-form reply is scanned for the *last* number it states, not the first — a model that reasons out loud before answering ("347 + 589 = 936, so the answer is 936") states its final answer last, and intermediate numbers earlier in the reasoning shouldn't be mistaken for it. Each answer is checked against the question's known numeric answer within its own per-question tolerance (most are exact); a reply with no number counts as unanswered (wrong).
 
@@ -137,7 +137,7 @@ Run just this test with `--tests math`.
 
 ### Code
 
-Every LLM model answers a fixed bank of 20 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`), asked to write a single Python function matching a given name and signature. The question bank (`scripts/data/code_problems.json`) covers eight categories — arithmetic, string, algorithms, list, number_theory, search, matrix, and stack — each problem with a handful of visible test cases (shown in the prompt as `args`/`expected` pairs the function should satisfy) plus additional hidden test cases the model never sees.
+Every LLM model answers a fixed bank of 25 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`), asked to write a single Python function matching a given name and signature. The question bank (`scripts/data/code_problems.json`) covers eight categories — arithmetic, string, algorithms, list, number_theory, search, matrix, and stack — each problem with a handful of visible test cases (shown in the prompt as `args`/`expected` pairs the function should satisfy) plus additional hidden test cases the model never sees.
 
 The model's reply is parsed for a fenced Python code block (falling back to the whole reply if it wrote bare code without fencing), then that code is run against every one of the problem's visible *and* hidden test cases in an isolated subprocess — so a model's bad output (infinite loop, crash, syntax error) can't hang or corrupt the benchmark itself, using the same process-isolation-plus-timeout approach as HumanEval-style code-eval harnesses rather than a hardened security sandbox. A problem counts as correct only if every test case passes; a reply with no extractable code, or code that fails even one test case, counts as wrong.
 

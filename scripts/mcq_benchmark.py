@@ -20,12 +20,9 @@ class MCQBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
 
-    # A short free-form reply is expected ("B" or "The answer is B."), but
-    # reasoning-style models emit a chain-of-thought preamble before the
-    # letter, so this needs enough headroom for that preamble too — too
-    # small and the response gets truncated before the actual answer ever
-    # appears, scored as unanswered.
-    MCQ_NUM_PREDICT = 1024
+    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
+    # answer. The wall-clock timeout in Shared.ollama_chat is the real bound.
+    MCQ_NUM_PREDICT = -1
 
     # Uppercase-only: models answer in uppercase ("B"), so scanning for A-D as
     # written avoids false hits on lowercase words/contractions a case-

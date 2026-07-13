@@ -278,5 +278,75 @@
     "prompt": "A jar has 3 green, 3 red, and 4 yellow marbles (10 total). What is the probability (as a percent) of picking a yellow marble at random?",
     "answer": 40,
     "tolerance": 0
+  },
+  {
+    "id": "math_041",
+    "category": "arithmetic",
+    "prompt": "What is 137 * 24?",
+    "answer": 3288,
+    "tolerance": 0
+  },
+  {
+    "id": "math_042",
+    "category": "algebra",
+    "prompt": "Solve the system: 3x + 2y = 16 and x - y = 2. What is x?",
+    "answer": 4,
+    "tolerance": 0
+  },
+  {
+    "id": "math_043",
+    "category": "algebra",
+    "prompt": "Solve for x: x^2 - 5x + 6 = 0. What is the larger root?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_044",
+    "category": "geometry",
+    "prompt": "A right triangle has legs of length 9 and 12. What is the length of the hypotenuse?",
+    "answer": 15,
+    "tolerance": 0
+  },
+  {
+    "id": "math_045",
+    "category": "word_problems",
+    "prompt": "A tank is filled by pipe A in 4 hours and by pipe B in 6 hours. If both pipes are opened together, how many hours does it take to fill the tank? Round to one decimal place.",
+    "answer": 2.4,
+    "tolerance": 0.1
+  },
+  {
+    "id": "math_046",
+    "category": "logic",
+    "prompt": "A is 3 times as old as B. In 12 years, A will be twice as old as B. How old is B now?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_047",
+    "category": "percentages",
+    "prompt": "A price is increased by 20% and then decreased by 20%. What is the overall percent change from the original price? (negative for a decrease)",
+    "answer": -4,
+    "tolerance": 0
+  },
+  {
+    "id": "math_048",
+    "category": "sequences",
+    "prompt": "What is the next number in the sequence: 2, 3, 5, 8, 13, 21, ?",
+    "answer": 34,
+    "tolerance": 0
+  },
+  {
+    "id": "math_049",
+    "category": "probability",
+    "prompt": "Two fair six-sided dice are rolled. What is the probability (as a percent, one decimal place) that the sum of the two dice equals 7?",
+    "answer": 16.7,
+    "tolerance": 0.1
+  },
+  {
+    "id": "math_050",
+    "category": "probability",
+    "prompt": "A bag has 5 red and 7 blue balls. Two balls are drawn without replacement. What is the probability (as a percent, one decimal place) that both are red?",
+    "answer": 15.2,
+    "tolerance": 0.1
   }
 ]

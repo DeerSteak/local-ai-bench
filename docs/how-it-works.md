@@ -76,15 +76,15 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |
 | Image measured runs | `--runs` per resolution, averaged (default: 3, range: 1–10) |
-| MCQ question bank | `scripts/data/mcq_questions.json` — 60 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language) |
+| MCQ question bank | `scripts/data/mcq_questions.json` — 75 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language) |
 | MCQ warmup runs | `--warmup` (default: 2, discarded) |
 | MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | MCQ metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Math question bank | `scripts/data/math_questions.json` — 40 questions across 8 categories (arithmetic, algebra, geometry, percentages, probability, sequences, logic, word problems) |
+| Math question bank | `scripts/data/math_questions.json` — 50 questions across 8 categories (arithmetic, algebra, geometry, percentages, probability, sequences, logic, word problems) |
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Code question bank | `scripts/data/code_problems.json` — 20 problems across 8 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack) |
+| Code question bank | `scripts/data/code_problems.json` — 25 problems across 8 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack) |
 | Code warmup runs | `--warmup` (default: 2, discarded) |
 | Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes |

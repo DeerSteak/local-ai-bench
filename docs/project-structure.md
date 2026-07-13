@@ -24,7 +24,7 @@
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
-| `scripts/data/` | Question banks used by accuracy tests — `mcq_questions.json` (60 multiple-choice questions across 8 categories), `math_questions.json`, and `code_problems.json` |
+| `scripts/data/` | Question banks used by accuracy tests — `mcq_questions.json` (75 multiple-choice questions across 8 categories), `math_questions.json`, and `code_problems.json` |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed Ollama's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
@@ -69,7 +69,7 @@ results/
 
 Each sibling name is always the results filename's stem with `results_` swapped for the sibling's own prefix (`images_`, `answers_mcq_`, `answers_math_`, `answers_code_`) — so the hostname and timestamp suffix is identical across all of them, letter for letter. This holds even when `--out` overrides the default naming (falling back to `<prefix><name>` if the given filename doesn't start with `results_`). See [CLI Reference](cli-reference.md) for the `--out` flag.
 
-The `answers_*.json` sidecars hold each accuracy test's wrong answers, keyed by model, with the model's full raw response text — kept out of the main results JSON since raw model output is large relative to everything else in there and would otherwise bloat it substantially (especially at the generation-length budgets `mcq_benchmark.py`/`math_benchmark.py`/`code_benchmark.py` use to give reasoning-style models room to reach their actual answer before being cut off).
+The `answers_*.json` sidecars hold each accuracy test's wrong answers, keyed by model, with the model's full raw response text — kept out of the main results JSON since raw model output (unbounded generation, see `docs/workloads.md`) is large relative to everything else in there and would otherwise bloat it substantially.
 
 `results/` is gitignored — nothing under it is tracked. Load its contents into the [dashboard](dashboard.md) to compare across machines.
 

@@ -20,12 +20,9 @@ class MathBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MATH_CRASH_CACHE = Path(".math_crash_cache.json")
 
-    # A numeric answer is still short, but reasoning-style models show a
-    # chain-of-thought preamble before it despite being told not to, so this
-    # leaves room for the actual number to still appear before generation is
-    # cut off — too small and parse_answer's "last number in the text" grabs
-    # an incidental number from mid-reasoning instead of the real answer.
-    MATH_NUM_PREDICT = 1024
+    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
+    # answer. The wall-clock timeout in Shared.ollama_chat is the real bound.
+    MATH_NUM_PREDICT = -1
 
     # Matches an optionally-negative, optionally-decimal number, with commas
     # allowed as thousands separators (stripped before parsing).

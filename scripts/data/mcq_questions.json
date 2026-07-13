@@ -418,5 +418,110 @@
     "prompt": "In the sentence \"I run every morning,\" what part of speech is the word \"run\"?",
     "choices": {"A": "Noun", "B": "Verb", "C": "Adjective", "D": "Adverb"},
     "answer": "B"
+  },
+  {
+    "id": "mcq_061",
+    "category": "science",
+    "prompt": "Which subatomic particle has no electric charge?",
+    "choices": {"A": "Proton", "B": "Electron", "C": "Neutron", "D": "Positron"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_062",
+    "category": "science",
+    "prompt": "What is the SI unit of electrical resistance?",
+    "choices": {"A": "Volt", "B": "Ohm", "C": "Watt", "D": "Farad"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_063",
+    "category": "history",
+    "prompt": "The Treaty of Westphalia (1648) brought an end to which conflict?",
+    "choices": {"A": "Hundred Years' War", "B": "Thirty Years' War", "C": "Napoleonic Wars", "D": "War of the Spanish Succession"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_064",
+    "category": "history",
+    "prompt": "Suleiman the Magnificent was a ruler of which empire?",
+    "choices": {"A": "Mughal Empire", "B": "Ottoman Empire", "C": "Safavid Empire", "D": "Byzantine Empire"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_065",
+    "category": "geography",
+    "prompt": "Lake Baikal, the world's deepest lake, is located in which country?",
+    "choices": {"A": "Mongolia", "B": "Kazakhstan", "C": "Russia", "D": "China"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_066",
+    "category": "geography",
+    "prompt": "Which country has three official capital cities (executive, legislative, and judicial)?",
+    "choices": {"A": "South Africa", "B": "Netherlands", "C": "Bolivia", "D": "Sri Lanka"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_067",
+    "category": "logic",
+    "prompt": "Three boxes are labeled 'Apples', 'Oranges', and 'Mixed' — but every label is wrong. You draw one fruit from the box labeled 'Mixed' and it's an apple. Which box actually contains only oranges?",
+    "choices": {"A": "The box labeled 'Apples'", "B": "The box labeled 'Oranges'", "C": "The box labeled 'Mixed'", "D": "Cannot be determined"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_068",
+    "category": "logic",
+    "prompt": "Four friends — Al, Bo, Cy, Dee — each own a different pet: cat, dog, fish, bird. Al doesn't own the dog or fish. Bo owns the bird. Cy doesn't own the cat. Dee owns the fish. What pet does Al own?",
+    "choices": {"A": "Cat", "B": "Dog", "C": "Fish", "D": "Bird"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_069",
+    "category": "literature",
+    "prompt": "Which 19th-century Russian novel opens with the line \"Happy families are all alike; every unhappy family is unhappy in its own way\"?",
+    "choices": {"A": "War and Peace", "B": "Anna Karenina", "C": "Crime and Punishment", "D": "The Brothers Karamazov"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_070",
+    "category": "literature",
+    "prompt": "Gabriel García Márquez's novel \"One Hundred Years of Solitude\" is set in the fictional town of?",
+    "choices": {"A": "Macondo", "B": "Comala", "C": "Santa Teresa", "D": "Aracataca"},
+    "answer": "A"
+  },
+  {
+    "id": "mcq_071",
+    "category": "arithmetic",
+    "prompt": "What is 17 squared?",
+    "choices": {"A": "279", "B": "289", "C": "298", "D": "308"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_072",
+    "category": "arithmetic",
+    "prompt": "What is the sum of all integers from 1 to 50?",
+    "choices": {"A": "1225", "B": "1275", "C": "1325", "D": "1250"},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_073",
+    "category": "commonsense",
+    "prompt": "A pot of soup turns out far too salty. What's the best way to fix it?",
+    "choices": {"A": "Add more salt", "B": "Add sugar", "C": "Add water or a peeled potato to dilute it", "D": "Add pepper"},
+    "answer": "C"
+  },
+  {
+    "id": "mcq_074",
+    "category": "language",
+    "prompt": "Which sentence correctly uses the subjunctive mood?",
+    "choices": {"A": "If I was rich, I would travel.", "B": "If I were rich, I would travel.", "C": "If I am rich, I would travel.", "D": "If I will be rich, I would travel."},
+    "answer": "B"
+  },
+  {
+    "id": "mcq_075",
+    "category": "language",
+    "prompt": "What figure of speech is used in \"The wind whispered through the trees\"?",
+    "choices": {"A": "Simile", "B": "Metaphor", "C": "Personification", "D": "Hyperbole"},
+    "answer": "C"
   }
 ]

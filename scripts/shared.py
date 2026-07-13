@@ -923,6 +923,11 @@ class Shared:
                 if thinking:
                     thinking_parts.append(thinking)
 
+                # urlopen()'s timeout is per-read, not total duration — it
+                # resets on every token. Enforce the real wall-clock deadline.
+                if time.perf_counter() - t_start > timeout:
+                    raise TimeoutError(f"ollama_chat exceeded {timeout}s wall-clock timeout")
+
                 if chunk.get("done"):
                     eval_count        = chunk.get("eval_count", tokens)
                     eval_duration      = chunk.get("eval_duration", 0)      # nanoseconds
