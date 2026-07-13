@@ -348,5 +348,229 @@
     "prompt": "A bag has 5 red and 7 blue balls. Two balls are drawn without replacement. What is the probability (as a percent, one decimal place) that both are red?",
     "answer": 15.2,
     "tolerance": 0.1
+  },
+  {
+    "id": "math_051",
+    "category": "ratios",
+    "prompt": "A paint mixture uses red and blue paint in a ratio of 3:5. If 24 liters of red paint are used, how many liters of blue paint are needed?",
+    "answer": 40,
+    "tolerance": 0
+  },
+  {
+    "id": "math_052",
+    "category": "percentages",
+    "prompt": "A $120 item is discounted by 25%, then 8% sales tax is applied to the discounted price. What is the final price in dollars?",
+    "answer": 97.2,
+    "tolerance": 0.01
+  },
+  {
+    "id": "math_053",
+    "category": "averages",
+    "prompt": "A student has test scores of 72, 84, 91, and 78. What score is needed on a fifth test to have an average of 82?",
+    "answer": 85,
+    "tolerance": 0
+  },
+  {
+    "id": "math_054",
+    "category": "rates",
+    "prompt": "A car travels 60 miles at 30 mph and then 60 miles at 60 mph. What is its average speed for the entire trip, in mph?",
+    "answer": 40,
+    "tolerance": 0
+  },
+  {
+    "id": "math_055",
+    "category": "mixtures",
+    "prompt": "How many liters of a 20% salt solution must be mixed with 10 liters of a 50% salt solution to produce a 30% salt solution?",
+    "answer": 20,
+    "tolerance": 0
+  },
+  {
+    "id": "math_056",
+    "category": "algebra",
+    "prompt": "Solve for x: 3/(x - 1) = 2. What is x?",
+    "answer": 2.5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_057",
+    "category": "algebra",
+    "prompt": "The solutions to x^2 - 7x + 10 = 0 are r and s. What is r^2 + s^2?",
+    "answer": 29,
+    "tolerance": 0
+  },
+  {
+    "id": "math_058",
+    "category": "geometry",
+    "prompt": "A rectangle has diagonal length 13 and width 5. What is its length?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_059",
+    "category": "geometry",
+    "prompt": "A cylinder has radius 3 and height 10. Using pi = 3.14, what is its volume?",
+    "answer": 282.6,
+    "tolerance": 0.01
+  },
+  {
+    "id": "math_060",
+    "category": "coordinate_geometry",
+    "prompt": "What is the distance between the points (1, 2) and (7, 10)?",
+    "answer": 10,
+    "tolerance": 0
+  },
+  {
+    "id": "math_061",
+    "category": "probability",
+    "prompt": "A box contains 3 defective and 9 non-defective parts. Two parts are selected without replacement. What is the probability, as a percent rounded to one decimal place, that exactly one is defective?",
+    "answer": 40.9,
+    "tolerance": 0.05
+  },
+  {
+    "id": "math_062",
+    "category": "probability",
+    "prompt": "A fair coin is flipped 4 times. What is the probability, as a percent, of getting exactly 2 heads?",
+    "answer": 37.5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_063",
+    "category": "expected_value",
+    "prompt": "A game pays $10 with probability 0.2 and loses $3 with probability 0.8. What is the expected net result per play, in dollars?",
+    "answer": -0.4,
+    "tolerance": 0.001
+  },
+  {
+    "id": "math_064",
+    "category": "combinatorics",
+    "prompt": "How many different 3-person committees can be selected from 8 people?",
+    "answer": 56,
+    "tolerance": 0
+  },
+  {
+    "id": "math_065",
+    "category": "number_theory",
+    "prompt": "What is the remainder when 7^5 is divided by 10?",
+    "answer": 7,
+    "tolerance": 0
+  },
+  {
+    "id": "math_066",
+    "category": "number_theory",
+    "prompt": "What is the smallest positive integer that is divisible by 12, 18, and 30?",
+    "answer": 180,
+    "tolerance": 0
+  },
+  {
+    "id": "math_067",
+    "category": "work_rates",
+    "prompt": "Pipe A fills a tank in 6 hours, pipe B fills it in 8 hours, and a drain empties it in 24 hours. If all three are open, how many hours will it take to fill the tank?",
+    "answer": 4,
+    "tolerance": 0
+  },
+  {
+    "id": "math_068",
+    "category": "rates",
+    "prompt": "A boat travels 30 miles downstream in 2 hours and returns the same distance upstream in 3 hours. What is the speed of the current, in mph?",
+    "answer": 2.5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_069",
+    "category": "percentages",
+    "prompt": "After a 15% discount and then a 10% sales tax, an item costs $93.50. What was its original price, in dollars?",
+    "answer": 100,
+    "tolerance": 0.01
+  },
+  {
+    "id": "math_070",
+    "category": "algebra",
+    "prompt": "Solve for x: sqrt(x + 5) = x - 1.",
+    "answer": 4,
+    "tolerance": 0
+  },
+  {
+    "id": "math_071",
+    "category": "probability",
+    "prompt": "A disease affects 1% of a population. A test is 95% sensitive and has a 5% false-positive rate. If a person tests positive, what is the probability, as a percent rounded to one decimal place, that the person has the disease?",
+    "answer": 16.1,
+    "tolerance": 0.05
+  },
+  {
+    "id": "math_072",
+    "category": "combinatorics",
+    "prompt": "How many 5-letter strings can be formed from the letters A, B, C, D, E, and F without repetition if the string must begin with a vowel (A or E)?",
+    "answer": 240,
+    "tolerance": 0
+  },
+  {
+    "id": "math_073",
+    "category": "optimization",
+    "prompt": "A rectangle has perimeter 40. What is the maximum possible area?",
+    "answer": 100,
+    "tolerance": 0
+  },
+  {
+    "id": "math_074",
+    "category": "sequences",
+    "prompt": "An arithmetic sequence has fifth term 18 and twelfth term 46. What is its first term?",
+    "answer": 2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_075",
+    "category": "logic",
+    "prompt": "Exactly two of the following statements are true: (1) x > 5, (2) x is even, (3) x < 8. Which value of x among 3, 6, 8, and 9 satisfies this condition?",
+    "answer": 8,
+    "tolerance": 0
+  },
+  {
+    "id": "math_079",
+    "category": "irrelevant_information",
+    "prompt": "A bookstore has 200 books, 40 chairs, and 6 employees. It sells 35 books on Monday and 28 books on Tuesday. How many books remain?",
+    "answer": 137,
+    "tolerance": 0
+  },
+  {
+    "id": "math_080",
+    "category": "reasoning_trap",
+    "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost, in dollars?",
+    "answer": 0.05,
+    "tolerance": 0.001
+  },
+  {
+    "id": "math_081",
+    "category": "units",
+    "prompt": "A rectangular floor is 12 feet by 15 feet. Carpet costs $4 per square yard. What is the total carpet cost?",
+    "answer": 80,
+    "tolerance": 0
+  },
+  {
+    "id": "math_082",
+    "category": "compound_growth",
+    "prompt": "An investment of $1,000 grows by 5% per year for 3 years, compounded annually. What is its value after 3 years, rounded to the nearest cent?",
+    "answer": 1157.63,
+    "tolerance": 0.005
+  },
+  {
+    "id": "math_083",
+    "category": "statistics",
+    "prompt": "The numbers 3, 5, 5, 7, 10 have a mean of 6. If another number is added and the new mean is 7, what number was added?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_084",
+    "category": "probability",
+    "prompt": "Three cards are drawn without replacement from a standard 52-card deck. What is the probability, as a percent rounded to two decimal places, that all three are hearts?",
+    "answer": 1.29,
+    "tolerance": 0.005
+  },
+  {
+    "id": "math_085",
+    "category": "modular_arithmetic",
+    "prompt": "What are the last two digits of 3^20?",
+    "answer": 1,
+    "tolerance": 0
   }
 ]
