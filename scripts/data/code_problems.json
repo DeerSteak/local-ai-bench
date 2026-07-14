@@ -821,7 +821,7 @@
     "id": "code_013",
     "category": "list",
     "function_name": "unique_elements",
-    "prompt": "Write a function unique_elements(lst) that returns a list of the unique elements in lst, preserving the order of their first occurrence. Elements in lst will be hashable (e.g. numbers or strings).",
+    "prompt": "Write a function unique_elements(lst) that returns a list of the unique elements in lst, preserving the order of their first occurrence. Elements in lst will be hashable (e.g. numbers or strings), and uniqueness follows Python equality and hash semantics.",
     "visible_tests": [
       {
         "args": [

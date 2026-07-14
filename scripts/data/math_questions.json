@@ -590,7 +590,7 @@
   {
     "id": "math_085",
     "category": "modular_arithmetic",
-    "prompt": "What are the last two digits of 3^20?",
+    "prompt": "What is the remainder when 3^20 is divided by 100?",
     "answer": 1,
     "tolerance": 0
   },

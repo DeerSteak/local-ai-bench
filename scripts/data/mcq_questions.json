@@ -507,7 +507,7 @@
     "id": "mcq_073",
     "category": "commonsense",
     "prompt": "A pot of soup turns out far too salty. What's the best way to fix it?",
-    "choices": {"A": "Add more salt", "B": "Add pepper", "C": "Add sugar", "D": "Add water or a peeled potato to dilute it"},
+    "choices": {"A": "Add more salt", "B": "Add pepper", "C": "Add sugar", "D": "Add unsalted liquid or more salt-free ingredients"},
     "answer": "D"
   },
   {
@@ -814,7 +814,7 @@
   {
     "id": "mcq_117",
     "category": "literature",
-    "prompt": "In Dante's Divine Comedy, who guides Dante through Paradise?",
+    "prompt": "In Dante's Divine Comedy, who guides Dante through most of Paradise?",
     "choices": {"A": "Virgil", "B": "Beatrice", "C": "Statius", "D": "Bernard alone for the entire journey"},
     "answer": "B"
   },
