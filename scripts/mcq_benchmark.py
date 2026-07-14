@@ -164,6 +164,7 @@ class MCQBenchmark:
                 answers: dict[str, str | None] = {}
                 raw_responses: dict[str, str] = {}
                 timed_out_ids: list[str] = []
+                likely_loop_ids: list[str] = []
                 stopped_early = None
 
                 for i, q in enumerate(questions):
@@ -193,7 +194,12 @@ class MCQBenchmark:
                         # old behavior of abandoning the rest of the bank outright
                         # (and would incorrectly zero out everything after one bad
                         # question for a model that's merely slow, not stuck).
+                        Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
+                                    "scoring as wrong and continuing")
                         timed_out_ids.append(q["id"])
+                        if partial_text and Shared.looks_like_loop(partial_text):
+                            Shared.warn(f"{q['id']}: response looks like a generation loop")
+                            likely_loop_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"
                         break
@@ -214,6 +220,9 @@ class MCQBenchmark:
                 if timed_out_ids:
                     results[short]["timed_out_count"] = len(timed_out_ids)
                     results[short]["timed_out_ids"] = timed_out_ids
+                if likely_loop_ids:
+                    results[short]["likely_loop_count"] = len(likely_loop_ids)
+                    results[short]["likely_loop_ids"] = likely_loop_ids
                 if stopped_early == "crashed":
                     crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                     results[short]["crashed"] = True

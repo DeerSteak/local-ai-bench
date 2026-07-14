@@ -28,7 +28,7 @@ If the run exceeds the 300-second timeout, it stops wherever it got to — whate
 
 A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself, if the decode speed at any history depth drops below the slow-model cutoff, it exits early. See [LLM workload](workloads.md#llm) for the full skip logic.
 
-The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache/timeout machinery as the other Ollama-backed tests, applied per question instead of per measured run. The code accuracy test follows the same per-model pattern, but scoring each reply is more involved: the generated function is run against that problem's visible and hidden test cases in an isolated Python subprocess (with its own wall-clock timeout, separate from the Ollama call timeout), and the problem only counts as correct if every test case passes. See [Accuracy workload](workloads.md#accuracy).
+The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache machinery as the other Ollama-backed tests, applied per question instead of per measured run — but the per-question timeout is `--acc-timeout` (default 60s), not `--timeout`, and a timeout only affects that one question: it's scored wrong (using whatever partial text streamed before the cutoff, run through a loop-detection heuristic) and the bank continues to the next question. See [Accuracy workload](workloads.md#accuracy) for the full timeout/loop-detection behavior. The code accuracy test follows the same per-model pattern, but scoring each reply is more involved: the generated function is run against that problem's visible and hidden test cases in an isolated Python subprocess (with its own wall-clock timeout, separate from the Ollama call timeout), and the problem only counts as correct if every test case passes.
 
 **Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
@@ -53,7 +53,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
 | `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
 
-Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N_RUNS` via `--runs`) are read via `config.RUN_TIMEOUT`/`config.N_RUNS` (a dotted attribute lookup) everywhere, rather than imported by name — a plain `from config import RUN_TIMEOUT` would bind a stale copy at import time and silently ignore the CLI override.
+Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `ACC_TIMEOUT` via `--acc-timeout`, `N_RUNS` via `--runs`) are read via `config.RUN_TIMEOUT`/`config.ACC_TIMEOUT`/`config.N_RUNS` (a dotted attribute lookup) everywhere, rather than imported by name — a plain `from config import RUN_TIMEOUT` would bind a stale copy at import time and silently ignore the CLI override.
 
 ## Parameters
 
@@ -64,7 +64,8 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
 | LLM warmup runs | `--warmup` (default: 2, discarded) |
 | LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |
-| Run timeout | `--timeout` per run (default: 300s) — that run stops wherever it got to if exceeded |
+| Run timeout | `--timeout` per run (default: 300s) — applies to warmup and to `llm`/`conv`/`emb`/`img`; that run stops wherever it got to if exceeded |
+| Accuracy question timeout | `--acc-timeout` per question (default: 60s), for `mcq`/`math`/`code` only — that question is scored wrong and the bank continues, rather than stopping the model's run |
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation test exclusion | Model excluded entirely if it timed out or was already marked too slow in the single-shot test |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` (via Ollama) |
@@ -79,15 +80,15 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | MCQ question bank | `scripts/data/mcq_questions.json` — 150 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language), with A–D answer positions balanced |
 | MCQ warmup runs | `--warmup` (default: 2, discarded) |
 | MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| MCQ metrics | Overall accuracy (%), plus accuracy (%) per category |
+| MCQ metrics | Overall accuracy (%), plus accuracy (%) per category; `timed_out_count`/`timed_out_ids` and `likely_loop_count`/`likely_loop_ids` when any question hit `--acc-timeout` |
 | Math question bank | `scripts/data/math_questions.json` — 150 numeric-answer problems across 30 categories, including calculus, combinatorics, linear algebra, number theory, probability, and statistics |
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| Math metrics | Overall accuracy (%), plus accuracy (%) per category |
+| Math metrics | Overall accuracy (%), plus accuracy (%) per category; `timed_out_count`/`timed_out_ids` and `likely_loop_count`/`likely_loop_ids` when any question hit `--acc-timeout` |
 | Code question bank | `scripts/data/code_problems.json` — 60 problems across 13 categories, including dynamic programming, graph, interval, divide-and-conquer, and advanced stateful structures |
 | Code warmup runs | `--warmup` (default: 2, discarded) |
 | Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes |
+| Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes; `timed_out_count`/`timed_out_ids` and `likely_loop_count`/`likely_loop_ids` when any question hit `--acc-timeout` |
 
 ---
 

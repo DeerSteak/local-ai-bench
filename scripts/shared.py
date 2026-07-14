@@ -730,7 +730,10 @@ class Shared:
             except Exception as e:
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
-                    Shared.err(f"Run {run_i+1} timed out — stopping remaining runs for {tag}")
+                    # What happens next (abandon the rest of this tag vs. score this
+                    # one attempt wrong and move on) is caller-specific, so this only
+                    # reports the timeout itself — not what the caller does about it.
+                    Shared.err(f"{tag}: timed out {what} (run {run_i+1})")
                     partial_text = getattr(e, "partial_text", "")
                     return samples, "timed_out", partial_text
                 Shared.err(f"Run {run_i+1} failed: {e}")
@@ -773,6 +776,66 @@ class Shared:
             return [{"tag": m["name"], "size": m.get("size")} for m in r.json().get("models", [])]
         except Exception:
             return []
+
+    # Self-correction/hedging markers a model repeats when it's spinning in
+    # place on the same reasoning (re-deriving, "catching" the same "mistake",
+    # apologizing) without ever landing on an answer — a paraphrased loop, not
+    # a verbatim one, so _has_repeated_verbatim_ngram alone won't catch it.
+    # Lowercase substrings, checked against lowercased text.
+    _LOOP_HEDGE_PHRASES = [
+        "wait,", "wait -", "actually,", "let me reconsider", "let me recalculate",
+        "let me re-check", "let me recheck", "let me recompute", "let me redo",
+        "let me try again", "let's try again", "let's recalculate",
+        "on second thought", "hold on,", "there seems to be a mistake",
+        "there seems to have been", "i made an error", "i made a mistake",
+        "that's not right", "this is incorrect", "let's start over",
+        "apolog",  # apologize / apologies / apologizing
+        "correcting myself", "let me reevaluate", "let me re-evaluate",
+    ]
+
+    @staticmethod
+    def _has_repeated_verbatim_ngram(text: str, ngram_words: int = 12, min_repeats: int = 3) -> bool:
+        """Flags `text` if any run of `ngram_words` consecutive words recurs
+        at least `min_repeats` times — the signature of a model restating the
+        same reasoning block (or the same code block, one indentation level
+        deeper each time) verbatim until the wall-clock cutoff hits.
+        Requiring a dozen-word run to repeat three times is deliberately
+        conservative: a real answer might reuse a short phrase a couple
+        times, but a 12+ word verbatim run recurring 3+ times essentially
+        never happens outside an actual loop. Word-level rather than
+        character-level so it isn't thrown off by minor whitespace/formatting
+        differences between repeats."""
+        words = text.split()
+        if len(words) < ngram_words * min_repeats:
+            return False
+        seen: dict[str, int] = {}
+        for i in range(len(words) - ngram_words + 1):
+            gram = " ".join(words[i:i + ngram_words])
+            count = seen.get(gram, 0) + 1
+            if count >= min_repeats:
+                return True
+            seen[gram] = count
+        return False
+
+    @staticmethod
+    def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3) -> bool:
+        """Flags `text` if any single phrase from _LOOP_HEDGE_PHRASES occurs
+        at least `min_repeats` times — catches a loop that paraphrases each
+        pass (re-deriving the same result, repeatedly "catching" and
+        "correcting" the same mistake) rather than repeating verbatim."""
+        lowered = text.lower()
+        return any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
+
+    @staticmethod
+    def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
+                         hedge_min_repeats: int = 3) -> bool:
+        """Heuristic for a degenerate generation loop in a timed-out accuracy-
+        test response: true if the model either repeated a substantial chunk
+        of text verbatim, or repeatedly hedged/self-corrected without ever
+        landing on an answer. See _has_repeated_verbatim_ngram and
+        _has_repeated_hedging_phrase for the two signals."""
+        return (Shared._has_repeated_verbatim_ngram(text, ngram_words, min_repeats)
+                or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats))
 
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
