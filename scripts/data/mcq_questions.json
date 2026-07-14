@@ -3,21 +3,21 @@
     "id": "mcq_001",
     "category": "science",
     "prompt": "What is the chemical symbol for gold?",
-    "choices": {"A": "Au", "B": "Ag", "C": "Gd", "D": "Go"},
-    "answer": "A"
+    "choices": {"A": "Ag", "B": "Gd", "C": "Go", "D": "Au"},
+    "answer": "D"
   },
   {
     "id": "mcq_002",
     "category": "science",
     "prompt": "How many planets are in our solar system?",
-    "choices": {"A": "7", "B": "8", "C": "9", "D": "10"},
-    "answer": "B"
+    "choices": {"A": "8", "B": "7", "C": "9", "D": "10"},
+    "answer": "A"
   },
   {
     "id": "mcq_003",
     "category": "science",
     "prompt": "What gas do plants primarily absorb for photosynthesis?",
-    "choices": {"A": "Oxygen", "B": "Nitrogen", "C": "Carbon dioxide", "D": "Hydrogen"},
+    "choices": {"A": "Nitrogen", "B": "Hydrogen", "C": "Carbon dioxide", "D": "Oxygen"},
     "answer": "C"
   },
   {
@@ -31,232 +31,232 @@
     "id": "mcq_005",
     "category": "science",
     "prompt": "At sea level, water boils at approximately what temperature in Celsius?",
-    "choices": {"A": "100", "B": "90", "C": "110", "D": "120"},
-    "answer": "A"
+    "choices": {"A": "90", "B": "100", "C": "120", "D": "110"},
+    "answer": "B"
   },
   {
     "id": "mcq_006",
     "category": "science",
     "prompt": "What is the hardest naturally occurring substance on Earth?",
-    "choices": {"A": "Quartz", "B": "Diamond", "C": "Titanium", "D": "Steel"},
-    "answer": "B"
+    "choices": {"A": "Diamond", "B": "Quartz", "C": "Steel", "D": "Titanium"},
+    "answer": "A"
   },
   {
     "id": "mcq_007",
     "category": "science",
     "prompt": "Which planet is known as the Red Planet?",
-    "choices": {"A": "Venus", "B": "Jupiter", "C": "Mars", "D": "Saturn"},
-    "answer": "C"
+    "choices": {"A": "Jupiter", "B": "Saturn", "C": "Venus", "D": "Mars"},
+    "answer": "D"
   },
   {
     "id": "mcq_008",
     "category": "science",
     "prompt": "What force keeps planets in orbit around the sun?",
-    "choices": {"A": "Magnetism", "B": "Friction", "C": "Inertia", "D": "Gravity"},
-    "answer": "D"
+    "choices": {"A": "Magnetism", "B": "Friction", "C": "Gravity", "D": "Inertia"},
+    "answer": "C"
   },
   {
     "id": "mcq_009",
     "category": "history",
     "prompt": "In what year did World War II end?",
-    "choices": {"A": "1945", "B": "1943", "C": "1947", "D": "1950"},
-    "answer": "A"
+    "choices": {"A": "1947", "B": "1945", "C": "1950", "D": "1943"},
+    "answer": "B"
   },
   {
     "id": "mcq_010",
     "category": "history",
     "prompt": "Who was the first President of the United States?",
-    "choices": {"A": "Thomas Jefferson", "B": "George Washington", "C": "John Adams", "D": "Benjamin Franklin"},
-    "answer": "B"
+    "choices": {"A": "John Adams", "B": "Thomas Jefferson", "C": "George Washington", "D": "Benjamin Franklin"},
+    "answer": "C"
   },
   {
     "id": "mcq_011",
     "category": "history",
     "prompt": "The Great Wall is located in which country?",
-    "choices": {"A": "Japan", "B": "Mongolia", "C": "China", "D": "South Korea"},
-    "answer": "C"
+    "choices": {"A": "Japan", "B": "China", "C": "South Korea", "D": "Mongolia"},
+    "answer": "B"
   },
   {
     "id": "mcq_012",
     "category": "history",
     "prompt": "Which ancient civilization built the pyramids at Giza?",
-    "choices": {"A": "Roman", "B": "Greek", "C": "Mesopotamian", "D": "Egyptian"},
-    "answer": "D"
+    "choices": {"A": "Greek", "B": "Egyptian", "C": "Roman", "D": "Mesopotamian"},
+    "answer": "B"
   },
   {
     "id": "mcq_013",
     "category": "history",
     "prompt": "The French Revolution began in which year?",
-    "choices": {"A": "1789", "B": "1776", "C": "1804", "D": "1812"},
+    "choices": {"A": "1789", "B": "1812", "C": "1776", "D": "1804"},
     "answer": "A"
   },
   {
     "id": "mcq_014",
     "category": "history",
     "prompt": "Who was the primary author of the United States Declaration of Independence?",
-    "choices": {"A": "George Washington", "B": "Thomas Jefferson", "C": "John Adams", "D": "Alexander Hamilton"},
-    "answer": "B"
+    "choices": {"A": "Thomas Jefferson", "B": "George Washington", "C": "John Adams", "D": "Alexander Hamilton"},
+    "answer": "A"
   },
   {
     "id": "mcq_015",
     "category": "history",
     "prompt": "Julius Caesar was a leader of which ancient civilization?",
-    "choices": {"A": "Persian", "B": "Ottoman", "C": "Roman", "D": "Byzantine"},
-    "answer": "C"
+    "choices": {"A": "Ottoman", "B": "Byzantine", "C": "Persian", "D": "Roman"},
+    "answer": "D"
   },
   {
     "id": "mcq_016",
     "category": "history",
     "prompt": "The Berlin Wall fell in which year?",
-    "choices": {"A": "1985", "B": "1987", "C": "1991", "D": "1989"},
+    "choices": {"A": "1991", "B": "1985", "C": "1987", "D": "1989"},
     "answer": "D"
   },
   {
     "id": "mcq_017",
     "category": "geography",
     "prompt": "Which river is traditionally considered the longest in the world?",
-    "choices": {"A": "Nile", "B": "Amazon", "C": "Yangtze", "D": "Mississippi"},
-    "answer": "A"
+    "choices": {"A": "Amazon", "B": "Yangtze", "C": "Nile", "D": "Mississippi"},
+    "answer": "C"
   },
   {
     "id": "mcq_018",
     "category": "geography",
     "prompt": "What is the capital of Australia?",
-    "choices": {"A": "Sydney", "B": "Canberra", "C": "Melbourne", "D": "Perth"},
-    "answer": "B"
+    "choices": {"A": "Sydney", "B": "Perth", "C": "Melbourne", "D": "Canberra"},
+    "answer": "D"
   },
   {
     "id": "mcq_019",
     "category": "geography",
     "prompt": "Which is the largest desert in the world by total area?",
-    "choices": {"A": "Sahara", "B": "Arabian", "C": "Antarctic", "D": "Gobi"},
-    "answer": "C"
+    "choices": {"A": "Antarctic", "B": "Sahara", "C": "Arabian", "D": "Gobi"},
+    "answer": "A"
   },
   {
     "id": "mcq_020",
     "category": "geography",
     "prompt": "Mount Everest is located in which mountain range?",
-    "choices": {"A": "Andes", "B": "Alps", "C": "Rockies", "D": "Himalayas"},
-    "answer": "D"
+    "choices": {"A": "Himalayas", "B": "Rockies", "C": "Andes", "D": "Alps"},
+    "answer": "A"
   },
   {
     "id": "mcq_021",
     "category": "geography",
     "prompt": "The Sahara Desert is located on which continent?",
-    "choices": {"A": "Africa", "B": "Asia", "C": "South America", "D": "Australia"},
+    "choices": {"A": "Africa", "B": "Asia", "C": "Australia", "D": "South America"},
     "answer": "A"
   },
   {
     "id": "mcq_022",
     "category": "geography",
     "prompt": "What is the smallest country in the world by area?",
-    "choices": {"A": "Monaco", "B": "Vatican City", "C": "San Marino", "D": "Liechtenstein"},
-    "answer": "B"
+    "choices": {"A": "Vatican City", "B": "Monaco", "C": "San Marino", "D": "Liechtenstein"},
+    "answer": "A"
   },
   {
     "id": "mcq_023",
     "category": "geography",
     "prompt": "Which strait separates Europe and Africa?",
-    "choices": {"A": "Bering Strait", "B": "Strait of Hormuz", "C": "Strait of Gibraltar", "D": "Bosphorus"},
+    "choices": {"A": "Bering Strait", "B": "Bosphorus", "C": "Strait of Gibraltar", "D": "Strait of Hormuz"},
     "answer": "C"
   },
   {
     "id": "mcq_024",
     "category": "geography",
     "prompt": "What is the capital of Japan?",
-    "choices": {"A": "Osaka", "B": "Kyoto", "C": "Yokohama", "D": "Tokyo"},
-    "answer": "D"
+    "choices": {"A": "Tokyo", "B": "Yokohama", "C": "Osaka", "D": "Kyoto"},
+    "answer": "A"
   },
   {
     "id": "mcq_025",
     "category": "logic",
     "prompt": "All roses are flowers. All flowers need water. Which statement must be true?",
-    "choices": {"A": "All roses need water", "B": "All flowers are roses", "C": "Some water needs flowers", "D": "No roses need water"},
+    "choices": {"A": "All roses need water", "B": "No roses need water", "C": "All flowers are roses", "D": "Some water needs flowers"},
     "answer": "A"
   },
   {
     "id": "mcq_026",
     "category": "logic",
     "prompt": "A train travels 60 miles in 1 hour at constant speed. How long does it take to travel 150 miles?",
-    "choices": {"A": "2 hours", "B": "2.5 hours", "C": "3 hours", "D": "3.5 hours"},
-    "answer": "B"
+    "choices": {"A": "2.5 hours", "B": "3.5 hours", "C": "2 hours", "D": "3 hours"},
+    "answer": "A"
   },
   {
     "id": "mcq_027",
     "category": "logic",
     "prompt": "What number comes next in the sequence: 2, 4, 8, 16, ?",
-    "choices": {"A": "20", "B": "24", "C": "32", "D": "30"},
-    "answer": "C"
+    "choices": {"A": "32", "B": "20", "C": "30", "D": "24"},
+    "answer": "A"
   },
   {
     "id": "mcq_028",
     "category": "logic",
     "prompt": "If today is Wednesday, what day of the week will it be in 10 days?",
-    "choices": {"A": "Friday", "B": "Sunday", "C": "Monday", "D": "Saturday"},
-    "answer": "D"
+    "choices": {"A": "Sunday", "B": "Saturday", "C": "Friday", "D": "Monday"},
+    "answer": "B"
   },
   {
     "id": "mcq_029",
     "category": "logic",
     "prompt": "Tom is taller than Jerry. Jerry is taller than Sam. Who is the shortest?",
-    "choices": {"A": "Sam", "B": "Tom", "C": "Jerry", "D": "Cannot be determined"},
-    "answer": "A"
+    "choices": {"A": "Cannot be determined", "B": "Sam", "C": "Tom", "D": "Jerry"},
+    "answer": "B"
   },
   {
     "id": "mcq_030",
     "category": "logic",
     "prompt": "Which word does not belong with the others: Apple, Banana, Carrot, Grape?",
-    "choices": {"A": "Apple", "B": "Carrot", "C": "Banana", "D": "Grape"},
-    "answer": "B"
+    "choices": {"A": "Apple", "B": "Grape", "C": "Carrot", "D": "Banana"},
+    "answer": "C"
   },
   {
     "id": "mcq_031",
     "category": "logic",
     "prompt": "If 5 machines make 5 widgets in 5 minutes, how long does it take 100 machines to make 100 widgets?",
-    "choices": {"A": "20 minutes", "B": "100 minutes", "C": "5 minutes", "D": "500 minutes"},
-    "answer": "C"
+    "choices": {"A": "5 minutes", "B": "20 minutes", "C": "100 minutes", "D": "500 minutes"},
+    "answer": "A"
   },
   {
     "id": "mcq_032",
     "category": "logic",
     "prompt": "A is the brother of B. B is the sister of C. What is A to C?",
-    "choices": {"A": "Sister", "B": "Father", "C": "Cannot be determined", "D": "Brother"},
+    "choices": {"A": "Sister", "B": "Cannot be determined", "C": "Father", "D": "Brother"},
     "answer": "D"
   },
   {
     "id": "mcq_033",
     "category": "literature",
     "prompt": "Who wrote \"Romeo and Juliet\"?",
-    "choices": {"A": "William Shakespeare", "B": "Charles Dickens", "C": "Mark Twain", "D": "Jane Austen"},
-    "answer": "A"
+    "choices": {"A": "Jane Austen", "B": "William Shakespeare", "C": "Mark Twain", "D": "Charles Dickens"},
+    "answer": "B"
   },
   {
     "id": "mcq_034",
     "category": "literature",
     "prompt": "\"Call me Ishmael\" is the opening line of which novel?",
-    "choices": {"A": "The Great Gatsby", "B": "Moby-Dick", "C": "War and Peace", "D": "1984"},
-    "answer": "B"
+    "choices": {"A": "The Great Gatsby", "B": "War and Peace", "C": "1984", "D": "Moby-Dick"},
+    "answer": "D"
   },
   {
     "id": "mcq_035",
     "category": "literature",
     "prompt": "Who wrote the \"Harry Potter\" series?",
-    "choices": {"A": "J.R.R. Tolkien", "B": "C.S. Lewis", "C": "J.K. Rowling", "D": "Roald Dahl"},
-    "answer": "C"
+    "choices": {"A": "C.S. Lewis", "B": "Roald Dahl", "C": "J.R.R. Tolkien", "D": "J.K. Rowling"},
+    "answer": "D"
   },
   {
     "id": "mcq_036",
     "category": "literature",
     "prompt": "\"1984\" and \"Animal Farm\" were written by which author?",
-    "choices": {"A": "Aldous Huxley", "B": "Ray Bradbury", "C": "H.G. Wells", "D": "George Orwell"},
-    "answer": "D"
+    "choices": {"A": "George Orwell", "B": "H.G. Wells", "C": "Ray Bradbury", "D": "Aldous Huxley"},
+    "answer": "A"
   },
   {
     "id": "mcq_037",
     "category": "literature",
     "prompt": "Who wrote \"Pride and Prejudice\"?",
-    "choices": {"A": "Jane Austen", "B": "Charlotte Bronte", "C": "Emily Bronte", "D": "Mary Shelley"},
-    "answer": "A"
+    "choices": {"A": "Charlotte Bronte", "B": "Mary Shelley", "C": "Jane Austen", "D": "Emily Bronte"},
+    "answer": "C"
   },
   {
     "id": "mcq_038",
@@ -269,8 +269,8 @@
     "id": "mcq_039",
     "category": "literature",
     "prompt": "Who is traditionally credited as the author of \"The Odyssey\"?",
-    "choices": {"A": "Sophocles", "B": "Plato", "C": "Homer", "D": "Aristotle"},
-    "answer": "C"
+    "choices": {"A": "Homer", "B": "Sophocles", "C": "Plato", "D": "Aristotle"},
+    "answer": "A"
   },
   {
     "id": "mcq_040",
@@ -283,295 +283,295 @@
     "id": "mcq_041",
     "category": "arithmetic",
     "prompt": "What is 7 x 8?",
-    "choices": {"A": "56", "B": "54", "C": "58", "D": "64"},
-    "answer": "A"
+    "choices": {"A": "64", "B": "58", "C": "56", "D": "54"},
+    "answer": "C"
   },
   {
     "id": "mcq_042",
     "category": "arithmetic",
     "prompt": "What is the square root of 144?",
-    "choices": {"A": "11", "B": "12", "C": "13", "D": "14"},
+    "choices": {"A": "14", "B": "12", "C": "11", "D": "13"},
     "answer": "B"
   },
   {
     "id": "mcq_043",
     "category": "arithmetic",
     "prompt": "A shirt costs $40 and is discounted 25%. What is the sale price?",
-    "choices": {"A": "$28", "B": "$32", "C": "$30", "D": "$35"},
-    "answer": "C"
+    "choices": {"A": "$32", "B": "$30", "C": "$28", "D": "$35"},
+    "answer": "B"
   },
   {
     "id": "mcq_044",
     "category": "arithmetic",
     "prompt": "What is 100 divided by 4?",
-    "choices": {"A": "20", "B": "30", "C": "40", "D": "25"},
-    "answer": "D"
+    "choices": {"A": "40", "B": "20", "C": "25", "D": "30"},
+    "answer": "C"
   },
   {
     "id": "mcq_045",
     "category": "arithmetic",
     "prompt": "What is the sum of the interior angles of a triangle, in degrees?",
-    "choices": {"A": "180", "B": "90", "C": "270", "D": "360"},
-    "answer": "A"
+    "choices": {"A": "360", "B": "180", "C": "270", "D": "90"},
+    "answer": "B"
   },
   {
     "id": "mcq_046",
     "category": "arithmetic",
     "prompt": "What is 9 squared?",
-    "choices": {"A": "18", "B": "81", "C": "72", "D": "90"},
-    "answer": "B"
+    "choices": {"A": "72", "B": "18", "C": "81", "D": "90"},
+    "answer": "C"
   },
   {
     "id": "mcq_047",
     "category": "commonsense",
     "prompt": "What do you typically use to cut paper?",
-    "choices": {"A": "Hammer", "B": "Spoon", "C": "Scissors", "D": "Wrench"},
+    "choices": {"A": "Hammer", "B": "Wrench", "C": "Scissors", "D": "Spoon"},
     "answer": "C"
   },
   {
     "id": "mcq_048",
     "category": "commonsense",
     "prompt": "Which of these is most commonly eaten for breakfast?",
-    "choices": {"A": "Steak dinner", "B": "Birthday cake", "C": "Soup course", "D": "Cereal"},
-    "answer": "D"
+    "choices": {"A": "Cereal", "B": "Steak dinner", "C": "Birthday cake", "D": "Soup course"},
+    "answer": "A"
   },
   {
     "id": "mcq_049",
     "category": "commonsense",
     "prompt": "What should you do before crossing a street?",
-    "choices": {"A": "Look both ways", "B": "Close your eyes", "C": "Run quickly without looking", "D": "Call a friend"},
-    "answer": "A"
+    "choices": {"A": "Run quickly without looking", "B": "Look both ways", "C": "Call a friend", "D": "Close your eyes"},
+    "answer": "B"
   },
   {
     "id": "mcq_050",
     "category": "commonsense",
     "prompt": "Which of these is a natural source of light?",
-    "choices": {"A": "Rock", "B": "Sun", "C": "Pillow", "D": "Book"},
-    "answer": "B"
+    "choices": {"A": "Sun", "B": "Pillow", "C": "Book", "D": "Rock"},
+    "answer": "A"
   },
   {
     "id": "mcq_051",
     "category": "commonsense",
     "prompt": "What is the primary purpose of a refrigerator?",
-    "choices": {"A": "Heat food", "B": "Cook food", "C": "Keep food cold", "D": "Clean dishes"},
-    "answer": "C"
+    "choices": {"A": "Cook food", "B": "Clean dishes", "C": "Heat food", "D": "Keep food cold"},
+    "answer": "D"
   },
   {
     "id": "mcq_052",
     "category": "commonsense",
     "prompt": "If it is raining outside, what should you bring with you?",
-    "choices": {"A": "Sunglasses", "B": "Swimsuit", "C": "Skis", "D": "Umbrella"},
-    "answer": "D"
+    "choices": {"A": "Skis", "B": "Sunglasses", "C": "Umbrella", "D": "Swimsuit"},
+    "answer": "C"
   },
   {
     "id": "mcq_053",
     "category": "commonsense",
     "prompt": "Which animal is known for barking?",
-    "choices": {"A": "Dog", "B": "Cat", "C": "Bird", "D": "Fish"},
+    "choices": {"A": "Dog", "B": "Fish", "C": "Cat", "D": "Bird"},
     "answer": "A"
   },
   {
     "id": "mcq_054",
     "category": "language",
     "prompt": "Which word is a synonym for \"happy\"?",
-    "choices": {"A": "Sad", "B": "Joyful", "C": "Angry", "D": "Tired"},
-    "answer": "B"
+    "choices": {"A": "Sad", "B": "Tired", "C": "Joyful", "D": "Angry"},
+    "answer": "C"
   },
   {
     "id": "mcq_055",
     "category": "language",
     "prompt": "Which word is an antonym for \"hot\"?",
-    "choices": {"A": "Warm", "B": "Mild", "C": "Cold", "D": "Humid"},
-    "answer": "C"
+    "choices": {"A": "Humid", "B": "Warm", "C": "Mild", "D": "Cold"},
+    "answer": "D"
   },
   {
     "id": "mcq_056",
     "category": "language",
     "prompt": "Which word means \"to make something clear or easy to understand\"?",
-    "choices": {"A": "Obscure", "B": "Confuse", "C": "Complicate", "D": "Clarify"},
-    "answer": "D"
+    "choices": {"A": "Obscure", "B": "Clarify", "C": "Complicate", "D": "Confuse"},
+    "answer": "B"
   },
   {
     "id": "mcq_057",
     "category": "language",
     "prompt": "What is the plural form of \"child\"?",
-    "choices": {"A": "Children", "B": "Childs", "C": "Childes", "D": "Childrens"},
-    "answer": "A"
+    "choices": {"A": "Childs", "B": "Children", "C": "Childes", "D": "Childrens"},
+    "answer": "B"
   },
   {
     "id": "mcq_058",
     "category": "language",
     "prompt": "Which word means \"extremely large\"?",
-    "choices": {"A": "Tiny", "B": "Enormous", "C": "Petite", "D": "Modest"},
-    "answer": "B"
+    "choices": {"A": "Modest", "B": "Tiny", "C": "Enormous", "D": "Petite"},
+    "answer": "C"
   },
   {
     "id": "mcq_059",
     "category": "language",
     "prompt": "Which word is a synonym for \"quickly\"?",
-    "choices": {"A": "Slowly", "B": "Lazily", "C": "Rapidly", "D": "Gradually"},
-    "answer": "C"
+    "choices": {"A": "Rapidly", "B": "Slowly", "C": "Gradually", "D": "Lazily"},
+    "answer": "A"
   },
   {
     "id": "mcq_060",
     "category": "language",
     "prompt": "In the sentence \"I run every morning,\" what part of speech is the word \"run\"?",
-    "choices": {"A": "Noun", "B": "Adjective", "C": "Adverb", "D": "Verb"},
-    "answer": "D"
+    "choices": {"A": "Verb", "B": "Noun", "C": "Adjective", "D": "Adverb"},
+    "answer": "A"
   },
   {
     "id": "mcq_061",
     "category": "science",
     "prompt": "Which subatomic particle has no electric charge?",
-    "choices": {"A": "Neutron", "B": "Proton", "C": "Electron", "D": "Positron"},
-    "answer": "A"
+    "choices": {"A": "Positron", "B": "Neutron", "C": "Electron", "D": "Proton"},
+    "answer": "B"
   },
   {
     "id": "mcq_062",
     "category": "science",
     "prompt": "What is the SI unit of electrical resistance?",
-    "choices": {"A": "Volt", "B": "Ohm", "C": "Watt", "D": "Farad"},
-    "answer": "B"
+    "choices": {"A": "Farad", "B": "Watt", "C": "Ohm", "D": "Volt"},
+    "answer": "C"
   },
   {
     "id": "mcq_063",
     "category": "history",
     "prompt": "The Treaty of Westphalia (1648) brought an end to which conflict?",
-    "choices": {"A": "Hundred Years' War", "B": "Napoleonic Wars", "C": "Thirty Years' War", "D": "War of the Spanish Succession"},
-    "answer": "C"
+    "choices": {"A": "Napoleonic Wars", "B": "Thirty Years' War", "C": "Hundred Years' War", "D": "War of the Spanish Succession"},
+    "answer": "B"
   },
   {
     "id": "mcq_064",
     "category": "history",
     "prompt": "Suleiman the Magnificent was a ruler of which empire?",
-    "choices": {"A": "Mughal Empire", "B": "Safavid Empire", "C": "Byzantine Empire", "D": "Ottoman Empire"},
-    "answer": "D"
+    "choices": {"A": "Ottoman Empire", "B": "Byzantine Empire", "C": "Safavid Empire", "D": "Mughal Empire"},
+    "answer": "A"
   },
   {
     "id": "mcq_065",
     "category": "geography",
     "prompt": "Lake Baikal, the world's deepest lake, is located in which country?",
-    "choices": {"A": "Russia", "B": "Mongolia", "C": "Kazakhstan", "D": "China"},
-    "answer": "A"
+    "choices": {"A": "Mongolia", "B": "Kazakhstan", "C": "Russia", "D": "China"},
+    "answer": "C"
   },
   {
     "id": "mcq_066",
     "category": "geography",
     "prompt": "Which country has three official capital cities (executive, legislative, and judicial)?",
-    "choices": {"A": "Netherlands", "B": "South Africa", "C": "Bolivia", "D": "Sri Lanka"},
-    "answer": "B"
+    "choices": {"A": "Sri Lanka", "B": "Netherlands", "C": "South Africa", "D": "Bolivia"},
+    "answer": "C"
   },
   {
     "id": "mcq_067",
     "category": "logic",
     "prompt": "Three boxes are labeled 'Apples', 'Oranges', and 'Mixed' — but every label is wrong. You draw one fruit from the box labeled 'Mixed' and it's an apple. Which box actually contains only oranges?",
-    "choices": {"A": "The box labeled 'Oranges'", "B": "The box labeled 'Mixed'", "C": "The box labeled 'Apples'", "D": "Cannot be determined"},
-    "answer": "C"
+    "choices": {"A": "The box labeled 'Mixed'", "B": "Cannot be determined", "C": "The box labeled 'Oranges'", "D": "The box labeled 'Apples'"},
+    "answer": "D"
   },
   {
     "id": "mcq_068",
     "category": "logic",
     "prompt": "Four friends — Al, Bo, Cy, Dee — each own a different pet: cat, dog, fish, bird. Al doesn't own the dog or fish. Bo owns the bird. Cy doesn't own the cat. Dee owns the fish. What pet does Al own?",
-    "choices": {"A": "Dog", "B": "Fish", "C": "Bird", "D": "Cat"},
-    "answer": "D"
+    "choices": {"A": "Fish", "B": "Cat", "C": "Bird", "D": "Dog"},
+    "answer": "B"
   },
   {
     "id": "mcq_069",
     "category": "literature",
     "prompt": "Which 19th-century Russian novel opens with the line \"Happy families are all alike; every unhappy family is unhappy in its own way\"?",
-    "choices": {"A": "Anna Karenina", "B": "War and Peace", "C": "Crime and Punishment", "D": "The Brothers Karamazov"},
-    "answer": "A"
+    "choices": {"A": "Crime and Punishment", "B": "Anna Karenina", "C": "The Brothers Karamazov", "D": "War and Peace"},
+    "answer": "B"
   },
   {
     "id": "mcq_070",
     "category": "literature",
     "prompt": "Gabriel García Márquez's novel \"One Hundred Years of Solitude\" is set in the fictional town of?",
-    "choices": {"A": "Comala", "B": "Macondo", "C": "Santa Teresa", "D": "Aracataca"},
-    "answer": "B"
+    "choices": {"A": "Comala", "B": "Santa Teresa", "C": "Aracataca", "D": "Macondo"},
+    "answer": "D"
   },
   {
     "id": "mcq_071",
     "category": "arithmetic",
     "prompt": "What is 17 squared?",
-    "choices": {"A": "279", "B": "298", "C": "289", "D": "308"},
-    "answer": "C"
+    "choices": {"A": "279", "B": "289", "C": "298", "D": "308"},
+    "answer": "B"
   },
   {
     "id": "mcq_072",
     "category": "arithmetic",
     "prompt": "What is the sum of all integers from 1 to 50?",
-    "choices": {"A": "1225", "B": "1325", "C": "1250", "D": "1275"},
-    "answer": "D"
+    "choices": {"A": "1275", "B": "1225", "C": "1250", "D": "1325"},
+    "answer": "A"
   },
   {
     "id": "mcq_073",
     "category": "commonsense",
     "prompt": "A pot of soup turns out far too salty. What's the best way to fix it?",
-    "choices": {"A": "Add water or a peeled potato to dilute it", "B": "Add more salt", "C": "Add sugar", "D": "Add pepper"},
-    "answer": "A"
+    "choices": {"A": "Add more salt", "B": "Add pepper", "C": "Add sugar", "D": "Add water or a peeled potato to dilute it"},
+    "answer": "D"
   },
   {
     "id": "mcq_074",
     "category": "language",
     "prompt": "Which sentence correctly uses the subjunctive mood?",
-    "choices": {"A": "If I was rich, I would travel.", "B": "If I were rich, I would travel.", "C": "If I am rich, I would travel.", "D": "If I will be rich, I would travel."},
-    "answer": "B"
+    "choices": {"A": "If I were rich, I would travel.", "B": "If I was rich, I would travel.", "C": "If I will be rich, I would travel.", "D": "If I am rich, I would travel."},
+    "answer": "A"
   },
   {
     "id": "mcq_075",
     "category": "language",
     "prompt": "What figure of speech is used in \"The wind whispered through the trees\"?",
-    "choices": {"A": "Simile", "B": "Metaphor", "C": "Personification", "D": "Hyperbole"},
-    "answer": "C"
+    "choices": {"A": "Personification", "B": "Simile", "C": "Hyperbole", "D": "Metaphor"},
+    "answer": "A"
   },
   {
     "id": "mcq_076",
     "category": "science",
     "prompt": "A reversible heat engine operates between reservoirs at 600 K and 300 K. What is its maximum theoretical efficiency?",
-    "choices": {"A": "25%", "B": "75%", "C": "100%", "D": "50%"},
+    "choices": {"A": "100%", "B": "75%", "C": "25%", "D": "50%"},
     "answer": "D"
   },
   {
     "id": "mcq_077",
     "category": "science",
     "prompt": "For an ideal gas undergoing a free expansion into a vacuum in an insulated container, which pair of changes is correct?",
-    "choices": {"A": "Delta U = 0 and Delta S > 0", "B": "Delta U < 0 and Delta S = 0", "C": "Delta U > 0 and Delta S < 0", "D": "Delta U = 0 and Delta S = 0"},
-    "answer": "A"
+    "choices": {"A": "Delta U < 0 and Delta S = 0", "B": "Delta U = 0 and Delta S > 0", "C": "Delta U > 0 and Delta S < 0", "D": "Delta U = 0 and Delta S = 0"},
+    "answer": "B"
   },
   {
     "id": "mcq_078",
     "category": "science",
     "prompt": "In a Hardy-Weinberg population, a recessive phenotype occurs in 9% of individuals. What is the expected frequency of heterozygotes?",
-    "choices": {"A": "21%", "B": "42%", "C": "49%", "D": "70%"},
+    "choices": {"A": "70%", "B": "42%", "C": "21%", "D": "49%"},
     "answer": "B"
   },
   {
     "id": "mcq_079",
     "category": "science",
     "prompt": "Which observation first led astronomers to infer that quasars could lie at cosmological distances rather than within the Milky Way?",
-    "choices": {"A": "Their radio emission", "B": "Their point-like appearance", "C": "Their large spectral redshifts", "D": "Their optical variability"},
-    "answer": "C"
+    "choices": {"A": "Their radio emission", "B": "Their large spectral redshifts", "C": "Their point-like appearance", "D": "Their optical variability"},
+    "answer": "B"
   },
   {
     "id": "mcq_080",
     "category": "science",
     "prompt": "The Mohorovicic discontinuity is defined by an abrupt change in seismic-wave velocity between which layers?",
-    "choices": {"A": "Inner and outer core", "B": "Upper and lower mantle", "C": "Lithosphere and asthenosphere", "D": "Crust and mantle"},
-    "answer": "D"
+    "choices": {"A": "Crust and mantle", "B": "Upper and lower mantle", "C": "Inner and outer core", "D": "Lithosphere and asthenosphere"},
+    "answer": "A"
   },
   {
     "id": "mcq_081",
     "category": "science",
     "prompt": "In quantum mechanics, what does the nonzero commutator [x, p] = i hbar imply most directly?",
-    "choices": {"A": "Position and momentum cannot both have arbitrarily sharp values", "B": "Position and momentum have simultaneous eigenstates", "C": "Momentum is not conserved", "D": "A particle cannot have zero momentum"},
+    "choices": {"A": "Position and momentum cannot both have arbitrarily sharp values", "B": "A particle cannot have zero momentum", "C": "Momentum is not conserved", "D": "Position and momentum have simultaneous eigenstates"},
     "answer": "A"
   },
   {
     "id": "mcq_082",
     "category": "science",
     "prompt": "Which planar, cyclic, fully conjugated species satisfies Huckel's 4n + 2 rule with n = 1?",
-    "choices": {"A": "Cyclobutadiene", "B": "Benzene", "C": "Cyclooctatetraene", "D": "Cyclopentadienyl cation"},
-    "answer": "B"
+    "choices": {"A": "Cyclooctatetraene", "B": "Cyclobutadiene", "C": "Cyclopentadienyl cation", "D": "Benzene"},
+    "answer": "D"
   },
   {
     "id": "mcq_083",
@@ -584,71 +584,71 @@
     "id": "mcq_084",
     "category": "science",
     "prompt": "At constant temperature and pressure, which condition characterizes a spontaneous process in a closed system capable only of pressure-volume work?",
-    "choices": {"A": "Delta H > 0", "B": "Delta S_system < 0", "C": "Delta U = 0", "D": "Delta G < 0"},
-    "answer": "D"
+    "choices": {"A": "Delta H > 0", "B": "Delta G < 0", "C": "Delta U = 0", "D": "Delta S_system < 0"},
+    "answer": "B"
   },
   {
     "id": "mcq_085",
     "category": "science",
     "prompt": "In the logistic growth model dN/dt = rN(1 - N/K), at what population size is the absolute growth rate greatest?",
-    "choices": {"A": "N = K/2", "B": "N = K/4", "C": "N = 3K/4", "D": "N = K"},
-    "answer": "A"
+    "choices": {"A": "N = 3K/4", "B": "N = K/2", "C": "N = K/4", "D": "N = K"},
+    "answer": "B"
   },
   {
     "id": "mcq_086",
     "category": "history",
     "prompt": "The Concordat of Worms (1122) primarily resolved a dispute over what practice?",
-    "choices": {"A": "Sale of indulgences", "B": "Lay investiture of bishops", "C": "Clerical celibacy", "D": "Papal residence at Avignon"},
-    "answer": "B"
+    "choices": {"A": "Lay investiture of bishops", "B": "Sale of indulgences", "C": "Papal residence at Avignon", "D": "Clerical celibacy"},
+    "answer": "A"
   },
   {
     "id": "mcq_087",
     "category": "history",
     "prompt": "Which fiscal institution was created in 1694 chiefly to lend money to the English government during the Nine Years' War?",
-    "choices": {"A": "East India Company", "B": "Exchequer", "C": "Bank of England", "D": "South Sea Company"},
-    "answer": "C"
+    "choices": {"A": "East India Company", "B": "South Sea Company", "C": "Exchequer", "D": "Bank of England"},
+    "answer": "D"
   },
   {
     "id": "mcq_088",
     "category": "history",
     "prompt": "The Tanzimat reforms were undertaken during the nineteenth century in which empire?",
-    "choices": {"A": "Russian", "B": "Austro-Hungarian", "C": "Qing", "D": "Ottoman"},
+    "choices": {"A": "Austro-Hungarian", "B": "Russian", "C": "Qing", "D": "Ottoman"},
     "answer": "D"
   },
   {
     "id": "mcq_089",
     "category": "history",
     "prompt": "Which battle in 751 is traditionally associated with the transfer of papermaking knowledge from Chinese prisoners to the Islamic world?",
-    "choices": {"A": "Talas", "B": "Tours", "C": "Manzikert", "D": "Qadisiyyah"},
-    "answer": "A"
+    "choices": {"A": "Manzikert", "B": "Qadisiyyah", "C": "Tours", "D": "Talas"},
+    "answer": "D"
   },
   {
     "id": "mcq_090",
     "category": "history",
     "prompt": "The Haitian Revolution began as a major slave uprising in which French colony?",
-    "choices": {"A": "Martinique", "B": "Saint-Domingue", "C": "Guadeloupe", "D": "French Guiana"},
-    "answer": "B"
+    "choices": {"A": "Saint-Domingue", "B": "Martinique", "C": "French Guiana", "D": "Guadeloupe"},
+    "answer": "A"
   },
   {
     "id": "mcq_091",
     "category": "history",
     "prompt": "Which settlement ended the War of the Spanish Succession and recognized Philip V as king of Spain?",
-    "choices": {"A": "Peace of Augsburg", "B": "Treaty of Tordesillas", "C": "Treaty of Utrecht", "D": "Congress of Vienna"},
+    "choices": {"A": "Congress of Vienna", "B": "Treaty of Tordesillas", "C": "Treaty of Utrecht", "D": "Peace of Augsburg"},
     "answer": "C"
   },
   {
     "id": "mcq_092",
     "category": "history",
     "prompt": "The devshirme system supplied administrators and soldiers primarily to which state?",
-    "choices": {"A": "Safavid Empire", "B": "Mughal Empire", "C": "Byzantine Empire", "D": "Ottoman Empire"},
-    "answer": "D"
+    "choices": {"A": "Mughal Empire", "B": "Ottoman Empire", "C": "Byzantine Empire", "D": "Safavid Empire"},
+    "answer": "B"
   },
   {
     "id": "mcq_093",
     "category": "history",
     "prompt": "Who issued the Edict of Nantes in 1598, granting limited toleration to French Huguenots?",
-    "choices": {"A": "Henry IV", "B": "Louis XIII", "C": "Francis I", "D": "Cardinal Richelieu"},
-    "answer": "A"
+    "choices": {"A": "Francis I", "B": "Cardinal Richelieu", "C": "Louis XIII", "D": "Henry IV"},
+    "answer": "D"
   },
   {
     "id": "mcq_094",
@@ -661,392 +661,392 @@
     "id": "mcq_095",
     "category": "history",
     "prompt": "Which West African ruler's 1324 pilgrimage to Mecca became famous for distributing so much gold that local prices were disrupted?",
-    "choices": {"A": "Sunni Ali", "B": "Sundiata Keita", "C": "Mansa Musa", "D": "Askia Muhammad"},
-    "answer": "C"
+    "choices": {"A": "Sundiata Keita", "B": "Askia Muhammad", "C": "Sunni Ali", "D": "Mansa Musa"},
+    "answer": "D"
   },
   {
     "id": "mcq_096",
     "category": "geography",
     "prompt": "Which river crosses the Equator twice before reaching the Atlantic Ocean?",
-    "choices": {"A": "Niger", "B": "Zambezi", "C": "Orange", "D": "Congo"},
-    "answer": "D"
+    "choices": {"A": "Congo", "B": "Zambezi", "C": "Niger", "D": "Orange"},
+    "answer": "A"
   },
   {
     "id": "mcq_097",
     "category": "geography",
     "prompt": "The Wakhan Corridor gives Afghanistan a narrow border with which country?",
-    "choices": {"A": "China", "B": "India", "C": "Tajikistan", "D": "Kyrgyzstan"},
-    "answer": "A"
+    "choices": {"A": "India", "B": "Kyrgyzstan", "C": "China", "D": "Tajikistan"},
+    "answer": "C"
   },
   {
     "id": "mcq_098",
     "category": "geography",
     "prompt": "Which sovereign state is entirely surrounded by South Africa?",
-    "choices": {"A": "Eswatini", "B": "Lesotho", "C": "Botswana", "D": "Namibia"},
-    "answer": "B"
+    "choices": {"A": "Eswatini", "B": "Botswana", "C": "Lesotho", "D": "Namibia"},
+    "answer": "C"
   },
   {
     "id": "mcq_099",
     "category": "geography",
     "prompt": "The Fergana Valley is shared by Uzbekistan, Kyrgyzstan, and which third country?",
-    "choices": {"A": "Kazakhstan", "B": "Turkmenistan", "C": "Tajikistan", "D": "Afghanistan"},
-    "answer": "C"
+    "choices": {"A": "Turkmenistan", "B": "Tajikistan", "C": "Kazakhstan", "D": "Afghanistan"},
+    "answer": "B"
   },
   {
     "id": "mcq_100",
     "category": "geography",
     "prompt": "Which ocean current most directly moderates the winter climate of northwestern Europe?",
-    "choices": {"A": "Canary Current", "B": "Labrador Current", "C": "Benguela Current", "D": "North Atlantic Drift"},
-    "answer": "D"
+    "choices": {"A": "Canary Current", "B": "North Atlantic Drift", "C": "Benguela Current", "D": "Labrador Current"},
+    "answer": "B"
   },
   {
     "id": "mcq_101",
     "category": "geography",
     "prompt": "The endorheic watershed containing the Amu Darya and Syr Darya historically drained into which body of water?",
-    "choices": {"A": "Aral Sea", "B": "Caspian Sea", "C": "Black Sea", "D": "Lake Balkhash"},
-    "answer": "A"
+    "choices": {"A": "Lake Balkhash", "B": "Black Sea", "C": "Aral Sea", "D": "Caspian Sea"},
+    "answer": "C"
   },
   {
     "id": "mcq_102",
     "category": "geography",
     "prompt": "Which pair of national capitals lies on opposite banks of the Congo River?",
-    "choices": {"A": "Kampala and Kigali", "B": "Brazzaville and Kinshasa", "C": "Dakar and Banjul", "D": "Lusaka and Harare"},
-    "answer": "B"
+    "choices": {"A": "Dakar and Banjul", "B": "Lusaka and Harare", "C": "Brazzaville and Kinshasa", "D": "Kampala and Kigali"},
+    "answer": "C"
   },
   {
     "id": "mcq_103",
     "category": "geography",
     "prompt": "The Strait of Malacca separates the Malay Peninsula from which Indonesian island?",
-    "choices": {"A": "Java", "B": "Borneo", "C": "Sumatra", "D": "Sulawesi"},
+    "choices": {"A": "Sulawesi", "B": "Borneo", "C": "Sumatra", "D": "Java"},
     "answer": "C"
   },
   {
     "id": "mcq_104",
     "category": "geography",
     "prompt": "Which country contains the exclave of Cabinda?",
-    "choices": {"A": "Democratic Republic of the Congo", "B": "Republic of the Congo", "C": "Gabon", "D": "Angola"},
-    "answer": "D"
+    "choices": {"A": "Democratic Republic of the Congo", "B": "Gabon", "C": "Angola", "D": "Republic of the Congo"},
+    "answer": "C"
   },
   {
     "id": "mcq_105",
     "category": "logic",
     "prompt": "All glibs are trogs. No trogs are flarns. Some wugs are glibs. Which conclusion must follow?",
-    "choices": {"A": "Some wugs are not flarns", "B": "No wugs are flarns", "C": "All wugs are trogs", "D": "Some flarns are not wugs"},
-    "answer": "A"
+    "choices": {"A": "Some flarns are not wugs", "B": "No wugs are flarns", "C": "All wugs are trogs", "D": "Some wugs are not flarns"},
+    "answer": "D"
   },
   {
     "id": "mcq_106",
     "category": "logic",
     "prompt": "Exactly one of P and Q is true. If P is true, then R is false. If Q is true, then R is true. Which statement must be true?",
-    "choices": {"A": "P and R have the same truth value", "B": "Q and R have the same truth value", "C": "Q is false", "D": "R is true"},
-    "answer": "B"
+    "choices": {"A": "P and R have the same truth value", "B": "Q is false", "C": "Q and R have the same truth value", "D": "R is true"},
+    "answer": "C"
   },
   {
     "id": "mcq_107",
     "category": "logic",
     "prompt": "Five runners P, Q, R, S, and T finish with no ties. P finishes before Q; R finishes after S but before T; and Q finishes before S. Who must finish first?",
-    "choices": {"A": "Q", "B": "R", "C": "P", "D": "S"},
-    "answer": "C"
+    "choices": {"A": "Q", "B": "P", "C": "R", "D": "S"},
+    "answer": "B"
   },
   {
     "id": "mcq_108",
     "category": "logic",
     "prompt": "A fair coin is tossed repeatedly until either HHT or THH first appears. Which pattern is more likely to appear first?",
-    "choices": {"A": "HHT", "B": "They are equally likely", "C": "The result depends on the first toss only", "D": "THH"},
-    "answer": "D"
+    "choices": {"A": "They are equally likely", "B": "HHT", "C": "THH", "D": "The result depends on the first toss only"},
+    "answer": "C"
   },
   {
     "id": "mcq_109",
     "category": "logic",
     "prompt": "A statement says, 'Exactly one of the four answer choices to this question is true.' Choice A says B is true. Choice B says C is true. Choice C says A and D are both false. Choice D says C is false. Which choice's statement is true?",
-    "choices": {"A": "Choice D's statement", "B": "Choice A's statement", "C": "Choice B's statement", "D": "Choice C's statement"},
-    "answer": "A"
+    "choices": {"A": "Choice A's statement", "B": "Choice C's statement", "C": "Choice B's statement", "D": "Choice D's statement"},
+    "answer": "D"
   },
   {
     "id": "mcq_110",
     "category": "logic",
     "prompt": "A three-digit code uses distinct digits. The first digit is twice the last digit, and the middle digit is three more than the last. The digits sum to 11. What is the code?",
-    "choices": {"A": "263", "B": "452", "C": "641", "D": "632"},
-    "answer": "B"
+    "choices": {"A": "263", "B": "632", "C": "452", "D": "641"},
+    "answer": "C"
   },
   {
     "id": "mcq_111",
     "category": "logic",
     "prompt": "Four cards show A, D, 4, and 7. Each card has a letter on one side and a number on the other. To test the rule 'If a card has a vowel on one side, then it has an even number on the other,' which cards must be turned over?",
-    "choices": {"A": "A only", "B": "A and 4", "C": "A and 7", "D": "A, 4, and 7"},
+    "choices": {"A": "A, 4, and 7", "B": "A and 4", "C": "A and 7", "D": "A only"},
     "answer": "C"
   },
   {
     "id": "mcq_112",
     "category": "logic",
     "prompt": "In a group, 60% speak French, 50% speak Spanish, and 20% speak neither. What percentage speak both French and Spanish?",
-    "choices": {"A": "10%", "B": "20%", "C": "40%", "D": "30%"},
-    "answer": "D"
+    "choices": {"A": "30%", "B": "10%", "C": "20%", "D": "40%"},
+    "answer": "A"
   },
   {
     "id": "mcq_113",
     "category": "logic",
     "prompt": "A clock loses 6 minutes every real hour. It is set correctly at noon. What will it display when the real time is 8:00 PM?",
-    "choices": {"A": "7:12 PM", "B": "7:08 PM", "C": "7:18 PM", "D": "7:24 PM"},
-    "answer": "A"
+    "choices": {"A": "7:24 PM", "B": "7:12 PM", "C": "7:08 PM", "D": "7:18 PM"},
+    "answer": "B"
   },
   {
     "id": "mcq_114",
     "category": "logic",
     "prompt": "If the implication P implies Q is false, which assignment of truth values is required?",
-    "choices": {"A": "P false, Q false", "B": "P true, Q false", "C": "P false, Q true", "D": "P true, Q true"},
+    "choices": {"A": "P false, Q false", "B": "P true, Q false", "C": "P true, Q true", "D": "P false, Q true"},
     "answer": "B"
   },
   {
     "id": "mcq_115",
     "category": "logic",
     "prompt": "A bag contains one red and one blue token. One token is drawn, its color recorded, and it is returned along with one additional token of the same color. After two such draws, what is the probability that the bag contains three tokens of one color and one of the other?",
-    "choices": {"A": "1/4", "B": "1/3", "C": "2/3", "D": "1/2"},
-    "answer": "C"
+    "choices": {"A": "1/3", "B": "1/4", "C": "1/2", "D": "2/3"},
+    "answer": "D"
   },
   {
     "id": "mcq_116",
     "category": "logic",
     "prompt": "A cube is painted on all six faces and cut into 27 equal smaller cubes. How many small cubes have exactly two painted faces?",
-    "choices": {"A": "8", "B": "18", "C": "24", "D": "12"},
-    "answer": "D"
+    "choices": {"A": "8", "B": "18", "C": "12", "D": "24"},
+    "answer": "C"
   },
   {
     "id": "mcq_117",
     "category": "literature",
     "prompt": "In Dante's Divine Comedy, who guides Dante through Paradise?",
-    "choices": {"A": "Beatrice", "B": "Virgil", "C": "Statius", "D": "Bernard alone for the entire journey"},
-    "answer": "A"
+    "choices": {"A": "Virgil", "B": "Beatrice", "C": "Statius", "D": "Bernard alone for the entire journey"},
+    "answer": "B"
   },
   {
     "id": "mcq_118",
     "category": "literature",
     "prompt": "Which novel is structured around the single day of June 16, 1904, and parallels episodes of Homer's Odyssey?",
-    "choices": {"A": "Mrs Dalloway", "B": "Ulysses", "C": "The Sound and the Fury", "D": "The Magic Mountain"},
-    "answer": "B"
+    "choices": {"A": "Ulysses", "B": "Mrs Dalloway", "C": "The Sound and the Fury", "D": "The Magic Mountain"},
+    "answer": "A"
   },
   {
     "id": "mcq_119",
     "category": "literature",
     "prompt": "The term 'objective correlative' is most closely associated with which poet and critic?",
-    "choices": {"A": "Ezra Pound", "B": "W. B. Yeats", "C": "T. S. Eliot", "D": "I. A. Richards"},
-    "answer": "C"
+    "choices": {"A": "I. A. Richards", "B": "Ezra Pound", "C": "W. B. Yeats", "D": "T. S. Eliot"},
+    "answer": "D"
   },
   {
     "id": "mcq_120",
     "category": "literature",
     "prompt": "In Sophocles' Antigone, what immediate act brings Antigone into conflict with Creon?",
-    "choices": {"A": "Refusing an arranged marriage", "B": "Freeing a political prisoner", "C": "Consulting a forbidden oracle", "D": "Burying her brother Polyneices"},
+    "choices": {"A": "Refusing an arranged marriage", "B": "Consulting a forbidden oracle", "C": "Freeing a political prisoner", "D": "Burying her brother Polyneices"},
     "answer": "D"
   },
   {
     "id": "mcq_121",
     "category": "literature",
     "prompt": "Which narrative technique presents a character's continuous, associative flow of thoughts with minimal authorial mediation?",
-    "choices": {"A": "Stream of consciousness", "B": "Epistolary narration", "C": "Free indirect discourse", "D": "Frame narration"},
-    "answer": "A"
+    "choices": {"A": "Frame narration", "B": "Free indirect discourse", "C": "Epistolary narration", "D": "Stream of consciousness"},
+    "answer": "D"
   },
   {
     "id": "mcq_122",
     "category": "literature",
     "prompt": "Who is the narrator of F. Scott Fitzgerald's The Great Gatsby?",
-    "choices": {"A": "Jay Gatsby", "B": "Nick Carraway", "C": "Tom Buchanan", "D": "An unnamed omniscient narrator"},
-    "answer": "B"
+    "choices": {"A": "Jay Gatsby", "B": "Tom Buchanan", "C": "An unnamed omniscient narrator", "D": "Nick Carraway"},
+    "answer": "D"
   },
   {
     "id": "mcq_123",
     "category": "literature",
     "prompt": "The fictional county of Yoknapatawpha is the setting for many works by which author?",
-    "choices": {"A": "John Steinbeck", "B": "Flannery O'Connor", "C": "William Faulkner", "D": "Eudora Welty"},
-    "answer": "C"
+    "choices": {"A": "Flannery O'Connor", "B": "Eudora Welty", "C": "John Steinbeck", "D": "William Faulkner"},
+    "answer": "D"
   },
   {
     "id": "mcq_124",
     "category": "literature",
     "prompt": "In literary prosody, a line consisting of six metrical feet is called what?",
-    "choices": {"A": "Pentameter", "B": "Tetrameter", "C": "Heptameter", "D": "Hexameter"},
-    "answer": "D"
+    "choices": {"A": "Hexameter", "B": "Pentameter", "C": "Tetrameter", "D": "Heptameter"},
+    "answer": "A"
   },
   {
     "id": "mcq_125",
     "category": "arithmetic",
     "prompt": "What is the remainder when 2^100 is divided by 7?",
-    "choices": {"A": "2", "B": "1", "C": "4", "D": "6"},
-    "answer": "A"
+    "choices": {"A": "4", "B": "1", "C": "2", "D": "6"},
+    "answer": "C"
   },
   {
     "id": "mcq_126",
     "category": "arithmetic",
     "prompt": "A number is increased by 25% and then decreased by 20%. Relative to the original, what is the net change?",
-    "choices": {"A": "A 5% increase", "B": "No change", "C": "A 5% decrease", "D": "A 1% decrease"},
-    "answer": "B"
+    "choices": {"A": "No change", "B": "A 5% increase", "C": "A 5% decrease", "D": "A 1% decrease"},
+    "answer": "A"
   },
   {
     "id": "mcq_127",
     "category": "arithmetic",
     "prompt": "If log base 2 of x is 5/2, what is x?",
-    "choices": {"A": "5 sqrt(2)", "B": "8 sqrt(2)", "C": "4 sqrt(2)", "D": "16 sqrt(2)"},
-    "answer": "C"
+    "choices": {"A": "16 sqrt(2)", "B": "5 sqrt(2)", "C": "8 sqrt(2)", "D": "4 sqrt(2)"},
+    "answer": "D"
   },
   {
     "id": "mcq_128",
     "category": "arithmetic",
     "prompt": "The harmonic mean of 4 and 12 is what?",
-    "choices": {"A": "7", "B": "8", "C": "9", "D": "6"},
-    "answer": "D"
+    "choices": {"A": "7", "B": "6", "C": "8", "D": "9"},
+    "answer": "B"
   },
   {
     "id": "mcq_129",
     "category": "arithmetic",
     "prompt": "How many trailing zeros does 100! have in base 10?",
-    "choices": {"A": "24", "B": "20", "C": "22", "D": "25"},
-    "answer": "A"
+    "choices": {"A": "22", "B": "20", "C": "24", "D": "25"},
+    "answer": "C"
   },
   {
     "id": "mcq_130",
     "category": "arithmetic",
     "prompt": "If x + 1/x = 3, what is x^2 + 1/x^2?",
-    "choices": {"A": "5", "B": "7", "C": "9", "D": "11"},
-    "answer": "B"
+    "choices": {"A": "7", "B": "5", "C": "11", "D": "9"},
+    "answer": "A"
   },
   {
     "id": "mcq_131",
     "category": "arithmetic",
     "prompt": "What is the sum of the infinite geometric series 3 - 1 + 1/3 - 1/9 + ...?",
-    "choices": {"A": "2", "B": "5/2", "C": "9/4", "D": "3"},
-    "answer": "C"
+    "choices": {"A": "9/4", "B": "2", "C": "3", "D": "5/2"},
+    "answer": "A"
   },
   {
     "id": "mcq_132",
     "category": "arithmetic",
     "prompt": "How many positive divisors does 360 have?",
-    "choices": {"A": "18", "B": "20", "C": "22", "D": "24"},
+    "choices": {"A": "20", "B": "18", "C": "22", "D": "24"},
     "answer": "D"
   },
   {
     "id": "mcq_133",
     "category": "arithmetic",
     "prompt": "A fair die is rolled three times. What is the probability of obtaining at least one 6?",
-    "choices": {"A": "91/216", "B": "1/2", "C": "125/216", "D": "25/36"},
-    "answer": "A"
+    "choices": {"A": "1/2", "B": "125/216", "C": "91/216", "D": "25/36"},
+    "answer": "C"
   },
   {
     "id": "mcq_134",
     "category": "arithmetic",
     "prompt": "If a and b are positive and a:b = 3:4 while b:c = 5:6, what is a:c?",
-    "choices": {"A": "3:8", "B": "5:8", "C": "5:6", "D": "8:5"},
-    "answer": "B"
+    "choices": {"A": "8:5", "B": "5:6", "C": "5:8", "D": "3:8"},
+    "answer": "C"
   },
   {
     "id": "mcq_135",
     "category": "commonsense",
     "prompt": "A carbon monoxide alarm sounds in a home, but nobody feels ill. What is the safest immediate response?",
-    "choices": {"A": "Open a window and go back to sleep", "B": "Remove the batteries to stop the noise", "C": "Move everyone outdoors and call emergency services from outside", "D": "Search each room for a smell"},
+    "choices": {"A": "Search each room for a smell", "B": "Remove the batteries to stop the noise", "C": "Move everyone outdoors and call emergency services from outside", "D": "Open a window and go back to sleep"},
     "answer": "C"
   },
   {
     "id": "mcq_136",
     "category": "commonsense",
     "prompt": "A grease fire starts in a frying pan. Which response is safest?",
-    "choices": {"A": "Carry the pan outdoors", "B": "Pour water over it", "C": "Fan it with a towel", "D": "Turn off the heat and cover the pan with a metal lid"},
-    "answer": "D"
+    "choices": {"A": "Carry the pan outdoors", "B": "Fan it with a towel", "C": "Turn off the heat and cover the pan with a metal lid", "D": "Pour water over it"},
+    "answer": "C"
   },
   {
     "id": "mcq_137",
     "category": "commonsense",
     "prompt": "A tightly sealed glass jar lid is stuck. Why can running warm water over the metal lid help loosen it?",
-    "choices": {"A": "The metal lid expands more quickly than the glass jar", "B": "The glass contracts while the metal stays fixed", "C": "Warm water chemically dissolves the seal", "D": "The contents lose mass"},
-    "answer": "A"
+    "choices": {"A": "Warm water chemically dissolves the seal", "B": "The glass contracts while the metal stays fixed", "C": "The contents lose mass", "D": "The metal lid expands more quickly than the glass jar"},
+    "answer": "D"
   },
   {
     "id": "mcq_138",
     "category": "commonsense",
     "prompt": "A driver begins hydroplaning on a wet road. What should the driver generally do first?",
-    "choices": {"A": "Brake as hard as possible", "B": "Ease off the accelerator and keep steering steady", "C": "Turn sharply toward the shoulder", "D": "Accelerate to restore tire contact"},
+    "choices": {"A": "Accelerate to restore tire contact", "B": "Ease off the accelerator and keep steering steady", "C": "Turn sharply toward the shoulder", "D": "Brake as hard as possible"},
     "answer": "B"
   },
   {
     "id": "mcq_139",
     "category": "commonsense",
     "prompt": "A recipe is accidentally made twice as salty because the cook doubled the salt but not the other ingredients. Which correction best preserves the intended flavor balance?",
-    "choices": {"A": "Add only water until the volume doubles", "B": "Add sugar equal to the extra salt", "C": "Add an equal amount of every ingredient except salt", "D": "Boil the mixture longer"},
-    "answer": "C"
+    "choices": {"A": "Add sugar equal to the extra salt", "B": "Add an equal amount of every ingredient except salt", "C": "Add only water until the volume doubles", "D": "Boil the mixture longer"},
+    "answer": "B"
   },
   {
     "id": "mcq_140",
     "category": "commonsense",
     "prompt": "Two extension cords are each rated for 10 amperes. Plugging one into the other does what to the safe current rating of the chain?",
-    "choices": {"A": "Raises it to 20 A", "B": "Raises it to 100 A", "C": "Halves it to 5 A", "D": "Leaves the limiting rating at 10 A"},
-    "answer": "D"
+    "choices": {"A": "Leaves the limiting rating at 10 A", "B": "Raises it to 100 A", "C": "Halves it to 5 A", "D": "Raises it to 20 A"},
+    "answer": "A"
   },
   {
     "id": "mcq_141",
     "category": "language",
     "prompt": "Which sentence contains a dangling modifier?",
-    "choices": {"A": "Walking through the museum, the paintings impressed Maya.", "B": "Walking through the museum, Maya admired the paintings.", "C": "Maya, walking through the museum, admired the paintings.", "D": "As Maya walked through the museum, the paintings impressed her."},
-    "answer": "A"
+    "choices": {"A": "As Maya walked through the museum, the paintings impressed her.", "B": "Walking through the museum, Maya admired the paintings.", "C": "Maya, walking through the museum, admired the paintings.", "D": "Walking through the museum, the paintings impressed Maya."},
+    "answer": "D"
   },
   {
     "id": "mcq_142",
     "category": "language",
     "prompt": "In the sentence 'Had I known, I would have acted differently,' what kind of conditional is used?",
-    "choices": {"A": "Zero conditional", "B": "Third conditional", "C": "First conditional", "D": "Second conditional"},
-    "answer": "B"
+    "choices": {"A": "Third conditional", "B": "Zero conditional", "C": "First conditional", "D": "Second conditional"},
+    "answer": "A"
   },
   {
     "id": "mcq_143",
     "category": "language",
     "prompt": "Which word is an example of an auto-antonym: a word that can mean its own opposite?",
-    "choices": {"A": "Transparent", "B": "Immutable", "C": "Sanction", "D": "Peripheral"},
-    "answer": "C"
+    "choices": {"A": "Immutable", "B": "Peripheral", "C": "Transparent", "D": "Sanction"},
+    "answer": "D"
   },
   {
     "id": "mcq_144",
     "category": "language",
     "prompt": "Which sentence uses 'whom' correctly in formal written English?",
-    "choices": {"A": "Whom do you think will win?", "B": "She is the person whom solved it.", "C": "Whom is waiting outside?", "D": "To whom should I address the letter?"},
-    "answer": "D"
+    "choices": {"A": "Whom is waiting outside?", "B": "Whom do you think will win?", "C": "To whom should I address the letter?", "D": "She is the person whom solved it."},
+    "answer": "C"
   },
   {
     "id": "mcq_145",
     "category": "language",
     "prompt": "The phrase 'the crown announced a new policy' exemplifies which figure of speech?",
-    "choices": {"A": "Metonymy", "B": "Oxymoron", "C": "Anaphora", "D": "Litotes"},
-    "answer": "A"
+    "choices": {"A": "Litotes", "B": "Metonymy", "C": "Oxymoron", "D": "Anaphora"},
+    "answer": "B"
   },
   {
     "id": "mcq_146",
     "category": "language",
     "prompt": "Which option correctly identifies the grammatical role of 'what she decided' in 'What she decided surprised everyone'?",
-    "choices": {"A": "Adverbial clause", "B": "Nominal clause functioning as subject", "C": "Relative clause modifying everyone", "D": "Direct object"},
-    "answer": "B"
+    "choices": {"A": "Direct object", "B": "Relative clause modifying everyone", "C": "Adverbial clause", "D": "Nominal clause functioning as subject"},
+    "answer": "D"
   },
   {
     "id": "mcq_147",
     "category": "language",
     "prompt": "Which pair illustrates suppletion rather than ordinary inflection?",
-    "choices": {"A": "walk / walked", "B": "mouse / mice", "C": "go / went", "D": "sing / sang"},
-    "answer": "C"
+    "choices": {"A": "go / went", "B": "walk / walked", "C": "sing / sang", "D": "mouse / mice"},
+    "answer": "A"
   },
   {
     "id": "mcq_148",
     "category": "language",
     "prompt": "In pragmatics, an implicature differs from an entailment because an implicature is typically what?",
-    "choices": {"A": "Encoded in a word's dictionary definition", "B": "Logically unavoidable and never cancelable", "C": "Always false when the literal sentence is true", "D": "Context-dependent and cancelable"},
+    "choices": {"A": "Always false when the literal sentence is true", "B": "Encoded in a word's dictionary definition", "C": "Logically unavoidable and never cancelable", "D": "Context-dependent and cancelable"},
     "answer": "D"
   },
   {
     "id": "mcq_149",
     "category": "language",
     "prompt": "Which sentence exhibits garden-path ambiguity?",
-    "choices": {"A": "The old man the boats.", "B": "The child read the book quietly.", "C": "Because it rained, the match ended.", "D": "She gave him the carefully wrapped gift."},
-    "answer": "A"
+    "choices": {"A": "Because it rained, the match ended.", "B": "The old man the boats.", "C": "The child read the book quietly.", "D": "She gave him the carefully wrapped gift."},
+    "answer": "B"
   },
   {
     "id": "mcq_150",
     "category": "language",
     "prompt": "What is the antecedent of the reflexive pronoun in 'The committee members blamed themselves for the delay'?",
-    "choices": {"A": "The committee", "B": "The committee members", "C": "The delay", "D": "Themselves"},
+    "choices": {"A": "The committee", "B": "The committee members", "C": "Themselves", "D": "The delay"},
     "answer": "B"
   }
 ]
