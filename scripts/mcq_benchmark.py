@@ -77,7 +77,7 @@ class MCQBenchmark:
         prompt = MCQBenchmark.build_prompt(question)
         _, _, _, _, response_text = Shared.ollama_chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.RUN_TIMEOUT, num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
         )
         return MCQBenchmark.parse_answer(response_text, question["choices"].keys()), response_text
 
@@ -159,24 +159,41 @@ class MCQBenchmark:
                     Shared.unload_model(tag)
                     continue
 
-                Shared.log(f"Answering {len(questions)} MCQ questions ...")
+                Shared.log(f"Answering {len(questions)} MCQ questions "
+                           f"({config.ACC_TIMEOUT}s timeout each) ...")
                 answers: dict[str, str | None] = {}
                 raw_responses: dict[str, str] = {}
+                timed_out_ids: list[str] = []
                 stopped_early = None
 
                 for i, q in enumerate(questions):
-                    samples, status = Shared.run_measured_calls(
+                    samples, status, partial_text = Shared.run_measured_calls(
                         1, lambda run_i, q=q: MCQBenchmark._ask(tag, q), tag, crash_cache,
                         MCQBenchmark.MCQ_CRASH_CACHE, f"answering {q['id']}",
                         crash_extra={"bank_hash": bank_hash})
-                    given, raw = samples[0] if samples else (None, "")
+                    if samples:
+                        given, raw = samples[0]
+                    elif status == "timed_out" and partial_text:
+                        # The model had already started answering when the wall-clock
+                        # timeout hit. Score whatever it wrote instead of a blank —
+                        # this is either a genuinely correct/incorrect answer cut off
+                        # right at the end, or unparseable (wrong-format) text, not
+                        # necessarily "the model produced nothing."
+                        given, raw = MCQBenchmark.parse_answer(partial_text, q["choices"].keys()), partial_text
+                    else:
+                        given, raw = None, ""
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
 
                     if status == "timed_out":
-                        Shared.err(f"Skipping remaining questions for {label}")
-                        stopped_early = "timed_out"
-                        break
+                        # A single stuck question is scored wrong and the run moves
+                        # on — with ACC_TIMEOUT this short, a model that reliably
+                        # gets stuck could otherwise rack up timeouts on a sizeable
+                        # fraction of the bank, but that's still cheaper than the
+                        # old behavior of abandoning the rest of the bank outright
+                        # (and would incorrectly zero out everything after one bad
+                        # question for a model that's merely slow, not stuck).
+                        timed_out_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"
                         break
@@ -194,9 +211,10 @@ class MCQBenchmark:
                 }
                 results[short] = {"label": label, **scored}
 
-                if stopped_early == "timed_out":
-                    results[short]["timed_out"] = True
-                elif stopped_early == "crashed":
+                if timed_out_ids:
+                    results[short]["timed_out_count"] = len(timed_out_ids)
+                    results[short]["timed_out_ids"] = timed_out_ids
+                if stopped_early == "crashed":
                     crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                     results[short]["crashed"] = True
                     results[short]["crashed_at"] = crashed_at

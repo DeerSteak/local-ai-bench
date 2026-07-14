@@ -31,6 +31,18 @@ import config
 from models import IMAGE_MODELS
 
 
+class OllamaTimeout(TimeoutError):
+    """Raised when ollama_chat exceeds its wall-clock timeout. Carries whatever
+    text had streamed in before the deadline hit, so callers can tell a bare
+    timeout (no text at all) apart from a timeout that cut off a response the
+    model had already started writing — which might have been a wrong-format
+    answer regardless of the timeout, or might have been about to be correct."""
+
+    def __init__(self, message: str, partial_text: str = ""):
+        super().__init__(message)
+        self.partial_text = partial_text
+
+
 class Shared:
     # Tracks processes we started so we can shut them down cleanly
     _managed_procs: list[subprocess.Popen] = []
@@ -686,7 +698,7 @@ class Shared:
 
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
-                            what: str, crash_extra: dict | None = None) -> tuple[list, str]:
+                            what: str, crash_extra: dict | None = None) -> tuple[list, str, str]:
         """
         Call `call(run_i)` up to `n_runs` times, collecting each return value —
         the shared shape behind every benchmark's "N measured runs" loop.
@@ -699,8 +711,14 @@ class Shared:
         to `cache_path` so future invocations skip this tag/test. `crash_extra`
         (e.g. {"bank_hash": ...}) is passed through to Shared.record_crash.
 
-        Returns (samples, status) where status is "ok", "timed_out", or
-        "crashed"; `samples` may be non-empty even when status != "ok".
+        Returns (samples, status, partial_text) where status is "ok",
+        "timed_out", or "crashed"; `samples` may be non-empty even when
+        status != "ok". `partial_text` is whatever text had streamed in before
+        a timeout hit (empty otherwise) — a timed-out run that had already
+        written a wrong-format (or even correct) answer is a different failure
+        than one that produced nothing at all, and callers that score
+        free-form answers need to tell them apart rather than treating every
+        timeout as a blank.
         """
         samples = []
         run_i = 0
@@ -713,7 +731,8 @@ class Shared:
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
                     Shared.err(f"Run {run_i+1} timed out — stopping remaining runs for {tag}")
-                    return samples, "timed_out"
+                    partial_text = getattr(e, "partial_text", "")
+                    return samples, "timed_out", partial_text
                 Shared.err(f"Run {run_i+1} failed: {e}")
                 if not Shared.is_connection_crash(e):
                     run_i += 1
@@ -724,14 +743,14 @@ class Shared:
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
-                    return samples, "crashed"
+                    return samples, "crashed", ""
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not Shared.wait_for_ollama_recovery():
                     Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
-                    return samples, "crashed"
+                    return samples, "crashed", ""
                 # don't advance run_i — retry the same run now that Ollama is back
-        return samples, "ok"
+        return samples, "ok", ""
 
     @staticmethod
     def model_pulled(tag):
@@ -998,7 +1017,9 @@ class Shared:
                 # urlopen()'s timeout is per-read, not total duration — it
                 # resets on every token. Enforce the real wall-clock deadline.
                 if time.perf_counter() - t_start > timeout:
-                    raise TimeoutError(f"ollama_chat exceeded {timeout}s wall-clock timeout")
+                    partial_text = "".join(response_parts) or "".join(thinking_parts)
+                    raise OllamaTimeout(f"ollama_chat exceeded {timeout}s wall-clock timeout",
+                                        partial_text=partial_text)
 
                 if chunk.get("done"):
                     eval_count        = chunk.get("eval_count", tokens)

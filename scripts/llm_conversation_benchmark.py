@@ -256,6 +256,15 @@ class LLMConversationBenchmark:
                         is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                         if is_timeout:
                             Shared.err(f"{label}: run {run_i+1} timed out — stopping this run here")
+                            partial_text = getattr(e, "partial_text", "")
+                            if partial_text:
+                                # Not scored here (this benchmark measures TTFT/TPS, not
+                                # correctness), but surfacing what the model had already
+                                # written tells a genuine stall apart from a response that
+                                # was mid-stream right up to the deadline.
+                                Shared.warn(f"{label}: run {run_i+1} had streamed "
+                                            f"{len(partial_text)} chars before the timeout: "
+                                            f"{partial_text[:200]!r}")
                             run_timed_out = True
                             timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
                         elif Shared.is_connection_crash(e):

@@ -3,8 +3,9 @@ config.py — shared constants for the benchmark suite.
 
 Other modules should `import config` and reference `config.NAME` rather than
 `from config import NAME` for any value main() can override via CLI flags
-(currently just RUN_TIMEOUT) — a `from` import binds a local copy at import
-time and won't see a later `config.RUN_TIMEOUT = ...` assignment.
+(currently RUN_TIMEOUT and ACCURACY_TEST_TIMEOUT) — a `from` import binds a
+local copy at import time and won't see a later `config.RUN_TIMEOUT = ...`
+assignment.
 """
 
 from pathlib import Path
@@ -36,6 +37,17 @@ VERSION        = "2.0"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs per test — every test averages exactly this many
 RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting — overridden by --timeout
+
+# Seconds per question before giving up on it, for the accuracy tests (mcq,
+# math, code) — overridden by --acc-timeout. Deliberately much shorter than
+# RUN_TIMEOUT: those tests run one question at a time with an unbounded token
+# budget, so a model that gets stuck reasoning in circles on a single question
+# would otherwise burn the full RUN_TIMEOUT before anyone finds out — at
+# 10% of a 150-question bank that's 15 questions x 300s = 75 minutes lost to
+# one model. A timed-out question is scored wrong and the run moves on to the
+# next question, so this value only bounds the cost of one stuck question,
+# not the whole benchmark.
+ACC_TIMEOUT = 60
 
 # Tokens/sec below which a model is skipped from the (expensive) conversation
 # test — too slow for usable back-and-forth chat regardless of single-shot

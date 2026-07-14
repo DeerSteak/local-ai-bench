@@ -264,6 +264,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         help="Seconds per run (warmup and measured) before aborting this model (default: 300)",
     )
     parser.add_argument(
+        "--acc-timeout", type=int, default=None,
+        help="Seconds per question before giving up on it, for the accuracy tests "
+             f"(mcq, math, code) — a timed-out question is scored wrong and the run "
+             f"moves on (default: {config.ACC_TIMEOUT})",
+    )
+    parser.add_argument(
         "--out", type=str, default=None,
         help="Output JSON file (default: results/results_<hostname>_<timestamp>.json)",
     )
@@ -349,6 +355,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     # Apply CLI overrides to shared config
     if args.timeout is not None:
         config.RUN_TIMEOUT = args.timeout
+    if args.acc_timeout is not None:
+        config.ACC_TIMEOUT = args.acc_timeout
     config.N_RUNS = args.runs
 
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
@@ -376,7 +384,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     print(f"  Backend:   {profile['backend']}")
     print(f"  RAM:       {profile['ram_gb']} GB")
     print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
-    print(f"  Timeout:   {config.RUN_TIMEOUT}s per run")
+    print(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
     print(f"  Models:    {tier_label}")
     if args.models:
         print(f"  --models:  {', '.join(m['label'] for m in llm_models) or '(none matched)'}")

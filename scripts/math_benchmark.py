@@ -65,7 +65,7 @@ class MathBenchmark:
         prompt = MathBenchmark.build_prompt(question)
         _, _, _, _, response_text = Shared.ollama_chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.RUN_TIMEOUT, num_predict=MathBenchmark.MATH_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_predict=MathBenchmark.MATH_NUM_PREDICT,
         )
         return MathBenchmark.parse_answer(response_text), response_text
 
@@ -149,24 +149,36 @@ class MathBenchmark:
                     Shared.unload_model(tag)
                     continue
 
-                Shared.log(f"Answering {len(questions)} math questions ...")
+                Shared.log(f"Answering {len(questions)} math questions "
+                           f"({config.ACC_TIMEOUT}s timeout each) ...")
                 answers: dict[str, float | None] = {}
                 raw_responses: dict[str, str] = {}
+                timed_out_ids: list[str] = []
                 stopped_early = None
 
                 for i, q in enumerate(questions):
-                    samples, status = Shared.run_measured_calls(
+                    samples, status, partial_text = Shared.run_measured_calls(
                         1, lambda run_i, q=q: MathBenchmark._ask(tag, q), tag, crash_cache,
                         MathBenchmark.MATH_CRASH_CACHE, f"answering {q['id']}",
                         crash_extra={"bank_hash": bank_hash})
-                    given, raw = samples[0] if samples else (None, "")
+                    if samples:
+                        given, raw = samples[0]
+                    elif status == "timed_out" and partial_text:
+                        # Score whatever the model had written before the wall-clock
+                        # timeout hit, rather than treating it as a blank — this is
+                        # either an answer cut off right at the end or unparseable
+                        # (wrong-format) text, not necessarily "no output at all."
+                        given, raw = MathBenchmark.parse_answer(partial_text), partial_text
+                    else:
+                        given, raw = None, ""
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
 
                     if status == "timed_out":
-                        Shared.err(f"Skipping remaining questions for {label}")
-                        stopped_early = "timed_out"
-                        break
+                        # A single stuck question is scored wrong and the run moves
+                        # on — see MCQBenchmark.run for why this replaced abandoning
+                        # the rest of the bank on the first timeout.
+                        timed_out_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"
                         break
@@ -184,9 +196,10 @@ class MathBenchmark:
                 }
                 results[short] = {"label": label, **scored}
 
-                if stopped_early == "timed_out":
-                    results[short]["timed_out"] = True
-                elif stopped_early == "crashed":
+                if timed_out_ids:
+                    results[short]["timed_out_count"] = len(timed_out_ids)
+                    results[short]["timed_out_ids"] = timed_out_ids
+                if stopped_early == "crashed":
                     crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                     results[short]["crashed"] = True
                     results[short]["crashed_at"] = crashed_at

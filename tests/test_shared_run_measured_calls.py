@@ -1,6 +1,6 @@
 import requests
 
-from shared import Shared
+from shared import OllamaTimeout, Shared
 import config
 
 
@@ -12,9 +12,10 @@ def test_run_measured_calls_all_succeed(tmp_path):
         calls.append(run_i)
         return run_i * 2
 
-    samples, status = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
     assert samples == [0, 2, 4]
     assert status == "ok"
+    assert partial_text == ""
     assert calls == [0, 1, 2]
 
 
@@ -26,9 +27,25 @@ def test_run_measured_calls_timeout_stops_immediately(tmp_path):
             raise TimeoutError("timed out")
         return run_i
 
-    samples, status = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
     assert samples == [0]
     assert status == "timed_out"
+    assert partial_text == ""
+
+
+def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
+    """A timeout that cut off a response already in progress should surface
+    that text, not just a bare 'timed_out' status — the caller needs to tell
+    a genuine blank apart from a cut-off (possibly wrong-format) answer."""
+    cache_path = tmp_path / "crash.json"
+
+    def call(run_i):
+        raise OllamaTimeout("timed out", partial_text="The answer is B")
+
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    assert samples == []
+    assert status == "timed_out"
+    assert partial_text == "The answer is B"
 
 
 def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
@@ -39,7 +56,7 @@ def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
             raise ValueError("some ordinary failure")
         return run_i
 
-    samples, status = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
     # run_i=1 fails but still counts as attempted (advances), so only 2 samples collected
     assert samples == [0, 2]
     assert status == "ok"
@@ -55,7 +72,7 @@ def test_run_measured_calls_crash_retries_then_gives_up(tmp_path, monkeypatch):
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
@@ -74,7 +91,7 @@ def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path, monkey
             raise requests.exceptions.ConnectionError("actively refused")
         return run_i
 
-    samples, status = Shared.run_measured_calls(2, call, "tag", {}, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(2, call, "tag", {}, cache_path, "testing")
     assert samples == [0, 1]
     assert status == "ok"
 
@@ -87,7 +104,7 @@ def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path, monkeypat
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
