@@ -12,6 +12,7 @@ import styles from "./benchmark_dashboard.module.css";
 export default function Dashboard() {
   const [files, setFiles] = useState([]);
   const [section, setSection] = useState("llm");
+  const [accuracyTest, setAccuracyTest] = useState("mcq");
   const [enabledModels, setEnabledModels] = useState(new Set());
   const [enabledImageModels, setEnabledImageModels] = useState(new Set());
   const [enabledEmbedModels, setEnabledEmbedModels] = useState(new Set());
@@ -213,6 +214,7 @@ export default function Dashboard() {
 
       <Controls
         section={section} setSection={setSection}
+        accuracyTest={accuracyTest} setAccuracyTest={setAccuracyTest}
         allModels={allModels} enabledModels={enabledModels} onToggleModel={toggleModel}
         allImageModels={allImageModels} enabledImageModels={enabledImageModels} onToggleImageModel={toggleImageModel}
         allEmbedModels={allEmbedModels} enabledEmbedModels={enabledEmbedModels} onToggleEmbedModel={toggleEmbedModel}
@@ -234,6 +236,7 @@ export default function Dashboard() {
         containerRef={chartRef}
         files={effectiveFiles}
         section={section}
+        accuracyTest={accuracyTest}
         enabledModels={enabledModels}
         enabledImageModels={enabledImageModels}
         enabledEmbedModels={enabledEmbedModels}
@@ -247,6 +250,7 @@ export default function Dashboard() {
       <StatsTable
         files={effectiveFiles}
         section={section}
+        accuracyTest={accuracyTest}
         sortConfig={sortConfig}
         onCycleSort={cycleSort}
       />

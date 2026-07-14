@@ -9,6 +9,11 @@ import {
   buildLLMBarData, buildLLMBarConfigs,
   sortBarData, findMostStrenuousKey,
   flattenLLMData,
+  getAllAccuracyModels,
+  buildAccuracyGroupedBarData, buildAccuracyGroupedBarConfigs,
+  buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
+  buildAccuracyTimeoutData,
+  flattenAccuracyData,
 } from "./utils";
 
 describe("parseJSON", () => {
@@ -67,6 +72,14 @@ describe("fmt", () => {
   });
   it("falls back to two-decimal formatting for an unrecognized unit", () => {
     expect(fmt(3.14159, "unknown")).toBe("3.14");
+  });
+  it("formats pct with one decimal and a percent sign", () => {
+    expect(fmt(87.34, "pct")).toBe("87.3%");
+    expect(fmt(0, "pct")).toBe("0.0%");
+  });
+  it("formats count as a rounded integer with no decoration", () => {
+    expect(fmt(2, "count")).toBe("2");
+    expect(fmt(2.9, "count")).toBe("3");
   });
 });
 
@@ -189,6 +202,10 @@ describe("getAllLLMModels", () => {
     ];
     expect(getAllLLMModels(files).filter(m => m === "phi4-mini")).toHaveLength(1);
   });
+  it("includes a model present only in an accuracy test (e.g. an --tests acc-only run, leaving llm/llm_conversation empty)", () => {
+    const files = [{ data: { llm: {}, llm_conversation: {}, mcq: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toContain("phi4-mini");
+  });
 });
 
 describe("getEmbedLabel", () => {
@@ -288,5 +305,122 @@ describe("flattenLLMData", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ctx).toBe("2K");
     expect(rows[0].tps_mean).toBe(10);
+  });
+});
+
+describe("getAllAccuracyModels", () => {
+  it("returns known models in canonical order for the given test only, unknowns appended after", () => {
+    const files = [{ data: {
+      mcq: { "phi4-mini": {}, "llama3.2-3b-q4": {}, "brand-new-model": {} },
+      math: { "phi4-mini": {} },
+    } }];
+    expect(getAllAccuracyModels(files, "mcq")).toEqual(["llama3.2-3b-q4", "phi4-mini", "brand-new-model"]);
+  });
+  it("doesn't pull in a model that only ran a different accuracy test", () => {
+    const files = [{ data: { mcq: { "phi4-mini": {} }, math: { "qwen3.5-4b": {} } } }];
+    expect(getAllAccuracyModels(files, "mcq")).toEqual(["phi4-mini"]);
+  });
+});
+
+describe("buildAccuracyGroupedBarData / buildAccuracyGroupedBarConfigs", () => {
+  const enabledModels = new Set(["phi4-mini", "qwen3.5-4b"]);
+  it("builds one row per file with one column per enabled model's accuracy_pct", () => {
+    const files = [{
+      hostname: "TestHost",
+      data: { mcq: { "phi4-mini": { accuracy_pct: 87.3 }, "qwen3.5-4b": { accuracy_pct: 89.3 } } },
+    }];
+    const rows = buildAccuracyGroupedBarData(files, "mcq", enabledModels);
+    expect(rows).toEqual([{ systemLabel: "TestHost", "phi4-mini": 87.3, "qwen3.5-4b": 89.3 }]);
+  });
+  it("omits a skipped model's column entirely rather than showing it as 0%", () => {
+    const files = [{
+      hostname: "TestHost",
+      data: { mcq: { "phi4-mini": { skipped: true, skip_reason: "known_crash" } } },
+    }];
+    expect(buildAccuracyGroupedBarData(files, "mcq", new Set(["phi4-mini"]))).toEqual([]);
+  });
+  it("respects the enabled-models filter", () => {
+    const configs = buildAccuracyGroupedBarConfigs(
+      [{ data: { mcq: { "phi4-mini": {}, "qwen3.5-4b": {} } } }],
+      "mcq", new Set(["phi4-mini"]),
+    );
+    expect(configs.map(c => c.dataKey)).toEqual(["phi4-mini"]);
+  });
+});
+
+describe("buildAccuracyCategoryData / buildAccuracyCategoryConfigs", () => {
+  it("builds one row per category with one column per file", () => {
+    const files = [
+      { hostname: "HostA", data: { mcq: { m: { by_category: { logic: { accuracy_pct: 60 }, science: { accuracy_pct: 90 } } } } } },
+      { hostname: "HostB", data: { mcq: { m: { by_category: { logic: { accuracy_pct: 80 } } } } } },
+    ];
+    const rows = buildAccuracyCategoryData(files, "mcq", "m");
+    expect(rows).toEqual([
+      { categoryLabel: "logic", f0: 60, f1: 80 },
+      { categoryLabel: "science", f0: 90 },
+    ]);
+    expect(buildAccuracyCategoryConfigs(files).map(c => c.name)).toEqual(["HostA", "HostB"]);
+  });
+  it("returns an empty array for a model with no category breakdown at all", () => {
+    const files = [{ data: { mcq: { m: {} } } }];
+    expect(buildAccuracyCategoryData(files, "mcq", "m")).toEqual([]);
+  });
+});
+
+describe("buildAccuracyTimeoutData", () => {
+  it("includes every enabled model once at least one had a timed-out question, zero-filling the rest", () => {
+    const files = [{
+      hostname: "TestHost",
+      data: {
+        mcq: {
+          "phi4-mini": { timed_out_count: 2, likely_loop_count: 2 },
+          "qwen3.5-4b": { timed_out_count: 0, likely_loop_count: 0 },
+        },
+      },
+    }];
+    const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["phi4-mini", "qwen3.5-4b"]));
+    expect(rows).toEqual([
+      { rowLabel: "Phi 4 Mini", timed_out_count: 2, likely_loop_count: 2 },
+      { rowLabel: "Qwen3.5 4B", timed_out_count: 0, likely_loop_count: 0 },
+    ]);
+  });
+  it("prefixes the row label with hostname across multiple files, to tell them apart", () => {
+    const files = [
+      { hostname: "HostA", data: { mcq: { m: { timed_out_count: 1, likely_loop_count: 0 } } } },
+      { hostname: "HostB", data: { mcq: { m: { timed_out_count: 3, likely_loop_count: 1 } } } },
+    ];
+    const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["m"]));
+    expect(rows.map(r => r.rowLabel)).toEqual(["HostA\nm", "HostB\nm"]);
+  });
+  it("returns an empty array when nothing timed out anywhere, so the chart cleanly disappears", () => {
+    const files = [{ hostname: "TestHost", data: { mcq: { m: { timed_out_count: 0 } } } }];
+    expect(buildAccuracyTimeoutData(files, "mcq", new Set(["m"]))).toEqual([]);
+  });
+});
+
+describe("flattenAccuracyData", () => {
+  it("produces a skipped row for a whole-model skip", () => {
+    const files = [{ id: "f1", data: { mcq: { m: { skipped: true, skip_reason: "known_crash", skip_detail: "x" } } } }];
+    expect(flattenAccuracyData(files, "mcq")).toEqual([
+      { _fileId: "f1", model: "m", skipped: true, skip_reason: "known_crash", skip_detail: "x" },
+    ]);
+  });
+  it("defaults timed_out_count/likely_loop_count to 0 and crashed to false when absent", () => {
+    const files = [{ id: "f1", data: { mcq: { m: { correct: 10, total: 20, answered: 20, accuracy_pct: 50 } } } }];
+    const rows = flattenAccuracyData(files, "mcq");
+    expect(rows[0]).toEqual({
+      _fileId: "f1", model: "m", correct: 10, total: 20, answered: 20, accuracy_pct: 50,
+      timed_out_count: 0, likely_loop_count: 0, crashed: false,
+    });
+  });
+  it("passes through timed_out_count/likely_loop_count/crashed when present", () => {
+    const files = [{ id: "f1", data: { mcq: { m: {
+      correct: 5, total: 10, answered: 8, accuracy_pct: 50,
+      timed_out_count: 2, likely_loop_count: 1, crashed: true,
+    } } } }];
+    const rows = flattenAccuracyData(files, "mcq");
+    expect(rows[0].timed_out_count).toBe(2);
+    expect(rows[0].likely_loop_count).toBe(1);
+    expect(rows[0].crashed).toBe(true);
   });
 });

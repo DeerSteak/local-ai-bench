@@ -48,6 +48,24 @@ export const FILE_COLORS = [
   "#0e7490", // teal
 ];
 
+// Categorical palette for single-series bar charts that color each bar by
+// row (e.g. accuracy-by-category breakdowns) — same darker/primary family as
+// FILE_COLORS/CTX_COLORS rather than the neon FALLBACK_COLORS used for model
+// lines, and ordered so hue neighbors in the data (alphabetically adjacent
+// category names) don't land next to each other.
+export const CATEGORY_COLORS = [
+  "#0969da", // blue
+  "#e36209", // orange
+  "#1a7f37", // green
+  "#9a3078", // purple
+  "#cf222e", // red
+  "#0e7490", // teal
+  "#5c6bc0", // indigo
+  "#c2185b", // pink
+  "#00897b", // teal-green
+  "#6a1b9a", // deep purple
+];
+
 // Dash patterns for distinguishing models within a file color
 export const MODEL_DASH_PATTERNS = [
   undefined,    // solid
@@ -138,13 +156,29 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "embeddings", "images"];
+export const SECTIONS = ["llm", "llm_conversation", "accuracy", "embeddings", "images"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
+  accuracy: "Accuracy",
   embeddings: "Embeddings",
   images: "Images",
 };
+
+// Accuracy sub-tests, grouped under the single "Accuracy" section pill —
+// matches scripts/config.py's ACCURACY_TESTS / results JSON's top-level
+// "mcq"/"math"/"code" keys.
+export const ACCURACY_TESTS = ["mcq", "math", "code"];
+export const ACCURACY_TEST_LABELS = { mcq: "MCQ", math: "Math", code: "Code" };
+
+// Fixed two-series bar config for the accuracy timeout/loop-detection chart
+// (scripts/*_benchmark.py's timed_out_count / likely_loop_count fields) —
+// not per-model, so this doesn't need a color-assignment helper like the
+// other bar configs.
+export const ACCURACY_TIMEOUT_BAR_CONFIGS = [
+  { dataKey: "timed_out_count",   name: "Timed out",   fill: "#e36209" },
+  { dataKey: "likely_loop_count", name: "Likely loop", fill: "#cf222e" },
+];
 
 // LLM metric options
 export const LLM_METRICS = ["tps", "ttft"];

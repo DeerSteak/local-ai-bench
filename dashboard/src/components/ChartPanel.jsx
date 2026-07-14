@@ -4,6 +4,7 @@ import EmbeddingsBySystemPanel from "./panels/EmbeddingsBySystemPanel";
 import LLMByModelPanel from "./panels/LLMByModelPanel";
 import ImagesPanel from "./panels/ImagesPanel";
 import EmbeddingsPanel from "./panels/EmbeddingsPanel";
+import AccuracyPanel from "./panels/AccuracyPanel";
 import { EmptyState } from "./panels/shared";
 
 // Picks the right panel for the current section / Group By / Chart Style
@@ -11,7 +12,7 @@ import { EmptyState } from "./panels/shared";
 // see components/panels/*.jsx. Shared chart-rendering primitives (the actual
 // recharts wrappers) live in components/charts/ChartCards.jsx.
 export default function ChartPanel({
-  containerRef, files, section,
+  containerRef, files, section, accuracyTest,
   enabledModels, enabledImageModels, enabledEmbedModels, chartWidth, logoSrc, chartStyle, groupBy, sizeSplit,
 }) {
   const isBar = chartStyle === "bar";
@@ -22,6 +23,15 @@ export default function ChartPanel({
   if (files.length === 0) {
     const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
     return <EmptyState style={containerStyle}>Drop a results JSON file above to get started</EmptyState>;
+  }
+
+  if (section === "accuracy") {
+    return (
+      <AccuracyPanel
+        containerRef={containerRef} files={files} accuracyTest={accuracyTest} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc}
+      />
+    );
   }
 
   if (isBySystem && (section === "llm" || section === "llm_conversation")) {

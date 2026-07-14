@@ -1,4 +1,4 @@
-import { SECTIONS, SECTION_LABELS, FILE_COLORS } from "../constants";
+import { SECTIONS, SECTION_LABELS, FILE_COLORS, ACCURACY_TESTS, ACCURACY_TEST_LABELS } from "../constants";
 import {
   modelLabel, imageModelLabel, embedModelLabel,
   getModelColor, getImageModelColor, getEmbedModelColor, sanitizeForFilename,
@@ -7,6 +7,7 @@ import styles from "./Controls.module.css";
 
 export default function Controls({
   section, setSection,
+  accuracyTest, setAccuracyTest,
   allModels, enabledModels, onToggleModel,
   allImageModels, enabledImageModels, onToggleImageModel,
   allEmbedModels, enabledEmbedModels, onToggleEmbedModel,
@@ -33,6 +34,19 @@ export default function Controls({
           ))}
         </div>
       </div>
+
+      {section === "accuracy" && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Test</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {ACCURACY_TESTS.map(t => (
+              <button key={t} className={`pill ${accuracyTest === t ? "active" : "inactive"}`} onClick={() => setAccuracyTest(t)}>
+                {ACCURACY_TEST_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={styles.dividerGroup}>
         <div className={styles.controlLabel}>Chart Style</div>
@@ -92,7 +106,7 @@ export default function Controls({
         </div>
       )}
 
-      {(section === "llm" || section === "llm_conversation") && allModels.length > 0 && (
+      {(section === "llm" || section === "llm_conversation" || section === "accuracy") && allModels.length > 0 && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>

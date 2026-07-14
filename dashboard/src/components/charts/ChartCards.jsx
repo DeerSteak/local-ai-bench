@@ -1,5 +1,6 @@
-import { LineChart, Line, BarChart, Bar, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { fmt } from "../../utils";
+import { CATEGORY_COLORS } from "../../constants";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
 import styles from "../ChartPanel.module.css";
@@ -156,9 +157,14 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
             width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
-          <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
+          {barConfigs.length > 1 && (
+            <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
+          )}
           {barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
+              {barConfigs.length === 1 && processedData.map((_, i) => (
+                <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
+              ))}
               <LabelList dataKey={bc.dataKey} content={(props) => (
                 <BarLabel {...props} naKey={`_na_${bc.dataKey}`} statusKey={`_status_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
               )} />

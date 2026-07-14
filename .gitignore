@@ -192,3 +192,4 @@ hf.txt
 .llm_crash_cache.json
 .conv_crash_cache.json
 /scripts/.omc
+/.claude

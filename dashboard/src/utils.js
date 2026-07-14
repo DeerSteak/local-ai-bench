@@ -1,7 +1,7 @@
 import {
   CTX_ORDER, RES_ORDER,
   MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
-  FILE_COLORS, MODEL_DASH_PATTERNS,
+  FILE_COLORS, CATEGORY_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS,
   LLM_MODEL_ORDER, IMAGE_MODEL_ORDER, EMBED_MODEL_ORDER,
   CTX_COLORS, IMAGE_BAR_COLORS, EMBED_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
@@ -42,6 +42,10 @@ export function fmt(v, unit) {
     case "sps":
       if (v >= 10000) return `${(v / 1000).toFixed(1)}K`;
       return v.toFixed(0);
+    case "pct":
+      return `${v.toFixed(1)}%`;
+    case "count":
+      return `${Math.round(v)}`;
     default:
       return v.toFixed(2);
   }
@@ -169,14 +173,20 @@ export function getImageBarStatusLabel(file, model, res) {
 }
 
 // Return all LLM model keys from the loaded files, in canonical order.
-// Checks both the single-shot and conversation LLM sections, since the
-// Models filter is shared UI across both — a model present in only one of
-// them should still show up and not disappear when switching sections.
+// Checks every section that runs the shared LLM roster — single-shot,
+// conversation, and the three accuracy tests — since the Models filter is
+// shared UI across all of them. A model present in only one section (e.g. a
+// file that only ran `--tests acc`, leaving llm/llm_conversation empty)
+// should still show up rather than leaving the filter (and every section
+// that depends on it) empty.
 export function getAllLLMModels(files) {
   const s = new Set();
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
+    for (const m of Object.keys(f.data.mcq || {})) s.add(m);
+    for (const m of Object.keys(f.data.math || {})) s.add(m);
+    for (const m of Object.keys(f.data.code || {})) s.add(m);
   }
   const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
@@ -692,5 +702,128 @@ export function flattenImageData(files) {
         n_runs: s.n_runs,
       }))
     )
+  );
+}
+
+// ── Accuracy (MCQ / Math / Code) ────────────────────────────────────────────
+
+// Return all model keys present in a given accuracy test (mcq/math/code)
+// across files, in canonical order — the same LLM roster runs every
+// accuracy test, so LLM_MODEL_ORDER applies here too.
+export function getAllAccuracyModels(files, testKey) {
+  const s = new Set();
+  for (const f of files) for (const m of Object.keys(f.data[testKey] || {})) s.add(m);
+  const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
+  return [...known, ...unknown];
+}
+
+// Accuracy overall-score bar chart: rows = files/systems, cols = models,
+// value = accuracy_pct. A skipped model (crashed repeatedly, no score at
+// all) is simply absent from that file's row rather than shown as 0%.
+export function buildAccuracyGroupedBarData(files, testKey, enabledModels) {
+  const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
+  return files
+    .map(f => {
+      const row = { systemLabel: f.hostname };
+      for (const model of allModels) {
+        const s = f.data[testKey]?.[model];
+        if (s && !s.skipped && s.accuracy_pct != null) row[model] = s.accuracy_pct;
+      }
+      return row;
+    })
+    .filter(row => allModels.some(m => row[m] != null));
+}
+
+// Uses the darker CATEGORY_COLORS palette rather than getModelColor's neon
+// MODEL_COLORS — this chart's bars sit side by side as flat color swatches
+// (unlike the LLM line charts getModelColor is tuned for), so the pastel
+// palette read as washed-out/clashing here.
+export function buildAccuracyGroupedBarConfigs(files, testKey, enabledModels) {
+  const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
+  return allModels.map((m, i) => ({
+    dataKey: m,
+    name: modelLabel(m),
+    fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+  }));
+}
+
+// Every category key a model's by_category breakdown has, across files, for
+// one accuracy test — categories vary per test/bank version, so this is
+// derived from the data rather than a fixed list, sorted alphabetically for
+// a stable chart order.
+function getAccuracyCategories(files, testKey, model) {
+  const s = new Set();
+  for (const f of files)
+    for (const cat of Object.keys(f.data[testKey]?.[model]?.by_category || {})) s.add(cat);
+  return [...s].sort();
+}
+
+// Accuracy per-category chart data for one model: rows = categories, bars = files.
+export function buildAccuracyCategoryData(files, testKey, model) {
+  const categories = getAccuracyCategories(files, testKey, model);
+  return categories.map(cat => {
+    const row = { categoryLabel: cat };
+    files.forEach((f, fi) => {
+      const c = f.data[testKey]?.[model]?.by_category?.[cat];
+      if (c) row[`f${fi}`] = c.accuracy_pct;
+    });
+    return row;
+  });
+}
+
+export function buildAccuracyCategoryConfigs(files) {
+  return files.map((f, fi) => ({
+    dataKey: `f${fi}`,
+    name: f.hostname,
+    fill: FILE_COLORS[fi % FILE_COLORS.length],
+  }));
+}
+
+// Accuracy timeout/loop-detection diagnostics: one row per (file, model),
+// cols = timed_out_count / likely_loop_count (0 for a model with a clean
+// run, so it's still visible alongside the ones that had trouble). The whole
+// chart (and its EmptyState fallback) only appears when at least one
+// model/file actually had a timeout — otherwise it'd always render with
+// nothing but zeroes.
+export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
+  const isMulti = files.length > 1;
+  const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
+  const rows = [];
+  let hasIncident = false;
+  for (const f of files) {
+    for (const model of allModels) {
+      const s = f.data[testKey]?.[model];
+      const timedOut = s?.timed_out_count || 0;
+      const likelyLoop = s?.likely_loop_count || 0;
+      if (timedOut || likelyLoop) hasIncident = true;
+      rows.push({
+        rowLabel: isMulti ? `${f.hostname}\n${modelLabel(model)}` : modelLabel(model),
+        timed_out_count: timedOut,
+        likely_loop_count: likelyLoop,
+      });
+    }
+  }
+  return hasIncident ? rows : [];
+}
+
+export function flattenAccuracyData(files, testKey) {
+  return files.flatMap(f =>
+    Object.entries(f.data[testKey] || {}).map(([model, s]) => {
+      if (s.skipped) {
+        return {
+          _fileId: f.id, model, skipped: true,
+          skip_reason: s.skip_reason, skip_detail: s.skip_detail,
+        };
+      }
+      return {
+        _fileId: f.id, model,
+        correct: s.correct, total: s.total, answered: s.answered,
+        accuracy_pct: s.accuracy_pct,
+        timed_out_count: s.timed_out_count || 0,
+        likely_loop_count: s.likely_loop_count || 0,
+        crashed: s.crashed || false,
+      };
+    })
   );
 }
