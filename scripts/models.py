@@ -171,11 +171,11 @@ LLM_MODELS_MEDIUM = sorted([
 # Large-tier models (70B+ parameters).
 LLM_MODELS_LARGE = sorted([
     {
-        "tag":            "llama3.3:70b-instruct-q4_K_M",
-        "label":          "Llama 3.3 70B Q4_K_M",
-        "short":          "llama3.3-70b-q4",
-        "download_size":  "~42.6 GB",
-        "params_b":       70,
+        "tag":            "llama4:16x17b",
+        "label":          "Llama 4 Scout 16x17B",
+        "short":          "llama4-16x17b",
+        "download_size":  "~67.0 GB",
+        "params_b":       109,   # 17B active
     },
     {
         "tag":            "deepseek-r1:70b",

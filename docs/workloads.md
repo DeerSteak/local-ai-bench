@@ -65,8 +65,8 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 | Model | Ollama tag | Size | Architecture |
 |---|---|---|---|
-| Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~42.6 GB | Dense |
 | DeepSeek-R1 70B | `deepseek-r1:70b` | ~42.6 GB | Dense |
+| Llama 4 Scout 16x17B | `llama4:16x17b` | ~67.0 GB | MoE — 17B active of ~109B total |
 | GPT-OSS 120B (MXFP4) | `gpt-oss:120b` | ~65.4 GB | MoE — 5.1B active of ~116.8B total |
 
 ### Dense vs. Mixture-of-Experts (MoE)

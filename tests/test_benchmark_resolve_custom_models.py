@@ -8,7 +8,7 @@ def test_catalog_pattern_behaves_like_filter_models_by_pattern():
     assert tags == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
-        "llama3.3:70b-instruct-q4_K_M",
+        "llama4:16x17b",
     }
 
 
