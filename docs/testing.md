@@ -82,7 +82,7 @@ With that config in place, coverage sits around 95% for the code the suite targe
 
 ## Test Suite Breakdown
 
-The test suite consists of **21 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
+The test suite consists of **22 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -244,6 +244,11 @@ The test suite consists of **21 test modules** validating different components o
   - Skipping a single run's metrics if a standard execution error occurs, while proceeding to the next run.
   - If a connection crash occurs, attempting Ollama recovery. If recovery succeeds, the loop retries the failed run. If recovery fails, the benchmark halts and records the model as crashed.
   - `slow_tps_early_exit` early termination logic based on performance speeds.
+
+- **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
+  Tests the degenerate-generation-loop heuristic used on timed-out accuracy-test responses (`Shared.looks_like_loop`):
+  - Detects a 12+ word run repeated verbatim 3+ times; false on normal prose, short text, and below-threshold repetition; respects custom `ngram_words`/`min_repeats`.
+  - Detects a paraphrased loop via repeated hedging/self-correction phrases (e.g. "let me reconsider", "there seems to have been") even with no verbatim repeated run; false when a hedge phrase appears only once.
 
 - **[test_shared_stats.py](../tests/test_shared_stats.py)**
   Validates general helpers in `Shared`:

@@ -30,7 +30,13 @@ run_bench.bat [options]   # Windows
                         enough — many turns growing all the way to the
                         sampling ceiling — that repeating it isn't worth the
                         time). Warmup time is unaffected (see --warmup).
---timeout N             Seconds per run before skipping model (default: 300)
+--timeout N             Seconds per run before skipping model — applies to
+                        warmup and to the llm/conv/emb/img tests (default: 300)
+--acc-timeout N         Seconds per question before giving up on it, for the
+                        accuracy tests (mcq/math/code) — a timed-out question
+                        is scored wrong (using whatever partial text the
+                        model had streamed so far, if any) and the run moves
+                        on to the next question (default: 60)
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
                         models at this tier and below: xsmall (<6B / +SD1.5),
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
@@ -78,7 +84,8 @@ Every test except the LLM conversation test and the accuracy-style tests (MCQ, m
 | `--cpu-only` | (flag) | off | Restarts Ollama with GPU devices hidden for every Ollama-backed test that's running (`llm`/`conv`/`mcq`/`math`/`code`/`emb`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
 | `--warmup` | integer | `2` | Discarded runs before measured runs, per model/checkpoint |
 | `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
-| `--timeout` | integer (seconds) | `300` | Per run (warmup or measured); exceeding it skips the rest of that model |
+| `--timeout` | integer (seconds) | `300` | Per run (warmup or measured) for `llm`/`conv`/`emb`/`img`, and for every test's warmup; exceeding it skips the rest of that model |
+| `--acc-timeout` | integer (seconds) | `60` | Per question for the accuracy tests (`mcq`/`math`/`code`) only; exceeding it scores that one question wrong and moves on to the next — see [Accuracy](workloads.md#accuracy) |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it |
 | `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Only affects `llm`/`conv`/`mcq`/`math`/`code` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier`, narrowing the catalog's models further — but a pattern that matches nothing in the catalog falls back to matching against tags actually pulled in Ollama, so a model outside the curated catalog (`models.py`) can still be tested. Quote wildcards (`"llama*"`) so your shell doesn't expand them first |
 | `--list-models` | (flag) | off | Lists every Ollama model actually installed, tagging each as `catalog` or `custom`, then exits without running anything — the quickest way to find the exact tag to pass to `--models` |
@@ -125,6 +132,9 @@ bash run_bench.sh --tests acc --sample 10
 
 # Give slow hardware more time per run
 bash run_bench.sh --timeout 600
+
+# Give a slower model more time per accuracy question before it's marked wrong
+bash run_bench.sh --tests acc --acc-timeout 120
 ```
 
 A full run takes several hours, depending on your hardware and which options you select.

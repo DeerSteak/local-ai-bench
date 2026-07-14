@@ -16,6 +16,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 - [Image Generation](#image-generation)
 - [Embeddings](#embeddings)
 - [Accuracy](#accuracy)
+  - [Timeouts and loop detection](#timeouts-and-loop-detection)
   - [Math](#math)
   - [Code](#code)
   - [Bank versioning](#bank-versioning)
@@ -125,6 +126,14 @@ The question bank (`scripts/data/mcq_questions.json`) covers eight categories �
 Results report overall accuracy plus a per-category breakdown, so a model that's strong on arithmetic but weak on commonsense reasoning (or vice versa) is visible rather than averaged away.
 
 Run just this test with `--tests mcq`.
+
+### Timeouts and loop detection
+
+Each accuracy question gets `--acc-timeout` seconds (default 60) to answer — much shorter than the 300-second `--timeout` used elsewhere, since these tests generate one question at a time with an unbounded token budget (a fixed cap risks truncating a reasoning model's answer, so the wall-clock timeout is the real bound). A model that gets stuck reasoning in circles on a single question would otherwise burn the full 300s before anyone found out; at 10% of a 150-question bank that's 15 questions × 300s = 75 minutes lost to one model.
+
+A timed-out question is scored wrong and the run moves on to the next question — a single timeout only affects that one question rather than the whole bank, since zeroing out every remaining question would unfairly penalize a model that's merely slow on one hard question rather than actually stuck. Whatever text the model had already streamed before the cutoff is captured and scored the same as a completed answer (parsed for a valid letter/number/code block), rather than treated as a blank — a cut-off response can still be right, wrong-but-parseable, or genuinely empty, and those are different outcomes worth telling apart.
+
+Each model's results record `timed_out_count` and `timed_out_ids` (which questions hit the timeout) whenever at least one did. Every timed-out response is additionally checked against a loop heuristic — flagging a response if a 12+ word chunk repeats verbatim three or more times, or if a self-correction/hedging phrase ("wait,", "let me reconsider", "there seems to have been...", "apolog-", etc.) recurs three or more times — since a model that gets cut off mid-answer is either genuinely still working through a hard question or stuck restating the same reasoning (or the same code, one indentation level deeper each time) without ever converging. This check only ever runs on a timed-out question's partial text — a completed, submitted answer is never checked for looping, no matter how wrong or repetitive-looking it is, since a wrong answer that was actually submitted isn't a loop. Models with at least one flagged response get `likely_loop_count` and `likely_loop_ids` in their results, alongside `timed_out_count`/`timed_out_ids`.
 
 ### Math
 
