@@ -82,7 +82,7 @@ With that config in place, coverage sits around 95% for the code the suite targe
 
 ## Test Suite Breakdown
 
-The test suite consists of **16 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
+The test suite consists of **21 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -116,6 +116,21 @@ The test suite consists of **16 test modules** validating different components o
   - Multiple overlapping patterns union their matches without duplicating a model that satisfies more than one.
   - A pattern matching nothing returns an empty list rather than erroring.
   - Filtering preserves the original model order.
+
+- **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
+  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually pulled in Ollama. It verifies:
+  - A pattern that matches the catalog behaves exactly like `filter_models_by_pattern` and does not also pull in unrelated installed tags.
+  - A pattern matching nothing in the catalog falls back to matching installed tags, producing a `"(custom)"`-labeled entry.
+  - A pattern matching neither the catalog nor anything installed resolves to nothing (not an error).
+  - A wildcard can resolve to multiple installed tags at once.
+  - Catalog and custom patterns can be mixed in the same `--models` invocation.
+  - `sanitize_tag_to_short` turns a raw Ollama tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+
+- **[test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py)**
+  Tests `sidecar_path` in `benchmark.py`, which builds a sibling filename (an `answers_mcq_*.json`, `images_*/`, etc.) alongside the main results JSON. It verifies:
+  - A `results_`-prefixed output path has that prefix swapped for the sidecar's own prefix.
+  - A custom `--out` filename that doesn't start with `results_` falls back to prepending the sidecar prefix instead.
+  - Every sidecar prefix (`answers_mcq_`, `answers_math_`, `answers_code_`, `images_`) produces the same hostname/timestamp suffix from the same results path, so sidecars from one run are always identifiable as a set.
 
 - **[test_config.py](../tests/test_config.py)**
   Performs structural sanity checks on the constants in `config.py`. It verifies that:
@@ -171,7 +186,7 @@ The test suite consists of **16 test modules** validating different components o
 
 - **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
   Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no Ollama server needed. It verifies:
-  - `build_prompt` includes the question text and the target function name.
+  - `build_prompt` includes the question text and the target function/class name, renders `visible_tests` as worked examples (for both function and stateful problems, including constructor `init` args), omits the examples block entirely when there are no visible tests, and never leaks `hidden_tests` values into the prompt — proven not just by substring-scanning the rendered text but by deleting the `hidden_tests` key from every real question in the bank and confirming `build_prompt` doesn't raise (i.e. never even looks it up).
   - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
   - `execute_tests` runs a candidate function against a list of test cases in an isolated subprocess: correct/incorrect results score independently per test case, a runtime error in one test case doesn't abort the others, a syntax error or reference to an undefined function name fails every test case with an error message, and an infinite loop is killed and reported as a `"timeout"` rather than hanging the test run.
   - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
@@ -181,6 +196,13 @@ The test suite consists of **16 test modules** validating different components o
 ---
 
 ### Shared Helpers & APIs
+
+- **[test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py)**
+  Tests the question-bank-versioning helpers in `Shared` that back `--sample` and the accuracy tests' bank-aware crash cache. It verifies:
+  - `file_hash` is stable for identical file content, differs when content differs, and returns a short (12-character) hex digest.
+  - `stratified_sample` returns the bank unchanged (not even reordered) once `n` meets or exceeds its size, otherwise returns exactly `n` questions, touches every category represented within the requested `n`, is deterministic across repeated calls for the same `(bank, n)`, and never produces duplicate IDs.
+  - `check_crash_cache`'s `expected_bank_hash` parameter ignores a cached crash recorded against a different bank version (so a stale crash doesn't skip a model forever after the bank changes) while still honoring one that matches, and non-bank-aware callers that omit `expected_bank_hash` still honor a `bank_hash`-tagged entry as before.
+  - `record_crash`'s `extra` parameter is merged into the stored cache record (e.g. `bank_hash`), and is simply omitted when not passed.
 
 - **[test_shared_crash_cache.py](../tests/test_shared_crash_cache.py)**
   Tests the model crash-tracking database (which prevents repeated attempts of deterministic crashes). It verifies:

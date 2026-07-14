@@ -2230,5 +2230,485 @@
     "hidden_tests": [
       {"init": [2], "ops": [["put", [1, 1]], ["put", [2, 2]], ["put", [1, 100]], ["put", [3, 3]], ["get", [2]], ["get", [1]], ["get", [3]]], "expected": [null, null, null, null, -1, 100, 3]}
     ]
+  },
+  {
+    "id": "code_029",
+    "category": "intervals",
+    "function_name": "merge_intervals",
+    "prompt": "Write a function merge_intervals(intervals) that merges overlapping closed intervals. Each interval is [start, end] with start <= end. Return intervals sorted by start; intervals that touch at an endpoint must merge. The input may be empty and must not be mutated.",
+    "visible_tests": [
+      {"args": [[[1,3],[2,6],[8,10],[15,18]]], "expected": [[1,6],[8,10],[15,18]]},
+      {"args": [[[1,4],[4,5]]], "expected": [[1,5]]}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": []},
+      {"args": [[[5,7],[1,2],[2,4],[6,8]]], "expected": [[1,4],[5,8]]},
+      {"args": [[[-5,-3],[-4,0],[2,2]]], "expected": [[-5,0],[2,2]]}
+    ]
+  },
+  {
+    "id": "code_030",
+    "category": "algorithms",
+    "function_name": "sliding_window_max",
+    "prompt": "Write a function sliding_window_max(nums, k) that returns the maximum in every contiguous window of length k, in left-to-right order. nums is non-empty and 1 <= k <= len(nums). The intended solution should run in O(n) time.",
+    "visible_tests": [
+      {"args": [[1,3,-1,-3,5,3,6,7],3], "expected": [3,3,5,5,6,7]},
+      {"args": [[9,8,7],1], "expected": [9,8,7]}
+    ],
+    "hidden_tests": [
+      {"args": [[4,4,4],2], "expected": [4,4]},
+      {"args": [[-1,-3,-2,-5],2], "expected": [-1,-2,-2]},
+      {"args": [[1,2,3,4],4], "expected": [4]}
+    ]
+  },
+  {
+    "id": "code_031",
+    "category": "dynamic_programming",
+    "function_name": "edit_distance",
+    "prompt": "Write a function edit_distance(a, b) that returns the Levenshtein distance between strings a and b: the minimum number of single-character insertions, deletions, and substitutions needed to transform a into b. Characters are compared exactly and case-sensitively.",
+    "visible_tests": [
+      {"args": ["kitten","sitting"], "expected": 3},
+      {"args": ["","abc"], "expected": 3}
+    ],
+    "hidden_tests": [
+      {"args": ["flaw","lawn"], "expected": 2},
+      {"args": ["intention","execution"], "expected": 5},
+      {"args": ["åb","ab"], "expected": 1}
+    ]
+  },
+  {
+    "id": "code_032",
+    "category": "dynamic_programming",
+    "function_name": "coin_change_min",
+    "prompt": "Write a function coin_change_min(coins, amount) that returns the fewest coins needed to make amount using unlimited copies of the positive integer denominations in coins, or -1 if impossible. Return 0 when amount is 0. coins may be empty.",
+    "visible_tests": [
+      {"args": [[1,2,5],11], "expected": 3},
+      {"args": [[2],3], "expected": -1}
+    ],
+    "hidden_tests": [
+      {"args": [[],0], "expected": 0},
+      {"args": [[2,5,10,1],27], "expected": 4},
+      {"args": [[3,7],14], "expected": 2}
+    ]
+  },
+  {
+    "id": "code_033",
+    "category": "dynamic_programming",
+    "function_name": "longest_common_subsequence_length",
+    "prompt": "Write a function longest_common_subsequence_length(a, b) that returns the length of the longest subsequence common to both strings. A subsequence need not be contiguous but must preserve relative order.",
+    "visible_tests": [
+      {"args": ["abcde","ace"], "expected": 3},
+      {"args": ["abc","abc"], "expected": 3}
+    ],
+    "hidden_tests": [
+      {"args": ["","x"], "expected": 0},
+      {"args": ["abc","def"], "expected": 0},
+      {"args": ["AGGTAB","GXTXAYB"], "expected": 4}
+    ]
+  },
+  {
+    "id": "code_034",
+    "category": "dynamic_programming",
+    "function_name": "max_subarray_sum",
+    "prompt": "Write a function max_subarray_sum(nums) that returns the largest sum of any non-empty contiguous subarray. If nums is empty, return 0.",
+    "visible_tests": [
+      {"args": [[-2,1,-3,4,-1,2,1,-5,4]], "expected": 6},
+      {"args": [[5]], "expected": 5}
+    ],
+    "hidden_tests": [
+      {"args": [[-8,-2,-5]], "expected": -2},
+      {"args": [[]], "expected": 0},
+      {"args": [[1,-1,1,-1,1]], "expected": 1}
+    ]
+  },
+  {
+    "id": "code_035",
+    "category": "search",
+    "function_name": "kth_smallest_two_sorted",
+    "prompt": "Write a function kth_smallest_two_sorted(a, b, k) that returns the kth smallest value in the combined multiset of two ascending sorted numeric lists, where k is 1-indexed. Either list may be empty, and 1 <= k <= len(a)+len(b). The intended solution should run in O(log(min(len(a),len(b)))) time.",
+    "visible_tests": [
+      {"args": [[1,3],[2],2], "expected": 2},
+      {"args": [[1,2],[3,4],3], "expected": 3}
+    ],
+    "hidden_tests": [
+      {"args": [[],[5,7,9],2], "expected": 7},
+      {"args": [[1,2,2],[2,2,3],4], "expected": 2},
+      {"args": [[-5,-1],[0,8],1], "expected": -5}
+    ]
+  },
+  {
+    "id": "code_036",
+    "category": "dynamic_programming",
+    "function_name": "weighted_interval_max_profit",
+    "prompt": "Write a function weighted_interval_max_profit(jobs) where each job is [start, end, profit] with start <= end and non-negative profit. Return the maximum total profit from pairwise compatible jobs. A job ending at time t is compatible with one starting at t. jobs may be unsorted or empty.",
+    "visible_tests": [
+      {"args": [[[1,3,50],[2,4,10],[3,5,40],[3,6,70]]], "expected": 120},
+      {"args": [[[1,2,20],[2,3,20],[3,4,20]]], "expected": 60}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": 0},
+      {"args": [[[1,10,5],[2,9,20],[3,8,12]]], "expected": 20},
+      {"args": [[[5,7,8],[1,2,4],[2,5,6],[7,8,3]]], "expected": 21}
+    ]
+  },
+  {
+    "id": "code_037",
+    "category": "string",
+    "function_name": "min_window_substring",
+    "prompt": "Write a function min_window_substring(s, t) that returns the shortest substring of s containing every character of t with at least its multiplicity. If none exists, return ''. If several shortest windows exist, return the leftmost. An empty t returns ''. Comparison is case-sensitive.",
+    "visible_tests": [
+      {"args": ["ADOBECODEBANC","ABC"], "expected": "BANC"},
+      {"args": ["a","a"], "expected": "a"}
+    ],
+    "hidden_tests": [
+      {"args": ["a","aa"], "expected": ""},
+      {"args": ["aaabdabcefaecbef","abc"], "expected": "abc"},
+      {"args": ["abaca","aa"], "expected": "aba"}
+    ]
+  },
+  {
+    "id": "code_038",
+    "category": "dynamic_programming",
+    "function_name": "wildcard_match",
+    "prompt": "Write a function wildcard_match(s, pattern) that returns whether the entire string s matches pattern. In pattern, '?' matches exactly one character and '*' matches any sequence of characters, including empty; all other characters match literally.",
+    "visible_tests": [
+      {"args": ["adceb","*a*b"], "expected": true},
+      {"args": ["acdcb","a*c?b"], "expected": false}
+    ],
+    "hidden_tests": [
+      {"args": ["","*"], "expected": true},
+      {"args": ["abc","???"], "expected": true},
+      {"args": ["abcde","a**?d*"], "expected": true}
+    ]
+  },
+  {
+    "id": "code_039",
+    "category": "graph",
+    "function_name": "shortest_path_grid",
+    "prompt": "Write a function shortest_path_grid(grid) that returns the minimum number of orthogonal moves from the top-left to the bottom-right cell of a non-empty rectangular grid, where 0 is open and 1 is blocked. Return -1 if unreachable. The start and destination may themselves be blocked. Do not mutate grid.",
+    "visible_tests": [
+      {"args": [[[0,0,0],[1,1,0],[0,0,0]]], "expected": 4},
+      {"args": [[[0]]], "expected": 0}
+    ],
+    "hidden_tests": [
+      {"args": [[[0,1],[1,0]]], "expected": -1},
+      {"args": [[[0,0,0,0]]], "expected": 3},
+      {"args": [[[1,0],[0,0]]], "expected": -1}
+    ]
+  },
+  {
+    "id": "code_040",
+    "category": "graph",
+    "function_name": "count_islands",
+    "prompt": "Write a function count_islands(grid) that counts connected components of '1' cells in a rectangular grid represented as a list of equal-length strings. Connectivity is orthogonal, not diagonal. Return 0 for an empty grid and do not mutate it.",
+    "visible_tests": [
+      {"args": [["11000","11000","00100","00011"]], "expected": 3},
+      {"args": [["111","010","111"]], "expected": 1}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": 0},
+      {"args": [["101","010","101"]], "expected": 5},
+      {"args": [["000","000"]], "expected": 0}
+    ]
+  },
+  {
+    "id": "code_041",
+    "category": "graph",
+    "function_name": "can_finish_courses",
+    "prompt": "Write a function can_finish_courses(n, prerequisites) that returns True if all courses 0 through n-1 can be completed. Each [course, prerequisite] pair is a directed prerequisite relation. Return False exactly when the dependency graph contains a cycle.",
+    "visible_tests": [
+      {"args": [2,[[1,0]]], "expected": true},
+      {"args": [2,[[1,0],[0,1]]], "expected": false}
+    ],
+    "hidden_tests": [
+      {"args": [5,[[1,0],[2,1],[3,1],[4,2],[4,3]]], "expected": true},
+      {"args": [3,[[0,0]]], "expected": false},
+      {"args": [0,[]], "expected": true}
+    ]
+  },
+  {
+    "id": "code_042",
+    "category": "graph",
+    "function_name": "network_delay_time",
+    "prompt": "Write a function network_delay_time(n, edges, source) for a directed graph whose nodes are 1 through n and whose edges are [u,v,weight] with non-negative numeric weights. Return the earliest time by which every node is reachable from source, or -1 if some node is unreachable. Parallel edges may occur.",
+    "visible_tests": [
+      {"args": [4,[[2,1,1],[2,3,1],[3,4,1]],2], "expected": 2},
+      {"args": [2,[[1,2,1]],2], "expected": -1}
+    ],
+    "hidden_tests": [
+      {"args": [1,[],1], "expected": 0},
+      {"args": [3,[[1,2,5],[1,2,2],[2,3,4],[1,3,10]],1], "expected": 6},
+      {"args": [3,[[1,2,0],[2,3,0]],1], "expected": 0}
+    ]
+  },
+  {
+    "id": "code_043",
+    "category": "graph",
+    "function_name": "shortest_alternating_paths",
+    "prompt": "Write a function shortest_alternating_paths(n, red_edges, blue_edges) that returns a list where result[i] is the shortest number of edges from node 0 to node i using strictly alternating edge colors, or -1 if unreachable. Either color may be used first. Edges are directed [from,to] pairs.",
+    "visible_tests": [
+      {"args": [3,[[0,1],[1,2]],[]], "expected": [0,1,-1]},
+      {"args": [3,[[0,1]],[[1,2]]], "expected": [0,1,2]}
+    ],
+    "hidden_tests": [
+      {"args": [3,[[0,1]],[[0,2]]], "expected": [0,1,1]},
+      {"args": [5,[[0,1],[1,2],[2,3],[3,4]],[[1,2],[2,3],[3,1]]], "expected": [0,1,2,3,7]},
+      {"args": [1,[],[]], "expected": [0]}
+    ]
+  },
+  {
+    "id": "code_044",
+    "category": "string",
+    "function_name": "decode_string",
+    "prompt": "Write a function decode_string(s) that decodes a valid expression where k[encoded] repeats encoded exactly k times. Expressions may be nested, repeat counts may have multiple digits, and literal characters are ASCII letters.",
+    "visible_tests": [
+      {"args": ["3[a2[c]]"], "expected": "accaccacc"},
+      {"args": ["2[abc]3[cd]ef"], "expected": "abcabccdcdcdef"}
+    ],
+    "hidden_tests": [
+      {"args": ["10[a]"], "expected": "aaaaaaaaaa"},
+      {"args": ["3[z]2[2[y]pq4[2[jk]e1[f]]]ef"], "expected": "zzzyypqjkjkefjkjkefjkjkefjkjkefyypqjkjkefjkjkefjkjkefjkjkefef"},
+      {"args": ["abc"], "expected": "abc"}
+    ]
+  },
+  {
+    "id": "code_045",
+    "category": "string",
+    "function_name": "normalize_path",
+    "prompt": "Write a function normalize_path(path) that canonicalizes an absolute Unix-style path. Collapse repeated '/', discard '.', resolve '..' without moving above root, and omit a trailing slash except for root. Path components are otherwise literal.",
+    "visible_tests": [
+      {"args": ["/a/./b/../../c/"], "expected": "/c"},
+      {"args": ["/../"], "expected": "/"}
+    ],
+    "hidden_tests": [
+      {"args": ["/home//foo/"], "expected": "/home/foo"},
+      {"args": ["/a/../../b/../c//.//"], "expected": "/c"},
+      {"args": ["/"], "expected": "/"}
+    ]
+  },
+  {
+    "id": "code_046",
+    "category": "string",
+    "function_name": "multiply_decimal_strings",
+    "prompt": "Write a function multiply_decimal_strings(a, b) that returns the exact product of two non-negative integers supplied as decimal strings, without converting either entire input to an integer. Inputs contain only digits and may have leading zeros; return a canonical decimal string with no leading zeros except '0'.",
+    "visible_tests": [
+      {"args": ["123","456"], "expected": "56088"},
+      {"args": ["0","99999"], "expected": "0"}
+    ],
+    "hidden_tests": [
+      {"args": ["00012","003"], "expected": "36"},
+      {"args": ["99999","99999"], "expected": "9999800001"},
+      {"args": ["1","12345678901234567890"], "expected": "12345678901234567890"}
+    ]
+  },
+  {
+    "id": "code_047",
+    "category": "string",
+    "function_name": "find_anagram_indices",
+    "prompt": "Write a function find_anagram_indices(s, pattern) that returns all starting indices, in ascending order, where a substring of s is an anagram of pattern. Character comparison is exact and case-sensitive. If pattern is empty or longer than s, return []. Overlapping matches count.",
+    "visible_tests": [
+      {"args": ["cbaebabacd","abc"], "expected": [0,6]},
+      {"args": ["abab","ab"], "expected": [0,1,2]}
+    ],
+    "hidden_tests": [
+      {"args": ["aaaa","aa"], "expected": [0,1,2]},
+      {"args": ["abc",""], "expected": []},
+      {"args": ["aAba","Aab"], "expected": [0,1]}
+    ]
+  },
+  {
+    "id": "code_048",
+    "category": "matrix",
+    "function_name": "spiral_order",
+    "prompt": "Write a function spiral_order(matrix) that returns all elements of a rectangular matrix in clockwise spiral order, beginning at the top-left. Return [] for an empty matrix and do not mutate the input.",
+    "visible_tests": [
+      {"args": [[[1,2,3],[4,5,6],[7,8,9]]], "expected": [1,2,3,6,9,8,7,4,5]},
+      {"args": [[[1,2,3,4]]], "expected": [1,2,3,4]}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": []},
+      {"args": [[[1],[2],[3]]], "expected": [1,2,3]},
+      {"args": [[[1,2,3],[4,5,6]]], "expected": [1,2,3,6,5,4]}
+    ]
+  },
+  {
+    "id": "code_049",
+    "category": "matrix",
+    "function_name": "rotate_matrix_clockwise",
+    "prompt": "Write a function rotate_matrix_clockwise(matrix) that returns a new matrix equal to a 90-degree clockwise rotation of the input rectangular matrix. Return [] for an empty matrix and do not mutate the input.",
+    "visible_tests": [
+      {"args": [[[1,2,3],[4,5,6]]], "expected": [[4,1],[5,2],[6,3]]},
+      {"args": [[[1]]], "expected": [[1]]}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": []},
+      {"args": [[[1,2,3,4]]], "expected": [[1],[2],[3],[4]]},
+      {"args": [[[1],[2],[3]]], "expected": [[3,2,1]]}
+    ]
+  },
+  {
+    "id": "code_050",
+    "category": "stack",
+    "function_name": "largest_rectangle_area",
+    "prompt": "Write a function largest_rectangle_area(heights) that returns the largest rectangle area in a histogram whose non-negative bar heights have unit width. The rectangle must use consecutive bars. Return 0 for an empty list. The intended solution should run in O(n) time.",
+    "visible_tests": [
+      {"args": [[2,1,5,6,2,3]], "expected": 10},
+      {"args": [[2,4]], "expected": 4}
+    ],
+    "hidden_tests": [
+      {"args": [[]], "expected": 0},
+      {"args": [[2,2,2]], "expected": 6},
+      {"args": [[6,5,4,3,2,1]], "expected": 12}
+    ]
+  },
+  {
+    "id": "code_051",
+    "category": "stack",
+    "function_name": "evaluate_rpn",
+    "prompt": "Write a function evaluate_rpn(tokens) that evaluates a valid Reverse Polish Notation expression. Tokens are decimal integers or '+', '-', '*', '/'. Integer division must truncate toward zero. Return the integer result.",
+    "visible_tests": [
+      {"args": [["2","1","+","3","*"]], "expected": 9},
+      {"args": [["4","13","5","/","+"]], "expected": 6}
+    ],
+    "hidden_tests": [
+      {"args": [["10","6","9","3","+","-11","*","/","*","17","+","5","+"]], "expected": 22},
+      {"args": [["7","-3","/"]], "expected": -2},
+      {"args": [["3","4","-"]], "expected": -1}
+    ]
+  },
+  {
+    "id": "code_052",
+    "category": "algorithms",
+    "function_name": "top_k_frequent",
+    "prompt": "Write a function top_k_frequent(nums, k) that returns the k distinct values with highest frequency, ordered by decreasing frequency and then by increasing numeric value for ties. nums is non-empty and 1 <= k <= the number of distinct values.",
+    "visible_tests": [
+      {"args": [[1,1,1,2,2,3],2], "expected": [1,2]},
+      {"args": [[4,4,5,5,6],2], "expected": [4,5]}
+    ],
+    "hidden_tests": [
+      {"args": [[-1,-1,-2,-2,-3],3], "expected": [-2,-1,-3]},
+      {"args": [[7],1], "expected": [7]},
+      {"args": [[3,2,1,3,2,1],2], "expected": [1,2]}
+    ]
+  },
+  {
+    "id": "code_053",
+    "category": "search",
+    "function_name": "median_two_sorted_arrays",
+    "prompt": "Write a function median_two_sorted_arrays(a, b) that returns the median of two ascending sorted numeric lists. At least one list is non-empty. For an even total length, return the arithmetic mean of the two middle values. The intended solution should run in O(log(min(len(a),len(b)))) time.",
+    "visible_tests": [
+      {"args": [[1,3],[2]], "expected": 2},
+      {"args": [[1,2],[3,4]], "expected": 2.5}
+    ],
+    "hidden_tests": [
+      {"args": [[],[1]], "expected": 1},
+      {"args": [[0,0],[0,0]], "expected": 0},
+      {"args": [[-5,-3,-1],[2,4,6,8]], "expected": 2}
+    ]
+  },
+  {
+    "id": "code_054",
+    "category": "divide_and_conquer",
+    "function_name": "count_range_sum",
+    "prompt": "Write a function count_range_sum(nums, lower, upper) that counts contiguous subarrays whose sum lies in the inclusive interval [lower, upper]. nums may be empty and may contain negative integers. The intended solution should run in O(n log n) time.",
+    "visible_tests": [
+      {"args": [[-2,5,-1],-2,2], "expected": 3},
+      {"args": [[0],0,0], "expected": 1}
+    ],
+    "hidden_tests": [
+      {"args": [[],0,0], "expected": 0},
+      {"args": [[1,-1,1],0,1], "expected": 5},
+      {"args": [[-3,1,2,-2,2],-2,2], "expected": 12}
+    ]
+  },
+  {
+    "id": "code_055",
+    "category": "stateful",
+    "class_name": "Trie",
+    "prompt": "Implement a class Trie, constructed with no arguments. insert(word) stores a case-sensitive string and returns None; search(word) returns True only for a complete stored word; starts_with(prefix) returns True if any stored word begins with prefix. The empty prefix is always a prefix, and inserting the empty string makes search('') true.",
+    "visible_tests": [
+      {"ops": [["insert",["apple"]],["search",["apple"]],["search",["app"]],["starts_with",["app"]],["insert",["app"]],["search",["app"]]], "expected": [null,true,false,true,null,true]},
+      {"ops": [["starts_with",[""]],["search",[""]]], "expected": [true,false]}
+    ],
+    "hidden_tests": [
+      {"ops": [["insert",[""]],["search",[""]]], "expected": [null,true]},
+      {"ops": [["insert",["Cat"]],["search",["cat"]],["starts_with",["C"]]], "expected": [null,false,true]},
+      {"ops": [["insert",["car"]],["insert",["cart"]],["search",["ca"]],["starts_with",["cart"]]], "expected": [null,null,false,true]}
+    ]
+  },
+  {
+    "id": "code_056",
+    "category": "stateful",
+    "class_name": "MinStack",
+    "prompt": "Implement a class MinStack, constructed with no arguments. push(x) adds x and returns None; pop() removes the top and returns None; top() returns the top value; get_min() returns the minimum value. pop, top, and get_min are called only when non-empty, and every operation should be O(1).",
+    "visible_tests": [
+      {"ops": [["push",[-2]],["push",[0]],["push",[-3]],["get_min",[]],["pop",[]],["top",[]],["get_min",[]]], "expected": [null,null,null,-3,null,0,-2]},
+      {"ops": [["push",[1]],["get_min",[]]], "expected": [null,1]}
+    ],
+    "hidden_tests": [
+      {"ops": [["push",[2]],["push",[2]],["get_min",[]],["pop",[]],["get_min",[]]], "expected": [null,null,2,null,2]},
+      {"ops": [["push",[3]],["push",[1]],["push",[2]],["pop",[]],["top",[]],["get_min",[]]], "expected": [null,null,null,null,1,1]},
+      {"ops": [["push",[-5]],["push",[-10]],["top",[]],["get_min",[]]], "expected": [null,null,-10,-10]}
+    ]
+  },
+  {
+    "id": "code_057",
+    "category": "stateful",
+    "class_name": "TimeMap",
+    "prompt": "Implement a class TimeMap, constructed with no arguments. set(key, value, timestamp) stores the string value at an integer timestamp and returns None. get(key, timestamp) returns the value associated with the greatest stored timestamp <= timestamp, or '' if none. set timestamps are strictly increasing for each key.",
+    "visible_tests": [
+      {"ops": [["set",["foo","bar",1]],["get",["foo",1]],["get",["foo",3]],["set",["foo","bar2",4]],["get",["foo",4]],["get",["foo",5]]], "expected": [null,"bar","bar",null,"bar2","bar2"]},
+      {"ops": [["get",["missing",10]]], "expected": [""]}
+    ],
+    "hidden_tests": [
+      {"ops": [["set",["a","x",5]],["get",["a",4]],["get",["a",5]]], "expected": [null,"","x"]},
+      {"ops": [["set",["a","x",1]],["set",["b","y",2]],["get",["a",100]],["get",["b",1]]], "expected": [null,null,"x",""]},
+      {"ops": [["set",["k","v1",1]],["set",["k","v2",10]],["set",["k","v3",20]],["get",["k",15]]], "expected": [null,null,null,"v2"]}
+    ]
+  },
+  {
+    "id": "code_058",
+    "category": "stateful",
+    "class_name": "UnionFind",
+    "prompt": "Implement a class UnionFind(n) for elements 0 through n-1. union(a,b) merges their components and returns True if a merge occurred or False if they were already connected; connected(a,b) reports connectivity; component_count() returns the current number of components. Use path compression and union by rank or size.",
+    "visible_tests": [
+      {"init": [5], "ops": [["component_count",[]],["union",[0,1]],["union",[1,2]],["connected",[0,2]],["component_count",[]]], "expected": [5,true,true,true,3]},
+      {"init": [2], "ops": [["union",[0,1]],["union",[0,1]],["component_count",[]]], "expected": [true,false,1]}
+    ],
+    "hidden_tests": [
+      {"init": [1], "ops": [["connected",[0,0]],["component_count",[]]], "expected": [true,1]},
+      {"init": [4], "ops": [["union",[0,1]],["union",[2,3]],["connected",[1,3]],["union",[1,3]],["connected",[0,2]]], "expected": [true,true,false,true,true]},
+      {"init": [3], "ops": [["union",[1,1]],["component_count",[]]], "expected": [false,3]}
+    ]
+  },
+  {
+    "id": "code_059",
+    "category": "stateful",
+    "class_name": "MedianFinder",
+    "prompt": "Implement a class MedianFinder, constructed with no arguments. add_num(x) adds a number and returns None. find_median() returns the median of all added numbers; for an even count, return the arithmetic mean of the two middle values. find_median is called only after at least one insertion, and operations should be O(log n) insertion and O(1) median lookup.",
+    "visible_tests": [
+      {"ops": [["add_num",[1]],["add_num",[2]],["find_median",[]],["add_num",[3]],["find_median",[]]], "expected": [null,null,1.5,null,2]},
+      {"ops": [["add_num",[-1]],["find_median",[]]], "expected": [null,-1]}
+    ],
+    "hidden_tests": [
+      {"ops": [["add_num",[5]],["add_num",[5]],["find_median",[]]], "expected": [null,null,5]},
+      {"ops": [["add_num",[10]],["add_num",[-10]],["add_num",[0]],["find_median",[]]], "expected": [null,null,null,0]},
+      {"ops": [["add_num",[4]],["add_num",[1]],["add_num",[7]],["add_num",[2]],["find_median",[]]], "expected": [null,null,null,null,3]}
+    ]
+  },
+  {
+    "id": "code_060",
+    "category": "stateful",
+    "class_name": "LFUCache",
+    "prompt": "Implement a class LFUCache(capacity). get(key) returns its value or -1; a successful get increases that key's use frequency. put(key,value) returns None, inserts or updates the key, and an update counts as a use. When insertion exceeds capacity, evict the least-frequently-used key; break frequency ties by least recent use. A new key starts at frequency 1. Capacity may be zero, and all operations should be O(1) average time.",
+    "visible_tests": [
+      {"init": [2], "ops": [["put",[1,1]],["put",[2,2]],["get",[1]],["put",[3,3]],["get",[2]],["get",[3]],["put",[4,4]],["get",[1]],["get",[3]],["get",[4]]], "expected": [null,null,1,null,-1,3,null,-1,3,4]},
+      {"init": [0], "ops": [["put",[1,1]],["get",[1]]], "expected": [null,-1]}
+    ],
+    "hidden_tests": [
+      {"init": [2], "ops": [["put",[1,1]],["put",[2,2]],["put",[1,10]],["put",[3,3]],["get",[2]],["get",[1]]], "expected": [null,null,null,null,-1,10]},
+      {"init": [1], "ops": [["put",[1,1]],["put",[2,2]],["get",[1]],["get",[2]]], "expected": [null,null,-1,2]},
+      {"init": [3], "ops": [["put",[1,1]],["put",[2,2]],["put",[3,3]],["get",[1]],["get",[2]],["put",[4,4]],["get",[3]],["get",[4]]], "expected": [null,null,null,1,2,null,-1,4]}
+    ]
   }
 ]

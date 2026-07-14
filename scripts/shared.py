@@ -6,10 +6,12 @@ bookkeeping (used to shut down servers this script itself started), so
 methods are static and state lives on the class rather than an instance.
 """
 
+import hashlib
 import http.client
 import json
 import os
 import platform
+import random
 import statistics
 import subprocess
 import sys
@@ -574,6 +576,54 @@ class Shared:
         return False
 
     @staticmethod
+    def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:
+        """Deterministically picks `n` questions out of `questions`, touching
+        every category present rather than risking a run of unlucky luck that
+        skips a whole category. For fast local dev iteration against the full
+        accuracy banks (mcq/math/code) — never used for a full/published run.
+
+        Groups by `category`, shuffles each group with a seeded RNG (so the
+        same (bank, n) always yields the same sample — reproducible and
+        diffable across runs), then round-robins across categories in sorted
+        order, one question at a time, until `n` are collected or the bank is
+        exhausted. Round-robin naturally gives larger categories more picks
+        without needing an explicit proportional-allocation step. Returns
+        `questions` unchanged (not even reordered) if `n >= len(questions)`.
+        """
+        if n >= len(questions):
+            return list(questions)
+        by_category: dict[str, list[dict]] = {}
+        for q in questions:
+            by_category.setdefault(q["category"], []).append(q)
+        rng = random.Random(seed)
+        for group in by_category.values():
+            rng.shuffle(group)
+        categories = sorted(by_category)
+        picked = []
+        idx = 0
+        while len(picked) < n:
+            progressed = False
+            for cat in categories:
+                if idx < len(by_category[cat]):
+                    picked.append(by_category[cat][idx])
+                    progressed = True
+                    if len(picked) == n:
+                        break
+            if not progressed:
+                break
+            idx += 1
+        return picked
+
+    @staticmethod
+    def file_hash(path: Path) -> str:
+        """First 12 hex chars of the sha256 of `path`'s raw bytes — a short,
+        stable fingerprint for a question bank so results can record exactly
+        which version of the data they were scored against. Doesn't parse
+        the JSON, so it also catches whitespace-only or key-order changes
+        that wouldn't show up in the question count."""
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+
+    @staticmethod
     def load_crash_cache(path: Path) -> dict:
         """Load a benchmark's cache of tag -> crash record, so a model that
         deterministically crashes Ollama's runner on a given test isn't
@@ -591,11 +641,24 @@ class Shared:
             Shared.warn(f"Failed to save crash cache to {path}: {e}")
 
     @staticmethod
-    def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path) -> dict | None:
+    def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
+                           expected_bank_hash: str | None = None) -> dict | None:
         """Returns a skip-result dict if `tag` is a known repeat-crasher on
-        this test, else None."""
+        this test, else None.
+
+        `expected_bank_hash`, when given (accuracy benchmarks backed by a
+        versioned question bank), invalidates a cached crash recorded against
+        a different bank version — a model that crashed on the old 185-
+        question bank shouldn't be silently skipped forever on the new
+        360-question one just because the tag matches. The stale entry is
+        left in place (it'll be overwritten if this tag crashes again on the
+        current bank) rather than deleted, so this stays a pure read."""
         detail = crash_cache.get(tag)
         if detail is None:
+            return None
+        if expected_bank_hash is not None and detail.get("bank_hash") != expected_bank_hash:
+            Shared.warn(f"{tag}'s recorded crash is for a different question-bank version "
+                        "— ignoring stale entry and retrying")
             return None
         crashed_at = detail.get("crashed_at", "an earlier run")
         Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
@@ -608,18 +671,22 @@ class Shared:
         }
 
     @staticmethod
-    def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str) -> str:
+    def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
+                      extra: dict | None = None) -> str:
         """Records a deterministic crash for `tag` in the cache. Returns the
-        crash timestamp so callers can fold it into their own result detail."""
+        crash timestamp so callers can fold it into their own result detail.
+        `extra` is merged into the stored record — accuracy benchmarks pass
+        {"bank_hash": ...} so check_crash_cache can tell a stale crash record
+        (from a since-changed question bank) apart from a current one."""
         crashed_at = datetime.now().isoformat(timespec="seconds")
-        crash_cache[tag] = {"crashed_at": crashed_at}
+        crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
         Shared.err(f"Ollama's runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
 
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
-                            what: str) -> tuple[list, str]:
+                            what: str, crash_extra: dict | None = None) -> tuple[list, str]:
         """
         Call `call(run_i)` up to `n_runs` times, collecting each return value —
         the shared shape behind every benchmark's "N measured runs" loop.
@@ -629,7 +696,8 @@ class Shared:
         respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since a
         deterministic crash would recur forever. Any other exception counts as
         a failed run and moves on. A crash that exhausts its retries is recorded
-        to `cache_path` so future invocations skip this tag/test.
+        to `cache_path` so future invocations skip this tag/test. `crash_extra`
+        (e.g. {"bank_hash": ...}) is passed through to Shared.record_crash.
 
         Returns (samples, status) where status is "ok", "timed_out", or
         "crashed"; `samples` may be non-empty even when status != "ok".
@@ -655,12 +723,12 @@ class Shared:
                            f"— last server output:\n{Shared.tail_ollama_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
-                    Shared.record_crash(tag, crash_cache, cache_path, what)
+                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed"
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not Shared.wait_for_ollama_recovery():
                     Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
-                    Shared.record_crash(tag, crash_cache, cache_path, what)
+                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed"
                 # don't advance run_i — retry the same run now that Ollama is back
         return samples, "ok"
@@ -814,7 +882,8 @@ class Shared:
 
     @staticmethod
     def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real threaded/watchdogged model load
-                      crash_cache: dict | None = None, cache_path: Path | None = None) -> bool:
+                      crash_cache: dict | None = None, cache_path: Path | None = None,
+                      crash_extra: dict | None = None) -> bool:
         """
         Load `tag` into memory with `warmup_runs` blocking generate calls, each
         watchdogged by a daemon thread so a hung load (model too large for
@@ -825,7 +894,9 @@ class Shared:
         A hang or a runner-crash exception is exactly the deterministic failure
         the crash cache exists to remember — warmup is often where an oversized
         model's OOM first shows up. Pass `crash_cache`/`cache_path` to record
-        that case here too.
+        that case here too. `crash_extra` (e.g. {"bank_hash": ...}) is forwarded
+        to Shared.record_crash so a bank-aware caller's check_crash_cache can
+        tell a stale record apart from a current one.
         """
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
@@ -848,14 +919,15 @@ class Shared:
                 Shared.warn(f"{label}: model is likely too large for available memory — skipping")
                 if crash_cache is not None and cache_path is not None:
                     Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up (hung past {config.RUN_TIMEOUT}s at num_ctx={num_ctx})")
+                                         f"warming up (hung past {config.RUN_TIMEOUT}s at num_ctx={num_ctx})",
+                                         extra=crash_extra)
                 return False
             elif exc_box[0] is not None:
                 Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
                 if crash_cache is not None and cache_path is not None and Shared.is_connection_crash(exc_box[0]):
                     Shared.wait_for_ollama_recovery()
                     Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}")
+                                         f"warming up at num_ctx={num_ctx}", extra=crash_extra)
                 return False
             else:
                 Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")

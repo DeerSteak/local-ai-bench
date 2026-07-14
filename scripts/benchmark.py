@@ -307,6 +307,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "anything. Useful for finding the exact tag to pass to --models.",
     )
     parser.add_argument(
+        "--sample", type=int, default=None, metavar="N",
+        help="Dev-only: run 'mcq'/'math'/'code' against a deterministic N-question "
+             "subset of each bank instead of the full thing, stratified so every "
+             "category is represented. Same N always yields the same questions for "
+             "a given bank version, and the exact sampled IDs are recorded in the "
+             "output JSON under 'sample_ids'. Never use for a result meant to be "
+             "compared against a full-bank run or published (default: full bank).",
+    )
+    parser.add_argument(
         "--force-all", action="store_true",
         help=f"Ignore the {config.SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
              "context length in the LLM prefill test and always run the conversation "
@@ -396,6 +405,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     results = {
         "version":         config.VERSION,
         "profile":         profile,
+        # Fingerprints of the accuracy question banks actually used for this
+        # run, so a raw correct count is never compared across bank sizes
+        # (e.g. 185 vs. 360 questions) without noticing the version differs.
+        "bank_versions": {
+            "mcq":  Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH),
+            "math": Shared.file_hash(MathBenchmark.MATH_DATA_PATH),
+            "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
+        },
+        # Populated only when --sample is used, with the exact question IDs
+        # drawn from each bank — so a dev-mode run is reproducible/auditable
+        # and never mistaken for a full-bank result.
+        "sample_ids": {},
         "llm":             {},
         "llm_conversation": {},
         "embeddings":      {},
@@ -482,8 +503,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 results["mcq"] = partial
                 _checkpoint()
 
+            mcq_questions = MCQBenchmark.load_questions()
+            if args.sample is not None:
+                mcq_questions = Shared.stratified_sample(mcq_questions, args.sample)
+                results["sample_ids"]["mcq"] = [q["id"] for q in mcq_questions]
+
             results["mcq"] = MCQBenchmark().run(
                 models=llm_models,
+                questions=mcq_questions,
                 warmup_runs=args.warmup,
                 save_fn=_mcq_save,
                 answers_path=sidecar_path(out_path, "answers_mcq_"),
@@ -496,8 +523,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 results["math"] = partial
                 _checkpoint()
 
+            math_questions = MathBenchmark.load_questions()
+            if args.sample is not None:
+                math_questions = Shared.stratified_sample(math_questions, args.sample)
+                results["sample_ids"]["math"] = [q["id"] for q in math_questions]
+
             results["math"] = MathBenchmark().run(
                 models=llm_models,
+                questions=math_questions,
                 warmup_runs=args.warmup,
                 save_fn=_math_save,
                 answers_path=sidecar_path(out_path, "answers_math_"),
@@ -510,8 +543,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 results["code"] = partial
                 _checkpoint()
 
+            code_questions = CodeBenchmark.load_questions()
+            if args.sample is not None:
+                code_questions = Shared.stratified_sample(code_questions, args.sample)
+                results["sample_ids"]["code"] = [q["id"] for q in code_questions]
+
             results["code"] = CodeBenchmark().run(
                 models=llm_models,
+                questions=code_questions,
                 warmup_runs=args.warmup,
                 save_fn=_code_save,
                 answers_path=sidecar_path(out_path, "answers_code_"),

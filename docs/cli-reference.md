@@ -38,8 +38,26 @@ run_bench.bat [options]   # Windows
 --models TAGS           Only test these LLM models (llm/conv/mcq/math/code tests) —
                         exact Ollama tags or wildcards, e.g. 'llama*' matches
                         every tag starting with 'llama'. Applied after
-                        --maxtier, so it can only narrow that tier's models
-                        further (default: every model in the selected tier)
+                        --maxtier, narrowing the catalog's models further; a
+                        pattern matching nothing in the catalog falls back to
+                        matching tags actually pulled in Ollama, so a model
+                        outside the curated catalog can still be tested (see
+                        --list-models). Quote wildcards so your shell doesn't
+                        glob-expand them first (default: every catalog model
+                        in the selected tier)
+--list-models           List every Ollama model actually installed locally,
+                        marking which are in the curated catalog (models.py)
+                        vs custom/extra, then exit without running anything.
+                        Useful for finding the exact tag to pass to --models
+--sample N              Dev-only: run the accuracy tests (mcq/math/code)
+                        against a deterministic N-question subset of each
+                        bank instead of the full thing, stratified so every
+                        category is represented. The same N always yields the
+                        same questions for a given bank version, and the
+                        sampled IDs are recorded in the output JSON under
+                        'sample_ids'. Never use for a result meant to be
+                        compared against a full-bank run, or published
+                        (default: full bank)
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results/results_<hostname>_<timestamp>.json)
 --force-all             Ignore the 15 tok/s slow-model cutoff: run every context
@@ -62,7 +80,9 @@ Every test except the LLM conversation test and the accuracy-style tests (MCQ, m
 | `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per run (warmup or measured); exceeding it skips the rest of that model |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it |
-| `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every model in the selected tier) | Only affects `llm`/`conv`/`mcq`/`math`/`code` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier`, so it narrows that tier's models rather than adding models outside it |
+| `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Only affects `llm`/`conv`/`mcq`/`math`/`code` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier`, narrowing the catalog's models further — but a pattern that matches nothing in the catalog falls back to matching against tags actually pulled in Ollama, so a model outside the curated catalog (`models.py`) can still be tested. Quote wildcards (`"llama*"`) so your shell doesn't expand them first |
+| `--list-models` | (flag) | off | Lists every Ollama model actually installed, tagging each as `catalog` or `custom`, then exits without running anything — the quickest way to find the exact tag to pass to `--models` |
+| `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`code` against a deterministic, stratified N-question subset of each bank instead of the full one — every category still represented, same N always picks the same questions for a given bank version. The sampled question IDs are recorded in the results JSON under `sample_ids`. Don't use it for a result meant to be compared against a full-bank run or published — see [bank versioning](workloads.md#bank-versioning) |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the auto-generated path entirely — an explicit path is used as-is, not placed under `results/`. Generated images (`--tests img`) still land under `results/`, in an `images_<name>` folder alongside it (see [Project Structure](project-structure.md)) |
 | `--force-all` | (flag) | off | See [LLM workload](workloads.md#llm) for what the slow-model cutoff normally skips |
@@ -95,6 +115,13 @@ bash run_bench.sh --tests llm --models "llama*"
 
 # One specific model plus a wildcard group
 bash run_bench.sh --tests llm --models gpt-oss:20b "deepseek-r1*"
+
+# Find the exact tag for a model you've pulled but isn't in the catalog
+bash run_bench.sh --list-models
+
+# Quick dev iteration on the accuracy tests — 10 questions per bank instead
+# of the full thing; never compare this against a full-bank result
+bash run_bench.sh --tests acc --sample 10
 
 # Give slow hardware more time per run
 bash run_bench.sh --timeout 600

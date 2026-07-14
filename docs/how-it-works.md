@@ -76,15 +76,15 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `N
 | Image seed | 42 (fixed) |
 | Image metrics | Seconds per image, per model, per resolution |
 | Image measured runs | `--runs` per resolution, averaged (default: 3, range: 1–10) |
-| MCQ question bank | `scripts/data/mcq_questions.json` — 75 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language) |
+| MCQ question bank | `scripts/data/mcq_questions.json` — 150 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language), with A–D answer positions balanced |
 | MCQ warmup runs | `--warmup` (default: 2, discarded) |
 | MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | MCQ metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Math question bank | `scripts/data/math_questions.json` — 50 questions across 8 categories (arithmetic, algebra, geometry, percentages, probability, sequences, logic, word problems) |
+| Math question bank | `scripts/data/math_questions.json` — 150 numeric-answer problems across 30 categories, including calculus, combinatorics, linear algebra, number theory, probability, and statistics |
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall accuracy (%), plus accuracy (%) per category |
-| Code question bank | `scripts/data/code_problems.json` — 28 problems across 9 categories (arithmetic, string, algorithms, list, number_theory, search, matrix, stack, stateful) |
+| Code question bank | `scripts/data/code_problems.json` — 60 problems across 13 categories, including dynamic programming, graph, interval, divide-and-conquer, and advanced stateful structures |
 | Code warmup runs | `--warmup` (default: 2, discarded) |
 | Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Code metrics | Overall accuracy (%), plus accuracy (%) per category — a problem counts as correct only if every one of its visible and hidden test cases passes |

@@ -13,6 +13,12 @@ Two problem shapes:
   "expected": [...]} — a fresh instance per test, constructed as
   class_name(*init), then each method called in sequence and every return
   value collected and compared to `expected` as a whole.
+
+`visible_tests` are rendered into the prompt as worked examples (the model
+is meant to see them, same as example I/O in a real problem statement);
+`hidden_tests` are never shown and only used for scoring. Both are run
+together at grading time, so a model can't game the split by memorizing
+just the visible cases.
 """
 
 import json
@@ -53,15 +59,43 @@ class CodeBenchmark:
         return json.loads(Path(path).read_text())
 
     @staticmethod
+    def _format_function_example(function_name: str, test: dict) -> str:
+        args_repr = ", ".join(repr(a) for a in test["args"])
+        return f"{function_name}({args_repr}) == {test['expected']!r}"
+
+    @staticmethod
+    def _format_stateful_example(class_name: str, test: dict) -> str:
+        init_repr = ", ".join(repr(a) for a in test.get("init", []))
+        lines = [f"obj = {class_name}({init_repr})"]
+        for (method, args), expected in zip(test["ops"], test["expected"]):
+            args_repr = ", ".join(repr(a) for a in args)
+            lines.append(f"obj.{method}({args_repr})  # -> {expected!r}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_examples_block(question: dict) -> str:
+        """Renders `visible_tests` as worked examples, or '' if there are
+        none. `hidden_tests` are deliberately never passed to this method."""
+        tests = question.get("visible_tests", [])
+        if not tests:
+            return ""
+        if "class_name" in question:
+            examples = [CodeBenchmark._format_stateful_example(question["class_name"], t) for t in tests]
+        else:
+            examples = [CodeBenchmark._format_function_example(question["function_name"], t) for t in tests]
+        return "Examples:\n" + "\n\n".join(examples) + "\n\n"
+
+    @staticmethod
     def build_prompt(question: dict) -> str:
+        examples = CodeBenchmark._build_examples_block(question)
         if "class_name" in question:
             return (
-                f"{question['prompt']}\n\n"
+                f"{question['prompt']}\n\n{examples}"
                 f"Respond with only the class definition for {question['class_name']}, "
                 "as a single Python code block, with no explanation."
             )
         return (
-            f"{question['prompt']}\n\n"
+            f"{question['prompt']}\n\n{examples}"
             f"Respond with only the function definition for {question['function_name']}, "
             "as a single Python code block, with no explanation."
         )
@@ -262,6 +296,7 @@ class CodeBenchmark:
             return results
 
         crash_cache = Shared.load_crash_cache(CodeBenchmark.CODE_CRASH_CACHE)
+        bank_hash = Shared.file_hash(CodeBenchmark.CODE_DATA_PATH)
 
         for model in models:
             tag   = model["tag"]
@@ -279,13 +314,15 @@ class CodeBenchmark:
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, CodeBenchmark.CODE_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, CodeBenchmark.CODE_CRASH_CACHE,
+                                                       expected_bank_hash=bank_hash)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
 
                 if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
-                                           crash_cache, CodeBenchmark.CODE_CRASH_CACHE):
+                                           crash_cache, CodeBenchmark.CODE_CRASH_CACHE,
+                                           crash_extra={"bank_hash": bank_hash}):
                     Shared.unload_model(tag)
                     continue
 
@@ -297,7 +334,8 @@ class CodeBenchmark:
                 for i, q in enumerate(questions):
                     samples, status = Shared.run_measured_calls(
                         1, lambda run_i, q=q: CodeBenchmark._ask(tag, q), tag, crash_cache,
-                        CodeBenchmark.CODE_CRASH_CACHE, f"answering {q['id']}")
+                        CodeBenchmark.CODE_CRASH_CACHE, f"answering {q['id']}",
+                        crash_extra={"bank_hash": bank_hash})
                     result, raw = samples[0] if samples else (None, "")
                     answers[q["id"]] = result
                     raw_responses[q["id"]] = raw

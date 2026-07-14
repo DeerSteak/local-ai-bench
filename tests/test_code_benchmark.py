@@ -18,6 +18,70 @@ def test_build_prompt_dispatches_to_class_definition_for_stateful_question():
     assert "function definition" not in prompt
 
 
+def test_build_prompt_without_visible_tests_key_has_no_examples_block():
+    q = {"prompt": "Write a function sum_two(a, b) ...", "function_name": "sum_two"}
+    assert "Examples:" not in CodeBenchmark.build_prompt(q)
+
+
+def test_build_prompt_renders_visible_tests_as_worked_examples():
+    q = {
+        "prompt": "Write a function sum_two(a, b) ...",
+        "function_name": "sum_two",
+        "visible_tests": [{"args": [2, 3], "expected": 5}, {"args": [-1, 1], "expected": 0}],
+        "hidden_tests": [{"args": [100, 200], "expected": 300}],
+    }
+    prompt = CodeBenchmark.build_prompt(q)
+    assert "Examples:" in prompt
+    assert "sum_two(2, 3) == 5" in prompt
+    assert "sum_two(-1, 1) == 0" in prompt
+
+
+def test_build_prompt_never_leaks_hidden_tests():
+    q = {
+        "prompt": "Write a function sum_two(a, b) ...",
+        "function_name": "sum_two",
+        "visible_tests": [{"args": [2, 3], "expected": 5}],
+        "hidden_tests": [{"args": [999, 999], "expected": 1998}],
+    }
+    prompt = CodeBenchmark.build_prompt(q)
+    assert "999" not in prompt
+    assert "1998" not in prompt
+
+
+def test_build_prompt_renders_stateful_visible_tests_as_worked_examples():
+    q = {
+        "prompt": "Implement a class Stack ...",
+        "class_name": "Stack",
+        "visible_tests": [
+            {"ops": [["push", [1]], ["pop", []]], "expected": [None, 1]},
+        ],
+        "hidden_tests": [
+            {"init": [], "ops": [["push", [999]]], "expected": [None]},
+        ],
+    }
+    prompt = CodeBenchmark.build_prompt(q)
+    assert "Examples:" in prompt
+    assert "obj = Stack()" in prompt
+    assert "obj.push(1)" in prompt
+    assert "obj.pop()" in prompt
+    assert "999" not in prompt
+
+
+def test_build_prompt_stateful_example_uses_init_args():
+    q = {
+        "prompt": "Implement a class LRUCache(capacity) ...",
+        "class_name": "LRUCache",
+        "visible_tests": [
+            {"init": [2], "ops": [["put", [1, 1]], ["get", [1]]], "expected": [None, 1]},
+        ],
+        "hidden_tests": [{"init": [2], "ops": [["get", [9]]], "expected": [-1]}],
+    }
+    prompt = CodeBenchmark.build_prompt(q)
+    assert "obj = LRUCache(2)" in prompt
+    assert "obj.put(1, 1)" in prompt
+    assert "obj.get(1)" in prompt
+
+
 # ── extract_code ──
 
 def test_extract_code_pulls_fenced_python_block():
@@ -332,3 +396,13 @@ def test_load_questions_dataset_has_stateful_problems():
     stateful = [q for q in questions if "class_name" in q]
     assert len(stateful) > 0
     assert {q["category"] for q in stateful} == {"stateful"}
+
+
+def test_build_prompt_never_reads_hidden_tests_key():
+    # Stronger than a substring scan (which small shared values like 0/1/True
+    # could pass by coincidence): build_prompt must not even look up
+    # "hidden_tests", proven by deleting the key and confirming no KeyError,
+    # across every real question in both problem shapes.
+    for q in CodeBenchmark.load_questions():
+        q_without_hidden = {k: v for k, v in q.items() if k != "hidden_tests"}
+        CodeBenchmark.build_prompt(q_without_hidden)  # raises if it were accessed

@@ -18,6 +18,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 - [Accuracy](#accuracy)
   - [Math](#math)
   - [Code](#code)
+  - [Bank versioning](#bank-versioning)
 
 ## LLM
 
@@ -117,9 +118,9 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 ## Accuracy
 
-Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 75 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
 
-The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — each with 7–8 questions. A model's free-form reply is scanned for the first standalone letter (A–D) that's actually one of that question's choices, so a model that reasons out loud before answering ("...so the answer is B") is still scored correctly; a reply with no matching letter counts as unanswered (wrong).
+The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — with introductory items retained for score continuity and a substantially harder second half. Correct-answer positions are balanced across A–D to prevent a position-only strategy from producing a misleading score. A model's free-form reply is scanned for the first standalone letter (A–D) that's actually one of that question's choices, so a model that reasons out loud before answering ("...so the answer is B") is still scored correctly; a reply with no matching letter counts as unanswered (wrong).
 
 Results report overall accuracy plus a per-category breakdown, so a model that's strong on arithmetic but weak on commonsense reasoning (or vice versa) is visible rather than averaged away.
 
@@ -127,7 +128,7 @@ Run just this test with `--tests mcq`.
 
 ### Math
 
-Every LLM model answers a fixed bank of 50 math word problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) covers eight categories — arithmetic, algebra, geometry, percentages, probability, sequences, logic, and word problems.
+Every LLM model answers a fixed bank of 150 math problems once each (temperature 0, same deterministic-decoding reasoning as MCQ, so this workload also ignores `--runs`), asked to respond with only the final numeric answer. The question bank (`scripts/data/math_questions.json`) spans 30 categories, from arithmetic and word problems through combinatorics, number theory, calculus, linear algebra, statistics, complex numbers, and conditional probability.
 
 A model's free-form reply is scanned for the *last* number it states, not the first — a model that reasons out loud before answering ("347 + 589 = 936, so the answer is 936") states its final answer last, and intermediate numbers earlier in the reasoning shouldn't be mistaken for it. Each answer is checked against the question's known numeric answer within its own per-question tolerance (most are exact); a reply with no number counts as unanswered (wrong).
 
@@ -137,11 +138,11 @@ Run just this test with `--tests math`.
 
 ### Code
 
-Every LLM model answers a fixed bank of 28 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`). The question bank (`scripts/data/code_problems.json`) covers nine categories — arithmetic, string, algorithms, list, number_theory, search, matrix, stack, and stateful — each problem with a handful of visible test cases the model can see plus additional hidden test cases it can't.
+Every LLM model answers a fixed bank of 60 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`). The question bank (`scripts/data/code_problems.json`) covers 13 categories — algorithms, arithmetic, divide-and-conquer, dynamic programming, graph, intervals, list, matrix, number theory, search, stack, stateful, and string — with visible and hidden expected-output cases for each problem.
 
 Problems come in two shapes:
 - **Function problems** (most of the bank): the model writes one function matching a given name and signature. Each test case is an `args`/`expected` pair.
-- **Stateful problems** (category `stateful` — a stack, a queue, an LRU cache): the model writes a class instead, and each test case is a scenario: construct a fresh instance, call a sequence of methods in order, and compare every return value against an expected sequence. A fresh instance is used per test case, so one scenario's state can never leak into another.
+- **Stateful problems** (category `stateful` — including caches, tries, disjoint sets, and streaming median structures): the model writes a class instead, and each test case is a scenario: construct a fresh instance, call a sequence of methods in order, and compare every return value against an expected sequence. A fresh instance is used per test case, so one scenario's state can never leak into another.
 
 The model's reply is parsed for a fenced Python code block (falling back to the whole reply if it wrote bare code without fencing), then that code is run against every one of the problem's visible *and* hidden test cases in an isolated subprocess — so a model's bad output (infinite loop, crash, syntax error) can't hang or corrupt the benchmark itself, using the same process-isolation-plus-timeout approach as HumanEval-style code-eval harnesses rather than a hardened security sandbox. A problem counts as correct only if every test case passes; a reply with no extractable code, or code that fails even one test case, counts as wrong.
 
@@ -150,6 +151,16 @@ Results report overall accuracy plus a per-category breakdown, same as MCQ/math.
 Run just this test with `--tests code`.
 
 Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, and code, and de-duplicates against any of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join this group in the future. See [CLI Reference](cli-reference.md).
+
+### Bank versioning
+
+Question banks grow and change over time (the MCQ and math banks each doubled in size in one revision, for example), so a raw correct count from one results file is never safely comparable to another without knowing which version of the bank produced it — 40/50 and 40/150 both look like "40 correct" but mean very different things. To make that comparison safe:
+
+- Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `code`) at the time of that run, computed from the raw bytes of `scripts/data/*_questions.json` / `code_problems.json` (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
+- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.code_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried.
+- Accuracy percentages (as opposed to raw correct counts) stay meaningfully comparable across bank versions, since they're already normalized by the bank's size at that time.
+
+`--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration: instead of the full bank, it runs a deterministic, stratified N-question subset — every category still represented, and the same N always draws the same questions for a given bank version. The exact sampled question IDs are recorded in the results JSON under `sample_ids`, so a sampled run is reproducible and auditable, but it's never meant to be compared against a full-bank run or published as a real score.
 
 ---
 

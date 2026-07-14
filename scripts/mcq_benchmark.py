@@ -123,6 +123,7 @@ class MCQBenchmark:
             return results
 
         crash_cache = Shared.load_crash_cache(MCQBenchmark.MCQ_CRASH_CACHE)
+        bank_hash = Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH)
 
         for model in models:
             tag   = model["tag"]
@@ -140,13 +141,15 @@ class MCQBenchmark:
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, MCQBenchmark.MCQ_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, MCQBenchmark.MCQ_CRASH_CACHE,
+                                                       expected_bank_hash=bank_hash)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
 
                 if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
-                                           crash_cache, MCQBenchmark.MCQ_CRASH_CACHE):
+                                           crash_cache, MCQBenchmark.MCQ_CRASH_CACHE,
+                                           crash_extra={"bank_hash": bank_hash}):
                     Shared.unload_model(tag)
                     continue
 
@@ -158,7 +161,8 @@ class MCQBenchmark:
                 for i, q in enumerate(questions):
                     samples, status = Shared.run_measured_calls(
                         1, lambda run_i, q=q: MCQBenchmark._ask(tag, q), tag, crash_cache,
-                        MCQBenchmark.MCQ_CRASH_CACHE, f"answering {q['id']}")
+                        MCQBenchmark.MCQ_CRASH_CACHE, f"answering {q['id']}",
+                        crash_extra={"bank_hash": bank_hash})
                     given, raw = samples[0] if samples else (None, "")
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw

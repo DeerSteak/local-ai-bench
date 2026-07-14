@@ -525,6 +525,27 @@
     "tolerance": 0
   },
   {
+    "id": "math_076",
+    "category": "modular_arithmetic",
+    "prompt": "What is the smallest positive integer x such that x leaves remainder 2 when divided by 3, remainder 3 when divided by 5, and remainder 2 when divided by 7?",
+    "answer": 23,
+    "tolerance": 0
+  },
+  {
+    "id": "math_077",
+    "category": "combinatorics",
+    "prompt": "Among the integers from 1 through 200 inclusive, how many are divisible by 4 or by 6 but not by both?",
+    "answer": 51,
+    "tolerance": 0
+  },
+  {
+    "id": "math_078",
+    "category": "algebra",
+    "prompt": "A monic cubic polynomial has roots 2, -3, and 5. What is the coefficient of x in the expanded polynomial?",
+    "answer": -11,
+    "tolerance": 0
+  },
+  {
     "id": "math_079",
     "category": "irrelevant_information",
     "prompt": "A bookstore has 200 books, 40 chairs, and 6 employees. It sells 35 books on Monday and 28 books on Tuesday. How many books remain?",
@@ -572,5 +593,460 @@
     "prompt": "What are the last two digits of 3^20?",
     "answer": 1,
     "tolerance": 0
+  },
+  {
+    "id": "math_086",
+    "category": "algebra",
+    "prompt": "Solve for x: (x + 1)/(x - 2) = 3/2.",
+    "answer": 8,
+    "tolerance": 0
+  },
+  {
+    "id": "math_087",
+    "category": "algebra",
+    "prompt": "The roots of x^3 - 6x^2 + 11x - 6 = 0 are r, s, and t. What is 1/r + 1/s + 1/t? Give a decimal rounded to six places.",
+    "answer": 1.833333,
+    "tolerance": 0.0000005
+  },
+  {
+    "id": "math_088",
+    "category": "algebra",
+    "prompt": "What is the larger real solution of |2x - 3| + |x + 1| = 7?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_089",
+    "category": "algebra",
+    "prompt": "The equation 4^x - 5(2^x) + 4 = 0 has two real solutions. What is their sum?",
+    "answer": 2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_090",
+    "category": "algebra",
+    "prompt": "For which smaller value of k does x^2 + (k - 3)x + k = 0 have a repeated real root?",
+    "answer": 1,
+    "tolerance": 0
+  },
+  {
+    "id": "math_091",
+    "category": "number_theory",
+    "prompt": "How many integers from 1 through 840 inclusive are relatively prime to 840?",
+    "answer": 192,
+    "tolerance": 0
+  },
+  {
+    "id": "math_092",
+    "category": "modular_arithmetic",
+    "prompt": "What is the least positive multiplicative inverse of 17 modulo 43?",
+    "answer": 38,
+    "tolerance": 0
+  },
+  {
+    "id": "math_093",
+    "category": "number_theory",
+    "prompt": "How many trailing zeros does 100! have when written in base 12?",
+    "answer": 48,
+    "tolerance": 0
+  },
+  {
+    "id": "math_094",
+    "category": "number_theory",
+    "prompt": "What is the sum of all positive divisors of 360?",
+    "answer": 1170,
+    "tolerance": 0
+  },
+  {
+    "id": "math_095",
+    "category": "number_theory",
+    "prompt": "Using F_0 = 0 and F_1 = 1 for the Fibonacci sequence, what is gcd(F_48, F_18)?",
+    "answer": 8,
+    "tolerance": 0
+  },
+  {
+    "id": "math_096",
+    "category": "combinatorics",
+    "prompt": "In how many permutations of 6 distinct objects is no object left in its original position?",
+    "answer": 265,
+    "tolerance": 0
+  },
+  {
+    "id": "math_097",
+    "category": "combinatorics",
+    "prompt": "How many binary necklaces of length 7 are there, where two binary strings are considered the same if one is a cyclic rotation of the other? Reflections are considered distinct.",
+    "answer": 20,
+    "tolerance": 0
+  },
+  {
+    "id": "math_098",
+    "category": "combinatorics",
+    "prompt": "How many onto functions are there from a 5-element labeled set to a 3-element labeled set?",
+    "answer": 150,
+    "tolerance": 0
+  },
+  {
+    "id": "math_099",
+    "category": "combinatorics",
+    "prompt": "How many lattice paths from (0,0) to (6,6), using only steps one unit right or one unit up, do not pass through (3,3)?",
+    "answer": 524,
+    "tolerance": 0
+  },
+  {
+    "id": "math_100",
+    "category": "combinatorics",
+    "prompt": "What is the coefficient of x^7 in (1 + x)^8(1 + x^2)^3?",
+    "answer": 352,
+    "tolerance": 0
+  },
+  {
+    "id": "math_101",
+    "category": "probability",
+    "prompt": "A box contains 4 red and 6 blue balls. Three balls are drawn without replacement. What is the probability, as a percent, of drawing exactly 2 red balls?",
+    "answer": 30,
+    "tolerance": 0
+  },
+  {
+    "id": "math_102",
+    "category": "expected_value",
+    "prompt": "A cereal box contains one of 5 equally likely prizes, independently selected for each box. What is the expected number of boxes needed to collect all 5 prizes? Round to four decimal places.",
+    "answer": 11.4167,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_103",
+    "category": "probability",
+    "prompt": "Two fair six-sided dice are rolled. Given that their sum is even, what is the probability, as a percent rounded to four decimal places, that at least one die shows 6?",
+    "answer": 27.7778,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_104",
+    "category": "probability",
+    "prompt": "Urn A is chosen with probability 0.4 and contains 3 red and 1 blue ball. Urn B is chosen with probability 0.6 and contains 1 red and 3 blue balls. One ball from the chosen urn is red. What is the probability, as a percent rounded to four decimal places, that Urn A was chosen?",
+    "answer": 66.6667,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_105",
+    "category": "probability",
+    "prompt": "A uniformly random permutation of 5 distinct objects is selected. What is the probability, as a percent rounded to four decimal places, that it has no fixed points?",
+    "answer": 36.6667,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_106",
+    "category": "geometry",
+    "prompt": "A triangle has side lengths 13, 14, and 15. What is its area?",
+    "answer": 84,
+    "tolerance": 0
+  },
+  {
+    "id": "math_107",
+    "category": "geometry",
+    "prompt": "What is the circumradius of a right triangle whose legs have lengths 6 and 8?",
+    "answer": 5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_108",
+    "category": "geometry",
+    "prompt": "A chord of length 12 lies in a circle of radius 10. What is the perpendicular distance from the center of the circle to the chord?",
+    "answer": 8,
+    "tolerance": 0
+  },
+  {
+    "id": "math_109",
+    "category": "geometry",
+    "prompt": "A regular hexagon has side length 2. What is the sum of the lengths of all its diagonals? Round to two decimal places.",
+    "answer": 32.78,
+    "tolerance": 0.005
+  },
+  {
+    "id": "math_110",
+    "category": "coordinate_geometry",
+    "prompt": "A triangle has vertices (-2,1), (4,7), and (7,-2). What is the x-coordinate of its centroid?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_111",
+    "category": "geometry",
+    "prompt": "A convex polygon has 35 diagonals. How many sides does it have?",
+    "answer": 10,
+    "tolerance": 0
+  },
+  {
+    "id": "math_112",
+    "category": "geometry",
+    "prompt": "A right circular conical frustum has height 4 and radii 3 and 6. Using pi = 3.14, what is its volume?",
+    "answer": 263.76,
+    "tolerance": 0.005
+  },
+  {
+    "id": "math_113",
+    "category": "calculus",
+    "prompt": "For x > 0, let f(x) = x^x. What is f'(1/e)?",
+    "answer": 0,
+    "tolerance": 0
+  },
+  {
+    "id": "math_114",
+    "category": "calculus",
+    "prompt": "Evaluate the definite integral of x*e^(x^2) from x = 0 to x = 1, using e = 2.71828. Round to five decimal places.",
+    "answer": 0.85914,
+    "tolerance": 0.000005
+  },
+  {
+    "id": "math_115",
+    "category": "optimization",
+    "prompt": "A closed right circular cylinder has fixed volume 250*pi. What radius minimizes its total surface area?",
+    "answer": 5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_116",
+    "category": "calculus",
+    "prompt": "Evaluate the limit as x approaches positive infinity of sqrt(x^2 + 3x) - x.",
+    "answer": 1.5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_117",
+    "category": "sequences",
+    "prompt": "What is the sum from n = 1 to infinity of n/2^n?",
+    "answer": 2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_118",
+    "category": "calculus",
+    "prompt": "The function y satisfies dy/dx = 2xy and y(0) = 3. Using e = 2.71828, what is y(1), rounded to five decimal places?",
+    "answer": 8.15484,
+    "tolerance": 0.000005
+  },
+  {
+    "id": "math_119",
+    "category": "linear_algebra",
+    "prompt": "What is the determinant of the matrix with rows [2,1,0], [-1,3,2], and [4,0,1]?",
+    "answer": 15,
+    "tolerance": 0
+  },
+  {
+    "id": "math_120",
+    "category": "linear_algebra",
+    "prompt": "What is the larger eigenvalue of the matrix with rows [4,1] and [2,3]?",
+    "answer": 5,
+    "tolerance": 0
+  },
+  {
+    "id": "math_121",
+    "category": "linear_algebra",
+    "prompt": "A 2 by 2 matrix A has trace 7 and determinant 10. What is trace(A^2)?",
+    "answer": 29,
+    "tolerance": 0
+  },
+  {
+    "id": "math_122",
+    "category": "statistics",
+    "prompt": "A group of 20 observations has mean 70, and a disjoint group of 30 observations has mean 80. What is the mean of all 50 observations combined?",
+    "answer": 76,
+    "tolerance": 0
+  },
+  {
+    "id": "math_123",
+    "category": "statistics",
+    "prompt": "What is the population variance of the data set 2, 4, 4, 4, 5, 5, 7, 9?",
+    "answer": 4,
+    "tolerance": 0
+  },
+  {
+    "id": "math_124",
+    "category": "statistics",
+    "prompt": "For the three data points (1,2), (2,5), and (3,8), what is the slope of the least-squares regression line of y on x?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_125",
+    "category": "statistics",
+    "prompt": "The data values are 1, 4, 6, 9, and 20. Each value x is transformed to 3x - 2. What is the median of the transformed data?",
+    "answer": 16,
+    "tolerance": 0
+  },
+  {
+    "id": "math_126",
+    "category": "probability",
+    "prompt": "A binomial random variable has n = 20 and p = 0.3. What is its variance?",
+    "answer": 4.2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_127",
+    "category": "rates",
+    "prompt": "A person takes 60 seconds to walk up a stationary escalator. Standing still on the moving escalator takes 90 seconds. Assuming constant rates, how many seconds will walking on the moving escalator take?",
+    "answer": 36,
+    "tolerance": 0
+  },
+  {
+    "id": "math_128",
+    "category": "work_rates",
+    "prompt": "Pipe A fills a tank in 4 hours, pipe B fills it in 6 hours, and a leak empties it in 12 hours. Starting empty with all three open, how many hours are needed to fill the tank?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_129",
+    "category": "mixtures",
+    "prompt": "A 100-liter tank contains a well-mixed 30% salt solution. Twenty liters are removed and replaced with water; after mixing, this operation is repeated once. What percent of the final mixture is salt?",
+    "answer": 19.2,
+    "tolerance": 0
+  },
+  {
+    "id": "math_130",
+    "category": "compound_growth",
+    "prompt": "An investment doubles in 8 years at a constant effective annual compound rate. What is that annual rate as a percent, rounded to four decimal places?",
+    "answer": 9.0508,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_131",
+    "category": "finance",
+    "prompt": "What is the present value of $1,100 received two years from now if the effective annual interest rate is 10%? Round to the nearest cent.",
+    "answer": 909.09,
+    "tolerance": 0.005
+  },
+  {
+    "id": "math_132",
+    "category": "sequences",
+    "prompt": "A sequence is defined by a_1 = 2 and a_n = 3a_(n-1) + 1 for n >= 2. What is a_5?",
+    "answer": 202,
+    "tolerance": 0
+  },
+  {
+    "id": "math_133",
+    "category": "sequences",
+    "prompt": "A geometric sequence has positive common ratio, third term 12, and seventh term 192. What is its tenth term?",
+    "answer": 1536,
+    "tolerance": 0
+  },
+  {
+    "id": "math_134",
+    "category": "sequences",
+    "prompt": "Evaluate the sum from n = 1 through 99 of 1/[n(n+1)]. Give the decimal value.",
+    "answer": 0.99,
+    "tolerance": 0
+  },
+  {
+    "id": "math_135",
+    "category": "sequences",
+    "prompt": "A sequence is defined by a_0 = 1 and a_n = a_(n-1) + 2n for n >= 1. What is a_10?",
+    "answer": 111,
+    "tolerance": 0
+  },
+  {
+    "id": "math_136",
+    "category": "geometry",
+    "prompt": "What is the smaller angle in degrees between the hour and minute hands of a clock at 3:40?",
+    "answer": 130,
+    "tolerance": 0
+  },
+  {
+    "id": "math_137",
+    "category": "word_problems",
+    "prompt": "Six years ago, A was twice B's age. Six years from now, A will be one and a half times B's age. How old is A now?",
+    "answer": 30,
+    "tolerance": 0
+  },
+  {
+    "id": "math_138",
+    "category": "combinatorics",
+    "prompt": "At a meeting, every pair of attendees shakes hands exactly once, for a total of 66 handshakes. How many attendees are present?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_139",
+    "category": "logic",
+    "prompt": "A drawer contains socks of 5 colors, with at least 3 socks of each color. What is the minimum number of socks that must be drawn without looking to guarantee 3 socks of one color?",
+    "answer": 11,
+    "tolerance": 0
+  },
+  {
+    "id": "math_140",
+    "category": "units",
+    "prompt": "Convert 72 kilometers per hour to meters per second.",
+    "answer": 20,
+    "tolerance": 0
+  },
+  {
+    "id": "math_141",
+    "category": "set_theory",
+    "prompt": "Finite sets A and B have 40 and 30 elements respectively, and their intersection has 15 elements. How many elements are in their union?",
+    "answer": 55,
+    "tolerance": 0
+  },
+  {
+    "id": "math_142",
+    "category": "number_theory",
+    "prompt": "What is the base-10 value of the binary number 101101?",
+    "answer": 45,
+    "tolerance": 0
+  },
+  {
+    "id": "math_143",
+    "category": "logarithms",
+    "prompt": "How many decimal digits are in 7^50?",
+    "answer": 43,
+    "tolerance": 0
+  },
+  {
+    "id": "math_144",
+    "category": "complex_numbers",
+    "prompt": "What is the real part of (1 + i)^8?",
+    "answer": 16,
+    "tolerance": 0
+  },
+  {
+    "id": "math_145",
+    "category": "complex_numbers",
+    "prompt": "What is the real part of the sum of all seven complex seventh roots of unity?",
+    "answer": 0,
+    "tolerance": 0
+  },
+  {
+    "id": "math_146",
+    "category": "modular_arithmetic",
+    "prompt": "What is the remainder when 11^123 is divided by 17?",
+    "answer": 12,
+    "tolerance": 0
+  },
+  {
+    "id": "math_147",
+    "category": "number_theory",
+    "prompt": "How many ordered pairs of non-negative integers (x,y) satisfy 3x + 5y = 30?",
+    "answer": 3,
+    "tolerance": 0
+  },
+  {
+    "id": "math_148",
+    "category": "optimization",
+    "prompt": "Positive real numbers x and y satisfy x + y = 20. What is the maximum possible value of xy?",
+    "answer": 100,
+    "tolerance": 0
+  },
+  {
+    "id": "math_149",
+    "category": "expected_value",
+    "prompt": "Two fair six-sided dice are rolled. What is the expected value of the larger result, rounded to four decimal places?",
+    "answer": 4.4722,
+    "tolerance": 0.00005
+  },
+  {
+    "id": "math_150",
+    "category": "probability",
+    "prompt": "A two-state Markov chain starts in state A. Each step, it switches states with probability 0.3 and stays put with probability 0.7. What is the probability, as a percent, that it is in state A after 4 steps?",
+    "answer": 51.28,
+    "tolerance": 0.0000001
   }
 ]
