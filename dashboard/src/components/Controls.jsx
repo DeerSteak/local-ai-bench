@@ -48,27 +48,31 @@ export default function Controls({
         </div>
       )}
 
-      <div className={styles.dividerGroup}>
-        <div className={styles.controlLabel}>Chart Style</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["bar", "Bar"], ["line", "Line"]].map(([value, label]) => (
-            <button key={value} className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
-              {label}
-            </button>
-          ))}
+      {section !== "accuracy" && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Chart Style</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["bar", "Bar"], ["line", "Line"]].map(([value, label]) => (
+              <button key={value} className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className={styles.dividerGroup}>
-        <div className={styles.controlLabel}>Group By</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
-            <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
-              {label}
-            </button>
-          ))}
+      {section !== "accuracy" && (
+        <div className={styles.dividerGroup}>
+          <div className={styles.controlLabel}>Group By</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
+              <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {groupBy === "system" && (section === "llm" || section === "llm_conversation") && (
         <div className={styles.dividerGroup}>
@@ -84,7 +88,11 @@ export default function Controls({
       )}
 
       {files.length > 0 && (
-        <div className={styles.dividerGroup}>
+        <div className={styles.rowBreak} />
+      )}
+
+      {files.length > 0 && (
+        <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Labels</div>
           <div className={styles.labelFields}>
             {files.map((f, i) => (
@@ -106,8 +114,10 @@ export default function Controls({
         </div>
       )}
 
+      <div className={styles.rowBreak} />
+
       {(section === "llm" || section === "llm_conversation" || section === "accuracy") && allModels.length > 0 && (
-        <div className={styles.dividerGroup}>
+        <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>
             {allModels.map(m => {
@@ -134,7 +144,7 @@ export default function Controls({
       )}
 
       {section === "images" && allImageModels.length > 0 && (
-        <div className={styles.dividerGroup}>
+        <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>
             {allImageModels.map(m => {
@@ -161,7 +171,7 @@ export default function Controls({
       )}
 
       {section === "embeddings" && allEmbedModels.length > 0 && (
-        <div className={styles.dividerGroup}>
+        <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>
             {allEmbedModels.map(m => {
@@ -187,7 +197,7 @@ export default function Controls({
         </div>
       )}
 
-      <div className={styles.endGroup}>
+      <div className={`${styles.endGroup} ${styles.dividerGroup}`}>
         <div>
           <div className={styles.controlLabel}>Chart Width</div>
           <div className={styles.widthRow}>

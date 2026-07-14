@@ -11,6 +11,21 @@
   padding-left: 24px;
 }
 
+/* Same spacing as .dividerGroup but no left border/padding — for groups that
+   always start a fresh row (via .rowBreak) rather than sitting inline next
+   to a left neighbor, where the divider would just be a stray vertical line. */
+.freshRowGroup {
+  padding-left: 0;
+}
+
+/* Zero-height full-width flex item — forces everything after it in the
+   wrapping Controls row onto a new line, regardless of how many pill groups
+   happen to precede it (e.g. Chart Style/Group By hidden on Accuracy). */
+.rowBreak {
+  flex-basis: 100%;
+  height: 0;
+}
+
 .filterGroup {
   display: flex;
   gap: 12px;
