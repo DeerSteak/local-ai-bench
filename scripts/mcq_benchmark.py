@@ -193,6 +193,8 @@ class MCQBenchmark:
                         # old behavior of abandoning the rest of the bank outright
                         # (and would incorrectly zero out everything after one bad
                         # question for a model that's merely slow, not stuck).
+                        Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
+                                    "scoring as wrong and continuing")
                         timed_out_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"

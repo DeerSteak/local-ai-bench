@@ -390,6 +390,8 @@ class CodeBenchmark:
                         # A single stuck question is scored wrong and the run moves
                         # on — see MCQBenchmark.run for why this replaced abandoning
                         # the rest of the bank on the first timeout.
+                        Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
+                                    "scoring as wrong and continuing")
                         timed_out_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"

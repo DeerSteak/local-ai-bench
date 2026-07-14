@@ -730,7 +730,10 @@ class Shared:
             except Exception as e:
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
-                    Shared.err(f"Run {run_i+1} timed out — stopping remaining runs for {tag}")
+                    # What happens next (abandon the rest of this tag vs. score this
+                    # one attempt wrong and move on) is caller-specific, so this only
+                    # reports the timeout itself — not what the caller does about it.
+                    Shared.err(f"{tag}: timed out {what} (run {run_i+1})")
                     partial_text = getattr(e, "partial_text", "")
                     return samples, "timed_out", partial_text
                 Shared.err(f"Run {run_i+1} failed: {e}")
