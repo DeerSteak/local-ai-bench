@@ -4,6 +4,7 @@ setlocal enabledelayedexpansion
 set SCRIPT_DIR=%~dp0
 set DASHBOARD_DIR=%SCRIPT_DIR%dashboard
 set DIST_DIR=%DASHBOARD_DIR%\dist
+set RESULTS_DIR=%SCRIPT_DIR%results
 set PORT=3000
 set REBUILD=0
 
@@ -72,5 +73,9 @@ echo Dashboard -^> http://localhost:%PORT%
 echo Drop your results JSON files onto the page to analyze them.
 echo Ctrl-C to stop.
 echo.
+
+if exist "%RESULTS_DIR%" (
+    start "" explorer "%RESULTS_DIR%"
+)
 
 call npm --prefix "%DASHBOARD_DIR%" run preview -- --port %PORT% --open

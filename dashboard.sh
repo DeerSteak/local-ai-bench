@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$SCRIPT_DIR/dashboard"
 DIST_DIR="$DASHBOARD_DIR/dist"
+RESULTS_DIR="$SCRIPT_DIR/results"
 PORT=3000
 REBUILD=0
 
@@ -53,5 +54,13 @@ echo "Dashboard -> http://localhost:$PORT"
 echo "Drop your results JSON files onto the page to analyze them."
 echo "Ctrl-C to stop."
 echo
+
+if [ -d "$RESULTS_DIR" ]; then
+    if command -v open >/dev/null 2>&1; then
+        open "$RESULTS_DIR"
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$RESULTS_DIR" >/dev/null 2>&1 &
+    fi
+fi
 
 exec npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open
