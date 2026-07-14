@@ -516,14 +516,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 mcq_questions = Shared.stratified_sample(mcq_questions, args.sample)
                 results["sample_ids"]["mcq"] = [q["id"] for q in mcq_questions]
 
+            mcq_answers_path = sidecar_path(out_path, "answers_mcq_")
             results["mcq"] = MCQBenchmark().run(
                 models=llm_models,
                 questions=mcq_questions,
                 warmup_runs=args.warmup,
                 save_fn=_mcq_save,
-                answers_path=sidecar_path(out_path, "answers_mcq_"),
+                answers_path=mcq_answers_path,
             )
             _checkpoint("MCQ done")
+            Shared.ok(f"Answers saved to: {mcq_answers_path}")
 
         # ── Math accuracy ──────────────────────────────────────────────────────
         if "math" in args.tests:
@@ -536,14 +538,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 math_questions = Shared.stratified_sample(math_questions, args.sample)
                 results["sample_ids"]["math"] = [q["id"] for q in math_questions]
 
+            math_answers_path = sidecar_path(out_path, "answers_math_")
             results["math"] = MathBenchmark().run(
                 models=llm_models,
                 questions=math_questions,
                 warmup_runs=args.warmup,
                 save_fn=_math_save,
-                answers_path=sidecar_path(out_path, "answers_math_"),
+                answers_path=math_answers_path,
             )
             _checkpoint("Math done")
+            Shared.ok(f"Answers saved to: {math_answers_path}")
 
         # ── Code accuracy ──────────────────────────────────────────────────────
         if "code" in args.tests:
@@ -556,14 +560,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 code_questions = Shared.stratified_sample(code_questions, args.sample)
                 results["sample_ids"]["code"] = [q["id"] for q in code_questions]
 
+            code_answers_path = sidecar_path(out_path, "answers_code_")
             results["code"] = CodeBenchmark().run(
                 models=llm_models,
                 questions=code_questions,
                 warmup_runs=args.warmup,
                 save_fn=_code_save,
-                answers_path=sidecar_path(out_path, "answers_code_"),
+                answers_path=code_answers_path,
             )
             _checkpoint("Code done")
+            Shared.ok(f"Answers saved to: {code_answers_path}")
 
         # ── Embeddings ─────────────────────────────────────────────────────────
         if "emb" in args.tests:
