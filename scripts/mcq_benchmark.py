@@ -45,10 +45,15 @@ class MCQBenchmark:
     def parse_answer(response_text: str, valid_choices) -> str | None:
         """Extract the model's chosen letter from free-form text, or None.
 
-        Scans for the first standalone letter that's a valid choice, so a
-        model reasoning out loud before answering ("... so the answer is B")
-        still scores, while a stray letter that isn't a valid choice ("A" in
-        "As an AI...") is skipped.
+        Takes the *last* standalone valid letter, not the first — MCQ_NUM_PREDICT
+        is unbounded specifically so a reasoning model has room to think before
+        answering, and that reasoning routinely walks through several options by
+        letter ("A is wrong because... B is wrong because... so the answer is
+        C") before landing on a final choice. Taking the first letter would grab
+        a rejected option instead of the model's actual answer; a stray letter
+        that isn't a valid choice for this question ("A" in "As an AI...") is
+        skipped regardless of position. Mirrors MathBenchmark.parse_answer's
+        same last-not-first reasoning for the same reason.
         """
         if not response_text:
             return None
@@ -60,11 +65,12 @@ class MCQBenchmark:
         if len(stripped) == 1 and stripped.upper() in valid:
             return stripped.upper()
 
+        found = None
         for match in MCQBenchmark._LETTER_RE.finditer(response_text):
             letter = match.group(1)
             if letter in valid:
-                return letter
-        return None
+                found = letter
+        return found
 
     @staticmethod
     def _ask(tag: str, question: dict) -> tuple[str | None, str]:

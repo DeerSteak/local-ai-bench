@@ -104,6 +104,55 @@ def test_extract_code_returns_empty_for_empty_response():
     assert CodeBenchmark.extract_code(None) == ""
 
 
+def test_extract_code_takes_last_block_when_multiple_are_present():
+    # A reasoning model sketching a draft before its real answer — the draft
+    # (first block) must not be graded instead of the final answer (last).
+    text = (
+        "Let me sketch this out first:\n"
+        "```python\ndef f(x):\n    pass  # TODO\n```\n"
+        "Now here's the real implementation:\n"
+        "```python\ndef f(x):\n    return x * 2\n```"
+    )
+    assert CodeBenchmark.extract_code(text) == "def f(x):\n    return x * 2"
+
+
+# ── _values_close ──
+
+def test_values_close_exact_match_for_ints_and_strings():
+    assert CodeBenchmark._values_close(5, 5) is True
+    assert CodeBenchmark._values_close("abc", "abc") is True
+    assert CodeBenchmark._values_close(5, 6) is False
+    assert CodeBenchmark._values_close("abc", "abd") is False
+
+
+def test_values_close_tolerates_float_rounding_difference():
+    # The classic floating-point example: 0.1 + 0.2 != 0.3 under exact ==.
+    assert CodeBenchmark._values_close(0.1 + 0.2, 0.3) is True
+
+
+def test_values_close_rejects_float_difference_beyond_tolerance():
+    assert CodeBenchmark._values_close(1.5, 1.6) is False
+
+
+def test_values_close_int_and_float_compare_by_value():
+    assert CodeBenchmark._values_close(2, 2.0) is True
+
+
+def test_values_close_recurses_into_lists_with_float_tolerance():
+    got = [None, None, 0.1 + 0.2, 2]
+    expected = [None, None, 0.3, 2]
+    assert CodeBenchmark._values_close(got, expected) is True
+
+
+def test_values_close_list_length_mismatch_fails():
+    assert CodeBenchmark._values_close([1, 2], [1, 2, 3]) is False
+
+
+def test_values_close_type_mismatch_is_not_accidentally_close():
+    assert CodeBenchmark._values_close("3.5", 3.5) is False
+    assert CodeBenchmark._values_close(None, 0.0) is False
+
+
 # ── execute_tests ──
 
 def test_execute_tests_all_pass():

@@ -54,6 +54,21 @@ def test_parse_answer_ignores_letter_outside_valid_choices_for_this_question():
     assert MCQBenchmark.parse_answer(text, {"A", "B", "C"}) == "A"
 
 
+def test_parse_answer_takes_last_letter_when_multiple_are_mentioned():
+    # A model walking through options by letter before concluding — the
+    # final stated answer (C) must win over earlier-rejected options (A, B).
+    text = "A is wrong because it's silver. B is wrong too. The answer is C."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "C"
+
+
+def test_parse_answer_takes_last_letter_even_when_final_answer_stated_first():
+    # The model states its answer, then contrasts it with a rejected option
+    # mentioned afterward — "last letter" still wins here, a known tradeoff
+    # of this heuristic versus the more common "state answer last" pattern.
+    text = "The answer is C, not D, since gold's symbol is Au, not Go."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "D"
+
+
 # ── score ──
 
 def _questions():

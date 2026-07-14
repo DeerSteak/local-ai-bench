@@ -22,6 +22,7 @@ just the visible cases.
 """
 
 import json
+import math
 import re
 import subprocess
 import sys
@@ -104,16 +105,46 @@ class CodeBenchmark:
     def extract_code(response_text: str) -> str:
         """Pull the model's code out of its free-form reply.
 
-        Prefers a fenced code block if present (the requested format); falls
-        back to the whole stripped reply for models that ignore the fencing
-        instruction and write bare code.
+        Prefers the *last* fenced code block if more than one is present, not
+        the first — CODE_NUM_PREDICT is unbounded specifically so a reasoning
+        model has room to think before answering, and that reasoning routinely
+        includes a scratch/draft code block (a plan, a first attempt it then
+        revises) before the actual final answer. Taking the first block would
+        grab that draft instead of the model's real answer. Falls back to the
+        whole stripped reply for models that ignore the fencing instruction
+        and write bare code with no fence at all.
         """
         if not response_text:
             return ""
-        match = CodeBenchmark._FENCE_RE.search(response_text)
-        if match:
-            return match.group(1).strip()
+        matches = list(CodeBenchmark._FENCE_RE.finditer(response_text))
+        if matches:
+            return matches[-1].group(1).strip()
         return response_text.strip()
+
+    @staticmethod
+    def _values_close(got, expected) -> bool:
+        """Grading comparison between a candidate's return value and a test
+        case's stored `expected`: recursive exact equality for everything
+        except floats, which are compared with a relative/absolute tolerance
+        (`math.isclose`, both 1e-9) instead. Several problems in the bank
+        have a float `expected` derived from arithmetic (an average, a
+        median, a probability, a distance) — a correct solution computing
+        that value via a different but equally valid order of operations can
+        legitimately differ from the stored value in the last bit or two of
+        precision, and exact `==` would mark that correct answer wrong.
+        Recurses into lists (stateful problems return a list of per-op
+        results) so a float anywhere inside gets the same tolerance; every
+        other type (str/int/bool/None) stays exact, so this only widens
+        acceptance for the specific case it's meant for."""
+        if isinstance(got, list) and isinstance(expected, list):
+            return len(got) == len(expected) and all(
+                CodeBenchmark._values_close(g, e) for g, e in zip(got, expected)
+            )
+        if (isinstance(got, (int, float)) and not isinstance(got, bool)
+                and isinstance(expected, (int, float)) and not isinstance(expected, bool)
+                and (isinstance(got, float) or isinstance(expected, float))):
+            return math.isclose(got, expected, rel_tol=1e-9, abs_tol=1e-9)
+        return got == expected
 
     @staticmethod
     def _run_harness(harness: str, payload: str, tests: list[dict],
@@ -151,7 +182,8 @@ class CodeBenchmark:
                 results.append({"passed": False, "got": None, "error": raw.get("error")})
             else:
                 got = raw.get("got")
-                results.append({"passed": got == test["expected"], "got": got, "error": None})
+                results.append({"passed": CodeBenchmark._values_close(got, test["expected"]),
+                                 "got": got, "error": None})
         return results
 
     @staticmethod
