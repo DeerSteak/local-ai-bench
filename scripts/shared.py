@@ -848,6 +848,149 @@ class Shared:
         path.write_text(json.dumps(data, indent=2))
 
     @staticmethod
+    def run_accuracy_benchmark(section_label: str, skip_label: str, question_noun: str,
+                                data_path: Path, crash_cache_path: Path, models, questions,
+                                warmup_runs: int, ask_fn, rescore_partial_fn, score_fn,
+                                save_fn=None, answers_path: Path | None = None
+                                ) -> dict:  # pragma: no cover — orchestrates real Ollama runs
+        """Shared run() body for the MCQ/Math/Code accuracy benchmarks: per-model
+        warmup, crash-cache check, one-question-at-a-time timeout/loop-detection
+        handling, and result/sidecar saving — identical across all three, which
+        only differ in how a question is asked (`ask_fn`), a partial (timed-out)
+        response is rescored (`rescore_partial_fn`), and a completed answer set
+        is tallied (`score_fn`).
+
+        `ask_fn(tag, question) -> (parsed_answer, raw_text)` and
+        `rescore_partial_fn(question, partial_text) -> parsed_answer` mirror each
+        benchmark's own `_ask`/`parse_answer`-or-`evaluate_question` shape.
+        `score_fn(questions, answers) -> dict` is each benchmark's `score()`.
+        `section_label`/`skip_label`/`question_noun` preserve each benchmark's
+        own wording ("MCQ"/"MCQ"/"MCQ questions", "Math"/"math"/"math questions",
+        "Code"/"code"/"coding problems") rather than deriving one from another.
+        """
+        results = {}
+        answers_out: dict = {}
+
+        if not Shared.ollama_available():
+            Shared.err(f"Ollama server not reachable — skipping {skip_label} benchmark")
+            Shared.err("Start with: ollama serve")
+            return results
+
+        crash_cache = Shared.load_crash_cache(crash_cache_path)
+        bank_hash = Shared.file_hash(data_path)
+
+        for model in models:
+            tag   = model["tag"]
+            label = model["label"]
+            short = model["short"]
+
+            Shared.section(f"{section_label}: {label}")
+
+            if not Shared.ollama_reachable_or_abort():
+                break
+
+            try:
+                if not Shared.model_pulled(tag):
+                    Shared.warn(f"{tag} not pulled — skipping")
+                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    continue
+
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
+                                                       expected_bank_hash=bank_hash)
+                if skip_entry is not None:
+                    results[short] = skip_entry
+                    continue
+
+                if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                                           crash_cache, crash_cache_path,
+                                           crash_extra={"bank_hash": bank_hash}):
+                    Shared.unload_model(tag)
+                    continue
+
+                Shared.log(f"Answering {len(questions)} {question_noun} "
+                           f"({config.ACC_TIMEOUT}s timeout each) ...")
+                answers: dict = {}
+                raw_responses: dict[str, str] = {}
+                timed_out_ids: list[str] = []
+                likely_loop_ids: list[str] = []
+                stopped_early = None
+
+                for i, q in enumerate(questions):
+                    samples, status, partial_text = Shared.run_measured_calls(
+                        1, lambda run_i, q=q: ask_fn(tag, q), tag, crash_cache,
+                        crash_cache_path, f"answering {q['id']}",
+                        crash_extra={"bank_hash": bank_hash})
+                    if samples:
+                        given, raw = samples[0]
+                    elif status == "timed_out" and partial_text:
+                        # The model had already started answering when the wall-clock
+                        # timeout hit. Score whatever it wrote instead of a blank —
+                        # this is either a genuinely correct/incorrect answer cut off
+                        # right at the end, or unparseable (wrong-format) text, not
+                        # necessarily "the model produced nothing."
+                        given, raw = rescore_partial_fn(q, partial_text), partial_text
+                    else:
+                        given, raw = None, ""
+                    answers[q["id"]] = given
+                    raw_responses[q["id"]] = raw
+
+                    if status == "timed_out":
+                        # A single stuck question is scored wrong and the run moves
+                        # on — with ACC_TIMEOUT this short, a model that reliably
+                        # gets stuck could otherwise rack up timeouts on a sizeable
+                        # fraction of the bank, but that's still cheaper than the
+                        # old behavior of abandoning the rest of the bank outright
+                        # (and would incorrectly zero out everything after one bad
+                        # question for a model that's merely slow, not stuck).
+                        Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
+                                    "scoring as wrong and continuing")
+                        timed_out_ids.append(q["id"])
+                        if partial_text and Shared.looks_like_loop(partial_text):
+                            Shared.warn(f"{q['id']}: response looks like a generation loop")
+                            likely_loop_ids.append(q["id"])
+                    if status == "crashed":
+                        stopped_early = "crashed"
+                        break
+
+                    if (i + 1) % 10 == 0:
+                        Shared.log(f"  {i+1}/{len(questions)} answered ...")
+
+                scored = score_fn(questions, answers)
+                answers_out[short] = {
+                    "label": label,
+                    "incorrect": [
+                        {**entry, "raw_response": raw_responses.get(entry["id"], "")}
+                        for entry in scored["incorrect"]
+                    ],
+                }
+                results[short] = {"label": label, **scored}
+
+                if timed_out_ids:
+                    results[short]["timed_out_count"] = len(timed_out_ids)
+                    results[short]["timed_out_ids"] = timed_out_ids
+                if likely_loop_ids:
+                    results[short]["likely_loop_count"] = len(likely_loop_ids)
+                    results[short]["likely_loop_ids"] = likely_loop_ids
+                if stopped_early == "crashed":
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
+                    results[short]["crashed"] = True
+                    results[short]["crashed_at"] = crashed_at
+
+                Shared.ok(f"{label}: {scored['accuracy_pct']:.1f}% "
+                          f"({scored['correct']}/{scored['total']})")
+
+                Shared.log(f"Unloading {label} ...")
+                Shared.unload_model(tag)
+                Shared.wait_until_unloaded(tag)
+            finally:
+                if save_fn:
+                    save_fn(results)
+                if answers_path:
+                    Shared.write_answers_sidecar(answers_path, answers_out)
+
+        return results
+
+    @staticmethod
     def ollama_model_max_ctx(model_tag, default=131072):
         """Look up a pulled model's real max context length via /api/show.
 

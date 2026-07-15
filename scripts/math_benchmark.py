@@ -109,120 +109,13 @@ class MathBenchmark:
 
     def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
             answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
-        results = {}
-        answers_out: dict = {}
         questions = questions if questions is not None else MathBenchmark.load_questions()
-
-        if not Shared.ollama_available():
-            Shared.err("Ollama server not reachable — skipping math benchmark")
-            Shared.err("Start with: ollama serve")
-            return results
-
-        crash_cache = Shared.load_crash_cache(MathBenchmark.MATH_CRASH_CACHE)
-        bank_hash = Shared.file_hash(MathBenchmark.MATH_DATA_PATH)
-
-        for model in models:
-            tag   = model["tag"]
-            label = model["label"]
-            short = model["short"]
-
-            Shared.section(f"Math: {label}")
-
-            if not Shared.ollama_reachable_or_abort():
-                break
-
-            try:
-                if not Shared.model_pulled(tag):
-                    Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
-                    continue
-
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, MathBenchmark.MATH_CRASH_CACHE,
-                                                       expected_bank_hash=bank_hash)
-                if skip_entry is not None:
-                    results[short] = skip_entry
-                    continue
-
-                if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
-                                           crash_cache, MathBenchmark.MATH_CRASH_CACHE,
-                                           crash_extra={"bank_hash": bank_hash}):
-                    Shared.unload_model(tag)
-                    continue
-
-                Shared.log(f"Answering {len(questions)} math questions "
-                           f"({config.ACC_TIMEOUT}s timeout each) ...")
-                answers: dict[str, float | None] = {}
-                raw_responses: dict[str, str] = {}
-                timed_out_ids: list[str] = []
-                likely_loop_ids: list[str] = []
-                stopped_early = None
-
-                for i, q in enumerate(questions):
-                    samples, status, partial_text = Shared.run_measured_calls(
-                        1, lambda run_i, q=q: MathBenchmark._ask(tag, q), tag, crash_cache,
-                        MathBenchmark.MATH_CRASH_CACHE, f"answering {q['id']}",
-                        crash_extra={"bank_hash": bank_hash})
-                    if samples:
-                        given, raw = samples[0]
-                    elif status == "timed_out" and partial_text:
-                        # Score whatever the model had written before the wall-clock
-                        # timeout hit, rather than treating it as a blank — this is
-                        # either an answer cut off right at the end or unparseable
-                        # (wrong-format) text, not necessarily "no output at all."
-                        given, raw = MathBenchmark.parse_answer(partial_text), partial_text
-                    else:
-                        given, raw = None, ""
-                    answers[q["id"]] = given
-                    raw_responses[q["id"]] = raw
-
-                    if status == "timed_out":
-                        # A single stuck question is scored wrong and the run moves
-                        # on — see MCQBenchmark.run for why this replaced abandoning
-                        # the rest of the bank on the first timeout.
-                        Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
-                                    "scoring as wrong and continuing")
-                        timed_out_ids.append(q["id"])
-                        if partial_text and Shared.looks_like_loop(partial_text):
-                            Shared.warn(f"{q['id']}: response looks like a generation loop")
-                            likely_loop_ids.append(q["id"])
-                    if status == "crashed":
-                        stopped_early = "crashed"
-                        break
-
-                    if (i + 1) % 10 == 0:
-                        Shared.log(f"  {i+1}/{len(questions)} answered ...")
-
-                scored = MathBenchmark.score(questions, answers)
-                answers_out[short] = {
-                    "label": label,
-                    "incorrect": [
-                        {**entry, "raw_response": raw_responses.get(entry["id"], "")}
-                        for entry in scored["incorrect"]
-                    ],
-                }
-                results[short] = {"label": label, **scored}
-
-                if timed_out_ids:
-                    results[short]["timed_out_count"] = len(timed_out_ids)
-                    results[short]["timed_out_ids"] = timed_out_ids
-                if likely_loop_ids:
-                    results[short]["likely_loop_count"] = len(likely_loop_ids)
-                    results[short]["likely_loop_ids"] = likely_loop_ids
-                if stopped_early == "crashed":
-                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
-                    results[short]["crashed"] = True
-                    results[short]["crashed_at"] = crashed_at
-
-                Shared.ok(f"{label}: {scored['accuracy_pct']:.1f}% "
-                          f"({scored['correct']}/{scored['total']})")
-
-                Shared.log(f"Unloading {label} ...")
-                Shared.unload_model(tag)
-                Shared.wait_until_unloaded(tag)
-            finally:
-                if save_fn:
-                    save_fn(results)
-                if answers_path:
-                    Shared.write_answers_sidecar(answers_path, answers_out)
-
-        return results
+        return Shared.run_accuracy_benchmark(
+            section_label="Math", skip_label="math", question_noun="math questions",
+            data_path=MathBenchmark.MATH_DATA_PATH, crash_cache_path=MathBenchmark.MATH_CRASH_CACHE,
+            models=models, questions=questions, warmup_runs=warmup_runs,
+            ask_fn=MathBenchmark._ask,
+            rescore_partial_fn=lambda q, text: MathBenchmark.parse_answer(text),
+            score_fn=MathBenchmark.score,
+            save_fn=save_fn, answers_path=answers_path,
+        )
