@@ -3,20 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$SCRIPT_DIR/dashboard"
-DIST_DIR="$DASHBOARD_DIR/dist"
 RESULTS_DIR="$SCRIPT_DIR/results"
 PORT=3000
-REBUILD=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)
             PORT="$2"
             shift 2
-            ;;
-        --rebuild)
-            REBUILD=1
-            shift
             ;;
         *)
             echo "Unknown option: $1"
@@ -43,12 +37,10 @@ if [ ! -d "$DASHBOARD_DIR/node_modules" ]; then
     echo
 fi
 
-if [ "$REBUILD" -eq 1 ] || [ ! -f "$DIST_DIR/index.html" ]; then
-    echo "Building dashboard ..."
-    (cd "$DASHBOARD_DIR" && npm run build)
-    echo "Build complete."
-    echo
-fi
+echo "Building dashboard ..."
+(cd "$DASHBOARD_DIR" && npm run build)
+echo "Build complete."
+echo
 
 echo "Dashboard -> http://localhost:$PORT"
 echo "Drop your results JSON files onto the page to analyze them."

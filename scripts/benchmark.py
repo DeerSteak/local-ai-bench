@@ -643,7 +643,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     Path(out_path).write_text(json.dumps(results, indent=2))
     Shared.ok(f"Results saved to: {out_path}")
     print(f"\n  Compare it against other machines in the dashboard:")
-    dash_hint = "dashboard.bat" if platform.system() == "Windows" else "bash dashboard.sh"
+    dash_hint = "launch_dashboard.bat" if platform.system() == "Windows" else "bash launch_dashboard.sh"
     print(f"  {dash_hint}\n")
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")

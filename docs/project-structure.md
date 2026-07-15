@@ -12,8 +12,8 @@
 | `setup.bat` | One-shot setup for Windows |
 | `run_bench.sh` | Activates the venv and runs `scripts/benchmark.py` on Linux / macOS |
 | `run_bench.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
-| `dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
-| `dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
+| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
+| `launch_dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `scripts/` | Benchmark implementation — see [How It Works](how-it-works.md#code-organization) for what each module does |

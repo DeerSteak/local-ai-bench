@@ -24,7 +24,7 @@ requirements.txt      Runtime deps, installed by setup scripts into bench-env/
 tests/requirements.txt  Test-only deps (pytest), installed by tests.sh/.bat into bench-env/
 setup.sh / setup.bat        One-shot install + interactive model picker
 run_bench.sh / .bat          Activates bench-env, runs scripts/benchmark.py
-dashboard.sh / .bat           Builds + serves the dashboard
+launch_dashboard.sh / .bat    Builds + serves the dashboard (always rebuilds)
 tests.sh / .bat                Activates bench-env, runs pytest
 .coveragerc            Coverage config — see Testing section below
 ```
@@ -46,7 +46,7 @@ tests.sh / .bat                Activates bench-env, runs pytest
 
 **Never run `benchmark.py` for a real test run** unless the user explicitly asks — it drives real Ollama/ComfyUI servers, loads multi-GB models into memory, and can take hours.
 
-**Use the existing `bench-env/` venv, not scratch venvs.** It's the user's real, persistent environment (created by `setup.sh`/`setup.bat`, already has `requirements.txt` installed) and is what every wrapper script (`run_bench.sh`, `dashboard.sh`, `tests.sh`) activates. Activate it or call `bench-env/bin/python`/`bench-env/bin/pip` directly for any check against this codebase (running tests, computing coverage, syntax-checking, simulating a module) — on Windows it's `bench-env\Scripts\python.exe`/`bench-env\Scripts\pip.exe`. Only fall back to a throwaway venv if `bench-env/` genuinely doesn't exist yet and creating it isn't appropriate.
+**Use the existing `bench-env/` venv, not scratch venvs.** It's the user's real, persistent environment (created by `setup.sh`/`setup.bat`, already has `requirements.txt` installed) and is what every wrapper script (`run_bench.sh`, `launch_dashboard.sh`, `tests.sh`) activates. Activate it or call `bench-env/bin/python`/`bench-env/bin/pip` directly for any check against this codebase (running tests, computing coverage, syntax-checking, simulating a module) — on Windows it's `bench-env\Scripts\python.exe`/`bench-env\Scripts\pip.exe`. Only fall back to a throwaway venv if `bench-env/` genuinely doesn't exist yet and creating it isn't appropriate.
 
 **`hf.txt` (repo root, gitignored) holds a real HuggingFace access token.** Never print, log, or commit its contents, and never include it in a diff or summary shown to anyone other than the user in their own terminal.
 
@@ -61,7 +61,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing   # with coverage (needs p
 # Everything else below has real side effects — confirm with the user first
 bash setup.sh              # installs Ollama, models, ComfyUI checkpoints
 bash run_bench.sh           # runs the real benchmark suite
-bash dashboard.sh           # builds + serves the results dashboard
+bash launch_dashboard.sh    # builds + serves the results dashboard
 ```
 
 Windows equivalents are the same commands with `.bat` instead of `.sh` (no `bash` prefix).
@@ -112,7 +112,7 @@ When you write similar logic (a decision, a calculation, a dispatch) inside an o
 
 **The dashboard (`dashboard/`) has its own separate test suite using Vitest** (`dashboard/src/*.test.js`, run via `cd dashboard && npm test`) — it does not share `bench-env`/pytest, and it does not extend the coverage boundary or conventions above, which are specific to `scripts/`. It covers the pure data-transformation logic in `utils.js` (chart data/status-label builders, formatting, model lookups) and the model-registry consistency in `constants.js` — deliberately **not** React component rendering (no React Testing Library/jsdom). If you add or change a pure function in `dashboard/src/utils.js` or `constants.js`, add or update a Vitest test for it the same way you would for `scripts/` — write real assertions against representative inputs, including edge cases (missing/null fields, unknown models, boundary values), not just a happy-path smoke test. If you change a React component's rendering behavior, there's no test harness for that — run `npm run lint` from `dashboard/` after touching `dashboard/src`, and manually trace/verify the change (e.g. against a sample file in `samples/`) the way this project's growth-loop and dashboard-rendering logic were verified in review. If a component change is complex enough that real component tests would be valuable, say so to the user rather than adding React Testing Library unasked.
 
-**The user wants to actually see chart/dashboard changes previewed, not just have the code traced or described.** For any change to `dashboard/src` that affects chart output, layout, or styling, start the dashboard (`bash dashboard.sh`, or `npm run dev` from `dashboard/` for hot-reload during iteration) and load a sample file from `samples/` (or a relevant `results_*.json`) so the actual rendered charts are visible before calling the change done — a screenshot or an interactive preview, not a text description of what it should look like.
+**The user wants to actually see chart/dashboard changes previewed, not just have the code traced or described.** For any change to `dashboard/src` that affects chart output, layout, or styling, start the dashboard (`bash launch_dashboard.sh`, or `npm run dev` from `dashboard/` for hot-reload during iteration) and load a sample file from `samples/` (or a relevant `results_*.json`) so the actual rendered charts are visible before calling the change done — a screenshot or an interactive preview, not a text description of what it should look like.
 
 **Coverage:** `pytest-cov` isn't installed by default — `bench-env/bin/pip install pytest-cov` first. Run via `bash tests.sh --cov=scripts --cov-report=term-missing`. `.coveragerc` shapes the report to reflect only the code meant to be unit-tested (see above); with it in place, coverage sits around 95%. Don't chase the exact number — the remaining gaps are fine-grained exception branches, not whole untested subsystems. If you add a new `run()`-style orchestration method or similarly untestable function, mark it `# pragma: no cover` at the `def` line rather than leaving it to silently drag the coverage number down without explanation.
 
@@ -131,7 +131,7 @@ When you write similar logic (a decision, a calculation, a dispatch) inside an o
 ## Design history worth knowing
 
 - **`compare.py` was intentionally removed**, replaced by the dashboard's multi-file comparison. Don't recreate it or treat its absence as a regression.
-- **`run_linux_mac.sh`/`run_windows.bat` → `run_bench.sh`/`run_bench.bat`**, and **`launch_dashboard.py` → `dashboard.sh`/`dashboard.bat`** (a Python `http.server`-based dashboard launcher replaced by shell scripts that shell out to `vite preview`). If you see references to the old names anywhere (docs, comments, scripts), they're stale — fix them.
+- **`run_linux_mac.sh`/`run_windows.bat` → `run_bench.sh`/`run_bench.bat`**, and **`launch_dashboard.py` → `dashboard.sh`/`dashboard.bat` → `launch_dashboard.sh`/`launch_dashboard.bat`** (a Python `http.server`-based dashboard launcher replaced by shell scripts that shell out to `vite preview`; later renamed from `dashboard.sh`/`.bat` back to `launch_dashboard.sh`/`.bat` so shell autocomplete doesn't collide with the `dashboard/` folder, and changed to always rebuild before launching rather than only when `dist/` was missing or `--rebuild` was passed). If you see references to the old names anywhere (docs, comments, scripts), they're stale — fix them.
 - **`scripts/` used to be a single flat `benchmark.py`** (2200+ lines) before a "big refactor to make it maintainable" split it into the current module layout. If old context or a stale doc references top-level `config.py`/`models.py`/`setup_check.py` (not under `scripts/`), that's pre-refactor and wrong now.
 - **Interactive setup UX is deliberately plain-`input()`, numbered-list, not arrow-key/raw-terminal.** An arrow-key checkbox menu was tried and rejected after repeated bugs (stray keystrokes leaking between prompts, a sub-installer's own confirmation prompt swallowing a keypress). The current pattern: one approval prompt for prerequisites up front, numbered-list toggle selection (`2 4 7-9`, tier keys, `a` for all, `q` to cancel), then fully unattended install with zero further prompts. Preserve this if touching `setup_check.py`.
 - **Chart card headers in the dashboard**: the model/system "eyebrow" label above a chart title must be the visually dominant text — larger and bolder than the chart title itself, not the reverse — since it's the first thing needed to identify what a card shows, especially once exported standalone as a PNG.

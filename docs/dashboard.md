@@ -16,17 +16,15 @@ An interactive results explorer for visualising and exporting benchmark output.
 
 ```bash
 # Linux / macOS
-bash dashboard.sh
-bash dashboard.sh --port 8080   # use a different port
-bash dashboard.sh --rebuild     # force a fresh npm build
+bash launch_dashboard.sh
+bash launch_dashboard.sh --port 8080   # use a different port
 
 # Windows
-dashboard.bat
-dashboard.bat --port 8080       # use a different port
-dashboard.bat --rebuild         # force a fresh npm build
+launch_dashboard.bat
+launch_dashboard.bat --port 8080       # use a different port
 ```
 
-Requires Node.js/npm. On first run, installs npm dependencies and builds the app, then starts a local server on port 3000 and opens the browser automatically.
+Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuilds the app, then starts a local server on port 3000 and opens the browser automatically.
 
 ## Loading results
 

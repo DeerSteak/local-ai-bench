@@ -3,21 +3,14 @@ setlocal enabledelayedexpansion
 
 set SCRIPT_DIR=%~dp0
 set DASHBOARD_DIR=%SCRIPT_DIR%dashboard
-set DIST_DIR=%DASHBOARD_DIR%\dist
 set RESULTS_DIR=%SCRIPT_DIR%results
 set PORT=3000
-set REBUILD=0
 
 :parse_args
 if "%~1"=="" goto args_done
 if /i "%~1"=="--port" (
     set PORT=%~2
     shift
-    shift
-    goto parse_args
-)
-if /i "%~1"=="--rebuild" (
-    set REBUILD=1
     shift
     goto parse_args
 )
@@ -51,23 +44,17 @@ if not exist "%DASHBOARD_DIR%\node_modules" (
     echo.
 )
 
-set NEEDS_BUILD=0
-if "%REBUILD%"=="1" set NEEDS_BUILD=1
-if not exist "%DIST_DIR%\index.html" set NEEDS_BUILD=1
-
-if "%NEEDS_BUILD%"=="1" (
-    echo Building dashboard ...
-    pushd "%DASHBOARD_DIR%"
-    call npm run build
-    if errorlevel 1 (
-        echo Build failed -- fix the errors above and try again.
-        popd
-        exit /b 1
-    )
+echo Building dashboard ...
+pushd "%DASHBOARD_DIR%"
+call npm run build
+if errorlevel 1 (
+    echo Build failed -- fix the errors above and try again.
     popd
-    echo Build complete.
-    echo.
+    exit /b 1
 )
+popd
+echo Build complete.
+echo.
 
 echo Dashboard -^> http://localhost:%PORT%
 echo Drop your results JSON files onto the page to analyze them.

@@ -33,10 +33,10 @@ A full run takes several hours, depending on your hardware and which options you
 
 ```bash
 # Linux / macOS
-bash dashboard.sh
+bash launch_dashboard.sh
 
 # Windows
-dashboard.bat
+launch_dashboard.bat
 ```
 
 For platform-specific notes, the HuggingFace token flow, and what setup actually installs, see [Setup](docs/setup.md).
