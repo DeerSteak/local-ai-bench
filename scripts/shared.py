@@ -121,28 +121,27 @@ class Shared:
         Shared._managed_procs.clear()
 
     @staticmethod
+    def _tail_log(path: Path | None, service_name: str, n_lines: int = 40) -> str:
+        """Return the last n_lines of a server's captured output."""
+        if path is None:
+            return f"(no {service_name} log captured this session)"
+        try:
+            lines = path.read_text(errors="replace").splitlines()
+            return "\n".join(lines[-n_lines:]) or "(log file is empty)"
+        except Exception as e:
+            return f"(failed to read {service_name} log: {e})"
+
+    @staticmethod
     def tail_ollama_log(n_lines: int = 40) -> str:
         """Return the last n_lines of the current Ollama server's captured
         output, for surfacing the real crash reason instead of guessing."""
-        if Shared._ollama_log_path is None:
-            return "(no Ollama log captured this session)"
-        try:
-            lines = Shared._ollama_log_path.read_text(errors="replace").splitlines()
-            return "\n".join(lines[-n_lines:]) or "(log file is empty)"
-        except Exception as e:
-            return f"(failed to read Ollama log: {e})"
+        return Shared._tail_log(Shared._ollama_log_path, "Ollama", n_lines)
 
     @staticmethod
     def tail_comfyui_log(n_lines: int = 40) -> str:
         """Return the last n_lines of the current ComfyUI server's captured
         output, for surfacing the real crash reason instead of guessing."""
-        if Shared._comfyui_log_path is None:
-            return "(no ComfyUI log captured this session)"
-        try:
-            lines = Shared._comfyui_log_path.read_text(errors="replace").splitlines()
-            return "\n".join(lines[-n_lines:]) or "(log file is empty)"
-        except Exception as e:
-            return f"(failed to read ComfyUI log: {e})"
+        return Shared._tail_log(Shared._comfyui_log_path, "ComfyUI", n_lines)
 
     @staticmethod
     def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:  # pragma: no cover — spawns a real subprocess
@@ -1068,6 +1067,31 @@ class Shared:
             raise RuntimeError(f"Ollama returned HTTP {e.code}: {detail[:500]}") from None
 
     @staticmethod
+    def _iter_ndjson(resp):
+        """Yield parsed JSON objects from a streaming NDJSON response body,
+        skipping blank or malformed lines."""
+        for raw_line in resp:
+            if not raw_line.strip():
+                continue
+            try:
+                yield json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+
+    @staticmethod
+    def _final_chunk_metrics(chunk: dict, tokens: int):
+        """Extract (ttft_override, eval_count, tps) from Ollama's final
+        ("done") stream chunk. ttft_override is None when the server didn't
+        report prompt_eval_duration, so the caller should keep its own ttft."""
+        eval_count    = chunk.get("eval_count", tokens)
+        eval_duration = chunk.get("eval_duration", 0)        # nanoseconds
+        prompt_dur    = chunk.get("prompt_eval_duration", 0) # nanoseconds
+
+        ttft_override = prompt_dur / 1e9 if prompt_dur and prompt_dur > 0 else None
+        tps = eval_count / (eval_duration / 1e9) if eval_duration and eval_duration > 0 else 0
+        return ttft_override, eval_count, tps
+
+    @staticmethod
     def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
                         num_ctx: int | None = None):
         """
@@ -1108,14 +1132,7 @@ class Shared:
         eval_count = 0
 
         with Shared._ollama_urlopen(req, timeout) as resp:
-            for raw_line in resp:
-                if not raw_line.strip():
-                    continue
-                try:
-                    chunk = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-
+            for chunk in Shared._iter_ndjson(resp):
                 # First token received — record TTFT from wall clock
                 if ttft is None and chunk.get("response"):
                     ttft = time.perf_counter() - t_start
@@ -1124,16 +1141,10 @@ class Shared:
                     tokens += 1
 
                 if chunk.get("done"):
-                    eval_count    = chunk.get("eval_count", tokens)
-                    eval_duration = chunk.get("eval_duration", 0)      # nanoseconds
-                    prompt_dur    = chunk.get("prompt_eval_duration", 0) # nanoseconds
-
                     # Prefer server-side TTFT (prompt processing time) if available
-                    if prompt_dur and prompt_dur > 0:
-                        ttft = prompt_dur / 1e9
-
-                    if eval_duration and eval_duration > 0:
-                        tps = eval_count / (eval_duration / 1e9)
+                    ttft_override, eval_count, tps = Shared._final_chunk_metrics(chunk, tokens)
+                    if ttft_override is not None:
+                        ttft = ttft_override
                     break
 
         total = time.perf_counter() - t_start
@@ -1244,14 +1255,7 @@ class Shared:
         last_loop_check   = t_start
 
         with Shared._ollama_urlopen(req, timeout) as resp:
-            for raw_line in resp:
-                if not raw_line.strip():
-                    continue
-                try:
-                    chunk = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-
+            for chunk in Shared._iter_ndjson(resp):
                 message  = chunk.get("message", {})
                 content  = message.get("content")
                 thinking = message.get("thinking")
@@ -1288,16 +1292,10 @@ class Shared:
                             partial_text=partial_text)
 
                 if chunk.get("done"):
-                    eval_count        = chunk.get("eval_count", tokens)
-                    eval_duration      = chunk.get("eval_duration", 0)      # nanoseconds
-                    prompt_dur         = chunk.get("prompt_eval_duration", 0)
-                    prompt_eval_count  = chunk.get("prompt_eval_count", 0)
-
-                    if prompt_dur and prompt_dur > 0:
-                        ttft = prompt_dur / 1e9
-
-                    if eval_duration and eval_duration > 0:
-                        tps = eval_count / (eval_duration / 1e9)
+                    ttft_override, eval_count, tps = Shared._final_chunk_metrics(chunk, tokens)
+                    if ttft_override is not None:
+                        ttft = ttft_override
+                    prompt_eval_count = chunk.get("prompt_eval_count", 0)
                     break
 
         total = time.perf_counter() - t_start
