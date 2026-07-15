@@ -13,6 +13,30 @@ from pathlib import Path
 OLLAMA_URL   = "http://localhost:11434"
 COMFYUI_URL  = "http://localhost:8188"
 
+# Env vars pinned on every 'ollama serve' launch so timing/throughput numbers
+# don't drift with whatever Ollama auto-detects on a given machine or version.
+# setdefault'd onto the environment (see Shared.start_ollama) rather than
+# forced, so an operator's own shell export still wins.
+#   OLLAMA_NUM_PARALLEL=1    — no concurrent request batching inflating/
+#                              deflating per-request throughput
+#   OLLAMA_MAX_LOADED_MODELS=1 — no cross-model memory contention from a
+#                              second model still resident
+#   OLLAMA_FLASH_ATTENTION=1 — otherwise auto-enabled per-model/hardware,
+#                              which silently changes both speed and numerics
+#   OLLAMA_KV_CACHE_TYPE=f16 — otherwise defaults can vary by Ollama version
+OLLAMA_ENV_DEFAULTS = {
+    "OLLAMA_NUM_PARALLEL":      "1",
+    "OLLAMA_MAX_LOADED_MODELS": "1",
+    "OLLAMA_FLASH_ATTENTION":   "1",
+    "OLLAMA_KV_CACHE_TYPE":     "f16",
+}
+
+# num_batch (llama.cpp's n_batch prompt-processing batch size) pinned on every
+# generate/chat/embed request — otherwise left to Ollama's auto-detected
+# default. Unrelated to the *number of inputs per /api/embed call*, which is
+# corpus-shape, not this — see [[embedding-crash-resolution]] memory.
+OLLAMA_NUM_BATCH = 512
+
 # Repo root — this file lives in scripts/, one level below it.
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"

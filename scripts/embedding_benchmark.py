@@ -115,7 +115,8 @@ class EmbeddingBenchmark:
                     try:
                         resp = requests.post(
                             f"{config.OLLAMA_URL}/api/embed",
-                            json={"model": tag, "input": chunks},
+                            json={"model": tag, "input": chunks,
+                                  "options": {"num_batch": config.OLLAMA_NUM_BATCH}},
                             timeout=120,
                         )
                         if not resp.ok:
@@ -133,7 +134,8 @@ class EmbeddingBenchmark:
                     t0 = time.perf_counter()
                     resp = requests.post(
                         f"{config.OLLAMA_URL}/api/embed",
-                        json={"model": tag, "input": chunks},
+                        json={"model": tag, "input": chunks,
+                              "options": {"num_batch": config.OLLAMA_NUM_BATCH}},
                         timeout=120,
                     )
                     if not resp.ok:

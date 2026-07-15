@@ -147,8 +147,16 @@ class Shared:
     def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:  # pragma: no cover — spawns a real subprocess
         """Start 'ollama serve', optionally with extra/overridden environment
         variables (e.g. HIP_VISIBLE_DEVICES="" to force CPU-only). Tracked in
-        _managed_procs for cleanup on exit. Returns True once reachable."""
+        _managed_procs for cleanup on exit. Returns True once reachable.
+
+        config.OLLAMA_ENV_DEFAULTS is applied first (setdefault — an operator's
+        own shell export still wins) so request-queuing/model-swap/attention
+        behavior is pinned instead of left to Ollama's auto-detected defaults,
+        which otherwise vary by machine and version and make run-to-run
+        timing comparisons unreliable."""
         env = os.environ.copy()
+        for k, v in config.OLLAMA_ENV_DEFAULTS.items():
+            env.setdefault(k, v)
         if extra_env:
             env.update(extra_env)
 
@@ -1107,7 +1115,7 @@ class Shared:
         uses the model default, and a prompt longer than that triggers a full
         model reload, inflating TTFT by minutes.
         """
-        options: dict = {"num_predict": 512, "temperature": 0.0}
+        options: dict = {"num_predict": 512, "temperature": 0.0, "num_batch": config.OLLAMA_NUM_BATCH}
         if num_ctx is not None:
             options["num_ctx"] = num_ctx
 
@@ -1226,7 +1234,7 @@ class Shared:
         well before burning the full per-question timeout. Off by default since
         it's only meaningful for single-shot, unbounded-reasoning callers.
         """
-        options: dict = {"num_predict": num_predict, "temperature": 0.0}
+        options: dict = {"num_predict": num_predict, "temperature": 0.0, "num_batch": config.OLLAMA_NUM_BATCH}
         if num_ctx is not None:
             options["num_ctx"] = num_ctx
 
