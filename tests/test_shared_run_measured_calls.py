@@ -1,6 +1,6 @@
 import requests
 
-from shared import OllamaTimeout, Shared
+from shared import OllamaLoopDetected, OllamaTimeout, Shared
 import config
 
 
@@ -46,6 +46,21 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
     assert samples == []
     assert status == "timed_out"
     assert partial_text == "The answer is B"
+
+
+def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
+    """OllamaLoopDetected (raised by ollama_chat's check_loop) must surface as
+    its own "loop_detected" status, not get folded into "timed_out" — the two
+    are independent buckets for the caller (see run_accuracy_benchmark)."""
+    cache_path = tmp_path / "crash.json"
+
+    def call(run_i):
+        raise OllamaLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
+
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    assert samples == []
+    assert status == "loop_detected"
+    assert partial_text == "wait, wait, wait,"
 
 
 def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):

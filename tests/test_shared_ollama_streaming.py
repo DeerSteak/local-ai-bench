@@ -110,6 +110,43 @@ def test_ollama_chat_prefers_content_over_thinking_when_both_present(monkeypatch
     assert text == "answer"
 
 
+def test_ollama_chat_check_loop_raises_early_on_repeated_hedging(monkeypatch):
+    """With check_loop=True, a stuck response should be cut off as soon as a
+    loop is detectable — well before the remaining chunks (and the eventual
+    `done`) ever stream in — rather than only after the full timeout."""
+    import itertools
+
+    counter = itertools.count(0, 1.0)
+    monkeypatch.setattr(shared_module.time, "perf_counter", lambda: next(counter))
+    monkeypatch.setattr(shared_module.config, "LOOP_CHECK_INTERVAL", 0)
+    _patch_urlopen(monkeypatch, [
+        {"message": {"content": "wait, "}},
+        {"message": {"content": "wait, "}},
+        {"message": {"content": "wait, still stuck"}},
+        {"message": {"content": "this chunk should never be reached"}},
+        {"done": True, "eval_count": 4, "eval_duration": 1_000_000_000, "prompt_eval_count": 10},
+    ])
+    with pytest.raises(shared_module.OllamaLoopDetected) as exc_info:
+        Shared.ollama_chat("tag", [{"role": "user", "content": "hi"}], check_loop=True)
+    assert "loop" in str(exc_info.value).lower()
+    assert "wait, wait, wait, still stuck" == exc_info.value.partial_text
+    assert "never be reached" not in exc_info.value.partial_text
+
+
+def test_ollama_chat_without_check_loop_ignores_repeated_hedging(monkeypatch):
+    """check_loop defaults to False, so callers that don't opt in (e.g. the
+    conversation benchmark) see no behavior change — a repetitive-but-still-
+    streaming response runs to completion as before."""
+    _patch_urlopen(monkeypatch, [
+        {"message": {"content": "wait, "}},
+        {"message": {"content": "wait, "}},
+        {"message": {"content": "wait, still stuck"}},
+        {"done": True, "eval_count": 3, "eval_duration": 1_000_000_000, "prompt_eval_count": 10},
+    ])
+    _, _, _, _, text = Shared.ollama_chat("tag", [{"role": "user", "content": "hi"}])
+    assert text == "wait, wait, wait, still stuck"
+
+
 # ── _ollama_urlopen error handling ──
 
 def _http_error(code, body: bytes):

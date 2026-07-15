@@ -268,6 +268,7 @@ class CodeBenchmark:
         _, _, _, _, response_text = Shared.ollama_chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
+            check_loop=True,
         )
         code = CodeBenchmark.extract_code(response_text)
         return CodeBenchmark.evaluate_question(question, code), response_text

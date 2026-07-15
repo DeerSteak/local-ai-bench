@@ -43,6 +43,17 @@ class OllamaTimeout(TimeoutError):
         self.partial_text = partial_text
 
 
+class OllamaLoopDetected(OllamaTimeout):
+    """Raised when ollama_chat's check_loop polling flags a degenerate
+    generation loop *before* the wall-clock timeout elapses. Deliberately a
+    distinct type from a bare OllamaTimeout (though still a TimeoutError
+    subclass, so generic timeout handling elsewhere keeps working): the model
+    didn't run out of its time budget here, it was cut off early because the
+    stream already looked pointless — callers that count "timed out" vs.
+    "looped" need to tell those apart rather than lumping every early loop
+    catch into the timeout bucket."""
+
+
 class Shared:
     # Tracks processes we started so we can shut them down cleanly
     _managed_procs: list[subprocess.Popen] = []
@@ -712,13 +723,20 @@ class Shared:
         (e.g. {"bank_hash": ...}) is passed through to Shared.record_crash.
 
         Returns (samples, status, partial_text) where status is "ok",
-        "timed_out", or "crashed"; `samples` may be non-empty even when
-        status != "ok". `partial_text` is whatever text had streamed in before
-        a timeout hit (empty otherwise) — a timed-out run that had already
-        written a wrong-format (or even correct) answer is a different failure
-        than one that produced nothing at all, and callers that score
-        free-form answers need to tell them apart rather than treating every
-        timeout as a blank.
+        "timed_out", "loop_detected", or "crashed"; `samples` may be non-empty
+        even when status != "ok". `partial_text` is whatever text had streamed
+        in before a timeout/loop-detection hit (empty otherwise) — a cut-off
+        run that had already written a wrong-format (or even correct) answer
+        is a different failure than one that produced nothing at all, and
+        callers that score free-form answers need to tell them apart rather
+        than treating every cutoff as a blank.
+
+        "timed_out" means the call's full wall-clock budget was exhausted;
+        "loop_detected" means ollama_chat's check_loop polling recognized a
+        degenerate generation loop and cut the call short *before* that
+        budget ran out (see OllamaLoopDetected) — kept distinct so a caller
+        counting timeouts doesn't also double-count early loop catches, and
+        vice versa.
         """
         samples = []
         run_i = 0
@@ -728,6 +746,9 @@ class Shared:
                 samples.append(call(run_i))
                 run_i += 1
             except Exception as e:
+                if isinstance(e, OllamaLoopDetected):
+                    Shared.err(f"{tag}: detected a generation loop {what} (run {run_i+1})")
+                    return samples, "loop_detected", e.partial_text
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
                     # What happens next (abandon the rest of this tag vs. score this
@@ -922,18 +943,30 @@ class Shared:
                         crash_extra={"bank_hash": bank_hash})
                     if samples:
                         given, raw = samples[0]
-                    elif status == "timed_out" and partial_text:
+                    elif status in ("timed_out", "loop_detected") and partial_text:
                         # The model had already started answering when the wall-clock
-                        # timeout hit. Score whatever it wrote instead of a blank —
-                        # this is either a genuinely correct/incorrect answer cut off
-                        # right at the end, or unparseable (wrong-format) text, not
-                        # necessarily "the model produced nothing."
+                        # timeout (or the loop check) cut it off. Score whatever it
+                        # wrote instead of a blank — this is either a genuinely
+                        # correct/incorrect answer cut off right at the end, or
+                        # unparseable (wrong-format) text, not necessarily "the model
+                        # produced nothing."
                         given, raw = rescore_partial_fn(q, partial_text), partial_text
                     else:
                         given, raw = None, ""
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
 
+                    # timed_out_ids and likely_loop_ids are independent buckets, not
+                    # a superset/subset: timed_out_ids only counts questions that
+                    # actually burned the full ACC_TIMEOUT (status == "timed_out"),
+                    # while likely_loop_ids only counts questions whose text pattern-
+                    # matches a degenerate loop (Shared.looks_like_loop), whether that
+                    # was caught early (status == "loop_detected", well under
+                    # ACC_TIMEOUT) or only became visible once the full timeout's
+                    # partial text came back. A run can be slow-but-not-looping
+                    # (timed_out only), looping-and-caught-early (loop only), or —
+                    # rarely, if looks_like_loop's heuristic didn't fire until the
+                    # last chunk — both.
                     if status == "timed_out":
                         # A single stuck question is scored wrong and the run moves
                         # on — with ACC_TIMEOUT this short, a model that reliably
@@ -946,8 +979,11 @@ class Shared:
                                     "scoring as wrong and continuing")
                         timed_out_ids.append(q["id"])
                         if partial_text and Shared.looks_like_loop(partial_text):
-                            Shared.warn(f"{q['id']}: response looks like a generation loop")
                             likely_loop_ids.append(q["id"])
+                    elif status == "loop_detected":
+                        Shared.warn(f"{q['id']}: response looks like a generation loop — "
+                                    "scoring as wrong and continuing")
+                        likely_loop_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"
                         break
@@ -1160,7 +1196,8 @@ class Shared:
 
     @staticmethod
     def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
-                     num_ctx: int | None = None, num_predict: int = 1024):
+                     num_ctx: int | None = None, num_predict: int = 1024,
+                     check_loop: bool = False):
         """
         Generate via Ollama's /api/chat and return timing metrics plus the reply text.
         Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
@@ -1170,6 +1207,13 @@ class Shared:
         `messages` shares a prefix with a prior call and llama.cpp's slot cache
         skips re-processing it (that shows up as low prompt_eval_duration/ttft
         instead).
+
+        check_loop opts into re-checking the accumulated text for a degenerate
+        generation loop (Shared.looks_like_loop) every config.LOOP_CHECK_INTERVAL
+        seconds instead of only once `timeout` is fully exhausted — lets the
+        accuracy tests (mcq/math/code) bail out of an obviously stuck response
+        well before burning the full per-question timeout. Off by default since
+        it's only meaningful for single-shot, unbounded-reasoning callers.
         """
         options: dict = {"num_predict": num_predict, "temperature": 0.0}
         if num_ctx is not None:
@@ -1197,6 +1241,7 @@ class Shared:
         prompt_eval_count = 0
         response_parts    = []
         thinking_parts    = []
+        last_loop_check   = t_start
 
         with Shared._ollama_urlopen(req, timeout) as resp:
             for raw_line in resp:
@@ -1220,12 +1265,27 @@ class Shared:
                 if thinking:
                     thinking_parts.append(thinking)
 
+                now = time.perf_counter()
+
                 # urlopen()'s timeout is per-read, not total duration — it
                 # resets on every token. Enforce the real wall-clock deadline.
-                if time.perf_counter() - t_start > timeout:
+                if now - t_start > timeout:
                     partial_text = "".join(response_parts) or "".join(thinking_parts)
                     raise OllamaTimeout(f"ollama_chat exceeded {timeout}s wall-clock timeout",
                                         partial_text=partial_text)
+
+                # Re-check for a degenerate loop every LOOP_CHECK_INTERVAL
+                # seconds rather than waiting for the full timeout above —
+                # a model spinning in circles is usually detectable within
+                # a fraction of ACC_TIMEOUT, and there's no reason to keep
+                # streaming (and burning GPU time) once it's obvious.
+                if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
+                    last_loop_check = now
+                    partial_text = "".join(response_parts) or "".join(thinking_parts)
+                    if partial_text and Shared.looks_like_loop(partial_text):
+                        raise OllamaLoopDetected(
+                            f"ollama_chat detected a generation loop after {now - t_start:.0f}s",
+                            partial_text=partial_text)
 
                 if chunk.get("done"):
                     eval_count        = chunk.get("eval_count", tokens)

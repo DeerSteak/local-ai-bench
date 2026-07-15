@@ -49,6 +49,13 @@ RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting — 
 # not the whole benchmark.
 ACC_TIMEOUT = 60
 
+# How often (seconds) the accuracy tests re-check a still-streaming response
+# for a degenerate generation loop (see Shared.looks_like_loop), rather than
+# waiting for the full ACC_TIMEOUT to elapse before looking. A model that's
+# visibly stuck by ~10s in gets cut off there instead of burning the rest of
+# its 60s budget on a question that was never going to land.
+LOOP_CHECK_INTERVAL = 8
+
 # Tokens/sec below which a model is skipped from the (expensive) conversation
 # test — too slow for usable back-and-forth chat regardless of single-shot
 # TTFT. Checked against every context depth the single-shot LLM test reported,
