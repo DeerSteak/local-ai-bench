@@ -55,7 +55,7 @@ export default function AccuracyPanel({ containerRef, files, accuracyTest, enabl
           <div key={model} className={styles.modelGroup}>
             <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
             <GroupedBarCard
-              title="Accuracy by Category"
+              title={`${testLabel} Accuracy by Category`}
               modelName={modelLabel(model)}
               data={catData}
               barConfigs={categoryConfigs}

@@ -105,7 +105,7 @@ export default function Controls({
                   className={styles.labelTextarea}
                   value={hostnameOverrides[f.id] ?? f.hostname}
                   onChange={e => onUpdateHostnameOverride(f.id, e.target.value)}
-                  rows={2}
+                  rows={4}
                   spellCheck={false}
                 />
               </div>

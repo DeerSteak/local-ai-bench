@@ -97,7 +97,7 @@ function BarLabel({ x, y, width, height, value, naKey, statusKey, rowData, forma
 function computeYAxisWidth(rows, key) {
   const lines = rows.flatMap(row => String(row[key] ?? '').split('\n'));
   const maxLabelChars = Math.max(1, ...lines.map(l => l.length));
-  return Math.min(260, Math.max(150, maxLabelChars * 7.2 + 24));
+  return Math.min(260, Math.max(40, maxLabelChars * 7.2 + 26));
 }
 
 // Reserve enough right margin for the longest bar-end label, including any
@@ -128,7 +128,7 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
 
   const maxLabelLines = Math.max(1, ...processedData.map(row => String(row[xKey] ?? '').split('\n').length));
   const rowH = Math.max(32, maxLabelLines * 16);
-  const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 100);
+  const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 104);
   const yAxisWidth = computeYAxisWidth(processedData, xKey);
   const rightMargin = computeRightMargin(processedData, barConfigs);
   return (
@@ -141,14 +141,14 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
         </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: rightMargin, bottom: 8, left: 8 }}>
+        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: rightMargin, bottom: 12, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
           <XAxis
             type="number"
             tick={{ fill: "#57606a", fontSize: 15 }}
             tickFormatter={valFormatter}
-            label={{ value: yLabel, position: "insideBottom", offset: -16, fill: "#8c959f", fontSize: 15 }}
-            height={40}
+            label={{ value: yLabel, position: "insideBottom", offset: -6, fill: "#8c959f", fontSize: 15 }}
+            height={56}
           />
           <YAxis
             type="category"
