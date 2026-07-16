@@ -32,7 +32,8 @@ tests.sh / .bat                Activates bench-env, runs pytest
 `scripts/` modules:
 - `benchmark.py` — CLI entry point, argument parsing, orchestration (`main()`)
 - `config.py` — shared constants (URLs, paths, timeouts, run counts)
-- `shared.py` — cross-cutting helpers: logging, server lifecycle, machine profiling, Ollama/ComfyUI HTTP clients
+- `shared.py` — cross-cutting helpers: logging, machine profiling, crash-cache/`run_measured_calls`/`run_accuracy_benchmark` orchestration (engine-agnostic — takes an `InferenceEngine`), ComfyUI server lifecycle/HTTP client
+- `engines/base.py` — `InferenceEngine` interface; `engines/ollama.py` — `OllamaEngine`, the only implementation today (Ollama server lifecycle + HTTP client). A future llama.cpp/MLX engine implements the same interface without touching orchestration.
 - `llm_prefill_benchmark.py` — single-shot cold-prefill LLM test
 - `llm_conversation_benchmark.py` — multi-turn conversation LLM test
 - `embedding_benchmark.py` — embeddings test
@@ -92,12 +93,12 @@ This is the part to get right — **write comprehensive, valuable tests for anyt
 
 **Structure:**
 - `tests/conftest.py` puts `scripts/` on `sys.path`, so tests import modules the same way the scripts import each other (`import config`, `from shared import Shared`, etc.) — bare top-level imports, not `scripts.foo`.
-- One test file roughly per source module; split further when a module has multiple distinct concerns (e.g. `shared.py` → `test_shared_crash_cache.py`, `test_shared_ollama_streaming.py`, `test_shared_ollama_maintenance.py`, `test_shared_run_measured_calls.py`, `test_shared_stats.py`, `test_shared_find_comfyui_python.py`).
+- One test file roughly per source module; split further when a module has multiple distinct concerns (e.g. `shared.py` → `test_shared_crash_cache.py`, `test_shared_run_measured_calls.py`, `test_shared_stats.py`, `test_shared_find_comfyui_python.py`, `test_run_accuracy_benchmark.py`; `engines/ollama.py` → `test_ollama_engine.py`).
 - Use `pytest`'s plain `assert`, `monkeypatch`, `unittest.mock.patch`, and `tmp_path` fixtures — no custom test framework.
 
 **What to test — the real boundary:**
 - **Do** unit test pure logic and anything mockable at a clean seam: parsing, calculation, decision/skip logic, config selection, request/response shaping. Mock `requests`/`urllib` calls and `Shared.*` seams rather than hitting a real server.
-- **Don't** try to unit test code that spawns real subprocesses, polls a live Ollama/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `Shared.start_ollama`/`ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test.
+- **Don't** try to unit test code that spawns real subprocesses, polls a live Ollama/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `OllamaEngine.start`/`Shared.ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test. Orchestration logic that used to be entangled with real Ollama calls (e.g. `Shared.run_accuracy_benchmark`) takes an `InferenceEngine` parameter specifically so it *isn't* in this bucket — test it with a fake engine instead.
 - `scripts/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
 
 **Extract before testing, when logic is buried in a loop.** Several times in this project's history, business logic embedded in a large orchestration loop turned out to be worth pulling into its own pure, testable function rather than leaving it untested inside a `# pragma: no cover` method:

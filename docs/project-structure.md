@@ -42,7 +42,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 |---|---|
 | `benchmark.py` | CLI entry point — argument parsing and test orchestration |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
-| `shared.py` | Cross-cutting helpers: logging, server lifecycle, machine profiling, Ollama/ComfyUI HTTP clients |
+| `shared.py` | Cross-cutting helpers: logging, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
+| `engines/base.py`, `engines/ollama.py` | `InferenceEngine` interface and its `OllamaEngine` implementation (Ollama server lifecycle + HTTP client) — the seam a future llama.cpp/MLX engine would implement, see [Engines](engines.md) |
 | `llm_prefill_benchmark.py` | Single-shot LLM test |
 | `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
 | `embedding_benchmark.py` | Embeddings test |
@@ -77,4 +78,4 @@ The `answers_*.json` sidecars hold each accuracy test's wrong answers, keyed by 
 
 ---
 
-[← How It Works](how-it-works.md) · [Back to README](../README.md) · [Testing →](testing.md)
+[← Engines](engines.md) · [Back to README](../README.md) · [Testing →](testing.md)

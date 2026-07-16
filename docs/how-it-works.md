@@ -42,7 +42,8 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 |---|---|
 | `scripts/benchmark.py` | CLI argument parsing and orchestration (`main()`) — calls each test class in order and writes results |
 | `scripts/config.py` | Shared constants: URLs, paths (`SCRIPT_DIR`, `RESULTS_DIR`, `COMFYUI_DIR`), timeouts, run counts |
-| `scripts/shared.py` | Cross-cutting helpers: logging, server lifecycle (start/stop Ollama and ComfyUI), machine profiling, low-level Ollama/ComfyUI HTTP clients |
+| `scripts/shared.py` | Cross-cutting helpers: logging, ComfyUI server lifecycle/HTTP client, machine profiling, engine-agnostic run/crash-cache orchestration |
+| `scripts/engines/base.py`, `scripts/engines/ollama.py` | `InferenceEngine` interface and its `OllamaEngine` implementation — start/stop, model lifecycle, and the low-level HTTP client for Ollama specifically, see [Engines](engines.md) |
 | `scripts/llm_prefill_benchmark.py` | The single-shot LLM test |
 | `scripts/llm_conversation_benchmark.py` | The multi-turn conversation test |
 | `scripts/embedding_benchmark.py` | The embeddings test |
@@ -92,4 +93,4 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `A
 
 ---
 
-[← Dashboard](dashboard.md) · [Back to README](../README.md) · [Project Structure →](project-structure.md)
+[← Dashboard](dashboard.md) · [Back to README](../README.md) · [Engines →](engines.md)

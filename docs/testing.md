@@ -74,7 +74,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 [`.coveragerc`](../.coveragerc) at the repo root shapes that report so it reflects the code this suite is actually meant to exercise, rather than being diluted by code that can't safely be unit tested:
 
 - `scripts/setup_check.py` is omitted entirely — it has no `__main__` guard, so importing it would run the whole interactive install flow (prompts, downloads).
-- Individual functions that spawn real subprocesses, poll a live Ollama/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `Shared.start_ollama`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
+- Individual functions that spawn real subprocesses, poll a live Ollama/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `OllamaEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
 
 With that config in place, coverage sits around 95% for the code the suite targets — the remaining gaps are a handful of fine-grained exception branches inside otherwise-tested functions, not whole untested subsystems.
 
@@ -220,30 +220,29 @@ The test suite consists of **22 test modules** validating different components o
   4. The current external active virtual environment (`VIRTUAL_ENV`).
   5. The current system interpreter (`sys.executable`).
 
-- **[test_shared_ollama_maintenance.py](../tests/test_shared_ollama_maintenance.py)**
-  Tests Ollama lifecycle hooks and server state controls:
-  - `ollama_reachable_or_abort` detects whether Ollama is running.
+- **[test_ollama_engine.py](../tests/test_ollama_engine.py)**
+  Tests `OllamaEngine` (`scripts/engines/ollama.py`), the only `InferenceEngine` implementation today — lifecycle hooks, server state controls, and NDJSON stream parsing:
+  - `reachable_or_abort` detects whether the Ollama server is running.
   - `model_pulled` checks for exact or implicit matches (like tags missing `:latest`) in the local image list.
-  - `ollama_model_max_ctx` parses architectural options to identify a model's true context limit, falling back to configuration defaults on failure.
-  - `unload_model` issues a keep-alive termination request and handles network errors.
-  - `unload_all_models` queries loaded models and terminates them.
+  - `max_context_length` parses architectural options to identify a model's true context limit, falling back to configuration defaults on failure.
+  - `unload` issues a keep-alive termination request and handles network errors.
+  - `unload_all` queries loaded models and terminates them.
   - `wait_until_unloaded` polls until a model is fully evicted.
-
-- **[test_shared_ollama_streaming.py](../tests/test_shared_ollama_streaming.py)**
-  Validates NDJSON response stream parsing for Ollama completion endpoints. It tests:
-  - Derivation of TTFT and Tokens/sec from server performance fields.
-  - Fallback calculation of TTFT using local system time if fields are missing.
-  - Resilience against empty, blank, or malformed JSON stream lines.
+  - Derivation of TTFT and tokens/sec from server performance fields, with fallback to local system time if fields are missing.
+  - Resilience against empty, blank, or malformed NDJSON stream lines.
   - Response extraction preferring the standard content payload over reasoning (`thinking`) fields, but falling back to reasoning text if needed.
   - Intercepting HTTP 500 error payloads to extract clean diagnostic messages (e.g. "model requires more system memory") rather than raising generic HTTP error statuses.
 
 - **[test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py)**
-  Tests the execution loop for benchmark runs (`run_measured_calls`). It checks:
+  Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:
   - Correct execution count under normal operations.
   - Instant stoppage and exit status marking on timeout.
   - Skipping a single run's metrics if a standard execution error occurs, while proceeding to the next run.
-  - If a connection crash occurs, attempting Ollama recovery. If recovery succeeds, the loop retries the failed run. If recovery fails, the benchmark halts and records the model as crashed.
+  - If a connection crash occurs, attempting recovery via the engine. If recovery succeeds, the loop retries the failed run. If recovery fails, the benchmark halts and records the model as crashed.
   - `slow_tps_early_exit` early termination logic based on performance speeds.
+
+- **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
+  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network). Previously untestable because it was entangled with real Ollama calls; taking `engine: InferenceEngine` as a parameter removed that coupling. Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
   Tests the degenerate-generation-loop heuristic used on timed-out accuracy-test responses (`Shared.looks_like_loop`):
