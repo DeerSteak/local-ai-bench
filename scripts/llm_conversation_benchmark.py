@@ -9,7 +9,7 @@ fill from empty.
 
 Expensive, so it runs a single conversation per model (the --runs flag is
 ignored here). The conversation grows from empty up to the model's real
-context ceiling (looked up live via Shared.ollama_model_max_ctx), sampling
+context ceiling (looked up live via the engine's max_context_length), sampling
 TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever the
 ceiling reaches). The model gets the full 128K of room, but sampling stops at
 96K, since 96K-to-128K is where models with an exact 128K native ceiling have
@@ -35,7 +35,7 @@ class LLMConversationBenchmark:
     CONV_RUNS = 1
 
     # Context window handed to a model: 128K if supported, else its real
-    # ceiling (see Shared.ollama_model_max_ctx). Higher than the top sampled
+    # ceiling (see the engine's max_context_length). Higher than the top sampled
     # checkpoint (96K) so the growth loop always has headroom against num_ctx
     # instead of scraping the ceiling.
     CONV_TARGET_CTX = 131072
@@ -116,11 +116,11 @@ class LLMConversationBenchmark:
             "examples, counterarguments, and analysis."
         )
 
-    def run(self, models, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, engine, models, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
-        if not Shared.ollama_available():
-            Shared.err("Ollama server not reachable — skipping LLM conversation benchmarks")
+        if not engine.available():
+            Shared.err("Inference engine not reachable — skipping LLM conversation benchmarks")
             Shared.err("Start with: ollama serve")
             return results
 
@@ -133,11 +133,11 @@ class LLMConversationBenchmark:
 
             Shared.section(f"LLM Conversation: {label}")
 
-            if not Shared.ollama_reachable_or_abort():
+            if not engine.reachable_or_abort():
                 break
 
             try:
-                if not Shared.model_pulled(tag):
+                if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
@@ -147,7 +147,7 @@ class LLMConversationBenchmark:
                     results[short] = skip_entry
                     continue
 
-                model_max = Shared.ollama_model_max_ctx(tag)
+                model_max = engine.max_context_length(tag)
                 target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
                 checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
                 num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
@@ -156,9 +156,9 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
-                if not Shared.warmup_model(tag, label, num_ctx, warmup_runs,
-                                           crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE):
-                    Shared.unload_model(tag)
+                if not engine.warmup(tag, label, num_ctx, warmup_runs,
+                                     crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE):
+                    engine.unload(tag)
                     continue
 
                 results[short] = {}
@@ -183,7 +183,7 @@ class LLMConversationBenchmark:
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens
                         messages.append({"role": "user", "content": prompt_text})
-                        ttft, eval_count, tps, prompt_eval_count, response_text = Shared.ollama_chat(
+                        ttft, eval_count, tps, prompt_eval_count, response_text = engine.chat(
                             tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
                             num_predict=num_predict,
                         )
@@ -267,16 +267,16 @@ class LLMConversationBenchmark:
                                             f"{partial_text[:200]!r}")
                             run_timed_out = True
                             timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
-                        elif Shared.is_connection_crash(e):
-                            # Ollama's model runner died mid-conversation (commonly OOM).
+                        elif engine.is_connection_crash(e):
+                            # The engine's model runner died mid-conversation (commonly OOM).
                             # Mid-turn state (this turn's user prompt is already appended)
                             # makes retrying unsafe, so stop the run here — but wait for
                             # the server to recover before the next model, rather than
-                            # letting its warmup discover Ollama is still down.
-                            Shared.err(f"{label}: run {run_i+1} — Ollama's model runner appears to have crashed "
-                                       f"— last server output:\n{Shared.tail_ollama_log()}")
-                            if not Shared.wait_for_ollama_recovery():
-                                Shared.warn("Ollama did not become reachable again within 30s")
+                            # letting its warmup discover the engine is still down.
+                            Shared.err(f"{label}: run {run_i+1} — the engine's model runner appears to have crashed "
+                                       f"— last server output:\n{engine.tail_log()}")
+                            if not engine.wait_for_recovery():
+                                Shared.warn("The engine did not become reachable again within 30s")
                             run_crashed = True
                             crashed_label = crashed_label or f"{cumulative_tokens // 1024}K"
                         else:
@@ -323,8 +323,8 @@ class LLMConversationBenchmark:
                         tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
 
                 Shared.log(f"Unloading {label} ...")
-                Shared.unload_model(tag)
-                Shared.wait_until_unloaded(tag)
+                engine.unload(tag)
+                engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
                     save_fn(results)

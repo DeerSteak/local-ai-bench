@@ -12,11 +12,11 @@ class LLMPrefillBenchmark:
     # same crash. Delete this file to retry a skipped model.
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")
 
-    def run(self, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, engine, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
-        if not Shared.ollama_available():
-            Shared.err("Ollama server not reachable — skipping LLM benchmarks")
+        if not engine.available():
+            Shared.err("Inference engine not reachable — skipping LLM benchmarks")
             Shared.err("Start with: ollama serve")
             return results
 
@@ -29,11 +29,11 @@ class LLMPrefillBenchmark:
 
             Shared.section(f"LLM: {label}")
 
-            if not Shared.ollama_reachable_or_abort():
+            if not engine.reachable_or_abort():
                 break
 
             try:
-                if not Shared.model_pulled(tag):
+                if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
@@ -46,9 +46,9 @@ class LLMPrefillBenchmark:
                 # Warm up at the largest context this model will run so Ollama
                 # pre-allocates the full KV cache once, avoiding a reload at max context.
                 max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
-                if not Shared.warmup_model(tag, label, max_ctx, warmup_runs,
-                                           crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
-                    Shared.unload_model(tag)
+                if not engine.warmup(tag, label, max_ctx, warmup_runs,
+                                     crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
+                    engine.unload(tag)
                     continue
 
                 results[short] = {}
@@ -63,7 +63,7 @@ class LLMPrefillBenchmark:
 
                     def _prefill_once(run_i):
                         prompt = Shared.build_prompt_for_context(ctx_len)
-                        ttft, tokens, tps = Shared.ollama_generate(
+                        ttft, tokens, tps = engine.generate(
                             tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=ctx_len
                         )
                         print(
@@ -75,7 +75,7 @@ class LLMPrefillBenchmark:
 
                     samples, status, _ = Shared.run_measured_calls(
                         config.N_RUNS, _prefill_once, tag, crash_cache,
-                        LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}")
+                        LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}", engine)
                     ttfts    = [s[0] for s in samples]
                     tps_list = [s[1] for s in samples]
 
@@ -114,8 +114,8 @@ class LLMPrefillBenchmark:
                 if model_timed_out:
                     Shared.warn(f"{label}: timed out — moving to next model")
                 Shared.log(f"Unloading {label} ...")
-                Shared.unload_model(tag)
-                Shared.wait_until_unloaded(tag)
+                engine.unload(tag)
+                engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
                     save_fn(results)

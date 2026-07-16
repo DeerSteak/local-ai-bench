@@ -68,6 +68,7 @@ from pathlib import Path
 
 import config
 from shared import Shared
+from engines import get_engine
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
@@ -322,6 +323,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "compared against a full-bank run or published (default: full bank).",
     )
     parser.add_argument(
+        "--engine", type=str, default="ollama", choices=["ollama"],
+        help="Inference engine to benchmark against (default: ollama). Only "
+             "Ollama is implemented today; the flag exists so a future "
+             "llama.cpp/MLX engine can be selected without changing call sites.",
+    )
+    parser.add_argument(
         "--force-all", action="store_true",
         help=f"Ignore the {config.SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
              "context length in the LLM prefill test and always run the conversation "
@@ -330,12 +337,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     args = parser.parse_args()
 
+    engine = get_engine(args.engine)
+    # Held on Shared so shutdown_managed() (called from the signal handler and
+    # the finally block) can consult the live engine without threading it in.
+    Shared._active_engine = engine
+
     if args.list_models:
-        if not Shared.ensure_ollama():
+        if not engine.ensure_running():
             Shared.err("Could not start Ollama — install from https://ollama.com/download "
                        "or start it manually with: ollama serve")
             sys.exit(1)
-        installed = Shared.list_installed_models()
+        installed = engine.list_installed_models()
         if not installed:
             Shared.warn("Ollama is running but no models are installed — pull one with: ollama pull <tag>")
             sys.exit(0)
@@ -362,8 +374,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
     if args.models:
-        Shared.ensure_ollama()  # so a custom (non-catalog) tag can resolve against what's actually pulled
-        installed_tags = [m["tag"] for m in Shared.list_installed_models()]
+        engine.ensure_running()  # so a custom (non-catalog) tag can resolve against what's actually pulled
+        installed_tags = [m["tag"] for m in engine.list_installed_models()]
         llm_models = resolve_custom_models(args.models, llm_models, installed_tags)
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
@@ -397,8 +409,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     def _cleanup(sig=None, frame=None):
         if sig is not None:
             print(f"\n{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}")
-        if Shared.ollama_available():
-            Shared.unload_all_models()
+        if engine.available():
+            engine.unload_all()
         if Shared.comfyui_available():
             ImageBenchmark.comfyui_free_models()
         if Shared._managed_procs:
@@ -447,19 +459,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             if args.cpu_only:
                 Shared.warn("Stopping Ollama to relaunch in CPU-only mode "
                             f"(applies to: {', '.join(ollama_tests)}) ...")
-                Shared.stop_all_ollama()
-                cpu_env = {
-                    "HIP_VISIBLE_DEVICES": "",
-                    "CUDA_VISIBLE_DEVICES": "",
-                    "ROCR_VISIBLE_DEVICES": "",
-                }
-                if not Shared.start_ollama(extra_env=cpu_env):
+                engine.stop()
+                if not engine.start(gpu_visible=False):
                     Shared.err("Failed to start Ollama in CPU-only mode — "
                                f"{', '.join(ollama_tests)} tests will be skipped")
-                else:
-                    Shared._cpu_only_active = True
             else:
-                Shared.ensure_ollama()
+                engine.ensure_running()
 
         # ── LLM ───────────────────────────────────────────────────────────────
         if "llm" in args.tests:
@@ -468,6 +473,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 _checkpoint()
 
             results["llm"] = LLMPrefillBenchmark().run(
+                engine=engine,
                 models=llm_models,
                 context_lengths=config.CONTEXT_LENGTHS,
                 warmup_runs=args.warmup,
@@ -497,6 +503,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 _checkpoint()
 
             results["llm_conversation"] = LLMConversationBenchmark().run(
+                engine=engine,
                 models=conv_models,
                 warmup_runs=args.warmup,
                 force_all=args.force_all,
@@ -525,6 +532,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
 
             answers_path = sidecar_path(out_path, f"answers_{test_name}_")
             results[test_name] = Bench().run(
+                engine=engine,
                 models=llm_models,
                 questions=questions,
                 warmup_runs=args.warmup,
@@ -541,6 +549,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 _checkpoint()
 
             results["embeddings"] = EmbeddingBenchmark().run(
+                engine=engine,
                 models=EMBED_MODELS,
                 warmup_runs=args.warmup,
                 save_fn=_emb_save,
@@ -550,11 +559,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
         # if this run forced CPU-only, so the machine isn't left in that state
         # (and so image generation, if it runs next, starts from a clean state).
-        if ollama_tests and args.cpu_only and Shared._cpu_only_active:
+        if ollama_tests and args.cpu_only and engine._cpu_only_active:
             Shared.log("Restoring normal (GPU-enabled) Ollama ...")
-            Shared.stop_all_ollama()
-            Shared._cpu_only_active = False
-            Shared.start_ollama()
+            engine.stop()
+            engine.start()
 
         # ── Image generation ───────────────────────────────────────────────────
         if "img" in args.tests:
@@ -563,9 +571,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             # generation is always the last phase, so nothing later needs
             # Ollama — kill the whole server rather than just unloading its
             # models, to free the memory the idle process itself still holds.
-            if Shared.ollama_available():
+            if engine.available():
                 Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
-                Shared.stop_all_ollama()
+                engine.stop()
             comfyui_started = Shared.ensure_comfyui(comfyui_dir)
             if not comfyui_started:
                 Shared.warn("Image benchmarks will be skipped")

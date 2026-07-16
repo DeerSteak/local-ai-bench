@@ -1,13 +1,15 @@
 """
-shared.py — cross-cutting helpers used by more than one test: logging, server
-lifecycle management, machine profiling, and the low-level Ollama/ComfyUI HTTP
-clients. Everything here is stateless-per-call except the managed-process
-bookkeeping (used to shut down servers this script itself started), so
-methods are static and state lives on the class rather than an instance.
+shared.py — cross-cutting helpers used by more than one test: logging, the
+ComfyUI server lifecycle, machine profiling, crash-cache bookkeeping, and the
+engine-agnostic benchmark orchestration (run_measured_calls,
+run_accuracy_benchmark, loop detection). The Ollama-specific HTTP/process
+client moved out to engines/ollama.py behind the InferenceEngine interface;
+what stays here is driven through that interface, not tied to Ollama. Most
+helpers are stateless-per-call, so methods are static and the little state
+there is (managed-process bookkeeping) lives on the class.
 """
 
 import hashlib
-import http.client
 import json
 import os
 import platform
@@ -16,19 +18,20 @@ import statistics
 import subprocess
 import sys
 import tempfile
-import threading
 import time
-import urllib.error
-import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import psutil
 import requests
 
 import config
 from models import IMAGE_MODELS
+
+if TYPE_CHECKING:
+    from engines.base import InferenceEngine
 
 
 class OllamaTimeout(TimeoutError):
@@ -55,28 +58,25 @@ class OllamaLoopDetected(OllamaTimeout):
 
 
 class Shared:
-    # Tracks processes we started so we can shut them down cleanly
+    # Tracks processes we started so we can shut them down cleanly. Both the
+    # inference engine's server (Ollama today) and ComfyUI register here, so
+    # shutdown_managed() can clean up everything from one list on crash/exit.
     _managed_procs: list[subprocess.Popen] = []
 
-    # True while Ollama is running with GPU devices hidden (--cpu-only). If
-    # the script dies before it restores normal mode, shutdown_managed() must
-    # not leave that GPU-hidden process running silently in the background.
-    _cpu_only_active = False
+    # The live inference engine for this run, set once by benchmark.py. Held so
+    # shutdown_managed() can ask it (e.g. whether it's in forced CPU-only mode)
+    # without the caller having to thread the instance into every cleanup path.
+    _active_engine: "InferenceEngine | None" = None
 
-    # Path to the log file capturing the current/most recent Ollama server's
-    # stdout+stderr — set by start_ollama() so a crash's actual message can be
-    # surfaced later instead of silently discarded.
-    _ollama_log_path: Path | None = None
-
-    # Same as _ollama_log_path but for the ComfyUI server process. Kept for the
-    # life of the process (not deleted on successful startup) so a crash later
-    # in the run — e.g. an OOM while loading a large checkpoint — still has a
-    # log to inspect instead of going silent.
+    # Path to the log file capturing the ComfyUI server process's stdout+stderr.
+    # Kept for the life of the process (not deleted on successful startup) so a
+    # crash later in the run — e.g. an OOM while loading a large checkpoint —
+    # still has a log to inspect instead of going silent.
     _comfyui_log_path: Path | None = None
 
-    # Cap on how many times a benchmark retries a request after Ollama's model
-    # runner subprocess crashes (commonly OOM) before giving up on that model —
-    # a deterministic crash would otherwise recur identically forever.
+    # Cap on how many times a benchmark retries a request after the engine's
+    # model runner subprocess crashes (commonly OOM) before giving up on that
+    # model — a deterministic crash would otherwise recur identically forever.
     CRASH_RETRY_MAX = 2
 
     # ── logging ──
@@ -104,12 +104,15 @@ class Shared:
     # ── server management ──
 
     @staticmethod
-    def shutdown_managed():  # pragma: no cover — manages real subprocesses
-        """Terminate any servers we started."""
-        if Shared._cpu_only_active:
-            Shared.warn("Exiting while Ollama is in forced CPU-only mode — killing it "
+    def shutdown_managed(engine: "InferenceEngine | None" = None):  # pragma: no cover — manages real subprocesses
+        """Terminate any servers we started. If the inference engine is running
+        in forced CPU-only mode, stop it first so the script doesn't exit
+        leaving a GPU-hidden server running silently in the background."""
+        engine = engine or Shared._active_engine
+        if engine is not None and getattr(engine, "_cpu_only_active", False):
+            Shared.warn("Exiting while the engine is in forced CPU-only mode — killing it "
                         "rather than leaving GPU devices hidden in the background")
-            Shared.stop_all_ollama()
+            engine.stop()
         for proc in Shared._managed_procs:
             if proc.poll() is None:
                 Shared.log(f"Stopping managed process (pid {proc.pid}) ...")
@@ -132,96 +135,10 @@ class Shared:
             return f"(failed to read {service_name} log: {e})"
 
     @staticmethod
-    def tail_ollama_log(n_lines: int = 40) -> str:
-        """Return the last n_lines of the current Ollama server's captured
-        output, for surfacing the real crash reason instead of guessing."""
-        return Shared._tail_log(Shared._ollama_log_path, "Ollama", n_lines)
-
-    @staticmethod
     def tail_comfyui_log(n_lines: int = 40) -> str:
         """Return the last n_lines of the current ComfyUI server's captured
         output, for surfacing the real crash reason instead of guessing."""
         return Shared._tail_log(Shared._comfyui_log_path, "ComfyUI", n_lines)
-
-    @staticmethod
-    def start_ollama(extra_env: dict | None = None, timeout: int = 15) -> bool:  # pragma: no cover — spawns a real subprocess
-        """Start 'ollama serve', optionally with extra/overridden environment
-        variables (e.g. HIP_VISIBLE_DEVICES="" to force CPU-only). Tracked in
-        _managed_procs for cleanup on exit. Returns True once reachable.
-
-        config.OLLAMA_ENV_DEFAULTS is applied first (setdefault — an operator's
-        own shell export still wins) so request-queuing/model-swap/attention
-        behavior is pinned instead of left to Ollama's auto-detected defaults,
-        which otherwise vary by machine and version and make run-to-run
-        timing comparisons unreliable."""
-        env = os.environ.copy()
-        for k, v in config.OLLAMA_ENV_DEFAULTS.items():
-            env.setdefault(k, v)
-        if extra_env:
-            env.update(extra_env)
-
-        os_name = platform.system()
-        try:
-            log_fh = tempfile.NamedTemporaryFile(
-                mode="w", suffix="-ollama-server.log", delete=False
-            )
-            Shared._ollama_log_path = Path(log_fh.name)
-            kwargs = dict(stdout=log_fh, stderr=subprocess.STDOUT, env=env)
-            if os_name == "Windows":
-                # On Windows Ollama is a system tray app; 'ollama serve' starts the server
-                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-            proc = subprocess.Popen(["ollama", "serve"], **kwargs)
-            log_fh.close()
-            Shared._managed_procs.append(proc)
-        except FileNotFoundError:
-            Shared.err("'ollama' not found in PATH — install from https://ollama.com/download")
-            return False
-
-        for i in range(timeout):
-            time.sleep(1)
-            if Shared.ollama_available():
-                Shared.ok(f"Ollama started (pid {proc.pid}) — log: {Shared._ollama_log_path}")
-                return True
-            if proc.poll() is not None:
-                Shared.err(f"Ollama exited unexpectedly (code {proc.returncode})")
-                Shared.err(f"Last output:\n{Shared.tail_ollama_log()}")
-                return False
-
-        Shared.err(f"Ollama did not respond within {timeout} seconds")
-        return False
-
-    @staticmethod
-    def stop_all_ollama(timeout: int = 15) -> None:  # pragma: no cover — kills real processes
-        """Kill any running Ollama server, including one this script didn't
-        start itself, so a fresh instance can be launched with different
-        environment variables (e.g. to force CPU-only for embeddings)."""
-        os_name = platform.system()
-        try:
-            if os_name == "Windows":
-                subprocess.run(["taskkill", "/IM", "ollama.exe", "/F"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.run(["pkill", "-f", "ollama serve"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except FileNotFoundError:
-            pass
-
-        t0 = time.perf_counter()
-        while time.perf_counter() - t0 < timeout:
-            if not Shared.ollama_available():
-                return
-            time.sleep(1)
-        Shared.warn(f"Ollama still reachable {timeout}s after attempting to stop it")
-
-    @staticmethod
-    def ensure_ollama():  # pragma: no cover — thin live-server orchestration wrapper
-        """Start Ollama if not already running. Returns True if available."""
-        if Shared.ollama_available():
-            Shared.ok("Ollama already running")
-            return True
-
-        Shared.log("Ollama not running — attempting to start ...")
-        return Shared.start_ollama()
 
     @staticmethod
     def find_comfyui_python(comfyui_dir: Path) -> str:
@@ -553,58 +470,6 @@ class Shared:
             total += len(Shared._PADDING_UNIT)
         return "".join(parts)[:chars_needed]
 
-    # ── Ollama HTTP client ──
-
-    @staticmethod
-    def ollama_available():  # pragma: no cover — real HTTP call; other tests mock this seam directly
-        try:
-            r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
-            return r.status_code == 200
-        except Exception:
-            return False
-
-    @staticmethod
-    def is_connection_crash(e: Exception) -> bool:
-        """True if `e` looks like Ollama's model runner subprocess died
-        (commonly OOM) rather than an ordinary request failure.
-
-        Two timings surface as different exception shapes: connection-refused
-        (runner already dead before the request) varies by HTTP client
-        (requests vs urllib), so check both; mid-stream death (runner dies
-        while streaming — the realistic OOM timing here) surfaces as a
-        truncated read — http.client.IncompleteRead, or a builtin
-        ConnectionError from the socket.
-        """
-        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
-                          http.client.IncompleteRead, ConnectionError)):
-            return True
-        return "actively refused" in str(e).lower()
-
-    @staticmethod
-    def wait_for_ollama_recovery(timeout: int = 30) -> bool:  # pragma: no cover — real polling loop; other tests mock this seam directly
-        """Poll until Ollama's main server answers again after its model
-        runner subprocess crashed — the main server itself stays up and
-        respawns the runner, it just needs a few seconds. Returns False if
-        it doesn't come back within `timeout`."""
-        wait_t0 = time.perf_counter()
-        while time.perf_counter() - wait_t0 < timeout:
-            if Shared.ollama_available():
-                return True
-            time.sleep(2)
-        return False
-
-    @staticmethod
-    def ollama_reachable_or_abort() -> bool:
-        """True if Ollama is reachable. Callers looping over models should stop
-        when this is False rather than continuing into model_pulled() — which
-        swallows connection errors and returns False indistinguishably from
-        "genuinely not pulled", so a still-down server would misreport every
-        remaining model as not pulled."""
-        if Shared.ollama_available():
-            return True
-        Shared.err("Ollama is not reachable — stopping remaining models in this test")
-        return False
-
     @staticmethod
     def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:
         """Deterministically picks `n` questions out of `questions`, touching
@@ -716,14 +581,15 @@ class Shared:
 
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
-                            what: str, crash_extra: dict | None = None) -> tuple[list, str, str]:
+                            what: str, engine: "InferenceEngine",
+                            crash_extra: dict | None = None) -> tuple[list, str, str]:
         """
         Call `call(run_i)` up to `n_runs` times, collecting each return value —
         the shared shape behind every benchmark's "N measured runs" loop.
 
-        A timeout stops immediately. A crash (Shared.is_connection_crash)
-        retries the *same* run without counting it, after waiting for Ollama to
-        respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since a
+        A timeout stops immediately. A crash (engine.is_connection_crash)
+        retries the *same* run without counting it, after waiting for the engine
+        to respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since a
         deterministic crash would recur forever. Any other exception counts as
         a failed run and moves on. A crash that exhausts its retries is recorded
         to `cache_path` so future invocations skip this tag/test. `crash_extra`
@@ -739,7 +605,7 @@ class Shared:
         than treating every cutoff as a blank.
 
         "timed_out" means the call's full wall-clock budget was exhausted;
-        "loop_detected" means ollama_chat's check_loop polling recognized a
+        "loop_detected" means the engine's chat check_loop polling recognized a
         degenerate generation loop and cut the call short *before* that
         budget ran out (see OllamaLoopDetected) — kept distinct so a caller
         counting timeouts doesn't also double-count early loop catches, and
@@ -765,45 +631,23 @@ class Shared:
                     partial_text = getattr(e, "partial_text", "")
                     return samples, "timed_out", partial_text
                 Shared.err(f"Run {run_i+1} failed: {e}")
-                if not Shared.is_connection_crash(e):
+                if not engine.is_connection_crash(e):
                     run_i += 1
                     continue
                 crash_retries += 1
-                Shared.err(f"Ollama's model runner appears to have crashed {what} "
-                           f"— last server output:\n{Shared.tail_ollama_log()}")
+                Shared.err(f"The engine's model runner appears to have crashed {what} "
+                           f"— last server output:\n{engine.tail_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
-                    Shared.err(f"Ollama's model runner crashed {crash_retries} times — giving up on {tag}")
+                    Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed", ""
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
-                if not Shared.wait_for_ollama_recovery():
-                    Shared.warn("Ollama did not become reachable again within 30s — giving up on this model")
+                if not engine.wait_for_recovery():
+                    Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed", ""
                 # don't advance run_i — retry the same run now that Ollama is back
         return samples, "ok", ""
-
-    @staticmethod
-    def model_pulled(tag):
-        try:
-            r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
-            models = r.json().get("models", [])
-            names = [m["name"] for m in models]
-            return tag in names or any(tag in n for n in names)
-        except Exception:
-            return False
-
-    @staticmethod
-    def list_installed_models() -> list[dict]:
-        """Every Ollama tag actually pulled locally, straight from /api/tags —
-        including ones outside models.py's catalog. Returns [] (not an
-        exception) if Ollama isn't reachable, so callers treat "can't reach"
-        and "none installed" the same for listing."""
-        try:
-            r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
-            return [{"tag": m["name"], "size": m.get("size")} for m in r.json().get("models", [])]
-        except Exception:
-            return []
 
     # Self-correction/hedging markers a model repeats when it's spinning in
     # place on the same reasoning (re-deriving, "catching" the same "mistake",
@@ -878,9 +722,10 @@ class Shared:
     @staticmethod
     def run_accuracy_benchmark(section_label: str, skip_label: str, question_noun: str,
                                 data_path: Path, crash_cache_path: Path, models, questions,
-                                warmup_runs: int, ask_fn, rescore_partial_fn, score_fn,
+                                warmup_runs: int, engine: "InferenceEngine",
+                                ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None
-                                ) -> dict:  # pragma: no cover — orchestrates real Ollama runs
+                                ) -> dict:
         """Shared run() body for the MCQ/Math/Code accuracy benchmarks: per-model
         warmup, crash-cache check, one-question-at-a-time timeout/loop-detection
         handling, and result/sidecar saving — identical across all three, which
@@ -899,8 +744,8 @@ class Shared:
         results = {}
         answers_out: dict = {}
 
-        if not Shared.ollama_available():
-            Shared.err(f"Ollama server not reachable — skipping {skip_label} benchmark")
+        if not engine.available():
+            Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
             Shared.err("Start with: ollama serve")
             return results
 
@@ -914,11 +759,11 @@ class Shared:
 
             Shared.section(f"{section_label}: {label}")
 
-            if not Shared.ollama_reachable_or_abort():
+            if not engine.reachable_or_abort():
                 break
 
             try:
-                if not Shared.model_pulled(tag):
+                if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
@@ -929,10 +774,10 @@ class Shared:
                     results[short] = skip_entry
                     continue
 
-                if not Shared.warmup_model(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
-                                           crash_cache, crash_cache_path,
-                                           crash_extra={"bank_hash": bank_hash}):
-                    Shared.unload_model(tag)
+                if not engine.warmup(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                                     crash_cache, crash_cache_path,
+                                     crash_extra={"bank_hash": bank_hash}):
+                    engine.unload(tag)
                     continue
 
                 Shared.log(f"Answering {len(questions)} {question_noun} "
@@ -946,7 +791,7 @@ class Shared:
                 for i, q in enumerate(questions):
                     samples, status, partial_text = Shared.run_measured_calls(
                         1, lambda run_i, q=q: ask_fn(tag, q), tag, crash_cache,
-                        crash_cache_path, f"answering {q['id']}",
+                        crash_cache_path, f"answering {q['id']}", engine,
                         crash_extra={"bank_hash": bank_hash})
                     if samples:
                         given, raw = samples[0]
@@ -1023,8 +868,8 @@ class Shared:
                           f"({scored['correct']}/{scored['total']})")
 
                 Shared.log(f"Unloading {label} ...")
-                Shared.unload_model(tag)
-                Shared.wait_until_unloaded(tag)
+                engine.unload(tag)
+                engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
                     save_fn(results)
@@ -1033,334 +878,6 @@ class Shared:
 
         return results
 
-    @staticmethod
-    def ollama_model_max_ctx(model_tag, default=131072):
-        """Look up a pulled model's real max context length via /api/show.
-
-        Reads manifest metadata only (no model load), so it's cheap. The
-        context-length key is architecture-prefixed (llama.context_length,
-        qwen35.context_length, gptoss.context_length, ...), so scan for any key
-        ending in that suffix rather than guessing the prefix. Falls back to
-        `default` if the model isn't found, the field is missing, or the
-        request fails — callers then behave as if it supports exactly `default`.
-        """
-        try:
-            r = requests.post(f"{config.OLLAMA_URL}/api/show",
-                               json={"model": model_tag}, timeout=15)
-            r.raise_for_status()
-            info = r.json().get("model_info", {})
-            for key, value in info.items():
-                if key.endswith(".context_length") and isinstance(value, int):
-                    return value
-        except Exception:
-            pass
-        return default
-
-    @staticmethod
-    def _ollama_urlopen(req, timeout):
-        """urlopen wrapper that surfaces the response body on HTTP error status.
-
-        Ollama puts the actual failure reason (OOM, backend/driver crash, model
-        load failure, etc.) in a JSON body even on a 500 — the bare HTTPError
-        only says "HTTP Error 500: Internal Server Error" and hides it.
-        """
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode(errors="replace")
-            try:
-                detail = json.loads(body).get("error", body)
-            except json.JSONDecodeError:
-                detail = body
-            raise RuntimeError(f"Ollama returned HTTP {e.code}: {detail[:500]}") from None
-
-    @staticmethod
-    def _iter_ndjson(resp):
-        """Yield parsed JSON objects from a streaming NDJSON response body,
-        skipping blank or malformed lines."""
-        for raw_line in resp:
-            if not raw_line.strip():
-                continue
-            try:
-                yield json.loads(raw_line)
-            except json.JSONDecodeError:
-                continue
-
-    @staticmethod
-    def _final_chunk_metrics(chunk: dict, tokens: int):
-        """Extract (ttft_override, eval_count, tps) from Ollama's final
-        ("done") stream chunk. ttft_override is None when the server didn't
-        report prompt_eval_duration, so the caller should keep its own ttft."""
-        eval_count    = chunk.get("eval_count", tokens)
-        eval_duration = chunk.get("eval_duration", 0)        # nanoseconds
-        prompt_dur    = chunk.get("prompt_eval_duration", 0) # nanoseconds
-
-        ttft_override = prompt_dur / 1e9 if prompt_dur and prompt_dur > 0 else None
-        tps = eval_count / (eval_duration / 1e9) if eval_duration and eval_duration > 0 else 0
-        return ttft_override, eval_count, tps
-
-    @staticmethod
-    def ollama_generate(model_tag: str, prompt: str, timeout: int = 600,
-                        num_ctx: int | None = None):
-        """
-        Generate via Ollama and return timing metrics.
-        Returns: (ttft_sec, tokens_generated, tokens_per_sec)
-
-        Uses urllib rather than requests so streaming isn't TCP-buffered (which
-        batches chunks and inflates TTFT). Ollama's final chunk carries
-        server-side timing (prompt_eval_duration, eval_count, eval_duration in
-        ns), preferred over wall-clock where available.
-
-        num_ctx must match the context length being tested — without it Ollama
-        uses the model default, and a prompt longer than that triggers a full
-        model reload, inflating TTFT by minutes.
-        """
-        options: dict = {"num_predict": 512, "temperature": 0.0, "num_batch": config.OLLAMA_NUM_BATCH}
-        if num_ctx is not None:
-            options["num_ctx"] = num_ctx
-
-        payload = json.dumps({
-            "model":  model_tag,
-            "prompt": prompt,
-            "stream": True,
-            "options": options,
-        }).encode()
-
-        req = urllib.request.Request(
-            f"{config.OLLAMA_URL}/api/generate",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        t_start = time.perf_counter()
-        ttft    = None
-        tokens  = 0
-        tps     = 0
-        eval_count = 0
-
-        with Shared._ollama_urlopen(req, timeout) as resp:
-            for chunk in Shared._iter_ndjson(resp):
-                # First token received — record TTFT from wall clock
-                if ttft is None and chunk.get("response"):
-                    ttft = time.perf_counter() - t_start
-
-                if chunk.get("response"):
-                    tokens += 1
-
-                if chunk.get("done"):
-                    # Prefer server-side TTFT (prompt processing time) if available
-                    ttft_override, eval_count, tps = Shared._final_chunk_metrics(chunk, tokens)
-                    if ttft_override is not None:
-                        ttft = ttft_override
-                    break
-
-        total = time.perf_counter() - t_start
-        if ttft is None:
-            ttft = total
-        return ttft, eval_count, tps
-
-    @staticmethod
-    def warmup_model(tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real threaded/watchdogged model load
-                      crash_cache: dict | None = None, cache_path: Path | None = None,
-                      crash_extra: dict | None = None) -> bool:
-        """
-        Load `tag` into memory with `warmup_runs` blocking generate calls, each
-        watchdogged by a daemon thread so a hung load (model too large for
-        memory) times out after config.RUN_TIMEOUT instead of hanging the whole
-        run. Returns False on the first hung or failed run so the caller can
-        skip this model.
-
-        A hang or a runner-crash exception is exactly the deterministic failure
-        the crash cache exists to remember — warmup is often where an oversized
-        model's OOM first shows up. Pass `crash_cache`/`cache_path` to record
-        that case here too. `crash_extra` (e.g. {"bank_hash": ...}) is forwarded
-        to Shared.record_crash so a bank-aware caller's check_crash_cache can
-        tell a stale record apart from a current one.
-        """
-        Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
-        for warmup_i in range(warmup_runs):
-            exc_box = [None]
-
-            def _warmup():
-                try:
-                    Shared.ollama_generate(tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
-                except Exception as e:
-                    exc_box[0] = e
-
-            t = threading.Thread(target=_warmup, daemon=True)
-            t_start = time.perf_counter()
-            t.start()
-            t.join(timeout=config.RUN_TIMEOUT)
-
-            if t.is_alive():
-                elapsed = time.perf_counter() - t_start
-                Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
-                Shared.warn(f"{label}: model is likely too large for available memory — skipping")
-                if crash_cache is not None and cache_path is not None:
-                    Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up (hung past {config.RUN_TIMEOUT}s at num_ctx={num_ctx})",
-                                         extra=crash_extra)
-                return False
-            elif exc_box[0] is not None:
-                Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
-                if crash_cache is not None and cache_path is not None and Shared.is_connection_crash(exc_box[0]):
-                    Shared.wait_for_ollama_recovery()
-                    Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}", extra=crash_extra)
-                return False
-            else:
-                Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
-        return True
-
-    @staticmethod
-    def ollama_chat(model_tag: str, messages: list, timeout: int = 600,
-                     num_ctx: int | None = None, num_predict: int = 1024,
-                     check_loop: bool = False):
-        """
-        Generate via Ollama's /api/chat and return timing metrics plus the reply text.
-        Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
-
-        prompt_eval_count is the *total* prompt token count for this call
-        (ground truth for context depth), not just the new suffix — even when
-        `messages` shares a prefix with a prior call and llama.cpp's slot cache
-        skips re-processing it (that shows up as low prompt_eval_duration/ttft
-        instead).
-
-        check_loop opts into re-checking the accumulated text for a degenerate
-        generation loop (Shared.looks_like_loop) every config.LOOP_CHECK_INTERVAL
-        seconds instead of only once `timeout` is fully exhausted — lets the
-        accuracy tests (mcq/math/code) bail out of an obviously stuck response
-        well before burning the full per-question timeout. Off by default since
-        it's only meaningful for single-shot, unbounded-reasoning callers.
-        """
-        options: dict = {"num_predict": num_predict, "temperature": 0.0, "num_batch": config.OLLAMA_NUM_BATCH}
-        if num_ctx is not None:
-            options["num_ctx"] = num_ctx
-
-        payload = json.dumps({
-            "model":    model_tag,
-            "messages": messages,
-            "stream":   True,
-            "options":  options,
-        }).encode()
-
-        req = urllib.request.Request(
-            f"{config.OLLAMA_URL}/api/chat",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        t_start = time.perf_counter()
-        ttft   = None
-        tokens = 0
-        tps    = 0
-        eval_count        = 0
-        prompt_eval_count = 0
-        response_parts    = []
-        thinking_parts    = []
-        last_loop_check   = t_start
-
-        with Shared._ollama_urlopen(req, timeout) as resp:
-            for chunk in Shared._iter_ndjson(resp):
-                message  = chunk.get("message", {})
-                content  = message.get("content")
-                thinking = message.get("thinking")
-
-                if ttft is None and (content or thinking):
-                    ttft = time.perf_counter() - t_start
-
-                if content:
-                    tokens += 1
-                    response_parts.append(content)
-                if thinking:
-                    thinking_parts.append(thinking)
-
-                now = time.perf_counter()
-
-                # urlopen()'s timeout is per-read, not total duration — it
-                # resets on every token. Enforce the real wall-clock deadline.
-                if now - t_start > timeout:
-                    partial_text = "".join(response_parts) or "".join(thinking_parts)
-                    raise OllamaTimeout(f"ollama_chat exceeded {timeout}s wall-clock timeout",
-                                        partial_text=partial_text)
-
-                # Re-check for a degenerate loop every LOOP_CHECK_INTERVAL
-                # seconds rather than waiting for the full timeout above —
-                # a model spinning in circles is usually detectable within
-                # a fraction of ACC_TIMEOUT, and there's no reason to keep
-                # streaming (and burning GPU time) once it's obvious.
-                if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
-                    last_loop_check = now
-                    partial_text = "".join(response_parts) or "".join(thinking_parts)
-                    if partial_text and Shared.looks_like_loop(partial_text):
-                        raise OllamaLoopDetected(
-                            f"ollama_chat detected a generation loop after {now - t_start:.0f}s",
-                            partial_text=partial_text)
-
-                if chunk.get("done"):
-                    ttft_override, eval_count, tps = Shared._final_chunk_metrics(chunk, tokens)
-                    if ttft_override is not None:
-                        ttft = ttft_override
-                    prompt_eval_count = chunk.get("prompt_eval_count", 0)
-                    break
-
-        total = time.perf_counter() - t_start
-        if ttft is None:
-            ttft = total
-        # Reasoning models (Qwen3.x, DeepSeek-R1, Gemma-thinking, ...) can stream
-        # their whole turn through message.thinking with message.content empty.
-        # Fall back to the thinking text so the history we feed back next turn
-        # isn't an empty assistant message — otherwise the growth loop overcounts
-        # how much context actually persists.
-        response_text = "".join(response_parts) or "".join(thinking_parts)
-        return ttft, eval_count, tps, prompt_eval_count, response_text
-
-    # ── Ollama model loading/unloading ──
-
-    @staticmethod
-    def unload_model(model_tag: str):
-        """Force Ollama to evict a model from memory immediately."""
-        try:
-            requests.post(
-                f"{config.OLLAMA_URL}/api/generate",
-                json={"model": model_tag, "keep_alive": 0},
-                timeout=30,
-            )
-            Shared.ok(f"Unloaded {model_tag}")
-        except Exception as e:
-            Shared.warn(f"Could not unload {model_tag}: {e}")
-
-    @staticmethod
-    def unload_all_models():
-        """Unload every model currently loaded in Ollama."""
-        try:
-            r = requests.get(f"{config.OLLAMA_URL}/api/ps", timeout=10)
-            loaded = r.json().get("models", [])
-            if not loaded:
-                Shared.ok("No models currently loaded in Ollama")
-                return
-            for m in loaded:
-                Shared.unload_model(m["name"])
-        except Exception as e:
-            Shared.warn(f"Could not query loaded models: {e}")
-
-    @staticmethod
-    def wait_until_unloaded(model_tag: str, timeout: int = 30):
-        """Poll /api/ps until the model no longer appears."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                r = requests.get(f"{config.OLLAMA_URL}/api/ps", timeout=5)
-                loaded = [m["name"] for m in r.json().get("models", [])]
-                if not any(model_tag in name for name in loaded):
-                    return True
-            except Exception:
-                pass
-            time.sleep(1)
-        Shared.warn(f"{model_tag} still appears loaded after {timeout}s")
-        return False
 
     # ── ComfyUI ──
 

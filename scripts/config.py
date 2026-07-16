@@ -15,7 +15,7 @@ COMFYUI_URL  = "http://localhost:8188"
 
 # Env vars pinned on every 'ollama serve' launch so timing/throughput numbers
 # don't drift with whatever Ollama auto-detects on a given machine or version.
-# setdefault'd onto the environment (see Shared.start_ollama) rather than
+# setdefault'd onto the environment (see OllamaEngine.start) rather than
 # forced, so an operator's own shell export still wins.
 #   OLLAMA_NUM_PARALLEL=1    — no concurrent request batching inflating/
 #                              deflating per-request throughput

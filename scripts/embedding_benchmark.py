@@ -9,8 +9,6 @@ import re
 import time
 from pathlib import Path
 
-import requests
-
 import config
 from shared import Shared
 
@@ -71,11 +69,11 @@ class EmbeddingBenchmark:
 
         return chunks
 
-    def run(self, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
-        if not Shared.ollama_available():
-            Shared.err("Ollama not running — skipping embedding benchmarks")
+        if not engine.available():
+            Shared.err("Inference engine not running — skipping embedding benchmarks")
             return results
 
         crash_cache = Shared.load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
@@ -90,16 +88,16 @@ class EmbeddingBenchmark:
 
             Shared.section(f"Embeddings: {label}")
 
-            if not Shared.ollama_reachable_or_abort():
+            if not engine.reachable_or_abort():
                 break
 
             try:
-                if not Shared.model_pulled(tag):
+                if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn(f"Pull with: ollama pull {tag}")
                     continue
 
-                Shared.ok(f"Using Ollama model: {tag}")
+                Shared.ok(f"Using model: {tag}")
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE)
                 if skip_entry is not None:
@@ -113,48 +111,24 @@ class EmbeddingBenchmark:
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:
-                        resp = requests.post(
-                            f"{config.OLLAMA_URL}/api/embed",
-                            json={"model": tag, "input": chunks,
-                                  "options": {"num_batch": config.OLLAMA_NUM_BATCH}},
-                            timeout=120,
-                        )
-                        if not resp.ok:
-                            Shared.warn(f"Warmup run {warmup_i+1} failed: HTTP {resp.status_code}")
-                        else:
-                            Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+                        engine.embed(tag, chunks)
+                        Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
                     except Exception as e:
                         Shared.warn(f"Warmup run {warmup_i+1} failed: {e}")
-                        if Shared.is_connection_crash(e):
-                            Shared.wait_for_ollama_recovery()
+                        if engine.is_connection_crash(e):
+                            engine.wait_for_recovery()
 
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
 
                 def _embed_once(run_i):
-                    t0 = time.perf_counter()
-                    resp = requests.post(
-                        f"{config.OLLAMA_URL}/api/embed",
-                        json={"model": tag, "input": chunks,
-                              "options": {"num_batch": config.OLLAMA_NUM_BATCH}},
-                        timeout=120,
-                    )
-                    if not resp.ok:
-                        try:
-                            detail = resp.json()
-                        except Exception:
-                            detail = resp.text[:500]
-                        raise RuntimeError(
-                            f"Ollama rejected embed request (HTTP {resp.status_code}, "
-                            f"n_chunks={len(chunks)}): {detail}"
-                        )
-                    elapsed = time.perf_counter() - t0
+                    _, elapsed = engine.embed(tag, chunks)
                     rate = len(chunks) / elapsed
                     print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
                     return rate
 
                 rates, status, _ = Shared.run_measured_calls(
                     config.N_RUNS, _embed_once, tag, crash_cache,
-                    EmbeddingBenchmark.EMBED_CRASH_CACHE, "embedding this document")
+                    EmbeddingBenchmark.EMBED_CRASH_CACHE, "embedding this document", engine)
 
                 if rates:
                     results[short] = {

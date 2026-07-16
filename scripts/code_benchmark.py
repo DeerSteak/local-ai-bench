@@ -41,7 +41,7 @@ class CodeBenchmark:
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")
 
     # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in Shared.ollama_chat is the real bound.
+    # answer. The wall-clock timeout in the engine's chat is the real bound.
     CODE_NUM_PREDICT = -1
 
     # Wall-clock budget for running a model's generated code against one
@@ -263,9 +263,9 @@ class CodeBenchmark:
         }
 
     @staticmethod
-    def _ask(tag: str, question: dict) -> tuple[dict, str]:
+    def _ask(engine, tag: str, question: dict) -> tuple[dict, str]:
         prompt = CodeBenchmark.build_prompt(question)
-        _, _, _, _, response_text = Shared.ollama_chat(
+        _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
             check_loop=True,
@@ -317,8 +317,8 @@ class CodeBenchmark:
             "incorrect":    incorrect,
         }
 
-    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else CodeBenchmark.load_questions()
 
         def _rescore_partial(q, text):
@@ -332,8 +332,8 @@ class CodeBenchmark:
         return Shared.run_accuracy_benchmark(
             section_label="Code", skip_label="code", question_noun="coding problems",
             data_path=CodeBenchmark.CODE_DATA_PATH, crash_cache_path=CodeBenchmark.CODE_CRASH_CACHE,
-            models=models, questions=questions, warmup_runs=warmup_runs,
-            ask_fn=CodeBenchmark._ask,
+            models=models, questions=questions, warmup_runs=warmup_runs, engine=engine,
+            ask_fn=lambda tag, q: CodeBenchmark._ask(engine, tag, q),
             rescore_partial_fn=_rescore_partial,
             score_fn=CodeBenchmark.score,
             save_fn=save_fn, answers_path=answers_path,

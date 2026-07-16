@@ -21,7 +21,7 @@ class MathBenchmark:
     MATH_CRASH_CACHE = Path(".math_crash_cache.json")
 
     # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in Shared.ollama_chat is the real bound.
+    # answer. The wall-clock timeout in the engine's chat is the real bound.
     MATH_NUM_PREDICT = -1
 
     # Matches an optionally-negative, optionally-decimal number, with commas
@@ -61,9 +61,9 @@ class MathBenchmark:
             return None
 
     @staticmethod
-    def _ask(tag: str, question: dict) -> tuple[float | None, str]:
+    def _ask(engine, tag: str, question: dict) -> tuple[float | None, str]:
         prompt = MathBenchmark.build_prompt(question)
-        _, _, _, _, response_text = Shared.ollama_chat(
+        _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_predict=MathBenchmark.MATH_NUM_PREDICT,
             check_loop=True,
@@ -108,14 +108,14 @@ class MathBenchmark:
             "incorrect":    incorrect,
         }
 
-    def run(self, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            answers_path: Path | None = None):  # pragma: no cover — orchestrates real Ollama runs
+    def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else MathBenchmark.load_questions()
         return Shared.run_accuracy_benchmark(
             section_label="Math", skip_label="math", question_noun="math questions",
             data_path=MathBenchmark.MATH_DATA_PATH, crash_cache_path=MathBenchmark.MATH_CRASH_CACHE,
-            models=models, questions=questions, warmup_runs=warmup_runs,
-            ask_fn=MathBenchmark._ask,
+            models=models, questions=questions, warmup_runs=warmup_runs, engine=engine,
+            ask_fn=lambda tag, q: MathBenchmark._ask(engine, tag, q),
             rescore_partial_fn=lambda q, text: MathBenchmark.parse_answer(text),
             score_fn=MathBenchmark.score,
             save_fn=save_fn, answers_path=answers_path,

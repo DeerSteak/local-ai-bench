@@ -4,6 +4,28 @@ from shared import OllamaLoopDetected, OllamaTimeout, Shared
 import config
 
 
+class _FakeEngine:
+    """Minimal test double satisfying just the three methods run_measured_calls
+    now calls on the engine: is_connection_crash (to tell a runner crash apart
+    from an ordinary failure), tail_log (surfaced in the crash message), and
+    wait_for_recovery (polled between crash retries). No network — the crash
+    path is exercised entirely in-memory. recovers controls whether a crash is
+    treated as recoverable, matching the two real-engine outcomes the tests
+    below used to force by monkeypatching Shared.wait_for_ollama_recovery."""
+
+    def __init__(self, recovers=True):
+        self._recovers = recovers
+
+    def is_connection_crash(self, e):
+        return isinstance(e, requests.exceptions.ConnectionError) or "actively refused" in str(e).lower()
+
+    def tail_log(self, n_lines=40):
+        return "(fake engine log)"
+
+    def wait_for_recovery(self, timeout=30):
+        return self._recovers
+
+
 def test_run_measured_calls_all_succeed(tmp_path):
     cache_path = tmp_path / "crash.json"
     calls = []
@@ -12,7 +34,7 @@ def test_run_measured_calls_all_succeed(tmp_path):
         calls.append(run_i)
         return run_i * 2
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0, 2, 4]
     assert status == "ok"
     assert partial_text == ""
@@ -27,7 +49,7 @@ def test_run_measured_calls_timeout_stops_immediately(tmp_path):
             raise TimeoutError("timed out")
         return run_i
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0]
     assert status == "timed_out"
     assert partial_text == ""
@@ -42,22 +64,22 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
     def call(run_i):
         raise OllamaTimeout("timed out", partial_text="The answer is B")
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "timed_out"
     assert partial_text == "The answer is B"
 
 
 def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
-    """OllamaLoopDetected (raised by ollama_chat's check_loop) must surface as
-    its own "loop_detected" status, not get folded into "timed_out" — the two
-    are independent buckets for the caller (see run_accuracy_benchmark)."""
+    """OllamaLoopDetected (raised by the engine's chat check_loop) must surface
+    as its own "loop_detected" status, not get folded into "timed_out" — the
+    two are independent buckets for the caller (see run_accuracy_benchmark)."""
     cache_path = tmp_path / "crash.json"
 
     def call(run_i):
         raise OllamaLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "loop_detected"
     assert partial_text == "wait, wait, wait,"
@@ -71,32 +93,30 @@ def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
             raise ValueError("some ordinary failure")
         return run_i
 
-    samples, status, _ = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     # run_i=1 fails but still counts as attempted (advances), so only 2 samples collected
     assert samples == [0, 2]
     assert status == "ok"
 
 
-def test_run_measured_calls_crash_retries_then_gives_up(tmp_path, monkeypatch):
+def test_run_measured_calls_crash_retries_then_gives_up(tmp_path):
     cache_path = tmp_path / "crash.json"
     crash_cache = {}
 
-    # Recovery always succeeds so the retry loop doesn't stall on real sleeps.
-    monkeypatch.setattr(Shared, "wait_for_ollama_recovery", lambda timeout=30: True)
-
+    # Recovery always succeeds so the retry loop doesn't stall — the crash is
+    # deterministic, so it exhausts CRASH_RETRY_MAX and gives up regardless.
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
     assert Shared.load_crash_cache(cache_path)["tag"]["crashed_at"] == crash_cache["tag"]["crashed_at"]
 
 
-def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path, monkeypatch):
+def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path):
     cache_path = tmp_path / "crash.json"
-    monkeypatch.setattr(Shared, "wait_for_ollama_recovery", lambda timeout=30: True)
 
     attempts = {"n": 0}
 
@@ -106,20 +126,20 @@ def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path, monkey
             raise requests.exceptions.ConnectionError("actively refused")
         return run_i
 
-    samples, status, _ = Shared.run_measured_calls(2, call, "tag", {}, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(2, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0, 1]
     assert status == "ok"
 
 
-def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path, monkeypatch):
+def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path):
     cache_path = tmp_path / "crash.json"
     crash_cache = {}
-    monkeypatch.setattr(Shared, "wait_for_ollama_recovery", lambda timeout=30: False)
 
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing")
+    samples, status, _ = Shared.run_measured_calls(
+        3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine(recovers=False))
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
