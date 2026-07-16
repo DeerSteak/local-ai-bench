@@ -121,6 +121,51 @@ to think about:
 - `max_context_length` will need to read the model's own metadata (GGUF
   header / MLX config) instead of Ollama's `/api/show`.
 
+### Reusing Ollama's downloaded weights for a llama.cpp engine
+
+A llama.cpp engine wouldn't need to re-download models Ollama already has.
+Ollama stores pulled models as an OCI-like blob store — a JSON manifest at
+`~/.ollama/models/manifests/registry.ollama.ai/library/<model>/<tag>` listing
+layers by digest, with the actual weights at
+`~/.ollama/models/blobs/sha256-<hash>`. The layer tagged
+`application/vnd.ollama.image.model` is a plain GGUF file, just named by its
+hash instead of `model.gguf` — Ollama stores it verbatim, byte-for-byte, so
+`llama-server -m` can point straight at that blob path (or a symlink to it
+with a `.gguf` extension for clarity; llama.cpp sniffs the GGUF magic bytes,
+not the extension). This only applies to a llama.cpp engine — MLX uses its
+own converted/quantized weight format (via `mlx_lm.convert`), so there's no
+blob-sharing there.
+
+Two things to verify before trusting this for cross-engine comparisons, not
+just assume:
+
+- **Quantization is whatever Ollama pulled for that tag** (e.g. `q4_K_M`) —
+  fine, but worth being explicit about when a results table calls two runs
+  "the same model."
+- **Chat template drift.** Ollama's own templating is a *separate* manifest
+  layer (`application/vnd.ollama.image.template`, Go `text/template` syntax)
+  used by its server at inference time — not the same thing as the
+  `tokenizer.chat_template` (Jinja) metadata key that may or may not be
+  embedded inside the GGUF blob itself, which is what `llama-server --jinja`
+  would use instead. The two are usually equivalent (Ollama's library
+  authors typically derive one from the other) but that's not guaranteed for
+  every model, especially older GGUFs converted before chat-template
+  embedding was standard practice. Silently diverging templates would show
+  up as a confusing quality difference between engines with no obvious cause.
+
+The cheap way to catch this: once a llama.cpp engine exists, have setup
+(`setup_check.py`, right after an `ollama pull` completes) resolve the
+manifest → blob path and read just the GGUF header — the metadata section is
+small and sits at the front of the file, no need to touch the multi-GB tensor
+data — to check whether `tokenizer.chat_template` is present (the `gguf`
+package, from llama.cpp's `gguf-py`, reads this without a hand-rolled
+parser). Log or record a warning for any model missing it, so a template gap
+is caught at setup time instead of discovered as an unexplained accuracy
+difference during a benchmark run. Not implemented — there's no llama.cpp
+engine to act on the finding yet, and this project's own convention (see
+above) is to build that check alongside the engine that needs it, not ahead
+of it.
+
 ## Testing
 
 [`tests/test_ollama_engine.py`](../tests/test_ollama_engine.py) tests
