@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import config
+import hardware
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 
 # Every asset this script manages (requirements.txt, ComfyUI/, hf.txt, ...)
@@ -121,6 +122,10 @@ print(f"  OS:       {platform.system()} {platform.release()}")
 print(f"  Machine:  {platform.machine()}")
 print(f"  Node:     {platform.node()}")
 
+# Populated below per-OS, used later (section 3a) as the memory ceiling for
+# Darwin/integrated-GPU/CPU-only machines — None if it couldn't be read.
+total_ram_gb = None
+
 if os_name == "Darwin":
     try:
         chip = subprocess.check_output(
@@ -133,6 +138,7 @@ if os_name == "Darwin":
         mem_bytes = int(subprocess.check_output(
             ["sysctl", "-n", "hw.memsize"], text=True
         ).strip())
+        total_ram_gb = mem_bytes / (1024**3)
         print(f"  RAM:      {mem_bytes // (1024**3)} GB")
     except Exception:
         pass
@@ -143,6 +149,7 @@ elif os_name == "Linux":
             for line in f:
                 if line.startswith("MemTotal"):
                     kb = int(line.split()[1])
+                    total_ram_gb = kb / (1024**2)
                     print(f"  RAM:      {kb // (1024**2)} GB")
                     break
     except Exception:
@@ -156,6 +163,7 @@ elif os_name == "Windows":
             text=True, stderr=subprocess.DEVNULL,
         ).strip()
         mem_bytes = int(out.splitlines()[-1].strip())
+        total_ram_gb = mem_bytes / (1024**3)
         print(f"  RAM:      {mem_bytes // (1024**3)} GB")
     except Exception:
         pass
@@ -164,7 +172,10 @@ elif os_name == "Windows":
 
 section("GPU / Acceleration Backend")
 
+nvidia_vram_gb = 0.0  # sum across GPUs — Ollama can span a model across multiple
+
 def check_nvidia():
+    global nvidia_vram_gb
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
@@ -176,6 +187,9 @@ def check_nvidia():
             print(f"  GPU:     {parts[0]}")
             print(f"  VRAM:    {parts[1]}")
             print(f"  Driver:  {parts[2]}")
+            m = re.match(r"([\d.]+)\s*MiB", parts[1])
+            if m:
+                nvidia_vram_gb += float(m.group(1)) / 1024
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
@@ -191,7 +205,11 @@ def get_nvidia_compute_cap():
     except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
         return None
 
+rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
+rocm_vram_gb  = None  # only queried for a discrete GPU — see compute_memory_ceiling_gb
+
 def check_rocm():
+    global rocm_gpu_kind, rocm_vram_gb
     try:
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
@@ -199,6 +217,30 @@ def check_rocm():
         agents = [l for l in out.splitlines() if "Marketing Name" in l]
         for a in agents[:3]:
             print(f"  ROCm GPU: {a.split(':', 1)[-1].strip()}")
+        if agents:
+            name = agents[0].split(":", 1)[-1].strip()
+            rocm_gpu_kind = hardware.classify_gpu(name)
+            if rocm_gpu_kind == "discrete":
+                # An APU's VRAM figure here is often just the small
+                # BIOS-fixed carve-out, not the real usable pool via
+                # GTT/system-RAM addressing — only trust this for a
+                # confirmed-discrete card. Fails open (leaves rocm_vram_gb
+                # None) on any missing binary or unexpected output.
+                try:
+                    mem_out = subprocess.check_output(
+                        ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                        text=True, stderr=subprocess.DEVNULL,
+                    )
+                    mem_data = json.loads(mem_out)
+                    total_bytes = sum(
+                        int(card.get("VRAM Total Memory (B)", 0))
+                        for card in mem_data.values()
+                    )
+                    if total_bytes > 0:
+                        rocm_vram_gb = total_bytes / (1024**3)
+                except (FileNotFoundError, subprocess.CalledProcessError,
+                        json.JSONDecodeError, ValueError):
+                    pass
         return bool(agents)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
@@ -219,8 +261,11 @@ def check_metal():
         pass
     return False
 
+windows_gpu_kind = None  # "discrete" or "integrated", set by check_windows_gpu()
+
 def check_windows_gpu():
     """Detect GPU vendor on Windows via PowerShell. Returns 'amd', 'intel', or None."""
+    global windows_gpu_kind
     if platform.system() != "Windows":
         return None
 
@@ -238,12 +283,16 @@ def check_windows_gpu():
     for name in names:
         if "AMD" in name or "Radeon" in name:
             print(f"  GPU:     {name}")
+            windows_gpu_kind = hardware.classify_gpu(name)
             return "amd"
         if "Intel" in name and "Arc" in name:
             print(f"  GPU:     {name}")
+            windows_gpu_kind = hardware.classify_gpu(name)
             return "intel"
 
     return None
+
+linux_intel_gpu_kind = None  # "discrete" or "integrated", set by check_linux_intel_gpu()
 
 def check_linux_intel_gpu():
     """Detect an Intel Arc GPU on Linux via lspci. Detection/labeling only —
@@ -253,6 +302,7 @@ def check_linux_intel_gpu():
     https://github.com/ollama/ollama/pull/11160), not anything this script
     installs. Requires 'Arc' in the name (not just 'Intel') so integrated
     graphics with no discrete acceleration aren't misreported."""
+    global linux_intel_gpu_kind
     if platform.system() != "Linux":
         return False
     try:
@@ -260,7 +310,9 @@ def check_linux_intel_gpu():
         for line in out.splitlines():
             if (any(k in line for k in ("VGA", "3D controller", "Display"))
                     and "Intel" in line and "Arc" in line):
-                print(f"  GPU:     {line.split(':', 2)[-1].strip()}")
+                name = line.split(":", 2)[-1].strip()
+                print(f"  GPU:     {name}")
+                linux_intel_gpu_kind = hardware.classify_gpu(name)
                 return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
@@ -343,6 +395,45 @@ elif metal_ok:
     ok("Apple Metal detected")
 else:
     warn("No GPU acceleration detected — LLM and image tests may run slowly")
+
+# ── 3a. Memory ceiling ─────────────────────────────────────────────────────────
+# How much memory a model can realistically use on this machine — VRAM for a
+# confirmed-discrete GPU, total system RAM for everything else (Apple Silicon
+# unified memory, integrated GPUs, or no GPU at all). Used below to default
+# models that clearly won't fit to unchecked in the picker — informational,
+# not a hard block (see hardware.py).
+
+section("Memory")
+
+if nvidia_ok:
+    gpu_vendor = "nvidia"
+    gpu_vram_gb = nvidia_vram_gb if nvidia_vram_gb > 0 else None
+elif rocm_ok:
+    gpu_vendor = "amd" if rocm_gpu_kind == "discrete" else "integrated"
+    gpu_vram_gb = rocm_vram_gb
+elif amd_windows:
+    gpu_vendor = "amd" if windows_gpu_kind == "discrete" else "integrated"
+    gpu_vram_gb = None  # no driver-agnostic VRAM query implemented on Windows
+elif intel_windows:
+    gpu_vendor = "intel" if windows_gpu_kind == "discrete" else "integrated"
+    gpu_vram_gb = None
+elif intel_linux:
+    gpu_vendor = "intel" if linux_intel_gpu_kind == "discrete" else "integrated"
+    gpu_vram_gb = None
+else:
+    # Apple Silicon (metal_ok) and "no GPU detected" both land here — unified
+    # memory and CPU-only both mean total system RAM is the only pool.
+    gpu_vendor = "integrated" if metal_ok else "none"
+    gpu_vram_gb = None
+
+memory_ceiling_gb, memory_ceiling_note = hardware.compute_memory_ceiling_gb(
+    os_name=os_name, total_ram_gb=total_ram_gb,
+    gpu_vendor=gpu_vendor, vram_gb=gpu_vram_gb,
+)
+if memory_ceiling_gb is not None:
+    ok(f"Model memory ceiling: {memory_ceiling_note}")
+else:
+    warn(memory_ceiling_note)
 
 # ── 4. Ollama detection (read-only — nothing is installed or started here) ────
 
@@ -528,13 +619,20 @@ if not confirm("Continue?", default=True):
 
 section("Model Selection")
 
-def select_models():
+def select_models(memory_ceiling_gb=None):
     """
     Flat numbered list spanning every LLM tier, embeddings, and image models,
-    all checked by default; returns (selected_llm, selected_images,
+    checked by default; returns (selected_llm, selected_images,
     selected_embed). The toggle syntax is printed to the user below. Plain
     input() only — no raw terminal mode — so stray keys from earlier prompts
     can't leak in and there's nothing to restore/flush.
+
+    An LLM model that hardware.model_fits() says won't fit in
+    memory_ceiling_gb starts unchecked instead, with a note on its line
+    explaining why — informational, not a hard block, since a model that's
+    merely tight (MoE expert offload, a little KV-cache spillover into
+    system RAM) can still be worth trying. memory_ceiling_gb=None (couldn't
+    be determined) means no filtering — every LLM model still starts checked.
     """
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
     groups = [
@@ -553,17 +651,28 @@ def select_models():
         tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
             entry_tier = tier if kind == "llm" else m.get("tier")
+            fits = (hardware.model_fits(m["download_size"], memory_ceiling_gb)
+                    if kind == "llm" else True)
             entries.append({"item": m, "kind": kind, "group": group_key,
-                            "tier": entry_tier, "checked": True})
+                            "tier": entry_tier, "checked": fits is not False,
+                            "fits": fits})
 
-    def size_label(m, kind):
-        if kind in ("llm", "embed"):
+    def size_label(e, m, kind):
+        if kind == "embed":
             return f"  ({m['download_size']})"
+        if kind == "llm":
+            label = f"  ({m['download_size']})"
+            if e["fits"] is False:
+                needed = hardware.model_memory_requirement_gb(m["download_size"])
+                label += f"  {YELLOW}⚠ needs ~{needed:.1f} GB, ~{memory_ceiling_gb:.1f} GB available{RESET}"
+            return label
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
         return f"  (~{gb:.1f} GB)" if gb else ""
 
     def render():
-        print(f"  {BOLD}Choose which models to install (all selected by default){RESET}")
+        header_note = ("all selected by default" if memory_ceiling_gb is None
+                        else "selected by default, except LLMs that likely won't fit in memory")
+        print(f"  {BOLD}Choose which models to install ({header_note}){RESET}")
         n = 1
         for header, items, kind, group_key in groups:
             if not items:
@@ -572,7 +681,7 @@ def select_models():
             for m in items:
                 e = entries[n - 1]
                 box = "[x]" if e["checked"] else "[ ]"
-                print(f"    {box} {n:>2}  {m['label']}{size_label(m, kind)}")
+                print(f"    {box} {n:>2}  {m['label']}{size_label(e, m, kind)}")
                 n += 1
             print()
 
@@ -643,7 +752,7 @@ def select_models():
     selected_embed  = [e["item"] for e in entries if e["checked"] and e["kind"] == "embed"]
     return selected_llm, selected_images, selected_embed
 
-selected_llm, selected_images, selected_embed = select_models()
+selected_llm, selected_images, selected_embed = select_models(memory_ceiling_gb)
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
@@ -774,18 +883,6 @@ elif needs_ollama_start and not ollama_found:
 
 section("Disk Space")
 
-def _parse_size_gb(s):
-    """Parse a size string like '~4.9 GB' or '~274 MB' to float GB."""
-    s = s.strip().lstrip("~≈")
-    try:
-        if "MB" in s:
-            return float(s.replace("MB", "").strip()) / 1024
-        if "GB" in s:
-            return float(s.replace("GB", "").strip())
-    except ValueError:
-        pass
-    return 0.0
-
 CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
 CLIP_DIR    = COMFYUI_DIR / "models" / "clip"
 VAE_DIR     = COMFYUI_DIR / "models" / "vae"
@@ -798,10 +895,10 @@ if ollama_up:
     for m in all_llm:
         tag = m["tag"]
         if not (tag in already_pulled or any(tag in a for a in already_pulled)):
-            remaining_gb += _parse_size_gb(m["download_size"])
+            remaining_gb += hardware.parse_size_gb(m["download_size"])
 else:
     for m in all_llm:
-        remaining_gb += _parse_size_gb(m["download_size"])
+        remaining_gb += hardware.parse_size_gb(m["download_size"])
 
 sd35_selected  = "sd35-large" in selected_image_shorts
 flux1_selected = "flux-dev" in selected_image_shorts
