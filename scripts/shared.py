@@ -654,11 +654,19 @@ class Shared:
     # apologizing) without ever landing on an answer — a paraphrased loop, not
     # a verbatim one, so _has_repeated_verbatim_ngram alone won't catch it.
     # Lowercase substrings, checked against lowercased text.
+    # Short, common CoT filler — capable models naturally say these a few
+    # times while reasoning toward a correct answer, so they need a higher
+    # repeat count before they're diagnostic of a stuck loop.
+    _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
+        "wait,", "wait -", "actually,", "hold on,",
+    ]
+    # Longer, diagnostically specific phrases — a model saying these even a
+    # few times is a real signal of re-deriving/re-catching the same mistake.
     _LOOP_HEDGE_PHRASES = [
-        "wait,", "wait -", "actually,", "let me reconsider", "let me recalculate",
+        "let me reconsider", "let me recalculate",
         "let me re-check", "let me recheck", "let me recompute", "let me redo",
         "let me try again", "let's try again", "let's recalculate",
-        "on second thought", "hold on,", "there seems to be a mistake",
+        "on second thought", "there seems to be a mistake",
         "there seems to have been", "i made an error", "i made a mistake",
         "that's not right", "this is incorrect", "let's start over",
         "apolog",  # apologize / apologies / apologizing
@@ -690,24 +698,33 @@ class Shared:
         return False
 
     @staticmethod
-    def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3) -> bool:
-        """Flags `text` if any single phrase from _LOOP_HEDGE_PHRASES occurs
-        at least `min_repeats` times — catches a loop that paraphrases each
+    def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3,
+                                      high_threshold_repeats: int = 5) -> bool:
+        """Flags `text` if any single phrase from _LOOP_HEDGE_PHRASES occurs at
+        least `min_repeats` times, or any phrase from
+        _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD occurs at least
+        `high_threshold_repeats` times — catches a loop that paraphrases each
         pass (re-deriving the same result, repeatedly "catching" and
-        "correcting" the same mistake) rather than repeating verbatim."""
+        "correcting" the same mistake) rather than repeating verbatim. The
+        high-threshold tier covers short, common CoT filler ("wait,",
+        "actually,") that capable models say a few times while reasoning
+        toward a correct answer, so it needs more repeats before it's
+        diagnostic of an actual stuck loop."""
         lowered = text.lower()
-        return any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
+        return (any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
+                or any(lowered.count(phrase) >= high_threshold_repeats
+                       for phrase in Shared._LOOP_HEDGE_PHRASES_HIGH_THRESHOLD))
 
     @staticmethod
     def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
-                         hedge_min_repeats: int = 3) -> bool:
+                         hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
         """Heuristic for a degenerate generation loop in a timed-out accuracy-
         test response: true if the model either repeated a substantial chunk
         of text verbatim, or repeatedly hedged/self-corrected without ever
         landing on an answer. See _has_repeated_verbatim_ngram and
         _has_repeated_hedging_phrase for the two signals."""
         return (Shared._has_repeated_verbatim_ngram(text, ngram_words, min_repeats)
-                or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats))
+                or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
 
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
@@ -833,8 +850,7 @@ class Shared:
                         if partial_text and Shared.looks_like_loop(partial_text):
                             likely_loop_ids.append(q["id"])
                     elif status == "loop_detected":
-                        Shared.warn(f"{q['id']}: response looks like a generation loop — "
-                                    "scoring as wrong and continuing")
+                        Shared.warn(f"{q['id']}: response looks like a generation loop")
                         likely_loop_ids.append(q["id"])
                     if status == "crashed":
                         stopped_early = "crashed"
@@ -856,6 +872,12 @@ class Shared:
                 if timed_out_ids:
                     results[short]["timed_out_count"] = len(timed_out_ids)
                     results[short]["timed_out_ids"] = timed_out_ids
+                if likely_loop_ids:
+                    # A question flagged mid-generation (or rescored from partial
+                    # text) may still have landed on the correct answer once
+                    # score_fn ran — don't list it as a loop if it wasn't wrong.
+                    incorrect_ids = {entry["id"] for entry in scored["incorrect"]}
+                    likely_loop_ids = [qid for qid in likely_loop_ids if qid in incorrect_ids]
                 if likely_loop_ids:
                     results[short]["likely_loop_count"] = len(likely_loop_ids)
                     results[short]["likely_loop_ids"] = likely_loop_ids

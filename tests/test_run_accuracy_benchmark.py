@@ -153,6 +153,20 @@ def test_loop_detected_question_is_flagged(tmp_path):
     assert "timed_out_count" not in results["fake"]
 
 
+def test_loop_detected_but_correct_answer_is_not_flagged(tmp_path):
+    # The model got caught in a loop-detection cutoff, but the partial text
+    # already contained a correct, parseable answer — it should be scored
+    # correct and never show up in likely_loop_ids, since that list is a
+    # diagnostic of wrong answers, not of raw detector hits.
+    questions = [_question("q1", "B")]
+    behaviors = {"q1": ("loop", "The answer is B, wait, wait, wait, let me restate: B")}
+    results, _ = _run(tmp_path, questions, behaviors)
+
+    assert results["fake"]["correct"] == 1
+    assert "likely_loop_count" not in results["fake"]
+    assert "likely_loop_ids" not in results["fake"]
+
+
 def test_crashed_run_stops_early(tmp_path):
     questions = [_question("q1", "B"), _question("q2", "A"), _question("q3", "C")]
     # q2 crashes the runner deterministically; the run should stop and never

@@ -141,16 +141,20 @@ def test_chat_check_loop_raises_early_on_repeated_hedging(monkeypatch):
     monkeypatch.setattr(ollama_module.time, "perf_counter", lambda: next(counter))
     monkeypatch.setattr(ollama_module.config, "LOOP_CHECK_INTERVAL", 0)
     _patch_urlopen(monkeypatch, [
+        # "wait," is common CoT filler now requiring 5 repeats (the
+        # high-threshold hedge tier) before it's diagnostic of a stuck loop.
+        {"message": {"content": "wait, "}},
+        {"message": {"content": "wait, "}},
         {"message": {"content": "wait, "}},
         {"message": {"content": "wait, "}},
         {"message": {"content": "wait, still stuck"}},
         {"message": {"content": "this chunk should never be reached"}},
-        {"done": True, "eval_count": 4, "eval_duration": 1_000_000_000, "prompt_eval_count": 10},
+        {"done": True, "eval_count": 6, "eval_duration": 1_000_000_000, "prompt_eval_count": 10},
     ])
     with pytest.raises(OllamaLoopDetected) as exc_info:
         OllamaEngine().chat("tag", [{"role": "user", "content": "hi"}], check_loop=True)
     assert "loop" in str(exc_info.value).lower()
-    assert "wait, wait, wait, still stuck" == exc_info.value.partial_text
+    assert "wait, wait, wait, wait, wait, still stuck" == exc_info.value.partial_text
     assert "never be reached" not in exc_info.value.partial_text
 
 
