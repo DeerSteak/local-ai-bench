@@ -774,7 +774,7 @@ class Shared:
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"{section_label}: {label}")
+            Shared.section(f"{section_label} ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break

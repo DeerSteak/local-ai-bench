@@ -86,7 +86,7 @@ class EmbeddingBenchmark:
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"Embeddings: {label}")
+            Shared.section(f"Embeddings ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break

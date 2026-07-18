@@ -202,7 +202,7 @@ class LlamaCppEngine(InferenceEngine):
                        "the llamacpp engine reuses models pulled via 'ollama pull', "
                        "pull at least one model first")
             return False
-        Shared.ok(f"{self.BINARY} found — models load on demand per test")
+        Shared.ok(f"{self.BINARY} found at {self._binary_path()} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper over ensure_running
@@ -360,8 +360,19 @@ class LlamaCppEngine(InferenceEngine):
                 return False
             elif exc_box[0] is not None:
                 Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
-                if crash_cache is not None and cache_path is not None and self.is_connection_crash(exc_box[0]):
-                    self.wait_for_recovery()
+                # Unlike Ollama (where a non-crash warmup exception can be an
+                # ordinary transient request failure against an always-on
+                # daemon), llama-server is spawned fresh per model here, so
+                # *any* warmup exception — not just a connection-crash shape —
+                # means this tag failed to load under llamacpp (bad GGUF,
+                # unsupported architecture, exited on startup, etc.) and is
+                # just as deterministic as a hang. Recording it regardless of
+                # is_connection_crash means a later --engine both pass over
+                # ollama (which reads this same cache) skips it too instead of
+                # re-discovering the same failure.
+                if crash_cache is not None and cache_path is not None:
+                    if self.is_connection_crash(exc_box[0]):
+                        self.wait_for_recovery()
                     Shared.record_crash(tag, crash_cache, cache_path,
                                          f"warming up at num_ctx={num_ctx}", extra=crash_extra)
                 return False

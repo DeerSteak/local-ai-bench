@@ -27,7 +27,7 @@ class LLMPrefillBenchmark:
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"LLM: {label}")
+            Shared.section(f"LLM ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break

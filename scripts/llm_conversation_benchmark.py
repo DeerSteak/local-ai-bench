@@ -131,7 +131,7 @@ class LLMConversationBenchmark:
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"LLM Conversation: {label}")
+            Shared.section(f"LLM Conversation ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break

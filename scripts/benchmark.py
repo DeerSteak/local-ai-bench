@@ -339,10 +339,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "already pulled via 'ollama pull' — resolved straight from "
              "Ollama's local model store, no separate download — and "
              "requires the llama.cpp 'llama-server' binary on PATH. "
-             "'both' runs the full --tests suite once per engine (ollama, "
-             "then llamacpp), back to back, writing a separate results file "
+             "'both' runs the full --tests suite once per engine (llamacpp, "
+             "then ollama), back to back, writing a separate results file "
              "for each (engine name appended to the filename) so they can "
-             "be compared directly.",
+             "be compared directly. llamacpp runs first so any model that "
+             "fails to load there is cached (see the per-test *_crash_cache.json "
+             "files) and skipped on the ollama pass too, instead of spending "
+             "time re-discovering the same failure.",
     )
     parser.add_argument(
         "--force-all", action="store_true",
@@ -353,14 +356,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     args = parser.parse_args()
 
-    # "both" runs the whole suite once per engine below; for the one-off
-    # --list-models / --models resolution steps that need *an* engine just to
-    # query Ollama's local model store, 'ollama' is authoritative regardless
-    # of --engine (llamacpp resolves models from that same store — see
-    # --engine help — and, unlike Ollama, requires its own binary installed
-    # just to answer "what's pulled", which --list-models/--models shouldn't
-    # need).
-    engine_names = ["ollama", "llamacpp"] if args.engine == "both" else [args.engine]
+    # "both" runs the whole suite once per engine below, llamacpp first so a
+    # model that fails to load there lands in the crash cache (see
+    # scripts/shared.py's load/check/record_crash_cache) before the ollama
+    # pass reads that same cache and skips it too — see --engine help.
+    #
+    # For the one-off --list-models / --models resolution steps that need *an*
+    # engine just to query Ollama's local model store, 'ollama' is
+    # authoritative regardless of --engine (llamacpp resolves models from that
+    # same store — see --engine help — and, unlike Ollama, requires its own
+    # binary installed just to answer "what's pulled", which
+    # --list-models/--models shouldn't need).
+    engine_names = ["llamacpp", "ollama"] if args.engine == "both" else [args.engine]
     engine = get_engine("ollama")
     # Held on Shared so shutdown_managed() (called from the signal handler and
     # the finally block) can consult the live engine without threading it in.
