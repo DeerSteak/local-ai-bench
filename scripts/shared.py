@@ -761,7 +761,7 @@ class Shared:
         results = {}
         answers_out: dict = {}
 
-        if not engine.available():
+        if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
             Shared.err("Start with: ollama serve")
             return results

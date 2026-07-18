@@ -72,7 +72,7 @@ class EmbeddingBenchmark:
     def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
-        if not engine.available():
+        if not engine.ensure_running():
             Shared.err("Inference engine not running — skipping embedding benchmarks")
             return results
 

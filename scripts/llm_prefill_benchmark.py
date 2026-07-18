@@ -15,7 +15,7 @@ class LLMPrefillBenchmark:
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
-        if not engine.available():
+        if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM benchmarks")
             Shared.err("Start with: ollama serve")
             return results
