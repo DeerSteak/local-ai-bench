@@ -331,8 +331,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "compared against a full-bank run or published (default: full bank).",
     )
     parser.add_argument(
-        "--engine", type=str, default="ollama", choices=["ollama", "llamacpp", "both"],
-        help="Inference engine to benchmark against (default: ollama). "
+        "--engine", type=str, default="llamacpp", choices=["ollama", "llamacpp", "both"],
+        help="Inference engine to benchmark against (default: llamacpp — "
+             "marginally faster than Ollama and a closer read on raw model "
+             "capability, without Ollama's scheduling/wrapper overhead). "
              "'llamacpp' runs llama-server directly against the same models "
              "already pulled via 'ollama pull' — resolved straight from "
              "Ollama's local model store, no separate download — and "
@@ -354,9 +356,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     # "both" runs the whole suite once per engine below; for the one-off
     # --list-models / --models resolution steps that need *an* engine just to
     # query Ollama's local model store, 'ollama' is authoritative regardless
-    # (llamacpp resolves models from that same store — see --engine help).
+    # of --engine (llamacpp resolves models from that same store — see
+    # --engine help — and, unlike Ollama, requires its own binary installed
+    # just to answer "what's pulled", which --list-models/--models shouldn't
+    # need).
     engine_names = ["ollama", "llamacpp"] if args.engine == "both" else [args.engine]
-    engine = get_engine(engine_names[0])
+    engine = get_engine("ollama")
     # Held on Shared so shutdown_managed() (called from the signal handler and
     # the finally block) can consult the live engine without threading it in.
     Shared._active_engine = engine
