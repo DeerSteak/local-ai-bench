@@ -218,6 +218,24 @@ def test_chat_returns_content_and_server_timings(monkeypatch):
     assert tps == pytest.approx(4.0)
 
 
+def test_chat_prefers_usage_prompt_tokens_over_timings_prompt_n(monkeypatch):
+    # timings.prompt_n is only the tokens newly prefilled this call (a slot
+    # cache hit means most of a growing conversation isn't recounted there);
+    # the trailing usage chunk's prompt_tokens is the true running total and
+    # must win — this is what LLMConversationBenchmark's growth loop relies
+    # on to know how deep the conversation actually is.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"content": "Hi"}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "timings": {"predicted_n": 4, "predicted_ms": 1000, "prompt_n": 12}},
+        {"choices": [], "usage": {"prompt_tokens": 2048, "completion_tokens": 4, "total_tokens": 2052}},
+    ])
+    _, _, _, prompt_eval_count, _ = LlamaCppEngine().chat(
+        "tag", [{"role": "user", "content": "hi"}])
+    assert prompt_eval_count == 2048
+
+
 def test_chat_falls_back_to_reasoning_text_when_content_empty(monkeypatch):
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [

@@ -577,14 +577,26 @@ class LlamaCppEngine(InferenceEngine):
         through as an extension field alongside the OpenAI-shaped body;
         -1 means unbounded, same convention the accuracy tests already rely on
         for Ollama. See OllamaEngine.chat's docstring for check_loop.
+
+        stream_options.include_usage asks for a trailing chunk carrying a
+        standard OpenAI `usage` object — prompt_eval_count is read from its
+        `prompt_tokens` field (see below), not from timings.prompt_n, which
+        is only the tokens newly prefilled *this call* once the slot's prefix
+        cache absorbs part of a growing conversation (see `cache_n` in
+        llama-server's own timings) — using prompt_n as if it were the
+        running total silently under-counts every turn after the first,
+        letting a caller like LLMConversationBenchmark's growth loop believe
+        it's still nowhere near a checkpoint long after the real (uncounted)
+        history has kept growing underneath it.
         """
         self._ensure_model(tag, num_ctx)
 
         payload = json.dumps({
-            "messages":    messages,
-            "n_predict":   num_predict,
-            "temperature": 0.0,
-            "stream":      True,
+            "messages":       messages,
+            "n_predict":      num_predict,
+            "temperature":    0.0,
+            "stream":         True,
+            "stream_options": {"include_usage": True},
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/v1/chat/completions",
@@ -646,6 +658,14 @@ class LlamaCppEngine(InferenceEngine):
                         ttft = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
+
+                # usage arrives in its own trailing chunk (empty choices) after
+                # the last content/timings chunk, so this always has the last
+                # word — the true total, overriding timings.prompt_n's
+                # cache-miss-only count above.
+                usage = chunk.get("usage")
+                if usage and usage.get("prompt_tokens") is not None:
+                    prompt_eval_count = usage["prompt_tokens"]
 
         total = time.perf_counter() - t_start
         if ttft is None:
