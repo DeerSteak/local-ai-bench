@@ -326,14 +326,21 @@ def test_is_connection_crash_false_for_unrelated_error():
     assert LlamaCppEngine().is_connection_crash(ValueError("bad json")) is False
 
 
-def test_reachable_or_abort_true_when_available(monkeypatch):
+def test_reachable_or_abort_always_true_regardless_of_available(monkeypatch):
+    # Unlike OllamaEngine, there's no always-on daemon to check between
+    # models — llama-server spawns fresh per model, so reachable_or_abort()
+    # never blocks a loop over models on it (see its docstring).
+    monkeypatch.setattr(LlamaCppEngine, "available", lambda self: False)
+    assert LlamaCppEngine().reachable_or_abort() is True
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: True)
     assert LlamaCppEngine().reachable_or_abort() is True
 
 
-def test_reachable_or_abort_false_when_unavailable(monkeypatch):
+def test_wait_for_recovery_always_true_regardless_of_available(monkeypatch):
+    # No passive self-heal to poll for (see wait_for_recovery's docstring) —
+    # recovery happens synchronously on the next generate/chat/embed call.
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: False)
-    assert LlamaCppEngine().reachable_or_abort() is False
+    assert LlamaCppEngine().wait_for_recovery() is True
 
 
 def test_unload_stops_process_when_tag_matches(monkeypatch):

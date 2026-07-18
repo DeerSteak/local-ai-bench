@@ -91,6 +91,16 @@ process-per-model server rather than an always-on multi-model daemon:
   tag in `_ensure_model`, and restarts whenever the requested
   `(tag, num_ctx, embedding-mode)` combination changes (mirrors Ollama's own
   num_ctx-mismatch-triggers-reload behavior, so both engines pay the same
+  *kind* of cold-swap cost via different mechanisms). This is also why
+  `available()` is `False` between models, not just before the first one —
+  a workload's `run()` must gate its top-of-run preflight on
+  `ensure_running()`, never `available()`/`reachable_or_abort()`, or every
+  model looks unreachable before `_ensure_model` ever gets a chance to spawn
+  one. `reachable_or_abort()`/`wait_for_recovery()` are both unconditionally
+  `True` on this engine for the same reason: there's no shared always-on
+  server to check between models or wait to self-heal — a failed spawn
+  raises on that model's own call instead, caught by the normal
+  crash-handling loop in `Shared.run_measured_calls`.
   *kind* of cold-swap cost via different mechanisms).
 - **Models resolve straight from Ollama's on-disk blob store**
   (`_resolve_blob_path`), no HTTP call to Ollama involved: Ollama stores a
