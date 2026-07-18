@@ -161,6 +161,18 @@ class LLMConversationBenchmark:
                     engine.unload(tag)
                     continue
 
+                if engine.name == "llamacpp":
+                    # Warmup above runs over llama-server's /completion endpoint,
+                    # but the conversation turns below measure over
+                    # /v1/chat/completions on that same kept-alive process (same
+                    # num_ctx, so _ensure_model never restarts it between the
+                    # two). Mixing endpoints on one slot leaves its KV-cache
+                    # position tracking corrupted — observed as the first real
+                    # turn's prompt suddenly costing near num_ctx tokens. Force
+                    # a clean respawn here; the first chat() call below reloads
+                    # it fresh via _ensure_model.
+                    engine.unload(tag)
+
                 results[short] = {}
                 # label -> list of (ttft, tps, depth_tokens), one entry per run that reached it
                 samples_by_label = {}
