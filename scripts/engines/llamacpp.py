@@ -80,24 +80,63 @@ class LlamaCppEngine(InferenceEngine):
         config.LLAMACPP_DIR rather than putting it on PATH — searched
         recursively since the exact layout varies by install method/zip
         structure. Falls back to PATH for the macOS (brew) install path,
-        which does put it there, or a manual install."""
+        which does put it there, or a manual install — and, if PATH doesn't
+        have it, the two well-known Homebrew prefixes directly, since a brew
+        install done in one shell (e.g. by setup.sh) doesn't update PATH in
+        any other already-open shell until its rc file is re-sourced. This
+        keeps engine resolution independent of shell state: no `source` or
+        terminal restart ever required after setup."""
         exe_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
         if config.LLAMACPP_DIR.exists():
             match = next(iter(config.LLAMACPP_DIR.rglob(exe_name)), None)
             if match is not None:
                 return str(match)
-        return shutil.which("llama-server")
+        found = shutil.which("llama-server")
+        if found is not None:
+            return found
+        if platform.system() == "Darwin":
+            for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
+                candidate = Path(prefix) / exe_name
+                if candidate.exists():
+                    return str(candidate)
+        return None
 
     # ── Ollama blob-store resolution ──
 
-    @staticmethod
-    def _ollama_models_dir() -> Path:
+    # Linux install methods that don't put models under the current user's
+    # ~/.ollama/models: Ubuntu's `snap install ollama` (runs as a snap-confined
+    # 'ollama' user, common data under /var/snap/...) and the official
+    # curl|sh installer's systemd service (runs as a dedicated 'ollama' system
+    # user, home /usr/share/ollama). 'ollama list' works fine from any user's
+    # shell either way — it just talks to the running server over HTTP — but a
+    # file-level reader like this one needs the real on-disk path.
+    _LINUX_SERVICE_MODEL_DIRS = (
+        Path("/var/snap/ollama/common/models"),
+        Path("/usr/share/ollama/.ollama/models"),
+    )
+
+    @classmethod
+    def _ollama_models_dir(cls) -> Path:
+        """Resolve Ollama's model store. $OLLAMA_MODELS wins outright if set —
+        an operator's own override always wins. Otherwise prefer the current
+        user's ~/.ollama/models (manual/dev installs, and the common case),
+        falling back to known service-managed locations (see
+        _LINUX_SERVICE_MODEL_DIRS) if that doesn't exist. Returns the ~/.ollama
+        default even when nothing was found, so callers' "not found at {path}"
+        errors point at the most common location rather than an obscure one."""
         env = os.environ.get("OLLAMA_MODELS")
         if env:
             return Path(env)
         if platform.system() == "Windows":
             return Path(os.environ.get("USERPROFILE", "")) / ".ollama" / "models"
-        return Path.home() / ".ollama" / "models"
+
+        home_dir = Path.home() / ".ollama" / "models"
+        if home_dir.exists():
+            return home_dir
+        for candidate in cls._LINUX_SERVICE_MODEL_DIRS:
+            if candidate.exists():
+                return candidate
+        return home_dir
 
     @staticmethod
     def _split_tag(tag: str) -> tuple[str, str]:

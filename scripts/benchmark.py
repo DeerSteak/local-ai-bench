@@ -95,6 +95,14 @@ TIER_LABELS = {
 }
 TIER_ORDER = ["xsmall", "small", "medium", "large"]
 
+# Ollama and llama-server both want the GPU to themselves — running two
+# inference engines' worth of loaded weights at once skews every timing
+# number either could produce. Whichever engine is about to start, the other
+# gets stopped first (see the "Starting Servers" section in main()), even if
+# this process didn't start it — mirrors OllamaEngine.stop()/LlamaCppEngine.stop()
+# already killing a stray server they didn't launch themselves.
+OTHER_ENGINE = {"ollama": "llamacpp", "llamacpp": "ollama"}
+
 
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
     """Resolve --maxtier into (llm_models, tier_label, image_models), applying
@@ -323,12 +331,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "compared against a full-bank run or published (default: full bank).",
     )
     parser.add_argument(
-        "--engine", type=str, default="ollama", choices=["ollama", "llamacpp"],
+        "--engine", type=str, default="ollama", choices=["ollama", "llamacpp", "both"],
         help="Inference engine to benchmark against (default: ollama). "
              "'llamacpp' runs llama-server directly against the same models "
              "already pulled via 'ollama pull' — resolved straight from "
              "Ollama's local model store, no separate download — and "
-             "requires the llama.cpp 'llama-server' binary on PATH.",
+             "requires the llama.cpp 'llama-server' binary on PATH. "
+             "'both' runs the full --tests suite once per engine (ollama, "
+             "then llamacpp), back to back, writing a separate results file "
+             "for each (engine name appended to the filename) so they can "
+             "be compared directly.",
     )
     parser.add_argument(
         "--force-all", action="store_true",
@@ -339,7 +351,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     args = parser.parse_args()
 
-    engine = get_engine(args.engine)
+    # "both" runs the whole suite once per engine below; for the one-off
+    # --list-models / --models resolution steps that need *an* engine just to
+    # query Ollama's local model store, 'ollama' is authoritative regardless
+    # (llamacpp resolves models from that same store — see --engine help).
+    engine_names = ["ollama", "llamacpp"] if args.engine == "both" else [args.engine]
+    engine = get_engine(engine_names[0])
     # Held on Shared so shutdown_managed() (called from the signal handler and
     # the finally block) can consult the live engine without threading it in.
     Shared._active_engine = engine
@@ -390,231 +407,264 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = args.out or str(config.RESULTS_DIR / f"results_{_safe}_{_start_stamp}.json")
+    base_out_path = args.out or str(config.RESULTS_DIR / f"results_{_safe}_{_start_stamp}.json")
+    multi_engine = len(engine_names) > 1
 
-    print(f"\n{config.BOLD}LLM Benchmark Suite{config.RESET}")
-    print(f"  Host:      {profile['hostname']}")
-    print(f"  OS:        {profile['os']}")
-    print(f"  Backend:   {profile['backend']}")
-    print(f"  RAM:       {profile['ram_gb']} GB")
-    print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
-    print(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
-    print(f"  Models:    {tier_label}")
-    if args.models:
-        print(f"  --models:  {', '.join(m['label'] for m in llm_models) or '(none matched)'}")
-    if args.maxtier:
-        print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
-    print(f"  Tests:     {', '.join(args.tests)}")
-    print(f"  ComfyUI:   {comfyui_dir}")
+    for run_idx, engine_name in enumerate(engine_names):
+        engine = get_engine(engine_name)
+        # Held on Shared so shutdown_managed() (called from the signal handler and
+        # the finally block) can consult the live engine without threading it in.
+        Shared._active_engine = engine
 
-    # Register cleanup for Ctrl-C and normal exit
-    def _cleanup(sig=None, frame=None):
-        if sig is not None:
-            print(f"\n{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}")
-        if engine.available():
-            engine.unload_all()
-        if Shared.comfyui_available():
-            ImageBenchmark.comfyui_free_models()
-        if Shared._managed_procs:
-            print(f"\n{config.YELLOW}Cleaning up managed servers ...{config.RESET}")
-            Shared.shutdown_managed()
-        if sig is not None:
-            sys.exit(0)
+        if multi_engine:
+            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(engine_names)})")
+            _base = Path(base_out_path)
+            out_path = str(_base.with_name(f"{_base.stem}_{engine_name}{_base.suffix}"))
+        else:
+            out_path = base_out_path
 
-    signal.signal(signal.SIGINT,  _cleanup)
-    signal.signal(signal.SIGTERM, _cleanup)
+        # Image generation doesn't go through the LLM engine at all (it's a
+        # separate ComfyUI HTTP call), so under --engine both it would just
+        # duplicate identical, real-cost data on the second pass — run it
+        # only once, on the first pass.
+        tests = args.tests
+        if multi_engine and run_idx > 0 and "img" in tests:
+            Shared.log("Image generation doesn't depend on --engine — already "
+                       f"captured in the {engine_names[0]} pass, skipping for {engine_name}")
+            tests = [t for t in tests if t != "img"]
 
-    results = {
-        "version":         config.VERSION,
-        "profile":         profile,
-        # Fingerprints of the accuracy question banks actually used for this
-        # run, so a raw correct count is never compared across bank sizes
-        # (e.g. 185 vs. 360 questions) without noticing the version differs.
-        "bank_versions": {
-            "mcq":  Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH),
-            "math": Shared.file_hash(MathBenchmark.MATH_DATA_PATH),
-            "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
-        },
-        # Populated only when --sample is used, with the exact question IDs
-        # drawn from each bank — so a dev-mode run is reproducible/auditable
-        # and never mistaken for a full-bank result.
-        "sample_ids": {},
-        "llm":             {},
-        "llm_conversation": {},
-        "embeddings":      {},
-        "images":          {},
-        "mcq":             {},
-        "math":            {},
-        "code":            {},
-    }
+        print(f"\n{config.BOLD}LLM Benchmark Suite{config.RESET}")
+        print(f"  Host:      {profile['hostname']}")
+        print(f"  OS:        {profile['os']}")
+        print(f"  Backend:   {profile['backend']}")
+        print(f"  RAM:       {profile['ram_gb']} GB")
+        print(f"  Engine:    {engine_name}")
+        print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
+        print(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
+        print(f"  Models:    {tier_label}")
+        if args.models:
+            print(f"  --models:  {', '.join(m['label'] for m in llm_models) or '(none matched)'}")
+        if args.maxtier:
+            print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
+        print(f"  Tests:     {', '.join(tests)}")
+        print(f"  ComfyUI:   {comfyui_dir}")
 
-    def _checkpoint(label=""):
-        Path(out_path).write_text(json.dumps(results, indent=2))
-        if label:
-            Shared.log(f"Partial results saved to {out_path} ({label})")
-
-    try:
-        # ── Ollama-backed tests (llm, conv, mcq, math, code, emb) share one server lifecycle
-        ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb") if t in args.tests]
-        if ollama_tests:
-            Shared.section("Starting Servers")
-            if args.cpu_only:
-                Shared.warn("Stopping Ollama to relaunch in CPU-only mode "
-                            f"(applies to: {', '.join(ollama_tests)}) ...")
-                engine.stop()
-                if not engine.start(gpu_visible=False):
-                    Shared.err("Failed to start Ollama in CPU-only mode — "
-                               f"{', '.join(ollama_tests)} tests will be skipped")
-            else:
-                engine.ensure_running()
-
-        # ── LLM ───────────────────────────────────────────────────────────────
-        if "llm" in args.tests:
-            def _llm_save(partial):
-                results["llm"] = partial
-                _checkpoint()
-
-            results["llm"] = LLMPrefillBenchmark().run(
-                engine=engine,
-                models=llm_models,
-                context_lengths=config.CONTEXT_LENGTHS,
-                warmup_runs=args.warmup,
-                force_all=args.force_all,
-                save_fn=_llm_save,
-            )
-            _checkpoint("LLM done")
-
-        if "conv" in args.tests:
-            conv_models = llm_models
-            llm_conv_skips = {}
-            if "llm" in args.tests:
-                conv_models = []
-                first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
-                for model in llm_models:
-                    short = model["short"]
-                    llm_data = results["llm"].get(short)
-                    skip_entry = conv_skip_entry(model, llm_data, first_ctx_label, args.force_all)
-                    if skip_entry is not None:
-                        Shared.warn(f"{model['label']}: skipping conversation test — {skip_entry['skip_detail']}")
-                        llm_conv_skips[short] = skip_entry
-                        continue
-                    conv_models.append(model)
-
-            def _conv_save(partial):
-                results["llm_conversation"] = partial
-                _checkpoint()
-
-            results["llm_conversation"] = LLMConversationBenchmark().run(
-                engine=engine,
-                models=conv_models,
-                warmup_runs=args.warmup,
-                force_all=args.force_all,
-                save_fn=_conv_save,
-            )
-            results["llm_conversation"].update(llm_conv_skips)
-            _checkpoint("LLM conversation done")
-
-        # ── Accuracy tests (MCQ / Math / Code) ────────────────────────────────
-        # Identical wiring for all three — only the test name, benchmark class,
-        # and display label vary.
-        for test_name, Bench, done_label in (
-            ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"), ("code", CodeBenchmark, "Code"),
-        ):
-            if test_name not in args.tests:
-                continue
-
-            def _save(partial, test_name=test_name):
-                results[test_name] = partial
-                _checkpoint()
-
-            questions = Bench.load_questions()
-            if args.sample is not None:
-                questions = Shared.stratified_sample(questions, args.sample)
-                results["sample_ids"][test_name] = [q["id"] for q in questions]
-
-            answers_path = sidecar_path(out_path, f"answers_{test_name}_")
-            results[test_name] = Bench().run(
-                engine=engine,
-                models=llm_models,
-                questions=questions,
-                warmup_runs=args.warmup,
-                save_fn=_save,
-                answers_path=answers_path,
-            )
-            _checkpoint(f"{done_label} done")
-            Shared.ok(f"Answers saved to: {answers_path}")
-
-        # ── Embeddings ─────────────────────────────────────────────────────────
-        if "emb" in args.tests:
-            def _emb_save(partial):
-                results["embeddings"] = partial
-                _checkpoint()
-
-            results["embeddings"] = EmbeddingBenchmark().run(
-                engine=engine,
-                models=EMBED_MODELS,
-                warmup_runs=args.warmup,
-                save_fn=_emb_save,
-            )
-            _checkpoint("embeddings done")
-
-        # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
-        # if this run forced CPU-only, so the machine isn't left in that state
-        # (and so image generation, if it runs next, starts from a clean state).
-        if ollama_tests and args.cpu_only and engine._cpu_only_active:
-            Shared.log("Restoring normal (GPU-enabled) Ollama ...")
-            engine.stop()
-            engine.start()
-
-        # ── Image generation ───────────────────────────────────────────────────
-        if "img" in args.tests:
-            Shared.section("Starting Servers")
-            # Nothing from Ollama in memory before ComfyUI loads. Image
-            # generation is always the last phase, so nothing later needs
-            # Ollama — kill the whole server rather than just unloading its
-            # models, to free the memory the idle process itself still holds.
+        # Register cleanup for Ctrl-C and normal exit
+        def _cleanup(sig=None, frame=None):
+            if sig is not None:
+                print(f"\n{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}")
             if engine.available():
-                Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
-                engine.stop()
-            comfyui_started = Shared.ensure_comfyui(comfyui_dir)
-            if not comfyui_started:
-                Shared.warn("Image benchmarks will be skipped")
-            else:
-                def _img_save(img_partial):
-                    results["images"] = img_partial
+                engine.unload_all()
+            if Shared.comfyui_available():
+                ImageBenchmark.comfyui_free_models()
+            if Shared._managed_procs:
+                print(f"\n{config.YELLOW}Cleaning up managed servers ...{config.RESET}")
+                Shared.shutdown_managed()
+            if sig is not None:
+                sys.exit(0)
+
+        signal.signal(signal.SIGINT,  _cleanup)
+        signal.signal(signal.SIGTERM, _cleanup)
+
+        results = {
+            "version":         config.VERSION,
+            "engine":          engine_name,
+            "profile":         profile,
+            # Fingerprints of the accuracy question banks actually used for this
+            # run, so a raw correct count is never compared across bank sizes
+            # (e.g. 185 vs. 360 questions) without noticing the version differs.
+            "bank_versions": {
+                "mcq":  Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH),
+                "math": Shared.file_hash(MathBenchmark.MATH_DATA_PATH),
+                "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
+            },
+            # Populated only when --sample is used, with the exact question IDs
+            # drawn from each bank — so a dev-mode run is reproducible/auditable
+            # and never mistaken for a full-bank result.
+            "sample_ids": {},
+            "llm":             {},
+            "llm_conversation": {},
+            "embeddings":      {},
+            "images":          {},
+            "mcq":             {},
+            "math":            {},
+            "code":            {},
+        }
+
+        def _checkpoint(label=""):
+            Path(out_path).write_text(json.dumps(results, indent=2))
+            if label:
+                Shared.log(f"Partial results saved to {out_path} ({label})")
+
+        try:
+            # ── Ollama-backed tests (llm, conv, mcq, math, code, emb) share one server lifecycle
+            ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb") if t in tests]
+            if ollama_tests:
+                Shared.section("Starting Servers")
+                other_name = OTHER_ENGINE[engine_name]
+                other_engine = get_engine(other_name)
+                if other_engine.available():
+                    Shared.log(f"Stopping {other_name} so only one inference "
+                               f"engine runs at a time ...")
+                    other_engine.stop()
+                if args.cpu_only:
+                    Shared.warn("Stopping Ollama to relaunch in CPU-only mode "
+                                f"(applies to: {', '.join(ollama_tests)}) ...")
+                    engine.stop()
+                    if not engine.start(gpu_visible=False):
+                        Shared.err("Failed to start Ollama in CPU-only mode — "
+                                   f"{', '.join(ollama_tests)} tests will be skipped")
+                else:
+                    engine.ensure_running()
+
+            # ── LLM ───────────────────────────────────────────────────────────────
+            if "llm" in tests:
+                def _llm_save(partial):
+                    results["llm"] = partial
                     _checkpoint()
 
-                # Same hostname+timestamp as the results JSON, so both can be
-                # grabbed together in a file browser — a sibling folder under
-                # results/, not nested inside a shared "images" folder.
-                _out_stem = Path(out_path).stem
-                _images_dirname = (
-                    "images_" + _out_stem[len("results_"):]
-                    if _out_stem.startswith("results_") else f"images_{_out_stem}"
+                results["llm"] = LLMPrefillBenchmark().run(
+                    engine=engine,
+                    models=llm_models,
+                    context_lengths=config.CONTEXT_LENGTHS,
+                    warmup_runs=args.warmup,
+                    force_all=args.force_all,
+                    save_fn=_llm_save,
                 )
+                _checkpoint("LLM done")
 
-                results["images"] = ImageBenchmark().run(
-                    image_models=image_models,
-                    resolutions=config.IMAGE_RESOLUTIONS,
-                    seed=config.IMAGE_SEED,
-                    prompt=config.IMAGE_PROMPT,
-                    comfyui_dir=comfyui_dir,
-                    timeout=config.RUN_TIMEOUT * 2,
-                    save_fn=_img_save,
-                    images_dir=config.RESULTS_DIR / _images_dirname,
+            if "conv" in tests:
+                conv_models = llm_models
+                llm_conv_skips = {}
+                if "llm" in tests:
+                    conv_models = []
+                    first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
+                    for model in llm_models:
+                        short = model["short"]
+                        llm_data = results["llm"].get(short)
+                        skip_entry = conv_skip_entry(model, llm_data, first_ctx_label, args.force_all)
+                        if skip_entry is not None:
+                            Shared.warn(f"{model['label']}: skipping conversation test — {skip_entry['skip_detail']}")
+                            llm_conv_skips[short] = skip_entry
+                            continue
+                        conv_models.append(model)
+
+                def _conv_save(partial):
+                    results["llm_conversation"] = partial
+                    _checkpoint()
+
+                results["llm_conversation"] = LLMConversationBenchmark().run(
+                    engine=engine,
+                    models=conv_models,
+                    warmup_runs=args.warmup,
+                    force_all=args.force_all,
+                    save_fn=_conv_save,
                 )
-                # Shut down ComfyUI as soon as image tests are done
-                # to free GPU memory before saving results
-                Shared.shutdown_managed()
+                results["llm_conversation"].update(llm_conv_skips)
+                _checkpoint("LLM conversation done")
 
-    finally:
-        # Always shut down anything still running, even on error
-        Shared.shutdown_managed()
+            # ── Accuracy tests (MCQ / Math / Code) ────────────────────────────────
+            # Identical wiring for all three — only the test name, benchmark class,
+            # and display label vary.
+            for test_name, Bench, done_label in (
+                ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"), ("code", CodeBenchmark, "Code"),
+            ):
+                if test_name not in tests:
+                    continue
 
-    # ── Save results ───────────────────────────────────────────────────────────
-    Shared.section("Saving Results")
-    Path(out_path).write_text(json.dumps(results, indent=2))
-    Shared.ok(f"Results saved to: {out_path}")
+                def _save(partial, test_name=test_name):
+                    results[test_name] = partial
+                    _checkpoint()
+
+                questions = Bench.load_questions()
+                if args.sample is not None:
+                    questions = Shared.stratified_sample(questions, args.sample)
+                    results["sample_ids"][test_name] = [q["id"] for q in questions]
+
+                answers_path = sidecar_path(out_path, f"answers_{test_name}_")
+                results[test_name] = Bench().run(
+                    engine=engine,
+                    models=llm_models,
+                    questions=questions,
+                    warmup_runs=args.warmup,
+                    save_fn=_save,
+                    answers_path=answers_path,
+                )
+                _checkpoint(f"{done_label} done")
+                Shared.ok(f"Answers saved to: {answers_path}")
+
+            # ── Embeddings ─────────────────────────────────────────────────────────
+            if "emb" in tests:
+                def _emb_save(partial):
+                    results["embeddings"] = partial
+                    _checkpoint()
+
+                results["embeddings"] = EmbeddingBenchmark().run(
+                    engine=engine,
+                    models=EMBED_MODELS,
+                    warmup_runs=args.warmup,
+                    save_fn=_emb_save,
+                )
+                _checkpoint("embeddings done")
+
+            # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
+            # if this run forced CPU-only, so the machine isn't left in that state
+            # (and so image generation, if it runs next, starts from a clean state).
+            if ollama_tests and args.cpu_only and engine._cpu_only_active:
+                Shared.log("Restoring normal (GPU-enabled) Ollama ...")
+                engine.stop()
+                engine.start()
+
+            # ── Image generation ───────────────────────────────────────────────────
+            if "img" in tests:
+                Shared.section("Starting Servers")
+                # Nothing from Ollama in memory before ComfyUI loads. Image
+                # generation is always the last phase, so nothing later needs
+                # Ollama — kill the whole server rather than just unloading its
+                # models, to free the memory the idle process itself still holds.
+                if engine.available():
+                    Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
+                    engine.stop()
+                comfyui_started = Shared.ensure_comfyui(comfyui_dir)
+                if not comfyui_started:
+                    Shared.warn("Image benchmarks will be skipped")
+                else:
+                    def _img_save(img_partial):
+                        results["images"] = img_partial
+                        _checkpoint()
+
+                    # Same hostname+timestamp as the results JSON, so both can be
+                    # grabbed together in a file browser — a sibling folder under
+                    # results/, not nested inside a shared "images" folder.
+                    _out_stem = Path(out_path).stem
+                    _images_dirname = (
+                        "images_" + _out_stem[len("results_"):]
+                        if _out_stem.startswith("results_") else f"images_{_out_stem}"
+                    )
+
+                    results["images"] = ImageBenchmark().run(
+                        image_models=image_models,
+                        resolutions=config.IMAGE_RESOLUTIONS,
+                        seed=config.IMAGE_SEED,
+                        prompt=config.IMAGE_PROMPT,
+                        comfyui_dir=comfyui_dir,
+                        timeout=config.RUN_TIMEOUT * 2,
+                        save_fn=_img_save,
+                        images_dir=config.RESULTS_DIR / _images_dirname,
+                    )
+                    # Shut down ComfyUI as soon as image tests are done
+                    # to free GPU memory before saving results
+                    Shared.shutdown_managed()
+
+        finally:
+            # Always shut down anything still running, even on error
+            Shared.shutdown_managed()
+
+        # ── Save results ───────────────────────────────────────────────────────────
+        Shared.section("Saving Results")
+        Path(out_path).write_text(json.dumps(results, indent=2))
+        Shared.ok(f"Results saved to: {out_path}")
+
     print(f"\n  Compare it against other machines in the dashboard:")
     dash_hint = "launch_dashboard.bat" if platform.system() == "Windows" else "bash launch_dashboard.sh"
     print(f"  {dash_hint}\n")

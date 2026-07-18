@@ -584,13 +584,26 @@ def find_llamacpp_binary():
     """Same resolution LlamaCppEngine uses at runtime (see its _binary_path):
     vendored under LLAMACPP_DIR first (source build on Linux, prebuilt zip on
     Windows), then PATH (the Homebrew install path on macOS, or a manual
-    install anywhere)."""
+    install anywhere), then — if PATH doesn't have it — the two well-known
+    Homebrew prefixes directly. A brew install only updates PATH in the shell
+    that ran it (and only for shells started after its rc-file was touched),
+    so a symlink that brew just created may not be on PATH yet in whatever
+    shell re-runs this script later; checking the fixed prefixes means this
+    never depends on the terminal being restarted or an rc file re-sourced."""
     exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
     if LLAMACPP_DIR.exists():
         match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
         if match is not None:
             return str(match)
-    return shutil.which("llama-server")
+    found = shutil.which("llama-server")
+    if found:
+        return found
+    if os_name == "Darwin":
+        for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
+            candidate = Path(prefix) / exe_name
+            if candidate.exists():
+                return str(candidate)
+    return None
 
 def download_llamacpp_windows():
     """Download the latest llama.cpp Windows release and extract it into
