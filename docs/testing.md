@@ -82,7 +82,7 @@ With that config in place, coverage sits around 95% for the code the suite targe
 
 ## Test Suite Breakdown
 
-The test suite consists of **22 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/ComfyUI HTTP client streaming.
+The test suite consists of **25 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -221,7 +221,7 @@ The test suite consists of **22 test modules** validating different components o
   5. The current system interpreter (`sys.executable`).
 
 - **[test_ollama_engine.py](../tests/test_ollama_engine.py)**
-  Tests `OllamaEngine` (`scripts/engines/ollama.py`), the only `InferenceEngine` implementation today — lifecycle hooks, server state controls, and NDJSON stream parsing:
+  Tests `OllamaEngine` (`scripts/engines/ollama.py`) — lifecycle hooks, server state controls, and NDJSON stream parsing:
   - `reachable_or_abort` detects whether the Ollama server is running.
   - `model_pulled` checks for exact or implicit matches (like tags missing `:latest`) in the local image list.
   - `max_context_length` parses architectural options to identify a model's true context limit, falling back to configuration defaults on failure.
@@ -233,6 +233,14 @@ The test suite consists of **22 test modules** validating different components o
   - Response extraction preferring the standard content payload over reasoning (`thinking`) fields, but falling back to reasoning text if needed.
   - Intercepting HTTP 500 error payloads to extract clean diagnostic messages (e.g. "model requires more system memory") rather than raising generic HTTP error statuses.
 
+- **[test_llamacpp_engine.py](../tests/test_llamacpp_engine.py)**
+  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — Ollama manifest/blob resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`, same convention as `OllamaEngine.start`):
+  - `_split_tag`/`_resolve_blob_path`/`model_pulled`/`list_installed_models` walk Ollama's manifest tree straight from disk, including a missing manifest, a missing blob file, and a missing model store entirely.
+  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't pulled or the file doesn't parse.
+  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `OllamaTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
+  - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
+  - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
+
 - **[test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py)**
   Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:
   - Correct execution count under normal operations.
@@ -242,7 +250,7 @@ The test suite consists of **22 test modules** validating different components o
   - `slow_tps_early_exit` early termination logic based on performance speeds.
 
 - **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network). Previously untestable because it was entangled with real Ollama calls; taking `engine: InferenceEngine` as a parameter removed that coupling. Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early.
+  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
   Tests the degenerate-generation-loop heuristic used on timed-out accuracy-test responses (`Shared.looks_like_loop`):

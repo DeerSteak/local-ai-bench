@@ -12,9 +12,9 @@
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python |
-| Linux / DGX Spark | `bash setup.sh` | Python, Ollama, XPU-enabled PyTorch (Intel Arc — experimental, see [Platform notes](#platform-notes)) |
-| Windows | `setup.bat` | Python, Ollama, ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, Ollama, llama.cpp |
+| Linux / DGX Spark | `bash setup.sh` | Python, Ollama, llama.cpp, XPU-enabled PyTorch (Intel Arc — experimental, see [Platform notes](#platform-notes)) |
+| Windows | `setup.bat` | Python, Ollama, llama.cpp, ComfyUI portable |
 
 `setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
 
@@ -30,7 +30,7 @@ Each script then creates a virtual environment (`bench-env/`) and hands off to `
    - Enter to install everything shown
    - `q` or Ctrl-C to cancel at any point with nothing installed yet
 4. If you selected a gated image model (SD3.5 Large, Flux.1-dev, Flux.2-dev), asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
-5. Installs everything you picked — Ollama, pip packages, models, image checkpoints — with no further prompts.
+5. Installs everything you picked — Ollama, llama.cpp, pip packages, models, image checkpoints — with no further prompts. `setup_check.py --engine ollama` skips the llama.cpp install if you only want to benchmark against Ollama.
 
 When setup is complete, run the benchmark:
 
@@ -87,7 +87,7 @@ For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfy
 - **The Intel GPU compute runtime** (Level Zero/OpenCL) — `setup_check.py` checks for it via `dpkg` and, if missing, prints the exact commands rather than installing it for you: it requires adding [Intel's graphics APT repository](https://dgpu-docs.intel.com/driver/installation.html) and a GPG key, which is a bigger, harder-to-reverse system change than the plain-package installs (Python, Ollama) this script automates from your distro's own repos.
 - **An XPU-enabled PyTorch build** — `setup_check.py` *does* install this automatically (if an image model is selected): ComfyUI's `requirements.txt` normally pulls in a plain torch build, so after installing it, this script reinstalls `torch`/`torchvision`/`torchaudio` from [Intel's XPU wheel index](https://download.pytorch.org/whl/xpu). This is a plain `pip install` — no sudo, no new package source — so it's automated like every other pip install this script does. No IPEX involved: Intel is winding that down (EOL end of March 2026) in favor of PyTorch's native XPU support (mainline since PyTorch 2.5).
 
-**DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
+**DGX Spark** — Ollama is installed via snap if missing (`setup_check.py` asks before installing it); its model store lives under `/var/snap/ollama/common/models` rather than `~/.ollama/models`, which `--engine llamacpp` resolves automatically (see [Engines](engines.md)). llama.cpp itself is built from source (`git`/`cmake` required). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
 
 **macOS and Linux** — If the script fails with a permissions error, run `sudo bash setup.sh` instead.
 

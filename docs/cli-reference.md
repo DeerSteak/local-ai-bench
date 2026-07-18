@@ -15,10 +15,21 @@ run_bench.bat [options]   # Windows
                         code, or acc as shorthand for every accuracy-style
                         test (currently mcq, math, and code) (default: all
                         seven — llm conv emb img mcq math code)
---cpu-only              Force CPU-only inference for every Ollama-backed test
-                        (llm, conv, mcq, math, code, emb) by restarting Ollama
-                        with GPU devices hidden, then restores normal GPU mode
-                        afterward
+--engine ENGINE         Inference engine to benchmark against: ollama,
+                        llamacpp, or both (default: llamacpp — marginally
+                        faster than Ollama and a closer read on raw model
+                        capability, without Ollama's scheduling/wrapper
+                        overhead). llamacpp reuses models already pulled via
+                        'ollama pull' — no separate download — and requires
+                        the llama-server binary (see setup). 'both' runs the
+                        full --tests suite once per engine, back to back, and
+                        writes a separate results file for each. Whichever
+                        engine is about to start, the other is stopped first
+                        so the two never compete for GPU memory at once
+--cpu-only              Force CPU-only inference for every test that goes
+                        through the active engine (llm, conv, mcq, math, code,
+                        emb) by restarting it with GPU devices hidden, then
+                        restores normal GPU mode afterward
 --warmup N              Warmup runs before measuring (default: 2)
 --runs N                Measured runs per checkpoint, averaged (default: 3,
                         range: 1-10). Applies separately to every model and
@@ -81,7 +92,8 @@ Every test except the LLM conversation test and the accuracy-style tests (MCQ, m
 | Flag | Values | Default | Notes |
 |---|---|---|---|
 | `--tests` | any of `llm conv emb img mcq math code`, plus `acc` | all seven (`llm conv emb img mcq math code`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (currently `mcq`, `math`, and `code`) and de-duplicates against any of them also listed explicitly |
-| `--cpu-only` | (flag) | off | Restarts Ollama with GPU devices hidden for every Ollama-backed test that's running (`llm`/`conv`/`mcq`/`math`/`code`/`emb`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
+| `--engine` | `ollama` / `llamacpp` / `both` | `llamacpp` | Which inference engine to benchmark against. `both` runs the full `--tests` suite once per engine and writes a separate results file for each (tagged internally with `"engine"`). See [Engines](engines.md) |
+| `--cpu-only` | (flag) | off | Restarts the active engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`code`/`emb`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
 | `--warmup` | integer | `2` | Discarded runs before measured runs, per model/checkpoint |
 | `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per run (warmup or measured) for `llm`/`conv`/`emb`/`img`, and for every test's warmup; exceeding it skips the rest of that model |
@@ -125,6 +137,9 @@ bash run_bench.sh --tests llm --models gpt-oss:20b "deepseek-r1*"
 
 # Find the exact tag for a model you've pulled but isn't in the catalog
 bash run_bench.sh --list-models
+
+# Compare engines on the same models — writes two results files
+bash run_bench.sh --engine both --tests llm mcq
 
 # Quick dev iteration on the accuracy tests — 10 questions per bank instead
 # of the full thing; never compare this against a full-bank result

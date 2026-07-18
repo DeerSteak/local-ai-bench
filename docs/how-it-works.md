@@ -9,7 +9,7 @@
 
 ## Execution order
 
-LLM benchmarks run first (small → medium → large), followed by the accuracy-style tests (MCQ, then math, then code — same models, same running Ollama server), then embeddings. Before starting ComfyUI for image tests, Ollama is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last.
+LLM benchmarks run first (small → medium → large), followed by the accuracy-style tests (MCQ, then math, then code — same models, same running engine server), then embeddings. Before starting ComfyUI for image tests, the active engine is stopped entirely (not just unloaded) to free up its memory for image generation, since image tests always run last. See [Engines](engines.md) for `--engine ollama|llamacpp|both` — everything on this page describes one engine's pass; `both` just repeats it once per engine.
 
 Each LLM model follows this pattern:
 
@@ -24,13 +24,13 @@ warmup (--warmup runs, default 2)
 
 The single-shot test builds an independent padded prompt for every run. The conversation test is different: it's a single conversation (this test is expensive enough — many turns growing all the way to the sampling ceiling — that it always runs once, ignoring `--runs`), started from a blank slate and grown toward a 96K sampling ceiling. The model is still given the full 128K context window (or its real maximum, whichever is lower — looked up live via Ollama's `/api/show`, not hardcoded), so there's always headroom left between the top checkpoint and the actual `num_ctx` limit. Growth happens in small steps (capped and scaled to the size of the gap being crossed) rather than one big jump per checkpoint, so the turn that actually crosses each threshold lands close to it instead of overshooting by a large margin.
 
-If the run exceeds the 300-second timeout, it stops wherever it got to — whatever checkpoints it already reached are kept. Only one model is ever in memory at a time: after each model completes both tests, a `keep_alive: 0` request to Ollama forces eviction, and `/api/ps` is polled until the model is confirmed unloaded before the next one loads.
+If the run exceeds the 300-second timeout, it stops wherever it got to — whatever checkpoints it already reached are kept. Only one model is ever in memory at a time: after each model completes both tests, the engine unloads it and confirms it's gone before the next one loads — a `keep_alive: 0` request polled against `/api/ps` for `OllamaEngine`, a process stop for `LlamaCppEngine` (see [Engines](engines.md)).
 
 A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test. Within the conversation test itself, if the decode speed at any history depth drops below the slow-model cutoff, it exits early. See [LLM workload](workloads.md#llm) for the full skip logic.
 
-The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one `/api/chat` call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache machinery as the other Ollama-backed tests, applied per question instead of per measured run — but the per-question timeout is `--acc-timeout` (default 60s), not `--timeout`, and a timeout only affects that one question: it's scored wrong (using whatever partial text streamed before the cutoff, run through a loop-detection heuristic) and the bank continues to the next question. See [Accuracy workload](workloads.md#accuracy) for the full timeout/loop-detection behavior. The code accuracy test follows the same per-model pattern, but scoring each reply is more involved: the generated function is run against that problem's visible and hidden test cases in an isolated Python subprocess (with its own wall-clock timeout, separate from the Ollama call timeout), and the problem only counts as correct if every test case passes.
+The MCQ and math accuracy tests each follow a simpler pattern per model: warmup, then one chat call per question in the bank (temperature 0, so a single pass is representative), scored right/wrong against the dataset's known answer, then unload. Both reuse the same crash-cache machinery as the other tests, applied per question instead of per measured run — but the per-question timeout is `--acc-timeout` (default 60s), not `--timeout`, and a timeout only affects that one question: it's scored wrong (using whatever partial text streamed before the cutoff, run through a loop-detection heuristic) and the bank continues to the next question. See [Accuracy workload](workloads.md#accuracy) for the full timeout/loop-detection behavior. The code accuracy test follows the same per-model pattern, but scoring each reply is more involved: the generated function is run against that problem's visible and hidden test cases in an isolated Python subprocess (with its own wall-clock timeout, separate from the engine call timeout), and the problem only counts as correct if every test case passes.
 
-**Ollama** is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
+**The active engine** (Ollama or llama-server, per `--engine`) is started if not already running. If the benchmark started it, it is shut down at exit; if it was already running, it is left running.
 
 **ComfyUI** is started just before the image tests and shut down immediately after. A signal handler and `finally` block ensure clean shutdown on Ctrl-C or crash.
 
@@ -43,7 +43,8 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/benchmark.py` | CLI argument parsing and orchestration (`main()`) — calls each test class in order and writes results |
 | `scripts/config.py` | Shared constants: URLs, paths (`SCRIPT_DIR`, `RESULTS_DIR`, `COMFYUI_DIR`), timeouts, run counts |
 | `scripts/shared.py` | Cross-cutting helpers: logging, ComfyUI server lifecycle/HTTP client, machine profiling, engine-agnostic run/crash-cache orchestration |
-| `scripts/engines/base.py`, `scripts/engines/ollama.py` | `InferenceEngine` interface and its `OllamaEngine` implementation — start/stop, model lifecycle, and the low-level HTTP client for Ollama specifically, see [Engines](engines.md) |
+| `scripts/engines/base.py` | `InferenceEngine` interface — start/stop, model lifecycle, generate/chat/embed, see [Engines](engines.md) |
+| `scripts/engines/ollama.py`, `scripts/engines/llamacpp.py` | `OllamaEngine` and `LlamaCppEngine` — the low-level HTTP/process client for each server |
 | `scripts/llm_prefill_benchmark.py` | The single-shot LLM test |
 | `scripts/llm_conversation_benchmark.py` | The multi-turn conversation test |
 | `scripts/embedding_benchmark.py` | The embeddings test |

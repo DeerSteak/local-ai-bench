@@ -74,7 +74,7 @@ Below the charts, every section also renders a sortable raw-numbers table (one r
 
 ## Multi-file comparison
 
-Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. The **Models** filter shows or hides individual models.
+Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. A file's `"engine"` field, when present, is folded into its default label (`hostname (ollama)` / `hostname (llamacpp)`) so a `--engine both` pair from the same machine loads as two distinct series instead of two identically-labeled ones — still overridable per file in the header. The **Models** filter shows or hides individual models.
 
 ## Exporting
 
