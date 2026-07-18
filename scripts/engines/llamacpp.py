@@ -253,24 +253,30 @@ class LlamaCppEngine(InferenceEngine):
             return True
         return "actively refused" in str(e).lower()
 
-    def wait_for_recovery(self, timeout: int = 30) -> bool:  # pragma: no cover — real polling loop
-        """Unlike Ollama's main server (which survives a model-runner crash
-        and just respawns the runner), llama-server's whole process is the
-        model runner — a crash takes the server down with it, so "recovery"
-        here means this engine noticing and relaunching on the next call, not
-        waiting for anything to come back on its own."""
-        wait_t0 = time.perf_counter()
-        while time.perf_counter() - wait_t0 < timeout:
-            if self.available():
-                return True
-            time.sleep(2)
-        return False
+    def wait_for_recovery(self, timeout: int = 30) -> bool:
+        """Always True: unlike Ollama's main server (which survives a
+        model-runner crash and just respawns the runner, so a caller polls
+        available() waiting for that self-heal), llama-server's whole process
+        is the model runner — a crash takes the server down with it, and
+        nothing brings it back up on its own to poll for. Recovery instead
+        happens synchronously on the caller's next generate/chat/embed call,
+        via _ensure_model respawning the process for that tag — if that
+        respawn itself fails, it raises on that call and this same
+        crash-handling loop (Shared.run_measured_calls) runs again, so a
+        model that's actually unrecoverable still gets caught, just by the
+        next real attempt instead of a passive wait beforehand."""
+        return True
 
     def reachable_or_abort(self) -> bool:
-        if self.available():
-            return True
-        Shared.err("llama.cpp server is not reachable — stopping remaining models in this test")
-        return False
+        """Always True: unlike Ollama's always-on daemon, there's no shared
+        server that stays up between models to check here — llama-server is
+        spawned fresh per model in _ensure_model, which is its own health
+        check for that specific model. model_pulled() also isn't at risk of
+        the failure mode this guards against on OllamaEngine (a down server
+        making 'reachable' and 'not pulled' indistinguishable over HTTP): it
+        reads Ollama's manifest/blob files straight off disk, no server
+        involved."""
+        return True
 
     def tail_log(self, n_lines: int = 40) -> str:
         return Shared._tail_log(self._log_path, "llama.cpp", n_lines)
