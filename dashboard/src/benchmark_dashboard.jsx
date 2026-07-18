@@ -107,10 +107,15 @@ export default function Dashboard() {
     const data = parseJSON(text);
     if (!data) return null;
     const p = data.profile || {};
+    const baseHostname = p.hostname || file.name.replace(".json", "");
     return {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
-      hostname: p.hostname || file.name.replace(".json", ""),
+      // Fold the engine into the default label so two --engine both runs off
+      // the same host (identical profile.hostname) still show up as distinct
+      // series without a manual rename — still fully overridable via the
+      // per-file hostname override field.
+      hostname: data.engine ? `${baseHostname} (${data.engine})` : baseHostname,
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       ram_gb:   p.ram_gb   || null,
