@@ -13,6 +13,12 @@ from pathlib import Path
 OLLAMA_URL   = "http://localhost:11434"
 COMFYUI_URL  = "http://localhost:8188"
 
+# llama-server's default port. LlamaCppEngine launches its own server on
+# demand (one model per process, unlike Ollama's swap-in-place daemon), always
+# on this fixed port.
+LLAMACPP_PORT = 8080
+LLAMACPP_URL  = f"http://localhost:{LLAMACPP_PORT}"
+
 # Env vars pinned on every 'ollama serve' launch so timing/throughput numbers
 # don't drift with whatever Ollama auto-detects on a given machine or version.
 # setdefault'd onto the environment (see OllamaEngine.start) rather than
@@ -40,6 +46,13 @@ OLLAMA_NUM_BATCH = 512
 # Repo root — this file lives in scripts/, one level below it.
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
+
+# Vendored llama.cpp install location, sibling to ComfyUI's own vendored
+# checkout — setup_check.py's Linux (source build) and Windows (prebuilt zip)
+# install paths both place llama-server somewhere under here rather than
+# requiring it on PATH; the macOS (brew) path installs onto PATH instead and
+# doesn't use this. LlamaCppEngine checks both (see its _binary_path).
+LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 
 # Benchmark output — results JSON plus generated images. Each run's images
 # land in results/images_<hostname>_<timestamp>/, a sibling of the matching

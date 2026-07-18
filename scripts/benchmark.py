@@ -323,10 +323,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "compared against a full-bank run or published (default: full bank).",
     )
     parser.add_argument(
-        "--engine", type=str, default="ollama", choices=["ollama"],
-        help="Inference engine to benchmark against (default: ollama). Only "
-             "Ollama is implemented today; the flag exists so a future "
-             "llama.cpp/MLX engine can be selected without changing call sites.",
+        "--engine", type=str, default="ollama", choices=["ollama", "llamacpp"],
+        help="Inference engine to benchmark against (default: ollama). "
+             "'llamacpp' runs llama-server directly against the same models "
+             "already pulled via 'ollama pull' — resolved straight from "
+             "Ollama's local model store, no separate download — and "
+             "requires the llama.cpp 'llama-server' binary on PATH.",
     )
     parser.add_argument(
         "--force-all", action="store_true",

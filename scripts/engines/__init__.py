@@ -1,15 +1,18 @@
 """engines — pluggable inference-engine registry.
 
-get_engine(name) returns a fresh InferenceEngine instance. Only Ollama is
-implemented today; llama.cpp/MLX engines register here later without any
-change to the benchmark orchestration that drives them through the interface.
+get_engine(name) returns a fresh InferenceEngine instance. Ollama and
+llama.cpp are implemented today; an MLX engine registers here later without
+any change to the benchmark orchestration that drives them through the
+interface.
 """
 
 from engines.base import InferenceEngine
 from engines.ollama import OllamaEngine
+from engines.llamacpp import LlamaCppEngine
 
 _REGISTRY: dict[str, type[InferenceEngine]] = {
-    "ollama": OllamaEngine,
+    "ollama":   OllamaEngine,
+    "llamacpp": LlamaCppEngine,
 }
 
 

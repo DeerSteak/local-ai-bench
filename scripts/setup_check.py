@@ -9,6 +9,7 @@ to all) -> gather any HuggingFace token needed for the picks -> install
 everything with no further prompts.
 """
 
+import argparse
 import sys
 import os
 import platform
@@ -27,8 +28,23 @@ from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_M
 # Every asset this script manages (requirements.txt, ComfyUI/, hf.txt, ...)
 # lives at the repo root, one level up. Sourced from config.py rather than
 # redefined here.
-SCRIPT_DIR  = config.SCRIPT_DIR
-COMFYUI_DIR = config.COMFYUI_DIR
+SCRIPT_DIR   = config.SCRIPT_DIR
+COMFYUI_DIR  = config.COMFYUI_DIR
+LLAMACPP_DIR = config.LLAMACPP_DIR
+
+_arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
+_arg_parser.add_argument(
+    "--engine", choices=["ollama", "llamacpp", "both"], default="both",
+    help="Which inference engine(s) to set up (default: both — llama.cpp is "
+         "a light install on top of Ollama, so it's set up unless you opt "
+         "out). Ollama is always needed regardless of choice — even "
+         "'llamacpp' pulls models through it, see engines/llamacpp.py — this "
+         "only controls whether the llama-server binary is also "
+         "detected/installed, for benchmark.py --engine llamacpp. Pass "
+         "--engine ollama to skip it.",
+)
+args = _arg_parser.parse_args()
+setup_llamacpp = args.engine in ("llamacpp", "both")
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -564,6 +580,157 @@ def install_ollama():
 
     return False
 
+def find_llamacpp_binary():
+    """Same resolution LlamaCppEngine uses at runtime (see its _binary_path):
+    vendored under LLAMACPP_DIR first (source build on Linux, prebuilt zip on
+    Windows), then PATH (the Homebrew install path on macOS, or a manual
+    install anywhere)."""
+    exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
+    if LLAMACPP_DIR.exists():
+        match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
+        if match is not None:
+            return str(match)
+    return shutil.which("llama-server")
+
+def download_llamacpp_windows():
+    """Download the latest llama.cpp Windows release and extract it into
+    LLAMACPP_DIR. Picks the Vulkan-backend build specifically: it runs on
+    NVIDIA/AMD/Intel GPUs alike without having to match a specific CUDA
+    toolkit version to whatever's installed, which is the safer bet for an
+    unattended install (a CUDA-specific asset that doesn't match the user's
+    toolkit would simply fail to load its driver at runtime)."""
+    import urllib.request
+    import zipfile
+
+    info("Fetching latest llama.cpp release info ...")
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            release = json.load(r)
+        asset = next(
+            (a for a in release["assets"]
+             if "win-vulkan-x64" in a["name"].lower() and a["name"].endswith(".zip")),
+            None,
+        )
+        if not asset:
+            fail("No Windows Vulkan build found in the latest llama.cpp release")
+            return False
+        url  = asset["browser_download_url"]
+        size = asset["size"] // (1024 ** 2)
+        tag  = release["tag_name"]
+    except Exception as e:
+        fail(f"Could not fetch llama.cpp release info: {e}")
+        return False
+
+    info(f"Downloading llama.cpp {tag} (Vulkan, {size} MB) ...")
+    tmp = SCRIPT_DIR / asset["name"]
+    try:
+        urllib.request.urlretrieve(url, str(tmp))
+    except Exception as e:
+        fail(f"Download failed: {e}")
+        tmp.unlink(missing_ok=True)
+        return False
+
+    info(f"Extracting {asset['name']} ...")
+    try:
+        LLAMACPP_DIR.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(tmp) as z:
+            z.extractall(LLAMACPP_DIR)
+        tmp.unlink()
+    except Exception as e:
+        fail(f"Extraction failed: {e}")
+        tmp.unlink(missing_ok=True)
+        return False
+
+    if not any(LLAMACPP_DIR.rglob("llama-server.exe")):
+        fail(f"Extracted {asset['name']} but llama-server.exe wasn't found inside it")
+        return False
+    ok(f"llama.cpp {tag} (Vulkan) extracted to {LLAMACPP_DIR}")
+    return True
+
+def install_llamacpp():
+    """Install llama-server using the appropriate method for this OS. Picks a
+    GPU backend using the same detection this script already ran for Ollama
+    (nvidia_ok/rocm_ok), so it's accelerated the same way — covers DGX Spark
+    the same as any other Linux+NVIDIA box, since a source build has no
+    prebuilt-binary architecture to match (Spark is ARM64)."""
+    if os_name == "Darwin":
+        if shutil.which("brew"):
+            info("Installing llama.cpp via Homebrew (includes Metal support) ...")
+            result = subprocess.run(
+                ["brew", "install", "--no-ask", "llama.cpp"],
+                env={**os.environ, "HOMEBREW_NO_ASK": "1", "NONINTERACTIVE": "1"},
+            )
+            return result.returncode == 0
+        fail("Homebrew not found — install llama.cpp manually: https://github.com/ggml-org/llama.cpp")
+        return False
+
+    elif os_name == "Linux":
+        if not shutil.which("git") or not shutil.which("cmake"):
+            fail("git and cmake are required to build llama.cpp from source — "
+                 "install them (e.g. sudo apt install git cmake build-essential) and re-run")
+            return False
+
+        cmake_flags = []
+        if nvidia_ok:
+            if not shutil.which("nvcc"):
+                warn("NVIDIA GPU detected but the CUDA toolkit (nvcc) isn't installed — "
+                     "building CPU-only. Install the CUDA toolkit and re-run for GPU support.")
+            else:
+                info("Building with CUDA support ...")
+                cmake_flags.append("-DGGML_CUDA=ON")
+        elif rocm_ok:
+            info("Building with ROCm/HIP support ...")
+            cmake_flags += ["-DGGML_HIP=ON"]
+        else:
+            info("No GPU backend detected — building CPU-only ...")
+
+        if LLAMACPP_DIR.exists():
+            info("Updating existing llama.cpp checkout ...")
+            pull = subprocess.run(["git", "pull"], cwd=str(LLAMACPP_DIR))
+            if pull.returncode != 0:
+                warn("git pull failed — building from the existing checkout as-is")
+        else:
+            info("Cloning llama.cpp ...")
+            clone = subprocess.run([
+                "git", "clone", "--depth", "1",
+                "https://github.com/ggml-org/llama.cpp", str(LLAMACPP_DIR),
+            ])
+            if clone.returncode != 0:
+                fail("git clone failed")
+                return False
+
+        build_dir = LLAMACPP_DIR / "build"
+        info(f"Configuring build ({' '.join(cmake_flags) or 'CPU-only'}) ...")
+        configure = subprocess.run(
+            ["cmake", "-B", str(build_dir), "-S", str(LLAMACPP_DIR)] + cmake_flags
+        )
+        if configure.returncode != 0:
+            fail("cmake configure failed")
+            return False
+
+        info("Building llama-server — this can take several minutes ...")
+        build = subprocess.run([
+            "cmake", "--build", str(build_dir), "--target", "llama-server",
+            "--config", "Release", "-j",
+        ])
+        if build.returncode != 0:
+            fail("Build failed")
+            return False
+
+        if not any(build_dir.rglob("llama-server")):
+            fail(f"Build finished but llama-server wasn't found under {build_dir}")
+            return False
+        return True
+
+    elif os_name == "Windows":
+        return download_llamacpp_windows()
+
+    return False
+
 ollama_up, tag_data = ollama_running()
 OLLAMA_BIN = find_ollama_binary()
 ollama_found = OLLAMA_BIN is not None
@@ -596,6 +763,24 @@ else:
 needs_ollama_install = not ollama_found
 needs_ollama_start   = not ollama_up
 
+# ── 4a. llama.cpp detection (opt-in via --engine llamacpp/both; read-only) ────
+
+LLAMACPP_BIN = None
+llamacpp_found = False
+needs_llamacpp_install = False
+
+if setup_llamacpp:
+    section("llama.cpp")
+    LLAMACPP_BIN = find_llamacpp_binary()
+    llamacpp_found = LLAMACPP_BIN is not None
+    needs_llamacpp_install = not llamacpp_found
+    if llamacpp_found:
+        ok(f"llama-server found: {LLAMACPP_BIN}")
+    else:
+        warn("llama-server not found — will need to be installed")
+    info("llama.cpp reuses models pulled via Ollama (see engines/llamacpp.py) "
+         "— Ollama itself is still required regardless of --engine")
+
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
 section("Setup Plan")
@@ -606,6 +791,9 @@ if needs_ollama_install:
     print("    • Install Ollama")
 if needs_ollama_start:
     print("    • Start the Ollama server")
+if needs_llamacpp_install:
+    build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
+    print(f"    • Install llama.cpp{build_note}")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -847,6 +1035,18 @@ if needs_ollama_install:
         fail("Ollama installation failed")
         issues.append("Install Ollama manually from https://ollama.com/download")
         info("On Linux (DGX Spark / Ubuntu): sudo snap install ollama")
+
+if needs_llamacpp_install:
+    llamacpp_installed = install_llamacpp()
+    if llamacpp_installed:
+        ok("llama.cpp installed successfully")
+        llamacpp_found = True
+        LLAMACPP_BIN = find_llamacpp_binary()
+    else:
+        fail("llama.cpp installation failed")
+        issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
+                       "(needs a 'llama-server' binary on PATH, or built under "
+                       f"{LLAMACPP_DIR})")
 
 if needs_ollama_start and ollama_found:
     info("Starting Ollama server ...")
