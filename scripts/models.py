@@ -96,6 +96,15 @@ IMAGE_MODELS = [
 # Extra-small-tier models (<6B parameters).
 LLM_MODELS_XSMALL = sorted([
     {
+        "tag":            "gemma3:1b-it-q4_K_M",
+        "label":          "Gemma 3 1B",
+        "short":          "gemma3-1b",
+        "download_size":  "~0.8 GB",
+        "params_b":       1,
+        "hf_repo":        "bartowski/google_gemma-3-1b-it-GGUF",
+        "hf_file":        "google_gemma-3-1b-it-Q4_K_M.gguf",
+    },
+    {
         "tag":            "llama3.2:3b-instruct-q4_K_M",
         "label":          "Llama 3.2 3B Q4_K_M",
         "short":          "llama3.2-3b-q4",
@@ -136,10 +145,32 @@ LLM_MODELS_SMALL = sorted([
         "hf_repo":        "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
         "hf_file":        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
     },
+    {
+        "tag":            "phi4:14b-q4_K_M",
+        "label":          "Phi 4 14B",
+        "short":          "phi4-14b",
+        "download_size":  "~8.5 GB",
+        "params_b":       14,
+        "hf_repo":        "bartowski/phi-4-GGUF",
+        "hf_file":        "phi-4-Q4_K_M.gguf",
+    },
 ], key=lambda m: m["params_b"])
 
-# Medium-tier models (26–35B parameters).
+# Medium-tier models (26–35B parameters). One dense (Qwen3.6 27B) alongside
+# the two MoE entries — MoE download size doesn't track active/compute cost
+# (both MoE entries here run at roughly xsmall-model speed despite the
+# tier-scale download), so a dense model keeps this tier representative of
+# what "medium" actually costs to run, not just to store.
 LLM_MODELS_MEDIUM = sorted([
+    {
+        "tag":            "qwen3.6:27b-q4_K_M",
+        "label":          "Qwen3.6 27B Q4_K_M",
+        "short":          "qwen3.6-27b-q4",
+        "download_size":  "~16.8 GB",
+        "params_b":       27,
+        "hf_repo":        "bartowski/Qwen_Qwen3.6-27B-GGUF",
+        "hf_file":        "Qwen_Qwen3.6-27B-Q4_K_M.gguf",
+    },
     {
         "tag":            "nemotron-3-nano:30b-a3b-q4_K_M",
         "label":          "Nemotron 3 Nano 30B-A3B",
@@ -160,11 +191,21 @@ LLM_MODELS_MEDIUM = sorted([
     },
 ], key=lambda m: m["params_b"])
 
-# Large-tier models (70B+ parameters). Llama 4 Scout and Nemotron 3 Super ship
-# as multi-part GGUF splits — "hf_file" is a list, part 1 first; llama.cpp
-# auto-discovers the sibling parts next to it, so only the first path is ever
-# passed to -m.
+# Large-tier models (70B+ parameters). One dense (Llama 3.3 70B) alongside
+# the two MoE entries, same rationale as medium above. Llama 4 Scout and
+# Nemotron 3 Super ship as multi-part GGUF splits — "hf_file" is a list,
+# part 1 first; llama.cpp auto-discovers the sibling parts next to it, so
+# only the first path is ever passed to -m.
 LLM_MODELS_LARGE = sorted([
+    {
+        "tag":            "llama3.3:70b-instruct-q4_K_M",
+        "label":          "Llama 3.3 70B Q4_K_M",
+        "short":          "llama3.3-70b-q4",
+        "download_size":  "~39.7 GB",
+        "params_b":       70,
+        "hf_repo":        "bartowski/Llama-3.3-70B-Instruct-GGUF",
+        "hf_file":        "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+    },
     {
         "tag":            "llama4:16x17b",
         "label":          "Llama 4 Scout 16x17B",

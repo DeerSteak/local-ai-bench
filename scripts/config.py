@@ -37,10 +37,19 @@ RESULTS_DIR = SCRIPT_DIR / "results"
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 
-# Concurrency test (scripts/concurrency_benchmark.py) — see docs/workloads.md.
-CONCURRENCY_LEVELS = [1, 2, 4, 8, 16, 32, 64]
-CONCURRENCY_CONTEXT = 16384   # tokens per concurrent request/slot
-CONCURRENCY_MIN_LEVEL_BEFORE_SOFT_EXIT = 16
+# Concurrency tests (scripts/concurrency_benchmark.py) — see docs/workloads.md.
+# "tool" simulates agentic/tool-calling fan-out: a handful of concurrent
+# requests, each a short tool-call-shaped turn — always runs every level, no
+# soft-exit (see benchmark.py). "chat" simulates a chat server under load:
+# many simultaneous long-conversation users, with a soft-exit once mean
+# tok/s craters (CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT) so a model
+# that's already clearly too slow doesn't burn huge wall-clock time climbing
+# to 32-way for a foregone conclusion.
+CONCURRENCY_TOOL_LEVELS  = [1, 2, 4, 6, 8]
+CONCURRENCY_TOOL_CONTEXT = 4096    # tokens per concurrent request/slot
+CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
+CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot
+CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT = 8
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42

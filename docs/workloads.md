@@ -43,6 +43,7 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
+| Gemma 3 1B | `gemma3:1b-it-q4_K_M` | ~0.8 GB | Dense |
 | Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.1 GB | Dense |
 | Phi 4 Mini | `phi4-mini` | ~2.5 GB | Dense |
 
@@ -52,11 +53,13 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 |---|---|---|---|
 | Mistral 7B v0.3 Q4_K_M | `mistral:7b-instruct-v0.3-q4_K_M` | ~4.4 GB | Dense |
 | Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~5.0 GB | Dense |
+| Phi 4 14B | `phi4:14b-q4_K_M` | ~8.5 GB | Dense |
 
 ### Medium tier (26–35B params)
 
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
+| Qwen3.6 27B Q4_K_M | `qwen3.6:27b-q4_K_M` | ~16.8 GB | Dense |
 | Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
 | Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~24.0 GB | MoE — 3B active of 35B total |
 
@@ -64,6 +67,7 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
+| Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~39.7 GB | Dense |
 | Llama 4 Scout 16x17B | `llama4:16x17b` | ~67.0 GB | MoE — 17B active of ~109B total |
 | Nemotron 3 Super 120B | `nemotron-3-super:120b` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
 
@@ -71,11 +75,11 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size — both the medium and large tiers here are MoE-only for exactly that reason. Nemotron 3 Nano and Nemotron 3 Super are a different kind of MoE than the others: a hybrid Mamba-Transformer architecture, where Mamba's state-space layers handle most sequence processing (linear-time in sequence length) and only a subset of experts activate per token on top of that — distinct from Qwen3.6 and Llama 4's more conventional transformer-based MoE, despite similar active/total parameter ratios.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen3.6 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super are a different kind of MoE than the others: a hybrid Mamba-Transformer architecture, where Mamba's state-space layers handle most sequence processing (linear-time in sequence length) and only a subset of experts activate per token on top of that — distinct from Qwen3.6 and Llama 4's more conventional transformer-based MoE, despite similar active/total parameter ratios.
 
 **Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's own separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec includes this thinking output — the engine's reported generation count and duration cover the whole response, thinking included, with no separate accounting. TTFT reflects prompt-processing time only (the engine's reported prompt-eval duration), which happens before generation starts, so it is not affected by how much the model reasons afterward.
 
-**Llama versions:** Llama 3.2 tops out at 3B parameters; the 8B slot uses Llama 3.1. Llama 4 Scout is the large tier's MoE entry, at 16 experts (17B active of ~109B total).
+**Llama versions:** Llama 3.2 tops out at 3B parameters; the 8B slot uses Llama 3.1; the large tier's dense entry uses Llama 3.3 70B. Llama 4 Scout is the large tier's MoE entry, at 16 experts (17B active of ~109B total).
 
 `--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--models` narrows further to specific tags or wildcards (e.g. `--models "llama*"`) within whatever tier is selected — see [CLI Reference](cli-reference.md).
 

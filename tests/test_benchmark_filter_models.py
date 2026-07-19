@@ -18,6 +18,7 @@ def test_wildcard_matches_every_tag_with_that_prefix():
     assert tags == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
+        "llama3.3:70b-instruct-q4_K_M",
         "llama4:16x17b",
     }
 
@@ -34,6 +35,7 @@ def test_multiple_patterns_are_unioned_without_duplicates():
     assert set(tags) == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
+        "llama3.3:70b-instruct-q4_K_M",
         "llama4:16x17b",
     }
 
