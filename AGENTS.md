@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. Read this before m
 
 ## What this is
 
-`local-ai-bench` is a cross-platform benchmark suite for local LLM generation (Ollama or llama.cpp, via a pluggable engine interface — see [Engines](docs/engines.md)), image generation (ComfyUI), and embeddings. It's designed to run unattended on real hardware (from 8GB GPUs up to unified-memory workstations) and produce comparable results across machines via a React/Vite dashboard.
+`local-ai-bench` is a cross-platform benchmark suite for local LLM generation (llama.cpp, via a pluggable engine interface — see [Engines](docs/engines.md)), image generation (ComfyUI), and embeddings. It's designed to run unattended on real hardware (from 8GB GPUs up to unified-memory workstations) and produce comparable results across machines via a React/Vite dashboard.
 
 Full docs live in [`docs/`](docs/) — [Project Structure](docs/project-structure.md), [How It Works](docs/how-it-works.md), [Engines](docs/engines.md), [Testing](docs/testing.md), [Workloads](docs/workloads.md), [CLI Reference](docs/cli-reference.md), [Setup](docs/setup.md), [Dashboard](docs/dashboard.md). This file is the entry point and summary — when in doubt, the docs above are authoritative and more detailed.
 
@@ -33,7 +33,7 @@ tests.sh / .bat                Activates bench-env, runs pytest
 - `benchmark.py` — CLI entry point, argument parsing, orchestration (`main()`)
 - `config.py` — shared constants (URLs, paths, timeouts, run counts)
 - `shared.py` — cross-cutting helpers: logging, machine profiling, crash-cache/`run_measured_calls`/`run_accuracy_benchmark` orchestration (engine-agnostic — takes an `InferenceEngine`), ComfyUI server lifecycle/HTTP client
-- `engines/base.py` — `InferenceEngine` interface; `engines/ollama.py`/`engines/llamacpp.py` — `OllamaEngine`/`LlamaCppEngine` (server lifecycle + HTTP/process client for each). `--engine ollama|llamacpp|both` on `benchmark.py` picks which; a third engine (e.g. MLX) implements the same interface without touching orchestration.
+- `engines/base.py` — `InferenceEngine` interface; `engines/llamacpp.py` — `LlamaCppEngine` (server lifecycle + HTTP/process client). llama.cpp is the only engine today; a second engine (e.g. MLX) implements the same interface without touching orchestration.
 - `llm_prefill_benchmark.py` — single-shot cold-prefill LLM test
 - `llm_conversation_benchmark.py` — multi-turn conversation LLM test
 - `embedding_benchmark.py` — embeddings test
@@ -43,9 +43,9 @@ tests.sh / .bat                Activates bench-env, runs pytest
 
 ## Critical safety rules
 
-**Never execute `setup_check.py`, `setup.sh`, or `setup.bat` directly to test a change**, even with piped/non-interactive stdin. These scripts have real, hard-to-reverse side effects: installing Ollama via Homebrew, pulling multi-GB models, cloning ComfyUI, downloading multi-GB checkpoints. This happened once already — running `setup_check.py --all` to "just check the fallback path" actually installed Ollama, 11 Homebrew packages, and started pulling a ~5GB model for real, requiring manual cleanup. To test logic inside these scripts, extract the specific function and test it in isolation (a `pty` harness for terminal-UI logic, a plain unit test for everything else) — never run the real entrypoint. If the full script genuinely needs an end-to-end run, ask the user to run it themselves.
+**Never execute `setup_check.py`, `setup.sh`, or `setup.bat` directly to test a change**, even with piped/non-interactive stdin. These scripts have real, hard-to-reverse side effects: installing llama.cpp via Homebrew or a source build, downloading multi-GB GGUF models, cloning ComfyUI, downloading multi-GB checkpoints. This happened once already (back when the project also used Ollama) — running `setup_check.py --all` to "just check the fallback path" actually installed Ollama, 11 Homebrew packages, and started pulling a ~5GB model for real, requiring manual cleanup. To test logic inside these scripts, extract the specific function and test it in isolation (a `pty` harness for terminal-UI logic, a plain unit test for everything else) — never run the real entrypoint. If the full script genuinely needs an end-to-end run, ask the user to run it themselves.
 
-**Never run `benchmark.py` for a real test run** unless the user explicitly asks — it drives real Ollama/llama.cpp/ComfyUI servers, loads multi-GB models into memory, and can take hours.
+**Never run `benchmark.py` for a real test run** unless the user explicitly asks — it drives real llama.cpp/ComfyUI servers, loads multi-GB models into memory, and can take hours.
 
 **Use the existing `bench-env/` venv, not scratch venvs.** It's the user's real, persistent environment (created by `setup.sh`/`setup.bat`, already has `requirements.txt` installed) and is what every wrapper script (`run_bench.sh`, `launch_dashboard.sh`, `tests.sh`) activates. Activate it or call `bench-env/bin/python`/`bench-env/bin/pip` directly for any check against this codebase (running tests, computing coverage, syntax-checking, simulating a module) — on Windows it's `bench-env\Scripts\python.exe`/`bench-env\Scripts\pip.exe`. Only fall back to a throwaway venv if `bench-env/` genuinely doesn't exist yet and creating it isn't appropriate.
 
@@ -60,7 +60,7 @@ bash tests.sh -k "select_tier"        # filter by test name
 bash tests.sh --cov=scripts --cov-report=term-missing   # with coverage (needs pytest-cov)
 
 # Everything else below has real side effects — confirm with the user first
-bash setup.sh              # installs Ollama, llama.cpp, models, ComfyUI checkpoints
+bash setup.sh              # installs llama.cpp, models, ComfyUI checkpoints
 bash run_bench.sh           # runs the real benchmark suite
 bash launch_dashboard.sh    # builds + serves the results dashboard
 ```
@@ -93,12 +93,12 @@ This is the part to get right — **write comprehensive, valuable tests for anyt
 
 **Structure:**
 - `tests/conftest.py` puts `scripts/` on `sys.path`, so tests import modules the same way the scripts import each other (`import config`, `from shared import Shared`, etc.) — bare top-level imports, not `scripts.foo`.
-- One test file roughly per source module; split further when a module has multiple distinct concerns (e.g. `shared.py` → `test_shared_crash_cache.py`, `test_shared_run_measured_calls.py`, `test_shared_stats.py`, `test_shared_find_comfyui_python.py`, `test_run_accuracy_benchmark.py`; `engines/ollama.py` → `test_ollama_engine.py`, `engines/llamacpp.py` → `test_llamacpp_engine.py`).
+- One test file roughly per source module; split further when a module has multiple distinct concerns (e.g. `shared.py` → `test_shared_crash_cache.py`, `test_shared_run_measured_calls.py`, `test_shared_stats.py`, `test_shared_find_comfyui_python.py`, `test_run_accuracy_benchmark.py`; `engines/llamacpp.py` → `test_llamacpp_engine.py`).
 - Use `pytest`'s plain `assert`, `monkeypatch`, `unittest.mock.patch`, and `tmp_path` fixtures — no custom test framework.
 
 **What to test — the real boundary:**
 - **Do** unit test pure logic and anything mockable at a clean seam: parsing, calculation, decision/skip logic, config selection, request/response shaping. Mock `requests`/`urllib` calls and `Shared.*` seams rather than hitting a real server.
-- **Don't** try to unit test code that spawns real subprocesses, polls a live Ollama/llama.cpp/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `OllamaEngine.start`/`LlamaCppEngine.start`/`Shared.ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test. Orchestration logic that takes an `InferenceEngine` parameter (e.g. `Shared.run_accuracy_benchmark`) isn't in this bucket — test it with a fake engine instead.
+- **Don't** try to unit test code that spawns real subprocesses, polls a live llama.cpp/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `LlamaCppEngine.start`/`Shared.ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test. Orchestration logic that takes an `InferenceEngine` parameter (e.g. `Shared.run_accuracy_benchmark`) isn't in this bucket — test it with a fake engine instead.
 - `scripts/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
 
 **Extract before testing, when logic is buried in a loop.** Several times in this project's history, business logic embedded in a large orchestration loop turned out to be worth pulling into its own pure, testable function rather than leaving it untested inside a `# pragma: no cover` method:
@@ -120,7 +120,7 @@ When you write similar logic (a decision, a calculation, a dispatch) inside an o
 ## Code conventions
 
 - **CLI-overridable config uses dotted access, not `from` imports.** `RUN_TIMEOUT`, `ACC_TIMEOUT`, and `N_RUNS` in `config.py` can be overridden by `--timeout`/`--acc-timeout`/`--runs` at runtime (`config.RUN_TIMEOUT = args.timeout`). Every reference to them elsewhere must be `config.RUN_TIMEOUT`/`config.ACC_TIMEOUT`/`config.N_RUNS` (dotted attribute lookup) — never `from config import RUN_TIMEOUT`, which binds a stale copy at import time and silently ignores the override.
-- **A timed-out accuracy question (`mcq`/`math`/`code`, `--acc-timeout`, default 60s) is scored wrong and the bank continues to the next question — a single timeout doesn't affect the rest of that model's run.** Whatever text streamed before the cutoff is captured (`OllamaTimeout.partial_text` in `shared.py`) and scored the same as a completed answer, and run through `Shared.looks_like_loop` (verbatim n-gram repetition or repeated hedging phrases) to flag a likely generation loop. That loop check only ever runs on a timed-out question's partial text — never on a completed, submitted answer, however wrong or repetitive it looks. Results carry `timed_out_count`/`timed_out_ids` and, when applicable, `likely_loop_count`/`likely_loop_ids` per model. See `docs/workloads.md#timeouts-and-loop-detection`.
+- **A timed-out accuracy question (`mcq`/`math`/`code`, `--acc-timeout`, default 60s) is scored wrong and the bank continues to the next question — a single timeout doesn't affect the rest of that model's run.** Whatever text streamed before the cutoff is captured (`EngineTimeout.partial_text` in `shared.py`) and scored the same as a completed answer, and run through `Shared.looks_like_loop` (verbatim n-gram repetition or repeated hedging phrases) to flag a likely generation loop. That loop check only ever runs on a timed-out question's partial text — never on a completed, submitted answer, however wrong or repetitive it looks. Results carry `timed_out_count`/`timed_out_ids` and, when applicable, `likely_loop_count`/`likely_loop_ids` per model. See `docs/workloads.md#timeouts-and-loop-detection`.
 - **Logging goes through `Shared.log/ok/warn/err/section`**, not bare `print()`, for consistent colored CLI output across all workload modules.
 - **`VERSION` in `config.py` and the `# Local AI Bench vX.Y` title in `README.md` must be bumped together.** They're two independent strings with no code linking them — nothing will catch a mismatch except noticing it.
 - **`N_RUNS` is fixed at 3, averaged directly, no outlier-dropping or early-exit-on-slow logic for the run count itself.** This was a deliberate simplification from an earlier 5-run design with more complex gating — variance across 5 runs was already low enough that 3 plain averaged runs is sufficient. Don't reintroduce run-count configurability or outlier-dropping without the user asking for it again. (Note: `SLOW_MODEL_MIN_TPS` skip/early-exit logic for the *conversation* test is separate and current — see `docs/workloads.md`.)

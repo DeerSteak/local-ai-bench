@@ -74,7 +74,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 [`.coveragerc`](../.coveragerc) at the repo root shapes that report so it reflects the code this suite is actually meant to exercise, rather than being diluted by code that can't safely be unit tested:
 
 - `scripts/setup_check.py` is omitted entirely — it has no `__main__` guard, so importing it would run the whole interactive install flow (prompts, downloads).
-- Individual functions that spawn real subprocesses, poll a live Ollama/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `OllamaEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
+- Individual functions that spawn real subprocesses, poll a live llama.cpp/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `LlamaCppEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
 
 With that config in place, coverage sits around 95% for the code the suite targets — the remaining gaps are a handful of fine-grained exception branches inside otherwise-tested functions, not whole untested subsystems.
 
@@ -82,7 +82,7 @@ With that config in place, coverage sits around 95% for the code the suite targe
 
 ## Test Suite Breakdown
 
-The test suite consists of **25 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **24 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -118,13 +118,13 @@ The test suite consists of **25 test modules** validating different components o
   - Filtering preserves the original model order.
 
 - **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
-  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually pulled in Ollama. It verifies:
+  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually downloaded locally. It verifies:
   - A pattern that matches the catalog behaves exactly like `filter_models_by_pattern` and does not also pull in unrelated installed tags.
   - A pattern matching nothing in the catalog falls back to matching installed tags, producing a `"(custom)"`-labeled entry.
   - A pattern matching neither the catalog nor anything installed resolves to nothing (not an error).
   - A wildcard can resolve to multiple installed tags at once.
   - Catalog and custom patterns can be mixed in the same `--models` invocation.
-  - `sanitize_tag_to_short` turns a raw Ollama tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+  - `sanitize_tag_to_short` turns a raw tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
 
 - **[test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py)**
   Tests `sidecar_path` in `benchmark.py`, which builds a sibling filename (an `answers_mcq_*.json`, `images_*/`, etc.) alongside the main results JSON. It verifies:
@@ -137,7 +137,7 @@ The test suite consists of **25 test modules** validating different components o
   - Context lengths are strictly sorted in ascending order and unique.
   - Important directories (`RESULTS_DIR`, `COMFYUI_DIR`) resolve correctly relative to the project root.
   - Execution run count (`N_RUNS`) is positive.
-  - Endpoint URLs (Ollama and ComfyUI) have proper HTTP schemas.
+  - Endpoint URLs (llama.cpp and ComfyUI) have proper HTTP schemas.
 
 - **[test_models.py](../tests/test_models.py)**
   Validates model configuration records in `models.py`. It checks:
@@ -185,7 +185,7 @@ The test suite consists of **25 test modules** validating different components o
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
 - **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
-  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no Ollama server needed. It verifies:
+  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no inference server needed. It verifies:
   - `build_prompt` includes the question text and the target function/class name, renders `visible_tests` as worked examples (for both function and stateful problems, including constructor `init` args), omits the examples block entirely when there are no visible tests, and never leaks `hidden_tests` values into the prompt — proven not just by substring-scanning the rendered text but by deleting the `hidden_tests` key from every real question in the bank and confirming `build_prompt` doesn't raise (i.e. never even looks it up).
   - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
   - `execute_tests` runs a candidate function against a list of test cases in an isolated subprocess: correct/incorrect results score independently per test case, a runtime error in one test case doesn't abort the others, a syntax error or reference to an undefined function name fails every test case with an error message, and an infinite loop is killed and reported as a `"timeout"` rather than hanging the test run.
@@ -220,24 +220,11 @@ The test suite consists of **25 test modules** validating different components o
   4. The current external active virtual environment (`VIRTUAL_ENV`).
   5. The current system interpreter (`sys.executable`).
 
-- **[test_ollama_engine.py](../tests/test_ollama_engine.py)**
-  Tests `OllamaEngine` (`scripts/engines/ollama.py`) — lifecycle hooks, server state controls, and NDJSON stream parsing:
-  - `reachable_or_abort` detects whether the Ollama server is running.
-  - `model_pulled` checks for exact or implicit matches (like tags missing `:latest`) in the local image list.
-  - `max_context_length` parses architectural options to identify a model's true context limit, falling back to configuration defaults on failure.
-  - `unload` issues a keep-alive termination request and handles network errors.
-  - `unload_all` queries loaded models and terminates them.
-  - `wait_until_unloaded` polls until a model is fully evicted.
-  - Derivation of TTFT and tokens/sec from server performance fields, with fallback to local system time if fields are missing.
-  - Resilience against empty, blank, or malformed NDJSON stream lines.
-  - Response extraction preferring the standard content payload over reasoning (`thinking`) fields, but falling back to reasoning text if needed.
-  - Intercepting HTTP 500 error payloads to extract clean diagnostic messages (e.g. "model requires more system memory") rather than raising generic HTTP error statuses.
-
 - **[test_llamacpp_engine.py](../tests/test_llamacpp_engine.py)**
-  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — Ollama manifest/blob resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`, same convention as `OllamaEngine.start`):
-  - `_split_tag`/`_resolve_blob_path`/`model_pulled`/`list_installed_models` walk Ollama's manifest tree straight from disk, including a missing manifest, a missing blob file, and a missing model store entirely.
-  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't pulled or the file doesn't parse.
-  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `OllamaTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
+  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — local GGUF-file resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`):
+  - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, and a multi-part (`hf_file` as a list) model with one part missing.
+  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't downloaded or the file doesn't parse.
+  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `EngineTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
   - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
   - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
 

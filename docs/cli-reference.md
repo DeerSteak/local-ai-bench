@@ -16,17 +16,14 @@ run_bench.bat [options]   # Windows
                         (currently mcq, math, and code), or conc (default: all
                         seven — llm conv emb img mcq math code; conc is
                         opt-in — see Workloads)
---engine ENGINE         Inference engine to benchmark against: ollama,
-                        llamacpp, or both (default: llamacpp — marginally
-                        faster than Ollama and a closer read on raw model
-                        capability, without Ollama's scheduling/wrapper
-                        overhead). llamacpp reuses models already pulled via
-                        'ollama pull' — no separate download — and requires
-                        the llama-server binary (see setup). 'both' runs the
-                        full --tests suite once per engine, back to back, and
-                        writes a separate results file for each. Whichever
-                        engine is about to start, the other is stopped first
-                        so the two never compete for GPU memory at once
+--engine ENGINE         Inference engine to benchmark against, or 'all' to run
+                        the full --tests suite once per registered engine (default:
+                        llamacpp). 'all' writes a separate results file per
+                        engine (engine name appended to the filename). Only
+                        llama.cpp is registered today, so 'all' is currently a
+                        no-op — kept so scripts/docs referencing --engine don't
+                        need to change once a second engine (e.g. MLX) is added.
+                        See Engines
 --cpu-only              Force CPU-only inference for every test that goes
                         through the active engine (llm, conv, mcq, math, code,
                         emb, conc) by restarting it with GPU devices hidden,
@@ -54,16 +51,16 @@ run_bench.bat [options]   # Windows
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
 --models TAGS           Only test these LLM models (llm/conv/mcq/math/code tests) —
-                        exact Ollama tags or wildcards, e.g. 'llama*' matches
+                        exact catalog tags or wildcards, e.g. 'llama*' matches
                         every tag starting with 'llama'. Applied after
                         --maxtier, narrowing the catalog's models further; a
                         pattern matching nothing in the catalog falls back to
-                        matching tags actually pulled in Ollama, so a model
+                        matching tags actually downloaded locally, so a model
                         outside the curated catalog can still be tested (see
                         --list-models). Quote wildcards so your shell doesn't
                         glob-expand them first (default: every catalog model
                         in the selected tier)
---list-models           List every Ollama model actually installed locally,
+--list-models           List every model actually downloaded locally,
                         marking which are in the curated catalog (models.py)
                         vs custom/extra, then exit without running anything.
                         Useful for finding the exact tag to pass to --models
@@ -93,15 +90,15 @@ Every test except the LLM conversation test and the accuracy-style tests (MCQ, m
 | Flag | Values | Default | Notes |
 |---|---|---|---|
 | `--tests` | any of `llm conv emb img mcq math code`, plus `acc` and `conc` | all seven (`llm conv emb img mcq math code`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (currently `mcq`, `math`, and `code`) and de-duplicates against any of them also listed explicitly. `conc` (the concurrency test — see [Concurrency](workloads.md#concurrency)) is opt-in, not part of the default set |
-| `--engine` | `ollama` / `llamacpp` / `both` | `llamacpp` | Which inference engine to benchmark against. `both` runs the full `--tests` suite once per engine and writes a separate results file for each (tagged internally with `"engine"`). See [Engines](engines.md) |
-| `--cpu-only` | (flag) | off | Restarts the active engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`code`/`emb`/`conc`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
+| `--engine` | any registered engine name, or `all` | `llamacpp` | Which inference engine to benchmark against. `all` runs the full `--tests` suite once per registered engine (sorted order) and writes a separate results file for each (engine name appended to the filename). Only llama.cpp is registered today, so `all` behaves identically to the default until a second engine (e.g. MLX) is added. See [Engines](engines.md) |
+| `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`code`/`emb`/`conc`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
 | `--warmup` | integer | `2` | Discarded runs before measured runs, per model/checkpoint |
 | `--runs` | integer, `1`–`10` | `3` | Measured runs per checkpoint, averaged. Applies separately to every model and context length in the single-shot LLM test, so total measured time scales roughly in proportion — e.g. 6 runs roughly doubles measured time versus the default. Ignored by the LLM conversation test, which always runs a single conversation. Warmup time is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per run (warmup or measured) for `llm`/`conv`/`emb`/`img`, and for every test's warmup; exceeding it skips the rest of that model |
 | `--acc-timeout` | integer (seconds) | `60` | Per question for the accuracy tests (`mcq`/`math`/`code`) only; exceeding it scores that one question wrong and moves on to the next — see [Accuracy](workloads.md#accuracy) |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. The concurrency test (`conc`) ignores this — it always restricts to xsmall+small, since each concurrent request needs its own KV cache (see [Concurrency](workloads.md#concurrency)) |
-| `--models` | space-separated Ollama tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`code`/`conc` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for `conc`, after its fixed xsmall+small restriction), narrowing the catalog's models further — but a pattern that matches nothing in the catalog falls back to matching against tags actually pulled in Ollama, so a model outside the curated catalog (`models.py`) can still be tested. Quote wildcards (`"llama*"`) so your shell doesn't expand them first |
-| `--list-models` | (flag) | off | Lists every Ollama model actually installed, tagging each as `catalog` or `custom`, then exits without running anything — the quickest way to find the exact tag to pass to `--models` |
+| `--models` | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`code`/`conc` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for `conc`, after its fixed xsmall+small restriction), narrowing the catalog's models further — but a pattern that matches nothing in the catalog falls back to matching against tags actually downloaded locally, so a model outside the curated catalog (`models.py`) can still be tested. Quote wildcards (`"llama*"`) so your shell doesn't expand them first |
+| `--list-models` | (flag) | off | Lists every model actually downloaded locally, tagging each as `catalog` or `custom`, then exits without running anything — the quickest way to find the exact tag to pass to `--models` |
 | `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`code` against a deterministic, stratified N-question subset of each bank instead of the full one — every category still represented, same N always picks the same questions for a given bank version. The sampled question IDs are recorded in the results JSON under `sample_ids`. Don't use it for a result meant to be compared against a full-bank run or published — see [bank versioning](workloads.md#bank-versioning) |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the auto-generated path entirely — an explicit path is used as-is, not placed under `results/`. Generated images (`--tests img`) still land under `results/`, in an `images_<name>` folder alongside it (see [Project Structure](project-structure.md)) |
@@ -134,13 +131,14 @@ bash run_bench.sh --maxtier small
 bash run_bench.sh --tests llm --models "llama*"
 
 # One specific model plus a wildcard group
-bash run_bench.sh --tests llm --models gpt-oss:20b "deepseek-r1*"
+bash run_bench.sh --tests llm --models phi4-mini "nemotron-3*"
 
-# Find the exact tag for a model you've pulled but isn't in the catalog
+# Find the exact tag for a model you've downloaded but isn't in the catalog
 bash run_bench.sh --list-models
 
-# Compare engines on the same models — writes two results files
-bash run_bench.sh --engine both --tests llm mcq
+# Run every registered engine, one pass each — writes a results file per
+# engine. Currently a no-op (only llama.cpp is registered)
+bash run_bench.sh --engine all --tests llm mcq
 
 # Quick dev iteration on the accuracy tests — 10 questions per bank instead
 # of the full thing; never compare this against a full-bank result

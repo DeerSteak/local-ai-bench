@@ -24,14 +24,14 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 
 ## LLM
 
-Twelve models across four tiers are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
+Eight models across four tiers (two per tier) are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
 
 Every model is run through **two separate LLM tests**, back to back:
 
 - **Single-shot** — a large prompt, padded to the target size and sent fresh (with unique content) on every run, measured at four context lengths (2K / 8K / 32K / 64K), so it's always a genuine cold prefill of that many tokens with nothing cached. This simulates dropping a large document, codebase, or transcript into a single prompt and asking one question about it.
 - **Conversation** — a real multi-turn chat, measured at up to eight depths (0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K, whichever the model's own context window reaches): the model explains Plato's Allegory of the Cave, then each following turn asks for more detail on a section, growing the conversation from a blank slate toward 96K. This test is expensive (many turns growing all the way to the sampling ceiling), so it always runs a single conversation regardless of `--runs` — that flag only repeats the other tests (see [CLI Reference](cli-reference.md)).
 
-The context window handed to a model for the conversation test is still the full 128K if it supports at least that much, otherwise its own real maximum — looked up live from Ollama for the exact model that's actually pulled, not assumed or hardcoded. Sampling deliberately stops at 96K rather than 128K so the conversation always has real headroom left against that context window instead of scraping the ceiling — most models' real maximum is exactly 128K, with no slack to spare for the growth loop's final turns.
+The context window handed to a model for the conversation test is still the full 128K if it supports at least that much, otherwise its own real maximum — read live from the downloaded GGUF's own metadata for the exact model that's actually installed, not assumed or hardcoded. Sampling deliberately stops at 96K rather than 128K so the conversation always has real headroom left against that context window instead of scraping the ceiling — most models' real maximum is exactly 128K, with no slack to spare for the growth loop's final turns.
 
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](dashboard.md#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
@@ -41,45 +41,41 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 ### Extra-small tier (<6B params)
 
-| Model | Ollama tag | Size | Architecture |
+| Model | Tag | Size | Architecture |
 |---|---|---|---|
 | Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.1 GB | Dense |
 | Phi 4 Mini | `phi4-mini` | ~2.5 GB | Dense |
-| Qwen3.5 4B | `qwen3.5:4b` | ~3.4 GB | Dense |
 
 ### Small tier (≤20B params)
 
-| Model | Ollama tag | Size | Architecture |
+| Model | Tag | Size | Architecture |
 |---|---|---|---|
+| Mistral 7B v0.3 Q4_K_M | `mistral:7b-instruct-v0.3-q4_K_M` | ~4.4 GB | Dense |
 | Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~5.0 GB | Dense |
-| Gemma 4 E4B | `gemma4:e4b` | ~9.7 GB | Dense (Per-Layer Embeddings — see below) |
-| GPT-OSS 20B (MXFP4) | `gpt-oss:20b` | ~13.8 GB | MoE — 3.6B active of ~20.9B total |
 
 ### Medium tier (26–35B params)
 
-| Model | Ollama tag | Size | Architecture |
+| Model | Tag | Size | Architecture |
 |---|---|---|---|
-| Gemma 4 26B | `gemma4:26b` | ~18.0 GB | MoE — 4B active of ~26B total |
-| DeepSeek-R1 32B | `deepseek-r1:32b` | ~19.9 GB | Dense |
+| Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
 | Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~24.0 GB | MoE — 3B active of 35B total |
 
 ### Large tier (70B+ params)
 
-| Model | Ollama tag | Size | Architecture |
+| Model | Tag | Size | Architecture |
 |---|---|---|---|
-| DeepSeek-R1 70B | `deepseek-r1:70b` | ~42.6 GB | Dense |
 | Llama 4 Scout 16x17B | `llama4:16x17b` | ~67.0 GB | MoE — 17B active of ~109B total |
-| GPT-OSS 120B (MXFP4) | `gpt-oss:120b` | ~65.4 GB | MoE — 5.1B active of ~116.8B total |
+| Nemotron 3 Super 120B | `nemotron-3-super:120b` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
 
 ### Dense vs. Mixture-of-Experts (MoE)
 
-A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Ollama tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`) or in the model's own naming (e.g. Gemma's `26B-A4B`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
+A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size — in the medium tier here, Qwen3.6 35B-A3B activates only ~3B parameters per token versus DeepSeek-R1 32B's dense 32B, despite both landing in a similar VRAM footprint (~20–22 GB). Gemma 4 E4B is a dense model that uses a different technique, Per-Layer Embeddings (PLE), to shrink its loaded memory footprint (~8B total parameters, ~4.5B "effective") without changing how much compute each token costs — every layer's core weights still run for every token, unlike MoE's routing.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size — both the medium and large tiers here are MoE-only for exactly that reason. Nemotron 3 Nano and Nemotron 3 Super are a different kind of MoE than the others: a hybrid Mamba-Transformer architecture, where Mamba's state-space layers handle most sequence processing (linear-time in sequence length) and only a subset of experts activate per token on top of that — distinct from Qwen3.6 and Llama 4's more conventional transformer-based MoE, despite similar active/total parameter ratios.
 
-**DeepSeek-R1** is a reasoning model that generates internal thinking tokens before its answer, via the engine's own separate reasoning field (Ollama's `thinking`, llama-server's `reasoning_content`) rather than mixing them into the answer text. Tokens/sec includes this thinking output — the engine's reported generation count and duration cover the whole response, thinking included, with no separate accounting. TTFT reflects prompt-processing time only (the engine's reported prompt-eval duration), which happens before generation starts, so it is not affected by how much the model reasons afterward.
+**Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's own separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec includes this thinking output — the engine's reported generation count and duration cover the whole response, thinking included, with no separate accounting. TTFT reflects prompt-processing time only (the engine's reported prompt-eval duration), which happens before generation starts, so it is not affected by how much the model reasons afterward.
 
-**Llama versions:** Llama 3.2 tops out at 3B parameters. The 8B slot uses Llama 3.1; the 70B slot uses Llama 3.3, the most recent 70B instruction model.
+**Llama versions:** Llama 3.2 tops out at 3B parameters; the 8B slot uses Llama 3.1. Llama 4 Scout is the large tier's MoE entry, at 16 experts (17B active of ~109B total).
 
 `--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--models` narrows further to specific tags or wildcards (e.g. `--models "llama*"`) within whatever tier is selected — see [CLI Reference](cli-reference.md).
 
@@ -107,20 +103,20 @@ Generated sample images are saved to `results/images_<hostname>_<timestamp>/`, a
 
 ## Embeddings
 
-Two models via Ollama — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting.
+Two models — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting.
 
 Like the other test types, each model gets `--warmup` discarded runs first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it's absorbed before the `--runs` measured runs (default 3) rather than skewing them. The active engine uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
 
 If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts the active engine with GPU devices hidden for every test in the run that goes through it (`llm`/`conv`/`mcq`/`emb`, not just embeddings), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
 
-| Model | Ollama tag | Size |
+| Model | Tag | Size |
 |---|---|---|
 | Nomic Embed Text | `nomic-embed-text` | ~0.3 GB |
 | MixedBread Embed Large | `mxbai-embed-large` | ~0.7 GB |
 
 ## Accuracy
 
-Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/api/chat`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
 
 The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — with introductory items retained for score continuity and a substantially harder second half. Correct-answer positions are balanced across A–D (38/38/37/37) *and* randomly ordered (seeded, so the file is reproducible) — balance alone doesn't rule out an exploitable fixed-cycle ordering (e.g. "guess A, then B, then C, then D, repeat"), so both properties matter. A model's free-form reply is scanned for the first standalone letter (A–D) that's actually one of that question's choices, so a model that reasons out loud before answering ("...so the answer is B") is still scored correctly; a reply with no matching letter counts as unanswered (wrong).
 

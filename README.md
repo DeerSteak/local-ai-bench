@@ -13,9 +13,9 @@ cd local-ai-bench
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, Ollama, llama.cpp |
-| Linux / DGX Spark | `bash setup.sh` | Python, Ollama, llama.cpp |
-| Windows | `setup.bat` | Python, Ollama, llama.cpp, ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp |
+| Windows | `setup.bat` | Python, llama.cpp, ComfyUI portable |
 
 `setup.sh` / `setup.bat` show exactly what they need to install and ask before doing it — nothing happens silently. They then hand off to an interactive model picker, so you choose what gets downloaded before anything installs unattended.
 
@@ -52,7 +52,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |
-| [Engines](docs/engines.md) | The `InferenceEngine` interface, `OllamaEngine`/`LlamaCppEngine`, `--engine`, and how to add a new engine |
+| [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
 | [Testing](docs/testing.md) | How to run tests and detail on what each test file validates |
 

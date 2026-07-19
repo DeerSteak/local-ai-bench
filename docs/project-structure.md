@@ -21,10 +21,11 @@
 | `dashboard/` | The results-explorer web app (React + Vite) |
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
+| `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup_check.py`, gitignored |
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
-| `scripts/data/` | Question banks used by accuracy tests — `mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `code_problems.json` (60 problems), plus [`TEST_BANK_NOTES.md`](../scripts/data/TEST_BANK_NOTES.md) authoring and harness notes |
+| `scripts/data/` | Question banks used by accuracy tests — `mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `code_problems.json` (60 problems) |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
@@ -43,7 +44,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `benchmark.py` | CLI entry point — argument parsing and test orchestration |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `shared.py` | Cross-cutting helpers: logging, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
-| `engines/base.py`, `engines/ollama.py`, `engines/llamacpp.py` | `InferenceEngine` interface, `OllamaEngine`, and `LlamaCppEngine` — server lifecycle + HTTP/process client for each, see [Engines](engines.md) |
+| `engines/base.py`, `engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
 | `llm_prefill_benchmark.py` | Single-shot LLM test |
 | `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
 | `embedding_benchmark.py` | Embeddings test |
@@ -72,7 +73,7 @@ results/
 
 Each sibling name is always the results filename's stem with `results_` swapped for the sibling's own prefix (`images_`, `answers_mcq_`, `answers_math_`, `answers_code_`) — so the hostname and timestamp suffix is identical across all of them, letter for letter. This holds even when `--out` overrides the default naming (falling back to `<prefix><name>` if the given filename doesn't start with `results_`). See [CLI Reference](cli-reference.md) for the `--out` flag.
 
-`--engine both` (see [Engines](engines.md)) appends `_ollama`/`_llamacpp` to the results filename's stem for each pass, so a `--engine both` run of the example above produces `results_..._090000_ollama.json` and `results_..._090000_llamacpp.json` side by side, each tagged internally with `"engine"`.
+`--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
 
 The `answers_*.json` sidecars hold each accuracy test's wrong answers, keyed by model, with the model's full raw response text — kept out of the main results JSON since raw model output (unbounded generation, see `docs/workloads.md`) is large relative to everything else in there and would otherwise bloat it substantially.
 
