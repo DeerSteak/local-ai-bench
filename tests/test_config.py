@@ -19,5 +19,9 @@ def test_n_runs_positive():
 
 
 def test_urls_have_scheme():
-    assert config.OLLAMA_URL.startswith("http://")
+    assert config.LLAMACPP_URL.startswith("http://")
     assert config.COMFYUI_URL.startswith("http://")
+
+
+def test_models_dir_under_script_dir():
+    assert config.MODELS_DIR == config.SCRIPT_DIR / "models"

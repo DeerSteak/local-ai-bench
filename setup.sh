@@ -116,7 +116,7 @@ info "Installing from requirements.txt ..."
 ok "Base dependencies installed"
 
 # ── 4. Run setup_check.py inside the venv ─────────────────────────────────────
-# (Ollama detection/install — including on Linux — happens inside
+# (llama.cpp detection/install — including on Linux — happens inside
 # setup_check.py, gated behind its own approval prompt, so it isn't
 # installed here without asking.)
 section "Running setup_check.py"

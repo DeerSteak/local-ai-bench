@@ -15,7 +15,7 @@ from shared import Shared
 class MathBenchmark:
     MATH_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "math_questions.json"
 
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     MATH_CRASH_CACHE = Path(".math_crash_cache.json")

@@ -8,8 +8,8 @@ def test_no_patterns_returns_models_unchanged():
 
 
 def test_exact_tag_matches_only_that_model():
-    result = filter_models_by_pattern(LLM_MODELS, ["gpt-oss:20b"])
-    assert [m["tag"] for m in result] == ["gpt-oss:20b"]
+    result = filter_models_by_pattern(LLM_MODELS, ["phi4-mini"])
+    assert [m["tag"] for m in result] == ["phi4-mini"]
 
 
 def test_wildcard_matches_every_tag_with_that_prefix():

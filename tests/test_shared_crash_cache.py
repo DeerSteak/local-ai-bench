@@ -4,7 +4,7 @@ import http.client
 import pytest
 import requests
 
-from engines.ollama import OllamaEngine
+from engines.llamacpp import LlamaCppEngine
 from shared import Shared
 
 
@@ -65,19 +65,19 @@ def test_record_crash_persists_to_cache(tmp_path):
 ])
 def test_is_connection_crash_true_for_connection_errors(exc):
     # is_connection_crash moved off Shared onto the engine (its exception-shape
-    # heuristic is Ollama-HTTP-client-specific) — the cases/reasoning are
-    # unchanged, just retargeted onto an OllamaEngine instance.
-    assert OllamaEngine().is_connection_crash(exc) is True
+    # heuristic is HTTP-client-specific) — the cases/reasoning are
+    # unchanged, just retargeted onto a LlamaCppEngine instance.
+    assert LlamaCppEngine().is_connection_crash(exc) is True
 
 
 def test_is_connection_crash_true_for_actively_refused_message():
-    assert OllamaEngine().is_connection_crash(RuntimeError("connection actively refused")) is True
+    assert LlamaCppEngine().is_connection_crash(RuntimeError("connection actively refused")) is True
 
 
 @pytest.mark.parametrize("exc", [
     ValueError("bad value"),
     TimeoutError("timed out"),
-    RuntimeError("Ollama returned HTTP 500: something else"),
+    RuntimeError("llama-server returned HTTP 500: something else"),
 ])
 def test_is_connection_crash_false_for_unrelated_errors(exc):
-    assert OllamaEngine().is_connection_crash(exc) is False
+    assert LlamaCppEngine().is_connection_crash(exc) is False

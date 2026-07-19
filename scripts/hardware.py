@@ -11,15 +11,16 @@ imported/run in tests, see AGENTS.md).
 
 import re
 
-# Weights + ~20% for KV-cache/runtime overhead. An approximation, not a
-# precise per-context-length calculation — deliberately simple, same spirit
-# as the disk-space check's flat buffers below.
+# Weights + ~20% for runtime overhead (KV-cache for LLMs, activations for
+# image models). An approximation, not a precise per-context-length
+# calculation — deliberately simple, same spirit as the disk-space check's
+# flat buffers below.
 MEMORY_OVERHEAD_MULTIPLIER = 1.2
 
 # Headroom reserved on top of a model's estimated footprint before comparing
 # against what the machine has, so "fits" doesn't mean "exactly to the byte."
 VRAM_RESERVE_GB = 1.0   # driver / other GPU processes
-RAM_RESERVE_GB  = 8.0   # OS + Ollama + everything else on the shared-memory path (unified/integrated/CPU-only)
+RAM_RESERVE_GB  = 8.0   # OS + the inference server + everything else on the shared-memory path (unified/integrated/CPU-only)
 
 
 def parse_size_gb(s: str) -> float:
@@ -104,3 +105,49 @@ def model_fits(download_size: str, ceiling_gb: float | None) -> bool | None:
     if ceiling_gb is None:
         return None
     return model_memory_requirement_gb(download_size) <= ceiling_gb
+
+
+# On-disk size per checkpoint, rounded UP to the next 0.1 GB so the
+# disk-space check errs toward requiring more space, not less.
+CHECKPOINT_SIZES_GB = {
+    "v1-5-pruned-emaonly.safetensors": 4.3,
+    "sd_xl_base_1.0.safetensors": 7.0,
+    "sd3.5_large.safetensors":    16.5,
+    "flux1-dev.safetensors":      23.9,
+    "flux2-dev.safetensors":      64.5,
+}
+ENCODER_SIZES_GB = {
+    "t5xxl_fp16.safetensors":               9.8,
+    "clip_l.safetensors":                   0.3,
+    "clip_g.safetensors":                   1.4,
+    "ae.safetensors":                       0.4,
+    "flux2-vae.safetensors":                0.4,
+    "mistral_3_small_flux2_fp8.safetensors": 18.1,
+}
+
+# Which encoder files (see ENCODER_SIZES_GB) each image model's "short" name
+# needs loaded alongside its checkpoint at generation time. SD1.5/SDXL use
+# none — their text encoder is bundled in the checkpoint file itself.
+IMAGE_ENCODER_GROUPS = {
+    "sd35-large": ("t5xxl_fp16.safetensors", "clip_l.safetensors", "clip_g.safetensors"),
+    "flux-dev":   ("t5xxl_fp16.safetensors", "clip_l.safetensors", "ae.safetensors"),
+    "flux2-dev":  ("mistral_3_small_flux2_fp8.safetensors", "flux2-vae.safetensors"),
+}
+
+
+def image_model_memory_requirement_gb(checkpoint: str, short: str) -> float:
+    """Estimated memory footprint for an image model: its checkpoint plus
+    whatever encoders it needs resident alongside it (see
+    IMAGE_ENCODER_GROUPS), times the same overhead multiplier as LLM
+    weights."""
+    weights_gb = CHECKPOINT_SIZES_GB.get(checkpoint, 0.0) + sum(
+        ENCODER_SIZES_GB[f] for f in IMAGE_ENCODER_GROUPS.get(short, ()))
+    return weights_gb * MEMORY_OVERHEAD_MULTIPLIER
+
+
+def image_model_fits(checkpoint: str, short: str, ceiling_gb: float | None) -> bool | None:
+    """True/False if ceiling_gb is known; None ("unknown, don't filter")
+    otherwise — same contract as model_fits(), for image models."""
+    if ceiling_gb is None:
+        return None
+    return image_model_memory_requirement_gb(checkpoint, short) <= ceiling_gb

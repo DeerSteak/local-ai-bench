@@ -15,7 +15,7 @@ from shared import Shared
 class MCQBenchmark:
     MCQ_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "mcq_questions.json"
 
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")

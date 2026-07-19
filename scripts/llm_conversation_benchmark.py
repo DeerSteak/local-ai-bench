@@ -89,7 +89,6 @@ class LLMConversationBenchmark:
 
         if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM conversation benchmarks")
-            Shared.err("Start with: ollama serve")
             return results
 
         crash_cache = Shared.load_crash_cache(LLMConversationBenchmark.CONV_CRASH_CACHE)
@@ -107,7 +106,7 @@ class LLMConversationBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)

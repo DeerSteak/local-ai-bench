@@ -1,6 +1,6 @@
 import requests
 
-from shared import OllamaLoopDetected, OllamaTimeout, Shared
+from shared import EngineLoopDetected, EngineTimeout, Shared
 import config
 
 
@@ -11,7 +11,7 @@ class _FakeEngine:
     wait_for_recovery (polled between crash retries). No network — the crash
     path is exercised entirely in-memory. recovers controls whether a crash is
     treated as recoverable, matching the two real-engine outcomes the tests
-    below used to force by monkeypatching Shared.wait_for_ollama_recovery."""
+    below used to force by monkeypatching the engine's wait_for_recovery."""
 
     def __init__(self, recovers=True):
         self._recovers = recovers
@@ -62,7 +62,7 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
     cache_path = tmp_path / "crash.json"
 
     def call(run_i):
-        raise OllamaTimeout("timed out", partial_text="The answer is B")
+        raise EngineTimeout("timed out", partial_text="The answer is B")
 
     samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []
@@ -71,13 +71,13 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
 
 
 def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
-    """OllamaLoopDetected (raised by the engine's chat check_loop) must surface
+    """EngineLoopDetected (raised by the engine's chat check_loop) must surface
     as its own "loop_detected" status, not get folded into "timed_out" — the
     two are independent buckets for the caller (see run_accuracy_benchmark)."""
     cache_path = tmp_path / "crash.json"
 
     def call(run_i):
-        raise OllamaLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
+        raise EngineLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
 
     samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []

@@ -7,18 +7,24 @@ Both benchmark.py and setup_check.py import from here.
 
 # "download_size" is each model's on-disk size, rounded UP to the next 0.1 GB
 # so setup's disk-space check errs toward requiring more free space, not less.
+# "hf_repo"/"hf_file" locate the GGUF on HuggingFace for setup_check.py's downloader;
+# "hf_file" is a list for models split across multiple GGUF parts.
 EMBED_MODELS = [
     {
         "tag":            "nomic-embed-text",
         "label":          "Nomic Embed Text",
         "short":          "nomic-embed-text",
         "download_size":  "~0.3 GB",
+        "hf_repo":        "nomic-ai/nomic-embed-text-v1.5-GGUF",
+        "hf_file":        "nomic-embed-text-v1.5.f16.gguf",
     },
     {
         "tag":            "mxbai-embed-large",
         "label":          "MixedBread Embed Large",
         "short":          "mxbai-embed-large",
         "download_size":  "~0.7 GB",
+        "hf_repo":        "ChristianAzinn/mxbai-embed-large-v1-gguf",
+        "hf_file":        "mxbai-embed-large-v1_fp16.gguf",
     },
 ]
 
@@ -88,7 +94,6 @@ IMAGE_MODELS = [
 ]
 
 # Extra-small-tier models (<6B parameters).
-# Tags verified against ollama.com/library June 2026.
 LLM_MODELS_XSMALL = sorted([
     {
         "tag":            "llama3.2:3b-instruct-q4_K_M",
@@ -96,6 +101,8 @@ LLM_MODELS_XSMALL = sorted([
         "short":          "llama3.2-3b-q4",
         "download_size":  "~2.1 GB",
         "params_b":       3,
+        "hf_repo":        "bartowski/Llama-3.2-3B-Instruct-GGUF",
+        "hf_file":        "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
     },
     {
         "tag":            "phi4-mini",
@@ -103,57 +110,44 @@ LLM_MODELS_XSMALL = sorted([
         "short":          "phi4-mini",
         "download_size":  "~2.5 GB",
         "params_b":       3.8,
-    },
-    {
-        "tag":            "qwen3.5:4b",
-        "label":          "Qwen3.5 4B",
-        "short":          "qwen3.5-4b",
-        "download_size":  "~3.4 GB",
-        "params_b":       4,
+        "hf_repo":        "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
+        "hf_file":        "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 
-# Small-tier models (≤20B parameters). Tags verified against ollama.com/library June 2026.
+# Small-tier models (≤20B parameters).
 # "params_b" is total parameters (not active, for MoE models) and sets sort order below.
 LLM_MODELS_SMALL = sorted([
+    {
+        "tag":            "mistral:7b-instruct-v0.3-q4_K_M",
+        "label":          "Mistral 7B v0.3 Q4_K_M",
+        "short":          "mistral-7b-q4",
+        "download_size":  "~4.4 GB",
+        "params_b":       7,
+        "hf_repo":        "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+        "hf_file":        "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+    },
     {
         "tag":            "llama3.1:8b-instruct-q4_K_M",
         "label":          "Llama 3.1 8B Q4_K_M",
         "short":          "llama3.1-8b-q4",
         "download_size":  "~5.0 GB",
         "params_b":       8,
-    },
-    {
-        "tag":            "gemma4:e4b",
-        "label":          "Gemma 4 E4B",
-        "short":          "gemma4-e4b",
-        "download_size":  "~9.7 GB",
-        "params_b":       8,   # "E4B" = 4B effective; ~8B total raw parameters
-    },
-    {
-        "tag":            "gpt-oss:20b",
-        "label":          "GPT-OSS 20B (MXFP4)",
-        "short":          "gpt-oss-20b",
-        "download_size":  "~13.8 GB",
-        "params_b":       20,
+        "hf_repo":        "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+        "hf_file":        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 
 # Medium-tier models (26–35B parameters).
 LLM_MODELS_MEDIUM = sorted([
     {
-        "tag":            "gemma4:26b",
-        "label":          "Gemma 4 26B",
-        "short":          "gemma4-26b",
-        "download_size":  "~18.0 GB",
-        "params_b":       26,
-    },
-    {
-        "tag":            "deepseek-r1:32b",
-        "label":          "DeepSeek-R1 32B",
-        "short":          "deepseek-r1-32b",
-        "download_size":  "~19.9 GB",
-        "params_b":       32,
+        "tag":            "nemotron-3-nano:30b-a3b-q4_K_M",
+        "label":          "Nemotron 3 Nano 30B-A3B",
+        "short":          "nemotron3-nano-30b-a3b",
+        "download_size":  "~24.0 GB",
+        "params_b":       30,   # 3B active — hybrid Mamba-Transformer MoE
+        "hf_repo":        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
+        "hf_file":        "Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf",
     },
     {
         "tag":            "qwen3.6:35b-a3b",
@@ -161,10 +155,15 @@ LLM_MODELS_MEDIUM = sorted([
         "short":          "qwen3.6-35b-a3b",
         "download_size":  "~24.0 GB",
         "params_b":       35,   # 3B active
+        "hf_repo":        "unsloth/Qwen3.6-35B-A3B-GGUF",
+        "hf_file":        "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 
-# Large-tier models (70B+ parameters).
+# Large-tier models (70B+ parameters). Llama 4 Scout and Nemotron 3 Super ship
+# as multi-part GGUF splits — "hf_file" is a list, part 1 first; llama.cpp
+# auto-discovers the sibling parts next to it, so only the first path is ever
+# passed to -m.
 LLM_MODELS_LARGE = sorted([
     {
         "tag":            "llama4:16x17b",
@@ -172,20 +171,24 @@ LLM_MODELS_LARGE = sorted([
         "short":          "llama4-16x17b",
         "download_size":  "~67.0 GB",
         "params_b":       109,   # 17B active
+        "hf_repo":        "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF",
+        "hf_file":        [
+            "UD-Q4_K_XL/Llama-4-Scout-17B-16E-Instruct-UD-Q4_K_XL-00001-of-00002.gguf",
+            "UD-Q4_K_XL/Llama-4-Scout-17B-16E-Instruct-UD-Q4_K_XL-00002-of-00002.gguf",
+        ],
     },
     {
-        "tag":            "deepseek-r1:70b",
-        "label":          "DeepSeek-R1 70B",
-        "short":          "deepseek-r1-70b",
-        "download_size":  "~42.6 GB",
-        "params_b":       70,
-    },
-    {
-        "tag":            "gpt-oss:120b",
-        "label":          "GPT-OSS 120B (MXFP4)",
-        "short":          "gpt-oss-120b",
-        "download_size":  "~65.4 GB",
-        "params_b":       120,
+        "tag":            "nemotron-3-super:120b",
+        "label":          "Nemotron 3 Super 120B",
+        "short":          "nemotron3-super-120b",
+        "download_size":  "~87.0 GB",
+        "params_b":       120,   # 12B active — hybrid Mamba-Transformer MoE
+        "hf_repo":        "unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF",
+        "hf_file":        [
+            "UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00001-of-00003.gguf",
+            "UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00002-of-00003.gguf",
+            "UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00003-of-00003.gguf",
+        ],
     },
 ], key=lambda m: m["params_b"])
 

@@ -1,111 +1,126 @@
 """Tests for LlamaCppEngine — the llama.cpp (llama-server) implementation of
-InferenceEngine that reuses models already pulled via `ollama pull`.
+InferenceEngine that resolves each tag to GGUF file(s) downloaded ahead of
+time by setup_check.py into config.MODELS_DIR.
 
 Three groups:
-  1. Ollama blob-store resolution (_split_tag, _resolve_blob_path,
-     model_pulled, list_installed_models, max_context_length) — built against
-     a fake Ollama store under tmp_path, monkeypatching _ollama_models_dir so
-     no real Ollama installation is needed.
+  1. Local model-file resolution (_slug, _resolve_model_files, model_pulled,
+     list_installed_models, max_context_length) — built against a fake
+     catalog and tmp_path, monkeypatching config.MODELS_DIR and
+     models.LLM_MODELS/EMBED_MODELS so no real download is needed.
   2. Streaming / timing parsing in generate()/chat() — mocked at the
-     _urlopen seam, same pattern as test_ollama_engine.py.
+     _urlopen seam.
   3. Maintenance seams (is_connection_crash, reachable_or_abort, unload,
-     unload_all, wait_until_unloaded) — mirror the OllamaEngine cases but
-     against LlamaCppEngine's single-process-per-model model.
+     unload_all, wait_until_unloaded) — exercise LlamaCppEngine's
+     single-process-per-model lifecycle.
 """
 
-import hashlib
 import json
 
 import gguf
 import pytest
 import requests
 
+import config
 from engines.llamacpp import LlamaCppEngine
 import engines.llamacpp as llamacpp_module
-from shared import OllamaLoopDetected, OllamaTimeout
+from shared import EngineLoopDetected, EngineTimeout
 
 
 # ══════════════════════════════════════════════════════════════════════════
-#  Group 1 — Ollama blob-store resolution
+#  Group 1 — local model-file resolution
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def _build_ollama_store(tmp_path, name: str, version: str, blob_bytes: bytes):
-    """Write a minimal but real Ollama manifest + blob under tmp_path, in the
-    exact layout `ollama pull` produces, and return that tmp_path."""
-    digest = hashlib.sha256(blob_bytes).hexdigest()
-    blobs_dir = tmp_path / "blobs"
-    blobs_dir.mkdir(parents=True, exist_ok=True)
-    (blobs_dir / f"sha256-{digest}").write_bytes(blob_bytes)
-
-    manifest_dir = tmp_path / "manifests" / "registry.ollama.ai" / "library" / name
-    manifest_dir.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "layers": [
-            {"mediaType": "application/vnd.ollama.image.model", "digest": f"sha256:{digest}"},
-            {"mediaType": "application/vnd.ollama.image.params", "digest": "sha256:deadbeef"},
-        ]
-    }
-    (manifest_dir / version).write_text(json.dumps(manifest))
-    return tmp_path
+_FAKE_CATALOG = [
+    {"tag": "phi4-mini", "hf_repo": "org/phi4-mini-gguf", "hf_file": "phi4-mini.Q4_K_M.gguf"},
+    {"tag": "llama3.2:3b-instruct-q4_K_M", "hf_repo": "org/llama32-gguf",
+     "hf_file": "llama32-3b.Q4_K_M.gguf"},
+    {"tag": "split:model", "hf_repo": "org/split-gguf",
+     "hf_file": ["split-00001-of-00002.gguf", "split-00002-of-00002.gguf"]},
+]
 
 
 @pytest.fixture
-def fake_store(tmp_path, monkeypatch):
-    store = _build_ollama_store(tmp_path, "phi4-mini", "latest", b"fake-gguf-bytes")
-    monkeypatch.setattr(LlamaCppEngine, "_ollama_models_dir", staticmethod(lambda: store))
-    return store
+def fake_catalog(monkeypatch, tmp_path):
+    """Point config.MODELS_DIR at tmp_path and swap in a small fixture
+    catalog (LLM_MODELS + EMBED_MODELS combined) instead of the real one."""
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", _FAKE_CATALOG)
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    return tmp_path
 
 
-def test_split_tag_with_explicit_version():
-    assert LlamaCppEngine._split_tag("llama3.2:3b-instruct-q4_K_M") == ("llama3.2", "3b-instruct-q4_K_M")
+def _write_model_file(models_dir, tag, filename, content: bytes):
+    slug = LlamaCppEngine._slug(tag)
+    model_dir = models_dir / "llamacpp" / slug
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / filename).write_bytes(content)
 
 
-def test_split_tag_implies_latest():
-    assert LlamaCppEngine._split_tag("phi4-mini") == ("phi4-mini", "latest")
+def test_models_dir_namespaced_under_engine_name(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    assert LlamaCppEngine._models_dir() == tmp_path / "llamacpp"
 
 
-def test_resolve_blob_path_finds_model_layer(fake_store):
-    blob = LlamaCppEngine._resolve_blob_path("phi4-mini")
-    assert blob is not None
-    assert blob.read_bytes() == b"fake-gguf-bytes"
+def test_slug_replaces_colons_and_slashes():
+    assert LlamaCppEngine._slug("llama3.2:3b-instruct-q4_K_M") == "llama3.2_3b-instruct-q4_K_M"
+    assert LlamaCppEngine._slug("someorg/some-model") == "someorg_some-model"
 
 
-def test_resolve_blob_path_missing_manifest_returns_none(fake_store):
-    assert LlamaCppEngine._resolve_blob_path("not-pulled:latest") is None
+def test_resolve_model_files_finds_single_file(fake_catalog):
+    _write_model_file(fake_catalog, "phi4-mini", "phi4-mini.Q4_K_M.gguf", b"fake-gguf-bytes")
+    paths = LlamaCppEngine._resolve_model_files("phi4-mini")
+    assert paths is not None
+    assert paths[0].read_bytes() == b"fake-gguf-bytes"
 
 
-def test_resolve_blob_path_missing_blob_file_returns_none(tmp_path, monkeypatch):
-    # Manifest exists but references a digest with no matching blob on disk —
-    # a partial/corrupt pull.
-    manifest_dir = tmp_path / "manifests" / "registry.ollama.ai" / "library" / "broken"
-    manifest_dir.mkdir(parents=True)
-    (manifest_dir / "latest").write_text(json.dumps({
-        "layers": [{"mediaType": "application/vnd.ollama.image.model", "digest": "sha256:" + "0" * 64}]
-    }))
-    monkeypatch.setattr(LlamaCppEngine, "_ollama_models_dir", staticmethod(lambda: tmp_path))
-    assert LlamaCppEngine._resolve_blob_path("broken:latest") is None
+def test_resolve_model_files_missing_tag_returns_none(fake_catalog):
+    assert LlamaCppEngine._resolve_model_files("not-in-catalog") is None
 
 
-def test_model_pulled_true_when_resolvable(fake_store):
+def test_resolve_model_files_missing_file_returns_none(fake_catalog):
+    # Catalog entry exists but the file was never downloaded.
+    assert LlamaCppEngine._resolve_model_files("phi4-mini") is None
+
+
+def test_resolve_model_files_requires_every_split_part(fake_catalog):
+    _write_model_file(fake_catalog, "split:model", "split-00001-of-00002.gguf", b"a")
+    assert LlamaCppEngine._resolve_model_files("split:model") is None  # part 2 missing
+    _write_model_file(fake_catalog, "split:model", "split-00002-of-00002.gguf", b"b")
+    paths = LlamaCppEngine._resolve_model_files("split:model")
+    assert paths is not None
+    assert [p.name for p in paths] == ["split-00001-of-00002.gguf", "split-00002-of-00002.gguf"]
+
+
+def test_model_pulled_true_when_resolvable(fake_catalog):
+    _write_model_file(fake_catalog, "phi4-mini", "phi4-mini.Q4_K_M.gguf", b"x")
     assert LlamaCppEngine().model_pulled("phi4-mini") is True
 
 
-def test_model_pulled_false_when_not_resolvable(fake_store):
-    assert LlamaCppEngine().model_pulled("nope:latest") is False
+def test_model_pulled_false_when_not_resolvable(fake_catalog):
+    assert LlamaCppEngine().model_pulled("phi4-mini") is False
 
 
-def test_list_installed_models_lists_every_resolvable_tag(tmp_path, monkeypatch):
-    store = _build_ollama_store(tmp_path, "phi4-mini", "latest", b"aaa")
-    _build_ollama_store(store, "llama3.2", "3b-instruct-q4_K_M", b"bbbbb")
-    monkeypatch.setattr(LlamaCppEngine, "_ollama_models_dir", staticmethod(lambda: store))
-
+def test_list_installed_models_lists_every_downloaded_catalog_tag(fake_catalog):
+    _write_model_file(fake_catalog, "phi4-mini", "phi4-mini.Q4_K_M.gguf", b"aaa")
+    _write_model_file(fake_catalog, "llama3.2:3b-instruct-q4_K_M", "llama32-3b.Q4_K_M.gguf", b"bbbbb")
     installed = {m["tag"]: m["size"] for m in LlamaCppEngine().list_installed_models()}
-    assert installed == {"phi4-mini:latest": 3, "llama3.2:3b-instruct-q4_K_M": 5}
+    assert installed == {"phi4-mini": 3, "llama3.2:3b-instruct-q4_K_M": 5}
 
 
-def test_list_installed_models_empty_when_store_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(LlamaCppEngine, "_ollama_models_dir", staticmethod(lambda: tmp_path / "does-not-exist"))
+def test_list_installed_models_includes_custom_dropped_in_model(fake_catalog):
+    # A model dropped in manually, not in the catalog at all.
+    custom_dir = fake_catalog / "llamacpp" / "my-custom-model"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "weights.gguf").write_bytes(b"cc")
+    installed = {m["tag"]: m["size"] for m in LlamaCppEngine().list_installed_models()}
+    assert installed == {"my-custom-model": 2}
+
+
+def test_list_installed_models_empty_when_dir_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path / "does-not-exist")
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
     assert LlamaCppEngine().list_installed_models() == []
 
 
@@ -121,18 +136,18 @@ def _write_gguf(path, context_length: int):
 def test_max_context_length_reads_architecture_prefixed_key(tmp_path, monkeypatch):
     gguf_path = tmp_path / "model.gguf"
     _write_gguf(gguf_path, 40960)
-    monkeypatch.setattr(LlamaCppEngine, "_resolve_blob_path", classmethod(lambda cls, tag: gguf_path))
+    monkeypatch.setattr(LlamaCppEngine, "_resolve_model_files", classmethod(lambda cls, tag: [gguf_path]))
     assert LlamaCppEngine().max_context_length("qwen3.5:4b") == 40960
 
 
-def test_max_context_length_falls_back_to_default_when_not_pulled(fake_store):
-    assert LlamaCppEngine().max_context_length("not-pulled:latest", default=8192) == 8192
+def test_max_context_length_falls_back_to_default_when_not_pulled(fake_catalog):
+    assert LlamaCppEngine().max_context_length("phi4-mini", default=8192) == 8192
 
 
 def test_max_context_length_falls_back_to_default_on_unparseable_file(tmp_path, monkeypatch):
     bad_path = tmp_path / "not-really-gguf.bin"
     bad_path.write_bytes(b"not a gguf file")
-    monkeypatch.setattr(LlamaCppEngine, "_resolve_blob_path", classmethod(lambda cls, tag: bad_path))
+    monkeypatch.setattr(LlamaCppEngine, "_resolve_model_files", classmethod(lambda cls, tag: [bad_path]))
     assert LlamaCppEngine().max_context_length("some-tag", default=2048) == 2048
 
 
@@ -273,15 +288,15 @@ def test_chat_check_loop_raises_early_on_repeated_hedging(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 6, "predicted_ms": 1000, "prompt_n": 10}},
     ])
-    with pytest.raises(OllamaLoopDetected) as exc_info:
+    with pytest.raises(EngineLoopDetected) as exc_info:
         LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}], check_loop=True)
     assert "loop" in str(exc_info.value).lower()
     assert "wait, wait, wait, wait, wait, still stuck" == exc_info.value.partial_text
     assert "never be reached" not in exc_info.value.partial_text
 
 
-def test_chat_raises_ollama_timeout_type_for_run_measured_calls_compat(monkeypatch):
-    # run_measured_calls (shared.py) does isinstance(e, OllamaLoopDetected) /
+def test_chat_raises_engine_timeout_type_for_run_measured_calls_compat(monkeypatch):
+    # run_measured_calls (shared.py) does isinstance(e, EngineLoopDetected) /
     # isinstance(e, TimeoutError) checks by type — LlamaCppEngine must raise
     # the *same* shared.py types, not engine-specific subclasses, or that
     # dispatch silently breaks for this engine.
@@ -292,7 +307,7 @@ def test_chat_raises_ollama_timeout_type_for_run_measured_calls_compat(monkeypat
         {"choices": [{"delta": {"content": "hi"}}]},
         {"choices": [{"delta": {"content": "still going"}}]},
     ])
-    with pytest.raises(OllamaTimeout):
+    with pytest.raises(EngineTimeout):
         LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}], timeout=5)
 
 
@@ -342,9 +357,9 @@ def test_is_connection_crash_false_for_unrelated_error():
 
 
 def test_reachable_or_abort_always_true_regardless_of_available(monkeypatch):
-    # Unlike OllamaEngine, there's no always-on daemon to check between
-    # models — llama-server spawns fresh per model, so reachable_or_abort()
-    # never blocks a loop over models on it (see its docstring).
+    # There's no always-on daemon to check between models — llama-server
+    # spawns fresh per model, so reachable_or_abort() never blocks a loop
+    # over models on it (see its docstring).
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: False)
     assert LlamaCppEngine().reachable_or_abort() is True
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: True)
@@ -360,16 +375,16 @@ def test_wait_for_recovery_always_true_regardless_of_available(monkeypatch):
 
 def test_unload_stops_process_when_tag_matches(monkeypatch):
     engine = LlamaCppEngine()
-    engine._loaded_tag = "phi4-mini:latest"
+    engine._loaded_tag = "phi4-mini"
     stopped = []
     monkeypatch.setattr(LlamaCppEngine, "_stop_process", lambda self: stopped.append(True))
-    engine.unload("phi4-mini")  # implicit :latest should still match
+    engine.unload("phi4-mini")
     assert stopped == [True]
 
 
 def test_unload_noop_when_tag_does_not_match(monkeypatch):
     engine = LlamaCppEngine()
-    engine._loaded_tag = "other-model:latest"
+    engine._loaded_tag = "other-model"
     stopped = []
     monkeypatch.setattr(LlamaCppEngine, "_stop_process", lambda self: stopped.append(True))
     engine.unload("phi4-mini")
@@ -378,11 +393,11 @@ def test_unload_noop_when_tag_does_not_match(monkeypatch):
 
 def test_unload_all_unloads_the_loaded_model(monkeypatch):
     engine = LlamaCppEngine()
-    engine._loaded_tag = "phi4-mini:latest"
+    engine._loaded_tag = "phi4-mini"
     unloaded = []
     monkeypatch.setattr(LlamaCppEngine, "unload", lambda self, tag: unloaded.append(tag))
     engine.unload_all()
-    assert unloaded == ["phi4-mini:latest"]
+    assert unloaded == ["phi4-mini"]
 
 
 def test_unload_all_noop_when_nothing_loaded(monkeypatch):
@@ -401,5 +416,5 @@ def test_wait_until_unloaded_true_once_tag_no_longer_loaded():
 
 def test_wait_until_unloaded_false_while_still_loaded():
     engine = LlamaCppEngine()
-    engine._loaded_tag = "phi4-mini:latest"
+    engine._loaded_tag = "phi4-mini"
     assert engine.wait_until_unloaded("phi4-mini") is False

@@ -1,13 +1,12 @@
 """llamacpp.py — LlamaCppEngine, a llama.cpp (llama-server) implementation of
-InferenceEngine. Reuses models already pulled via `ollama pull` rather than
-downloading its own copy, and restarts its single-model-per-process server
-whenever the requested (tag, num_ctx, embedding-mode) changes. See
-docs/engines.md#llamacppengine for the full rationale.
+InferenceEngine. Resolves each tag to GGUF file(s) downloaded ahead of time by
+setup_check.py into config.MODELS_DIR, and restarts its single-model-per-
+process server whenever the requested (tag, num_ctx, embedding-mode) changes.
+See docs/engines.md#llamacppengine for the full rationale.
 """
 
 import http.client
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -23,7 +22,8 @@ import requests
 
 import config
 from engines.base import InferenceEngine
-from shared import OllamaLoopDetected, OllamaTimeout, Shared
+from models import EMBED_MODELS, LLM_MODELS
+from shared import EngineLoopDetected, EngineTimeout, Shared
 
 
 class LlamaCppEngine(InferenceEngine):
@@ -74,73 +74,48 @@ class LlamaCppEngine(InferenceEngine):
                     return str(candidate)
         return None
 
-    # ── Ollama blob-store resolution ──
-
-    # Service-managed Ollama installs (snap, curl|sh's systemd service) — see docs/engines.md#llamacppengine.
-    _LINUX_SERVICE_MODEL_DIRS = (
-        Path("/var/snap/ollama/common/models"),
-        Path("/usr/share/ollama/.ollama/models"),
-    )
+    # ── local model-file resolution ──
 
     @classmethod
-    def _ollama_models_dir(cls) -> Path:
-        """Resolve Ollama's model store. $OLLAMA_MODELS wins outright if set —
-        an operator's own override always wins. Otherwise prefer the current
-        user's ~/.ollama/models (manual/dev installs, and the common case),
-        falling back to known service-managed locations (see
-        _LINUX_SERVICE_MODEL_DIRS) if that doesn't exist. Returns the ~/.ollama
-        default even when nothing was found, so callers' "not found at {path}"
-        errors point at the most common location rather than an obscure one."""
-        env = os.environ.get("OLLAMA_MODELS")
-        if env:
-            return Path(env)
-        if platform.system() == "Windows":
-            return Path(os.environ.get("USERPROFILE", "")) / ".ollama" / "models"
-
-        home_dir = Path.home() / ".ollama" / "models"
-        if home_dir.exists():
-            return home_dir
-        for candidate in cls._LINUX_SERVICE_MODEL_DIRS:
-            if candidate.exists():
-                return candidate
-        return home_dir
+    def _models_dir(cls) -> Path:
+        """This engine's namespaced model directory — config.MODELS_DIR/llamacpp/
+        — so a future engine with its own model format/layout (e.g. MLX)
+        gets its own subtree instead of colliding with this one's."""
+        return config.MODELS_DIR / cls.name
 
     @staticmethod
-    def _split_tag(tag: str) -> tuple[str, str]:
-        """"llama3.2:3b-instruct-q4_K_M" -> ("llama3.2", "3b-instruct-q4_K_M");
-        a bare "phi4-mini" implies ":latest", matching Ollama's own convention
-        for an untagged pull."""
-        name, _, version = tag.partition(":")
-        return name, version or "latest"
+    def _slug(tag: str) -> str:
+        """Filesystem-safe per-tag directory name under _models_dir(),
+        e.g. "llama3.2:3b-instruct-q4_K_M" -> "llama3.2_3b-instruct-q4_K_M"."""
+        return tag.replace(":", "_").replace("/", "_")
+
+    @staticmethod
+    def _catalog_entry(tag: str) -> dict | None:
+        """Look up `tag` in models.py's LLM_MODELS/EMBED_MODELS catalog to
+        find its hf_repo/hf_file — the only place that mapping lives."""
+        for model in LLM_MODELS + EMBED_MODELS:
+            if model["tag"] == tag:
+                return model
+        return None
 
     @classmethod
-    def _manifest_path(cls, tag: str) -> Path:
-        name, version = cls._split_tag(tag)
-        return (cls._ollama_models_dir() / "manifests" / "registry.ollama.ai"
-                 / "library" / name / version)
-
-    @classmethod
-    def _resolve_blob_path(cls, tag: str) -> Path | None:
-        """Map an Ollama tag straight to the on-disk GGUF blob backing it,
-        reading Ollama's own manifest/blob store — the same layout `ollama
-        pull` writes — without calling Ollama at all. None if the manifest or
-        its model-weight layer (as opposed to the Modelfile/params/license
-        layers a manifest also lists) isn't found."""
-        manifest_path = cls._manifest_path(tag)
-        if not manifest_path.exists():
+    def _resolve_model_files(cls, tag: str) -> list[Path] | None:
+        """Map a catalog tag to its downloaded GGUF file(s) under
+        _models_dir()/<slug>/, as placed there by setup_check.py's
+        HuggingFace download step. `hf_file` in models.py is a single
+        filename, or a list for a model split across multiple GGUF parts
+        (large-tier models) — every listed file must exist locally for the
+        model to count as resolved. None if `tag` isn't in the catalog or
+        any expected file is missing."""
+        entry = cls._catalog_entry(tag)
+        if entry is None:
             return None
-        try:
-            manifest = json.loads(manifest_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return None
-
-        for layer in manifest.get("layers", []):
-            if layer.get("mediaType") == "application/vnd.ollama.image.model":
-                digest = layer.get("digest", "")
-                if digest.startswith("sha256:"):
-                    blob = cls._ollama_models_dir() / "blobs" / f"sha256-{digest[7:]}"
-                    if blob.exists():
-                        return blob
+        hf_files = entry["hf_file"]
+        filenames = hf_files if isinstance(hf_files, list) else [hf_files]
+        model_dir = cls._models_dir() / cls._slug(tag)
+        paths = [model_dir / Path(name).name for name in filenames]
+        if all(p.exists() for p in paths):
+            return paths
         return None
 
     # ── server/process lifecycle ──
@@ -153,21 +128,20 @@ class LlamaCppEngine(InferenceEngine):
             return False
 
     def ensure_running(self) -> bool:
-        """Unlike Ollama, llama-server has no standalone "up but no model
-        loaded" state to start — a process needs a model to launch with. This
-        is the preflight instead: confirm the binary and Ollama's model store
-        both exist, so a caller (e.g. --list-models, or the top of a run) gets
-        a clear error before wasting time on the first per-model load. The
-        actual subprocess spawns lazily per tag in _ensure_model."""
+        """llama-server has no standalone "up but no model loaded" state to
+        start — a process needs a model to launch with. This is the preflight
+        instead: confirm the binary and model storage directory both exist,
+        so a caller (e.g. --list-models, or the top of a run) gets a clear
+        error before wasting time on the first per-model load. The actual
+        subprocess spawns lazily per tag in _ensure_model."""
         if self._binary_path() is None:
-            Shared.err(f"'{self.BINARY}' not found — run setup_check.py --engine llamacpp "
+            Shared.err(f"'{self.BINARY}' not found — run setup_check.py "
                        "to install it, or build/install llama.cpp yourself: "
                        "https://github.com/ggml-org/llama.cpp")
             return False
-        if not self._ollama_models_dir().exists():
-            Shared.err(f"Ollama's model store not found at {self._ollama_models_dir()} — "
-                       "the llamacpp engine reuses models pulled via 'ollama pull', "
-                       "pull at least one model first")
+        if not self._models_dir().exists():
+            Shared.err(f"Model directory not found at {self._models_dir()} — "
+                       "run setup_check.py to download at least one model first")
             return False
         Shared.ok(f"{self.BINARY} found at {self._binary_path()} — models load on demand per test")
         return True
@@ -183,9 +157,8 @@ class LlamaCppEngine(InferenceEngine):
 
     def stop(self, *, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Stop this engine's own subprocess, then also reap any stray
-        llama-server left behind by a previous crashed run (the same
-        belt-and-suspenders OllamaEngine.stop does for 'ollama serve'), so a
-        fresh instance can bind the port again."""
+        llama-server left behind by a previous crashed run, so a fresh
+        instance can bind the port again."""
         self._stop_process(timeout=timeout)
         os_name = platform.system()
         try:
@@ -213,31 +186,28 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_n_parallel = 1
 
     def is_connection_crash(self, e: Exception) -> bool:
-        """Same exception shapes as OllamaEngine.is_connection_crash — both
-        engines are hit over HTTP with the same requests/urllib clients, so a
-        dead server surfaces identically regardless of which engine it is."""
+        """True for the exception shapes a dead HTTP server surfaces as
+        (requests/urllib connection errors, or a refused connection)."""
         if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
                           http.client.IncompleteRead, ConnectionError)):
             return True
         return "actively refused" in str(e).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
-        """Always True: unlike Ollama's server, which survives a runner crash
-        and self-heals, llama-server's whole process *is* the model runner —
-        there's nothing to poll for. Recovery instead happens synchronously
-        on the next generate/chat/embed call, via _ensure_model respawning;
-        an unrecoverable model still gets caught there, just on that attempt."""
+        """Always True: llama-server's whole process *is* the model runner,
+        so there's no separate daemon to poll for recovery. Recovery instead
+        happens synchronously on the next generate/chat/embed call, via
+        _ensure_model respawning; an unrecoverable model still gets caught
+        there, just on that attempt."""
         return True
 
     def reachable_or_abort(self) -> bool:
-        """Always True: unlike Ollama's always-on daemon, there's no shared
-        server that stays up between models to check here — llama-server is
-        spawned fresh per model in _ensure_model, which is its own health
-        check for that specific model. model_pulled() also isn't at risk of
-        the failure mode this guards against on OllamaEngine (a down server
-        making 'reachable' and 'not pulled' indistinguishable over HTTP): it
-        reads Ollama's manifest/blob files straight off disk, no server
-        involved."""
+        """Always True: there's no shared server that stays up between models
+        to check here — llama-server is spawned fresh per model in
+        _ensure_model, which is its own health check for that specific
+        model. model_pulled() reads local GGUF files straight off disk, no
+        server involved, so it's never at risk of a down server making
+        'reachable' and 'not downloaded' indistinguishable."""
         return True
 
     def tail_log(self, n_lines: int = 40) -> str:
@@ -246,39 +216,43 @@ class LlamaCppEngine(InferenceEngine):
     # ── model lifecycle ──
 
     def model_pulled(self, tag: str) -> bool:
-        return self._resolve_blob_path(tag) is not None
+        return self._resolve_model_files(tag) is not None
 
     def list_installed_models(self) -> list[dict]:
-        """Every tag with a resolvable model-weight blob under Ollama's
-        standard library namespace — walks the manifest tree directly rather
-        than calling Ollama, so this works even if Ollama itself isn't
-        running. Returns [] if the store doesn't exist."""
-        library = self._ollama_models_dir() / "manifests" / "registry.ollama.ai" / "library"
-        if not library.exists():
-            return []
+        """Every catalog tag whose GGUF file(s) are fully present under
+        _models_dir(), plus any extra subdirectory there that doesn't match a
+        catalog slug — lets someone benchmark a model they dropped in
+        manually without adding it to models.py first."""
         installed = []
-        for model_dir in sorted(p for p in library.iterdir() if p.is_dir()):
-            for version_file in sorted(p for p in model_dir.iterdir() if p.is_file()):
-                tag = f"{model_dir.name}:{version_file.name}"
-                blob = self._resolve_blob_path(tag)
-                if blob is not None:
-                    installed.append({"tag": tag, "size": blob.stat().st_size})
+        for model in LLM_MODELS + EMBED_MODELS:
+            paths = self._resolve_model_files(model["tag"])
+            if paths is not None:
+                installed.append({"tag": model["tag"], "size": sum(p.stat().st_size for p in paths)})
+
+        models_dir = self._models_dir()
+        if models_dir.exists():
+            catalog_slugs = {self._slug(model["tag"]) for model in LLM_MODELS + EMBED_MODELS}
+            for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
+                if entry.name in catalog_slugs:
+                    continue
+                ggufs = sorted(entry.glob("*.gguf"))
+                if ggufs:
+                    installed.append({"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)})
         return installed
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
-        """Read a pulled model's real max context length straight from its
-        GGUF metadata. GGUFReader memory-maps the file and only walks its
-        key/value header section, so — like OllamaEngine's /api/show version
-        — this never loads the model's weights. Same architecture-prefixed-key
-        scan as OllamaEngine.max_context_length (llama.context_length,
-        qwen35.context_length, gptoss.context_length, ...), since both read
-        the same underlying GGUF metadata convention.
+        """Read a downloaded model's real max context length straight from
+        its GGUF metadata. GGUFReader memory-maps the file and only walks its
+        key/value header section, so this never loads the model's weights.
+        Scans every architecture-prefixed key convention GGUF uses
+        (llama.context_length, qwen35.context_length, gptoss.context_length,
+        ...) since the prefix varies by model family.
         """
-        blob = self._resolve_blob_path(tag)
-        if blob is None:
+        paths = self._resolve_model_files(tag)
+        if paths is None:
             return default
         try:
-            reader = gguf.GGUFReader(str(blob))
+            reader = gguf.GGUFReader(str(paths[0]))
             for key, field in reader.fields.items():
                 if key.endswith(".context_length"):
                     value = field.contents()
@@ -291,11 +265,10 @@ class LlamaCppEngine(InferenceEngine):
     def warmup(self, tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real threaded/watchdogged model load
                crash_cache: dict | None = None, cache_path: Path | None = None,
                crash_extra: dict | None = None) -> bool:
-        """Identical shape to OllamaEngine.warmup (same watchdog-thread
-        pattern) — the first call here is what actually spawns and loads the
-        llama-server subprocess, via generate() -> _ensure_model(), so a
-        model too large for available memory times out here exactly the same
-        way an oversized Ollama pull would."""
+        """Watchdog-threaded warmup — the first call here is what actually
+        spawns and loads the llama-server subprocess, via generate() ->
+        _ensure_model(), so a model too large for available memory times out
+        here rather than hanging the whole run."""
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
             exc_box = [None]
@@ -324,7 +297,7 @@ class LlamaCppEngine(InferenceEngine):
                 Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
                 # Every warmup exception here (not just connection-crash shapes) means this tag
                 # failed to load — llama-server is freshly spawned per model, so it's as
-                # deterministic as a hang. Recording it lets a later --engine both pass skip it too.
+                # deterministic as a hang.
                 if crash_cache is not None and cache_path is not None:
                     if self.is_connection_crash(exc_box[0]):
                         self.wait_for_recovery()
@@ -339,7 +312,7 @@ class LlamaCppEngine(InferenceEngine):
         """llama-server serves one model per process, so "unload" just means
         stopping that process — a no-op if `tag` isn't the one currently
         loaded."""
-        if self._loaded_tag is not None and self._split_tag(tag) == self._split_tag(self._loaded_tag):
+        if self._loaded_tag is not None and tag == self._loaded_tag:
             self._stop_process()
             Shared.ok(f"Unloaded {tag}")
 
@@ -354,13 +327,13 @@ class LlamaCppEngine(InferenceEngine):
         subprocess), so by the time either it or _stop_process returns
         there's nothing left to poll for — this just reports the current
         state."""
-        return self._loaded_tag is None or self._split_tag(tag) != self._split_tag(self._loaded_tag)
+        return self._loaded_tag is None or tag != self._loaded_tag
 
     def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
                              warmup_runs: int = 1, timeout: int = 300) -> bool:  # pragma: no cover — spawns a real subprocess
         """(Re)spawn llama-server with --parallel n_parallel slots at
         per_slot_ctx tokens each. warmup_runs is accepted for interface
-        parity with OllamaEngine but unused — _ensure_model's spawn already
+        parity with other engines but unused — _ensure_model's spawn already
         blocks until the KV cache is allocated and healthy, so there's
         nothing left for a separate warmup call to catch here."""
         try:
@@ -376,9 +349,8 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _urlopen(req, timeout):
         """urlopen wrapper that surfaces the response body on HTTP error
-        status, same reasoning as OllamaEngine._ollama_urlopen: the bare
-        HTTPError only says "HTTP Error 500: Internal Server Error" and hides
-        llama-server's actual JSON error detail."""
+        status — the bare HTTPError only says "HTTP Error 500: Internal
+        Server Error" and hides llama-server's actual JSON error detail."""
         try:
             return urllib.request.urlopen(req, timeout=timeout)
         except urllib.error.HTTPError as e:
@@ -417,36 +389,34 @@ class LlamaCppEngine(InferenceEngine):
         (re)spawning the subprocess if a different model, context size,
         embedding-vs-chat mode, or parallel-slot count is requested. See the
         module docstring for why every mismatch means a full restart
-        (llama-server is single-model-per-process, unlike Ollama).
+        (llama-server is single-model-per-process).
         `n_parallel` > 1 is only used by the concurrency test."""
         want = (tag, num_ctx, embedding, n_parallel)
         have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding, self._loaded_n_parallel)
         if want == have and self._proc is not None and self._proc.poll() is None and self.available():
             return
 
-        blob = self._resolve_blob_path(tag)
-        if blob is None:
+        paths = self._resolve_model_files(tag)
+        if paths is None:
             raise RuntimeError(
-                f"{tag} not found in Ollama's model store ({self._ollama_models_dir()}) — "
-                f"pull it first with: ollama pull {tag}"
+                f"{tag} not found under {config.MODELS_DIR} — "
+                "download it first with: python setup_check.py"
             )
 
         self._stop_process()
 
         binary = self._binary_path()
         if binary is None:
-            raise RuntimeError(f"'{self.BINARY}' not found — run setup_check.py --engine llamacpp to install it")
+            raise RuntimeError(f"'{self.BINARY}' not found — run setup_check.py to install it")
 
         args = [
             binary,
-            "-m", str(blob),
+            "-m", str(paths[0]),
             "--host", "127.0.0.1",
             "--port", str(config.LLAMACPP_PORT),
             "-ngl", "0" if not self._gpu_visible else "999",
             "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
-            # Same prompt-processing batch size pinned for the Ollama engine,
-            # so timing numbers are comparable across engines.
-            "-b", str(config.OLLAMA_NUM_BATCH),
+            "-b", str(config.LLAMACPP_NUM_BATCH),
         ]
         if num_ctx is not None:
             # -c is a total KV-cache budget split across --parallel slots, so
@@ -491,8 +461,7 @@ class LlamaCppEngine(InferenceEngine):
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
         """Generate via llama-server's native /completion endpoint. Returns
         (ttft_sec, tokens_generated, tokens_per_sec), preferring the server's
-        own reported timings over wall clock (same reasoning as
-        OllamaEngine.generate). n_parallel must match the last
+        own reported timings over wall clock. n_parallel must match the last
         prepare_concurrency call (default 1 elsewhere); concurrent callers
         passing the same values is safe without locking since
         _ensure_model's want == have check is then read-only."""
@@ -544,8 +513,10 @@ class LlamaCppEngine(InferenceEngine):
         """Generate via llama-server's OpenAI-compatible /v1/chat/completions.
         Returns (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count,
         response_text). n_predict is passed straight through as an extension
-        field (-1 = unbounded, same convention as Ollama); see OllamaEngine.chat
-        for check_loop. stream_options.include_usage asks for a trailing usage
+        field (-1 = unbounded). check_loop, when set, polls the streaming
+        response for a degenerate generation loop (see Shared.looks_like_loop)
+        and raises EngineLoopDetected early rather than waiting out the full
+        timeout. stream_options.include_usage asks for a trailing usage
         chunk — prompt_eval_count reads its prompt_tokens (the true running
         total), not timings.prompt_n (only newly-prefilled tokens this call,
         which under-counts once the prefix cache kicks in)."""
@@ -595,14 +566,14 @@ class LlamaCppEngine(InferenceEngine):
                 # resets on every token. Enforce the real wall-clock deadline.
                 if now - t_start > timeout:
                     partial_text = "".join(response_parts) or "".join(reasoning_parts)
-                    raise OllamaTimeout(f"llamacpp_chat exceeded {timeout}s wall-clock timeout",
+                    raise EngineTimeout(f"llamacpp_chat exceeded {timeout}s wall-clock timeout",
                                         partial_text=partial_text)
 
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
                     partial_text = "".join(response_parts) or "".join(reasoning_parts)
                     if partial_text and Shared.looks_like_loop(partial_text):
-                        raise OllamaLoopDetected(
+                        raise EngineLoopDetected(
                             f"llamacpp_chat detected a generation loop after {now - t_start:.0f}s",
                             partial_text=partial_text)
 
@@ -628,7 +599,7 @@ class LlamaCppEngine(InferenceEngine):
         if ttft is None:
             ttft = total
         # A reasoning model can stream its whole turn via reasoning_content with content empty;
-        # falling back avoids an empty assistant turn corrupting history (same as OllamaEngine.chat).
+        # falling back avoids an empty assistant turn corrupting history.
         response_text = "".join(response_parts) or "".join(reasoning_parts)
         return ttft, eval_count, tps, prompt_eval_count, response_text
 
@@ -637,9 +608,7 @@ class LlamaCppEngine(InferenceEngine):
         Returns (embeddings_list, elapsed_seconds).
 
         Loads the model in embedding mode (--embeddings --pooling mean) —
-        embedding models need this for the endpoint to be enabled at all, and
-        the mean-pooling default matches what Ollama uses for the same
-        nomic-embed-text / mxbai-embed-large models.
+        embedding models need this for the endpoint to be enabled at all.
         """
         self._ensure_model(tag, num_ctx=None, embedding=True)
 

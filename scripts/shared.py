@@ -2,11 +2,12 @@
 shared.py — cross-cutting helpers used by more than one test: logging, the
 ComfyUI server lifecycle, machine profiling, crash-cache bookkeeping, and the
 engine-agnostic benchmark orchestration (run_measured_calls,
-run_accuracy_benchmark, loop detection). The Ollama-specific HTTP/process
-client moved out to engines/ollama.py behind the InferenceEngine interface;
-what stays here is driven through that interface, not tied to Ollama. Most
-helpers are stateless-per-call, so methods are static and the little state
-there is (managed-process bookkeeping) lives on the class.
+run_accuracy_benchmark, loop detection). The inference engine's own
+HTTP/process client lives behind the InferenceEngine interface (see
+engines/llamacpp.py); what stays here is driven through that interface, not
+tied to any one engine. Most helpers are stateless-per-call, so methods are
+static and the little state there is (managed-process bookkeeping) lives on
+the class.
 """
 
 import hashlib
@@ -35,32 +36,33 @@ if TYPE_CHECKING:
     from engines.base import InferenceEngine
 
 
-class OllamaTimeout(TimeoutError):
-    """Raised when ollama_chat exceeds its wall-clock timeout. Carries whatever
-    text had streamed in before the deadline hit, so callers can tell a bare
-    timeout (no text at all) apart from a timeout that cut off a response the
-    model had already started writing — which might have been a wrong-format
-    answer regardless of the timeout, or might have been about to be correct."""
+class EngineTimeout(TimeoutError):
+    """Raised when an engine's chat() exceeds its wall-clock timeout. Carries
+    whatever text had streamed in before the deadline hit, so callers can tell
+    a bare timeout (no text at all) apart from a timeout that cut off a
+    response the model had already started writing — which might have been a
+    wrong-format answer regardless of the timeout, or might have been about to
+    be correct."""
 
     def __init__(self, message: str, partial_text: str = ""):
         super().__init__(message)
         self.partial_text = partial_text
 
 
-class OllamaLoopDetected(OllamaTimeout):
-    """Raised when ollama_chat's check_loop polling flags a degenerate
-    generation loop *before* the wall-clock timeout elapses. Deliberately a
-    distinct type from a bare OllamaTimeout (though still a TimeoutError
-    subclass, so generic timeout handling elsewhere keeps working): the model
-    didn't run out of its time budget here, it was cut off early because the
-    stream already looked pointless — callers that count "timed out" vs.
-    "looped" need to tell those apart rather than lumping every early loop
-    catch into the timeout bucket."""
+class EngineLoopDetected(EngineTimeout):
+    """Raised when chat()'s check_loop polling flags a degenerate generation
+    loop *before* the wall-clock timeout elapses. Deliberately a distinct type
+    from a bare EngineTimeout (though still a TimeoutError subclass, so
+    generic timeout handling elsewhere keeps working): the model didn't run
+    out of its time budget here, it was cut off early because the stream
+    already looked pointless — callers that count "timed out" vs. "looped"
+    need to tell those apart rather than lumping every early loop catch into
+    the timeout bucket."""
 
 
 class Shared:
     # Tracks processes we started so we can shut them down cleanly. Both the
-    # inference engine's server (Ollama today) and ComfyUI register here, so
+    # inference engine's server and ComfyUI register here, so
     # shutdown_managed() can clean up everything from one list on crash/exit.
     _managed_procs: list[subprocess.Popen] = []
 
@@ -499,7 +501,7 @@ class Shared:
         Pad a prompt to approximate a target context length (1 token ≈ 4 chars).
 
         Prepends a unique per-call nonce so repeated calls at the same length
-        don't share a prefix — without it Ollama's slot cache serves a cache
+        don't share a prefix — without it the server's slot cache serves a cache
         hit on every rerun, so every run after the first measures cache-hit
         latency rather than real prompt-processing time.
         """
@@ -557,7 +559,7 @@ class Shared:
     @staticmethod
     def load_crash_cache(path: Path) -> dict:
         """Load a benchmark's cache of tag -> crash record, so a model that
-        deterministically crashes Ollama's runner on a given test isn't
+        deterministically crashes the engine's runner on a given test isn't
         retried forever across separate script invocations."""
         try:
             return json.loads(path.read_text())
@@ -587,13 +589,13 @@ class Shared:
                         "— ignoring stale entry and retrying")
             return None
         crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
+        Shared.warn(f"{tag} previously crashed the engine's runner repeatedly on "
                     f"{crashed_at} — skipping (delete {cache_path} to retry)")
         return {
             "label": label,
             "skipped": True,
             "skip_reason": "known_crash",
-            "skip_detail": f"Crashed Ollama's runner repeatedly on {crashed_at}",
+            "skip_detail": f"Crashed the engine's runner repeatedly on {crashed_at}",
         }
 
     @staticmethod
@@ -607,7 +609,7 @@ class Shared:
         crashed_at = datetime.now().isoformat(timespec="seconds")
         crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"Ollama's runner crashed repeatedly {what} — recorded to {cache_path}")
+        Shared.err(f"The engine's runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
 
     @staticmethod
@@ -637,7 +639,7 @@ class Shared:
                 samples.append(call(run_i))
                 run_i += 1
             except Exception as e:
-                if isinstance(e, OllamaLoopDetected):
+                if isinstance(e, EngineLoopDetected):
                     Shared.err(f"{tag}: detected a generation loop {what} (run {run_i+1})")
                     return samples, "loop_detected", e.partial_text
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
@@ -664,7 +666,7 @@ class Shared:
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed", ""
-                # don't advance run_i — retry the same run now that Ollama is back
+                # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", ""
 
     # Paraphrased-loop markers (_has_repeated_verbatim_ngram only catches verbatim repeats).
@@ -756,7 +758,6 @@ class Shared:
 
         if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
-            Shared.err("Start with: ollama serve")
             return results
 
         crash_cache = Shared.load_crash_cache(crash_cache_path)
@@ -774,8 +775,8 @@ class Shared:
 
             try:
                 if not engine.model_pulled(tag):
-                    Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn(f"{tag} not downloaded — skipping")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,

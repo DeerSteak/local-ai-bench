@@ -10,26 +10,15 @@ assignment.
 
 from pathlib import Path
 
-OLLAMA_URL   = "http://localhost:11434"
 COMFYUI_URL  = "http://localhost:8188"
 
 # llama-server's default port. LlamaCppEngine launches its own server on
-# demand (one model per process, unlike Ollama's swap-in-place daemon), always
-# on this fixed port.
+# demand (one model per process), always on this fixed port.
 LLAMACPP_PORT = 8080
 LLAMACPP_URL  = f"http://localhost:{LLAMACPP_PORT}"
 
-# Pinned on every 'ollama serve' launch (setdefault'd — an operator's shell export still wins) so
-# timing/throughput numbers don't drift with whatever Ollama auto-detects per machine/version.
-OLLAMA_ENV_DEFAULTS = {
-    "OLLAMA_NUM_PARALLEL":      "1",
-    "OLLAMA_MAX_LOADED_MODELS": "1",
-    "OLLAMA_FLASH_ATTENTION":   "1",
-    "OLLAMA_KV_CACHE_TYPE":     "f16",
-}
-
-# Prompt-processing batch size, pinned on every request instead of left to Ollama's auto-detected default.
-OLLAMA_NUM_BATCH = 512
+# Prompt-processing batch size, pinned on every request instead of left to the server's auto-detected default.
+LLAMACPP_NUM_BATCH = 512
 
 # Repo root — this file lives in scripts/, one level below it.
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
@@ -39,6 +28,11 @@ COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 
+# Model downloads land here (setup_check.py), namespaced one subdirectory
+# per engine (e.g. "llamacpp") so a future engine with its own model format/
+# layout (e.g. MLX) doesn't collide with this one's.
+MODELS_DIR = SCRIPT_DIR / "models"
+
 RESULTS_DIR = SCRIPT_DIR / "results"
 
 CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
@@ -46,7 +40,7 @@ CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt
 # Concurrency test (scripts/concurrency_benchmark.py) — see docs/workloads.md.
 CONCURRENCY_LEVELS = [1, 2, 4, 8, 16, 32, 64]
 CONCURRENCY_CONTEXT = 16384   # tokens per concurrent request/slot
-CONCURRENCY_MIN_LEVEL_BEFORE_SOFT_EXIT = 8
+CONCURRENCY_MIN_LEVEL_BEFORE_SOFT_EXIT = 16
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42

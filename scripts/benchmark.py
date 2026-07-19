@@ -24,7 +24,7 @@ from pathlib import Path
 
 import config
 from shared import Shared
-from engines import get_engine
+from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
@@ -52,10 +52,6 @@ TIER_LABELS = {
 }
 TIER_ORDER = ["xsmall", "small", "medium", "large"]
 
-# Whichever engine is about to start, the other is stopped first (see "Starting Servers" in main())
-# so the two never compete for GPU memory at once.
-OTHER_ENGINE = {"ollama": "llamacpp", "llamacpp": "ollama"}
-
 
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
     """Resolve --maxtier into (llm_models, tier_label, image_models), applying
@@ -74,7 +70,7 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 
 def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
     """Filter `models` down to those whose tag matches any of `patterns` —
-    each an exact Ollama tag or a shell-style wildcard (fnmatch), e.g. "llama*".
+    each an exact catalog tag or a shell-style wildcard (fnmatch), e.g. "llama*".
     Case-sensitive (`fnmatchcase`) so behavior is identical across platforms
     (plain `fnmatch` case-normalizes on Windows only). `patterns=None` or empty
     disables filtering, which is what makes --models optional."""
@@ -83,17 +79,8 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
     return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
 
 
-def strip_implicit_latest(tag: str) -> str:
-    """Ollama's /api/tags always reports an explicit ":latest" for models
-    pulled without a tag suffix, but models.py stores those same models under
-    their bare tag ("phi4-mini", not "phi4-mini:latest"). Normalize before
-    comparing an installed tag against the catalog so those aren't
-    misidentified as "custom"."""
-    return tag[:-len(":latest")] if tag.endswith(":latest") else tag
-
-
 def sanitize_tag_to_short(tag: str) -> str:
-    """Turn a raw Ollama tag ("qwen3.5:4b-instruct") into a filesystem/JSON-key
+    """Turn a raw tag ("qwen3.5:4b-instruct") into a filesystem/JSON-key
     -safe "short" identifier ("qwen3.5-4b-instruct"), mirroring the style of
     the hand-picked "short" values in models.py for catalog entries."""
     return re.sub(r'[:/]', '-', tag)
@@ -101,10 +88,11 @@ def sanitize_tag_to_short(tag: str) -> str:
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str]) -> list[dict]:
     """Extends filter_models_by_pattern so a pattern matching nothing in the
-    curated catalog can still resolve to a model that's actually pulled in
-    Ollama — lets someone benchmark a self-installed model without adding it
-    to models.py first. Only patterns with zero catalog matches fall through
-    to the installed-tag lookup."""
+    curated catalog can still resolve to a model that's actually downloaded
+    locally (see LlamaCppEngine.list_installed_models) — lets someone
+    benchmark a self-installed model without adding it to models.py first.
+    Only patterns with zero catalog matches fall through to the
+    installed-tag lookup."""
     catalog_tags = {m["tag"] for m in catalog}
     resolved = list(filter_models_by_pattern(catalog, patterns))
     seen = {m["tag"] for m in resolved}
@@ -113,7 +101,7 @@ def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_ta
         if any(fnmatch.fnmatchcase(t, pattern) for t in catalog_tags):
             continue  # already satisfied by the catalog match above
         for tag in installed_tags:
-            if tag in seen or strip_implicit_latest(tag) in catalog_tags:
+            if tag in seen or tag in catalog_tags:
                 continue
             if fnmatch.fnmatchcase(tag, pattern):
                 resolved.append({"tag": tag, "label": f"{tag} (custom)", "short": sanitize_tag_to_short(tag)})
@@ -148,6 +136,15 @@ def expand_tests(tests: list[str]) -> list[str]:
     return expanded
 
 
+def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
+    """Resolve --engine into the ordered list of engine names to run this
+    pass over: "all" expands to every registered engine (sorted, so the run
+    order is deterministic across invocations); anything else is a single
+    engine name, passed through as-is (argparse's `choices` already rejects
+    an unregistered one before this is called)."""
+    return list(available) if engine == "all" else [engine]
+
+
 def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
     """Decide whether `model` should be skipped from the (expensive) conversation
     test, based on how it did in the single-shot LLM prefill test. Returns a
@@ -163,7 +160,7 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
 
     if llm_data.get("skipped") or llm_data.get("crashed"):
         detail = llm_data.get("skip_detail") or (
-            f"Ollama's runner crashed repeatedly during the LLM test "
+            f"The engine's runner crashed repeatedly during the LLM test "
             f"(at {llm_data['crashed']} context)"
         )
         return {"label": label, "skipped": True,
@@ -194,7 +191,7 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
     return None
 
 
-def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/ComfyUI runs
+def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
@@ -241,14 +238,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     parser.add_argument(
         "--cpu-only", action="store_true",
-        help="Force CPU-only inference for every Ollama-backed test (llm, conv, "
-             "mcq, math, code, emb) by restarting Ollama with GPU devices hidden "
-             "(HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES / ROCR_VISIBLE_DEVICES "
-             "set empty). Stops any running Ollama server (even one this script "
-             "didn't start) and restores normal GPU mode afterward. Useful on GPU "
-             "backends unstable under one of those workloads (originally added "
-             "for embedding batching, but the same instability can hit LLM/MCQ "
-             "inference on some backends too).",
+        help="Force CPU-only inference for every LLM-backed test (llm, conv, "
+             "mcq, math, code, emb) by restarting the engine with GPU devices "
+             "hidden (HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES / "
+             "ROCR_VISIBLE_DEVICES set empty). Stops any running engine server "
+             "(even one this script didn't start) and restores normal GPU mode "
+             "afterward. Useful on GPU backends unstable under one of those "
+             "workloads (originally added for embedding batching, but the same "
+             "instability can hit LLM/MCQ inference on some backends too).",
     )
     parser.add_argument(
         "--maxtier", type=str, default=None,
@@ -259,18 +256,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     parser.add_argument(
         "--models", nargs="+", default=None,
-        help="Only test these LLM models (llm, conv, mcq, math, and code tests) — exact Ollama "
+        help="Only test these LLM models (llm, conv, mcq, math, and code tests) — exact "
              "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
              "starting with 'llama' (default: every model in the selected tier). "
              "Applied after --maxtier, so it can only narrow that selection further "
              "within the catalog — but a pattern that matches nothing in the catalog "
-             "falls back to matching against models actually pulled in Ollama, so a "
+             "falls back to matching against models actually downloaded locally, so a "
              "model outside our curated catalog can still be tested (see --list-models). "
              "Quote wildcards (e.g. \"llama*\") so your shell doesn't glob-expand them first.",
     )
     parser.add_argument(
         "--list-models", action="store_true",
-        help="List every Ollama model actually installed locally, marking which are in "
+        help="List every model actually downloaded locally, marking which are in "
              "the curated catalog (models.py) vs custom/extra, then exit without running "
              "anything. Useful for finding the exact tag to pass to --models.",
     )
@@ -284,53 +281,45 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
              "compared against a full-bank run or published (default: full bank).",
     )
     parser.add_argument(
-        "--engine", type=str, default="llamacpp", choices=["ollama", "llamacpp", "both"],
-        help="Inference engine to benchmark against (default: llamacpp — "
-             "marginally faster than Ollama and a closer read on raw model "
-             "capability, without Ollama's scheduling/wrapper overhead). "
-             "'llamacpp' runs llama-server directly against the same models "
-             "already pulled via 'ollama pull' — resolved straight from "
-             "Ollama's local model store, no separate download — and "
-             "requires the llama.cpp 'llama-server' binary on PATH. "
-             "'both' runs the full --tests suite once per engine (llamacpp, "
-             "then ollama), back to back, writing a separate results file "
-             "for each (engine name appended to the filename) so they can "
-             "be compared directly. llamacpp runs first so any model that "
-             "fails to load there is cached (see the per-test *_crash_cache.json "
-             "files) and skipped on the ollama pass too, instead of spending "
-             "time re-discovering the same failure.",
-    )
-    parser.add_argument(
         "--force-all", action="store_true",
         help=f"Ignore the {config.SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
              "context length in the LLM prefill test and always run the conversation "
              "test, even for models that would otherwise be marked slow and skipped. "
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
+    _engines = registered_engine_names()
+    parser.add_argument(
+        "--engine", type=str, default=_engines[0], choices=_engines + ["all"],
+        help=f"Inference engine to benchmark against (default: {_engines[0]}). "
+             "'all' runs the full --tests suite once per registered engine, back "
+             "to back (sorted order), writing a separate results file for each "
+             "(engine name appended to the filename) so they can be compared "
+             "directly. Only llama.cpp is registered today, so this is a no-op "
+             "until a second engine (e.g. MLX) is added — kept here so scripts/"
+             "docs referencing --engine don't need to change when one is.",
+    )
     args = parser.parse_args()
 
-    # "both" order and rationale, and why --list-models/--models always use 'ollama'
-    # regardless of --engine, are covered in --engine's own help text above.
-    engine_names = ["llamacpp", "ollama"] if args.engine == "both" else [args.engine]
-    engine = get_engine("ollama")
+    # --list-models/--models always use the first registered engine
+    # (alphabetically) regardless of --engine — there's nothing to list
+    # per-engine, models.py's catalog is shared across all of them.
+    engine = get_engine(_engines[0])
     # Held on Shared so shutdown_managed() (called from the signal handler and
     # the finally block) can consult the live engine without threading it in.
     Shared._active_engine = engine
 
     if args.list_models:
         if not engine.ensure_running():
-            Shared.err("Could not start Ollama — install from https://ollama.com/download "
-                       "or start it manually with: ollama serve")
             sys.exit(1)
         installed = engine.list_installed_models()
         if not installed:
-            Shared.warn("Ollama is running but no models are installed — pull one with: ollama pull <tag>")
+            Shared.warn("No models are downloaded — run: python setup_check.py")
             sys.exit(0)
         catalog_tags = {m["tag"] for m in LLM_MODELS} | {m["tag"] for m in EMBED_MODELS}
-        print(f"\n{config.BOLD}Installed Ollama models{config.RESET}")
+        print(f"\n{config.BOLD}Downloaded models{config.RESET}")
         n_catalog = 0
         for m in sorted(installed, key=lambda m: m["tag"]):
-            in_catalog = strip_implicit_latest(m["tag"]) in catalog_tags
+            in_catalog = m["tag"] in catalog_tags
             n_catalog += in_catalog
             size_gb = f"{m['size'] / 1e9:.1f} GB" if m.get("size") else "? GB"
             print(f"  {m['tag']:<40} {size_gb:>10}   ({'catalog' if in_catalog else 'custom'})")
@@ -349,12 +338,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
     if args.models:
-        engine.ensure_running()  # so a custom (non-catalog) tag can resolve against what's actually pulled
+        engine.ensure_running()  # so a custom (non-catalog) tag can resolve against what's actually downloaded
         installed_tags = [m["tag"] for m in engine.list_installed_models()]
         llm_models = resolve_custom_models(args.models, llm_models, installed_tags)
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
-                       f"in the selected tier ({tier_label}) or installed in Ollama — "
+                       f"in the selected tier ({tier_label}) or downloaded locally — "
                        "llm/conv/mcq/math/code tests will have nothing to run")
 
     # The concurrency test always restricts to xsmall+small regardless of
@@ -371,16 +360,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     base_out_path = args.out or str(config.RESULTS_DIR / f"results_{_safe}_{_start_stamp}.json")
-    multi_engine = len(engine_names) > 1
 
-    for run_idx, engine_name in enumerate(engine_names):
+    run_engine_names = resolve_engine_names(args.engine, _engines)
+    multi_engine = len(run_engine_names) > 1
+
+    for run_idx, engine_name in enumerate(run_engine_names):
         engine = get_engine(engine_name)
         # Held on Shared so shutdown_managed() (called from the signal handler and
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
         if multi_engine:
-            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(engine_names)})")
+            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
             _base = Path(base_out_path)
             out_path = str(_base.with_name(f"{_base.stem}_{engine_name}{_base.suffix}"))
         else:
@@ -390,7 +381,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         tests = args.tests
         if multi_engine and run_idx > 0 and "img" in tests:
             Shared.log("Image generation doesn't depend on --engine — already "
-                       f"captured in the {engine_names[0]} pass, skipping for {engine_name}")
+                       f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
 
         print(f"\n{config.BOLD}LLM Benchmark Suite{config.RESET}")
@@ -458,23 +449,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
         try:
-            # ── Ollama-backed tests (llm, conv, mcq, math, code, emb) share one server lifecycle
-            ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb", "conc") if t in tests]
-            if ollama_tests:
+            # ── LLM-backed tests (llm, conv, mcq, math, code, emb, conc) share one server lifecycle
+            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb", "conc") if t in tests]
+            if llm_tests:
                 Shared.section("Starting Servers")
-                other_name = OTHER_ENGINE[engine_name]
-                other_engine = get_engine(other_name)
-                if other_engine.available():
-                    Shared.log(f"Stopping {other_name} so only one inference "
-                               f"engine runs at a time ...")
-                    other_engine.stop()
+                for other_name in _engines:
+                    if other_name == engine_name:
+                        continue
+                    other_engine = get_engine(other_name)
+                    if other_engine.available():
+                        Shared.log(f"Stopping {other_name} so only one inference "
+                                   f"engine runs at a time ...")
+                        other_engine.stop()
                 if args.cpu_only:
-                    Shared.warn("Stopping Ollama to relaunch in CPU-only mode "
-                                f"(applies to: {', '.join(ollama_tests)}) ...")
+                    Shared.warn("Stopping the engine to relaunch in CPU-only mode "
+                                f"(applies to: {', '.join(llm_tests)}) ...")
                     engine.stop()
                     if not engine.start(gpu_visible=False):
-                        Shared.err("Failed to start Ollama in CPU-only mode — "
-                                   f"{', '.join(ollama_tests)} tests will be skipped")
+                        Shared.err("Failed to start the engine in CPU-only mode — "
+                                   f"{', '.join(llm_tests)} tests will be skipped")
                 else:
                     engine.ensure_running()
 
@@ -587,11 +580,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 )
                 _checkpoint("concurrency done")
 
-            # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
-            # if this run forced CPU-only, so the machine isn't left in that state
+            # Done with every LLM-backed test — restore normal GPU-enabled mode if
+            # this run forced CPU-only, so the machine isn't left in that state
             # (and so image generation, if it runs next, starts from a clean state).
-            if ollama_tests and args.cpu_only and engine._cpu_only_active:
-                Shared.log("Restoring normal (GPU-enabled) Ollama ...")
+            if llm_tests and args.cpu_only and engine._cpu_only_active:
+                Shared.log("Restoring normal (GPU-enabled) engine ...")
                 engine.stop()
                 engine.start()
 
@@ -600,7 +593,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 Shared.section("Starting Servers")
                 # Kill the whole server, not just unload its models, to free memory the idle process itself still holds.
                 if engine.available():
-                    Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
+                    Shared.log("Stopping the engine entirely to free memory for ComfyUI ...")
                     engine.stop()
                 comfyui_started = Shared.ensure_comfyui(comfyui_dir)
                 if not comfyui_started:

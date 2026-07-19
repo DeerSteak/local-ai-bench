@@ -25,7 +25,7 @@ from shared import Shared
 class CodeBenchmark:
     CODE_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "code_problems.json"
 
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")

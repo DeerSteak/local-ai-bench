@@ -1,7 +1,7 @@
 import pytest
 
 import hardware
-from models import LLM_MODELS
+from models import LLM_MODELS, IMAGE_MODELS
 
 
 def test_parse_size_gb_gb_string():
@@ -133,5 +133,50 @@ def test_model_fits_against_real_catalog_values():
     xsmall = next(m for m in LLM_MODELS if m["short"] == "llama3.2-3b-q4")
     assert hardware.model_fits(xsmall["download_size"], 8.0) is True
 
-    large = next(m for m in LLM_MODELS if m["short"] == "deepseek-r1-70b")
+    large = next(m for m in LLM_MODELS if m["short"] == "nemotron3-super-120b")
     assert hardware.model_fits(large["download_size"], 8.0) is False
+
+
+# ── image_model_memory_requirement_gb / image_model_fits ──
+
+def test_image_model_memory_requirement_checkpoint_only():
+    # SDXL has no entry in IMAGE_ENCODER_GROUPS — checkpoint weight only.
+    expected = hardware.CHECKPOINT_SIZES_GB["sd_xl_base_1.0.safetensors"] * hardware.MEMORY_OVERHEAD_MULTIPLIER
+    assert hardware.image_model_memory_requirement_gb(
+        "sd_xl_base_1.0.safetensors", "sdxl") == pytest.approx(expected)
+
+
+def test_image_model_memory_requirement_includes_encoders():
+    # Flux.1-dev needs its checkpoint plus t5xxl + clip_l + ae encoders.
+    checkpoint_gb = hardware.CHECKPOINT_SIZES_GB["flux1-dev.safetensors"]
+    encoder_gb = (hardware.ENCODER_SIZES_GB["t5xxl_fp16.safetensors"]
+                  + hardware.ENCODER_SIZES_GB["clip_l.safetensors"]
+                  + hardware.ENCODER_SIZES_GB["ae.safetensors"])
+    expected = (checkpoint_gb + encoder_gb) * hardware.MEMORY_OVERHEAD_MULTIPLIER
+    assert hardware.image_model_memory_requirement_gb(
+        "flux1-dev.safetensors", "flux-dev") == pytest.approx(expected)
+
+
+def test_image_model_fits_none_when_ceiling_unknown():
+    assert hardware.image_model_fits("flux2-dev.safetensors", "flux2-dev", None) is None
+
+
+def test_image_model_fits_false_when_encoders_push_it_over():
+    """A checkpoint alone might fit, but Flux.2-dev's Mistral text encoder
+    (~18 GB) is large enough that omitting it from the requirement — the bug
+    this test guards against — would wrongly say it fits a 24 GB machine."""
+    assert hardware.image_model_fits("flux2-dev.safetensors", "flux2-dev", 24.0) is False
+
+
+def test_image_model_fits_true_on_large_ceiling():
+    assert hardware.image_model_fits("v1-5-pruned-emaonly.safetensors", "sd15", 24.0) is True
+
+
+def test_image_model_fits_against_real_catalog_values():
+    """Sanity check against models.py's actual IMAGE_MODELS entries, not
+    just synthetic checkpoint/short strings."""
+    sd15 = next(m for m in IMAGE_MODELS if m["short"] == "sd15")
+    assert hardware.image_model_fits(sd15["checkpoint"], sd15["short"], 24.0) is True
+
+    flux2 = next(m for m in IMAGE_MODELS if m["short"] == "flux2-dev")
+    assert hardware.image_model_fits(flux2["checkpoint"], flux2["short"], 24.0) is False

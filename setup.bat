@@ -96,7 +96,7 @@ if %errorlevel% neq 0 (
 echo   OK  Base dependencies installed
 
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
-:: (Ollama detection/install happens inside setup_check.py, gated behind its
+:: (llama.cpp detection/install happens inside setup_check.py, gated behind its
 :: own approval prompt, so it isn't installed here without asking.)
 echo.
 echo [Running setup_check.py]

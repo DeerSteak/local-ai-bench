@@ -7,7 +7,7 @@ from shared import Shared
 
 
 class LLMPrefillBenchmark:
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")
@@ -17,7 +17,6 @@ class LLMPrefillBenchmark:
 
         if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM benchmarks")
-            Shared.err("Start with: ollama serve")
             return results
 
         crash_cache = Shared.load_crash_cache(LLMPrefillBenchmark.LLM_CRASH_CACHE)
@@ -35,7 +34,7 @@ class LLMPrefillBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE)
@@ -43,7 +42,7 @@ class LLMPrefillBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up at the largest context this model will run so Ollama
+                # Warm up at the largest context this model will run so the server
                 # pre-allocates the full KV cache once, avoiding a reload at max context.
                 max_ctx = min(model.get("max_ctx", max(context_lengths)), max(context_lengths))
                 if not engine.warmup(tag, label, max_ctx, warmup_runs,

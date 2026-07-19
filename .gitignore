@@ -181,6 +181,7 @@ cython_debug/
 .cursorindexingignore
 ComfyUI/
 bench-env/
+/models/
 .DS_Store
 hf.txt
 **/node_modules
@@ -191,5 +192,9 @@ hf.txt
 .embed_crash_cache.json
 .llm_crash_cache.json
 .conv_crash_cache.json
+.mcq_crash_cache.json
+.math_crash_cache.json
+.code_crash_cache.json
 /scripts/.omc
 /.claude
+/mba-results

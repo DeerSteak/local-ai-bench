@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 class InferenceEngine(ABC):
-    name: str  # e.g. "ollama"
+    name: str  # e.g. "llamacpp"
 
     # ── server / process lifecycle ──
 

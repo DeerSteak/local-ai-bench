@@ -1,7 +1,7 @@
 """Tests for Shared.run_accuracy_benchmark driven by a fake InferenceEngine.
 
 This function was previously `pragma: no cover` because it was entangled with
-real Ollama network/process calls. Now that those live behind the
+real network/process calls. Now that those live behind the
 InferenceEngine interface, a fully in-memory test double implementing the
 interface with canned per-question responses can drive it through every branch
 that matters: a normal run scored correctly, a question that times out with
@@ -20,14 +20,14 @@ import pytest
 import config
 from engines.base import InferenceEngine
 from mcq_benchmark import MCQBenchmark
-from shared import OllamaLoopDetected, OllamaTimeout, Shared
+from shared import EngineLoopDetected, EngineTimeout, Shared
 
 
 class FakeEngine(InferenceEngine):
     """In-memory InferenceEngine. chat() dispatches on a per-question behavior
     keyed by a marker embedded in the question prompt (so the fake needs no
     knowledge of message formatting): "ok" returns canned text, "timeout"
-    raises OllamaTimeout with partial text, "loop" raises OllamaLoopDetected,
+    raises EngineTimeout with partial text, "loop" raises EngineLoopDetected,
     "crash" raises a ConnectionError (the runner-died shape). Everything else
     is a no-op or trivially-true, since run_accuracy_benchmark only needs the
     server/model to look available and to load."""
@@ -74,9 +74,9 @@ class FakeEngine(InferenceEngine):
                 if kind == "ok":
                     return 0.1, len(text.split()), 5.0, 10, text
                 if kind == "timeout":
-                    raise OllamaTimeout("timed out", partial_text=text)
+                    raise EngineTimeout("timed out", partial_text=text)
                 if kind == "loop":
-                    raise OllamaLoopDetected("generation loop", partial_text=text)
+                    raise EngineLoopDetected("generation loop", partial_text=text)
                 if kind == "crash":
                     raise ConnectionError("actively refused")
         raise AssertionError(f"no canned behavior matched prompt: {content!r}")

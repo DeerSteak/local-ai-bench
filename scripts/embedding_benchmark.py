@@ -19,7 +19,7 @@ class EmbeddingBenchmark:
     EMBED_CHUNK_MAX_WORDS = 150
     EMBED_CHUNK_MIN_WORDS = 6
 
-    # Records model/document combos that crashed Ollama's runner repeatedly
+    # Records model/document combos that crashed the engine's runner repeatedly
     # (deterministically, not a transient blip) so future runs don't waste time
     # rediscovering the same crash. Delete this file to retry a skipped model.
     EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")
@@ -91,7 +91,7 @@ class EmbeddingBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 Shared.ok(f"Using model: {tag}")
@@ -141,7 +141,7 @@ class EmbeddingBenchmark:
                         "label": label,
                         "skipped": True,
                         "skip_reason": "known_crash",
-                        "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
+                        "skip_detail": f"The engine's runner crashed repeatedly embedding this document ({crashed_at})",
                     }
                 elif status == "timed_out":
                     results[short] = {
