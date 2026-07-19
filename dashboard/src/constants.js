@@ -1,23 +1,19 @@
 // Colors per known LLM model short key (order follows LLM_MODEL_ORDER, i.e.
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
-  "llama3.2-3b-q4":    "#536dfe",
-  "phi4-mini":         "#64ffda",
-  "qwen3.5-4b":        "#ff8a80",
-  "llama3.1-8b-q4":    "#7c4dff",
-  "deepseek-r1-8b":    "#00e5ff",
-  "gemma4-e4b":        "#ff6d00",
-  "gpt-oss-20b":       "#ff4081",
-  "gemma4-26b":        "#00e676",
-  "deepseek-r1-32b":   "#ffd740",
-  "qwen3.6-35b-a3b":   "#ea80fc",
-  "llama3.3-70b-q4":   "#69f0ae",
-  "deepseek-r1-70b":   "#ccff90",
-  "gpt-oss-120b":      "#40c4ff",
+  "llama3.2-3b-q4":         "#536dfe",
+  "phi4-mini":              "#64ffda",
+  "mistral-7b-q4":          "#ff8a80",
+  "llama3.1-8b-q4":         "#7c4dff",
+  "nemotron3-nano-30b-a3b": "#00e676",
+  "qwen3.6-35b-a3b":        "#ea80fc",
+  "llama4-16x17b":          "#ffd740",
+  "nemotron3-super-120b":   "#40c4ff",
 };
 
 // Matches models.py's IMAGE_MODELS list
 export const IMAGE_MODEL_COLORS = {
+  "sd15":         "#ff4081",
   "sdxl":         "#00e5ff",
   "sd35-large":   "#7c4dff",
   "flux-dev":     "#ff6d00",
@@ -25,6 +21,7 @@ export const IMAGE_MODEL_COLORS = {
 };
 
 export const IMAGE_MODEL_LABELS = {
+  "sd15":         "Stable Diffusion 1.5",
   "sdxl":         "SDXL",
   "sd35-large":   "SD3.5 Large",
   "flux-dev":     "Flux.1-dev",
@@ -83,29 +80,24 @@ export const MAX_FILES = 6;
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
-  "llama3.2-3b-q4":  "Llama 3.2 3B Q4_K_M",
-  "phi4-mini":       "Phi 4 Mini",
-  "qwen3.5-4b":      "Qwen3.5 4B",
-  "llama3.1-8b-q4":  "Llama 3.1 8B Q4_K_M",
-  "deepseek-r1-8b":  "DeepSeek-R1 8B",
-  "gemma4-e4b":      "Gemma 4 E4B",
-  "gpt-oss-20b":     "GPT-OSS 20B (MXFP4)",
-  "gemma4-26b":      "Gemma 4 26B",
-  "deepseek-r1-32b": "DeepSeek-R1 32B",
-  "qwen3.6-35b-a3b": "Qwen3.6 35B-A3B",
-  "llama3.3-70b-q4": "Llama 3.3 70B Q4_K_M",
-  "deepseek-r1-70b": "DeepSeek-R1 70B",
-  "gpt-oss-120b":    "GPT-OSS 120B (MXFP4)",
+  "llama3.2-3b-q4":         "Llama 3.2 3B Q4_K_M",
+  "phi4-mini":              "Phi 4 Mini",
+  "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
+  "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
+  "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
+  "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
+  "llama4-16x17b":          "Llama 4 Scout 16x17B",
+  "nemotron3-super-120b":   "Nemotron 3 Super 120B",
 };
 
 // Canonical model order (determines chart line order and color assignment).
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "llama3.2-3b-q4", "phi4-mini", "qwen3.5-4b",
-  "llama3.1-8b-q4", "deepseek-r1-8b", "gemma4-e4b", "gpt-oss-20b",
-  "gemma4-26b", "deepseek-r1-32b", "qwen3.6-35b-a3b",
-  "llama3.3-70b-q4", "deepseek-r1-70b", "gpt-oss-120b",
+  "llama3.2-3b-q4", "phi4-mini",
+  "mistral-7b-q4", "llama3.1-8b-q4",
+  "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+  "llama4-16x17b", "nemotron3-super-120b",
 ];
 
 // Size tier per model short key — mirrors models.py's LLM_MODELS_XSMALL /
@@ -113,22 +105,17 @@ export const LLM_MODEL_ORDER = [
 // footprint is shown per-model for reference, but tier membership doesn't
 // depend on it).
 export const MODEL_SIZE_TIER = {
-  "llama3.2-3b-q4":  "xsmall",
-  "phi4-mini":       "xsmall",
-  "qwen3.5-4b":      "xsmall",
-  "llama3.1-8b-q4":  "small",
-  "deepseek-r1-8b":  "small",
-  "gemma4-e4b":      "small",
-  "gpt-oss-20b":     "small",
-  "gemma4-26b":      "medium",
-  "deepseek-r1-32b": "medium",
-  "qwen3.6-35b-a3b": "medium",
-  "llama3.3-70b-q4": "large",
-  "deepseek-r1-70b": "large",
-  "gpt-oss-120b":    "large",
+  "llama3.2-3b-q4":         "xsmall",
+  "phi4-mini":              "xsmall",
+  "mistral-7b-q4":          "small",
+  "llama3.1-8b-q4":         "small",
+  "nemotron3-nano-30b-a3b": "medium",
+  "qwen3.6-35b-a3b":        "medium",
+  "llama4-16x17b":          "large",
+  "nemotron3-super-120b":   "large",
 };
 
-export const IMAGE_MODEL_ORDER = ["sdxl", "sd35-large", "flux-dev", "flux2-dev"];
+export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flux2-dev"];
 
 // Matches models.py's EMBED_MODELS list
 export const EMBED_MODEL_COLORS = {
@@ -156,13 +143,28 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "accuracy", "embeddings", "images"];
+export const SECTIONS = ["llm", "llm_conversation", "concurrency", "accuracy", "embeddings", "images"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
+  concurrency: "Concurrency",
   accuracy: "Accuracy",
   embeddings: "Embeddings",
   images: "Images",
+};
+
+// Ordered concurrency levels swept by concurrency_benchmark.py — matches
+// scripts/config.py's CONCURRENCY_LEVELS (kept as strings since results JSON
+// keys are strings).
+export const CONCURRENCY_LEVELS = ["1", "2", "4", "8", "16", "32", "64"];
+
+// Human-readable reason for ConcurrencyBenchmark.run stopping a model's sweep
+// early (results JSON's per-model "stopped_at" field).
+export const CONCURRENCY_STOP_LABELS = {
+  load_failed: "couldn't load at this level — the model's real ceiling on this hardware",
+  crashed:     "the engine crashed during this batch",
+  failed:      "the batch failed (e.g. timed out)",
+  slow:        "per-request tokens/sec dropped below the slow-model cutoff",
 };
 
 // Accuracy sub-tests, grouped under the single "Accuracy" section pill —
@@ -201,6 +203,7 @@ export const CTX_COLORS = {
 
 // Colors per image model (used in bar chart mode — matches CTX palette)
 export const IMAGE_BAR_COLORS = {
+  "sd15":         "#cf222e",
   "sdxl":         "#0969da",
   "sd35-large":   "#e36209",
   "flux-dev":     "#1a7f37",

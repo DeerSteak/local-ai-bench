@@ -48,7 +48,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && (
+      {section !== "accuracy" && section !== "concurrency" && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -61,7 +61,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && (
+      {section !== "accuracy" && section !== "concurrency" && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -116,7 +116,7 @@ export default function Controls({
 
       <div className={styles.rowBreak} />
 
-      {(section === "llm" || section === "llm_conversation" || section === "accuracy") && allModels.length > 0 && (
+      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || section === "concurrency") && allModels.length > 0 && (
         <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>

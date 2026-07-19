@@ -1,5 +1,5 @@
 import {
-  CTX_ORDER, RES_ORDER,
+  CTX_ORDER, RES_ORDER, CONCURRENCY_LEVELS, CONCURRENCY_STOP_LABELS,
   MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS,
@@ -111,13 +111,13 @@ const SKIP_REASON_LABELS = {
   timed_out: "Skipped - LLM Timed Out",
   slow_tps: "Skipped - LLM Too Slow",
   no_llm_data: "Skipped - No LLM Data",
-  known_crash: "Skipped - Ollama Crashed",
+  known_crash: "Skipped - Engine Crashed",
 };
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
 // llm_conversation both set a "timed_out" field), "{ctx} - Crashed" for the
-// context at which Ollama's model runner crashed (a "crashed" field, set by
+// context at which the inference engine's model runner crashed (a "crashed" field, set by
 // the llm and llm_conversation tests when they give up retrying after a
 // repeat crash), "{ctx} - Skipped ({slowCtx} Too Slow)" for every later
 // (larger) context that was never attempted because the model dropped below
@@ -174,11 +174,11 @@ export function getImageBarStatusLabel(file, model, res) {
 
 // Return all LLM model keys from the loaded files, in canonical order.
 // Checks every section that runs the shared LLM roster — single-shot,
-// conversation, and the three accuracy tests — since the Models filter is
-// shared UI across all of them. A model present in only one section (e.g. a
-// file that only ran `--tests acc`, leaving llm/llm_conversation empty)
-// should still show up rather than leaving the filter (and every section
-// that depends on it) empty.
+// conversation, the three accuracy tests, and concurrency — since the Models
+// filter is shared UI across all of them. A model present in only one section
+// (e.g. a file that only ran `--tests acc`, leaving llm/llm_conversation
+// empty) should still show up rather than leaving the filter (and every
+// section that depends on it) empty.
 export function getAllLLMModels(files) {
   const s = new Set();
   for (const f of files) {
@@ -187,6 +187,7 @@ export function getAllLLMModels(files) {
     for (const m of Object.keys(f.data.mcq || {})) s.add(m);
     for (const m of Object.keys(f.data.math || {})) s.add(m);
     for (const m of Object.keys(f.data.code || {})) s.add(m);
+    for (const m of Object.keys(f.data.concurrency || {})) s.add(m);
   }
   const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
@@ -805,6 +806,79 @@ export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
     }
   }
   return hasIncident ? rows : [];
+}
+
+// ── Concurrency ─────────────────────────────────────────────────────────────
+
+// Return all model keys present in the concurrency section across files, in
+// canonical order (same LLM roster as everything else).
+export function getAllConcurrencyModels(files) {
+  const s = new Set();
+  for (const f of files) for (const m of Object.keys(f.data.concurrency || {})) s.add(m);
+  const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
+  return [...known, ...unknown];
+}
+
+// Concurrency: one chart per model. X = concurrency level, lines = files.
+// metric: "tps" (per-request tokens/sec), "ttft", or "aggregate" (aggregate
+// tokens/sec across the whole concurrent batch).
+export function buildConcurrencyDataForModel(files, model, metric) {
+  const levelSet = new Set();
+  for (const f of files)
+    for (const level of Object.keys(f.data.concurrency?.[model] || {}))
+      if (CONCURRENCY_LEVELS.includes(level)) levelSet.add(level);
+  const levels = CONCURRENCY_LEVELS.filter(l => levelSet.has(l));
+  return levels.map(level => {
+    const row = { levelLabel: `${level}-way` };
+    files.forEach((f, fi) => {
+      const s = f.data.concurrency?.[model]?.[level];
+      if (!s) return;
+      row[`f${fi}`] = metric === "tps" ? s.tps_mean
+        : metric === "ttft" ? s.ttft_mean_sec
+        : s.aggregate_tps;
+    });
+    return row;
+  });
+}
+
+// Info about why a (file, model) concurrency sweep stopped climbing before
+// CONCURRENCY_LEVELS ran out — null if it wasn't cut short (ran every level,
+// or has no concurrency data at all). "slow" stops after recording the level
+// that triggered it (a real measurement), the other reasons stop before ever
+// recording that level's data, hence nextLevel vs lastLevel below.
+export function getConcurrencyStopInfo(file, model) {
+  const d = file.data.concurrency?.[model];
+  const stoppedAt = d?.stopped_at;
+  if (!stoppedAt) return null;
+  const presentLevels = CONCURRENCY_LEVELS.filter(l => d[l] != null);
+  const lastLevel = presentLevels[presentLevels.length - 1] || null;
+  const lastIdx = lastLevel ? CONCURRENCY_LEVELS.indexOf(lastLevel) : -1;
+  const nextLevel = stoppedAt === "slow" ? null : (CONCURRENCY_LEVELS[lastIdx + 1] || null);
+  return { reason: stoppedAt, label: CONCURRENCY_STOP_LABELS[stoppedAt] || stoppedAt, lastLevel, nextLevel };
+}
+
+export function flattenConcurrencyData(files) {
+  return files.flatMap(f =>
+    Object.entries(f.data.concurrency || {}).flatMap(([model, d]) => {
+      if (d?.skipped) {
+        return [{
+          _fileId: f.id, model, level: "—", skipped: true,
+          skip_reason: d.skip_reason, skip_detail: d.skip_detail,
+        }];
+      }
+      return CONCURRENCY_LEVELS.filter(l => d[l]).map(level => {
+        const s = d[level];
+        return {
+          _fileId: f.id, model, level,
+          tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
+          aggregate_tps: s.aggregate_tps,
+          ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
+          total_tokens: s.total_tokens,
+        };
+      });
+    })
+  );
 }
 
 export function flattenAccuracyData(files, testKey) {

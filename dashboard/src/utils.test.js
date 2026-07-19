@@ -14,6 +14,8 @@ import {
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
   buildAccuracyTimeoutData,
   flattenAccuracyData,
+  getAllConcurrencyModels, buildConcurrencyDataForModel,
+  getConcurrencyStopInfo, flattenConcurrencyData,
 } from "./utils";
 
 describe("parseJSON", () => {
@@ -86,7 +88,7 @@ describe("fmt", () => {
 describe("getModelSizeTier", () => {
   it("uses the known MODEL_SIZE_TIER map for known models", () => {
     expect(getModelSizeTier("llama3.2-3b-q4")).toBe("xsmall");
-    expect(getModelSizeTier("gpt-oss-120b")).toBe("large");
+    expect(getModelSizeTier("nemotron3-super-120b")).toBe("large");
   });
   it("falls back to a param-count heuristic parsed from an unknown model's key", () => {
     expect(getModelSizeTier("some-new-model-15b")).toBe("small");
@@ -188,8 +190,8 @@ describe("getImageBarStatusLabel", () => {
 
 describe("getAllLLMModels", () => {
   it("returns known models in canonical order, with unknown models appended after", () => {
-    const files = [{ data: { llm: { "gpt-oss-20b": {}, "llama3.2-3b-q4": {}, "brand-new-model": {} } } }];
-    expect(getAllLLMModels(files)).toEqual(["llama3.2-3b-q4", "gpt-oss-20b", "brand-new-model"]);
+    const files = [{ data: { llm: { "mistral-7b-q4": {}, "llama3.2-3b-q4": {}, "brand-new-model": {} } } }];
+    expect(getAllLLMModels(files)).toEqual(["llama3.2-3b-q4", "mistral-7b-q4", "brand-new-model"]);
   });
   it("includes a model present only in llm_conversation, not llm, since the Models filter is shared", () => {
     const files = [{ data: { llm: {}, llm_conversation: { "phi4-mini": {} } } }];
@@ -204,6 +206,10 @@ describe("getAllLLMModels", () => {
   });
   it("includes a model present only in an accuracy test (e.g. an --tests acc-only run, leaving llm/llm_conversation empty)", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, mcq: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toContain("phi4-mini");
+  });
+  it("includes a model present only in concurrency, leaving llm/llm_conversation empty", () => {
+    const files = [{ data: { llm: {}, llm_conversation: {}, concurrency: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
   });
 });
@@ -374,14 +380,14 @@ describe("buildAccuracyTimeoutData", () => {
       data: {
         mcq: {
           "phi4-mini": { timed_out_count: 2, likely_loop_count: 2 },
-          "qwen3.5-4b": { timed_out_count: 0, likely_loop_count: 0 },
+          "mistral-7b-q4": { timed_out_count: 0, likely_loop_count: 0 },
         },
       },
     }];
-    const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["phi4-mini", "qwen3.5-4b"]));
+    const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["phi4-mini", "mistral-7b-q4"]));
     expect(rows).toEqual([
       { rowLabel: "Phi 4 Mini", timed_out_count: 2, likely_loop_count: 2 },
-      { rowLabel: "Qwen3.5 4B", timed_out_count: 0, likely_loop_count: 0 },
+      { rowLabel: "Mistral 7B v0.3 Q4_K_M", timed_out_count: 0, likely_loop_count: 0 },
     ]);
   });
   it("prefixes the row label with hostname across multiple files, to tell them apart", () => {
@@ -422,5 +428,103 @@ describe("flattenAccuracyData", () => {
     expect(rows[0].timed_out_count).toBe(2);
     expect(rows[0].likely_loop_count).toBe(1);
     expect(rows[0].crashed).toBe(true);
+  });
+});
+
+describe("getAllConcurrencyModels", () => {
+  it("returns known models in canonical order, unknowns appended after", () => {
+    const files = [{ data: { concurrency: { "phi4-mini": {}, "llama3.2-3b-q4": {}, "brand-new-model": {} } } }];
+    expect(getAllConcurrencyModels(files)).toEqual(["llama3.2-3b-q4", "phi4-mini", "brand-new-model"]);
+  });
+  it("returns an empty array when no file has concurrency data", () => {
+    expect(getAllConcurrencyModels([{ data: { llm: { m: {} } } }])).toEqual([]);
+  });
+});
+
+describe("buildConcurrencyDataForModel", () => {
+  const files = [{
+    hostname: "TestHost",
+    data: {
+      concurrency: {
+        m: {
+          "1": { tps_mean: 28.3, ttft_mean_sec: 31.35, aggregate_tps: 7.79 },
+          "2": { tps_mean: 11.4, ttft_mean_sec: 36.29, aggregate_tps: 7.53 },
+          "4": { tps_mean: 3.9, ttft_mean_sec: 45.29, aggregate_tps: 6.13 },
+          stopped_at: "failed",
+        },
+      },
+    },
+  }];
+  it("builds one row per recorded level, in CONCURRENCY_LEVELS order, labeled as N-way", () => {
+    const rows = buildConcurrencyDataForModel(files, "m", "tps");
+    expect(rows.map(r => r.levelLabel)).toEqual(["1-way", "2-way", "4-way"]);
+    expect(rows[0].f0).toBe(28.3);
+  });
+  it("picks ttft_mean_sec for the ttft metric and aggregate_tps for the aggregate metric", () => {
+    expect(buildConcurrencyDataForModel(files, "m", "ttft")[0].f0).toBe(31.35);
+    expect(buildConcurrencyDataForModel(files, "m", "aggregate")[0].f0).toBe(7.79);
+  });
+  it("excludes non-level keys like stopped_at from the level rows", () => {
+    const rows = buildConcurrencyDataForModel(files, "m", "tps");
+    expect(rows).toHaveLength(3);
+  });
+  it("returns an empty array for a model with no concurrency data", () => {
+    expect(buildConcurrencyDataForModel(files, "missing-model", "tps")).toEqual([]);
+  });
+});
+
+describe("getConcurrencyStopInfo", () => {
+  it("returns null when the sweep wasn't cut short", () => {
+    const file = { data: { concurrency: { m: { "1": {}, "2": {} } } } };
+    expect(getConcurrencyStopInfo(file, "m")).toBeNull();
+  });
+  it("returns null for a model with no concurrency data at all", () => {
+    expect(getConcurrencyStopInfo({ data: {} }, "m")).toBeNull();
+  });
+  it("points to the next level for a load/crash/failure stop, since that level's data was never recorded", () => {
+    const file = { data: { concurrency: { m: { "1": {}, "2": {}, "4": {}, stopped_at: "failed" } } } };
+    const info = getConcurrencyStopInfo(file, "m");
+    expect(info).toEqual({ reason: "failed", label: expect.any(String), lastLevel: "4", nextLevel: "8" });
+  });
+  it("has no next level for a slow stop, since the triggering level's real data was already recorded", () => {
+    const file = { data: { concurrency: { m: { "1": {}, "2": {}, "4": {}, "8": {}, stopped_at: "slow" } } } };
+    const info = getConcurrencyStopInfo(file, "m");
+    expect(info.lastLevel).toBe("8");
+    expect(info.nextLevel).toBeNull();
+  });
+  it("has no next level when the failure happened at the very first level (no data recorded yet)", () => {
+    const file = { data: { concurrency: { m: { stopped_at: "load_failed" } } } };
+    const info = getConcurrencyStopInfo(file, "m");
+    expect(info.lastLevel).toBeNull();
+    expect(info.nextLevel).toBe("1");
+  });
+});
+
+describe("flattenConcurrencyData", () => {
+  it("produces a single skipped row for a whole-model skip, not one row per level", () => {
+    const files = [{ id: "f1", data: { concurrency: { m: { skipped: true, skip_reason: "known_crash", skip_detail: "x" } } } }];
+    expect(flattenConcurrencyData(files)).toEqual([
+      { _fileId: "f1", model: "m", level: "—", skipped: true, skip_reason: "known_crash", skip_detail: "x" },
+    ]);
+  });
+  it("produces one row per real level, excluding non-level keys like stopped_at", () => {
+    const files = [{
+      id: "f1",
+      data: {
+        concurrency: {
+          m: {
+            "1": { tps_mean: 28.3, tps_stdev: 0, aggregate_tps: 7.79, ttft_mean_sec: 31.35, ttft_stdev_sec: 0, total_tokens: 337 },
+            stopped_at: "failed",
+          },
+        },
+      },
+    }];
+    const rows = flattenConcurrencyData(files);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      _fileId: "f1", model: "m", level: "1",
+      tps_mean: 28.3, tps_stdev: 0, aggregate_tps: 7.79,
+      ttft_mean: 31.35, ttft_stdev: 0, total_tokens: 337,
+    });
   });
 });
