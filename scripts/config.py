@@ -45,7 +45,7 @@ CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt
 # tok/s craters (CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT) so a model
 # that's already clearly too slow doesn't burn huge wall-clock time climbing
 # to 32-way for a foregone conclusion.
-CONCURRENCY_TOOL_LEVELS  = [1, 2, 4, 6, 8]
+CONCURRENCY_TOOL_LEVELS  = [1, 2, 4, 6, 8, 16]
 CONCURRENCY_TOOL_CONTEXT = 4096    # tokens per concurrent request/slot
 CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
 CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot
