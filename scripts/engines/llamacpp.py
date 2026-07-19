@@ -332,10 +332,15 @@ class LlamaCppEngine(InferenceEngine):
     def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
                              warmup_runs: int = 1, timeout: int = 300) -> bool:  # pragma: no cover — spawns a real subprocess
         """(Re)spawn llama-server with --parallel n_parallel slots at
-        per_slot_ctx tokens each. warmup_runs is accepted for interface
-        parity with other engines but unused — _ensure_model's spawn already
-        blocks until the KV cache is allocated and healthy, so there's
-        nothing left for a separate warmup call to catch here."""
+        per_slot_ctx tokens each. `warmup_runs` is accepted for interface
+        parity with other engines but unused *here* — this only blocks until
+        the process is up and the KV cache is allocated (process-level
+        readiness), not until a real decode has run at this concurrent
+        shape. ConcurrencyBenchmark.run fires the actual throwaway warmup
+        batches itself, after this returns, since every level respawns the
+        process (n_parallel is part of _ensure_model's want/have check) —
+        each level's first real inference is on a fresh process, so it
+        genuinely needs its own warmup."""
         try:
             self._ensure_model(tag, per_slot_ctx, n_parallel=n_parallel)
             return True

@@ -30,6 +30,22 @@ class ConcurrencyBenchmark:
             return False
         return mean_tps < config.SLOW_MODEL_MIN_TPS
 
+    @staticmethod
+    def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
+        """Fire `level` concurrent generate() requests, each its own uniquely
+        padded prompt so none of them share a cached prefix with each other
+        (see docs/workloads.md#concurrency). Returns the raw (ttft, tokens,
+        tps) samples — used for both a discarded warmup batch and the real
+        measured one, so a level's warmup exercises the exact same
+        concurrent shape it's about to be measured at."""
+        prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
+        with ThreadPoolExecutor(max_workers=level) as pool:
+            futures = [
+                pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT, per_request_context, level)
+                for p in prompts
+            ]
+            return [f.result() for f in futures]
+
     def run(self, engine, models, levels, per_request_context, warmup_runs,
             crash_cache_path: Path, section_label: str,
             soft_exit_floor: int | None = None, force_all=False,
@@ -83,19 +99,40 @@ class ConcurrencyBenchmark:
                         mem_bits.append(f"{memory['gpu_vram_used_gb']:.1f}/{memory['gpu_vram_total_gb']:.1f} GB VRAM")
                     Shared.log(f"{label}: loaded at {level}-way — {', '.join(mem_bits)} in use")
 
-                    Shared.log(f"{label}: firing {level} concurrent request(s) ...")
-                    prompts = [Shared.build_prompt_for_context(per_request_context)
-                               for _ in range(level)]
+                    # Every level respawns llama-server (n_parallel is part of
+                    # _ensure_model's want/have check), so this level's first
+                    # batch is also that fresh process's first-ever inference
+                    # at this concurrent shape — warm it up the same way every
+                    # other test warms up before measuring, rather than
+                    # letting first-call overhead (kernel autotune, CUDA graph
+                    # capture, etc.) land in the measured numbers.
+                    warmup_failed = False
+                    for warmup_i in range(warmup_runs):
+                        Shared.log(f"{label}: warming up {level}-way concurrency "
+                                   f"(run {warmup_i+1}/{warmup_runs}) ...")
+                        try:
+                            self._fire_batch(engine, tag, level, per_request_context)
+                        except Exception as e:
+                            if engine.is_connection_crash(e):
+                                Shared.err(f"{label}: engine crashed warming up {level}-way "
+                                           f"concurrency — last server output:\n{engine.tail_log()}")
+                                engine.wait_for_recovery()
+                                results[short]["crashed_at"] = Shared.record_crash(
+                                    tag, crash_cache, crash_cache_path,
+                                    f"warming up {level}-way concurrency")
+                                stopped_at = "crashed"
+                            else:
+                                Shared.err(f"{label}: {level}-way concurrency warmup failed: {e}")
+                                stopped_at = "failed"
+                            warmup_failed = True
+                            break
+                    if warmup_failed:
+                        break
 
+                    Shared.log(f"{label}: firing {level} concurrent request(s) ...")
                     batch_t0 = time.perf_counter()
                     try:
-                        with ThreadPoolExecutor(max_workers=level) as pool:
-                            futures = [
-                                pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT,
-                                            per_request_context, level)
-                                for p in prompts
-                            ]
-                            samples = [f.result() for f in futures]
+                        samples = self._fire_batch(engine, tag, level, per_request_context)
                     except Exception as e:
                         if engine.is_connection_crash(e):
                             Shared.err(f"{label}: engine crashed during the {level}-way batch — "
