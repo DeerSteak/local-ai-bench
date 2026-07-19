@@ -2,7 +2,7 @@
 
 # Workloads
 
-Four workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, and accuracy (multiple-choice question answering, math word problems, and coding problems). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Five workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, and coding problems), and concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -20,6 +20,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Math](#math)
   - [Code](#code)
   - [Bank versioning](#bank-versioning)
+- [Concurrency](#concurrency)
 
 ## LLM
 
@@ -170,6 +171,20 @@ Question banks grow and change over time (the MCQ and math banks each doubled in
 - Accuracy percentages (as opposed to raw correct counts) stay meaningfully comparable across bank versions, since they're already normalized by the bank's size at that time.
 
 `--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration: instead of the full bank, it runs a deterministic, stratified N-question subset — every category still represented, and the same N always draws the same questions for a given bank version. The exact sampled question IDs are recorded in the results JSON under `sample_ids`, so a sampled run is reproducible and auditable, but it's never meant to be compared against a full-bank run or published as a real score.
+
+## Concurrency
+
+Every other LLM test in this suite is strictly one request at a time — this is the only one that measures how per-request latency and aggregate throughput scale as multiple simultaneous requests hit the same loaded model, which matters far more than single-stream numbers for anyone thinking about serving more than one user (or one agent's parallel tool-calls) at once. Opt-in via `--tests conc` — it's not part of the default set, since it always restricts to the xsmall and small tiers regardless of `--maxtier` and takes noticeably longer per model than a single request.
+
+Each model is swept through concurrency levels 1, 2, 4, 8, 16, 32, and 64 (doubling each step), every concurrent request given 16,384 tokens of its own context. That per-request context is the reason for the tier restriction: each concurrent request needs its own KV cache, so total memory scales with context-per-request × concurrency, on top of the model weights themselves — testing this against a large-tier model would multiply an already-large footprint by up to 64.
+
+At each level, N concurrent requests are fired at once (a real prompt padded to 16K tokens, not a multi-turn conversation — much cheaper to hit an exact context size in one shot than growing there turn by turn, see the LLM conversation test above). Each one gets its own nonce prefix so none of them share a cached prompt prefix with each other — without that, an engine's prefix cache would serve some requests near-instantly regardless of real concurrency, understating exactly the contention this test exists to measure. Two numbers are recorded per level: the mean/stdev of each individual request's own TTFT and tokens/sec (the number that should visibly degrade as concurrency climbs), and the aggregate tokens/sec — total tokens generated across every concurrent stream, divided by that batch's real wall-clock duration (the number that shows overall system capacity, which typically climbs, plateaus, then can decline past a saturation point).
+
+Escalation to the next level stops for one of two reasons:
+- **Hard stop** — the model fails to even load at that level (out of memory, hung load) or the engine's runner crashes mid-batch. This is the real ceiling for that model on this hardware, not a bug — repeated engine crashes are the only case recorded to the crash cache (`.concurrency_crash_cache.json`), since a load failure at a given level isn't something worth remembering to skip on the next run (a lower level is cheap to retry and will very likely still succeed).
+- **Soft stop** — once concurrency level 8 has actually been reached, per-request tokens/sec dropping below the usual slow-model cutoff means climbing further would only confirm what's already obvious. Levels 1, 2, and 4 always run and get recorded regardless of how slow they already look — 8-way concurrency is common enough for agentic/tool-calling fan-out to be worth a real data point on its own, not skipped just because a lower level already looked slow. `--force-all` disables this the same way it does elsewhere.
+
+Each level also records a memory snapshot, taken right after that level finishes loading (model + full KV cache allocated) and before the batch fires — the steadiest point to read how much headroom is actually left, rather than numbers that fluctuate mid-batch. It always includes system RAM used/total; GPU VRAM used/total is added too when `nvidia-smi` or `rocm-smi` answers (a `rocm-smi` reading is only trusted for a confirmed-discrete AMD card — an APU's reported VRAM is often just a small BIOS-fixed carve-out, not the real usable pool). On a unified-memory machine — Apple Silicon, or an NVIDIA/AMD box like a DGX Spark or Strix Halo, where the model competes with the OS for the same physical pool — system RAM is the number that actually reflects total headroom; GPU VRAM there is supplementary, not a substitute. A load failure also records a `memory_at_failure` snapshot, so it's clear what memory state actually triggered the ceiling.
 
 ---
 

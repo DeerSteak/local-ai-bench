@@ -22,10 +22,9 @@ EMBED_MODELS = [
     },
 ]
 
-# Image generation models. Checkpoint files not present in
-# ComfyUI/models/checkpoints/ are skipped automatically.
-# "tier" maps each checkpoint onto the same xsmall/small/medium/large scale as
-# the LLM tiers (roughly by checkpoint size) so --maxtier caps both together.
+# Checkpoints missing from ComfyUI/models/checkpoints/ are skipped automatically.
+# "tier" maps each checkpoint onto the LLM tiers' xsmall/small/medium/large
+# scale so --maxtier caps both together.
 IMAGE_MODELS = [
     {
         "label":       "Stable Diffusion 1.5",
@@ -114,11 +113,8 @@ LLM_MODELS_XSMALL = sorted([
     },
 ], key=lambda m: m["params_b"])
 
-# Small-tier models (≤20B parameters).
-# Tags verified against ollama.com/library June 2026.
-# "params_b" is total parameter count in billions (not active/effective count
-# for MoE models — e.g. Qwen3.6 35B-A3B has 3B active but 35B total) and sets
-# the test order below, not download size or list position.
+# Small-tier models (≤20B parameters). Tags verified against ollama.com/library June 2026.
+# "params_b" is total parameters (not active, for MoE models) and sets sort order below.
 LLM_MODELS_SMALL = sorted([
     {
         "tag":            "llama3.1:8b-instruct-q4_K_M",

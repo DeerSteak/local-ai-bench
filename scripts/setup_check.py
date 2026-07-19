@@ -98,10 +98,7 @@ def confirm(prompt, default=True):
 
 issues = []
 
-# Approximate download sizes keyed by filename — shown on the model-selection
-# screen and used to estimate remaining disk space. Each is the on-disk size
-# rounded UP to the next 0.1 GB so the section-8a disk check errs toward
-# requiring more free space, not less.
+# On-disk size per checkpoint, rounded UP to the next 0.1 GB so the disk check errs toward requiring more space.
 CHECKPOINT_SIZES_GB = {
     "v1-5-pruned-emaonly.safetensors": 4.3,
     "sd_xl_base_1.0.safetensors": 7.0,
@@ -237,11 +234,8 @@ def check_rocm():
             name = agents[0].split(":", 1)[-1].strip()
             rocm_gpu_kind = hardware.classify_gpu(name)
             if rocm_gpu_kind == "discrete":
-                # An APU's VRAM figure here is often just the small
-                # BIOS-fixed carve-out, not the real usable pool via
-                # GTT/system-RAM addressing — only trust this for a
-                # confirmed-discrete card. Fails open (leaves rocm_vram_gb
-                # None) on any missing binary or unexpected output.
+                # Only trust rocm-smi's VRAM figure for a confirmed-discrete card —
+                # an APU's is often just a small BIOS-fixed carve-out, not the real usable pool.
                 try:
                     mem_out = subprocess.check_output(
                         ["rocm-smi", "--showmeminfo", "vram", "--json"],
@@ -334,12 +328,9 @@ def check_linux_intel_gpu():
         pass
     return False
 
-# Intel's Level Zero / OpenCL GPU compute runtime — the actual missing piece
-# for XPU-accelerated PyTorch/ComfyUI on Linux, distinct from the GPU merely
-# appearing in lspci. Packages from Intel's install guide
-# (https://dgpu-docs.intel.com/driver/installation.html), via a third-party
-# APT repo this script deliberately does NOT add itself (see
-# check_linux_intel_gpu_runtime()).
+# Intel's Level Zero/OpenCL GPU runtime — the actual missing piece for XPU-accelerated
+# PyTorch/ComfyUI, distinct from the GPU merely appearing in lspci. From a third-party
+# APT repo (https://dgpu-docs.intel.com/driver/installation.html) this script doesn't add itself.
 INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
 
 def check_linux_intel_gpu_runtime():
@@ -413,11 +404,7 @@ else:
     warn("No GPU acceleration detected — LLM and image tests may run slowly")
 
 # ── 3a. Memory ceiling ─────────────────────────────────────────────────────────
-# How much memory a model can realistically use on this machine — VRAM for a
-# confirmed-discrete GPU, total system RAM for everything else (Apple Silicon
-# unified memory, integrated GPUs, or no GPU at all). Used below to default
-# models that clearly won't fit to unchecked in the picker — informational,
-# not a hard block (see hardware.py).
+# Defaults models that clearly won't fit to unchecked in the picker below — informational, not a hard block.
 
 section("Memory")
 
@@ -464,10 +451,8 @@ def parse_ollama_version(ver_string):
         return None
     return tuple(int(g) for g in m.groups())
 
-# Ollama's native Intel GPU (SYCL) backend landed in this release — an Intel
-# Arc GPU needs at least this version for LLM tests to run on the GPU instead
-# of silently falling back to CPU. Source:
-# https://github.com/ollama/ollama/pull/11160
+# Min Ollama version with native Intel SYCL support — below this, Arc GPUs
+# silently fall back to CPU. https://github.com/ollama/ollama/pull/11160
 OLLAMA_INTEL_SYCL_MIN_VERSION = (0, 17, 0)
 
 def report_gpu_acceleration_status(ollama_version):
@@ -537,10 +522,7 @@ def install_ollama():
     if os_name == "Darwin":
         if shutil.which("brew"):
             info("Installing Ollama via Homebrew ...")
-            # --no-ask / HOMEBREW_NO_ASK skips brew's "proceed? [y/n]"
-            # confirmation (NOT what NONINTERACTIVE controls — that only covers
-            # brew's installer script and sudo). We already got consent in the
-            # prerequisites screen.
+            # --no-ask/HOMEBREW_NO_ASK skips brew's "proceed?" prompt — NONINTERACTIVE alone doesn't cover it.
             result = subprocess.run(
                 ["brew", "install", "--no-ask", "ollama"],
                 env={**os.environ, "HOMEBREW_NO_ASK": "1", "NONINTERACTIVE": "1"},
@@ -581,15 +563,9 @@ def install_ollama():
     return False
 
 def find_llamacpp_binary():
-    """Same resolution LlamaCppEngine uses at runtime (see its _binary_path):
-    vendored under LLAMACPP_DIR first (source build on Linux, prebuilt zip on
-    Windows), then PATH (the Homebrew install path on macOS, or a manual
-    install anywhere), then — if PATH doesn't have it — the two well-known
-    Homebrew prefixes directly. A brew install only updates PATH in the shell
-    that ran it (and only for shells started after its rc-file was touched),
-    so a symlink that brew just created may not be on PATH yet in whatever
-    shell re-runs this script later; checking the fixed prefixes means this
-    never depends on the terminal being restarted or an rc file re-sourced."""
+    """Mirrors LlamaCppEngine._binary_path: LLAMACPP_DIR, then PATH, then (macOS)
+    the two well-known Homebrew prefixes directly — a brew-created symlink may
+    not be on PATH yet in whatever shell re-runs this script."""
     exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
     if LLAMACPP_DIR.exists():
         match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
@@ -821,20 +797,13 @@ if not confirm("Continue?", default=True):
 section("Model Selection")
 
 def select_models(memory_ceiling_gb=None):
-    """
-    Flat numbered list spanning every LLM tier, embeddings, and image models,
-    checked by default; returns (selected_llm, selected_images,
-    selected_embed). The toggle syntax is printed to the user below. Plain
-    input() only — no raw terminal mode — so stray keys from earlier prompts
-    can't leak in and there's nothing to restore/flush.
+    """Flat numbered list spanning every LLM tier, embeddings, and image
+    models, checked by default; returns (selected_llm, selected_images,
+    selected_embed). Plain input() only, no raw terminal mode.
 
-    An LLM model that hardware.model_fits() says won't fit in
-    memory_ceiling_gb starts unchecked instead, with a note on its line
-    explaining why — informational, not a hard block, since a model that's
-    merely tight (MoE expert offload, a little KV-cache spillover into
-    system RAM) can still be worth trying. memory_ceiling_gb=None (couldn't
-    be determined) means no filtering — every LLM model still starts checked.
-    """
+    An LLM model hardware.model_fits() says won't fit starts unchecked with a
+    note why — informational, not a hard block, since a merely-tight model
+    can still be worth trying. memory_ceiling_gb=None means no filtering."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
@@ -1148,10 +1117,7 @@ try:
     if remaining_gb > 0:
         print(f"  Still to download: ~{remaining_gb:.0f} GB")
     def _warn_if_drive_fills_up():
-        # Separate from the absolute-GB checks above: even with room for the
-        # downloads, warn if so little would be left afterward that the drive
-        # gets uncomfortably full. Informational only — doesn't block or add
-        # to `issues`.
+        # Informational only (doesn't block or add to `issues`) — warns even when the downloads themselves fit.
         projected_free_gb = free_gb - remaining_gb
         if projected_free_gb < total_gb * 0.10:
             warn(f"After these downloads, free space would be ~{projected_free_gb:.0f} GB — "
@@ -1219,15 +1185,11 @@ else:
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
     def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
-        """
-        ComfyUI's Windows portable build bundles a pinned torch wheel. New GPU
-        architectures (e.g. Blackwell / RTX 50-series, compute capability 12.0)
-        aren't recognized by older cu12x wheels, so every CUDA kernel launch
-        fails with "no kernel image is available for execution on the device"
-        (first seen during CLIP text encoding in warmup). Compare the GPU's
-        compute capability against the bundled torch build and reinstall from
-        the cu128 wheel index if the architecture isn't listed.
-        """
+        """ComfyUI's Windows portable build bundles a pinned torch wheel that
+        doesn't recognize newer GPU architectures (e.g. Blackwell, compute
+        capability 12.0) — every CUDA kernel launch then fails with "no
+        kernel image is available for execution on the device." Reinstalls
+        from the cu128 wheel index if the architecture isn't listed."""
         if not compute_cap:
             return
         major, minor = compute_cap.split(".")
@@ -1248,13 +1210,9 @@ else:
 
         warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
              f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
-        # --force-reinstall is required, not just --upgrade: pip treats an
-        # already-installed torch+cu126 as satisfying a bare "torch" requirement
-        # and skips it, while torchvision/torchaudio get swapped to +cu128 —
-        # leaving a mismatched trio torchaudio's _check_cuda_version() refuses to
-        # import. Forcing reinstall keeps all three in lockstep. The wheels are
-        # ~800MB-2GB each, so stream pip's progress live instead of capturing
-        # silently, which would look hung for minutes.
+        # --force-reinstall (not --upgrade): pip otherwise leaves an already-installed
+        # torch+cu126 alone while swapping torchvision/torchaudio to +cu128, a mismatched
+        # trio torchaudio refuses to import. Streamed, not captured — wheels are 800MB-2GB.
         proc = subprocess.Popen(
             [str(python_exe), "-s", "-m", "pip", "install",
              "--force-reinstall", "--no-deps", "--progress-bar", "raw",
@@ -1464,10 +1422,7 @@ else:
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
 
-        # Intel Arc on Linux: ComfyUI's requirements.txt pulls in a plain
-        # (non-XPU) torch, so overwrite it with Intel's XPU wheels afterward —
-        # a plain pip install from a public index, no sudo or new APT repo
-        # needed. Requires PyTorch >= 2.5; no IPEX involved.
+        # ComfyUI's requirements.txt pulls in plain (non-XPU) torch on Intel Arc — overwrite after. PyTorch >= 2.5, no IPEX.
         if intel_linux and not PORTABLE_PYTHON.exists():
             torch_show = subprocess.run(
                 [sys.executable, "-m", "pip", "show", "torch"],

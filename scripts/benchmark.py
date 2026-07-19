@@ -2,58 +2,14 @@
 """
 benchmark.py — Cross-platform LLM benchmark suite.
 
-Tests:
-  1. LLM generation — 12 models across xsmall/small/medium/large tiers via Ollama
-     Metrics: time-to-first-token (TTFT), tokens/sec
-     Context lengths: 2K, 8K, 32K, 64K
-     Models that exceed the warmup timeout are skipped automatically
-
-  1b. LLM conversation — same models, but via a real multi-turn chat
-      (/api/chat) instead of one padded single-shot prompt: the model
-      explains Plato's Allegory of the Cave in sections, then each turn asks
-      for more detail. TTFT/tokens-per-sec at each depth reflect processing a
-      new turn against an already-filled context (llama.cpp's slot prefix
-      cache), not a cold fill. Expensive, so it always runs a single
-      conversation (--runs ignored), grown from scratch toward 96K, sampled at
-      0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever the model's real ceiling
-      reaches). The model gets the full 128K window (or its real max) so 96K
-      is reached with headroom.
-
-  2. Image generation — SD1.5, SDXL, SD3.5 Large, Flux.1-dev, Flux.2-dev via
-     ComfyUI HTTP API
-     Metrics: seconds/image at 1024×1024 and 1536×1536 (SD1.5: 512×512, 768×768)
-     (models skipped automatically if checkpoint not found)
-
-  3. Embeddings — nomic-embed-text and mxbai-embed-large via Ollama
-     Metrics: chunks/sec chunking one real document and embedding it in a
-     single call
-
-  4. MCQ accuracy — every LLM model answers the multiple-choice question
-     bank (scripts/data/mcq_questions.json) once via Ollama's /api/chat
-     Metrics: overall and per-category accuracy (% correct)
-
-  5. Math accuracy — every LLM model answers the math word-problem bank
-     (scripts/data/math_questions.json) once via Ollama's /api/chat
-     Metrics: overall and per-category accuracy (% correct, within each
-     question's own numeric tolerance)
-
-  6. Code accuracy — every LLM model answers the coding-problem bank
-     (scripts/data/code_problems.json) once via Ollama's /api/chat, and the
-     generated function is run against each problem's test cases in an
-     isolated subprocess
-     Metrics: overall and per-category accuracy (% of problems where every
-     test case passed)
-
-Servers are managed automatically:
-  - Ollama: started if not already running, shut down on exit if we started it
-  - ComfyUI: started before image tests, shut down cleanly when done
+Tests: llm, conv, img, emb, mcq, math, code, conc (opt-in) — see
+docs/workloads.md for what each measures. Servers start/stop automatically —
+see docs/how-it-works.md.
 
 Usage:
-  python benchmark.py                  # run all tests
+  python benchmark.py                  # run all tests except conc
   python benchmark.py --tests llm      # run only LLM single-shot tests
-  python benchmark.py --tests llm emb  # run LLM + embeddings
-  python benchmark.py --tests conv     # run only LLM conversation tests
-  python benchmark.py --comfyui /path/to/ComfyUI  # override ComfyUI path
+  python benchmark.py --help           # full flag reference
 """
 
 import argparse
@@ -76,6 +32,7 @@ from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
 from code_benchmark import CodeBenchmark
+from concurrency_benchmark import ConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
 
@@ -95,12 +52,8 @@ TIER_LABELS = {
 }
 TIER_ORDER = ["xsmall", "small", "medium", "large"]
 
-# Ollama and llama-server both want the GPU to themselves — running two
-# inference engines' worth of loaded weights at once skews every timing
-# number either could produce. Whichever engine is about to start, the other
-# gets stopped first (see the "Starting Servers" section in main()), even if
-# this process didn't start it — mirrors OllamaEngine.stop()/LlamaCppEngine.stop()
-# already killing a stray server they didn't launch themselves.
+# Whichever engine is about to start, the other is stopped first (see "Starting Servers" in main())
+# so the two never compete for GPU memory at once.
 OTHER_ENGINE = {"ollama": "llamacpp", "llamacpp": "ollama"}
 
 
@@ -147,16 +100,11 @@ def sanitize_tag_to_short(tag: str) -> str:
 
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str]) -> list[dict]:
-    """Extend `filter_models_by_pattern`'s catalog-only matching so a pattern
-    that matches nothing in the curated catalog (models.py) can still resolve
-    to a model, as long as it's actually pulled in Ollama. Lets someone
-    benchmark a self-installed model without adding it to the catalog first; it
-    just runs without curated tier/label/params_b metadata.
-
-    Only patterns with zero catalog matches fall through to the installed-tag
-    lookup, so an existing wildcard that already matches curated models behaves
-    exactly as before.
-    """
+    """Extends filter_models_by_pattern so a pattern matching nothing in the
+    curated catalog can still resolve to a model that's actually pulled in
+    Ollama — lets someone benchmark a self-installed model without adding it
+    to models.py first. Only patterns with zero catalog matches fall through
+    to the installed-tag lookup."""
     catalog_tags = {m["tag"] for m in catalog}
     resolved = list(filter_models_by_pattern(catalog, patterns))
     seen = {m["tag"] for m in resolved}
@@ -250,10 +198,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc"],
+        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc", "conc"],
         default=["llm", "conv", "emb", "img", "mcq", "math", "code"],
-        help="Which benchmarks to run (default: all). 'acc' is shorthand for "
-             "every accuracy-style test ('mcq', 'math', and 'code').",
+        help="Which benchmarks to run (default: all except 'conc'). 'acc' is "
+             "shorthand for every accuracy-style test ('mcq', 'math', and "
+             "'code'). 'conc' is the concurrency test (see workloads.md) — "
+             "opt-in, not part of the default set, since it always restricts "
+             "to xsmall+small tier models regardless of --maxtier and takes "
+             "noticeably longer per model (a 1-64 concurrent-request sweep "
+             "instead of one request at a time).",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -356,17 +309,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
     )
     args = parser.parse_args()
 
-    # "both" runs the whole suite once per engine below, llamacpp first so a
-    # model that fails to load there lands in the crash cache (see
-    # scripts/shared.py's load/check/record_crash_cache) before the ollama
-    # pass reads that same cache and skips it too — see --engine help.
-    #
-    # For the one-off --list-models / --models resolution steps that need *an*
-    # engine just to query Ollama's local model store, 'ollama' is
-    # authoritative regardless of --engine (llamacpp resolves models from that
-    # same store — see --engine help — and, unlike Ollama, requires its own
-    # binary installed just to answer "what's pulled", which
-    # --list-models/--models shouldn't need).
+    # "both" order and rationale, and why --list-models/--models always use 'ollama'
+    # regardless of --engine, are covered in --engine's own help text above.
     engine_names = ["llamacpp", "ollama"] if args.engine == "both" else [args.engine]
     engine = get_engine("ollama")
     # Held on Shared so shutdown_managed() (called from the signal handler and
@@ -413,6 +357,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                        f"in the selected tier ({tier_label}) or installed in Ollama — "
                        "llm/conv/mcq/math/code tests will have nothing to run")
 
+    # The concurrency test always restricts to xsmall+small regardless of
+    # --maxtier (see concurrency_benchmark.py's module docstring) — --models
+    # still narrows within that fixed catalog, same as llm_models above.
+    conc_models = LLM_MODELS_XSMALL + LLM_MODELS_SMALL
+    if args.models:
+        conc_models = resolve_custom_models(args.models, conc_models, installed_tags)
+
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
     profile  = Shared.build_profile()
@@ -435,10 +386,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
         else:
             out_path = base_out_path
 
-        # Image generation doesn't go through the LLM engine at all (it's a
-        # separate ComfyUI HTTP call), so under --engine both it would just
-        # duplicate identical, real-cost data on the second pass — run it
-        # only once, on the first pass.
+        # Image generation doesn't depend on --engine (separate ComfyUI call) — run it once, first pass only.
         tests = args.tests
         if multi_engine and run_idx > 0 and "img" in tests:
             Shared.log("Image generation doesn't depend on --engine — already "
@@ -501,6 +449,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             "mcq":             {},
             "math":            {},
             "code":            {},
+            "concurrency":     {},
         }
 
         def _checkpoint(label=""):
@@ -510,7 +459,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
 
         try:
             # ── Ollama-backed tests (llm, conv, mcq, math, code, emb) share one server lifecycle
-            ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb") if t in tests]
+            ollama_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb", "conc") if t in tests]
             if ollama_tests:
                 Shared.section("Starting Servers")
                 other_name = OTHER_ENGINE[engine_name]
@@ -619,6 +568,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
                 )
                 _checkpoint("embeddings done")
 
+            # ── Concurrency ────────────────────────────────────────────────────────
+            if "conc" in tests:
+                def _conc_save(partial):
+                    results["concurrency"] = partial
+                    _checkpoint()
+
+                if not conc_models:
+                    Shared.warn("--models matched no xsmall/small-tier models — "
+                                "concurrency test will have nothing to run")
+
+                results["concurrency"] = ConcurrencyBenchmark().run(
+                    engine=engine,
+                    models=conc_models,
+                    warmup_runs=args.warmup,
+                    force_all=args.force_all,
+                    save_fn=_conc_save,
+                )
+                _checkpoint("concurrency done")
+
             # Done with every Ollama-backed test — restore normal GPU-enabled Ollama
             # if this run forced CPU-only, so the machine isn't left in that state
             # (and so image generation, if it runs next, starts from a clean state).
@@ -630,10 +598,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real Ollama/Com
             # ── Image generation ───────────────────────────────────────────────────
             if "img" in tests:
                 Shared.section("Starting Servers")
-                # Nothing from Ollama in memory before ComfyUI loads. Image
-                # generation is always the last phase, so nothing later needs
-                # Ollama — kill the whole server rather than just unloading its
-                # models, to free the memory the idle process itself still holds.
+                # Kill the whole server, not just unload its models, to free memory the idle process itself still holds.
                 if engine.available():
                     Shared.log("Stopping Ollama entirely to free memory for ComfyUI ...")
                     engine.stop()

@@ -60,9 +60,11 @@ class FakeEngine(InferenceEngine):
     def unload(self, tag: str) -> None: self.unloaded.append(tag)
     def unload_all(self) -> None: pass
     def wait_until_unloaded(self, tag: str, timeout: int = 30) -> None: pass
+    def prepare_concurrency(self, tag, n_parallel, per_slot_ctx, warmup_runs=1, timeout=300) -> bool:
+        return True
 
     # inference
-    def generate(self, tag, prompt, timeout=600, num_ctx=None):
+    def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
         return 0.1, 1, 1.0
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024, check_loop=False):

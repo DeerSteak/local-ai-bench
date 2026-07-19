@@ -219,11 +219,8 @@ def test_chat_returns_content_and_server_timings(monkeypatch):
 
 
 def test_chat_prefers_usage_prompt_tokens_over_timings_prompt_n(monkeypatch):
-    # timings.prompt_n is only the tokens newly prefilled this call (a slot
-    # cache hit means most of a growing conversation isn't recounted there);
-    # the trailing usage chunk's prompt_tokens is the true running total and
-    # must win — this is what LLMConversationBenchmark's growth loop relies
-    # on to know how deep the conversation actually is.
+    # usage.prompt_tokens (true total) must win over timings.prompt_n
+    # (cache-miss-only count) — see chat()'s docstring.
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"content": "Hi"}}]},

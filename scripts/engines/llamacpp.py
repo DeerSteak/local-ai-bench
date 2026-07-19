@@ -1,29 +1,8 @@
 """llamacpp.py — LlamaCppEngine, a llama.cpp (llama-server) implementation of
-InferenceEngine.
-
-Reuses models already pulled via `ollama pull` instead of downloading its own
-copy: Ollama stores every pulled model as a content-addressed GGUF blob (no
-file extension) under its models directory, referenced by a manifest JSON
-that maps a tag to a sha256 digest. llama.cpp identifies GGUF files by their
-magic bytes, not filename, so that blob is a valid `-m` target for
-llama-server as-is — see _resolve_blob_path. This only resolves tags pulled
-from the standard Ollama library namespace (registry.ollama.ai/library/...),
-which is every tag in this project's catalog (models.py); a custom/private
-registry pull isn't handled.
-
-llama-server serves exactly one model per process (unlike Ollama, which swaps
-models in and out of one long-running server on demand), so this engine
-manages its own subprocess and restarts it whenever the requested (tag,
-num_ctx, embedding-mode) combination changes — see _ensure_model. That
-mirrors Ollama's own num_ctx-mismatch-triggers-reload behavior (see
-OllamaEngine.chat's docstring), so the two engines pay the same kind of
-cold-swap cost, just via a different mechanism, keeping cross-engine timing
-comparisons meaningful.
-
-Requires the llama.cpp 'llama-server' binary on PATH and a recent enough
-build to support --jinja (renders the model's own embedded chat template
-rather than llama.cpp's built-in template-guessing heuristics, for closer
-parity with what Ollama renders from the same GGUF metadata).
+InferenceEngine. Reuses models already pulled via `ollama pull` rather than
+downloading its own copy, and restarts its single-model-per-process server
+whenever the requested (tag, num_ctx, embedding-mode) changes. See
+docs/engines.md#llamacppengine for the full rationale.
 """
 
 import http.client
@@ -65,6 +44,7 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_tag: str | None = None
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
+        self._loaded_n_parallel: int = 1
         # Remembered across calls so a lazily-spawned server (there's no
         # tag at start()/ensure_running() time to load yet) still launches
         # in the right mode.
@@ -75,17 +55,10 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _binary_path() -> str | None:
-        """Locate llama-server: setup_check.py's Linux (source build) and
-        Windows (prebuilt zip) install paths both vendor it somewhere under
-        config.LLAMACPP_DIR rather than putting it on PATH — searched
-        recursively since the exact layout varies by install method/zip
-        structure. Falls back to PATH for the macOS (brew) install path,
-        which does put it there, or a manual install — and, if PATH doesn't
-        have it, the two well-known Homebrew prefixes directly, since a brew
-        install done in one shell (e.g. by setup.sh) doesn't update PATH in
-        any other already-open shell until its rc file is re-sourced. This
-        keeps engine resolution independent of shell state: no `source` or
-        terminal restart ever required after setup."""
+        """Locate llama-server: config.LLAMACPP_DIR (vendored installs) first,
+        then PATH, then (macOS) the two well-known Homebrew prefixes directly
+        — a brew install may not be on PATH yet in another already-open shell.
+        See docs/engines.md#llamacppengine."""
         exe_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
         if config.LLAMACPP_DIR.exists():
             match = next(iter(config.LLAMACPP_DIR.rglob(exe_name)), None)
@@ -103,13 +76,7 @@ class LlamaCppEngine(InferenceEngine):
 
     # ── Ollama blob-store resolution ──
 
-    # Linux install methods that don't put models under the current user's
-    # ~/.ollama/models: Ubuntu's `snap install ollama` (runs as a snap-confined
-    # 'ollama' user, common data under /var/snap/...) and the official
-    # curl|sh installer's systemd service (runs as a dedicated 'ollama' system
-    # user, home /usr/share/ollama). 'ollama list' works fine from any user's
-    # shell either way — it just talks to the running server over HTTP — but a
-    # file-level reader like this one needs the real on-disk path.
+    # Service-managed Ollama installs (snap, curl|sh's systemd service) — see docs/engines.md#llamacppengine.
     _LINUX_SERVICE_MODEL_DIRS = (
         Path("/var/snap/ollama/common/models"),
         Path("/usr/share/ollama/.ollama/models"),
@@ -243,6 +210,7 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_tag = None
         self._loaded_num_ctx = None
         self._loaded_embedding = None
+        self._loaded_n_parallel = 1
 
     def is_connection_crash(self, e: Exception) -> bool:
         """Same exception shapes as OllamaEngine.is_connection_crash — both
@@ -254,17 +222,11 @@ class LlamaCppEngine(InferenceEngine):
         return "actively refused" in str(e).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
-        """Always True: unlike Ollama's main server (which survives a
-        model-runner crash and just respawns the runner, so a caller polls
-        available() waiting for that self-heal), llama-server's whole process
-        is the model runner — a crash takes the server down with it, and
-        nothing brings it back up on its own to poll for. Recovery instead
-        happens synchronously on the caller's next generate/chat/embed call,
-        via _ensure_model respawning the process for that tag — if that
-        respawn itself fails, it raises on that call and this same
-        crash-handling loop (Shared.run_measured_calls) runs again, so a
-        model that's actually unrecoverable still gets caught, just by the
-        next real attempt instead of a passive wait beforehand."""
+        """Always True: unlike Ollama's server, which survives a runner crash
+        and self-heals, llama-server's whole process *is* the model runner —
+        there's nothing to poll for. Recovery instead happens synchronously
+        on the next generate/chat/embed call, via _ensure_model respawning;
+        an unrecoverable model still gets caught there, just on that attempt."""
         return True
 
     def reachable_or_abort(self) -> bool:
@@ -360,16 +322,9 @@ class LlamaCppEngine(InferenceEngine):
                 return False
             elif exc_box[0] is not None:
                 Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
-                # Unlike Ollama (where a non-crash warmup exception can be an
-                # ordinary transient request failure against an always-on
-                # daemon), llama-server is spawned fresh per model here, so
-                # *any* warmup exception — not just a connection-crash shape —
-                # means this tag failed to load under llamacpp (bad GGUF,
-                # unsupported architecture, exited on startup, etc.) and is
-                # just as deterministic as a hang. Recording it regardless of
-                # is_connection_crash means a later --engine both pass over
-                # ollama (which reads this same cache) skips it too instead of
-                # re-discovering the same failure.
+                # Every warmup exception here (not just connection-crash shapes) means this tag
+                # failed to load — llama-server is freshly spawned per model, so it's as
+                # deterministic as a hang. Recording it lets a later --engine both pass skip it too.
                 if crash_cache is not None and cache_path is not None:
                     if self.is_connection_crash(exc_box[0]):
                         self.wait_for_recovery()
@@ -400,6 +355,21 @@ class LlamaCppEngine(InferenceEngine):
         there's nothing left to poll for — this just reports the current
         state."""
         return self._loaded_tag is None or self._split_tag(tag) != self._split_tag(self._loaded_tag)
+
+    def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
+                             warmup_runs: int = 1, timeout: int = 300) -> bool:  # pragma: no cover — spawns a real subprocess
+        """(Re)spawn llama-server with --parallel n_parallel slots at
+        per_slot_ctx tokens each. warmup_runs is accepted for interface
+        parity with OllamaEngine but unused — _ensure_model's spawn already
+        blocks until the KV cache is allocated and healthy, so there's
+        nothing left for a separate warmup call to catch here."""
+        try:
+            self._ensure_model(tag, per_slot_ctx, n_parallel=n_parallel)
+            return True
+        except Exception as e:
+            Shared.warn(f"Failed to load {tag} for {n_parallel}-way concurrency "
+                        f"at {per_slot_ctx} tokens/slot: {e}")
+            return False
 
     # ── HTTP streaming helpers (llama-server's SSE protocol) ──
 
@@ -441,14 +411,16 @@ class LlamaCppEngine(InferenceEngine):
 
     # ── model process spawn ──
 
-    def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False) -> None:
+    def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
+                       n_parallel: int = 1) -> None:
         """Make sure llama-server is up and serving `tag` at `num_ctx`,
-        (re)spawning the subprocess if a different model, a different context
-        size, or an embedding-vs-chat mode switch is requested. See the
-        module docstring for why every mismatch here means a full restart
-        (llama-server is single-model-per-process, unlike Ollama)."""
-        want = (tag, num_ctx, embedding)
-        have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding)
+        (re)spawning the subprocess if a different model, context size,
+        embedding-vs-chat mode, or parallel-slot count is requested. See the
+        module docstring for why every mismatch means a full restart
+        (llama-server is single-model-per-process, unlike Ollama).
+        `n_parallel` > 1 is only used by the concurrency test."""
+        want = (tag, num_ctx, embedding, n_parallel)
+        have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding, self._loaded_n_parallel)
         if want == have and self._proc is not None and self._proc.poll() is None and self.available():
             return
 
@@ -471,19 +443,20 @@ class LlamaCppEngine(InferenceEngine):
             "--host", "127.0.0.1",
             "--port", str(config.LLAMACPP_PORT),
             "-ngl", "0" if not self._gpu_visible else "999",
-            # Render the model's own embedded Jinja chat template (from its
-            # GGUF tokenizer.chat_template metadata) instead of llama.cpp's
-            # built-in template-guessing — closer parity with what Ollama
-            # renders from the same underlying metadata.
-            "--jinja",
+            "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
             # Same prompt-processing batch size pinned for the Ollama engine,
             # so timing numbers are comparable across engines.
             "-b", str(config.OLLAMA_NUM_BATCH),
         ]
         if num_ctx is not None:
-            args += ["-c", str(num_ctx)]
+            # -c is a total KV-cache budget split across --parallel slots, so
+            # scale it up here; num_ctx stays the per-slot value everywhere
+            # else (self._loaded_num_ctx below, the want/have check above).
+            args += ["-c", str(num_ctx * n_parallel)]
         if embedding:
             args += ["--embeddings", "--pooling", "mean"]
+        if n_parallel > 1:
+            args += ["--parallel", str(n_parallel)]
 
         log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
         self._log_path = Path(log_fh.name)
@@ -502,6 +475,7 @@ class LlamaCppEngine(InferenceEngine):
                 self._loaded_tag = tag
                 self._loaded_num_ctx = num_ctx
                 self._loaded_embedding = embedding
+                self._loaded_n_parallel = n_parallel
                 return
             if proc.poll() is not None:
                 raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
@@ -514,15 +488,15 @@ class LlamaCppEngine(InferenceEngine):
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None) -> tuple[float, int, float]:
-        """Generate via llama-server's native /completion endpoint and return
-        timing metrics. Returns: (ttft_sec, tokens_generated, tokens_per_sec)
-
-        Prefers llama-server's own reported timings (predicted_n,
-        predicted_ms, prompt_ms in its final streamed chunk) over wall clock,
-        same reasoning as OllamaEngine.generate.
-        """
-        self._ensure_model(tag, num_ctx)
+                 num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
+        """Generate via llama-server's native /completion endpoint. Returns
+        (ttft_sec, tokens_generated, tokens_per_sec), preferring the server's
+        own reported timings over wall clock (same reasoning as
+        OllamaEngine.generate). n_parallel must match the last
+        prepare_concurrency call (default 1 elsewhere); concurrent callers
+        passing the same values is safe without locking since
+        _ensure_model's want == have check is then read-only."""
+        self._ensure_model(tag, num_ctx, n_parallel=n_parallel)
 
         payload = json.dumps({
             "prompt": prompt,
@@ -567,28 +541,14 @@ class LlamaCppEngine(InferenceEngine):
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
              check_loop: bool = False):
-        """Generate via llama-server's OpenAI-compatible /v1/chat/completions
-        (so the model's chat template gets applied for us) and return timing
-        metrics plus the reply text.
-        Returns: (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count, response_text)
-
-        n_predict is llama.cpp's own sampling-length parameter (what Ollama's
-        num_predict is itself forwarded to under the hood) — passed straight
-        through as an extension field alongside the OpenAI-shaped body;
-        -1 means unbounded, same convention the accuracy tests already rely on
-        for Ollama. See OllamaEngine.chat's docstring for check_loop.
-
-        stream_options.include_usage asks for a trailing chunk carrying a
-        standard OpenAI `usage` object — prompt_eval_count is read from its
-        `prompt_tokens` field (see below), not from timings.prompt_n, which
-        is only the tokens newly prefilled *this call* once the slot's prefix
-        cache absorbs part of a growing conversation (see `cache_n` in
-        llama-server's own timings) — using prompt_n as if it were the
-        running total silently under-counts every turn after the first,
-        letting a caller like LLMConversationBenchmark's growth loop believe
-        it's still nowhere near a checkpoint long after the real (uncounted)
-        history has kept growing underneath it.
-        """
+        """Generate via llama-server's OpenAI-compatible /v1/chat/completions.
+        Returns (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count,
+        response_text). n_predict is passed straight through as an extension
+        field (-1 = unbounded, same convention as Ollama); see OllamaEngine.chat
+        for check_loop. stream_options.include_usage asks for a trailing usage
+        chunk — prompt_eval_count reads its prompt_tokens (the true running
+        total), not timings.prompt_n (only newly-prefilled tokens this call,
+        which under-counts once the prefix cache kicks in)."""
         self._ensure_model(tag, num_ctx)
 
         payload = json.dumps({
@@ -659,10 +619,7 @@ class LlamaCppEngine(InferenceEngine):
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
 
-                # usage arrives in its own trailing chunk (empty choices) after
-                # the last content/timings chunk, so this always has the last
-                # word — the true total, overriding timings.prompt_n's
-                # cache-miss-only count above.
+                # Trailing chunk, so this overrides prompt_n above with the true total.
                 usage = chunk.get("usage")
                 if usage and usage.get("prompt_tokens") is not None:
                     prompt_eval_count = usage["prompt_tokens"]
@@ -670,10 +627,8 @@ class LlamaCppEngine(InferenceEngine):
         total = time.perf_counter() - t_start
         if ttft is None:
             ttft = total
-        # Reasoning models can stream their whole turn through
-        # delta.reasoning_content with delta.content empty — same fallback
-        # OllamaEngine.chat applies to message.thinking, for the same reason
-        # (an empty assistant turn would corrupt the next turn's history).
+        # A reasoning model can stream its whole turn via reasoning_content with content empty;
+        # falling back avoids an empty assistant turn corrupting history (same as OllamaEngine.chat).
         response_text = "".join(response_parts) or "".join(reasoning_parts)
         return ttft, eval_count, tps, prompt_eval_count, response_text
 

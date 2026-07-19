@@ -19,12 +19,7 @@ MEMORY_OVERHEAD_MULTIPLIER = 1.2
 # Headroom reserved on top of a model's estimated footprint before comparing
 # against what the machine has, so "fits" doesn't mean "exactly to the byte."
 VRAM_RESERVE_GB = 1.0   # driver / other GPU processes
-RAM_RESERVE_GB  = 8.0   # OS + Ollama + everything else — flat buffer, same
-                         # style as the existing disk-space check's 10 GB
-                         # buffer. Applies to the shared-memory path (Apple
-                         # Silicon unified memory, integrated GPUs, CPU-only)
-                         # where the model competes with the OS for the same
-                         # pool of RAM, unlike dedicated VRAM.
+RAM_RESERVE_GB  = 8.0   # OS + Ollama + everything else on the shared-memory path (unified/integrated/CPU-only)
 
 
 def parse_size_gb(s: str) -> float:
@@ -72,18 +67,11 @@ def compute_memory_ceiling_gb(*, os_name: str, total_ram_gb: float | None,
                                gpu_vendor: str, vram_gb: float | None = None
                                ) -> tuple[float | None, str]:
     """Decide how much memory a model can realistically use on this machine.
-
-    gpu_vendor is one of "nvidia", "amd", "intel", "integrated", or "none".
-    "amd"/"intel" here always means *discrete* — call classify_gpu() first
-    and pass "integrated" instead when it returns that, so this function
-    doesn't need to re-derive discrete/integrated itself.
-
-    Returns (ceiling_gb, note). ceiling_gb is None when it can't be reliably
-    determined (a discrete AMD/Intel GPU with no vram_gb — no
-    driver-agnostic VRAM query is implemented for that path yet); callers
-    should treat None as "don't filter, tell the user why" rather than
-    blocking anything.
-    """
+    gpu_vendor: "nvidia"/"amd"/"intel"/"integrated"/"none" — "amd"/"intel"
+    always means *discrete* here, so call classify_gpu() first and pass
+    "integrated" when it returns that. Returns (ceiling_gb, note); ceiling_gb
+    is None when it can't be reliably determined — callers should treat that
+    as "don't filter, tell the user why" rather than blocking anything."""
     if gpu_vendor == "nvidia" and vram_gb is not None:
         ceiling = vram_gb - VRAM_RESERVE_GB
         return ceiling, f"~{ceiling:.1f} GB (NVIDIA VRAM, minus {VRAM_RESERVE_GB:.0f} GB reserve)"

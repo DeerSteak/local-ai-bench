@@ -1,13 +1,6 @@
-"""base.py — the InferenceEngine interface.
-
-Every method here is derived directly from the Ollama-specific surface that
-used to live on Shared, so nothing is invented speculatively: a future
-llama.cpp/MLX engine implements this same contract and drops into the
-benchmark orchestration (timeout/loop/crash handling, scoring, warmup, results
-saving) untouched. `gpu_visible` on start() is the interface-level stand-in for
-what used to be an Ollama-specific env-var dict (HIP/CUDA/ROCR_VISIBLE_DEVICES
-emptied) — a future engine implements the equivalent knob (--n-gpu-layers 0,
-device="cpu", ...) without the caller knowing which one it turns.
+"""base.py — the InferenceEngine interface. Derived directly from the
+Ollama-specific surface that used to live on Shared, so a new engine drops
+into the existing orchestration untouched. See docs/engines.md.
 """
 
 from abc import ABC, abstractmethod
@@ -93,13 +86,22 @@ class InferenceEngine(ABC):
     def wait_until_unloaded(self, tag: str, timeout: int = 30) -> None:
         """Poll until `tag` is no longer loaded."""
 
+    @abstractmethod
+    def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
+                             warmup_runs: int = 1, timeout: int = 300) -> bool:
+        """Load `tag` configured to serve `n_parallel` simultaneous requests
+        at `per_slot_ctx` tokens each. Call once before any concurrent
+        generate() calls, which must pass the same n_parallel back. Returns
+        False on a load failure (a hard stop, no retry at a lower level)."""
+
     # ── inference ──
 
     @abstractmethod
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None) -> tuple[float, int, float]:
+                 num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
         """Single-shot generate. Returns (ttft_sec, tokens_generated,
-        tokens_per_sec)."""
+        tokens_per_sec). n_parallel must match the last prepare_concurrency
+        call (default 1 everywhere outside the concurrency test)."""
 
     @abstractmethod
     def chat(self, tag: str, messages: list, timeout: int = 600,

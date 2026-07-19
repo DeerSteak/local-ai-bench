@@ -14,10 +14,7 @@ from shared import Shared
 
 
 class EmbeddingBenchmark:
-    # max_words caps every chunk well under any embedding model's context
-    # length (mxbai-embed-large's is 512 tokens), which also avoids "content
-    # length exceeds context length" errors an unbounded chunker hits on a
-    # document's own markdown tables/code blocks.
+    # Caps every chunk well under any embedding model's context length (mxbai-embed-large's is 512 tokens).
     EMBED_DOCUMENT_PATH = config.SCRIPT_DIR / "sample_document.txt"
     EMBED_CHUNK_MAX_WORDS = 150
     EMBED_CHUNK_MIN_WORDS = 6
@@ -104,10 +101,7 @@ class EmbeddingBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up before measuring: the first embed call against a
-                # freshly-unloaded model pays a one-time load/setup cost unrelated
-                # to steady-state throughput, and folding it into a measured run
-                # would understate performance.
+                # First embed call pays a one-time load cost that would skew a measured run.
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:

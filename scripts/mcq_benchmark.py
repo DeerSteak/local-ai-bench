@@ -44,17 +44,9 @@ class MCQBenchmark:
     @staticmethod
     def parse_answer(response_text: str, valid_choices) -> str | None:
         """Extract the model's chosen letter from free-form text, or None.
-
-        Takes the *last* standalone valid letter, not the first — MCQ_NUM_PREDICT
-        is unbounded specifically so a reasoning model has room to think before
-        answering, and that reasoning routinely walks through several options by
-        letter ("A is wrong because... B is wrong because... so the answer is
-        C") before landing on a final choice. Taking the first letter would grab
-        a rejected option instead of the model's actual answer; a stray letter
-        that isn't a valid choice for this question ("A" in "As an AI...") is
-        skipped regardless of position. Mirrors MathBenchmark.parse_answer's
-        same last-not-first reasoning for the same reason.
-        """
+        Takes the *last* standalone valid letter, not the first — a reasoning
+        model walks through rejected options by letter before its final
+        choice. Same reasoning as MathBenchmark.parse_answer."""
         if not response_text:
             return None
         valid = {c.upper() for c in valid_choices}

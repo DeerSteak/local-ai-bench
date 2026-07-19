@@ -31,7 +31,7 @@ is an ABC with three groups of methods:
 | Group | Methods |
 |---|---|
 | Server/process lifecycle | `ensure_running`, `start(gpu_visible=...)`, `stop`, `available`, `reachable_or_abort`, `wait_for_recovery`, `is_connection_crash`, `tail_log` |
-| Model lifecycle | `model_pulled`, `list_installed_models`, `max_context_length`, `warmup`, `unload`, `unload_all`, `wait_until_unloaded` |
+| Model lifecycle | `model_pulled`, `list_installed_models`, `max_context_length`, `warmup`, `unload`, `unload_all`, `wait_until_unloaded`, `prepare_concurrency` |
 | Inference | `generate` (single-shot), `chat` (multi-turn), `embed` |
 
 A few design choices worth knowing if you're reading or extending this:
@@ -52,6 +52,14 @@ A few design choices worth knowing if you're reading or extending this:
 - **`generate`/`chat`/`embed` return plain tuples**, not engine-specific
   response objects, so a caller scoring a benchmark run never touches
   anything Ollama-shaped.
+- **`prepare_concurrency(tag, n_parallel, per_slot_ctx)`** (used only by the
+  concurrency test — see [Workloads](workloads.md#concurrency)) hides a real
+  difference between the two engines: `LlamaCppEngine` scales `per_slot_ctx`
+  up by `n_parallel` before it becomes llama-server's `-c`, because `-c` is a
+  *total* KV-cache budget split across `--parallel` slots, not a per-slot
+  size; `OllamaEngine` passes `per_slot_ctx` straight through and instead
+  restarts with `OLLAMA_NUM_PARALLEL=n_parallel`, since Ollama already
+  allocates a full `per_slot_ctx`-sized KV cache per parallel slot on its own.
 
 ## `OllamaEngine`
 
