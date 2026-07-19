@@ -381,6 +381,32 @@ class LlamaCppEngine(InferenceEngine):
             except json.JSONDecodeError:
                 continue
 
+    @staticmethod
+    def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
+        """Replace a self-reported tps with a wall-clock estimate whenever it
+        exceeds config.MAX_PLAUSIBLE_TPS — see that constant's docstring for
+        why llama-server's own numbers occasionally aren't trustworthy.
+        `tokens` is our own locally-counted content-chunk count, not the
+        server's predicted_n, so this fallback doesn't share the server-side
+        bug it's guarding against."""
+        if tps <= config.MAX_PLAUSIBLE_TPS:
+            return tps
+        decode_elapsed = total - ttft
+        return tokens / decode_elapsed if decode_elapsed > 0 else 0
+
+    @staticmethod
+    def _warn_tps_sanitized(tag: str, raw_tps: float, sanitized_tps: float,
+                             eval_count: int, predicted_ms: float) -> None:
+        """Surfaces the raw server values behind a _sanitize_tps substitution
+        — without this, the only trace of the bad reading is the corrected
+        number, which is useless for tracking down what llama-server
+        actually reported. predicted_ms is printed at full precision (not
+        rounded) since the anomaly is specifically that it's an implausibly
+        tiny fraction of a millisecond."""
+        Shared.warn(f"{tag}: implausible tps from server (predicted_n={eval_count}, "
+                    f"predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
+                    f"using wall-clock estimate ({sanitized_tps:.1f} tok/s) instead")
+
     # ── model process spawn ──
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
@@ -482,7 +508,8 @@ class LlamaCppEngine(InferenceEngine):
         ttft   = None
         tokens = 0
         tps    = 0
-        eval_count = 0
+        eval_count   = 0
+        predicted_ms = 0
 
         with self._urlopen(req, timeout) as resp:
             for chunk in self._iter_sse(resp):
@@ -505,7 +532,10 @@ class LlamaCppEngine(InferenceEngine):
         total = time.perf_counter() - t_start
         if ttft is None:
             ttft = total
-        return ttft, eval_count, tps
+        sanitized = self._sanitize_tps(tps, tokens, ttft, total)
+        if sanitized != tps:
+            self._warn_tps_sanitized(tag, tps, sanitized, eval_count, predicted_ms)
+        return ttft, eval_count, sanitized
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
@@ -539,6 +569,7 @@ class LlamaCppEngine(InferenceEngine):
         tokens = 0
         tps    = 0
         eval_count        = 0
+        predicted_ms      = 0
         prompt_eval_count = 0
         response_parts    = []
         reasoning_parts    = []
@@ -598,10 +629,13 @@ class LlamaCppEngine(InferenceEngine):
         total = time.perf_counter() - t_start
         if ttft is None:
             ttft = total
+        sanitized = self._sanitize_tps(tps, tokens, ttft, total)
+        if sanitized != tps:
+            self._warn_tps_sanitized(tag, tps, sanitized, eval_count, predicted_ms)
         # A reasoning model can stream its whole turn via reasoning_content with content empty;
         # falling back avoids an empty assistant turn corrupting history.
         response_text = "".join(response_parts) or "".join(reasoning_parts)
-        return ttft, eval_count, tps, prompt_eval_count, response_text
+        return ttft, eval_count, sanitized, prompt_eval_count, response_text
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
         """Embed every string in `inputs` in a single /v1/embeddings call.

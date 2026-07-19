@@ -74,6 +74,15 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
+# tokens/sec above which a single request's self-reported tps is treated as
+# unreliable rather than real — llama-server's streamed timings.predicted_ms
+# can, under heavy concurrent-slot contention, report an implausibly small
+# cumulative decode time for a chunk relative to predicted_n, producing a
+# tps ratio with no physical basis (observed up to ~1e6 tok/s on real
+# hardware). No real single-request stream gets remotely close to this on
+# any current hardware, so it's a safe tripwire, not a tuned threshold.
+MAX_PLAUSIBLE_TPS = 5000.0
+
 GREEN  = "\033[92m"
 YELLOW = "\033[93m"
 RED    = "\033[91m"
