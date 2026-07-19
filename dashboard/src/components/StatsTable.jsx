@@ -155,9 +155,9 @@ function ImagesTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
-function ConcurrencyTable({ files, sortConfig, onCycleSort }) {
+function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenConcurrencyData(files).sort((a, b) => {
+  const rows = flattenConcurrencyData(files, section).sort((a, b) => {
     const ak = a[sortConfig.key] ?? "";
     const bk = b[sortConfig.key] ?? "";
     return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
@@ -267,7 +267,8 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
       <div className={styles.tableTitle}>{title}</div>
       {(section === "llm" || section === "llm_conversation") &&
         <LLMTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
-      {section === "concurrency" && <ConcurrencyTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {(section === "concurrency_tool" || section === "concurrency_chat") &&
+        <ConcurrencyTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "accuracy"  && <AccuracyTable files={files} testKey={accuracyTest} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}

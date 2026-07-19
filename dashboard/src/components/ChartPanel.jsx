@@ -35,10 +35,10 @@ export default function ChartPanel({
     );
   }
 
-  if (section === "concurrency") {
+  if (section === "concurrency_tool" || section === "concurrency_chat") {
     return (
       <ConcurrencyPanel
-        containerRef={containerRef} files={files} enabledModels={enabledModels}
+        containerRef={containerRef} files={files} section={section} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
     );

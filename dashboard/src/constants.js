@@ -143,20 +143,25 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "concurrency", "accuracy", "embeddings", "images"];
+export const SECTIONS = ["llm", "llm_conversation", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
-  concurrency: "Concurrency",
+  concurrency_tool: "Concurrency (Tool)",
+  concurrency_chat: "Concurrency (Chat)",
   accuracy: "Accuracy",
   embeddings: "Embeddings",
   images: "Images",
 };
 
-// Ordered concurrency levels swept by concurrency_benchmark.py — matches
-// scripts/config.py's CONCURRENCY_LEVELS (kept as strings since results JSON
-// keys are strings).
-export const CONCURRENCY_LEVELS = ["1", "2", "4", "8", "16", "32", "64"];
+// Ordered concurrency levels swept by concurrency_benchmark.py, one per
+// test — matches scripts/config.py's CONCURRENCY_TOOL_LEVELS/
+// CONCURRENCY_CHAT_LEVELS (kept as strings since results JSON keys are
+// strings).
+export const CONCURRENCY_LEVELS = {
+  concurrency_tool: ["1", "2", "4", "6", "8", "12", "16"],
+  concurrency_chat: ["1", "2", "4", "8", "16", "24", "32"],
+};
 
 // Human-readable reason for ConcurrencyBenchmark.run stopping a model's sweep
 // early (results JSON's per-model "stopped_at" field).

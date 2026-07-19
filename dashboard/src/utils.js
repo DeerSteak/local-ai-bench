@@ -174,11 +174,11 @@ export function getImageBarStatusLabel(file, model, res) {
 
 // Return all LLM model keys from the loaded files, in canonical order.
 // Checks every section that runs the shared LLM roster — single-shot,
-// conversation, the three accuracy tests, and concurrency — since the Models
-// filter is shared UI across all of them. A model present in only one section
-// (e.g. a file that only ran `--tests acc`, leaving llm/llm_conversation
-// empty) should still show up rather than leaving the filter (and every
-// section that depends on it) empty.
+// conversation, the three accuracy tests, and both concurrency tests — since
+// the Models filter is shared UI across all of them. A model present in only
+// one section (e.g. a file that only ran `--tests acc`, leaving
+// llm/llm_conversation empty) should still show up rather than leaving the
+// filter (and every section that depends on it) empty.
 export function getAllLLMModels(files) {
   const s = new Set();
   for (const f of files) {
@@ -187,7 +187,8 @@ export function getAllLLMModels(files) {
     for (const m of Object.keys(f.data.mcq || {})) s.add(m);
     for (const m of Object.keys(f.data.math || {})) s.add(m);
     for (const m of Object.keys(f.data.code || {})) s.add(m);
-    for (const m of Object.keys(f.data.concurrency || {})) s.add(m);
+    for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
+    for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
   }
   const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
@@ -809,12 +810,16 @@ export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
 }
 
 // ── Concurrency ─────────────────────────────────────────────────────────────
+// `section` is "concurrency_tool" or "concurrency_chat" — the two
+// concurrency tests share this shape but have different level ladders (see
+// CONCURRENCY_LEVELS in constants.js) and live under separate results JSON
+// keys.
 
-// Return all model keys present in the concurrency section across files, in
+// Return all model keys present in a concurrency section across files, in
 // canonical order (same LLM roster as everything else).
-export function getAllConcurrencyModels(files) {
+export function getAllConcurrencyModels(files, section) {
   const s = new Set();
-  for (const f of files) for (const m of Object.keys(f.data.concurrency || {})) s.add(m);
+  for (const f of files) for (const m of Object.keys(f.data[section] || {})) s.add(m);
   const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
   return [...known, ...unknown];
@@ -823,16 +828,17 @@ export function getAllConcurrencyModels(files) {
 // Concurrency: one chart per model. X = concurrency level, lines = files.
 // metric: "tps" (per-request tokens/sec), "ttft", or "aggregate" (aggregate
 // tokens/sec across the whole concurrent batch).
-export function buildConcurrencyDataForModel(files, model, metric) {
+export function buildConcurrencyDataForModel(files, section, model, metric) {
+  const allLevels = CONCURRENCY_LEVELS[section];
   const levelSet = new Set();
   for (const f of files)
-    for (const level of Object.keys(f.data.concurrency?.[model] || {}))
-      if (CONCURRENCY_LEVELS.includes(level)) levelSet.add(level);
-  const levels = CONCURRENCY_LEVELS.filter(l => levelSet.has(l));
+    for (const level of Object.keys(f.data[section]?.[model] || {}))
+      if (allLevels.includes(level)) levelSet.add(level);
+  const levels = allLevels.filter(l => levelSet.has(l));
   return levels.map(level => {
     const row = { levelLabel: `${level}-way` };
     files.forEach((f, fi) => {
-      const s = f.data.concurrency?.[model]?.[level];
+      const s = f.data[section]?.[model]?.[level];
       if (!s) return;
       row[`f${fi}`] = metric === "tps" ? s.tps_mean
         : metric === "ttft" ? s.ttft_mean_sec
@@ -843,31 +849,33 @@ export function buildConcurrencyDataForModel(files, model, metric) {
 }
 
 // Info about why a (file, model) concurrency sweep stopped climbing before
-// CONCURRENCY_LEVELS ran out — null if it wasn't cut short (ran every level,
+// its level ladder ran out — null if it wasn't cut short (ran every level,
 // or has no concurrency data at all). "slow" stops after recording the level
 // that triggered it (a real measurement), the other reasons stop before ever
 // recording that level's data, hence nextLevel vs lastLevel below.
-export function getConcurrencyStopInfo(file, model) {
-  const d = file.data.concurrency?.[model];
+export function getConcurrencyStopInfo(file, section, model) {
+  const allLevels = CONCURRENCY_LEVELS[section];
+  const d = file.data[section]?.[model];
   const stoppedAt = d?.stopped_at;
   if (!stoppedAt) return null;
-  const presentLevels = CONCURRENCY_LEVELS.filter(l => d[l] != null);
+  const presentLevels = allLevels.filter(l => d[l] != null);
   const lastLevel = presentLevels[presentLevels.length - 1] || null;
-  const lastIdx = lastLevel ? CONCURRENCY_LEVELS.indexOf(lastLevel) : -1;
-  const nextLevel = stoppedAt === "slow" ? null : (CONCURRENCY_LEVELS[lastIdx + 1] || null);
+  const lastIdx = lastLevel ? allLevels.indexOf(lastLevel) : -1;
+  const nextLevel = stoppedAt === "slow" ? null : (allLevels[lastIdx + 1] || null);
   return { reason: stoppedAt, label: CONCURRENCY_STOP_LABELS[stoppedAt] || stoppedAt, lastLevel, nextLevel };
 }
 
-export function flattenConcurrencyData(files) {
+export function flattenConcurrencyData(files, section) {
+  const allLevels = CONCURRENCY_LEVELS[section];
   return files.flatMap(f =>
-    Object.entries(f.data.concurrency || {}).flatMap(([model, d]) => {
+    Object.entries(f.data[section] || {}).flatMap(([model, d]) => {
       if (d?.skipped) {
         return [{
           _fileId: f.id, model, level: "—", skipped: true,
           skip_reason: d.skip_reason, skip_detail: d.skip_detail,
         }];
       }
-      return CONCURRENCY_LEVELS.filter(l => d[l]).map(level => {
+      return allLevels.filter(l => d[l]).map(level => {
         const s = d[level];
         return {
           _fileId: f.id, model, level,
