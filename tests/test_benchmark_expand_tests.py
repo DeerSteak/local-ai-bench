@@ -1,8 +1,21 @@
-from benchmark import ACCURACY_TESTS, expand_tests
+from benchmark import ACCURACY_TESTS, CONCURRENCY_TESTS, expand_tests
 
 
 def test_acc_expands_to_accuracy_tests():
     assert expand_tests(["acc"]) == ACCURACY_TESTS
+
+
+def test_conc_expands_to_concurrency_tests():
+    assert expand_tests(["conc"]) == CONCURRENCY_TESTS
+
+
+def test_conc_and_acc_together_preserve_order():
+    assert expand_tests(["conc", "acc"]) == CONCURRENCY_TESTS + ACCURACY_TESTS
+
+
+def test_conc_and_explicit_member_does_not_duplicate():
+    assert expand_tests(["conc", "conc_tool"]) == CONCURRENCY_TESTS
+    assert expand_tests(["conc_tool", "conc"]) == CONCURRENCY_TESTS
 
 
 def test_non_acc_tests_pass_through_unchanged():

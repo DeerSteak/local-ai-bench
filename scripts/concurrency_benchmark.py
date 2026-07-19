@@ -1,6 +1,7 @@
 """
 concurrency_benchmark.py — per-request latency and aggregate throughput at
-increasing simultaneous request counts. See docs/workloads.md#concurrency.
+increasing simultaneous request counts. Shared implementation for both the
+"tool" and "chat" concurrency tests — see docs/workloads.md#concurrency.
 """
 
 import time
@@ -12,34 +13,41 @@ from shared import Shared
 
 
 class ConcurrencyBenchmark:
-    # A crashed batch is recorded here (delete to retry); a plain
-    # prepare_concurrency ceiling is not — see docs/workloads.md#concurrency.
-    CONCURRENCY_CRASH_CACHE = Path(".concurrency_crash_cache.json")
+    # Separate crash caches per test — a crash on one doesn't affect retry
+    # state on the other, since they run different levels/context sizes.
+    TOOL_CRASH_CACHE = Path(".concurrency_tool_crash_cache.json")
+    CHAT_CRASH_CACHE = Path(".concurrency_chat_crash_cache.json")
 
     @staticmethod
-    def should_stop_escalating(level: int, mean_tps: float, force_all: bool) -> bool:
-        """True if the sweep shouldn't climb past `level` for this model."""
-        if force_all:
+    def should_stop_escalating(level: int, mean_tps: float, force_all: bool,
+                                soft_exit_floor: int | None) -> bool:
+        """True if the sweep shouldn't climb past `level` for this model.
+        `soft_exit_floor=None` means this test never soft-exits (the tool
+        test) — only a hard stop (crash/load-failure) ends its sweep early."""
+        if force_all or soft_exit_floor is None:
             return False
-        if level < config.CONCURRENCY_MIN_LEVEL_BEFORE_SOFT_EXIT:
+        if level < soft_exit_floor:
             return False
         return mean_tps < config.SLOW_MODEL_MIN_TPS
 
-    def run(self, engine, models, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
+    def run(self, engine, models, levels, per_request_context, warmup_runs,
+            crash_cache_path: Path, section_label: str,
+            soft_exit_floor: int | None = None, force_all=False,
+            save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
-            Shared.err("Inference engine not reachable — skipping concurrency benchmark")
+            Shared.err(f"Inference engine not reachable — skipping {section_label} benchmark")
             return results
 
-        crash_cache = Shared.load_crash_cache(ConcurrencyBenchmark.CONCURRENCY_CRASH_CACHE)
+        crash_cache = Shared.load_crash_cache(crash_cache_path)
 
         for model in models:
             tag   = model["tag"]
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"Concurrency ({engine.name}): {label}")
+            Shared.section(f"{section_label} ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break
@@ -50,8 +58,7 @@ class ConcurrencyBenchmark:
                     Shared.warn("Download it with: python setup_check.py")
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache,
-                                                       ConcurrencyBenchmark.CONCURRENCY_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
@@ -59,11 +66,11 @@ class ConcurrencyBenchmark:
                 results[short] = {}
                 stopped_at = None
 
-                for level in config.CONCURRENCY_LEVELS:
+                for level in levels:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
-                               f"{config.CONCURRENCY_CONTEXT} tokens/slot ...")
+                               f"{per_request_context} tokens/slot ...")
 
-                    if not engine.prepare_concurrency(tag, level, config.CONCURRENCY_CONTEXT, warmup_runs):
+                    if not engine.prepare_concurrency(tag, level, per_request_context, warmup_runs):
                         Shared.warn(f"{label}: couldn't load at {level}-way concurrency — "
                                     "this is the model's real ceiling, stopping here")
                         results[short]["memory_at_failure"] = Shared.sample_memory_gb()
@@ -77,7 +84,7 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: loaded at {level}-way — {', '.join(mem_bits)} in use")
 
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
-                    prompts = [Shared.build_prompt_for_context(config.CONCURRENCY_CONTEXT)
+                    prompts = [Shared.build_prompt_for_context(per_request_context)
                                for _ in range(level)]
 
                     batch_t0 = time.perf_counter()
@@ -85,7 +92,7 @@ class ConcurrencyBenchmark:
                         with ThreadPoolExecutor(max_workers=level) as pool:
                             futures = [
                                 pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT,
-                                            config.CONCURRENCY_CONTEXT, level)
+                                            per_request_context, level)
                                 for p in prompts
                             ]
                             samples = [f.result() for f in futures]
@@ -95,7 +102,7 @@ class ConcurrencyBenchmark:
                                        f"last server output:\n{engine.tail_log()}")
                             engine.wait_for_recovery()
                             results[short]["crashed_at"] = Shared.record_crash(
-                                tag, crash_cache, ConcurrencyBenchmark.CONCURRENCY_CRASH_CACHE,
+                                tag, crash_cache, crash_cache_path,
                                 f"running {level}-way concurrency")
                             stopped_at = "crashed"
                         else:
@@ -126,7 +133,7 @@ class ConcurrencyBenchmark:
                         f"TPS={mean_tps:.1f} — aggregate {aggregate_tps:.1f} tok/s"
                     )
 
-                    if self.should_stop_escalating(level, mean_tps, force_all):
+                    if self.should_stop_escalating(level, mean_tps, force_all, soft_exit_floor):
                         Shared.warn(f"{label}: per-request TPS ({mean_tps:.1f}) below "
                                     f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s at {level}-way "
                                     "— stopping here")

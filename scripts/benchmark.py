@@ -2,12 +2,12 @@
 """
 benchmark.py — Cross-platform LLM benchmark suite.
 
-Tests: llm, conv, img, emb, mcq, math, code, conc (opt-in) — see
-docs/workloads.md for what each measures. Servers start/stop automatically —
-see docs/how-it-works.md.
+Tests: llm, conv, img, emb, mcq, math, code, conc_tool, conc_chat (both
+opt-in) — see docs/workloads.md for what each measures. Servers start/stop
+automatically — see docs/how-it-works.md.
 
 Usage:
-  python benchmark.py                  # run all tests except conc
+  python benchmark.py                  # run all tests except conc_tool/conc_chat
   python benchmark.py --tests llm      # run only LLM single-shot tests
   python benchmark.py --help           # full flag reference
 """
@@ -110,6 +110,17 @@ def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_ta
     return resolved
 
 
+def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[dict]:
+    """Filter `catalog` down to entries whose tag is actually downloaded
+    locally (per `installed_tags`, from LlamaCppEngine.list_installed_models),
+    preserving catalog order. Used by the concurrency tests, which scale to
+    whatever's on the machine — small hardware that only downloaded
+    xsmall/small models tests those; a machine with medium/large downloaded
+    tests those too — rather than a fixed tier cap like --maxtier."""
+    installed = set(installed_tags)
+    return [m for m in catalog if m["tag"] in installed]
+
+
 def sidecar_path(out_path: str, prefix: str) -> Path:
     """Build a sidecar file path alongside the main results JSON, swapping its
     "results_" stem prefix for `prefix` (or prepending `prefix` if the stem
@@ -122,15 +133,22 @@ def sidecar_path(out_path: str, prefix: str) -> Path:
 
 
 ACCURACY_TESTS = ["mcq", "math", "code"]
+CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
+
+# --tests shorthand groups, expanded by expand_tests below.
+TEST_GROUPS = {
+    "acc":  ACCURACY_TESTS,
+    "conc": CONCURRENCY_TESTS,
+}
 
 
 def expand_tests(tests: list[str]) -> list[str]:
-    """Expand shorthand groups (currently just "acc") in --tests into their
+    """Expand shorthand groups (see TEST_GROUPS) in --tests into their
     underlying individual test names, preserving order and de-duplicating so
     e.g. --tests acc mcq doesn't run the MCQ benchmark twice."""
     expanded = []
     for t in tests:
-        for name in (ACCURACY_TESTS if t == "acc" else [t]):
+        for name in TEST_GROUPS.get(t, [t]):
             if name not in expanded:
                 expanded.append(name)
     return expanded
@@ -195,15 +213,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc", "conc"],
+        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc",
+                 "conc_tool", "conc_chat", "conc"],
         default=["llm", "conv", "emb", "img", "mcq", "math", "code"],
-        help="Which benchmarks to run (default: all except 'conc'). 'acc' is "
-             "shorthand for every accuracy-style test ('mcq', 'math', and "
-             "'code'). 'conc' is the concurrency test (see workloads.md) — "
-             "opt-in, not part of the default set, since it always restricts "
-             "to xsmall+small tier models regardless of --maxtier and takes "
-             "noticeably longer per model (a 1-64 concurrent-request sweep "
-             "instead of one request at a time).",
+        help="Which benchmarks to run (default: all except the concurrency "
+             "tests). 'acc' is shorthand for every accuracy-style test "
+             "('mcq', 'math', and 'code'). 'conc_tool' and 'conc_chat' are "
+             "the two concurrency tests (see workloads.md) — opt-in, not "
+             "part of the default set, since each takes noticeably longer "
+             "per model than one request at a time, and both scope to "
+             "whatever LLM models are actually downloaded locally "
+             "(ignoring --maxtier — a machine that only downloaded "
+             "xsmall/small models tests those; one with medium/large "
+             "downloaded tests those too) rather than a fixed model list. "
+             "'conc_tool' simulates agentic/tool-calling fan-out: a 1-8 "
+             "concurrent-request sweep at a short per-request context, every "
+             "level always run (no early exit). 'conc_chat' simulates a chat "
+             "server under load: a 1-32 concurrent-request sweep at a long "
+             "per-request context, with an early exit once tok/s craters "
+             "(disable via --force-all). 'conc' is shorthand for both.",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -337,21 +365,31 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
     llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
-    if args.models:
-        engine.ensure_running()  # so a custom (non-catalog) tag can resolve against what's actually downloaded
+    needs_installed_tags = args.models or "conc_tool" in args.tests or "conc_chat" in args.tests
+    if needs_installed_tags:
+        # So a custom (non-catalog) --models tag, and the concurrency tests'
+        # "whatever's downloaded" scoping, can resolve against what's actually
+        # downloaded locally.
+        engine.ensure_running()
         installed_tags = [m["tag"] for m in engine.list_installed_models()]
+
+    if args.models:
         llm_models = resolve_custom_models(args.models, llm_models, installed_tags)
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
                        f"in the selected tier ({tier_label}) or downloaded locally — "
                        "llm/conv/mcq/math/code tests will have nothing to run")
 
-    # The concurrency test always restricts to xsmall+small regardless of
-    # --maxtier (see concurrency_benchmark.py's module docstring) — --models
-    # still narrows within that fixed catalog, same as llm_models above.
-    conc_models = LLM_MODELS_XSMALL + LLM_MODELS_SMALL
-    if args.models:
-        conc_models = resolve_custom_models(args.models, conc_models, installed_tags)
+    # Both concurrency tests scope to the same model set — every catalog
+    # model actually downloaded locally, ignoring --maxtier (see
+    # downloaded_models's docstring) — --models still narrows further, same
+    # as llm_models above. They differ in levels/context/exit behavior, not
+    # model scope.
+    conc_models = []
+    if "conc_tool" in args.tests or "conc_chat" in args.tests:
+        conc_models = downloaded_models(LLM_MODELS, installed_tags)
+        if args.models:
+            conc_models = resolve_custom_models(args.models, conc_models, installed_tags)
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
@@ -440,7 +478,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "mcq":             {},
             "math":            {},
             "code":            {},
-            "concurrency":     {},
+            "concurrency_tool": {},
+            "concurrency_chat": {},
         }
 
         def _checkpoint(label=""):
@@ -449,8 +488,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
         try:
-            # ── LLM-backed tests (llm, conv, mcq, math, code, emb, conc) share one server lifecycle
-            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb", "conc") if t in tests]
+            # ── LLM-backed tests share one server lifecycle
+            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb",
+                                      "conc_tool", "conc_chat") if t in tests]
             if llm_tests:
                 Shared.section("Starting Servers")
                 for other_name in _engines:
@@ -561,24 +601,53 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
                 _checkpoint("embeddings done")
 
-            # ── Concurrency ────────────────────────────────────────────────────────
-            if "conc" in tests:
-                def _conc_save(partial):
-                    results["concurrency"] = partial
+            # ── Concurrency: tool-style (agentic fan-out, no early exit) ───────────
+            if "conc_tool" in tests:
+                def _conc_tool_save(partial):
+                    results["concurrency_tool"] = partial
                     _checkpoint()
 
                 if not conc_models:
-                    Shared.warn("--models matched no xsmall/small-tier models — "
-                                "concurrency test will have nothing to run")
+                    Shared.warn("No downloaded models to test — "
+                                "conc_tool test will have nothing to run")
 
-                results["concurrency"] = ConcurrencyBenchmark().run(
+                results["concurrency_tool"] = ConcurrencyBenchmark().run(
                     engine=engine,
                     models=conc_models,
+                    levels=config.CONCURRENCY_TOOL_LEVELS,
+                    per_request_context=config.CONCURRENCY_TOOL_CONTEXT,
                     warmup_runs=args.warmup,
+                    crash_cache_path=ConcurrencyBenchmark.TOOL_CRASH_CACHE,
+                    section_label="Concurrency (Tool)",
+                    soft_exit_floor=None,
                     force_all=args.force_all,
-                    save_fn=_conc_save,
+                    save_fn=_conc_tool_save,
                 )
-                _checkpoint("concurrency done")
+                _checkpoint("concurrency (tool) done")
+
+            # ── Concurrency: chat-server (many simultaneous users, soft exit) ──────
+            if "conc_chat" in tests:
+                def _conc_chat_save(partial):
+                    results["concurrency_chat"] = partial
+                    _checkpoint()
+
+                if not conc_models:
+                    Shared.warn("No downloaded models to test — "
+                                "conc_chat test will have nothing to run")
+
+                results["concurrency_chat"] = ConcurrencyBenchmark().run(
+                    engine=engine,
+                    models=conc_models,
+                    levels=config.CONCURRENCY_CHAT_LEVELS,
+                    per_request_context=config.CONCURRENCY_CHAT_CONTEXT,
+                    warmup_runs=args.warmup,
+                    crash_cache_path=ConcurrencyBenchmark.CHAT_CRASH_CACHE,
+                    section_label="Concurrency (Chat)",
+                    soft_exit_floor=config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+                    force_all=args.force_all,
+                    save_fn=_conc_chat_save,
+                )
+                _checkpoint("concurrency (chat) done")
 
             # Done with every LLM-backed test — restore normal GPU-enabled mode if
             # this run forced CPU-only, so the machine isn't left in that state
