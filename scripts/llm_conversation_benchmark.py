@@ -6,7 +6,8 @@ sends the full history via /api/chat, so the slot cache carries prior turns
 forward — TTFT/TPS at each depth reflect a new turn against an already-filled
 context, not a cold fill. Expensive, so it runs one conversation per model
 (--runs ignored), grown from empty toward the model's real context ceiling,
-sampling at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K. See docs/workloads.md.
+sampling at 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, and 96K. The
+xsmall/small tiers stop at 48K. See docs/workloads.md.
 """
 
 from pathlib import Path

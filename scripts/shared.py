@@ -517,12 +517,12 @@ class Shared:
 
     @staticmethod
     def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:
-        """Deterministically picks `n` questions, touching every category
-        rather than risking one skipped entirely — for fast dev iteration
-        only, never a full/published run. Seeded per-category shuffle,
-        round-robin across categories in sorted order (reproducible, and
-        naturally proportional to category size). Returns `questions`
-        unchanged if `n >= len(questions)`."""
+        """Deterministically picks `n` questions round-robin by category.
+
+        Every category is touched when `n` is at least the category count.
+        This is for fast dev iteration only, never a full/published run.
+        Returns `questions` unchanged if `n >= len(questions)`.
+        """
         if n >= len(questions):
             return list(questions)
         by_category: dict[str, list[dict]] = {}
@@ -722,8 +722,9 @@ class Shared:
     @staticmethod
     def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
                          hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
-        """Heuristic for a degenerate generation loop in a timed-out accuracy-
-        test response: true if the model either repeated a substantial chunk
+        """Heuristic for a degenerate accuracy-response generation loop.
+
+        True if the model either repeated a substantial chunk
         of text verbatim, or repeatedly hedged/self-corrected without ever
         landing on an answer. See _has_repeated_verbatim_ngram and
         _has_repeated_hedging_phrase for the two signals."""
@@ -747,8 +748,8 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None
                                 ) -> dict:
-        """Shared run() body for the MCQ/Math/Code accuracy benchmarks — only
-        differ in how a question is asked (`ask_fn`), a timed-out response is
+        """Shared run() body for the MCQ/Math/Code/Tool accuracy benchmarks — only
+        differ in how a question is asked (`ask_fn`), a partial response is
         rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
         `ask_fn(tag, q) -> (parsed_answer, raw_text)`,
         `rescore_partial_fn(q, partial_text) -> parsed_answer`,
@@ -817,9 +818,9 @@ class Shared:
                     # timed_out_ids and likely_loop_ids are independent buckets — a run
                     # can be slow-but-not-looping, looping-and-caught-early, or both.
                     if status == "timed_out":
-                        # Scored wrong, run continues — cheaper than abandoning the rest of the bank over one stuck question.
+                        # The partial response, if any, was rescored above; continue the bank either way.
                         Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
-                                    "scoring as wrong and continuing")
+                                    "scoring the partial response and continuing")
                         timed_out_ids.append(q["id"])
                         if partial_text and Shared.looks_like_loop(partial_text):
                             likely_loop_ids.append(q["id"])

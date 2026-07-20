@@ -124,11 +124,7 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
 
 
 def sidecar_path(out_path: str, prefix: str) -> Path:
-    """Build a sidecar file path alongside the main results JSON, swapping its
-    "results_" stem prefix for `prefix` (or prepending `prefix` if the stem
-    doesn't start with "results_", e.g. after --out) so hostname and timestamp
-    stay identical between the two — same convention as the images_*/ folder
-    (see docs/project-structure.md)."""
+    """Build a results-directory sidecar path from the main output's stem."""
     stem = Path(out_path).stem
     name = prefix + stem[len("results_"):] if stem.startswith("results_") else f"{prefix}{stem}"
     return config.RESULTS_DIR / f"{name}.json"
@@ -228,7 +224,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(ignoring --maxtier — a machine that only downloaded "
              "xsmall/small models tests those; one with medium/large "
              "downloaded tests those too) rather than a fixed model list. "
-             "'conc_tool' simulates agentic/tool-calling fan-out: a 1-8 "
+             "'conc_tool' simulates short-context agentic fan-out: a 1-16 "
              "concurrent-request sweep at a short per-request context, every "
              "level always run (no early exit). 'conc_chat' simulates a chat "
              "server under load: a 1-32 concurrent-request sweep at a long "
@@ -242,20 +238,22 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--runs", type=int, default=config.N_RUNS, choices=range(1, 11),
         metavar="[1-10]",
-        help=f"Measured runs per checkpoint, averaged (default: {config.N_RUNS}). "
-             "Applies separately to every model, context length, and test mode "
-             "that's enabled, so total measured time scales roughly in "
+        help=f"Measured runs per checkpoint for single-shot LLM, embeddings, and "
+             f"images, averaged (default: {config.N_RUNS}). Conversation, accuracy, "
+             "and concurrency tests use one measured pass/batch. Total measured time scales roughly in "
              "proportion — e.g. going from 3 to 6 runs roughly doubles it "
              "(warmup time is unaffected; see --warmup).",
     )
     parser.add_argument(
         "--timeout", type=int, default=None,
-        help="Seconds per run (warmup and measured) before aborting this model (default: 300)",
+        help="Seconds per engine generation/chat run and warmup before aborting "
+             "(default: 300). Image generations use twice this value; embedding "
+             "calls use their fixed 120s engine timeout; accuracy questions use --acc-timeout.",
     )
     parser.add_argument(
         "--acc-timeout", type=int, default=None,
         help="Seconds per question before giving up on it, for the accuracy tests "
-             f"(mcq, math, code, tool) — a timed-out question is scored wrong and the run "
+             f"(mcq, math, code, tool) — any partial response is scored normally and the run "
              f"moves on (default: {config.ACC_TIMEOUT})",
     )
     parser.add_argument(
@@ -304,8 +302,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--sample", type=int, default=None, metavar="N",
         help="Dev-only: run 'mcq'/'math'/'code'/'tool' against a deterministic N-question "
-             "subset of each bank instead of the full thing, stratified so every "
-             "category is represented. Same N always yields the same questions for "
+             "subset of each bank instead of the full thing, selected by deterministic "
+             "round-robin across categories. Every category is represented when N is "
+             "at least that bank's category count. Same N yields the same questions for "
              "a given bank version, and the exact sampled IDs are recorded in the "
              "output JSON under 'sample_ids'. Never use for a result meant to be "
              "compared against a full-bank run or published (default: full bank).",
@@ -314,7 +313,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         "--force-all", action="store_true",
         help=f"Ignore the {config.SLOW_MODEL_MIN_TPS:.0f} tok/s slow-model cutoff: run every "
              "context length in the LLM prefill test and always run the conversation "
-             "test, even for models that would otherwise be marked slow and skipped. "
+             "test, even for models that would otherwise be marked slow and skipped; "
+             "also disable the chat-concurrency soft exit. "
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
     _engines = registered_engine_names()
@@ -380,7 +380,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         if not llm_models:
             Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
                        f"in the selected tier ({tier_label}) or downloaded locally — "
-                       "llm/conv/mcq/math/code tests will have nothing to run")
+                       "llm/conv/mcq/math/code/tool tests will have nothing to run")
 
     # Both concurrency tests scope to the same model set — every catalog
     # model actually downloaded locally, ignoring --maxtier (see
@@ -561,8 +561,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 results["llm_conversation"].update(llm_conv_skips)
                 _checkpoint("LLM conversation done")
 
-            # ── Accuracy tests (MCQ / Math / Code) ────────────────────────────────
-            # Identical wiring for all three — only the test name, benchmark class,
+            # ── Accuracy tests (MCQ / Math / Code / Tool) ─────────────────────────
+            # Identical wiring for all four — only the test name, benchmark class,
             # and display label vary.
             for test_name, Bench, done_label in (
                 ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"),

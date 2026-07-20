@@ -3,7 +3,7 @@ config.py — shared constants for the benchmark suite.
 
 Other modules should `import config` and reference `config.NAME` rather than
 `from config import NAME` for any value main() can override via CLI flags
-(currently RUN_TIMEOUT and ACCURACY_TEST_TIMEOUT) — a `from` import binds a
+(currently RUN_TIMEOUT, ACC_TIMEOUT, and N_RUNS) — a `from` import binds a
 local copy at import time and won't see a later `config.RUN_TIMEOUT = ...`
 assignment.
 """
@@ -61,10 +61,10 @@ IMAGE_PROMPT = (
 
 VERSION        = "3.0"
 WARMUP_RUNS    = 2
-N_RUNS         = 3   # measured runs per test — every test averages exactly this many
-RUN_TIMEOUT = 300   # seconds per run (warmup and measured) before aborting — overridden by --timeout
+N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
+RUN_TIMEOUT = 300   # base generation/chat timeout; images use 2x — overridden by --timeout
 
-# Per accuracy question (mcq/math/code), overridden by --acc-timeout — much shorter than RUN_TIMEOUT
+# Per accuracy question (mcq/math/code/tool), overridden by --acc-timeout — much shorter than RUN_TIMEOUT
 # since a stuck model's unbounded token budget would otherwise burn 300s per question before anyone noticed.
 ACC_TIMEOUT = 60
 
