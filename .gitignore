@@ -195,6 +195,8 @@ hf.txt
 .mcq_crash_cache.json
 .math_crash_cache.json
 .code_crash_cache.json
+.concurrency_tool_crash_cache.json
+.concurrency_chat_crash_cache.json
 /scripts/.omc
 /.claude
 /mba-results

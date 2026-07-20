@@ -53,7 +53,7 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 |---|---|---|---|
 | Mistral 7B v0.3 Q4_K_M | `mistral:7b-instruct-v0.3-q4_K_M` | ~4.4 GB | Dense |
 | Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~5.0 GB | Dense |
-| Phi 4 14B | `phi4:14b-q4_K_M` | ~8.5 GB | Dense |
+| Phi 4 14B | `phi4:14b-q4_K_M` | ~8.3 GB | Dense |
 
 ### Medium tier (26–35B params)
 
@@ -174,17 +174,39 @@ Question banks grow and change over time (the MCQ and math banks each doubled in
 
 ## Concurrency
 
-Every other LLM test in this suite is strictly one request at a time — this is the only one that measures how per-request latency and aggregate throughput scale as multiple simultaneous requests hit the same loaded model, which matters far more than single-stream numbers for anyone thinking about serving more than one user (or one agent's parallel tool-calls) at once. Opt-in via `--tests conc` — it's not part of the default set, since it always restricts to the xsmall and small tiers regardless of `--maxtier` and takes noticeably longer per model than a single request.
+Every other LLM test in this suite is strictly one request at a time — these two measure how per-request latency and aggregate throughput scale as multiple simultaneous requests hit the same loaded model, which matters far more than single-stream numbers for anyone thinking about serving more than one user (or one agent's parallel tool-calls) at once. They're two separate tests because "agentic tool-calling fan-out" and "many simultaneous chat users" are genuinely different workload shapes — different concurrency ceilings, different per-request context, and different early-exit tradeoffs — not one sweep with one shape. Both are opt-in via `--tests conc_tool`/`--tests conc_chat` (`--tests conc` runs both) — not part of the default set, since each takes noticeably longer per model than a single request.
 
-Each model is swept through concurrency levels 1, 2, 4, 8, 16, 32, and 64 (doubling each step), every concurrent request given 16,384 tokens of its own context. That per-request context is the reason for the tier restriction: each concurrent request needs its own KV cache, so total memory scales with context-per-request × concurrency, on top of the model weights themselves — testing this against a large-tier model would multiply an already-large footprint by up to 64.
+Both tests scope to **every LLM model actually downloaded locally**, ignoring `--maxtier` — a machine that only downloaded xsmall/small models tests those; one that downloaded medium/large too tests those as well. This is deliberate: unlike the fixed-tier restriction these tests used to have, download presence is itself a decent proxy for "this machine has the memory to try." `--models` still narrows further within whatever's downloaded.
 
-At each level, N concurrent requests are fired at once (a real prompt padded to 16K tokens, not a multi-turn conversation — much cheaper to hit an exact context size in one shot than growing there turn by turn, see the LLM conversation test above). Each one gets its own nonce prefix so none of them share a cached prompt prefix with each other — without that, an engine's prefix cache would serve some requests near-instantly regardless of real concurrency, understating exactly the contention this test exists to measure. Two numbers are recorded per level: the mean/stdev of each individual request's own TTFT and tokens/sec (the number that should visibly degrade as concurrency climbs), and the aggregate tokens/sec — total tokens generated across every concurrent stream, divided by that batch's real wall-clock duration (the number that shows overall system capacity, which typically climbs, plateaus, then can decline past a saturation point).
+Every level respawns `llama-server` (the concurrency level is part of `LlamaCppEngine._ensure_model`'s want/have check, so a level change always forces a fresh process), which means each level's first-ever inference is on a brand-new process at that specific concurrent shape. `--warmup` (default 2) throwaway concurrent batches are fired and discarded at each level before the real measured one, for exactly the same reason every other test in this suite warms up before measuring — a fresh process's first real decode can carry one-time overhead (kernel autotuning, CUDA graph capture, and similar) that has nothing to do with steady-state throughput.
+
+At each level, N concurrent requests are fired at once (a real prompt padded to the test's per-request context size, not a multi-turn conversation — much cheaper to hit an exact context size in one shot than growing there turn by turn, see the LLM conversation test above). Each one gets its own nonce prefix so none of them share a cached prompt prefix with each other — without that, an engine's prefix cache would serve some requests near-instantly regardless of real concurrency, understating exactly the contention this test exists to measure. Two numbers are recorded per level: the mean/stdev of each individual request's own TTFT and tokens/sec (the number that should visibly degrade as concurrency climbs), and the aggregate tokens/sec — total tokens generated across every concurrent stream, divided by that batch's real wall-clock duration (the number that shows overall system capacity, which typically climbs, plateaus, then can decline past a saturation point).
+
+### Tool (`conc_tool`)
+
+Simulates agentic/tool-calling fan-out — a handful of concurrent requests, each a short tool-call-shaped turn. Swept through concurrency levels 1, 2, 4, 6, 8, 12, and 16, each request given 4,096 tokens of its own context (short, matching a real tool-call turn's shape — system prompt, schema, a short result — not a long document).
+
+This test **never soft-exits on slow tok/s** — every level always runs and gets recorded, since the whole ceiling here (16-way) is cheap enough that a real data point at every level is worth more than an inferred one. Only a hard stop (see below) ends its sweep early.
+
+### Chat (`conc_chat`)
+
+Simulates a chat server under load — many simultaneous long-conversation users. Swept through concurrency levels 1, 2, 4, 8, 16, 24, and 32, each request given 16,384 tokens of its own context (a long conversation history, at scale).
+
+Unlike the tool test, this one **does** soft-exit (see below) — at up to 32-way concurrency, a model that's already cratered to a few tokens/sec per request costs an enormous amount of wall-clock time to keep climbing for a foregone conclusion.
+
+### Escalation stopping
 
 Escalation to the next level stops for one of two reasons:
-- **Hard stop** — the model fails to even load at that level (out of memory, hung load) or the engine's runner crashes mid-batch. This is the real ceiling for that model on this hardware, not a bug — repeated engine crashes are the only case recorded to the crash cache (`.concurrency_crash_cache.json`), since a load failure at a given level isn't something worth remembering to skip on the next run (a lower level is cheap to retry and will very likely still succeed).
-- **Soft stop** — once concurrency level 8 has actually been reached, per-request tokens/sec dropping below the usual slow-model cutoff means climbing further would only confirm what's already obvious. Levels 1, 2, and 4 always run and get recorded regardless of how slow they already look — 8-way concurrency is common enough for agentic/tool-calling fan-out to be worth a real data point on its own, not skipped just because a lower level already looked slow. `--force-all` disables this the same way it does elsewhere.
+- **Hard stop** (both tests) — the model fails to even load at that level (out of memory, hung load) or the engine's runner crashes mid-batch. This is the real ceiling for that model on this hardware, not a bug — repeated engine crashes are the only case recorded to a crash cache (`.concurrency_tool_crash_cache.json` / `.concurrency_chat_crash_cache.json`, one per test so a crash on one doesn't affect retry state on the other), since a load failure at a given level isn't something worth remembering to skip on the next run (a lower level is cheap to retry and will very likely still succeed).
+- **Soft stop** (chat only) — once concurrency level 8 has actually been reached, per-request tokens/sec dropping below the usual slow-model cutoff means climbing further would only confirm what's already obvious. Levels 1, 2, 4, and 8 always run and get recorded regardless of how slow they already look. `--force-all` disables this the same way it does elsewhere.
+
+### Memory snapshots
 
 Each level also records a memory snapshot, taken right after that level finishes loading (model + full KV cache allocated) and before the batch fires — the steadiest point to read how much headroom is actually left, rather than numbers that fluctuate mid-batch. It always includes system RAM used/total; GPU VRAM used/total is added too when `nvidia-smi` or `rocm-smi` answers (a `rocm-smi` reading is only trusted for a confirmed-discrete AMD card — an APU's reported VRAM is often just a small BIOS-fixed carve-out, not the real usable pool). On a unified-memory machine — Apple Silicon, or an NVIDIA/AMD box like a DGX Spark or Strix Halo, where the model competes with the OS for the same physical pool — system RAM is the number that actually reflects total headroom; GPU VRAM there is supplementary, not a substitute. A load failure also records a `memory_at_failure` snapshot, so it's clear what memory state actually triggered the ceiling.
+
+### A note on tok/s outliers
+
+Under heavy concurrent-slot contention, llama-server's own streamed timing data can occasionally misreport a request's decode time as implausibly tiny relative to its token count, which would otherwise show up as a wildly inflated (sometimes six-figure) tok/s reading for that one request. `LlamaCppEngine` sanity-checks every self-reported tok/s value against `config.MAX_PLAUSIBLE_TPS` and substitutes a wall-clock-measured rate whenever the server's number is physically implausible, so this shouldn't show up in results — see `LlamaCppEngine._sanitize_tps` in [Engines](engines.md#llamacppengine).
 
 ---
 

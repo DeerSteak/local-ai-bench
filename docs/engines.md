@@ -118,6 +118,20 @@ llama-server being a process-per-model server:
   (older conversions, mainly) — there's no setup-time check yet that warns
   when it's missing, so a silent template mismatch on those models is still
   a possible, if narrow, source of a confusing quality difference.
+- **`_sanitize_tps`** guards `generate()`/`chat()`'s tok/s calculation
+  against a real observed llama-server quirk: under heavy concurrent-slot
+  contention (see [Concurrency](workloads.md#concurrency)), a streamed
+  chunk's `timings.predicted_ms` can be implausibly tiny relative to
+  `predicted_n`, producing a tps ratio with no physical basis (six-figure
+  values observed on real hardware). Any self-reported tps above
+  `config.MAX_PLAUSIBLE_TPS` is replaced with a wall-clock estimate
+  (locally-counted tokens over measured decode time) instead — a sanity
+  tripwire, not a tuned threshold, since no real single-request stream gets
+  remotely close to it on current hardware. Whenever this fires,
+  `_warn_tps_sanitized` logs the raw `predicted_n`/`predicted_ms` values
+  that produced the bad reading (not just the corrected number), so a run
+  that hits this is still diagnosable — worth keeping an eye on the console
+  output if you're trying to track down why llama-server reported it.
 
 ## Selecting an engine
 
