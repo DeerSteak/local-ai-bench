@@ -12,16 +12,14 @@
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp, XPU-enabled PyTorch (Intel Arc — experimental, see [Platform notes](#platform-notes)) |
-| Windows | `setup.bat` | Python, llama.cpp, ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp, ComfyUI |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI, XPU-enabled PyTorch on Intel Arc (experimental) |
+| Windows | `setup.bat` | Python, llama.cpp Vulkan build, ComfyUI portable |
 
-`setup.sh` / `setup.bat` show exactly what they need to install (Homebrew and/or Python) and ask before doing it — nothing happens silently.
-
-Each script then creates a virtual environment (`bench-env/`) and hands off to `scripts/setup_check.py`, which:
+`setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
 
 1. Detects your hardware (OS, GPU backend, RAM).
-2. Shows a numbered list of every LLM and image model — everything selected by default, except models estimated not to fit in your detected RAM/VRAM, which start unchecked with a note on how much they'd need.
+2. Shows a numbered list of all 12 LLMs, two embedding models, and five image models — everything selected by default except LLM/image models estimated not to fit in detected RAM/VRAM, which start unchecked with a note on how much they'd need. The estimate includes model weights, required image encoders, a 20% runtime allowance, and a small OS/driver reserve; it is guidance rather than a hard block.
 3. Lets you toggle the selection interactively:
    - Numbers to toggle individual models (`2 4 7-9`)
    - A size tier (`xs`/`s`/`m`/`l`) to toggle every model at that tier — LLM and image checkpoints together, e.g. `s` toggles the small-tier LLMs and SDXL as a group
@@ -30,7 +28,7 @@ Each script then creates a virtual environment (`bench-env/`) and hands off to `
    - Enter to install everything shown
    - `q` or Ctrl-C to cancel at any point with nothing installed yet
 4. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
-5. Installs everything you picked — llama.cpp, pip packages, LLM/embedding GGUFs, image checkpoints — with no further prompts.
+5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts.
 
 When setup is complete, run the benchmark:
 
@@ -56,7 +54,7 @@ Independently of that, if completing the downloads would leave less than 10% of 
 
 ## HuggingFace token
 
-Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/models.py` into `models/llamacpp/<tag>/` (see [Engines](engines.md#llamacppengine)). Image checkpoints go through the same download path. SD3.5 Large, Flux.1-dev, and Flux.2-dev additionally require a free HuggingFace account and license acceptance at:
+Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/models.py` into `models/llamacpp/<tag-slug>/` (see [Engines](engines.md#llamacppengine)). Image checkpoints use the same HuggingFace download client but land in ComfyUI's model directories. Public repositories can be downloaded without an account or token. SD3.5 Large, Flux.1-dev, and Flux.2-dev are gated and require a free account, license acceptance, and an access token:
 
 - https://huggingface.co/stabilityai/stable-diffusion-3.5-large
 - https://huggingface.co/black-forest-labs/FLUX.1-dev
@@ -68,7 +66,7 @@ If you select any LLM, embedding, or image model in the picker, `setup_check.py`
 2. `hf.txt` in the repo root (token on a single line)
 3. Interactive prompt — offers to save to `hf.txt` for future runs
 
-A token isn't required for non-gated models, but HuggingFace gives token holders faster downloads — `setup_check.py` will still offer to use one for those downloads if you have one available.
+A token isn't required for non-gated models, but authenticated downloads generally receive better rate limits. `setup_check.py` therefore offers token authentication whenever any model is selected; pressing Enter skips it when no gated image model was selected.
 
 ## Platform notes
 

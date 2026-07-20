@@ -2,7 +2,7 @@
 
 # Workloads
 
-Five workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, and coding problems), and concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Five workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -19,23 +19,24 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Timeouts and loop detection](#timeouts-and-loop-detection)
   - [Math](#math)
   - [Code](#code)
+  - [Tool Use](#tool-use)
   - [Bank versioning](#bank-versioning)
 - [Concurrency](#concurrency)
 
 ## LLM
 
-Eight models across four tiers (two per tier) are benchmarked by default. If any warmup or measured run exceeds the 300-second timeout, the model is skipped and the benchmark moves on — small GPUs naturally skip the large models without any flags.
+Twelve models across four tiers (three per tier) are in the default catalog. Models that were not downloaded are skipped; a timeout or repeatable runner crash stops that model's current workload and preserves any measurements already collected.
 
-Every model is run through **two separate LLM tests**, back to back:
+The suite provides **two separate LLM tests**. When both are selected, it completes the single-shot stage for all models before starting the conversation stage:
 
 - **Single-shot** — a large prompt, padded to the target size and sent fresh (with unique content) on every run, measured at up to five context lengths (512 / 2K / 8K / 32K / 64K, whichever the model's own context window reaches), so it's always a genuine cold prefill of that many tokens with nothing cached. This simulates dropping a large document, codebase, or transcript into a single prompt and asking one question about it.
-- **Conversation** — a real multi-turn chat, measured at up to eight depths (0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K, whichever the model's own context window reaches): the model explains Plato's Allegory of the Cave, then each following turn asks for more detail on a section, growing the conversation from a blank slate toward 96K. This test is expensive (many turns growing all the way to the sampling ceiling), so it always runs a single conversation regardless of `--runs` — that flag only repeats the other tests (see [CLI Reference](cli-reference.md)).
+- **Conversation** — a real multi-turn chat, measured at up to ten depths (0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K, subject to the model and tier limits below): the model explains Plato's Allegory of the Cave, then each following turn asks for more detail on a section, growing the conversation from a blank slate. This test is expensive, so it always runs one conversation regardless of `--runs`.
 
-Both tests cap their context lengths to each model's own real maximum — read live from the downloaded GGUF's own metadata for the exact model that's actually installed, not assumed or hardcoded — so a model with a smaller native window (e.g. a 32K-context model) simply has its higher checkpoints skipped rather than sent to the server and rejected. The conversation test's context window is still the full 128K if the model supports at least that much, otherwise its own real maximum; sampling deliberately stops at 96K rather than 128K so the conversation always has real headroom left against that context window instead of scraping the ceiling — most models' real maximum is exactly 128K, with no slack to spare for the growth loop's final turns.
+Both tests cap their context lengths to each model's real maximum, read from the downloaded GGUF metadata. For medium/large catalog models and custom models, the conversation plan targets at most 128K and samples through 96K, leaving up to 4K of KV-cache headroom where the model's native ceiling allows it. xsmall/small catalog models use a smaller plan: a 64K growth target, up to roughly 68K of allocated context including headroom, and a top sampled checkpoint of 48K. A model whose native ceiling is lower gets a correspondingly shorter plan.
 
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](dashboard.md#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
-If a model's single-shot decode speed drops below 15 tok/s at some context length, the single-shot test stops there — deeper context lengths are skipped for that model, since a slower run would just be a longer wait for a data point nobody needs. A model is excluded from the conversation test *entirely* if it timed out or was already marked too slow in the single-shot test (e.g. too large to fit in memory) — that pre-flight check only runs when the single-shot test ran earlier in the same session; running `--tests conv` on its own has no single-shot data to check against, so every model is tested there.
+The single-shot slow-model check applies at its first checkpoint (512 tokens): below 15 tok/s, deeper single-shot contexts are skipped unless `--force-all` is set. When single-shot and conversation run together, the conversation pre-flight also excludes a model with no usable single-shot data, a repeatable runner crash, a first-checkpoint timeout, or that first-checkpoint slow marker. A timeout only at a deeper single-shot context does not by itself exclude conversation. Running `--tests conv` alone has no single-shot pre-flight data, so it attempts every selected model.
 
 Separately, *within* the conversation test itself: if the decode speed at any history depth drops below the slow-model cutoff, the conversation exits early and records results to that point. Pass `--force-all` to ignore this cutoff and always run every context length (see [CLI Reference](cli-reference.md)).
 
@@ -87,7 +88,7 @@ Because decode speed tracks active parameters far more closely than total size o
 
 Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose checkpoint is absent from `ComfyUI/models/checkpoints/` is skipped automatically; `setup_check.py` downloads them on first run.
 
-Each measured run (`--runs`, default 3) uses a different seed (`seed + run index`) — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. The warmup run before those also uses its own distinct seed, for the same reason.
+Each measured run (`--runs`, default 3) uses a different seed, starting at 42 — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. Every image model also gets exactly one warmup at its first resolution with seed 41; image generation does not use `--warmup`. Each generation gets twice `--timeout` (600 seconds by default).
 
 | Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
 |---|---|---|---|---|---|
@@ -103,15 +104,15 @@ Each measured run (`--runs`, default 3) uses a different seed (`seed + run index
 
 SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide.
 
-Generated sample images are saved to `results/images_<hostname>_<timestamp>/`, alongside the matching results JSON — see [Project Structure](project-structure.md).
+Generated sample images are saved under `results/images_<hostname>_<timestamp>/` — see [Project Structure](project-structure.md). If `--out` puts the main JSON elsewhere, the image folder remains under `results/` and is named from that output stem.
 
 ## Embeddings
 
 Two models — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting.
 
-Like the other test types, each model gets `--warmup` discarded runs first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it's absorbed before the `--runs` measured runs (default 3) rather than skewing them. The active engine uses the GPU on all supported platforms (Metal, CUDA, ROCm), so results are directly comparable across machines.
+Each model gets `--warmup` discarded calls first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it is absorbed before the `--runs` measured calls (default 3) rather than skewing them. Embedding calls use the engine interface's fixed 120-second request timeout.
 
-If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only` to force CPU-only inference instead — in some cases this is also faster or just more stable than a flaky GPU path. This restarts the active engine with GPU devices hidden for every test in the run that goes through it (`llm`/`conv`/`mcq`/`emb`, not just embeddings), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
+If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only`. This restarts the active engine with GPU devices hidden for every engine-backed test in the run (`llm`/`conv`/`mcq`/`math`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
 
 | Model | Tag | Size |
 |---|---|---|
@@ -132,9 +133,9 @@ Run just this test with `--tests mcq`.
 
 Each accuracy question gets `--acc-timeout` seconds (default 60) to answer — much shorter than the 300-second `--timeout` used elsewhere, since these tests generate one question at a time with an unbounded token budget (a fixed cap risks truncating a reasoning model's answer, so the wall-clock timeout is the real bound). A model that gets stuck reasoning in circles on a single question would otherwise burn the full 300s before anyone found out; at 10% of a 150-question bank that's 15 questions × 300s = 75 minutes lost to one model.
 
-A timed-out question is scored wrong and the run moves on to the next question — a single timeout only affects that one question rather than the whole bank, since zeroing out every remaining question would unfairly penalize a model that's merely slow on one hard question rather than actually stuck. Whatever text the model had already streamed before the cutoff is captured and scored the same as a completed answer (parsed for a valid letter/number/code block), rather than treated as a blank — a cut-off response can still be right, wrong-but-parseable, or genuinely empty, and those are different outcomes worth telling apart.
+A timeout ends only that question; the bank continues. Whatever the model streamed before the cutoff is captured and passed through that workload's normal parser/scorer, so a partial response can still be correct, wrong-but-parseable, or empty. The timeout is recorded regardless of the resulting score.
 
-Each model's results record `timed_out_count` and `timed_out_ids` (which questions hit the timeout) whenever at least one did. Every timed-out response is additionally checked against a loop heuristic — flagging a response if a 12+ word chunk repeats verbatim three or more times, or if a self-correction/hedging phrase ("wait,", "let me reconsider", "there seems to have been...", "apolog-", etc.) recurs three or more times — since a model that gets cut off mid-answer is either genuinely still working through a hard question or stuck restating the same reasoning (or the same code, one indentation level deeper each time) without ever converging. This check only ever runs on a timed-out question's partial text — a completed, submitted answer is never checked for looping, no matter how wrong or repetitive-looking it is, since a wrong answer that was actually submitted isn't a loop. Models with at least one flagged response get `likely_loop_count` and `likely_loop_ids` in their results, alongside `timed_out_count`/`timed_out_ids`.
+Each model's results record `timed_out_count` and `timed_out_ids` whenever at least one question reaches the wall-clock limit. Streaming responses are also checked periodically for a loop heuristic: a 12+ word chunk repeated three or more times, or recurring self-correction/hedging phrases such as "wait," and "let me reconsider." That can stop a likely loop before the full timeout, so `likely_loop_ids` is a separate diagnostic rather than a subset of `timed_out_ids`. Completed responses are never loop-checked, and a flagged partial response is retained in `likely_loop_ids` only if its final score is wrong.
 
 ### Math
 
@@ -160,17 +161,29 @@ Results report overall accuracy plus a per-category breakdown, same as MCQ/math.
 
 Run just this test with `--tests code`.
 
-Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, and code, and de-duplicates against any of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join this group in the future. See [CLI Reference](cli-reference.md).
+### Tool Use
+
+Every LLM model answers a fixed bank of 100 tool-calling questions once each (temperature 0, same deterministic-decoding reasoning as MCQ/math/code, so this workload also ignores `--runs`). Each question offers the model an OpenAI-style `tools` array (function name, description, and JSON-schema parameters) via `/v1/chat/completions` with `tool_choice: "auto"`, and is scored on whether the model called the right tool with the right arguments — or correctly declined to call anything when none of the offered tools genuinely fit. The question bank (`scripts/data/tool_questions.json`) spans 20 five-question categories. The first half covers straightforward calls, basic selection and extraction, enum/numeric/boolean arguments, optional parameters, multi-argument calls, and obvious declines. The harder half covers close tool distinctions, semantic conversions, nested arrays/objects, omitting unspecified optional arguments, semantic enum mapping, missing-information and near-miss declines, large distractor sets, instruction-like content that must remain literal data, and corrections or negations.
+
+The decline cases matter as much as the call cases: a model that fires a tool for a request none of the tools can serve, lacks required information, or would violate an explicit "do not" instruction is as wrong as one that calls the wrong tool. Correct behavior there is calling nothing. A positive case requires exactly one tool call, so emitting the expected call alongside an unintended second action fails.
+
+Argument comparison is recursive. Numeric strings are accepted for numeric values (`"20"` matches `20`), but booleans never match numbers. Baseline questions use subset matching, allowing extra keys for continuity; advanced questions marked `strict_arguments` require the same keys at every nested object level. Arrays are positional by default, while scenarios can mark genuinely set-like fields such as labels or recipients with `unordered_keys`, which compares those arrays as multisets while preserving duplicates.
+
+Results report overall accuracy plus a per-category breakdown, same as MCQ/math/code.
+
+Run just this test with `--tests tool`.
+
+Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, code, and tool, and de-duplicates against any of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join this group in the future. See [CLI Reference](cli-reference.md).
 
 ### Bank versioning
 
 Question banks grow and change over time (the MCQ and math banks each doubled in size in one revision, for example), so a raw correct count from one results file is never safely comparable to another without knowing which version of the bank produced it — 40/50 and 40/150 both look like "40 correct" but mean very different things. To make that comparison safe:
 
-- Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `code`) at the time of that run, computed from the raw bytes of `scripts/data/*_questions.json` / `code_problems.json` (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
-- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.code_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried.
-- Accuracy percentages (as opposed to raw correct counts) stay meaningfully comparable across bank versions, since they're already normalized by the bank's size at that time.
+- Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `code`, `tool`) at the time of that run, computed from the raw bytes of `scripts/data/*_questions.json` / `code_problems.json` (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
+- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.code_crash_cache.json`, `.tool_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried.
+- Percentages normalize for bank size, but a changed bank can also change difficulty and composition. Use matching `bank_versions` hashes for direct model/system comparisons; treat cross-version percentages as contextual rather than apples-to-apples.
 
-`--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration: instead of the full bank, it runs a deterministic, stratified N-question subset — every category still represented, and the same N always draws the same questions for a given bank version. The exact sampled question IDs are recorded in the results JSON under `sample_ids`, so a sampled run is reproducible and auditable, but it's never meant to be compared against a full-bank run or published as a real score.
+`--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration. It uses a deterministic round-robin across categories; every category is represented when `N` is at least that bank's category count, while smaller samples cover as many categories as their size permits. The exact sampled IDs are recorded under `sample_ids`. Sampled runs are reproducible, but are not comparable with full-bank or differently sampled runs.
 
 ## Concurrency
 
@@ -180,11 +193,11 @@ Both tests scope to **every LLM model actually downloaded locally**, ignoring `-
 
 Every level respawns `llama-server` (the concurrency level is part of `LlamaCppEngine._ensure_model`'s want/have check, so a level change always forces a fresh process), which means each level's first-ever inference is on a brand-new process at that specific concurrent shape. `--warmup` (default 2) throwaway concurrent batches are fired and discarded at each level before the real measured one, for exactly the same reason every other test in this suite warms up before measuring — a fresh process's first real decode can carry one-time overhead (kernel autotuning, CUDA graph capture, and similar) that has nothing to do with steady-state throughput.
 
-At each level, N concurrent requests are fired at once (a real prompt padded to the test's per-request context size, not a multi-turn conversation — much cheaper to hit an exact context size in one shot than growing there turn by turn, see the LLM conversation test above). Each one gets its own nonce prefix so none of them share a cached prompt prefix with each other — without that, an engine's prefix cache would serve some requests near-instantly regardless of real concurrency, understating exactly the contention this test exists to measure. Two numbers are recorded per level: the mean/stdev of each individual request's own TTFT and tokens/sec (the number that should visibly degrade as concurrency climbs), and the aggregate tokens/sec — total tokens generated across every concurrent stream, divided by that batch's real wall-clock duration (the number that shows overall system capacity, which typically climbs, plateaus, then can decline past a saturation point).
+At each level, N concurrent requests are fired at once using independent padded single-shot prompts and up to 512 generated tokens per request. Each gets a nonce prefix so no two requests share a cached prompt prefix. After the configured warmup batches, one measured concurrent batch is recorded; `--runs` does not repeat concurrency batches. Results include mean/stdev per-request TTFT and tokens/sec plus aggregate tokens/sec: total generated tokens divided by the measured batch's wall-clock duration.
 
 ### Tool (`conc_tool`)
 
-Simulates agentic/tool-calling fan-out — a handful of concurrent requests, each a short tool-call-shaped turn. Swept through concurrency levels 1, 2, 4, 6, 8, 12, and 16, each request given 4,096 tokens of its own context (short, matching a real tool-call turn's shape — system prompt, schema, a short result — not a long document).
+Simulates the short-context fan-out common in agentic workflows. It uses ordinary completion requests rather than the tool-calling API—the "tool" label describes the serving shape, not a function-call accuracy test. The sweep covers 1, 2, 4, 6, 8, 12, and 16 simultaneous requests, each with a 4,096-token padded context.
 
 This test **never soft-exits on slow tok/s** — every level always runs and gets recorded, since the whole ceiling here (16-way) is cheap enough that a real data point at every level is worth more than an inferred one. Only a hard stop (see below) ends its sweep early.
 

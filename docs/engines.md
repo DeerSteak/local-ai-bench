@@ -39,7 +39,7 @@ is an ABC with three groups of methods:
 |---|---|
 | Server/process lifecycle | `ensure_running`, `start(gpu_visible=...)`, `stop`, `available`, `reachable_or_abort`, `wait_for_recovery`, `is_connection_crash`, `tail_log` |
 | Model lifecycle | `model_pulled`, `list_installed_models`, `max_context_length`, `warmup`, `unload`, `unload_all`, `wait_until_unloaded`, `prepare_concurrency` |
-| Inference | `generate` (single-shot), `chat` (multi-turn), `embed` |
+| Inference | `generate` (single-shot), `chat` (multi-turn), `chat_tools` (tool-calling), `embed` |
 
 A few design choices worth knowing if you're reading or extending this:
 
@@ -57,7 +57,12 @@ A few design choices worth knowing if you're reading or extending this:
 - **`generate`/`chat`/`embed` return plain tuples**, not engine-specific
   response objects, so a caller scoring a benchmark run never touches
   anything engine-shaped.
-- **`prepare_concurrency(tag, n_parallel, per_slot_ctx)`** (used only by the
+- **`chat_tools` is a separate method, not an argument to `chat`**, so the
+  tool-calling accuracy test can offer an OpenAI-style tools array and read
+  back a parsed `tool_calls` list (`[{"name", "arguments"}]`) without changing
+  `chat`'s signature or return arity at every existing call site. It returns
+  `chat`'s five values plus that list (empty when the model called nothing).
+- **`prepare_concurrency(tag, n_parallel, per_slot_ctx, warmup_runs, timeout)`** (used only by the
   concurrency test — see [Workloads](workloads.md#concurrency)) scales
   `per_slot_ctx` up by `n_parallel` before it becomes llama-server's `-c`,
   because `-c` is a *total* KV-cache budget split across `--parallel` slots,
@@ -95,7 +100,7 @@ llama-server being a process-per-model server:
   confirm the binary exists and `_models_dir()` is reachable — not an
   actual server start; the real `llama-server` subprocess spawns lazily per
   tag in `_ensure_model`, and restarts whenever the requested
-  `(tag, num_ctx, embedding-mode)` combination changes. This is also why
+  `(tag, num_ctx, embedding-mode, n_parallel)` combination changes. This is also why
   `available()` is `False` between models, not just before the first one —
   a workload's `run()` must gate its top-of-run preflight on
   `ensure_running()`, never `available()`/`reachable_or_abort()`, or every
