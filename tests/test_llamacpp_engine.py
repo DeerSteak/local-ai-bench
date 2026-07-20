@@ -215,14 +215,13 @@ def _patch_ensure_model(monkeypatch):
 def test_generate_uses_server_reported_timings(monkeypatch):
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
-        {"content": "Hel"},
-        {"content": "lo"},
+        *[{"content": "x"} for _ in range(10)],
         {"content": "", "stop": True,
          "timings": {"predicted_n": 10, "predicted_ms": 2000, "prompt_ms": 500}},
     ])
     ttft, tokens, tps = LlamaCppEngine().generate("some-tag", "prompt", num_ctx=2048)
     assert ttft == pytest.approx(0.5)
-    assert tokens == 10
+    assert tokens == 10  # our own locally-counted content chunks, not predicted_n
     assert tps == pytest.approx(5.0)  # 10 tokens / 2 sec
 
 
@@ -240,40 +239,57 @@ def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch
 
 
 def test_generate_sanitizes_implausible_server_reported_tps(monkeypatch):
-    # Reproduces a real observed failure: under heavy concurrent-slot
-    # contention, llama-server's timings.predicted_ms can be implausibly
-    # tiny relative to predicted_n, producing e.g. "TPS=1000000.0" — this
-    # must fall back to a wall-clock estimate instead of returning garbage.
+    # Reproduces the exact real-world observed failure: under heavy
+    # concurrent-slot contention, llama-server's timings.predicted_ms can be
+    # implausibly tiny (predicted_n=1, predicted_ms=0.001 -> raw tps of
+    # exactly 1000000.0) — this must fall back to a wall-clock estimate
+    # instead of returning garbage.
     _patch_ensure_model(monkeypatch)
     fake_time = iter([100.0, 100.5, 110.5])
     monkeypatch.setattr(llamacpp_module.time, "perf_counter", lambda: next(fake_time))
     _patch_urlopen(monkeypatch, [
         {"content": "Hi"},
-        {"content": "", "stop": True, "timings": {"predicted_n": 500000, "predicted_ms": 0.5}},
+        {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 0.001}},
     ])
     ttft, tokens, tps = LlamaCppEngine().generate("some-tag", "prompt")
     assert ttft == pytest.approx(0.5)
     assert tps == pytest.approx(0.1)  # 1 token / (10.5 - 0.5)s wall-clock decode time
 
 
+def test_generate_uses_our_own_token_count_not_servers_predicted_n(monkeypatch):
+    # server_predicted_n can under-report relative to real content chunks
+    # (this is the divergence _warn_tps_sanitized's message is designed to
+    # surface) — tokens_generated must reflect what we actually received,
+    # not the server's count, since only ours is guaranteed accurate.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"content": "a"}, {"content": "b"}, {"content": "c"},
+        {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 1000}},
+    ])
+    _, tokens, _ = LlamaCppEngine().generate("some-tag", "prompt")
+    assert tokens == 3
+
+
 def test_generate_logs_raw_server_values_when_sanitizing(monkeypatch):
     # The whole point of surfacing this warning is to make the raw
-    # predicted_n/predicted_ms diagnosable — assert the actual numbers
-    # appear, not just that some warning fired.
+    # predicted_n/predicted_ms diagnosable, and to show whether our own
+    # count agrees with the server's — assert the actual numbers appear,
+    # not just that some warning fired.
     _patch_ensure_model(monkeypatch)
     fake_time = iter([100.0, 100.5, 110.5])
     monkeypatch.setattr(llamacpp_module.time, "perf_counter", lambda: next(fake_time))
     _patch_urlopen(monkeypatch, [
         {"content": "Hi"},
-        {"content": "", "stop": True, "timings": {"predicted_n": 500000, "predicted_ms": 0.5}},
+        {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 0.001}},
     ])
     warnings = []
     monkeypatch.setattr(llamacpp_module.Shared, "warn", staticmethod(lambda msg: warnings.append(msg)))
     LlamaCppEngine().generate("some-tag", "prompt")
     assert len(warnings) == 1
     assert "some-tag" in warnings[0]
-    assert "predicted_n=500000" in warnings[0]
-    assert "predicted_ms=0.5" in warnings[0]
+    assert "server predicted_n=1" in warnings[0]
+    assert "our tokens=1" in warnings[0]
+    assert "predicted_ms=0.001" in warnings[0]
 
 
 def test_generate_does_not_warn_when_tps_is_plausible(monkeypatch):
@@ -295,7 +311,9 @@ def test_generate_does_not_warn_when_tps_is_plausible(monkeypatch):
 def test_chat_returns_content_and_server_timings(monkeypatch):
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
-        {"choices": [{"delta": {"content": "Hel"}}]},
+        {"choices": [{"delta": {"content": "H"}}]},
+        {"choices": [{"delta": {"content": "e"}}]},
+        {"choices": [{"delta": {"content": "l"}}]},
         {"choices": [{"delta": {"content": "lo"}}]},
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 4, "predicted_ms": 1000, "prompt_ms": 200, "prompt_n": 50}},
@@ -305,6 +323,7 @@ def test_chat_returns_content_and_server_timings(monkeypatch):
     assert text == "Hello"
     assert prompt_eval_count == 50
     assert ttft == pytest.approx(0.2)
+    assert tokens == 4  # our own locally-counted content chunks, not predicted_n
     assert tps == pytest.approx(4.0)
 
 
@@ -316,7 +335,7 @@ def test_chat_sanitizes_implausible_server_reported_tps(monkeypatch):
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"content": "Hi"}}]},
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
-         "timings": {"predicted_n": 500000, "predicted_ms": 0.5}},
+         "timings": {"predicted_n": 1, "predicted_ms": 0.001}},
     ])
     ttft, tokens, tps, _, _ = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
     assert ttft == pytest.approx(0.5)

@@ -401,15 +401,19 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _warn_tps_sanitized(tag: str, raw_tps: float, sanitized_tps: float,
-                             eval_count: int, predicted_ms: float) -> None:
+                             tokens: int, server_predicted_n: int, predicted_ms: float) -> None:
         """Surfaces the raw server values behind a _sanitize_tps substitution
         — without this, the only trace of the bad reading is the corrected
         number, which is useless for tracking down what llama-server
-        actually reported. predicted_ms is printed at full precision (not
-        rounded) since the anomaly is specifically that it's an implausibly
-        tiny fraction of a millisecond."""
-        Shared.warn(f"{tag}: implausible tps from server (predicted_n={eval_count}, "
-                    f"predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
+        actually reported. Prints `tokens` (our own locally-counted content
+        chunks, always trustworthy) right next to `server_predicted_n`
+        (timings.predicted_n) specifically so the two can be compared — if
+        they diverge, predicted_n itself is unreliable under this workload,
+        not just predicted_ms. predicted_ms is printed at full precision
+        (not rounded) since the anomaly is specifically that it's an
+        implausibly tiny fraction of a millisecond."""
+        Shared.warn(f"{tag}: implausible tps from server (server predicted_n={server_predicted_n}, "
+                    f"our tokens={tokens}, predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
                     f"using wall-clock estimate ({sanitized_tps:.1f} tok/s) instead")
 
     # ── model process spawn ──
@@ -491,8 +495,14 @@ class LlamaCppEngine(InferenceEngine):
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
         """Generate via llama-server's native /completion endpoint. Returns
-        (ttft_sec, tokens_generated, tokens_per_sec), preferring the server's
-        own reported timings over wall clock. n_parallel must match the last
+        (ttft_sec, tokens_generated, tokens_per_sec). tokens_generated is our
+        own locally-counted content-chunk count, not the server's
+        timings.predicted_n — under heavy concurrent-slot contention,
+        predicted_n has been observed stuck at 1 (see _warn_tps_sanitized)
+        even when real content chunks kept arriving, so it can't be trusted
+        as the authoritative count; tps still prefers the server's own
+        predicted_ms when it's plausible, since decode-time measurement
+        hasn't shown the same failure mode. n_parallel must match the last
         prepare_concurrency call (default 1 elsewhere); concurrent callers
         passing the same values is safe without locking since
         _ensure_model's want == have check is then read-only."""
@@ -513,8 +523,8 @@ class LlamaCppEngine(InferenceEngine):
         ttft   = None
         tokens = 0
         tps    = 0
-        eval_count   = 0
-        predicted_ms = 0
+        server_predicted_n = 0
+        predicted_ms       = 0
 
         with self._urlopen(req, timeout) as resp:
             for chunk in self._iter_sse(resp):
@@ -526,11 +536,11 @@ class LlamaCppEngine(InferenceEngine):
 
                 timings = chunk.get("timings")
                 if timings:
-                    eval_count = timings.get("predicted_n", tokens)
+                    server_predicted_n = timings.get("predicted_n", tokens)
                     predicted_ms = timings.get("predicted_ms") or 0
                     prompt_ms = timings.get("prompt_ms")
                     if predicted_ms:
-                        tps = eval_count / (predicted_ms / 1000)
+                        tps = tokens / (predicted_ms / 1000)
                     if prompt_ms is not None and prompt_ms > 0:
                         ttft = prompt_ms / 1000
 
@@ -539,22 +549,25 @@ class LlamaCppEngine(InferenceEngine):
             ttft = total
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
-            self._warn_tps_sanitized(tag, tps, sanitized, eval_count, predicted_ms)
-        return ttft, eval_count, sanitized
+            self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
+        return ttft, tokens, sanitized
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
              check_loop: bool = False):
         """Generate via llama-server's OpenAI-compatible /v1/chat/completions.
         Returns (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count,
-        response_text). n_predict is passed straight through as an extension
-        field (-1 = unbounded). check_loop, when set, polls the streaming
-        response for a degenerate generation loop (see Shared.looks_like_loop)
-        and raises EngineLoopDetected early rather than waiting out the full
-        timeout. stream_options.include_usage asks for a trailing usage
-        chunk — prompt_eval_count reads its prompt_tokens (the true running
-        total), not timings.prompt_n (only newly-prefilled tokens this call,
-        which under-counts once the prefix cache kicks in)."""
+        response_text). tokens_generated is our own locally-counted content-
+        chunk count, not the server's timings.predicted_n — see generate()'s
+        docstring for why. n_predict is passed straight through as an
+        extension field (-1 = unbounded). check_loop, when set, polls the
+        streaming response for a degenerate generation loop (see
+        Shared.looks_like_loop) and raises EngineLoopDetected early rather
+        than waiting out the full timeout. stream_options.include_usage asks
+        for a trailing usage chunk — prompt_eval_count reads its
+        prompt_tokens (the true running total), not timings.prompt_n (only
+        newly-prefilled tokens this call, which under-counts once the prefix
+        cache kicks in)."""
         self._ensure_model(tag, num_ctx)
 
         payload = json.dumps({
@@ -573,8 +586,8 @@ class LlamaCppEngine(InferenceEngine):
         ttft   = None
         tokens = 0
         tps    = 0
-        eval_count        = 0
-        predicted_ms      = 0
+        server_predicted_n = 0
+        predicted_ms       = 0
         prompt_eval_count = 0
         response_parts    = []
         reasoning_parts    = []
@@ -615,12 +628,12 @@ class LlamaCppEngine(InferenceEngine):
 
                 timings = chunk.get("timings")
                 if timings:
-                    eval_count   = timings.get("predicted_n", tokens)
-                    predicted_ms = timings.get("predicted_ms") or 0
-                    prompt_ms    = timings.get("prompt_ms")
-                    prompt_n     = timings.get("prompt_n")
+                    server_predicted_n = timings.get("predicted_n", tokens)
+                    predicted_ms       = timings.get("predicted_ms") or 0
+                    prompt_ms          = timings.get("prompt_ms")
+                    prompt_n           = timings.get("prompt_n")
                     if predicted_ms:
-                        tps = eval_count / (predicted_ms / 1000)
+                        tps = tokens / (predicted_ms / 1000)
                     if prompt_ms is not None and prompt_ms > 0:
                         ttft = prompt_ms / 1000
                     if prompt_n is not None:
@@ -636,11 +649,11 @@ class LlamaCppEngine(InferenceEngine):
             ttft = total
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
-            self._warn_tps_sanitized(tag, tps, sanitized, eval_count, predicted_ms)
+            self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
         # A reasoning model can stream its whole turn via reasoning_content with content empty;
         # falling back avoids an empty assistant turn corrupting history.
         response_text = "".join(response_parts) or "".join(reasoning_parts)
-        return ttft, eval_count, sanitized, prompt_eval_count, response_text
+        return ttft, tokens, sanitized, prompt_eval_count, response_text
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
         """Embed every string in `inputs` in a single /v1/embeddings call.

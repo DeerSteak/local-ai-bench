@@ -149,9 +149,16 @@ LLM_MODELS_SMALL = sorted([
         "tag":            "phi4:14b-q4_K_M",
         "label":          "Phi 4 14B",
         "short":          "phi4-14b",
-        "download_size":  "~8.5 GB",
+        "download_size":  "~8.3 GB",
         "params_b":       14,
-        "hf_repo":        "bartowski/phi-4-GGUF",
+        # unsloth's repo specifically, not bartowski's — Microsoft's original
+        # Phi-4 tokenizer config has <|endoftext|> registered as BOS *and*
+        # EOS, which under a raw (non-chat-templated) /completion request —
+        # exactly what this benchmark's LLM/concurrency tests send — makes
+        # llama-server treat generation as immediately over after the
+        # auto-prepended BOS token. Unsloth found and fixed this upstream;
+        # their GGUF bakes in the corrected tokenizer config.
+        "hf_repo":        "unsloth/phi-4-GGUF",
         "hf_file":        "phi-4-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
