@@ -786,7 +786,7 @@ export function buildAccuracyCategoryConfigs(files) {
 // cols = timed_out_count / likely_loop_count (0 for a model with a clean
 // run, so it's still visible alongside the ones that had trouble). The whole
 // chart (and its EmptyState fallback) only appears when at least one
-// model/file actually had a timeout — otherwise it'd always render with
+// model/file had either incident — otherwise it'd always render with
 // nothing but zeroes.
 export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
   const isMulti = files.length > 1;

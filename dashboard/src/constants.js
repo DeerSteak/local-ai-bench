@@ -1,12 +1,16 @@
 // Colors per known LLM model short key (order follows LLM_MODEL_ORDER, i.e.
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
+  "gemma3-1b":              "#00e5ff",
   "llama3.2-3b-q4":         "#536dfe",
   "phi4-mini":              "#64ffda",
   "mistral-7b-q4":          "#ff8a80",
   "llama3.1-8b-q4":         "#7c4dff",
+  "phi4-14b":               "#ff4081",
+  "qwen3.6-27b-q4":         "#ff6e40",
   "nemotron3-nano-30b-a3b": "#00e676",
   "qwen3.6-35b-a3b":        "#ea80fc",
+  "llama3.3-70b-q4":        "#69f0ae",
   "llama4-16x17b":          "#ffd740",
   "nemotron3-super-120b":   "#40c4ff",
 };
@@ -80,12 +84,16 @@ export const MAX_FILES = 6;
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
+  "gemma3-1b":              "Gemma 3 1B",
   "llama3.2-3b-q4":         "Llama 3.2 3B Q4_K_M",
   "phi4-mini":              "Phi 4 Mini",
   "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
   "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
+  "phi4-14b":               "Phi 4 14B",
+  "qwen3.6-27b-q4":         "Qwen3.6 27B Q4_K_M",
   "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
   "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
+  "llama3.3-70b-q4":        "Llama 3.3 70B Q4_K_M",
   "llama4-16x17b":          "Llama 4 Scout 16x17B",
   "nemotron3-super-120b":   "Nemotron 3 Super 120B",
 };
@@ -94,10 +102,10 @@ export const LLM_MODEL_LABELS = {
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "llama3.2-3b-q4", "phi4-mini",
-  "mistral-7b-q4", "llama3.1-8b-q4",
-  "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
-  "llama4-16x17b", "nemotron3-super-120b",
+  "gemma3-1b", "llama3.2-3b-q4", "phi4-mini",
+  "mistral-7b-q4", "llama3.1-8b-q4", "phi4-14b",
+  "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+  "llama3.3-70b-q4", "llama4-16x17b", "nemotron3-super-120b",
 ];
 
 // Size tier per model short key — mirrors models.py's LLM_MODELS_XSMALL /
@@ -105,12 +113,16 @@ export const LLM_MODEL_ORDER = [
 // footprint is shown per-model for reference, but tier membership doesn't
 // depend on it).
 export const MODEL_SIZE_TIER = {
+  "gemma3-1b":              "xsmall",
   "llama3.2-3b-q4":         "xsmall",
   "phi4-mini":              "xsmall",
   "mistral-7b-q4":          "small",
   "llama3.1-8b-q4":         "small",
+  "phi4-14b":               "small",
+  "qwen3.6-27b-q4":         "medium",
   "nemotron3-nano-30b-a3b": "medium",
   "qwen3.6-35b-a3b":        "medium",
+  "llama3.3-70b-q4":        "large",
   "llama4-16x17b":          "large",
   "nemotron3-super-120b":   "large",
 };
@@ -173,8 +185,8 @@ export const CONCURRENCY_STOP_LABELS = {
 };
 
 // Accuracy sub-tests, grouped under the single "Accuracy" section pill —
-// matches scripts/config.py's ACCURACY_TESTS / results JSON's top-level
-// "mcq"/"math"/"code" keys.
+// matches benchmark.py's ACCURACY_TESTS / results JSON's top-level
+// "mcq"/"math"/"code"/"tool" keys.
 export const ACCURACY_TESTS = ["mcq", "math", "code", "tool"];
 export const ACCURACY_TEST_LABELS = { mcq: "MCQ", math: "Math", code: "Code", tool: "Tool Use" };
 

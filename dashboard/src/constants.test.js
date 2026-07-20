@@ -11,6 +11,15 @@ import {
 // without also adding it to the others (label, color, size tier) that other
 // code assumes are present for every ordered model.
 describe("model registry consistency", () => {
+  it("contains the complete 12-model LLM catalog in tier order", () => {
+    expect(LLM_MODEL_ORDER).toEqual([
+      "gemma3-1b", "llama3.2-3b-q4", "phi4-mini",
+      "mistral-7b-q4", "llama3.1-8b-q4", "phi4-14b",
+      "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+      "llama3.3-70b-q4", "llama4-16x17b", "nemotron3-super-120b",
+    ]);
+  });
+
   it("every LLM model in LLM_MODEL_ORDER has a label, a color, and a valid size tier", () => {
     for (const model of LLM_MODEL_ORDER) {
       expect(LLM_MODEL_LABELS[model], `${model} missing a label`).toBeDefined();
