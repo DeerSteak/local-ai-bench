@@ -34,7 +34,7 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 
 | Section | Charts |
 |---|---|
-| LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (2K / 8K / 32K / 64K), single-shot cold-prefill test |
+| LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (512 / 2K / 8K / 32K / 64K), single-shot cold-prefill test |
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 64K / 96K each model's context window reached |
 | Concurrency | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — across whichever concurrency levels (1 / 2 / 4 / 8 / 16 / 32 / 64) the model's sweep reached. See [Concurrency](workloads.md#concurrency) for what these numbers measure |
 | Accuracy | A **Test** sub-picker for MCQ / Math / Code (mirrors `scripts/config.py`'s `ACCURACY_TESTS`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — only when at least one question actually timed out — a Timeouts & Likely Loops diagnostics chart. See [Accuracy](workloads.md#accuracy) for what these numbers measure |

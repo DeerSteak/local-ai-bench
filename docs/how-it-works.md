@@ -15,7 +15,7 @@ Each LLM model follows this pattern:
 
 ```
 warmup (--warmup runs, default 2)
-  → measure single-shot   (--runs runs at 2K / 8K / 32K / 64K, default 3)
+  → measure single-shot   (--runs runs at 512 / 2K / 8K / 32K / 64K, default 3)
   → measure conversation  (a single full conversation, --runs is ignored here,
                             sampled at 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K /
                             80K / 96K up to the model's real context ceiling)
@@ -61,7 +61,7 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `A
 
 | Parameter | Value |
 |---|---|
-| LLM single-shot context lengths | 2K, 8K, 32K, 64K |
+| LLM single-shot context lengths | 512, 2K, 8K, 32K, 64K — capped per model at its real context ceiling |
 | LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, 96K — capped per model at its real context ceiling (model is still given the full 128K context window, or its real max if lower) |
 | LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
 | LLM warmup runs | `--warmup` (default: 2, discarded) |

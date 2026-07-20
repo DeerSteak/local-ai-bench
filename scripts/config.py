@@ -35,7 +35,7 @@ MODELS_DIR = SCRIPT_DIR / "models"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
 
-CONTEXT_LENGTHS = [2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
+CONTEXT_LENGTHS = [512, 2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 
 # Concurrency tests (scripts/concurrency_benchmark.py) — see docs/workloads.md.
 # "tool" simulates agentic/tool-calling fan-out: a handful of concurrent
