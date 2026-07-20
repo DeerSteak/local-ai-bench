@@ -175,8 +175,8 @@ export const CONCURRENCY_STOP_LABELS = {
 // Accuracy sub-tests, grouped under the single "Accuracy" section pill —
 // matches scripts/config.py's ACCURACY_TESTS / results JSON's top-level
 // "mcq"/"math"/"code" keys.
-export const ACCURACY_TESTS = ["mcq", "math", "code"];
-export const ACCURACY_TEST_LABELS = { mcq: "MCQ", math: "Math", code: "Code" };
+export const ACCURACY_TESTS = ["mcq", "math", "code", "tool"];
+export const ACCURACY_TEST_LABELS = { mcq: "MCQ", math: "Math", code: "Code", tool: "Tool Use" };
 
 // Fixed two-series bar config for the accuracy timeout/loop-detection chart
 // (scripts/*_benchmark.py's timed_out_count / likely_loop_count fields) —
