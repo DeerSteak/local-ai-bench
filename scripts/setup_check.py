@@ -832,18 +832,16 @@ def load_token():
             return token
     needs_gated = bool(GATED_IMAGE_SHORTS & selected_image_shorts)
     print()
+    print(f"  {YELLOW}All models are downloaded from HuggingFace and require a free HuggingFace account.{RESET}")
+    print(f"  1. Create an account at {link('https://huggingface.co')}")
     if needs_gated:
-        print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
-        print(f"  1. Create an account at {link('https://huggingface.co')}")
         print(f"  2. Accept the licenses at:")
         print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
         print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
         print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
         print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
     else:
-        print(f"  {CYAN}A free HuggingFace token isn't required for the models you selected,{RESET}")
-        print(f"  {CYAN}but HuggingFace gives token holders faster downloads.{RESET}")
-        print(f"  Generate one (optional) at {link('https://huggingface.co/settings/tokens')}")
+        print(f"  2. Generate a token at {link('https://huggingface.co/settings/tokens')}")
     print()
     try:
         skip_hint = "skip gated models" if needs_gated else "skip and download without one"

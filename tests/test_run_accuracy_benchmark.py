@@ -20,6 +20,7 @@ import pytest
 import config
 from engines.base import InferenceEngine
 from mcq_benchmark import MCQBenchmark
+from tool_benchmark import ToolBenchmark
 from shared import EngineLoopDetected, EngineTimeout, Shared
 
 
@@ -34,9 +35,13 @@ class FakeEngine(InferenceEngine):
 
     name = "fake"
 
-    def __init__(self, behaviors: dict[str, tuple[str, str]]):
+    def __init__(self, behaviors: dict[str, tuple[str, str]],
+                 tool_behaviors: dict[str, tuple] | None = None):
         # marker -> (kind, text): kind in {"ok","timeout","loop","crash"}
         self._behaviors = behaviors
+        # marker -> (kind, payload): for chat_tools. "ok" payload is a
+        # tool_calls list; timeout/loop payload is partial text.
+        self._tool_behaviors = tool_behaviors or {}
         self.unloaded: list[str] = []
 
     # server/process lifecycle
@@ -80,6 +85,20 @@ class FakeEngine(InferenceEngine):
                 if kind == "crash":
                     raise ConnectionError("actively refused")
         raise AssertionError(f"no canned behavior matched prompt: {content!r}")
+
+    def chat_tools(self, tag, messages, tools, timeout=600, num_predict=1024, check_loop=False):
+        content = messages[-1]["content"]
+        for marker, (kind, payload) in self._tool_behaviors.items():
+            if marker in content:
+                if kind == "ok":
+                    return 0.1, 1, 5.0, 10, json.dumps(payload), payload
+                if kind == "timeout":
+                    raise EngineTimeout("timed out", partial_text=payload)
+                if kind == "loop":
+                    raise EngineLoopDetected("generation loop", partial_text=payload)
+                if kind == "crash":
+                    raise ConnectionError("actively refused")
+        raise AssertionError(f"no canned tool behavior matched prompt: {content!r}")
 
     def embed(self, tag, inputs, timeout=120):
         return [], 0.0
@@ -184,6 +203,79 @@ def test_crashed_run_stops_early(tmp_path):
     assert "crashed_at" in results["fake"]
     # q1 was scored before the crash; q3 was never reached (still counts toward
     # total as unanswered, not correct).
+    assert results["fake"]["correct"] == 1
+    assert results["fake"]["total"] == 3
+    assert results["fake"]["answered"] == 1
+
+
+# ── Tool-calling accuracy path (ToolBenchmark through the same orchestration) ──
+
+
+def _tool_question(qid: str, expected: dict) -> dict:
+    return {
+        "id": qid,
+        "category": "single_tool_call",
+        "prompt": f"[{qid}] do the thing",
+        "tools": [{"type": "function", "function": {"name": "do_it"}}],
+        "expected": expected,
+    }
+
+
+def _run_tool(tmp_path, questions, tool_behaviors):
+    data_path = tmp_path / "tool_bank.json"
+    data_path.write_text(json.dumps(questions))
+    engine = FakeEngine({}, tool_behaviors=tool_behaviors)
+    models = [{"tag": "fake:tag", "label": "Fake Model", "short": "fake"}]
+    results = Shared.run_accuracy_benchmark(
+        section_label="Tool", skip_label="tool", question_noun="tool question",
+        data_path=data_path, crash_cache_path=tmp_path / "tool_crash.json",
+        models=models, questions=questions, warmup_runs=1, engine=engine,
+        ask_fn=lambda tag, q: ToolBenchmark._ask(engine, tag, q),
+        rescore_partial_fn=ToolBenchmark.rescore_partial_fn,
+        score_fn=ToolBenchmark.score,
+    )
+    return results, engine
+
+
+def test_tool_normal_run_scores_correctly(tmp_path):
+    questions = [
+        _tool_question("q1", {"call": True, "name": "do_it", "arguments": {"x": 1}}),
+        _tool_question("q2", {"call": True, "name": "do_it", "arguments": {"x": 2}}),
+    ]
+    tool_behaviors = {
+        "q1": ("ok", [{"name": "do_it", "arguments": {"x": 1}}]),  # correct
+        "q2": ("ok", [{"name": "do_it", "arguments": {"x": 99}}]),  # wrong argument
+    }
+    results, engine = _run_tool(tmp_path, questions, tool_behaviors)
+    assert results["fake"]["correct"] == 1
+    assert results["fake"]["total"] == 2
+    assert engine.unloaded == ["fake:tag"]
+
+
+def test_tool_timeout_with_partial_text_gets_rescored(tmp_path):
+    questions = [_tool_question("q1", {"call": True, "name": "do_it", "arguments": {"x": 1}})]
+    # Times out, but the partial text is a parseable (correct) tool-call list.
+    partial = json.dumps([{"name": "do_it", "arguments": {"x": 1}}])
+    results, _ = _run_tool(tmp_path, questions, {"q1": ("timeout", partial)})
+    assert results["fake"]["correct"] == 1        # rescored from partial text
+    assert results["fake"]["answered"] == 1
+    assert results["fake"]["timed_out_count"] == 1
+    assert results["fake"]["timed_out_ids"] == ["q1"]
+
+
+def test_tool_crashed_run_stops_early(tmp_path):
+    questions = [
+        _tool_question("q1", {"call": True, "name": "do_it", "arguments": {}}),
+        _tool_question("q2", {"call": True, "name": "do_it", "arguments": {}}),
+        _tool_question("q3", {"call": True, "name": "do_it", "arguments": {}}),
+    ]
+    tool_behaviors = {
+        "q1": ("ok", [{"name": "do_it", "arguments": {}}]),
+        "q2": ("crash", ""),
+        "q3": ("ok", [{"name": "do_it", "arguments": {}}]),
+    }
+    results, _ = _run_tool(tmp_path, questions, tool_behaviors)
+    assert results["fake"]["crashed"] is True
     assert results["fake"]["correct"] == 1
     assert results["fake"]["total"] == 3
     assert results["fake"]["answered"] == 1

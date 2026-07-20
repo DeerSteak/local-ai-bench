@@ -29,9 +29,21 @@ def test_llm_tags_and_shorts_unique():
 
 
 def test_llm_models_have_required_keys():
-    required = {"tag", "label", "short", "download_size", "params_b", "hf_repo", "hf_file"}
+    required = {"tag", "label", "short", "tier", "download_size", "params_b", "hf_repo", "hf_file"}
     for m in LLM_MODELS:
         assert required <= m.keys()
+
+
+def test_llm_models_tier_matches_source_list():
+    expected = {
+        "xsmall": LLM_MODELS_XSMALL,
+        "small":  LLM_MODELS_SMALL,
+        "medium": LLM_MODELS_MEDIUM,
+        "large":  LLM_MODELS_LARGE,
+    }
+    for tier_name, models in expected.items():
+        for m in models:
+            assert m["tier"] == tier_name
 
 
 def test_embed_models_have_required_keys():

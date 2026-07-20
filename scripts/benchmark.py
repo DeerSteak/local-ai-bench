@@ -2,8 +2,9 @@
 """
 benchmark.py — Cross-platform LLM benchmark suite.
 
-Tests: llm, conv, img, emb, mcq, math, code, conc_tool, conc_chat (both
-opt-in) — see docs/workloads.md for what each measures. Servers start/stop
+Tests: llm, conv, img, emb, mcq, math, code, tool, conc_tool, conc_chat
+(conc_tool/conc_chat both opt-in) — see docs/workloads.md for what each
+measures. Servers start/stop
 automatically — see docs/how-it-works.md.
 
 Usage:
@@ -32,6 +33,7 @@ from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
 from code_benchmark import CodeBenchmark
+from tool_benchmark import ToolBenchmark
 from concurrency_benchmark import ConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 
@@ -132,7 +134,7 @@ def sidecar_path(out_path: str, prefix: str) -> Path:
     return config.RESULTS_DIR / f"{name}.json"
 
 
-ACCURACY_TESTS = ["mcq", "math", "code"]
+ACCURACY_TESTS = ["mcq", "math", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 
 # --tests shorthand groups, expanded by expand_tests below.
@@ -213,12 +215,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "acc",
+        choices=["llm", "conv", "emb", "img", "mcq", "math", "code", "tool", "acc",
                  "conc_tool", "conc_chat", "conc"],
-        default=["llm", "conv", "emb", "img", "mcq", "math", "code"],
+        default=["llm", "conv", "emb", "img", "mcq", "math", "code", "tool"],
         help="Which benchmarks to run (default: all except the concurrency "
              "tests). 'acc' is shorthand for every accuracy-style test "
-             "('mcq', 'math', and 'code'). 'conc_tool' and 'conc_chat' are "
+             "('mcq', 'math', 'code', and 'tool'). 'conc_tool' and 'conc_chat' are "
              "the two concurrency tests (see workloads.md) — opt-in, not "
              "part of the default set, since each takes noticeably longer "
              "per model than one request at a time, and both scope to "
@@ -253,7 +255,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--acc-timeout", type=int, default=None,
         help="Seconds per question before giving up on it, for the accuracy tests "
-             f"(mcq, math, code) — a timed-out question is scored wrong and the run "
+             f"(mcq, math, code, tool) — a timed-out question is scored wrong and the run "
              f"moves on (default: {config.ACC_TIMEOUT})",
     )
     parser.add_argument(
@@ -267,7 +269,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--cpu-only", action="store_true",
         help="Force CPU-only inference for every LLM-backed test (llm, conv, "
-             "mcq, math, code, emb) by restarting the engine with GPU devices "
+             "mcq, math, code, tool, emb) by restarting the engine with GPU devices "
              "hidden (HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES / "
              "ROCR_VISIBLE_DEVICES set empty). Stops any running engine server "
              "(even one this script didn't start) and restores normal GPU mode "
@@ -284,7 +286,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     parser.add_argument(
         "--models", nargs="+", default=None,
-        help="Only test these LLM models (llm, conv, mcq, math, and code tests) — exact "
+        help="Only test these LLM models (llm, conv, mcq, math, code, and tool tests) — exact "
              "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
              "starting with 'llama' (default: every model in the selected tier). "
              "Applied after --maxtier, so it can only narrow that selection further "
@@ -301,7 +303,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     parser.add_argument(
         "--sample", type=int, default=None, metavar="N",
-        help="Dev-only: run 'mcq'/'math'/'code' against a deterministic N-question "
+        help="Dev-only: run 'mcq'/'math'/'code'/'tool' against a deterministic N-question "
              "subset of each bank instead of the full thing, stratified so every "
              "category is represented. Same N always yields the same questions for "
              "a given bank version, and the exact sampled IDs are recorded in the "
@@ -466,6 +468,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "mcq":  Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH),
                 "math": Shared.file_hash(MathBenchmark.MATH_DATA_PATH),
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
+                "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
             # Populated only when --sample is used, with the exact question IDs
             # drawn from each bank — so a dev-mode run is reproducible/auditable
@@ -478,6 +481,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "mcq":             {},
             "math":            {},
             "code":            {},
+            "tool":            {},
             "concurrency_tool": {},
             "concurrency_chat": {},
         }
@@ -489,7 +493,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         try:
             # ── LLM-backed tests share one server lifecycle
-            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "emb",
+            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "tool", "emb",
                                       "conc_tool", "conc_chat") if t in tests]
             if llm_tests:
                 Shared.section("Starting Servers")
@@ -561,7 +565,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             # Identical wiring for all three — only the test name, benchmark class,
             # and display label vary.
             for test_name, Bench, done_label in (
-                ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"), ("code", CodeBenchmark, "Code"),
+                ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"),
+                ("code", CodeBenchmark, "Code"), ("tool", ToolBenchmark, "Tool"),
             ):
                 if test_name not in tests:
                     continue

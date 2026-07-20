@@ -420,6 +420,74 @@ def test_chat_raises_engine_timeout_type_for_run_measured_calls_compat(monkeypat
         LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}], timeout=5)
 
 
+# ── chat_tools ──
+
+def test_chat_tools_accumulates_fragmented_arguments(monkeypatch):
+    # arguments streams as partial JSON text across chunks and must be
+    # reassembled by index before parsing; name arrives once up front.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "function": {"name": "get_weather", "arguments": ""}}]}}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": '{"location": "Par'}}]}}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": 'is", "unit": "celsius"}'}}]}}]},
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
+         "timings": {"predicted_n": 3, "predicted_ms": 1000, "prompt_n": 20}},
+    ])
+    _, _, _, prompt_eval_count, text, tool_calls = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "weather?"}], tools=[{"type": "function"}])
+    assert tool_calls == [{"name": "get_weather", "arguments": {"location": "Paris", "unit": "celsius"}}]
+    assert prompt_eval_count == 20
+    assert text == ""  # no content chunks, only tool calls
+
+
+def test_chat_tools_zero_tool_calls_returns_empty_list(monkeypatch):
+    # A model that answers in prose instead of calling anything yields an
+    # empty tool_calls list plus the response text.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"content": "I can't help with that."}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "timings": {"predicted_n": 5, "predicted_ms": 1000, "prompt_n": 15}},
+    ])
+    _, _, _, _, text, tool_calls = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "hi"}], tools=[{"type": "function"}])
+    assert tool_calls == []
+    assert text == "I can't help with that."
+
+
+def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
+    # A truncated/invalid arguments string must not crash the parse — it falls
+    # back to {} while still reporting the tool name.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "function": {"name": "set_timer", "arguments": '{"minutes":'}}]}}]},
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
+         "timings": {"predicted_n": 1, "predicted_ms": 1000, "prompt_n": 10}},
+    ])
+    _, _, _, _, _, tool_calls = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "timer"}], tools=[{"type": "function"}])
+    assert tool_calls == [{"name": "set_timer", "arguments": {}}]
+
+
+def test_chat_tools_multiple_calls_ordered_by_index(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 1, "id": "c2", "function": {"name": "second", "arguments": "{}"}}]}}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "function": {"name": "first", "arguments": "{}"}}]}}]},
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
+         "timings": {"predicted_n": 2, "predicted_ms": 1000, "prompt_n": 10}},
+    ])
+    _, _, _, _, _, tool_calls = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "two"}], tools=[{"type": "function"}])
+    assert [c["name"] for c in tool_calls] == ["first", "second"]
+
+
 # ── embed ──
 
 def test_embed_returns_embeddings_in_index_order(monkeypatch):

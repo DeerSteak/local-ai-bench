@@ -655,6 +655,116 @@ class LlamaCppEngine(InferenceEngine):
         response_text = "".join(response_parts) or "".join(reasoning_parts)
         return ttft, tokens, sanitized, prompt_eval_count, response_text
 
+    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
+                   num_predict: int = 1024, check_loop: bool = False):
+        """Tool-calling chat via /v1/chat/completions with tools/tool_choice.
+        Same 5-tuple as chat() plus a tool_calls list of {"name", "arguments"}
+        (empty if nothing was called). delta.tool_calls fragments stream by
+        index — id/name arrive once, arguments as partial JSON text — so they
+        accumulate per index the way content does; each arguments string is
+        JSON-parsed once at the end, falling back to {} if it won't parse."""
+        self._ensure_model(tag, None)
+
+        payload = json.dumps({
+            "messages":       messages,
+            "tools":          tools,
+            "tool_choice":    "auto",
+            "n_predict":      num_predict,
+            "temperature":    0.0,
+            "stream":         True,
+            "stream_options": {"include_usage": True},
+        }).encode()
+        req = urllib.request.Request(
+            f"{config.LLAMACPP_URL}/v1/chat/completions",
+            data=payload, headers={"Content-Type": "application/json"}, method="POST",
+        )
+
+        t_start = time.perf_counter()
+        ttft   = None
+        tokens = 0
+        tps    = 0
+        server_predicted_n = 0
+        predicted_ms       = 0
+        prompt_eval_count = 0
+        response_parts    = []
+        # index -> {"name": str, "arguments": str}: fragments arrive by index.
+        tool_fragments: dict[int, dict] = {}
+        last_loop_check   = t_start
+
+        with self._urlopen(req, timeout) as resp:
+            for chunk in self._iter_sse(resp):
+                choices   = chunk.get("choices") or [{}]
+                delta     = choices[0].get("delta", {})
+                content   = delta.get("content")
+                tool_calls = delta.get("tool_calls")
+
+                if ttft is None and (content or tool_calls):
+                    ttft = time.perf_counter() - t_start
+
+                if content:
+                    tokens += 1
+                    response_parts.append(content)
+                if tool_calls:
+                    for call in tool_calls:
+                        idx = call.get("index", 0)
+                        frag = tool_fragments.setdefault(idx, {"name": "", "arguments": ""})
+                        fn = call.get("function") or {}
+                        if fn.get("name"):
+                            frag["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            frag["arguments"] += fn["arguments"]
+
+                now = time.perf_counter()
+
+                if now - t_start > timeout:
+                    partial_text = "".join(response_parts)
+                    raise EngineTimeout(f"llamacpp_chat_tools exceeded {timeout}s wall-clock timeout",
+                                        partial_text=partial_text)
+
+                if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
+                    last_loop_check = now
+                    partial_text = "".join(response_parts)
+                    if partial_text and Shared.looks_like_loop(partial_text):
+                        raise EngineLoopDetected(
+                            f"llamacpp_chat_tools detected a generation loop after {now - t_start:.0f}s",
+                            partial_text=partial_text)
+
+                timings = chunk.get("timings")
+                if timings:
+                    server_predicted_n = timings.get("predicted_n", tokens)
+                    predicted_ms       = timings.get("predicted_ms") or 0
+                    prompt_ms          = timings.get("prompt_ms")
+                    prompt_n           = timings.get("prompt_n")
+                    if predicted_ms:
+                        tps = tokens / (predicted_ms / 1000)
+                    if prompt_ms is not None and prompt_ms > 0:
+                        ttft = prompt_ms / 1000
+                    if prompt_n is not None:
+                        prompt_eval_count = prompt_n
+
+                usage = chunk.get("usage")
+                if usage and usage.get("prompt_tokens") is not None:
+                    prompt_eval_count = usage["prompt_tokens"]
+
+        total = time.perf_counter() - t_start
+        if ttft is None:
+            ttft = total
+        sanitized = self._sanitize_tps(tps, tokens, ttft, total)
+        if sanitized != tps:
+            self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
+
+        tool_calls_out = []
+        for idx in sorted(tool_fragments):
+            frag = tool_fragments[idx]
+            try:
+                arguments = json.loads(frag["arguments"]) if frag["arguments"] else {}
+            except json.JSONDecodeError:
+                arguments = {}
+            tool_calls_out.append({"name": frag["name"], "arguments": arguments})
+
+        response_text = "".join(response_parts)
+        return ttft, tokens, sanitized, prompt_eval_count, response_text, tool_calls_out
+
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
         """Embed every string in `inputs` in a single /v1/embeddings call.
         Returns (embeddings_list, elapsed_seconds).

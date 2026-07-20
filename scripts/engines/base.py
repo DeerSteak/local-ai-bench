@@ -111,6 +111,14 @@ class InferenceEngine(ABC):
         tokens_per_sec, prompt_eval_count, response_text)."""
 
     @abstractmethod
+    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
+                   num_predict: int = 1024, check_loop: bool = False
+                   ) -> tuple[float, int, float, int, str, list[dict]]:
+        """Tool-calling chat. Same return as chat() plus a tool_calls list of
+        {"name": str, "arguments": dict} (empty if the model called nothing).
+        `tools` is an OpenAI-style function-tools array."""
+
+    @abstractmethod
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
         """Embed `inputs` in a single call. Returns (embeddings_list,
         elapsed_seconds)."""

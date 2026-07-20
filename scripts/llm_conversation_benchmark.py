@@ -25,6 +25,15 @@ class LLMConversationBenchmark:
     # Higher than the top sampled checkpoint (96K) so the growth loop always has headroom, never scrapes the ceiling.
     CONV_TARGET_CTX = 131072
 
+    # xsmall/small models can have a native context window (e.g. Phi 4 Mini's 128K) far
+    # beyond what a constrained-memory machine can actually reserve KV-cache for — a small
+    # model's value is being cheap to run everywhere, not exercising every token it's rated
+    # for. Cap their context budget and top sampled checkpoint at half the large-tier ones,
+    # same headroom ratio as CONV_TARGET_CTX leaves above the 96K checkpoint.
+    CONV_SMALL_TIERS = {"xsmall", "small"}
+    CONV_SMALL_TIER_TARGET_CTX = 65536
+    CONV_SMALL_TIER_TOP_CHECKPOINT = 49152
+
     # 2K doubling to 64K, plus 48K/80K in the higher gaps and the 96K cap. Filtered per model to its real ceiling.
     CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
@@ -77,6 +86,25 @@ class LLMConversationBenchmark:
         return min(step, room), False
 
     @staticmethod
+    def conv_ctx_plan(tier: str | None, model_max: int) -> tuple[int, list[int], int]:
+        """Resolve a model's conversation-test context budget from its tier and
+        real max context: (target_ctx, checkpoints, num_ctx). xsmall/small-tier
+        models get CONV_SMALL_TIER_TARGET_CTX/CONV_SMALL_TIER_TOP_CHECKPOINT
+        instead of the full CONV_TARGET_CTX/CONV_CHECKPOINTS ceiling — see those
+        constants' docstring. An unrecognized/missing tier (e.g. a custom
+        --models tag outside the catalog) falls back to the uncapped behavior."""
+        is_small_tier = tier in LLMConversationBenchmark.CONV_SMALL_TIERS
+        target_ctx_cap = (LLMConversationBenchmark.CONV_SMALL_TIER_TARGET_CTX if is_small_tier
+                          else LLMConversationBenchmark.CONV_TARGET_CTX)
+        target_ctx = min(model_max, target_ctx_cap)
+        checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
+        if is_small_tier:
+            checkpoints = [c for c in checkpoints
+                           if c <= LLMConversationBenchmark.CONV_SMALL_TIER_TOP_CHECKPOINT]
+        num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+        return target_ctx, checkpoints, num_ctx
+
+    @staticmethod
     def _conv_followup_prompt(section_n: int) -> str:
         section = ((section_n - 1) % LLMConversationBenchmark.CONV_NUM_SECTIONS) + 1
         return (
@@ -115,9 +143,8 @@ class LLMConversationBenchmark:
                     continue
 
                 model_max = engine.max_context_length(tag)
-                target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
-                checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
-                num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(
+                    model.get("tier"), model_max)
                 top_checkpoint = checkpoints[-1] if checkpoints else 0
 
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
