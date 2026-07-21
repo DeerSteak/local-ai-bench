@@ -126,7 +126,7 @@ class ToolBenchmark:
         correct = (not first.get("incomplete")
                    and first.get("name") == expected["name"]
                    and ToolBenchmark._args_match(
-                       first.get("arguments") or {}, expected["arguments"],
+                       first.get("arguments", {}), expected["arguments"],
                        allow_extra=not expected.get("strict_arguments", False),
                        unordered_keys=expected.get("unordered_keys", ()),
                    ))

@@ -544,7 +544,9 @@ def test_chat_tools_zero_tool_calls_returns_empty_list(monkeypatch):
 
 def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
     # A truncated/invalid arguments string must not crash the parse — it falls
-    # back to {} while still reporting the tool name.
+    # back to {} while still reporting the tool name, and is marked incomplete
+    # even though this stream completed normally (didn't time out) — a
+    # completed-but-unparseable call is not a genuine empty-argument call.
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"tool_calls": [
@@ -554,7 +556,7 @@ def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
     ])
     _, _, _, _, _, tool_calls = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "timer"}], tools=[{"type": "function"}])
-    assert tool_calls == [{"name": "set_timer", "arguments": {}}]
+    assert tool_calls == [{"name": "set_timer", "arguments": {}, "incomplete": True}]
 
 
 def test_chat_tools_multiple_calls_ordered_by_index(monkeypatch):
@@ -612,6 +614,58 @@ def test_chat_tools_timeout_with_text_only_keeps_text(monkeypatch):
     assert exc_info.value.partial_text == "not calling"
 
 
+def test_chat_tools_falls_back_to_reasoning_text_when_content_empty(monkeypatch):
+    # Mirrors chat()'s reasoning fallback (test_chat_falls_back_to_reasoning_
+    # text_when_content_empty) — a reasoning model that declines to call
+    # anything can stream its whole turn via reasoning_content.
+    _patch_ensure_model(monkeypatch)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"reasoning_content": "Let me consider... "}}]},
+        {"choices": [{"delta": {"reasoning_content": "no tool fits."}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "timings": {"predicted_n": 8, "predicted_ms": 1000, "prompt_n": 10}},
+    ])
+    _, tokens, _, _, text, tool_calls = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "hi"}], tools=[{"type": "function"}])
+    assert text == "Let me consider... no tool fits."
+    assert tool_calls == []
+    assert tokens == 8
+
+
+def test_chat_tools_check_loop_raises_during_reasoning_phase(monkeypatch):
+    # Before the fix, check_loop only inspected `content`, so a model stuck
+    # looping in reasoning_content (with content still empty) would never
+    # trip loop detection and would burn the full accuracy timeout instead.
+    _patch_ensure_model(monkeypatch)
+    import itertools
+
+    counter = itertools.count(0, 1.0)
+    monkeypatch.setattr(llamacpp_module.time, "perf_counter", lambda: next(counter))
+    monkeypatch.setattr(llamacpp_module.config, "LOOP_CHECK_INTERVAL", 0)
+    _patch_urlopen(monkeypatch, [
+        {"choices": [{"delta": {"reasoning_content": "wait, "}}]},
+        {"choices": [{"delta": {"reasoning_content": "wait, "}}]},
+        {"choices": [{"delta": {"reasoning_content": "wait, "}}]},
+        {"choices": [{"delta": {"reasoning_content": "wait, "}}]},
+        {"choices": [{"delta": {"reasoning_content": "wait, still stuck"}}]},
+        {"choices": [{"delta": {"reasoning_content": "this chunk should never be reached"}}]},
+    ])
+    with pytest.raises(EngineLoopDetected) as exc_info:
+        LlamaCppEngine().chat_tools(
+            "tag", [{"role": "user", "content": "hi"}], tools=[{"type": "function"}], check_loop=True)
+    assert "wait, wait, wait, wait, wait, still stuck" == exc_info.value.partial_text
+    assert "never be reached" not in exc_info.value.partial_text
+
+
+def test_chat_tools_timeout_with_reasoning_only_keeps_reasoning_text(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 1.0, 10.0))
+    _patch_urlopen(monkeypatch, [{"choices": [{"delta": {"reasoning_content": "still thinking"}}]}])
+    with pytest.raises(EngineTimeout) as exc_info:
+        LlamaCppEngine().chat_tools("tag", [], [], timeout=5)
+    assert exc_info.value.partial_text == "still thinking"
+
+
 # ── embed ──
 
 def test_embed_returns_embeddings_in_index_order(monkeypatch):
@@ -661,6 +715,7 @@ def test_is_connection_crash_false_for_unrelated_error():
     ("CUDA0: NVIDIA RTX", "cuda"),
     ("HIP0: AMD Radeon", "rocm"),
     ("Metal: Apple M3", "metal"),
+    ("Available devices:\n  MTL0: Apple M4 (18186 MiB, 18185 MiB free)", "metal"),
     ("SYCL0: Intel Arc", "xpu"),
     ("Vulkan0: AMD Radeon", "vulkan"),
     ("Available devices:\n", "cpu"),
@@ -728,6 +783,44 @@ def test_ensure_model_deadline_stops_in_progress_process(monkeypatch, tmp_path):
 
     assert proc.terminated is True
     assert engine._proc is None
+
+
+@pytest.mark.parametrize(("n_parallel", "num_ctx", "expected_ctx_arg"), [
+    (1, 2048, "2048"),
+    (4, 2048, "8192"),
+])
+def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_parallel, num_ctx, expected_ctx_arg):
+    """--parallel must be passed even at 1 — omitting it lets llama-server
+    fall back to its own auto-slot resolution instead of the single slot
+    this engine records via _loaded_n_parallel."""
+    captured_args = {}
+
+    class Proc:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    def fake_popen(args, **kwargs):
+        captured_args["args"] = args
+        return Proc()
+
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"x")
+    monkeypatch.setattr(LlamaCppEngine, "_resolve_model_files", classmethod(lambda cls, tag: [model_path]))
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "available", lambda: True)
+
+    engine._ensure_model("tag", num_ctx, n_parallel=n_parallel)
+
+    args = captured_args["args"]
+    assert "--parallel" in args
+    assert args[args.index("--parallel") + 1] == str(n_parallel)
+    assert args[args.index("-c") + 1] == expected_ctx_arg
+    assert engine._loaded_n_parallel == n_parallel
 
 
 def test_reachable_or_abort_always_true_regardless_of_available(monkeypatch):

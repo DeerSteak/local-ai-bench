@@ -67,6 +67,7 @@ class ConcurrencyBenchmark:
                     f"Engine crashed during {level}-way concurrency; retrying "
                     f"({crash_i + 1}/{Shared.CRASH_RETRY_MAX}) ..."
                 )
+        return [], "crashed", None, 0
 
     def run(self, engine, models, levels, per_request_context, warmup_runs,
             crash_cache_path: Path, section_label: str,

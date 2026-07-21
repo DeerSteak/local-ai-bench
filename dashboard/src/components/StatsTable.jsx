@@ -1,5 +1,5 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, fmt, modelLabel } from "../utils";
+import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, concurrencySortValue, fmt, modelLabel } from "../utils";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
@@ -158,8 +158,8 @@ function ImagesTable({ files, sortConfig, onCycleSort }) {
 function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
   const rows = flattenConcurrencyData(files, section).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
+    const ak = concurrencySortValue(a, sortConfig.key);
+    const bk = concurrencySortValue(b, sortConfig.key);
     return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
   });
 

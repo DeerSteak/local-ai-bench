@@ -267,7 +267,7 @@ class LlamaCppEngine(InferenceEngine):
                 return "cuda"
             if re.match(r"(?:rocm|hip)\d*\s*:", device):
                 return "rocm"
-            if re.match(r"metal\d*\s*:", device):
+            if re.match(r"(?:metal|mtl)\d*\s*:", device):
                 return "metal"
             if re.match(r"(?:sycl|level[- ]?zero)\d*\s*:", device):
                 return "xpu"
@@ -506,8 +506,10 @@ class LlamaCppEngine(InferenceEngine):
                 args += ["-c", str(num_ctx * n_parallel)]
             if embedding:
                 args += ["--embeddings", "--pooling", "mean"]
-            if n_parallel > 1:
-                args += ["--parallel", str(n_parallel)]
+            # Always pinned, even at 1 — omitting it lets llama-server fall back
+            # to its own auto-slot resolution (4 slots on this project's test
+            # hardware), which silently diverges from the n_parallel we record.
+            args += ["--parallel", str(n_parallel)]
 
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
             self._log_path = Path(log_fh.name)
@@ -749,6 +751,7 @@ class LlamaCppEngine(InferenceEngine):
         predicted_ms       = 0
         prompt_eval_count = 0
         response_parts    = []
+        reasoning_parts    = []
         # index -> {"name": str, "arguments": str}: fragments arrive by index.
         tool_fragments: dict[int, dict] = {}
         last_loop_check   = t_start
@@ -759,13 +762,16 @@ class LlamaCppEngine(InferenceEngine):
                 choices   = chunk.get("choices") or [{}]
                 delta     = choices[0].get("delta", {})
                 content   = delta.get("content")
+                reasoning = delta.get("reasoning_content")
                 tool_calls = delta.get("tool_calls")
 
-                if ttft is None and (content or tool_calls):
+                if ttft is None and (content or reasoning or tool_calls):
                     ttft = time.perf_counter() - t_start
 
                 if content:
                     response_parts.append(content)
+                if reasoning:
+                    reasoning_parts.append(reasoning)
                 if tool_calls:
                     for call in tool_calls:
                         idx = call.get("index", 0)
@@ -779,15 +785,15 @@ class LlamaCppEngine(InferenceEngine):
                 now = time.perf_counter()
 
                 if now > deadline:
-                    partial_calls = self._tool_calls_from_fragments(tool_fragments, mark_incomplete=True)
+                    partial_calls = self._tool_calls_from_fragments(tool_fragments)
                     partial_text = (json.dumps(partial_calls) if partial_calls
-                                    else "".join(response_parts))
+                                    else "".join(response_parts) or "".join(reasoning_parts))
                     raise EngineTimeout(f"llamacpp_chat_tools exceeded {timeout}s wall-clock timeout",
                                         partial_text=partial_text)
 
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
-                    partial_text = "".join(response_parts)
+                    partial_text = "".join(response_parts) or "".join(reasoning_parts)
                     if partial_text and Shared.looks_like_loop(partial_text):
                         raise EngineLoopDetected(
                             f"llamacpp_chat_tools detected a generation loop after {now - t_start:.0f}s",
@@ -825,23 +831,20 @@ class LlamaCppEngine(InferenceEngine):
 
         tool_calls_out = self._tool_calls_from_fragments(tool_fragments)
 
-        response_text = "".join(response_parts)
+        # A reasoning model can stream its whole turn via reasoning_content with content empty;
+        # falling back avoids an empty assistant turn corrupting history.
+        response_text = "".join(response_parts) or "".join(reasoning_parts)
         return ttft, tokens, sanitized, prompt_eval_count, response_text, tool_calls_out
 
     @staticmethod
-    def _tool_calls_from_fragments(tool_fragments: dict[int, dict],
-                                   mark_incomplete: bool = False) -> list[dict]:
+    def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:
         tool_calls_out = []
         for idx in sorted(tool_fragments):
             frag = tool_fragments[idx]
-            incomplete = False
+            call = {"name": frag["name"], "arguments": {}}
             try:
-                arguments = json.loads(frag["arguments"]) if frag["arguments"] else {}
+                call["arguments"] = json.loads(frag["arguments"]) if frag["arguments"] else {}
             except json.JSONDecodeError:
-                arguments = {}
-                incomplete = True
-            call = {"name": frag["name"], "arguments": arguments}
-            if mark_incomplete and incomplete:
                 call["incomplete"] = True
             tool_calls_out.append(call)
         return tool_calls_out

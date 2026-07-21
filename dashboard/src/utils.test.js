@@ -16,7 +16,7 @@ import {
   buildAccuracyTimeoutData,
   flattenAccuracyData,
   getAllConcurrencyModels, buildConcurrencyDataForModel,
-  getConcurrencyStopInfo, flattenConcurrencyData,
+  getConcurrencyStopInfo, flattenConcurrencyData, concurrencySortValue,
 } from "./utils";
 
 describe("parseJSON", () => {
@@ -564,5 +564,36 @@ describe("flattenConcurrencyData", () => {
       tps_mean: 28.3, tps_stdev: 0, aggregate_tps: 7.79,
       ttft_mean: 31.35, ttft_stdev: 0, total_tokens: 337,
     });
+  });
+});
+
+describe("concurrencySortValue", () => {
+  it("coerces level to a number so sweep order beats lexicographic order", () => {
+    const levels = ["1", "2", "4", "6", "8", "12", "16"].map(level => ({ level }));
+    const sorted = [...levels].sort(
+      (a, b) => concurrencySortValue(a, "level") - concurrencySortValue(b, "level"),
+    );
+    expect(sorted.map(r => r.level)).toEqual(["1", "2", "4", "6", "8", "12", "16"]);
+  });
+  it("passes other columns through unchanged", () => {
+    expect(concurrencySortValue({ tps_mean: 12.5 }, "tps_mean")).toBe(12.5);
+    expect(concurrencySortValue({ model: "m" }, "model")).toBe("m");
+  });
+  it("falls back to empty string for a missing non-level field", () => {
+    expect(concurrencySortValue({}, "tps_mean")).toBe("");
+  });
+  it("pins a skipped row's non-numeric level to +Infinity instead of NaN", () => {
+    // Number("—") is NaN, and NaN compares false in both directions, which
+    // breaks comparator consistency (a<b and a>b both false, yet a !== b).
+    expect(concurrencySortValue({ level: "—" }, "level")).toBe(Infinity);
+    const rows = [{ level: "16" }, { level: "—" }, { level: "1" }, { level: "4" }];
+    const ascending = [...rows].sort(
+      (a, b) => concurrencySortValue(a, "level") - concurrencySortValue(b, "level"),
+    );
+    expect(ascending.map(r => r.level)).toEqual(["1", "4", "16", "—"]);
+    const descending = [...rows].sort(
+      (a, b) => concurrencySortValue(b, "level") - concurrencySortValue(a, "level"),
+    );
+    expect(descending.map(r => r.level)).toEqual(["—", "16", "4", "1"]);
   });
 });

@@ -1,6 +1,8 @@
 from collections import Counter
 import json
 
+import pytest
+
 from tool_benchmark import ToolBenchmark
 
 
@@ -73,6 +75,38 @@ def test_evaluate_float_string_coercion():
 def test_evaluate_incorrectly_declined_when_should_call():
     assert ToolBenchmark.evaluate_question(_q_call(), [])["correct"] is False
     assert ToolBenchmark.evaluate_question(_q_call(), None)["correct"] is False
+
+
+def test_evaluate_incomplete_call_with_empty_expected_arguments_is_wrong():
+    # Regression for tool_070/tool_089 (real bank questions with expected
+    # arguments == {}): a completed-but-unparseable-JSON call must not be
+    # scored correct just because its coerced-to-{} arguments happen to
+    # match an empty expectation — the incomplete flag has to override it.
+    q = {
+        "id": "tool_z", "category": "single_tool_call",
+        "prompt": "Show me the latest headlines.",
+        "tools": [{"type": "function", "function": {"name": "get_news"}}],
+        "expected": {"call": True, "name": "get_news", "arguments": {}, "strict_arguments": True},
+    }
+    calls = [{"name": "get_news", "arguments": {}, "incomplete": True}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+@pytest.mark.parametrize("bogus_arguments", [None, [], False, 0, ""])
+def test_evaluate_non_dict_arguments_with_empty_expected_arguments_is_wrong(bogus_arguments):
+    # Regression: `first.get("arguments") or {}` used Python truthiness, so
+    # any falsy-but-valid-JSON value (null, [], false, 0, "") was silently
+    # coerced to {} before ever reaching _args_match's isinstance(dict)
+    # guard — scoring correct against an empty-expected-arguments question
+    # even though the model never actually produced an empty object.
+    q = {
+        "id": "tool_z", "category": "single_tool_call",
+        "prompt": "Show me the latest headlines.",
+        "tools": [{"type": "function", "function": {"name": "get_news"}}],
+        "expected": {"call": True, "name": "get_news", "arguments": {}, "strict_arguments": True},
+    }
+    calls = [{"name": "get_news", "arguments": bogus_arguments}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
 
 
 def test_evaluate_nested_object_numeric_string_coercion():

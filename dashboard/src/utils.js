@@ -890,6 +890,18 @@ export function flattenConcurrencyData(files, section) {
   );
 }
 
+// level is a numeric-string sweep value ("1".."32"), so it must sort
+// numerically rather than lexicographically ("12" before "2"). Every other
+// column sorts by its raw value, same as the other stats tables. A skipped
+// row's level is "—" (non-numeric) — Number(NaN) compares false in both
+// directions, which breaks comparator consistency, so it's pinned to
+// +Infinity: last ascending and first descending.
+export function concurrencySortValue(row, key) {
+  if (key !== "level") return row[key] ?? "";
+  const n = Number(row.level);
+  return Number.isNaN(n) ? Infinity : n;
+}
+
 export function flattenAccuracyData(files, testKey) {
   return files.flatMap(f =>
     Object.entries(f.data[testKey] || {}).map(([model, s]) => {

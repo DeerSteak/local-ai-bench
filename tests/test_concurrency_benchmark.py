@@ -164,3 +164,11 @@ def test_fire_batch_stops_when_engine_cannot_recover(monkeypatch):
     assert status == "crashed"
     assert isinstance(error, ConnectionError)
     assert engine.recovery_calls == 1
+
+
+def test_fire_batch_negative_retry_limit_returns_defensive_fallback(monkeypatch):
+    monkeypatch.setattr(Shared, "CRASH_RETRY_MAX", -1)
+    result = ConcurrencyBenchmark._fire_batch_with_crash_retries(
+        _RetryEngine(), "tag", 2, 512,
+    )
+    assert result == ([], "crashed", None, 0)
