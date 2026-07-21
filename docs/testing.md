@@ -191,14 +191,14 @@ The test suite consists of **29 test modules** validating different components o
   Tests the pure logic in `MCQBenchmark`. It verifies:
   - `build_prompt` includes the question text and every answer choice.
   - `parse_answer` extracts a model's chosen letter from free-form text — bare letters, punctuated letters (`"B."`, `"(B)"`), and letters embedded in a reasoning sentence ("...so the answer is B") — while rejecting letters that aren't among the question's valid choices and not false-positiving on ordinary words/contractions that happen to contain a letter (e.g. the "d" in "I'd").
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/mcq_questions.json` file — unique IDs, and every question's answer is one of its own choices.
 
 - **[test_math_benchmark.py](../tests/test_math_benchmark.py)**
   Tests the pure logic in `MathBenchmark`. It verifies:
   - `build_prompt` includes the question text and asks for a numeric-only answer.
   - `parse_answer` extracts a model's final numeric answer from free-form text — bare integers, decimals, negative numbers, thousands-comma-separated numbers, and numbers with a trailing `%` — taking the *last* number stated rather than the first, so a model that reasons out loud before answering is still scored on its final answer, and returning `None` when no number (or only a bare `-`) is found.
-  - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list.
+  - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
 - **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
@@ -207,7 +207,7 @@ The test suite consists of **29 test modules** validating different components o
   - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
   - `execute_tests` runs a candidate function against a list of test cases in an isolated subprocess: correct/incorrect results score independently per test case, a runtime error in one test case doesn't abort the others, a syntax error or reference to an undefined function name fails every test case with an error message, and an infinite loop is killed and reported as a `"timeout"` rather than hanging the test run.
   - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/code_problems.json` file — unique IDs, and every problem has a function name and at least one visible and one hidden test case, each with `args` and `expected`.
 
 - **[test_tool_benchmark.py](../tests/test_tool_benchmark.py)**
@@ -216,7 +216,8 @@ The test suite consists of **29 test modules** validating different components o
   - Recursive comparison handles nested strict objects, keeps booleans distinct from numbers, preserves positional arrays by default, and treats configured `unordered_keys` arrays as multisets (including arrays of objects).
   - `evaluate_question` scores a decline case (`call: false`) correct only when nothing was called — an empty/`None` call list is a correct decline, and firing any tool is wrong; conversely a call case with an empty/`None` list is a wrong (incorrect) decline.
   - `rescore_partial_fn` parses a tool-call list out of a timed-out question's partial text, falling back to a decline (`[]`) when the text won't parse or isn't a list.
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `_ask` never discards a model's prose: a pure tool call raw-responds as the tool-calls JSON, a decline (no tool calls) raw-responds as the prose itself, and a turn that emits *both* narration and a tool call keeps both, as a `{"tool_calls": ..., "text": ...}` object.
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none).
 
 ---
@@ -267,7 +268,7 @@ The test suite consists of **29 test modules** validating different components o
   - `slow_tps_early_exit` early termination logic based on performance speeds.
 
 - **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling.
+  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling. Also verifies the `answers_*.json` sidecar: it's built from `score_fn`'s `all` list, so it carries every question's raw response and `correct` flag (not just wrong answers), while the main results dict stays on the separate incorrect-only schema and never picks up the `all` key.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
   Tests the degenerate-generation-loop heuristic applied periodically to streaming accuracy responses (`Shared.looks_like_loop`):
@@ -278,6 +279,9 @@ The test suite consists of **29 test modules** validating different components o
   Validates general helpers in `Shared`:
   - `mean` and `stdev` mathematical routines (including handling empty lists or single-element inputs).
   - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
+
+- **[test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py)**
+  Tests `Shared.tally_accuracy_entry` — the common by_category/`all`/`incorrect` recording tail shared by all four accuracy `score()` methods (MCQ/Math/Code/Tool). Verifies a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`), an incorrect entry lands in both `all` and `incorrect` (the latter without a `correct` key, preserving the existing `incorrect` shape) without bumping the category count, and that the original `entry` dict passed in is never mutated.
 
 ---
 

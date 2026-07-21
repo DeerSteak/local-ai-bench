@@ -276,6 +276,46 @@ def test_tool_timeout_with_partial_text_gets_rescored(tmp_path):
     assert results["fake"]["timed_out_ids"] == ["q1"]
 
 
+def test_answers_sidecar_includes_correct_and_incorrect_responses(tmp_path):
+    questions = [_question("q1", "B"), _question("q2", "A")]
+    behaviors = {
+        "q1": ("ok", "The answer is B"),   # correct
+        "q2": ("ok", "The answer is D"),   # wrong (expected A)
+    }
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    answers_path = tmp_path / "answers.json"
+    engine = FakeEngine(behaviors)
+    models = [{"tag": "fake:tag", "label": "Fake Model", "short": "fake"}]
+    results = Shared.run_accuracy_benchmark(
+        section_label="MCQ", skip_label="MCQ", question_noun="MCQ questions",
+        data_path=data_path, crash_cache_path=tmp_path / "crash.json",
+        models=models, questions=questions, warmup_runs=1, engine=engine,
+        ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
+        rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
+        score_fn=MCQBenchmark.score,
+        answers_path=answers_path,
+    )
+
+    sidecar = json.loads(answers_path.read_text())
+    entries = sidecar["fake"]["answers"]
+    assert {e["id"] for e in entries} == {"q1", "q2"}  # every question, not just wrong ones
+
+    q1_entry = next(e for e in entries if e["id"] == "q1")
+    assert q1_entry["correct"] is True
+    assert q1_entry["raw_response"] == "The answer is B"
+
+    q2_entry = next(e for e in entries if e["id"] == "q2")
+    assert q2_entry["correct"] is False
+    assert q2_entry["raw_response"] == "The answer is D"
+
+    # The main results JSON is a separate schema — it must keep its existing
+    # incorrect-only shape and never pick up the sidecar's "all" list.
+    assert "all" not in results["fake"]
+    assert {e["id"] for e in results["fake"]["incorrect"]} == {"q2"}
+    assert results["fake"]["correct"] == 1
+
+
 def test_tool_crashed_run_stops_early(tmp_path):
     questions = [
         _tool_question("q1", {"call": True, "name": "do_it", "arguments": {}}),

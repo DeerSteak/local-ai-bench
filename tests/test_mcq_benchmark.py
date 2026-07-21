@@ -115,6 +115,16 @@ def test_score_missing_answer_counts_as_incorrect_and_unanswered():
     assert len(result["incorrect"]) == 3
 
 
+def test_score_all_list_covers_every_question_including_correct_ones():
+    answers = {"q1": "B", "q2": "D", "q3": None}
+    result = MCQBenchmark.score(_questions(), answers)
+    assert {e["id"] for e in result["all"]} == {"q1", "q2", "q3"}
+    q1_entry = next(e for e in result["all"] if e["id"] == "q1")
+    assert q1_entry == {"id": "q1", "category": "science", "given": "B", "expected": "B", "correct": True}
+    q2_entry = next(e for e in result["all"] if e["id"] == "q2")
+    assert q2_entry == {"id": "q2", "category": "science", "given": "D", "expected": "A", "correct": False}
+
+
 # ── load_questions against the real dataset ──
 
 def test_load_questions_returns_well_formed_dataset():

@@ -422,6 +422,22 @@ def test_score_missing_answer_counts_as_incorrect_and_unanswered():
     assert len(result["incorrect"]) == 3
 
 
+def test_score_all_list_covers_every_question_including_correct_ones():
+    answers = {
+        "q1": {"correct": True, "tests_passed": 1, "tests_total": 1, "error": None},
+        "q2": {"correct": False, "tests_passed": 0, "tests_total": 1, "error": "AssertionError"},
+        "q3": None,
+    }
+    result = CodeBenchmark.score(_questions(), answers)
+    assert {e["id"] for e in result["all"]} == {"q1", "q2", "q3"}
+    q1_entry = next(e for e in result["all"] if e["id"] == "q1")
+    assert q1_entry == {"id": "q1", "category": "arithmetic", "tests_passed": 1, "tests_total": 1,
+                         "error": None, "correct": True}
+    q3_entry = next(e for e in result["all"] if e["id"] == "q3")
+    assert q3_entry == {"id": "q3", "category": "string", "tests_passed": 0, "tests_total": 1,
+                         "error": "unanswered", "correct": False}
+
+
 # ── load_questions against the real dataset ──
 
 def test_load_questions_returns_well_formed_dataset():

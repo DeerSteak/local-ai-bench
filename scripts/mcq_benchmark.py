@@ -81,6 +81,7 @@ class MCQBenchmark:
         given_letter_or_None} map. Pure, so it's directly testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
+        all_results = []
         correct = 0
         answered = 0
 
@@ -92,11 +93,9 @@ class MCQBenchmark:
             if given is not None:
                 answered += 1
             is_correct = given == expected
-            if is_correct:
+            entry = {"id": qid, "category": category, "given": given, "expected": expected}
+            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
                 correct += 1
-                cat["correct"] += 1
-            else:
-                incorrect.append({"id": qid, "category": category, "given": given, "expected": expected})
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
@@ -109,6 +108,7 @@ class MCQBenchmark:
             "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
             "by_category":  by_category,
             "incorrect":    incorrect,
+            "all":          all_results,
         }
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,

@@ -736,12 +736,28 @@ class Shared:
                 or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
 
     @staticmethod
+    def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
+                              all_results: list, incorrect: list) -> bool:
+        """Record one scored question into by_category/all/incorrect — the
+        common tail of every accuracy benchmark's per-question scoring loop
+        (MCQ/Math/Code/Tool), which otherwise differ only in how `entry` and
+        `is_correct` are built. Returns `is_correct` so the caller can bump
+        its own correct counter."""
+        all_results.append({**entry, "correct": is_correct})
+        if is_correct:
+            cat["correct"] += 1
+        else:
+            incorrect.append(entry)
+        return is_correct
+
+    @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
-        """Write an accuracy test's per-model raw-answer sidecar (wrong answers'
-        full raw_response text) to `path`, overwriting each call so it updates
-        incrementally as models finish — same checkpoint-as-you-go as the main
-        results JSON, so a crash mid-run doesn't lose collected answers. Kept
-        out of that JSON since raw model output is large and bloats it fast."""
+        """Write an accuracy test's per-model raw-answer sidecar (every
+        question's full raw_response text, correct and incorrect alike) to
+        `path`, overwriting each call so it updates incrementally as models
+        finish — same checkpoint-as-you-go as the main results JSON, so a
+        crash mid-run doesn't lose collected answers. Kept out of that JSON
+        since raw model output is large and bloats it fast."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2))
 
@@ -757,7 +773,9 @@ class Shared:
         rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
         `ask_fn(tag, q) -> (parsed_answer, raw_text)`,
         `rescore_partial_fn(q, partial_text) -> parsed_answer`,
-        `score_fn(questions, answers) -> dict`."""
+        `score_fn(questions, answers) -> dict` with `"incorrect"` and `"all"`
+        keys (one entry per question each, `"all"` covering every question
+        correct or not) — `"all"` feeds the answers sidecar below."""
         results = {}
         answers_out: dict = {}
 
@@ -841,11 +859,12 @@ class Shared:
                 scored = score_fn(questions, answers)
                 answers_out[short] = {
                     "label": label,
-                    "incorrect": [
+                    "answers": [
                         {**entry, "raw_response": raw_responses.get(entry["id"], "")}
-                        for entry in scored["incorrect"]
+                        for entry in scored["all"]
                     ],
                 }
+                scored.pop("all", None)
                 results[short] = {"label": label, **scored}
 
                 if timed_out_ids:

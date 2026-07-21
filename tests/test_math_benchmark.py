@@ -120,6 +120,17 @@ def test_score_missing_answer_counts_as_incorrect_and_unanswered():
     assert len(result["incorrect"]) == 3
 
 
+def test_score_all_list_covers_every_question_including_correct_ones():
+    answers = {"q1": 936.0, "q2": 100.0, "q3": None}
+    result = MathBenchmark.score(_questions(), answers)
+    assert {e["id"] for e in result["all"]} == {"q1", "q2", "q3"}
+    q1_entry = next(e for e in result["all"] if e["id"] == "q1")
+    assert q1_entry["correct"] is True
+    assert q1_entry["given"] == 936.0
+    q2_entry = next(e for e in result["all"] if e["id"] == "q2")
+    assert q2_entry == {"id": "q2", "category": "arithmetic", "given": 100.0, "expected": 456, "correct": False}
+
+
 def test_score_defaults_tolerance_to_zero_when_absent():
     questions = [{"id": "q1", "category": "arithmetic", "answer": 5}]
     result = MathBenchmark.score(questions, {"q1": 5.0})

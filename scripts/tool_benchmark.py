@@ -140,7 +140,14 @@ class ToolBenchmark:
             num_ctx=config.ACCURACY_CONTEXT,
             num_predict=ToolBenchmark.TOOL_NUM_PREDICT, check_loop=True,
         )
-        return ToolBenchmark.evaluate_question(question, tool_calls), json.dumps(tool_calls)
+        # Keep prose alongside tool calls — a decline is prose with no calls at all.
+        if tool_calls and response_text:
+            raw = json.dumps({"tool_calls": tool_calls, "text": response_text})
+        elif tool_calls:
+            raw = json.dumps(tool_calls)
+        else:
+            raw = response_text
+        return ToolBenchmark.evaluate_question(question, tool_calls), raw
 
     @staticmethod
     def rescore_partial_fn(question: dict, partial_text: str) -> dict:
@@ -162,6 +169,7 @@ class ToolBenchmark:
         testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
+        all_results = []
         correct = 0
         answered = 0
 
@@ -173,11 +181,9 @@ class ToolBenchmark:
             if result is not None:
                 answered += 1
             is_correct = result is not None and result["correct"]
-            if is_correct:
+            entry = {"id": qid, "category": category}
+            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
                 correct += 1
-                cat["correct"] += 1
-            else:
-                incorrect.append({"id": qid, "category": category})
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
@@ -190,6 +196,7 @@ class ToolBenchmark:
             "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
             "by_category":  by_category,
             "incorrect":    incorrect,
+            "all":          all_results,
         }
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
