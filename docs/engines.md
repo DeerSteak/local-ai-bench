@@ -126,6 +126,12 @@ llama-server being a process-per-model server:
   (older conversions, mainly) — there's no setup-time check yet that warns
   when it's missing, so a silent template mismatch on those models is still
   a possible, if narrow, source of a confusing quality difference.
+- **Phi-4 14B native completions are chat-wrapped first.** Its catalog entry
+  opts `generate()` into llama-server's `/apply-template` endpoint, then the
+  rendered string goes through the same native `/completion` stream used by
+  every single-shot request. This prevents an immediate EOS response while
+  retaining native token IDs and timing data. Template rendering happens
+  before the measured TTFT interval; no other catalog model opts into it.
 - **Generated-token accounting** uses native streamed token IDs for
   `/completion` and the trailing `usage.completion_tokens` value for
   OpenAI-compatible chat, including reasoning tokens. SSE text fragments are

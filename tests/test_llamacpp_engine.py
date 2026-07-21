@@ -211,6 +211,20 @@ class _FakeResponse:
         return iter(self._lines)
 
 
+class _FakeJSONResponse:
+    def __init__(self, value):
+        self._body = json.dumps(value).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self._body
+
+
 def _patch_urlopen(monkeypatch, chunks):
     monkeypatch.setattr(LlamaCppEngine, "_urlopen",
                         staticmethod(lambda req, timeout: _FakeResponse(chunks)))
@@ -260,6 +274,134 @@ def _clock(*values):
 
 
 # ── generate ──
+
+def test_generate_applies_embedded_chat_template_for_flagged_model(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "templated", "completion_chat_template": True},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    requests = []
+
+    def fake_urlopen(req, timeout):
+        requests.append((req.full_url, json.loads(req.data)))
+        if req.full_url.endswith("/apply-template"):
+            return _FakeJSONResponse({"prompt": "<chat>original prompt<assistant>"})
+        return _FakeResponse([
+            {"content": "answer", "tokens": [1]},
+            {"content": "", "stop": True,
+             "timings": {"predicted_n": 1, "predicted_ms": 1000}},
+        ])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(fake_urlopen))
+    _, tokens, _ = LlamaCppEngine().generate("templated", "original prompt")
+
+    assert [url.rsplit("/", 1)[-1] for url, _ in requests] == ["apply-template", "completion"]
+    assert requests[0][1] == {
+        "messages": [{"role": "user", "content": "original prompt"}],
+    }
+    assert requests[1][1]["prompt"] == "<chat>original prompt<assistant>"
+    assert tokens == 1
+
+
+def test_generate_sends_unflagged_model_directly_to_completion(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "raw", "completion_chat_template": False},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    requests = []
+
+    def fake_urlopen(req, timeout):
+        requests.append((req.full_url, json.loads(req.data)))
+        return _FakeResponse([
+            {"content": "answer", "tokens": [1]},
+            {"content": "", "stop": True,
+             "timings": {"predicted_n": 1, "predicted_ms": 1000}},
+        ])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(fake_urlopen))
+    LlamaCppEngine().generate("raw", "original prompt")
+
+    assert len(requests) == 1
+    assert requests[0][0].endswith("/completion")
+    assert requests[0][1]["prompt"] == "original prompt"
+
+
+def test_generate_rejects_missing_templated_prompt(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "templated", "completion_chat_template": True},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    monkeypatch.setattr(
+        LlamaCppEngine, "_urlopen",
+        staticmethod(lambda req, timeout: _FakeJSONResponse({"prompt": ""})),
+    )
+
+    with pytest.raises(RuntimeError, match="returned no prompt"):
+        LlamaCppEngine().generate("templated", "original prompt")
+
+
+def test_generate_rejects_invalid_template_json(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "templated", "completion_chat_template": True},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    response = _FakeJSONResponse({})
+    response._body = b"not-json"
+    monkeypatch.setattr(
+        LlamaCppEngine, "_urlopen", staticmethod(lambda req, timeout: response),
+    )
+
+    with pytest.raises(RuntimeError, match="returned invalid JSON"):
+        LlamaCppEngine().generate("templated", "original prompt")
+
+
+def test_generate_enforces_deadline_while_applying_template(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "templated", "completion_chat_template": True},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 0.0, 6.0),
+    )
+    monkeypatch.setattr(
+        LlamaCppEngine, "_urlopen",
+        staticmethod(lambda req, timeout: _FakeJSONResponse({"prompt": "rendered"})),
+    )
+
+    with pytest.raises(EngineTimeout):
+        LlamaCppEngine().generate("templated", "original prompt", timeout=5)
+
+
+def test_generate_excludes_template_rendering_from_ttft(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [
+        {"tag": "templated", "completion_chat_template": True},
+    ])
+    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter",
+        _clock(10.0, 10.0, 10.0, 12.0, 12.0, 15.0, 15.0, 16.0, 16.0),
+    )
+    responses = iter([
+        _FakeJSONResponse({"prompt": "<chat>prompt<assistant>"}),
+        _FakeResponse([
+            {"content": "answer", "tokens": [1]},
+            {"content": "", "stop": True,
+             "timings": {"predicted_n": 1, "predicted_ms": 1000}},
+        ]),
+    ])
+    monkeypatch.setattr(
+        LlamaCppEngine, "_urlopen", staticmethod(lambda req, timeout: next(responses)),
+    )
+
+    ttft, _, _ = LlamaCppEngine().generate("templated", "prompt")
+
+    assert ttft == pytest.approx(3.0)
 
 def test_generate_uses_server_reported_timings(monkeypatch):
     _patch_ensure_model(monkeypatch)
@@ -818,6 +960,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
 
     args = captured_args["args"]
     assert "--parallel" in args
+    assert "--props" in args
     assert args[args.index("--parallel") + 1] == str(n_parallel)
     assert args[args.index("-c") + 1] == expected_ctx_arg
     assert engine._loaded_n_parallel == n_parallel

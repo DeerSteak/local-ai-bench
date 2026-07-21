@@ -34,6 +34,11 @@ def test_llm_models_have_required_keys():
         assert required <= m.keys()
 
 
+def test_completion_chat_template_is_scoped_to_phi4_14b():
+    templated = [m["tag"] for m in LLM_MODELS if m.get("completion_chat_template")]
+    assert templated == ["phi4:14b-q4_K_M"]
+
+
 def test_llm_models_tier_matches_source_list():
     expected = {
         "xsmall": LLM_MODELS_XSMALL,

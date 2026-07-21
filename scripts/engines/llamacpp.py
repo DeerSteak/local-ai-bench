@@ -497,6 +497,7 @@ class LlamaCppEngine(InferenceEngine):
                 "--port", str(config.LLAMACPP_PORT),
                 "-ngl", "0" if not self._gpu_visible else "999",
                 "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
+                "--props",   # enables /apply-template for catalog models that need a chat-wrapped native completion
                 "-b", str(config.LLAMACPP_NUM_BATCH),
             ]
             if num_ctx is not None:
@@ -543,17 +544,46 @@ class LlamaCppEngine(InferenceEngine):
 
     # ── inference ──
 
+    def _apply_completion_chat_template(self, prompt: str, deadline: float) -> str:
+        payload = json.dumps({
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode()
+        req = urllib.request.Request(
+            f"{config.LLAMACPP_URL}/apply-template",
+            data=payload, headers={"Content-Type": "application/json"}, method="POST",
+        )
+        remaining = max(deadline - time.perf_counter(), 0.001)
+        with self._urlopen(req, remaining) as resp:
+            try:
+                result = json.loads(resp.read())
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise RuntimeError("llama-server /apply-template returned invalid JSON") from exc
+        rendered = result.get("prompt") if isinstance(result, dict) else None
+        if not isinstance(rendered, str) or not rendered:
+            raise RuntimeError("llama-server /apply-template returned no prompt")
+        if time.perf_counter() > deadline:
+            raise EngineTimeout("llamacpp_generate exceeded the request wall-clock timeout")
+        return rendered
+
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
         """Generate via llama-server's native /completion endpoint. Returns
         (ttft_sec, tokens_generated, tokens_per_sec). Native streamed token
         IDs provide the generated-token count; timings.predicted_n is only an
-        older-server fallback. n_parallel must match the last
+        older-server fallback. Catalog models marked completion_chat_template
+        first render one user turn through the GGUF's embedded template;
+        template-rendering time is excluded from TTFT. n_parallel must match the last
         prepare_concurrency call (default 1 elsewhere); concurrent callers
         passing the same values takes _ensure_model's process-alive fast path."""
         t_start = time.perf_counter()
         deadline = t_start + timeout
         self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
+
+        entry = self._catalog_entry(tag)
+        if entry and entry.get("completion_chat_template"):
+            template_start = time.perf_counter()
+            prompt = self._apply_completion_chat_template(prompt, deadline)
+            t_start += time.perf_counter() - template_start
 
         payload = json.dumps({
             "prompt": prompt,

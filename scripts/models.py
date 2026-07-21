@@ -157,15 +157,11 @@ LLM_MODELS_SMALL = sorted([
         "tier":           "small",
         "download_size":  "~8.3 GB",
         "params_b":       14,
-        # unsloth's repo specifically, not bartowski's — Microsoft's original
-        # Phi-4 tokenizer config has <|endoftext|> registered as BOS *and*
-        # EOS, which under a raw (non-chat-templated) /completion request —
-        # exactly what this benchmark's LLM/concurrency tests send — makes
-        # llama-server treat generation as immediately over after the
-        # auto-prepended BOS token. Unsloth found and fixed this upstream;
-        # their GGUF bakes in the corrected tokenizer config.
+        # Unsloth carries the corrected tokenizer metadata; Phi-4 14B also
+        # needs its embedded chat wrapper before native completion.
         "hf_repo":        "unsloth/phi-4-GGUF",
         "hf_file":        "phi-4-Q4_K_M.gguf",
+        "completion_chat_template": True,
     },
 ], key=lambda m: m["params_b"])
 
