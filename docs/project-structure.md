@@ -61,6 +61,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `tool_benchmark.py` | Tool-calling accuracy test |
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup_policy.py` | Pure, unit-tested setup decisions used by the otherwise interactive installer |
 | `data/` | Question banks used by accuracy tests (see above) |
 
 ## `results/` in detail

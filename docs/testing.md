@@ -74,6 +74,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 [`.coveragerc`](../.coveragerc) at the repo root shapes that report so it reflects the code this suite is actually meant to exercise, rather than being diluted by code that can't safely be unit tested:
 
 - `scripts/setup_check.py` is omitted entirely — it has no `__main__` guard, so importing it would run the whole interactive install flow (prompts, downloads).
+- `tests/test_setup_policy.py` covers the pure setup decisions extracted from that unsafe-to-import entrypoint, including Linux's unconditional repo-local llama.cpp refresh policy.
 - Individual functions that spawn real subprocesses, poll a live llama.cpp/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `LlamaCppEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
 
 The report is intentionally scoped to unit-testable code. Treat its missing-line detail as the useful signal rather than relying on a fixed percentage, which changes as the suite evolves.
@@ -82,7 +83,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **28 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **29 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -154,6 +155,9 @@ The test suite consists of **28 test modules** validating different components o
 
 - **[test_hardware.py](../tests/test_hardware.py)**
   Tests memory-size parsing, integrated/discrete GPU classification (including processor-name false positives), extraction of GPU agents from CPU-first `rocminfo` output, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
+
+- **[test_setup_policy.py](../tests/test_setup_policy.py)**
+  Tests that Linux always installs or refreshes the repo-local llama.cpp source build even when a system binary exists, while macOS and Windows retain an existing platform-managed installation and install one only when missing.
 
 ---
 

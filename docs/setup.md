@@ -28,7 +28,7 @@
    - Enter to install everything shown
    - `q` or Ctrl-C to cancel at any point with nothing installed yet
 4. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
-5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts.
+5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts. On Linux, every setup run clones or fast-forwards a repo-local `llama.cpp/` checkout and rebuilds `llama-server`, even when an older system binary is already on `PATH`; benchmark runs prefer this repo-local build.
 
 When setup is complete, run the benchmark:
 
@@ -74,7 +74,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify GPU acceleration after setup: run the benchmark and confirm llama-server loads on GPU in `nvidia-smi`.
+**Linux (NVIDIA/AMD)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Setup always clones or updates `llama.cpp/` in the project root and rebuilds its repo-local `llama-server` with CUDA or ROCm/HIP support as detected, rather than accepting a potentially stale system binary. If the checkout cannot be fast-forwarded, setup leaves it untouched and reports an action item instead of silently building stale code. Verify GPU acceleration after setup with `nvidia-smi` on NVIDIA or `rocminfo` on AMD.
 
 **Linux (Intel Arc) — experimental, untested on real hardware** — this project's maintainers don't have access to an Intel Arc machine, so everything below is implemented against Intel's published documentation, not verified against a real run. Package names and version numbers may be wrong or out of date. If you have Arc hardware and try this, please report back (open an issue) with what did or didn't work — that's how this graduates out of experimental.
 

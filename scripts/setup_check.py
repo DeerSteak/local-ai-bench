@@ -24,6 +24,7 @@ from pathlib import Path
 import config
 import hardware
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
+from setup_policy import should_install_llamacpp
 
 # Every asset this script manages (requirements.txt, ComfyUI/, hf.txt, ...)
 # lives at the repo root, one level up. Sourced from config.py rather than
@@ -593,9 +594,10 @@ def install_llamacpp():
 
         if LLAMACPP_DIR.exists():
             info("Updating existing llama.cpp checkout ...")
-            pull = subprocess.run(["git", "pull"], cwd=str(LLAMACPP_DIR))
+            pull = subprocess.run(["git", "pull", "--ff-only"], cwd=str(LLAMACPP_DIR))
             if pull.returncode != 0:
-                warn("git pull failed — building from the existing checkout as-is")
+                fail("Could not update the existing llama.cpp checkout")
+                return False
         else:
             info("Cloning llama.cpp ...")
             clone = subprocess.run([
@@ -640,9 +642,11 @@ section("llama.cpp")
 
 LLAMACPP_BIN = find_llamacpp_binary()
 llamacpp_found = LLAMACPP_BIN is not None
-needs_llamacpp_install = not llamacpp_found
+needs_llamacpp_install = should_install_llamacpp(os_name, llamacpp_found)
 if llamacpp_found:
     ok(f"llama-server found: {LLAMACPP_BIN}")
+    if os_name == "Linux":
+        info("Linux setup will install or update the repo-local llama.cpp source build")
 else:
     warn("llama-server not found — will need to be installed")
 
@@ -654,7 +658,8 @@ print("  This will:")
 print("    • Install Python dependencies from requirements.txt")
 if needs_llamacpp_install:
     build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
-    print(f"    • Install llama.cpp{build_note}")
+    action = "Install/update" if os_name == "Linux" else "Install"
+    print(f"    • {action} llama.cpp{build_note}")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -889,7 +894,7 @@ else:
 if needs_llamacpp_install:
     llamacpp_installed = install_llamacpp()
     if llamacpp_installed:
-        ok("llama.cpp installed successfully")
+        ok("llama.cpp installed/updated successfully")
         llamacpp_found = True
         LLAMACPP_BIN = find_llamacpp_binary()
     else:
