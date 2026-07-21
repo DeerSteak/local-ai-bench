@@ -758,7 +758,9 @@ class Shared:
         rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
         `ask_fn(tag, q) -> (parsed_answer, raw_text)`,
         `rescore_partial_fn(q, partial_text) -> parsed_answer`,
-        `score_fn(questions, answers) -> dict`."""
+        `score_fn(questions, answers) -> dict` with `"incorrect"` and `"all"`
+        keys (one entry per question each, `"all"` covering every question
+        correct or not) — `"all"` feeds the answers sidecar below."""
         results = {}
         answers_out: dict = {}
 
