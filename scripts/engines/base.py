@@ -1,6 +1,5 @@
-"""base.py — the InferenceEngine interface. Derived directly from the
-Ollama-specific surface that used to live on Shared, so a new engine drops
-into the existing orchestration untouched. See docs/engines.md.
+"""base.py — the engine-neutral inference interface used by every workload.
+See docs/engines.md.
 """
 
 from abc import ABC, abstractmethod
@@ -51,6 +50,11 @@ class InferenceEngine(ABC):
     def tail_log(self, n_lines: int = 40) -> str:
         """Return the last n_lines of the server's captured output, to surface
         a real crash reason instead of guessing."""
+
+    def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
+        """Backend the engine will actually use, falling back to the detected
+        hardware classification when an engine has no stronger signal."""
+        return "cpu" if cpu_only else hardware_backend
 
     # ── model lifecycle ──
 
@@ -112,7 +116,7 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_predict: int = 1024, check_loop: bool = False
+                   num_ctx: int | None = None, num_predict: int = 1024, check_loop: bool = False
                    ) -> tuple[float, int, float, int, str, list[dict]]:
         """Tool-calling chat. Same return as chat() plus a tool_calls list of
         {"name": str, "arguments": dict} (empty if the model called nothing).

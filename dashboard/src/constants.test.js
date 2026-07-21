@@ -3,7 +3,7 @@ import {
   LLM_MODEL_ORDER, LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
   IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
-  SIZE_TIER_ORDER,
+  SIZE_TIER_ORDER, RES_ORDER, RES_COLORS,
 } from "./constants";
 
 // These catch the most common maintenance mistake in this file: adding a
@@ -51,5 +51,15 @@ describe("model registry consistency", () => {
   it("IMAGE_MODEL_ORDER and EMBED_MODEL_ORDER have no duplicate entries", () => {
     expect(new Set(IMAGE_MODEL_ORDER).size).toBe(IMAGE_MODEL_ORDER.length);
     expect(new Set(EMBED_MODEL_ORDER).size).toBe(EMBED_MODEL_ORDER.length);
+  });
+});
+
+describe("image resolution registry", () => {
+  it("includes SD 1.5 native resolutions before the larger-model defaults", () => {
+    expect(RES_ORDER).toEqual(["512x512", "768x768", "1024x1024", "1536x1536"]);
+  });
+
+  it("assigns a color to every ordered resolution", () => {
+    for (const resolution of RES_ORDER) expect(RES_COLORS[resolution]).toBeDefined();
   });
 });

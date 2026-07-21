@@ -46,6 +46,28 @@ class ConcurrencyBenchmark:
             ]
             return [f.result() for f in futures]
 
+    @staticmethod
+    def _fire_batch_with_crash_retries(engine, tag: str, level: int,
+                                       per_request_context: int
+                                       ) -> tuple[list, str, Exception | None, float]:
+        for crash_i in range(Shared.CRASH_RETRY_MAX + 1):
+            batch_t0 = time.perf_counter()
+            try:
+                samples = ConcurrencyBenchmark._fire_batch(
+                    engine, tag, level, per_request_context,
+                )
+                return samples, "ok", None, time.perf_counter() - batch_t0
+            except Exception as e:
+                if not engine.is_connection_crash(e):
+                    return [], "failed", e, 0
+                recovered = engine.wait_for_recovery()
+                if crash_i >= Shared.CRASH_RETRY_MAX or not recovered:
+                    return [], "crashed", e, 0
+                Shared.warn(
+                    f"Engine crashed during {level}-way concurrency; retrying "
+                    f"({crash_i + 1}/{Shared.CRASH_RETRY_MAX}) ..."
+                )
+
     def run(self, engine, models, levels, per_request_context, warmup_runs,
             crash_cache_path: Path, section_label: str,
             soft_exit_floor: int | None = None, force_all=False,
@@ -110,19 +132,19 @@ class ConcurrencyBenchmark:
                     for warmup_i in range(warmup_runs):
                         Shared.log(f"{label}: warming up {level}-way concurrency "
                                    f"(run {warmup_i+1}/{warmup_runs}) ...")
-                        try:
-                            self._fire_batch(engine, tag, level, per_request_context)
-                        except Exception as e:
-                            if engine.is_connection_crash(e):
-                                Shared.err(f"{label}: engine crashed warming up {level}-way "
+                        _, status, error, _ = self._fire_batch_with_crash_retries(
+                            engine, tag, level, per_request_context,
+                        )
+                        if status != "ok":
+                            if status == "crashed":
+                                Shared.err(f"{label}: engine crashed repeatedly warming up {level}-way "
                                            f"concurrency — last server output:\n{engine.tail_log()}")
-                                engine.wait_for_recovery()
                                 results[short]["crashed_at"] = Shared.record_crash(
                                     tag, crash_cache, crash_cache_path,
                                     f"warming up {level}-way concurrency")
                                 stopped_at = "crashed"
                             else:
-                                Shared.err(f"{label}: {level}-way concurrency warmup failed: {e}")
+                                Shared.err(f"{label}: {level}-way concurrency warmup failed: {error}")
                                 stopped_at = "failed"
                             warmup_failed = True
                             break
@@ -130,24 +152,21 @@ class ConcurrencyBenchmark:
                         break
 
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
-                    batch_t0 = time.perf_counter()
-                    try:
-                        samples = self._fire_batch(engine, tag, level, per_request_context)
-                    except Exception as e:
-                        if engine.is_connection_crash(e):
-                            Shared.err(f"{label}: engine crashed during the {level}-way batch — "
+                    samples, status, error, batch_elapsed = self._fire_batch_with_crash_retries(
+                        engine, tag, level, per_request_context,
+                    )
+                    if status != "ok":
+                        if status == "crashed":
+                            Shared.err(f"{label}: engine crashed repeatedly during the {level}-way batch — "
                                        f"last server output:\n{engine.tail_log()}")
-                            engine.wait_for_recovery()
                             results[short]["crashed_at"] = Shared.record_crash(
                                 tag, crash_cache, crash_cache_path,
                                 f"running {level}-way concurrency")
                             stopped_at = "crashed"
                         else:
-                            Shared.err(f"{label}: {level}-way concurrency batch failed: {e}")
+                            Shared.err(f"{label}: {level}-way concurrency batch failed: {error}")
                             stopped_at = "failed"
                         break
-                    batch_elapsed = time.perf_counter() - batch_t0
-
                     ttfts  = [s[0] for s in samples]
                     tokens = [s[1] for s in samples]
                     tpss   = [s[2] for s in samples]

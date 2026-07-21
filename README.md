@@ -1,4 +1,4 @@
-# Local AI Bench v3.0
+# Local AI Bench v3.1
 
 Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and opt-in concurrency/load testing. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 

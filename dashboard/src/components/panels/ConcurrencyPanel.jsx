@@ -41,7 +41,7 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
       .filter(e => e.info);
 
     const hasAny = tpsLineConfigs.length > 0 || aggLineConfigs.length > 0 || ttftLineConfigs.length > 0;
-    if (!hasAny && !skipEntries.length) return null;
+    if (!hasAny && !skipEntries.length && !stopEntries.length) return null;
     return {
       model, tpsData, aggData, ttftData,
       tpsLineConfigs, aggLineConfigs, ttftLineConfigs,

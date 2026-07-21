@@ -83,15 +83,20 @@ class ToolBenchmark:
         a distinct given element (recursively), regardless of position."""
         if not isinstance(given, list) or len(given) != len(expected):
             return False
-        remaining = list(given)
-        for exp in expected:
-            for i, g in enumerate(remaining):
-                if ToolBenchmark._values_equal(g, exp, strict, unordered_keys):
-                    del remaining[i]
-                    break
-            else:
-                return False
-        return True
+
+        def match(expected_i: int, used: frozenset[int]) -> bool:
+            if expected_i == len(expected):
+                return True
+            return any(
+                given_i not in used
+                and ToolBenchmark._values_equal(
+                    value, expected[expected_i], strict, unordered_keys,
+                )
+                and match(expected_i + 1, used | {given_i})
+                for given_i, value in enumerate(given)
+            )
+
+        return match(0, frozenset())
 
     @staticmethod
     def _args_match(given: dict, expected: dict, allow_extra: bool = True, unordered_keys=()) -> bool:
@@ -118,7 +123,8 @@ class ToolBenchmark:
         if len(calls) != 1:
             return {"correct": False}
         first = calls[0]
-        correct = (first.get("name") == expected["name"]
+        correct = (not first.get("incomplete")
+                   and first.get("name") == expected["name"]
                    and ToolBenchmark._args_match(
                        first.get("arguments") or {}, expected["arguments"],
                        allow_extra=not expected.get("strict_arguments", False),
@@ -131,6 +137,7 @@ class ToolBenchmark:
         _, _, _, _, response_text, tool_calls = engine.chat_tools(
             tag, [{"role": "user", "content": question["prompt"]}],
             tools=question["tools"], timeout=config.ACC_TIMEOUT,
+            num_ctx=config.ACCURACY_CONTEXT,
             num_predict=ToolBenchmark.TOOL_NUM_PREDICT, check_loop=True,
         )
         return ToolBenchmark.evaluate_question(question, tool_calls), json.dumps(tool_calls)

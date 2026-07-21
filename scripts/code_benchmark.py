@@ -233,7 +233,8 @@ class CodeBenchmark:
         prompt = CodeBenchmark.build_prompt(question)
         _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.ACC_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
+            num_predict=CodeBenchmark.CODE_NUM_PREDICT,
             check_loop=True,
         )
         code = CodeBenchmark.extract_code(response_text)

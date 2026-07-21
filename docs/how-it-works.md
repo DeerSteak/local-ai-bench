@@ -65,9 +65,9 @@ Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `A
 | LLM single-shot context lengths | 512, 2K, 8K, 32K, 64K — capped per model at its real context ceiling |
 | LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, 96K — medium/large/custom sample through 96K with up to a 128K growth plan; xsmall/small stop at 48K with a 64K growth plan; all are capped by the GGUF's real context ceiling |
 | LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
-| LLM warmup runs | `--warmup` (default: 2, discarded) |
+| LLM warmup runs | `--warmup` at each context-specific server configuration (default: 2, discarded) |
 | LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |
-| Run timeout | `--timeout` per engine generation/chat call and engine warmup (default: 300s); image generation uses 2× this value. Embeddings retain a fixed 120s request timeout |
+| Run timeout | `--timeout` is a total model-load-plus-generation/chat deadline and also bounds engine warmup (default: 300s); image generation uses 2× this value. Embeddings retain a fixed 120s request timeout |
 | Accuracy question timeout | `--acc-timeout` per question (default: 60s), for `mcq`/`math`/`code`/`tool`; partial output is scored normally, the timeout is recorded, and the bank continues |
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation pre-flight | When single-shot also ran: excludes no/failed data, repeatable crashes, first-checkpoint timeouts, and first-checkpoint slow markers; deeper timeouts alone do not exclude conversation |

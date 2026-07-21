@@ -42,22 +42,22 @@ class LLMPrefillBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up at the largest context this model will run so the server
-                # pre-allocates the full KV cache once, avoiding a reload at max context.
                 model_max = engine.max_context_length(tag)
-                max_ctx = min(model_max, max(context_lengths))
-                if not engine.warmup(tag, label, max_ctx, warmup_runs,
-                                     crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
-                    engine.unload(tag)
-                    continue
-
                 results[short] = {}
 
                 model_ctx_lengths = [c for c in context_lengths if c <= model_max]
 
                 model_timed_out = False
                 for ctx_len in model_ctx_lengths:
-                    label_ctx = f"{ctx_len / 1024:g}K"
+                    label_ctx = Shared.context_label(ctx_len)
+                    if not engine.warmup(tag, label, ctx_len, warmup_runs,
+                                         crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
+                        results[short]["crashed"] = label_ctx
+                        results[short]["crashed_at"] = crash_cache.get(tag, {}).get(
+                            "crashed_at", "during warmup",
+                        )
+                        engine.unload(tag)
+                        break
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
 
                     def _prefill_once(run_i):

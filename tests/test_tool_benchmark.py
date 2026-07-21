@@ -1,4 +1,5 @@
 from collections import Counter
+import json
 
 from tool_benchmark import ToolBenchmark
 
@@ -174,6 +175,16 @@ def test_evaluate_unordered_list_of_objects():
     assert ToolBenchmark.evaluate_question(q, calls)["correct"] is True
 
 
+def test_evaluate_unordered_overlapping_objects_finds_one_to_one_match():
+    q = {"expected": {"call": True, "name": "update", "arguments": {
+        "items": [{"x": 1}, {"x": 1, "y": 2}],
+    }, "unordered_keys": ["items"]}}
+    calls = [{"name": "update", "arguments": {
+        "items": [{"x": 1, "y": 2}, {"x": 1}],
+    }}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is True
+
+
 # ── evaluate_question: decline cases ──
 
 def _q_decline():
@@ -209,6 +220,12 @@ def test_rescore_partial_unparseable_is_decline():
 def test_rescore_partial_non_list_json_is_decline():
     # Valid JSON but not a list of calls -> treated as a decline.
     assert ToolBenchmark.rescore_partial_fn(_q_decline(), '{"name": "x"}')["correct"] is True
+
+
+def test_rescore_partial_incomplete_call_is_not_a_decline_or_correct_call():
+    partial = json.dumps([{"name": "get_weather", "arguments": {}, "incomplete": True}])
+    assert ToolBenchmark.rescore_partial_fn(_q_decline(), partial)["correct"] is False
+    assert ToolBenchmark.rescore_partial_fn(_q_call(), partial)["correct"] is False
 
 
 # ── score ──

@@ -65,7 +65,8 @@ class MathBenchmark:
         prompt = MathBenchmark.build_prompt(question)
         _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.ACC_TIMEOUT, num_predict=MathBenchmark.MATH_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
+            num_predict=MathBenchmark.MATH_NUM_PREDICT,
             check_loop=True,
         )
         return MathBenchmark.parse_answer(response_text), response_text

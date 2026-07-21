@@ -98,6 +98,10 @@ class Shared:
     def stdev(vals):  return statistics.stdev(vals) if len(vals) >= 2 else 0
 
     @staticmethod
+    def context_label(tokens: int) -> str:
+        return f"{tokens / 1024:g}K"
+
+    @staticmethod
     def system_ram_gb():
         return psutil.virtual_memory().total / (1024 ** 3)
 
@@ -786,7 +790,7 @@ class Shared:
                     results[short] = skip_entry
                     continue
 
-                if not engine.warmup(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                if not engine.warmup(tag, label, config.ACCURACY_CONTEXT, warmup_runs,
                                      crash_cache, crash_cache_path,
                                      crash_extra={"bank_hash": bank_hash}):
                     engine.unload(tag)

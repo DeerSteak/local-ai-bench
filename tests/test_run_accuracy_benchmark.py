@@ -43,6 +43,9 @@ class FakeEngine(InferenceEngine):
         # tool_calls list; timeout/loop payload is partial text.
         self._tool_behaviors = tool_behaviors or {}
         self.unloaded: list[str] = []
+        self.warmup_contexts: list[int] = []
+        self.chat_contexts: list[int | None] = []
+        self.tool_contexts: list[int | None] = []
 
     # server/process lifecycle
     def ensure_running(self) -> bool: return True
@@ -61,6 +64,7 @@ class FakeEngine(InferenceEngine):
     def max_context_length(self, tag: str, default: int = 131072) -> int: return default
     def warmup(self, tag, label, num_ctx, warmup_runs, crash_cache=None,
                cache_path=None, crash_extra=None) -> bool:
+        self.warmup_contexts.append(num_ctx)
         return True
     def unload(self, tag: str) -> None: self.unloaded.append(tag)
     def unload_all(self) -> None: pass
@@ -73,6 +77,7 @@ class FakeEngine(InferenceEngine):
         return 0.1, 1, 1.0
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024, check_loop=False):
+        self.chat_contexts.append(num_ctx)
         content = messages[-1]["content"]
         for marker, (kind, text) in self._behaviors.items():
             if marker in content:
@@ -86,7 +91,9 @@ class FakeEngine(InferenceEngine):
                     raise ConnectionError("actively refused")
         raise AssertionError(f"no canned behavior matched prompt: {content!r}")
 
-    def chat_tools(self, tag, messages, tools, timeout=600, num_predict=1024, check_loop=False):
+    def chat_tools(self, tag, messages, tools, timeout=600, num_ctx=None,
+                   num_predict=1024, check_loop=False):
+        self.tool_contexts.append(num_ctx)
         content = messages[-1]["content"]
         for marker, (kind, payload) in self._tool_behaviors.items():
             if marker in content:
@@ -146,6 +153,10 @@ def test_normal_run_scores_correctly(tmp_path):
     assert "likely_loop_count" not in results["fake"]
     assert "crashed" not in results["fake"]
     assert engine.unloaded == ["fake:tag"]  # unloaded when the model finished
+    assert engine.warmup_contexts == [config.ACCURACY_CONTEXT]
+    assert engine.chat_contexts == [config.ACCURACY_CONTEXT] * len(questions)
+    assert engine.runtime_backend("cuda") == "cuda"
+    assert engine.runtime_backend("cuda", cpu_only=True) == "cpu"
 
 
 def test_timeout_with_partial_text_gets_rescored(tmp_path):
@@ -250,6 +261,8 @@ def test_tool_normal_run_scores_correctly(tmp_path):
     assert results["fake"]["correct"] == 1
     assert results["fake"]["total"] == 2
     assert engine.unloaded == ["fake:tag"]
+    assert engine.warmup_contexts == [config.ACCURACY_CONTEXT]
+    assert engine.tool_contexts == [config.ACCURACY_CONTEXT] * len(questions)
 
 
 def test_tool_timeout_with_partial_text_gets_rescored(tmp_path):

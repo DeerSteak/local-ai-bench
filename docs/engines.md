@@ -37,7 +37,7 @@ is an ABC with three groups of methods:
 
 | Group | Methods |
 |---|---|
-| Server/process lifecycle | `ensure_running`, `start(gpu_visible=...)`, `stop`, `available`, `reachable_or_abort`, `wait_for_recovery`, `is_connection_crash`, `tail_log` |
+| Server/process lifecycle | `ensure_running`, `start(gpu_visible=...)`, `stop`, `available`, `reachable_or_abort`, `wait_for_recovery`, `is_connection_crash`, `tail_log`, `runtime_backend` |
 | Model lifecycle | `model_pulled`, `list_installed_models`, `max_context_length`, `warmup`, `unload`, `unload_all`, `wait_until_unloaded`, `prepare_concurrency` |
 | Inference | `generate` (single-shot), `chat` (multi-turn), `chat_tools` (tool-calling), `embed` |
 
@@ -91,7 +91,10 @@ file's GGUF metadata. The existing `tag` field values (e.g.
 `"llama3.2:3b-instruct-q4_K_M"`) are unchanged in shape — they're now opaque
 catalog identifiers rather than literal server tags, but every other file
 that already keyed off them (results JSON, crash caches, `--models`) doesn't
-need to change.
+need to change. A non-catalog directory can contain either one GGUF or one
+complete, consistently named multipart GGUF set; its directory name becomes
+the custom tag advertised by `list_installed_models` and resolved by the same
+model-loading path.
 
 Shape differences from an always-on multi-model daemon, both consequences of
 llama-server being a process-per-model server:
@@ -123,6 +126,10 @@ llama-server being a process-per-model server:
   (older conversions, mainly) — there's no setup-time check yet that warns
   when it's missing, so a silent template mismatch on those models is still
   a possible, if narrow, source of a confusing quality difference.
+- **Generated-token accounting** uses native streamed token IDs for
+  `/completion` and the trailing `usage.completion_tokens` value for
+  OpenAI-compatible chat, including reasoning tokens. SSE text fragments are
+  transport units and are never counted as tokens.
 - **`_sanitize_tps`** guards `generate()`/`chat()`'s tok/s calculation
   against a real observed llama-server quirk: under heavy concurrent-slot
   contention (see [Concurrency](workloads.md#concurrency)), a streamed
@@ -130,13 +137,18 @@ llama-server being a process-per-model server:
   `predicted_n`, producing a tps ratio with no physical basis (six-figure
   values observed on real hardware). Any self-reported tps above
   `config.MAX_PLAUSIBLE_TPS` is replaced with a wall-clock estimate
-  (locally-counted tokens over measured decode time) instead — a sanity
+  (authoritatively counted tokens over measured decode time) instead — a sanity
   tripwire, not a tuned threshold, since no real single-request stream gets
   remotely close to it on current hardware. Whenever this fires,
   `_warn_tps_sanitized` logs the raw `predicted_n`/`predicted_ms` values
   that produced the bad reading (not just the corrected number), so a run
   that hits this is still diagnosable — worth keeping an eye on the console
   output if you're trying to track down why llama-server reported it.
+- **`runtime_backend`** runs llama-server's read-only `--list-devices` query
+  and reports the build/runtime family it can actually use (`cuda`, `rocm`,
+  `metal`, `xpu`, `vulkan`, or `cpu`). Results retain physical GPU detection
+  separately as `profile.hardware_backend`, so a Vulkan Windows build or a
+  CPU-only Linux build is not mislabeled from hardware presence alone.
 
 ## Selecting an engine
 

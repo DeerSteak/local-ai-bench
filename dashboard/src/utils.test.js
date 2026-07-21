@@ -5,6 +5,7 @@ import {
   getModelSizeTier,
   getSkipInfo, getBarStatusLabel, getImageBarStatusLabel,
   getAllLLMModels,
+  buildImagesDataForModel, buildImagesBarDataByModel,
   getEmbedLabel,
   buildLLMBarData, buildLLMBarConfigs,
   sortBarData, findMostStrenuousKey,
@@ -208,6 +209,10 @@ describe("getAllLLMModels", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, mcq: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
   });
+  it("includes a model present only in tool accuracy results", () => {
+    const files = [{ data: { tool: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toEqual(["phi4-mini"]);
+  });
   it("includes a model present only in concurrency_tool, leaving llm/llm_conversation empty", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, concurrency_tool: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
@@ -215,6 +220,30 @@ describe("getAllLLMModels", () => {
   it("includes a model present only in concurrency_chat, leaving llm/llm_conversation empty", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, concurrency_chat: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
+  });
+});
+
+describe("SD 1.5 image resolutions", () => {
+  const file = {
+    data: { images: { sd15: { label: "Stable Diffusion 1.5", resolutions: {
+      "512x512": { sec_per_image_mean: 1.25 },
+      "768x768": { sec_per_image_mean: 2.5 },
+    } } } },
+  };
+
+  it("builds by-model line data at both native resolutions", () => {
+    expect(buildImagesDataForModel([file], "sd15")).toEqual([
+      { resLabel: "512x512", f0: 1.25 },
+      { resLabel: "768x768", f0: 2.5 },
+    ]);
+  });
+
+  it("builds by-system bar data from an SD 1.5-only result", () => {
+    expect(buildImagesBarDataByModel(file, ["sd15"])).toEqual([{
+      modelLabel: "Stable Diffusion 1.5",
+      "512x512": 1.25,
+      "768x768": 2.5,
+    }]);
   });
 });
 

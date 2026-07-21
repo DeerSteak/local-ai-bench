@@ -8,6 +8,7 @@ See docs/engines.md#llamacppengine for the full rationale.
 import http.client
 import json
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -50,6 +51,7 @@ class LlamaCppEngine(InferenceEngine):
         # in the right mode.
         self._gpu_visible = True
         self._cpu_only_active = False
+        self._model_lock = threading.RLock()
 
     # ── binary resolution ──
 
@@ -105,11 +107,28 @@ class LlamaCppEngine(InferenceEngine):
         HuggingFace download step. `hf_file` in models.py is a single
         filename, or a list for a model split across multiple GGUF parts
         (large-tier models) — every listed file must exist locally for the
-        model to count as resolved. None if `tag` isn't in the catalog or
-        any expected file is missing."""
+        model to count as resolved. Custom tags resolve one GGUF or a complete
+        multipart set from a same-named directory. None if required files are
+        absent or a custom directory is ambiguous."""
         entry = cls._catalog_entry(tag)
         if entry is None:
-            return None
+            if tag != Path(tag).name:
+                return None
+            paths = sorted((cls._models_dir() / tag).glob("*.gguf"))
+            part_re = re.compile(r"^(.*)-(\d+)-of-(\d+)\.gguf$", re.IGNORECASE)
+            matches = [part_re.match(path.name) for path in paths]
+            if len(paths) == 1 and not matches[0]:
+                return paths
+            if not paths or not all(matches):
+                return None
+            prefixes = {match.group(1) for match in matches}
+            totals = {int(match.group(3)) for match in matches}
+            if len(prefixes) != 1 or len(totals) != 1:
+                return None
+            total = totals.pop()
+            by_part = {int(match.group(2)): path for match, path in zip(matches, paths)}
+            expected_parts = set(range(1, total + 1))
+            return [by_part[i] for i in range(1, total + 1)] if set(by_part) == expected_parts else None
         hf_files = entry["hf_file"]
         filenames = hf_files if isinstance(hf_files, list) else [hf_files]
         model_dir = cls._models_dir() / cls._slug(tag)
@@ -235,10 +254,41 @@ class LlamaCppEngine(InferenceEngine):
             for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
                 if entry.name in catalog_slugs:
                     continue
-                ggufs = sorted(entry.glob("*.gguf"))
-                if ggufs:
+                ggufs = self._resolve_model_files(entry.name)
+                if ggufs is not None:
                     installed.append({"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)})
         return installed
+
+    @staticmethod
+    def _backend_from_device_listing(output: str) -> str:
+        for line in output.splitlines():
+            device = line.strip().lower()
+            if re.match(r"cuda\d*\s*:", device):
+                return "cuda"
+            if re.match(r"(?:rocm|hip)\d*\s*:", device):
+                return "rocm"
+            if re.match(r"metal\d*\s*:", device):
+                return "metal"
+            if re.match(r"(?:sycl|level[- ]?zero)\d*\s*:", device):
+                return "xpu"
+            if re.match(r"vulkan\d*\s*:", device):
+                return "vulkan"
+        return "cpu"
+
+    def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
+        if cpu_only:
+            return "cpu"
+        binary = self._binary_path()
+        if binary is None:
+            return hardware_backend
+        try:
+            completed = subprocess.run(
+                [binary, "--list-devices"], capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return hardware_backend
+        output = f"{completed.stdout}\n{completed.stderr}"
+        return self._backend_from_device_listing(output) if completed.returncode == 0 else hardware_backend
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
         """Read a downloaded model's real max context length straight from
@@ -262,50 +312,30 @@ class LlamaCppEngine(InferenceEngine):
             pass
         return default
 
-    def warmup(self, tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real threaded/watchdogged model load
+    def warmup(self, tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real model load/inference
                crash_cache: dict | None = None, cache_path: Path | None = None,
                crash_extra: dict | None = None) -> bool:
-        """Watchdog-threaded warmup — the first call here is what actually
-        spawns and loads the llama-server subprocess, via generate() ->
-        _ensure_model(), so a model too large for available memory times out
-        here rather than hanging the whole run."""
+        """Warm the exact server configuration used by the following calls.
+        generate() enforces one deadline across model load and inference, so a
+        timed-out load is synchronously stopped before this returns."""
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
-            exc_box = [None]
-
-            def _warmup():
-                try:
-                    self.generate(tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
-                except Exception as e:
-                    exc_box[0] = e
-
-            t = threading.Thread(target=_warmup, daemon=True)
             t_start = time.perf_counter()
-            t.start()
-            t.join(timeout=config.RUN_TIMEOUT)
-
-            if t.is_alive():
+            try:
+                self.generate(tag, "Hello.", timeout=config.RUN_TIMEOUT, num_ctx=num_ctx)
+            except Exception as e:
                 elapsed = time.perf_counter() - t_start
-                Shared.warn(f"{label}: warmup run {warmup_i+1} did not complete within {elapsed:.0f}s")
-                Shared.warn(f"{label}: model is likely too large for available memory — skipping")
-                if crash_cache is not None and cache_path is not None:
-                    Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up (hung past {config.RUN_TIMEOUT}s at num_ctx={num_ctx})",
-                                         extra=crash_extra)
-                return False
-            elif exc_box[0] is not None:
-                Shared.warn(f"Warmup run {warmup_i+1} failed: {exc_box[0]}")
+                Shared.warn(f"Warmup run {warmup_i+1} failed after {elapsed:.0f}s: {e}")
                 # Every warmup exception here (not just connection-crash shapes) means this tag
                 # failed to load — llama-server is freshly spawned per model, so it's as
                 # deterministic as a hang.
                 if crash_cache is not None and cache_path is not None:
-                    if self.is_connection_crash(exc_box[0]):
+                    if self.is_connection_crash(e):
                         self.wait_for_recovery()
                     Shared.record_crash(tag, crash_cache, cache_path,
                                          f"warming up at num_ctx={num_ctx}", extra=crash_extra)
                 return False
-            else:
-                Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
+            Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
         return True
 
     def unload(self, tag: str) -> None:
@@ -342,7 +372,10 @@ class LlamaCppEngine(InferenceEngine):
         each level's first real inference is on a fresh process, so it
         genuinely needs its own warmup."""
         try:
-            self._ensure_model(tag, per_slot_ctx, n_parallel=n_parallel)
+            self._ensure_model(
+                tag, per_slot_ctx, n_parallel=n_parallel,
+                deadline=time.perf_counter() + timeout,
+            )
             return True
         except Exception as e:
             Shared.warn(f"Failed to load {tag} for {n_parallel}-way concurrency "
@@ -371,29 +404,31 @@ class LlamaCppEngine(InferenceEngine):
         """Yield parsed JSON objects from a streaming Server-Sent-Events
         response body (llama-server's /completion and /v1/chat/completions
         both stream this way: 'data: {...}' lines, terminated by 'data:
-        [DONE]'), skipping blank lines, non-data lines, and the [DONE]
-        sentinel itself."""
+        [DONE]'). Empty objects are yielded for comments, malformed lines,
+        and the terminal sentinel so callers can enforce a total deadline
+        even while the server emits only keepalive traffic."""
         for raw_line in resp:
             line = raw_line.decode(errors="replace") if isinstance(raw_line, bytes) else raw_line
             line = line.strip()
             if not line.startswith("data:"):
+                yield {}
                 continue
             data = line[len("data:"):].strip()
             if data == "[DONE]":
+                yield {}
                 continue
             try:
                 yield json.loads(data)
             except json.JSONDecodeError:
-                continue
+                yield {}
 
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
         """Replace a self-reported tps with a wall-clock estimate whenever it
         exceeds config.MAX_PLAUSIBLE_TPS — see that constant's docstring for
         why llama-server's own numbers occasionally aren't trustworthy.
-        `tokens` is our own locally-counted content-chunk count, not the
-        server's predicted_n, so this fallback doesn't share the server-side
-        bug it's guarding against."""
+        `tokens` is an authoritative generated-token count from native token
+        IDs or OpenAI-compatible usage, not a transport-fragment count."""
         if tps <= config.MAX_PLAUSIBLE_TPS:
             return tps
         decode_elapsed = total - ttft
@@ -405,21 +440,21 @@ class LlamaCppEngine(InferenceEngine):
         """Surfaces the raw server values behind a _sanitize_tps substitution
         — without this, the only trace of the bad reading is the corrected
         number, which is useless for tracking down what llama-server
-        actually reported. Prints `tokens` (our own locally-counted content
-        chunks, always trustworthy) right next to `server_predicted_n`
+        actually reported. Prints `tokens` (the authoritative response count)
+        right next to `server_predicted_n`
         (timings.predicted_n) specifically so the two can be compared — if
         they diverge, predicted_n itself is unreliable under this workload,
         not just predicted_ms. predicted_ms is printed at full precision
         (not rounded) since the anomaly is specifically that it's an
         implausibly tiny fraction of a millisecond."""
         Shared.warn(f"{tag}: implausible tps from server (server predicted_n={server_predicted_n}, "
-                    f"our tokens={tokens}, predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
+                    f"response tokens={tokens}, predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
                     f"using wall-clock estimate ({sanitized_tps:.1f} tok/s) instead")
 
     # ── model process spawn ──
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
-                       n_parallel: int = 1) -> None:
+                       n_parallel: int = 1, deadline: float | None = None) -> None:
         """Make sure llama-server is up and serving `tag` at `num_ctx`,
         (re)spawning the subprocess if a different model, context size,
         embedding-vs-chat mode, or parallel-slot count is requested. See the
@@ -427,126 +462,144 @@ class LlamaCppEngine(InferenceEngine):
         (llama-server is single-model-per-process).
         `n_parallel` > 1 is only used by the concurrency test."""
         want = (tag, num_ctx, embedding, n_parallel)
-        have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding, self._loaded_n_parallel)
-        if want == have and self._proc is not None and self._proc.poll() is None and self.available():
+
+        def ready():
+            have = (self._loaded_tag, self._loaded_num_ctx,
+                    self._loaded_embedding, self._loaded_n_parallel)
+            return want == have and self._proc is not None and self._proc.poll() is None
+
+        if ready():
             return
 
-        paths = self._resolve_model_files(tag)
-        if paths is None:
-            raise RuntimeError(
-                f"{tag} not found under {config.MODELS_DIR} — "
-                "download it first with: python setup_check.py"
-            )
-
-        self._stop_process()
-
-        binary = self._binary_path()
-        if binary is None:
-            raise RuntimeError(f"'{self.BINARY}' not found — run setup_check.py to install it")
-
-        args = [
-            binary,
-            "-m", str(paths[0]),
-            "--host", "127.0.0.1",
-            "--port", str(config.LLAMACPP_PORT),
-            "-ngl", "0" if not self._gpu_visible else "999",
-            "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
-            "-b", str(config.LLAMACPP_NUM_BATCH),
-        ]
-        if num_ctx is not None:
-            # -c is a total KV-cache budget split across --parallel slots, so
-            # scale it up here; num_ctx stays the per-slot value everywhere
-            # else (self._loaded_num_ctx below, the want/have check above).
-            args += ["-c", str(num_ctx * n_parallel)]
-        if embedding:
-            args += ["--embeddings", "--pooling", "mean"]
-        if n_parallel > 1:
-            args += ["--parallel", str(n_parallel)]
-
-        log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
-        self._log_path = Path(log_fh.name)
-        try:
-            proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT)
-        except FileNotFoundError:
-            log_fh.close()
-            raise RuntimeError(f"'{self.BINARY}' not found in PATH") from None
-        log_fh.close()
-        self._proc = proc
-        Shared._managed_procs.append(proc)
-
-        t0 = time.perf_counter()
-        while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
-            if self.available():
-                self._loaded_tag = tag
-                self._loaded_num_ctx = num_ctx
-                self._loaded_embedding = embedding
-                self._loaded_n_parallel = n_parallel
+        with self._model_lock:
+            if ready():
                 return
-            if proc.poll() is not None:
-                raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
-                                   f"loading {tag} — last output:\n{self.tail_log()}")
-            time.sleep(1)
+            if deadline is not None and time.perf_counter() >= deadline:
+                raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
 
-        self._stop_process()
-        raise RuntimeError(f"llama-server did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
+            paths = self._resolve_model_files(tag)
+            if paths is None:
+                raise RuntimeError(
+                    f"{tag} not found under {config.MODELS_DIR} — "
+                    "download it first with: python setup_check.py"
+                )
+
+            self._stop_process()
+
+            binary = self._binary_path()
+            if binary is None:
+                raise RuntimeError(f"'{self.BINARY}' not found — run setup_check.py to install it")
+
+            args = [
+                binary,
+                "-m", str(paths[0]),
+                "--host", "127.0.0.1",
+                "--port", str(config.LLAMACPP_PORT),
+                "-ngl", "0" if not self._gpu_visible else "999",
+                "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
+                "-b", str(config.LLAMACPP_NUM_BATCH),
+            ]
+            if num_ctx is not None:
+                # -c is a total KV-cache budget split across --parallel slots, so
+                # scale it up here; num_ctx stays the per-slot value everywhere
+                # else (self._loaded_num_ctx below, the want/have check above).
+                args += ["-c", str(num_ctx * n_parallel)]
+            if embedding:
+                args += ["--embeddings", "--pooling", "mean"]
+            if n_parallel > 1:
+                args += ["--parallel", str(n_parallel)]
+
+            log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
+            self._log_path = Path(log_fh.name)
+            try:
+                proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT)
+            except FileNotFoundError:
+                log_fh.close()
+                raise RuntimeError(f"'{self.BINARY}' not found in PATH") from None
+            log_fh.close()
+            self._proc = proc
+            Shared._managed_procs.append(proc)
+
+            t0 = time.perf_counter()
+            while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
+                if deadline is not None and time.perf_counter() >= deadline:
+                    self._stop_process()
+                    raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
+                if self.available():
+                    self._loaded_tag = tag
+                    self._loaded_num_ctx = num_ctx
+                    self._loaded_embedding = embedding
+                    self._loaded_n_parallel = n_parallel
+                    return
+                if proc.poll() is not None:
+                    raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
+                                       f"loading {tag} — last output:\n{self.tail_log()}")
+                time.sleep(1)
+
+            self._stop_process()
+            raise RuntimeError(f"llama-server did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
 
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
         """Generate via llama-server's native /completion endpoint. Returns
-        (ttft_sec, tokens_generated, tokens_per_sec). tokens_generated is our
-        own locally-counted content-chunk count, not the server's
-        timings.predicted_n — under heavy concurrent-slot contention,
-        predicted_n has been observed stuck at 1 (see _warn_tps_sanitized)
-        even when real content chunks kept arriving, so it can't be trusted
-        as the authoritative count; tps still prefers the server's own
-        predicted_ms when it's plausible, since decode-time measurement
-        hasn't shown the same failure mode. n_parallel must match the last
+        (ttft_sec, tokens_generated, tokens_per_sec). Native streamed token
+        IDs provide the generated-token count; timings.predicted_n is only an
+        older-server fallback. n_parallel must match the last
         prepare_concurrency call (default 1 elsewhere); concurrent callers
-        passing the same values is safe without locking since
-        _ensure_model's want == have check is then read-only."""
-        self._ensure_model(tag, num_ctx, n_parallel=n_parallel)
+        passing the same values takes _ensure_model's process-alive fast path."""
+        t_start = time.perf_counter()
+        deadline = t_start + timeout
+        self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
 
         payload = json.dumps({
             "prompt": prompt,
             "n_predict": 512,
             "temperature": 0.0,
             "stream": True,
+            "return_tokens": True,
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/completion",
             data=payload, headers={"Content-Type": "application/json"}, method="POST",
         )
 
-        t_start = time.perf_counter()
         ttft   = None
         tokens = 0
         tps    = 0
         server_predicted_n = 0
         predicted_ms       = 0
+        response_parts = []
 
-        with self._urlopen(req, timeout) as resp:
+        remaining = max(deadline - time.perf_counter(), 0.001)
+        with self._urlopen(req, remaining) as resp:
             for chunk in self._iter_sse(resp):
                 content = chunk.get("content")
                 if ttft is None and content:
                     ttft = time.perf_counter() - t_start
                 if content:
-                    tokens += 1
+                    response_parts.append(content)
+                tokens += len(chunk.get("tokens") or [])
+
+                if time.perf_counter() > deadline:
+                    raise EngineTimeout(f"llamacpp_generate exceeded {timeout}s wall-clock timeout",
+                                        partial_text="".join(response_parts))
 
                 timings = chunk.get("timings")
                 if timings:
                     server_predicted_n = timings.get("predicted_n", tokens)
                     predicted_ms = timings.get("predicted_ms") or 0
-                    prompt_ms = timings.get("prompt_ms")
-                    if predicted_ms:
-                        tps = tokens / (predicted_ms / 1000)
-                    if prompt_ms is not None and prompt_ms > 0:
-                        ttft = prompt_ms / 1000
 
         total = time.perf_counter() - t_start
+        if not tokens:
+            tokens = server_predicted_n
         if ttft is None:
             ttft = total
+        if predicted_ms:
+            tps = tokens / (predicted_ms / 1000)
+        elif total > ttft:
+            tps = tokens / (total - ttft)
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
             self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
@@ -557,9 +610,9 @@ class LlamaCppEngine(InferenceEngine):
              check_loop: bool = False):
         """Generate via llama-server's OpenAI-compatible /v1/chat/completions.
         Returns (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count,
-        response_text). tokens_generated is our own locally-counted content-
-        chunk count, not the server's timings.predicted_n — see generate()'s
-        docstring for why. n_predict is passed straight through as an
+        response_text). The trailing usage.completion_tokens value is the
+        authoritative generated-token count and includes reasoning output.
+        n_predict is passed straight through as an
         extension field (-1 = unbounded). check_loop, when set, polls the
         streaming response for a degenerate generation loop (see
         Shared.looks_like_loop) and raises EngineLoopDetected early rather
@@ -568,7 +621,9 @@ class LlamaCppEngine(InferenceEngine):
         prompt_tokens (the true running total), not timings.prompt_n (only
         newly-prefilled tokens this call, which under-counts once the prefix
         cache kicks in)."""
-        self._ensure_model(tag, num_ctx)
+        t_start = time.perf_counter()
+        deadline = t_start + timeout
+        self._ensure_model(tag, num_ctx, deadline=deadline)
 
         payload = json.dumps({
             "messages":       messages,
@@ -582,7 +637,6 @@ class LlamaCppEngine(InferenceEngine):
             data=payload, headers={"Content-Type": "application/json"}, method="POST",
         )
 
-        t_start = time.perf_counter()
         ttft   = None
         tokens = 0
         tps    = 0
@@ -593,7 +647,8 @@ class LlamaCppEngine(InferenceEngine):
         reasoning_parts    = []
         last_loop_check   = t_start
 
-        with self._urlopen(req, timeout) as resp:
+        remaining = max(deadline - time.perf_counter(), 0.001)
+        with self._urlopen(req, remaining) as resp:
             for chunk in self._iter_sse(resp):
                 choices   = chunk.get("choices") or [{}]
                 delta     = choices[0].get("delta", {})
@@ -604,7 +659,6 @@ class LlamaCppEngine(InferenceEngine):
                     ttft = time.perf_counter() - t_start
 
                 if content:
-                    tokens += 1
                     response_parts.append(content)
                 if reasoning:
                     reasoning_parts.append(reasoning)
@@ -613,7 +667,7 @@ class LlamaCppEngine(InferenceEngine):
 
                 # urlopen()'s timeout is per-read, not total duration — it
                 # resets on every token. Enforce the real wall-clock deadline.
-                if now - t_start > timeout:
+                if now > deadline:
                     partial_text = "".join(response_parts) or "".join(reasoning_parts)
                     raise EngineTimeout(f"llamacpp_chat exceeded {timeout}s wall-clock timeout",
                                         partial_text=partial_text)
@@ -632,8 +686,8 @@ class LlamaCppEngine(InferenceEngine):
                     predicted_ms       = timings.get("predicted_ms") or 0
                     prompt_ms          = timings.get("prompt_ms")
                     prompt_n           = timings.get("prompt_n")
-                    if predicted_ms:
-                        tps = tokens / (predicted_ms / 1000)
+                    if not tokens:
+                        tokens = server_predicted_n
                     if prompt_ms is not None and prompt_ms > 0:
                         ttft = prompt_ms / 1000
                     if prompt_n is not None:
@@ -643,10 +697,16 @@ class LlamaCppEngine(InferenceEngine):
                 usage = chunk.get("usage")
                 if usage and usage.get("prompt_tokens") is not None:
                     prompt_eval_count = usage["prompt_tokens"]
+                if usage and usage.get("completion_tokens") is not None:
+                    tokens = usage["completion_tokens"]
 
         total = time.perf_counter() - t_start
         if ttft is None:
             ttft = total
+        if predicted_ms:
+            tps = tokens / (predicted_ms / 1000)
+        elif total > ttft:
+            tps = tokens / (total - ttft)
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
             self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
@@ -656,14 +716,17 @@ class LlamaCppEngine(InferenceEngine):
         return ttft, tokens, sanitized, prompt_eval_count, response_text
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_predict: int = 1024, check_loop: bool = False):
+                   num_ctx: int | None = None, num_predict: int = 1024,
+                   check_loop: bool = False):
         """Tool-calling chat via /v1/chat/completions with tools/tool_choice.
         Same 5-tuple as chat() plus a tool_calls list of {"name", "arguments"}
         (empty if nothing was called). delta.tool_calls fragments stream by
         index — id/name arrive once, arguments as partial JSON text — so they
         accumulate per index the way content does; each arguments string is
         JSON-parsed once at the end, falling back to {} if it won't parse."""
-        self._ensure_model(tag, None)
+        t_start = time.perf_counter()
+        deadline = t_start + timeout
+        self._ensure_model(tag, num_ctx, deadline=deadline)
 
         payload = json.dumps({
             "messages":       messages,
@@ -679,7 +742,6 @@ class LlamaCppEngine(InferenceEngine):
             data=payload, headers={"Content-Type": "application/json"}, method="POST",
         )
 
-        t_start = time.perf_counter()
         ttft   = None
         tokens = 0
         tps    = 0
@@ -691,7 +753,8 @@ class LlamaCppEngine(InferenceEngine):
         tool_fragments: dict[int, dict] = {}
         last_loop_check   = t_start
 
-        with self._urlopen(req, timeout) as resp:
+        remaining = max(deadline - time.perf_counter(), 0.001)
+        with self._urlopen(req, remaining) as resp:
             for chunk in self._iter_sse(resp):
                 choices   = chunk.get("choices") or [{}]
                 delta     = choices[0].get("delta", {})
@@ -702,7 +765,6 @@ class LlamaCppEngine(InferenceEngine):
                     ttft = time.perf_counter() - t_start
 
                 if content:
-                    tokens += 1
                     response_parts.append(content)
                 if tool_calls:
                     for call in tool_calls:
@@ -716,8 +778,10 @@ class LlamaCppEngine(InferenceEngine):
 
                 now = time.perf_counter()
 
-                if now - t_start > timeout:
-                    partial_text = "".join(response_parts)
+                if now > deadline:
+                    partial_calls = self._tool_calls_from_fragments(tool_fragments, mark_incomplete=True)
+                    partial_text = (json.dumps(partial_calls) if partial_calls
+                                    else "".join(response_parts))
                     raise EngineTimeout(f"llamacpp_chat_tools exceeded {timeout}s wall-clock timeout",
                                         partial_text=partial_text)
 
@@ -735,8 +799,8 @@ class LlamaCppEngine(InferenceEngine):
                     predicted_ms       = timings.get("predicted_ms") or 0
                     prompt_ms          = timings.get("prompt_ms")
                     prompt_n           = timings.get("prompt_n")
-                    if predicted_ms:
-                        tps = tokens / (predicted_ms / 1000)
+                    if not tokens:
+                        tokens = server_predicted_n
                     if prompt_ms is not None and prompt_ms > 0:
                         ttft = prompt_ms / 1000
                     if prompt_n is not None:
@@ -745,25 +809,42 @@ class LlamaCppEngine(InferenceEngine):
                 usage = chunk.get("usage")
                 if usage and usage.get("prompt_tokens") is not None:
                     prompt_eval_count = usage["prompt_tokens"]
+                if usage and usage.get("completion_tokens") is not None:
+                    tokens = usage["completion_tokens"]
 
         total = time.perf_counter() - t_start
         if ttft is None:
             ttft = total
+        if predicted_ms:
+            tps = tokens / (predicted_ms / 1000)
+        elif total > ttft:
+            tps = tokens / (total - ttft)
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
             self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
 
+        tool_calls_out = self._tool_calls_from_fragments(tool_fragments)
+
+        response_text = "".join(response_parts)
+        return ttft, tokens, sanitized, prompt_eval_count, response_text, tool_calls_out
+
+    @staticmethod
+    def _tool_calls_from_fragments(tool_fragments: dict[int, dict],
+                                   mark_incomplete: bool = False) -> list[dict]:
         tool_calls_out = []
         for idx in sorted(tool_fragments):
             frag = tool_fragments[idx]
+            incomplete = False
             try:
                 arguments = json.loads(frag["arguments"]) if frag["arguments"] else {}
             except json.JSONDecodeError:
                 arguments = {}
-            tool_calls_out.append({"name": frag["name"], "arguments": arguments})
-
-        response_text = "".join(response_parts)
-        return ttft, tokens, sanitized, prompt_eval_count, response_text, tool_calls_out
+                incomplete = True
+            call = {"name": frag["name"], "arguments": arguments}
+            if mark_incomplete and incomplete:
+                call["incomplete"] = True
+            tool_calls_out.append(call)
+        return tool_calls_out
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
         """Embed every string in `inputs` in a single /v1/embeddings call.

@@ -75,7 +75,7 @@ Windows equivalents are the same commands with `.bat` instead of `.sh` (no `bash
 The reasoning below isn't fully written down anywhere else — the docs describe *what* these tests do, this is the *why* behind specific implementation choices.
 
 **Two LLM test modes measure genuinely different things — don't compare their TTFT numbers at face value.**
-- **Single-shot** (`llm_prefill_benchmark.py`): a fresh, unique-content prompt padded to a target size (2K/8K/32K/64K), sent cold every run. TTFT is a genuine cold prefill — the whole prompt is processed with nothing cached.
+- **Single-shot** (`llm_prefill_benchmark.py`): a fresh, unique-content prompt padded to a target size (2K/8K/32K/64K), sent cold every run — the whole prompt is processed with nothing cached. TTFT is measured wall-clock, from request start until the first output reaches the client.
 - **Conversation** (`llm_conversation_benchmark.py`): one real multi-turn chat, grown from a blank slate toward 96K. TTFT here measures only the *new* turn's marginal cost, relying on the backend's slot/KV-cache reuse — that's why conversation TTFT at, say, 32K is a small fraction of single-shot TTFT at 32K. TPS (decode speed) *is* comparable between the two, since it depends on total context depth in both cases, not on what's cached.
 
 **Model tiers are cumulative.** `xsmall` (<6B), `small` (≤20B), `medium` (26–35B), `large` (70B+) are defined in `models.py`. `--maxtier medium` runs xsmall+small+medium, not just medium — `select_tier()` in `benchmark.py` applies the identical cumulative cap to image models via each image model's own `tier` field. To add a model to a tier, add it to the right list in `models.py`; the cap logic itself shouldn't need to change.

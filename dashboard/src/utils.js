@@ -174,7 +174,7 @@ export function getImageBarStatusLabel(file, model, res) {
 
 // Return all LLM model keys from the loaded files, in canonical order.
 // Checks every section that runs the shared LLM roster — single-shot,
-// conversation, the three accuracy tests, and both concurrency tests — since
+// conversation, all accuracy tests, and both concurrency tests — since
 // the Models filter is shared UI across all of them. A model present in only
 // one section (e.g. a file that only ran `--tests acc`, leaving
 // llm/llm_conversation empty) should still show up rather than leaving the
@@ -187,6 +187,7 @@ export function getAllLLMModels(files) {
     for (const m of Object.keys(f.data.mcq || {})) s.add(m);
     for (const m of Object.keys(f.data.math || {})) s.add(m);
     for (const m of Object.keys(f.data.code || {})) s.add(m);
+    for (const m of Object.keys(f.data.tool || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
   }

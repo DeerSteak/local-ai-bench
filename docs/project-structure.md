@@ -94,7 +94,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | Key | Contents |
 |---|---|
 | `version`, `engine` | Benchmark schema/version label and inference-engine name |
-| `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, and detected backend (`cuda`, `rocm`, `metal`, `xpu`, or CPU fallback) |
+| `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
 | `llm`, `llm_conversation` | Per-model context/checkpoint measurements and any timeout, crash, slow-TPS, or skip markers |

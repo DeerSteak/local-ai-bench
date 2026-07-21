@@ -187,8 +187,8 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
         return {"label": label, "skipped": True,
                 "skip_reason": "timed_out", "skip_detail": detail}
 
-    # A timeout at a deeper context (8K/32K/64K) doesn't disqualify the model —
-    # it passed the 2K prefill test, so fall through to the tok/s check below.
+    # A timeout at a deeper context doesn't disqualify the model — it passed
+    # the first prefill checkpoint, so fall through to the tok/s check below.
     slow_ctx = None if force_all else llm_data.get("slow_tps") or (
         first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
         and llm_data[first_ctx_label].get("tps_mean") is not None
@@ -395,8 +395,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
-    profile  = Shared.build_profile()
-    _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', profile['hostname']).strip('_')
+    hardware_profile = Shared.build_profile()
+    _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     base_out_path = args.out or str(config.RESULTS_DIR / f"results_{_safe}_{_start_stamp}.json")
@@ -424,10 +424,24 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
 
+        engine_backed_tests = [
+            t for t in ("llm", "conv", "mcq", "math", "code", "tool", "emb",
+                        "conc_tool", "conc_chat") if t in tests
+        ]
+        hardware_backend = hardware_profile["backend"]
+        profile = {
+            **hardware_profile,
+            "hardware_backend": hardware_backend,
+            "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
+                        if engine_backed_tests else hardware_backend),
+        }
+
         print(f"\n{config.BOLD}LLM Benchmark Suite{config.RESET}")
         print(f"  Host:      {profile['hostname']}")
         print(f"  OS:        {profile['os']}")
         print(f"  Backend:   {profile['backend']}")
+        if profile["backend"] != profile["hardware_backend"]:
+            print(f"  Hardware:  {profile['hardware_backend']}")
         print(f"  RAM:       {profile['ram_gb']} GB")
         print(f"  Engine:    {engine_name}")
         print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
@@ -493,8 +507,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         try:
             # ── LLM-backed tests share one server lifecycle
-            llm_tests = [t for t in ("llm", "conv", "mcq", "math", "code", "tool", "emb",
-                                      "conc_tool", "conc_chat") if t in tests]
+            llm_tests = engine_backed_tests
             if llm_tests:
                 Shared.section("Starting Servers")
                 for other_name in _engines:
@@ -536,7 +549,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 llm_conv_skips = {}
                 if "llm" in tests:
                     conv_models = []
-                    first_ctx_label = f"{config.CONTEXT_LENGTHS[0] // 1024}K"
+                    first_ctx_label = Shared.context_label(config.CONTEXT_LENGTHS[0])
                     for model in llm_models:
                         short = model["short"]
                         llm_data = results["llm"].get(short)

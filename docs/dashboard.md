@@ -74,6 +74,8 @@ Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).
 
+The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on NVIDIA, AMD, and Intel hardware. The raw results retain that physical classification separately as `profile.hardware_backend`.
+
 **Embeddings → Chunks/sec.** Throughput embedding one real document's chunks in a single call. Higher is better.
 
 **Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.

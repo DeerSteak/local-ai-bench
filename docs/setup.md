@@ -78,7 +78,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **Linux (Intel Arc) — experimental, untested on real hardware** — this project's maintainers don't have access to an Intel Arc machine, so everything below is implemented against Intel's published documentation, not verified against a real run. Package names and version numbers may be wrong or out of date. If you have Arc hardware and try this, please report back (open an issue) with what did or didn't work — that's how this graduates out of experimental.
 
-`setup_check.py` detects the GPU (via `lspci`) and labels it correctly in the hardware summary and results JSON (`"backend": "xpu"`). LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which this script doesn't build — `setup_check.py` warns plainly that LLM tests will run on CPU unless you build llama.cpp yourself with `-DGGML_SYCL=ON`.
+`setup_check.py` detects the GPU (via `lspci`) and labels its hardware classification as `xpu`. LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which this script doesn't build — `setup_check.py` warns plainly that LLM tests will run on CPU unless you build llama.cpp yourself with `-DGGML_SYCL=ON`. Results report that effective inference backend as `cpu` while retaining `xpu` separately as `hardware_backend`.
 
 For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfyanonymous/ComfyUI/pull/409) is already merged into the main repo this project clones — the same clone used for AMD/NVIDIA on Linux, no fork or custom node needed. Two things have to be true for it to actually use the GPU:
 
@@ -93,7 +93,7 @@ For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfy
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc)** — The setup script detects the GPU, labels it correctly (`"backend": "xpu"`), and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated (this part is Intel's own official build, not something built for this project). LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which this script doesn't build — it warns plainly that LLM tests will run on CPU unless you build llama.cpp yourself with `-DGGML_SYCL=ON`. **This warning is experimental** — like the Linux Intel Arc path above, this project's maintainers don't have Arc hardware to verify it against a real run.
+**Windows (Intel Arc)** — The setup script detects the GPU as `xpu` and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated (this part is Intel's own official build, not something built for this project). The standard llama.cpp install is the cross-vendor Vulkan build, so engine-backed results report `backend: "vulkan"` and retain `hardware_backend: "xpu"`. A manual SYCL build instead reports `xpu`. **This path is experimental** — this project's maintainers don't have Arc hardware to verify it against a real run.
 
 **Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 

@@ -241,12 +241,14 @@ export const EMBED_BAR_COLORS = {
 export const CTX_ORDER = ["0K", "0.5K", "2K", "4K", "8K", "16K", "32K", "48K", "64K", "80K", "96K", "128K"];
 
 // Image resolution order
-export const RES_ORDER = ["1024x1024", "1536x1536"];
+export const RES_ORDER = ["512x512", "768x768", "1024x1024", "1536x1536"];
 
 // Colors per image resolution (used in "Group by System" bar chart mode)
 export const RES_COLORS = {
-  "1024x1024": "#0969da",
-  "1536x1536": "#e36209",
+  "512x512":   "#0969da",
+  "768x768":   "#e36209",
+  "1024x1024": "#1a7f37",
+  "1536x1536": "#9a3078",
 };
 
 // Backend badge colors
@@ -255,5 +257,6 @@ export const BACKEND_COLORS = {
   rocm:  { bg: "#f0ebff", color: "#7c4dff", border: "#c8b8f8" },
   metal: { bg: "#dff0ff", color: "#0969da", border: "#b6d4fb" },
   xpu:   { bg: "#e0f7f7", color: "#0e8a8a", border: "#a8e6e6" },
+  vulkan:{ bg: "#fff4e5", color: "#b45309", border: "#f3c98b" },
   cpu:   { bg: "#f6f8fa", color: "#8c959f", border: "#d0d7de" },
 };
