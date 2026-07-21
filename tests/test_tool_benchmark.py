@@ -262,6 +262,46 @@ def test_rescore_partial_incomplete_call_is_not_a_decline_or_correct_call():
     assert ToolBenchmark.rescore_partial_fn(_q_call(), partial)["correct"] is False
 
 
+# ── _ask ──
+
+class _FakeChatToolsEngine:
+    """Minimal stub of just the chat_tools() surface _ask() calls."""
+
+    def __init__(self, response_text: str, tool_calls: list):
+        self._response_text = response_text
+        self._tool_calls = tool_calls
+
+    def chat_tools(self, tag, messages, tools, timeout=None, num_ctx=None,
+                   num_predict=None, check_loop=None):
+        return None, None, None, None, self._response_text, self._tool_calls
+
+
+def test_ask_raw_response_is_tool_calls_json_when_a_call_was_made():
+    engine = _FakeChatToolsEngine("", [{"name": "get_weather", "arguments": {"location": "Paris"}}])
+    _, raw = ToolBenchmark._ask(engine, "tag", _q_call())
+    assert raw == json.dumps([{"name": "get_weather", "arguments": {"location": "Paris"}}])
+
+
+def test_ask_raw_response_preserves_prose_on_decline():
+    # No tool call was made — the model just answered in prose. Losing that
+    # text would make a declined-tool sidecar entry uninformative.
+    q = {"id": "tool_y", "category": "decline_no_fit", "prompt": "Play a song for me.",
+         "tools": [{"type": "function", "function": {"name": "get_weather"}}],
+         "expected": {"call": False}}
+    engine = _FakeChatToolsEngine("I can't help with that request.", [])
+    _, raw = ToolBenchmark._ask(engine, "tag", q)
+    assert raw == "I can't help with that request."
+
+
+def test_ask_raw_response_keeps_both_prose_and_tool_calls_when_model_emits_both():
+    # A model can narrate ("Sure, checking the weather...") *and* call a tool
+    # in the same turn — neither should be discarded from the sidecar.
+    tool_calls = [{"name": "get_weather", "arguments": {"location": "Paris"}}]
+    engine = _FakeChatToolsEngine("Sure, let me check that for you.", tool_calls)
+    _, raw = ToolBenchmark._ask(engine, "tag", _q_call())
+    assert json.loads(raw) == {"tool_calls": tool_calls, "text": "Sure, let me check that for you."}
+
+
 # ── score ──
 
 def _questions():
@@ -304,6 +344,16 @@ def test_score_missing_answer_counts_incorrect_and_unanswered():
     assert result["correct"] == 0
     assert result["answered"] == 0
     assert len(result["incorrect"]) == 3
+
+
+def test_score_all_list_covers_every_question_including_correct_ones():
+    answers = {"q1": {"correct": True}, "q2": {"correct": False}, "q3": None}
+    result = ToolBenchmark.score(_questions(), answers)
+    assert {e["id"] for e in result["all"]} == {"q1", "q2", "q3"}
+    q1_entry = next(e for e in result["all"] if e["id"] == "q1")
+    assert q1_entry == {"id": "q1", "category": "single_tool_call", "correct": True}
+    q3_entry = next(e for e in result["all"] if e["id"] == "q3")
+    assert q3_entry == {"id": "q3", "category": "decline_no_fit", "correct": False}
 
 
 # ── load_questions against the real dataset ──

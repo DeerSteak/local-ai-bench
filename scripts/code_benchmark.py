@@ -247,6 +247,7 @@ class CodeBenchmark:
         testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
+        all_results = []
         correct = 0
         answered = 0
 
@@ -258,18 +259,20 @@ class CodeBenchmark:
             if result is not None:
                 answered += 1
             is_correct = result is not None and result["correct"]
+            total_tests = len(q["visible_tests"]) + len(q["hidden_tests"])
+            entry = {
+                "id":           qid,
+                "category":     category,
+                "tests_passed": result["tests_passed"] if result else 0,
+                "tests_total":  result["tests_total"] if result else total_tests,
+                "error":        result["error"] if result else "unanswered",
+            }
+            all_results.append({**entry, "correct": is_correct})
             if is_correct:
                 correct += 1
                 cat["correct"] += 1
             else:
-                total_tests = len(q["visible_tests"]) + len(q["hidden_tests"])
-                incorrect.append({
-                    "id":           qid,
-                    "category":     category,
-                    "tests_passed": result["tests_passed"] if result else 0,
-                    "tests_total":  result["tests_total"] if result else total_tests,
-                    "error":        result["error"] if result else "unanswered",
-                })
+                incorrect.append(entry)
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
@@ -282,6 +285,7 @@ class CodeBenchmark:
             "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
             "by_category":  by_category,
             "incorrect":    incorrect,
+            "all":          all_results,
         }
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,

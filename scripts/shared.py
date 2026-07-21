@@ -737,11 +737,12 @@ class Shared:
 
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
-        """Write an accuracy test's per-model raw-answer sidecar (wrong answers'
-        full raw_response text) to `path`, overwriting each call so it updates
-        incrementally as models finish — same checkpoint-as-you-go as the main
-        results JSON, so a crash mid-run doesn't lose collected answers. Kept
-        out of that JSON since raw model output is large and bloats it fast."""
+        """Write an accuracy test's per-model raw-answer sidecar (every
+        question's full raw_response text, correct and incorrect alike) to
+        `path`, overwriting each call so it updates incrementally as models
+        finish — same checkpoint-as-you-go as the main results JSON, so a
+        crash mid-run doesn't lose collected answers. Kept out of that JSON
+        since raw model output is large and bloats it fast."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2))
 
@@ -841,12 +842,12 @@ class Shared:
                 scored = score_fn(questions, answers)
                 answers_out[short] = {
                     "label": label,
-                    "incorrect": [
+                    "answers": [
                         {**entry, "raw_response": raw_responses.get(entry["id"], "")}
-                        for entry in scored["incorrect"]
+                        for entry in scored["all"]
                     ],
                 }
-                results[short] = {"label": label, **scored}
+                results[short] = {"label": label, **{k: v for k, v in scored.items() if k != "all"}}
 
                 if timed_out_ids:
                     results[short]["timed_out_count"] = len(timed_out_ids)

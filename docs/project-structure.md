@@ -18,7 +18,7 @@
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `scripts/` | Benchmark implementation — see [How It Works](how-it-works.md#code-organization) for what each module does |
-| `results/` | Default benchmark output — `results_*.json`, generated-image folders, and `answers_mcq_*` / `answers_math_*` / `answers_code_*` / `answers_tool_*` JSON sidecars containing incorrect responses |
+| `results/` | Default benchmark output — `results_*.json`, generated-image folders, and `answers_mcq_*` / `answers_math_*` / `answers_code_*` / `answers_tool_*` JSON sidecars containing every accuracy-test response |
 | `dashboard/` | The results-explorer web app (React + Vite) |
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
@@ -85,7 +85,7 @@ Each auxiliary name is derived from the main results filename's stem by swapping
 
 `--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
 
-The `answers_*.json` sidecars hold each accuracy test's wrong answers, keyed by model, with the model's full raw response text — kept out of the main results JSON since raw model output (unbounded generation, see `docs/workloads.md`) is large relative to everything else in there and would otherwise bloat it substantially.
+The `answers_*.json` sidecars hold every question's answer for that accuracy test, keyed by model, each with the model's full raw response text and a `correct` flag — kept out of the main results JSON since raw model output (unbounded generation, see `docs/workloads.md`) is large relative to everything else in there and would otherwise bloat it substantially. The main results JSON's own `incorrect` list (per model, per test) is unaffected and still covers only wrong answers.
 
 ### Main results JSON
 

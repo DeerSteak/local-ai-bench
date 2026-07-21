@@ -78,6 +78,7 @@ class MathBenchmark:
         question's tolerance. Pure, so it's directly testable."""
         by_category: dict[str, dict] = {}
         incorrect = []
+        all_results = []
         correct = 0
         answered = 0
 
@@ -90,11 +91,13 @@ class MathBenchmark:
             if given is not None:
                 answered += 1
             is_correct = given is not None and abs(given - expected) <= tolerance
+            entry = {"id": qid, "category": category, "given": given, "expected": expected}
+            all_results.append({**entry, "correct": is_correct})
             if is_correct:
                 correct += 1
                 cat["correct"] += 1
             else:
-                incorrect.append({"id": qid, "category": category, "given": given, "expected": expected})
+                incorrect.append(entry)
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
@@ -107,6 +110,7 @@ class MathBenchmark:
             "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
             "by_category":  by_category,
             "incorrect":    incorrect,
+            "all":          all_results,
         }
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
