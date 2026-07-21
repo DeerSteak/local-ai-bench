@@ -141,8 +141,8 @@ class Shared:
             info_out = subprocess.check_output(
                 ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
             )
-            agents = [l for l in info_out.splitlines() if "Marketing Name" in l]
-            if agents and hardware.classify_gpu(agents[0].split(":", 1)[-1].strip()) == "discrete":
+            gpu_names = hardware.rocminfo_gpu_names(info_out)
+            if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names):
                 mem_out = subprocess.check_output(
                     ["rocm-smi", "--showmeminfo", "vram", "--json"],
                     text=True, stderr=subprocess.DEVNULL, timeout=10,

@@ -123,6 +123,26 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
     return [m for m in catalog if m["tag"] in installed]
 
 
+def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
+                         patterns: list[str] | None, concurrency_enabled: bool
+                         ) -> tuple[list[dict], list[dict]]:
+    """Resolve normal and concurrency model scopes for one engine's local
+    model inventory. Concurrency ignores the tier cap but still honors
+    --models; normal workloads retain the selected tier."""
+    run_models = (
+        resolve_custom_models(patterns, tier_models, installed_tags)
+        if patterns else tier_models
+    )
+    concurrency_models = []
+    if concurrency_enabled:
+        concurrency_models = downloaded_models(LLM_MODELS, installed_tags)
+        if patterns:
+            concurrency_models = resolve_custom_models(
+                patterns, concurrency_models, installed_tags,
+            )
+    return run_models, concurrency_models
+
+
 def sidecar_path(out_path: str, prefix: str) -> Path:
     """Build a results-directory sidecar path from the main output's stem."""
     stem = Path(out_path).stem
@@ -330,9 +350,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     args = parser.parse_args()
 
-    # --list-models/--models always use the first registered engine
-    # (alphabetically) regardless of --engine — there's nothing to list
-    # per-engine, models.py's catalog is shared across all of them.
+    # --list-models uses the first registered engine (alphabetically); normal
+    # runs resolve --models against each selected engine's own inventory.
     engine = get_engine(_engines[0])
     # Held on Shared so shutdown_managed() (called from the signal handler and
     # the finally block) can consult the live engine without threading it in.
@@ -365,33 +384,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         config.ACC_TIMEOUT = args.acc_timeout
     config.N_RUNS = args.runs
 
-    llm_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
-
-    needs_installed_tags = args.models or "conc_tool" in args.tests or "conc_chat" in args.tests
-    if needs_installed_tags:
-        # So a custom (non-catalog) --models tag, and the concurrency tests'
-        # "whatever's downloaded" scoping, can resolve against what's actually
-        # downloaded locally.
-        engine.ensure_running()
-        installed_tags = [m["tag"] for m in engine.list_installed_models()]
-
-    if args.models:
-        llm_models = resolve_custom_models(args.models, llm_models, installed_tags)
-        if not llm_models:
-            Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
-                       f"in the selected tier ({tier_label}) or downloaded locally — "
-                       "llm/conv/mcq/math/code/tool tests will have nothing to run")
-
-    # Both concurrency tests scope to the same model set — every catalog
-    # model actually downloaded locally, ignoring --maxtier (see
-    # downloaded_models's docstring) — --models still narrows further, same
-    # as llm_models above. They differ in levels/context/exit behavior, not
-    # model scope.
-    conc_models = []
-    if "conc_tool" in args.tests or "conc_chat" in args.tests:
-        conc_models = downloaded_models(LLM_MODELS, installed_tags)
-        if args.models:
-            conc_models = resolve_custom_models(args.models, conc_models, installed_tags)
+    tier_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
 
     comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
 
@@ -423,6 +416,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
+
+        concurrency_enabled = "conc_tool" in tests or "conc_chat" in tests
+        installed_tags = []
+        if args.models or concurrency_enabled:
+            engine.ensure_running()
+            installed_tags = [m["tag"] for m in engine.list_installed_models()]
+        llm_models, conc_models = resolve_model_scopes(
+            tier_models, installed_tags, args.models, concurrency_enabled,
+        )
+        if args.models and not llm_models:
+            Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
+                       f"in the selected tier ({tier_label}) or downloaded for {engine_name} — "
+                       "llm/conv/mcq/math/code/tool tests will have nothing to run")
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "mcq", "math", "code", "tool", "emb",

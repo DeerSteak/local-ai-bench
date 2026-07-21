@@ -109,7 +109,10 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
-                    if not engine.prepare_concurrency(tag, level, per_request_context, warmup_runs):
+                    if not engine.prepare_concurrency(
+                        tag, level, per_request_context, warmup_runs,
+                        timeout=config.RUN_TIMEOUT,
+                    ):
                         Shared.warn(f"{label}: couldn't load at {level}-way concurrency — "
                                     "this is the model's real ceiling, stopping here")
                         results[short]["memory_at_failure"] = Shared.sample_memory_gb()

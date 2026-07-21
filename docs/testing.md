@@ -118,7 +118,7 @@ The test suite consists of **28 test modules** validating different components o
   - Filtering preserves the original model order.
 
 - **[test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py)**
-  Tests the concurrency workload's downloaded-model scoping. It verifies that only installed catalog entries are retained, catalog order is preserved, custom installed tags are ignored at this stage, and empty/all-installed inputs behave correctly.
+  Tests the concurrency workload's downloaded-model scoping. It verifies that only installed catalog entries are retained, catalog order is preserved, custom installed tags are ignored at this stage, empty/all-installed inputs behave correctly, and each engine pass resolves against its own installed-model inventory.
 
 - **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
   Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually downloaded locally. It verifies:
@@ -153,7 +153,7 @@ The test suite consists of **28 test modules** validating different components o
   - Required fields (e.g., download size, model tags, parameters, samplers, schedulers) exist in model definitions.
 
 - **[test_hardware.py](../tests/test_hardware.py)**
-  Tests memory-size parsing, integrated/discrete GPU classification, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
+  Tests memory-size parsing, integrated/discrete GPU classification (including processor-name false positives), extraction of GPU agents from CPU-first `rocminfo` output, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
 
 ---
 

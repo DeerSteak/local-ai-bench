@@ -261,12 +261,14 @@ def check_rocm():
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
         )
-        agents = [l for l in out.splitlines() if "Marketing Name" in l]
-        for a in agents[:3]:
-            print(f"  ROCm GPU: {a.split(':', 1)[-1].strip()}")
-        if agents:
-            name = agents[0].split(":", 1)[-1].strip()
-            rocm_gpu_kind = hardware.classify_gpu(name)
+        gpu_names = hardware.rocminfo_gpu_names(out)
+        for name in gpu_names[:3]:
+            print(f"  ROCm GPU: {name}")
+        if gpu_names:
+            rocm_gpu_kind = (
+                "discrete" if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names)
+                else "integrated"
+            )
             if rocm_gpu_kind == "discrete":
                 # Only trust rocm-smi's VRAM figure for a confirmed-discrete card —
                 # an APU's is often just a small BIOS-fixed carve-out, not the real usable pool.
@@ -285,7 +287,7 @@ def check_rocm():
                 except (FileNotFoundError, subprocess.CalledProcessError,
                         json.JSONDecodeError, ValueError):
                     pass
-        return bool(agents)
+        return bool(gpu_names)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 

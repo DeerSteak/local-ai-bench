@@ -40,7 +40,7 @@ def parse_size_gb(s: str) -> float:
 
 # AMD discrete cards are branded with one of these tokens; APU/integrated
 # graphics is typically bare ("AMD Radeon Graphics", "Radeon 8060S Graphics").
-_AMD_DISCRETE_MARKERS = ("RX", "PRO", "INSTINCT")
+_AMD_DISCRETE_PATTERN = re.compile(r"(?:\bRX(?=\b|\d)|\bPRO\b|\bINSTINCT\b)")
 
 # Intel discrete Arc cards carry a model number (A380/A750/A770, B570/B580);
 # integrated Arc graphics (Meteor Lake/Lunar Lake and newer) is just
@@ -57,11 +57,27 @@ def classify_gpu(name: str) -> str:
     failure mode: it means falling back to the system-RAM ceiling, not
     wrongly capping to a VRAM number that doesn't apply)."""
     upper = name.upper()
-    if any(marker in upper for marker in _AMD_DISCRETE_MARKERS):
+    if _AMD_DISCRETE_PATTERN.search(upper):
         return "discrete"
     if _INTEL_DISCRETE_PATTERN.search(upper):
         return "discrete"
     return "integrated"
+
+
+def rocminfo_gpu_names(output: str) -> list[str]:
+    """Return Marketing Name values only from rocminfo GPU agent blocks.
+
+    rocminfo normally lists the host CPU as Agent 1, so selecting the first
+    Marketing Name can classify the processor instead of the GPU."""
+    names = []
+    agent_blocks = re.split(r"(?m)^\s*Agent\s+\d+\s*$", output)[1:]
+    for block in agent_blocks:
+        device_type = re.search(r"(?m)^\s*Device Type:\s*(\S+)", block)
+        marketing_name = re.search(r"(?m)^\s*Marketing Name:\s*(.+?)\s*$", block)
+        if (device_type and device_type.group(1).upper() == "GPU"
+                and marketing_name and marketing_name.group(1).strip()):
+            names.append(marketing_name.group(1).strip())
+    return names
 
 
 def compute_memory_ceiling_gb(*, os_name: str, total_ram_gb: float | None,

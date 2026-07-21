@@ -27,6 +27,7 @@ def test_classify_gpu_amd_discrete():
 def test_classify_gpu_amd_integrated():
     assert hardware.classify_gpu("AMD Radeon Graphics") == "integrated"
     assert hardware.classify_gpu("AMD Radeon 8060S Graphics") == "integrated"
+    assert hardware.classify_gpu("AMD Ryzen 9 7950X 16-Core Processor") == "integrated"
 
 
 def test_classify_gpu_intel_discrete():
@@ -36,6 +37,48 @@ def test_classify_gpu_intel_discrete():
 
 def test_classify_gpu_intel_integrated():
     assert hardware.classify_gpu("Intel Arc Graphics") == "integrated"
+
+
+# ── rocminfo parsing ──
+
+def test_rocminfo_gpu_names_ignores_cpu_agent_and_returns_gpu():
+    output = """
+*******
+Agent 1
+*******
+  Marketing Name:          AMD Ryzen 9 7950X 16-Core Processor
+  Vendor Name:             CPU
+  Device Type:             CPU
+*******
+Agent 2
+*******
+  Marketing Name:          AMD Radeon Graphics
+  Vendor Name:             AMD
+  Device Type:             GPU
+"""
+    assert hardware.rocminfo_gpu_names(output) == ["AMD Radeon Graphics"]
+
+
+def test_rocminfo_gpu_names_returns_all_gpu_agents():
+    output = """
+Agent 1
+  Marketing Name: AMD Ryzen Processor
+  Device Type: CPU
+Agent 2
+  Marketing Name: AMD Radeon Graphics
+  Device Type: GPU
+Agent 3
+  Marketing Name: AMD Radeon RX 7900 XTX
+  Device Type: GPU
+"""
+    assert hardware.rocminfo_gpu_names(output) == [
+        "AMD Radeon Graphics",
+        "AMD Radeon RX 7900 XTX",
+    ]
+
+
+def test_rocminfo_gpu_names_requires_an_agent_block_and_device_type():
+    assert hardware.rocminfo_gpu_names("Marketing Name: AMD Radeon RX 7900 XTX") == []
 
 
 # ── compute_memory_ceiling_gb ──
