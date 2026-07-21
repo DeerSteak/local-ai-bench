@@ -140,9 +140,7 @@ class ToolBenchmark:
             num_ctx=config.ACCURACY_CONTEXT,
             num_predict=ToolBenchmark.TOOL_NUM_PREDICT, check_loop=True,
         )
-        # Keep any prose alongside the tool calls — a model can emit both, and a
-        # decline is prose with no tool calls at all — so the sidecar always shows
-        # what the model actually said instead of an uninformative "[]".
+        # Keep prose alongside tool calls — a decline is prose with no calls at all.
         if tool_calls and response_text:
             raw = json.dumps({"tool_calls": tool_calls, "text": response_text})
         elif tool_calls:
@@ -184,12 +182,8 @@ class ToolBenchmark:
                 answered += 1
             is_correct = result is not None and result["correct"]
             entry = {"id": qid, "category": category}
-            all_results.append({**entry, "correct": is_correct})
-            if is_correct:
+            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
                 correct += 1
-                cat["correct"] += 1
-            else:
-                incorrect.append(entry)
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0

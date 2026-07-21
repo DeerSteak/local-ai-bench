@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **28 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **29 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -275,6 +275,9 @@ The test suite consists of **28 test modules** validating different components o
   Validates general helpers in `Shared`:
   - `mean` and `stdev` mathematical routines (including handling empty lists or single-element inputs).
   - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
+
+- **[test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py)**
+  Tests `Shared.tally_accuracy_entry` — the common by_category/`all`/`incorrect` recording tail shared by all four accuracy `score()` methods (MCQ/Math/Code/Tool). Verifies a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`), an incorrect entry lands in both `all` and `incorrect` (the latter without a `correct` key, preserving the existing `incorrect` shape) without bumping the category count, and that the original `entry` dict passed in is never mutated.
 
 ---
 

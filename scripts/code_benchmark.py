@@ -267,12 +267,8 @@ class CodeBenchmark:
                 "tests_total":  result["tests_total"] if result else total_tests,
                 "error":        result["error"] if result else "unanswered",
             }
-            all_results.append({**entry, "correct": is_correct})
-            if is_correct:
+            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
                 correct += 1
-                cat["correct"] += 1
-            else:
-                incorrect.append(entry)
 
         for cat in by_category.values():
             cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0

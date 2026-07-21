@@ -736,6 +736,21 @@ class Shared:
                 or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
 
     @staticmethod
+    def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
+                              all_results: list, incorrect: list) -> bool:
+        """Record one scored question into by_category/all/incorrect — the
+        common tail of every accuracy benchmark's per-question scoring loop
+        (MCQ/Math/Code/Tool), which otherwise differ only in how `entry` and
+        `is_correct` are built. Returns `is_correct` so the caller can bump
+        its own correct counter."""
+        all_results.append({**entry, "correct": is_correct})
+        if is_correct:
+            cat["correct"] += 1
+        else:
+            incorrect.append(entry)
+        return is_correct
+
+    @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
         """Write an accuracy test's per-model raw-answer sidecar (every
         question's full raw_response text, correct and incorrect alike) to
@@ -849,7 +864,8 @@ class Shared:
                         for entry in scored["all"]
                     ],
                 }
-                results[short] = {"label": label, **{k: v for k, v in scored.items() if k != "all"}}
+                scored.pop("all", None)
+                results[short] = {"label": label, **scored}
 
                 if timed_out_ids:
                     results[short]["timed_out_count"] = len(timed_out_ids)
