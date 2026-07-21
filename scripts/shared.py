@@ -2,11 +2,12 @@
 shared.py — cross-cutting helpers used by more than one test: logging, the
 ComfyUI server lifecycle, machine profiling, crash-cache bookkeeping, and the
 engine-agnostic benchmark orchestration (run_measured_calls,
-run_accuracy_benchmark, loop detection). The Ollama-specific HTTP/process
-client moved out to engines/ollama.py behind the InferenceEngine interface;
-what stays here is driven through that interface, not tied to Ollama. Most
-helpers are stateless-per-call, so methods are static and the little state
-there is (managed-process bookkeeping) lives on the class.
+run_accuracy_benchmark, loop detection). The inference engine's own
+HTTP/process client lives behind the InferenceEngine interface (see
+engines/llamacpp.py); what stays here is driven through that interface, not
+tied to any one engine. Most helpers are stateless-per-call, so methods are
+static and the little state there is (managed-process bookkeeping) lives on
+the class.
 """
 
 import hashlib
@@ -28,38 +29,40 @@ import psutil
 import requests
 
 import config
+import hardware
 from models import IMAGE_MODELS
 
 if TYPE_CHECKING:
     from engines.base import InferenceEngine
 
 
-class OllamaTimeout(TimeoutError):
-    """Raised when ollama_chat exceeds its wall-clock timeout. Carries whatever
-    text had streamed in before the deadline hit, so callers can tell a bare
-    timeout (no text at all) apart from a timeout that cut off a response the
-    model had already started writing — which might have been a wrong-format
-    answer regardless of the timeout, or might have been about to be correct."""
+class EngineTimeout(TimeoutError):
+    """Raised when an engine's chat() exceeds its wall-clock timeout. Carries
+    whatever text had streamed in before the deadline hit, so callers can tell
+    a bare timeout (no text at all) apart from a timeout that cut off a
+    response the model had already started writing — which might have been a
+    wrong-format answer regardless of the timeout, or might have been about to
+    be correct."""
 
     def __init__(self, message: str, partial_text: str = ""):
         super().__init__(message)
         self.partial_text = partial_text
 
 
-class OllamaLoopDetected(OllamaTimeout):
-    """Raised when ollama_chat's check_loop polling flags a degenerate
-    generation loop *before* the wall-clock timeout elapses. Deliberately a
-    distinct type from a bare OllamaTimeout (though still a TimeoutError
-    subclass, so generic timeout handling elsewhere keeps working): the model
-    didn't run out of its time budget here, it was cut off early because the
-    stream already looked pointless — callers that count "timed out" vs.
-    "looped" need to tell those apart rather than lumping every early loop
-    catch into the timeout bucket."""
+class EngineLoopDetected(EngineTimeout):
+    """Raised when chat()'s check_loop polling flags a degenerate generation
+    loop *before* the wall-clock timeout elapses. Deliberately a distinct type
+    from a bare EngineTimeout (though still a TimeoutError subclass, so
+    generic timeout handling elsewhere keeps working): the model didn't run
+    out of its time budget here, it was cut off early because the stream
+    already looked pointless — callers that count "timed out" vs. "looped"
+    need to tell those apart rather than lumping every early loop catch into
+    the timeout bucket."""
 
 
 class Shared:
     # Tracks processes we started so we can shut them down cleanly. Both the
-    # inference engine's server (Ollama today) and ComfyUI register here, so
+    # inference engine's server and ComfyUI register here, so
     # shutdown_managed() can clean up everything from one list on crash/exit.
     _managed_procs: list[subprocess.Popen] = []
 
@@ -68,10 +71,7 @@ class Shared:
     # without the caller having to thread the instance into every cleanup path.
     _active_engine: "InferenceEngine | None" = None
 
-    # Path to the log file capturing the ComfyUI server process's stdout+stderr.
-    # Kept for the life of the process (not deleted on successful startup) so a
-    # crash later in the run — e.g. an OOM while loading a large checkpoint —
-    # still has a log to inspect instead of going silent.
+    # Kept for the process's life (not deleted on success) so a later crash still has a log to inspect.
     _comfyui_log_path: Path | None = None
 
     # Cap on how many times a benchmark retries a request after the engine's
@@ -98,8 +98,65 @@ class Shared:
     def stdev(vals):  return statistics.stdev(vals) if len(vals) >= 2 else 0
 
     @staticmethod
+    def context_label(tokens: int) -> str:
+        return f"{tokens / 1024:g}K"
+
+    @staticmethod
     def system_ram_gb():
         return psutil.virtual_memory().total / (1024 ** 3)
+
+    @staticmethod
+    def sample_memory_gb() -> dict:  # pragma: no cover — shells out to GPU tools + psutil
+        """Point-in-time memory snapshot: system RAM always (psutil), plus GPU
+        VRAM when nvidia-smi/rocm-smi answers (rocm-smi only for a confirmed
+        discrete AMD card — an APU's VRAM figure is often just a small
+        BIOS-fixed carve-out, same caution as setup_check.py's check_rocm).
+        gpu_* fields are None if no GPU query succeeds."""
+        vm = psutil.virtual_memory()
+        snapshot = {
+            "system_ram_used_gb":  round(vm.used / (1024 ** 3), 2),
+            "system_ram_total_gb": round(vm.total / (1024 ** 3), 2),
+            "gpu_vram_used_gb":  None,
+            "gpu_vram_total_gb": None,
+        }
+
+        try:
+            out = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=memory.used,memory.total",
+                 "--format=csv,noheader,nounits"],
+                text=True, stderr=subprocess.DEVNULL, timeout=10,
+            )
+            used_mib = total_mib = 0.0
+            for line in out.strip().splitlines():
+                used, total = line.split(",")
+                used_mib += float(used.strip())
+                total_mib += float(total.strip())
+            snapshot["gpu_vram_used_gb"]  = round(used_mib / 1024, 2)
+            snapshot["gpu_vram_total_gb"] = round(total_mib / 1024, 2)
+            return snapshot
+        except Exception:
+            pass
+
+        try:
+            info_out = subprocess.check_output(
+                ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+            )
+            gpu_names = hardware.rocminfo_gpu_names(info_out)
+            if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names):
+                mem_out = subprocess.check_output(
+                    ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                    text=True, stderr=subprocess.DEVNULL, timeout=10,
+                )
+                mem_data = json.loads(mem_out)
+                used_bytes  = sum(int(c.get("VRAM Total Used Memory (B)", 0)) for c in mem_data.values())
+                total_bytes = sum(int(c.get("VRAM Total Memory (B)", 0)) for c in mem_data.values())
+                if total_bytes > 0:
+                    snapshot["gpu_vram_used_gb"]  = round(used_bytes / (1024 ** 3), 2)
+                    snapshot["gpu_vram_total_gb"] = round(total_bytes / (1024 ** 3), 2)
+        except Exception:
+            pass
+
+        return snapshot
 
     # ── server management ──
 
@@ -210,13 +267,8 @@ class Shared:
             cmd = [python_exe, str(main_py), "--listen"]
             launch_cwd = str(comfyui_dir)
 
-        # ComfyUI's Dynamic VRAM (comfy-aimdo) has an unresolved upstream bug that
-        # raises "hostbuf_file_reader_read failed" while streaming weights straight
-        # from combined checkpoint files (e.g. SDXL's CheckpointLoaderSimple, which
-        # packs unet+clip+vae into one .safetensors) — see Comfy-Org/ComfyUI#14239
-        # and #14281. Flux/Flux2 load CLIP/VAE from separate files and are unaffected,
-        # so disabling it globally trades away Dynamic VRAM's memory savings for
-        # correctness across all image models rather than only the ones that need it.
+        # Dynamic VRAM has an unresolved upstream bug streaming combined checkpoint
+        # files like SDXL's (Comfy-Org/ComfyUI#14239, #14281) — disabled globally.
         cmd.append("--disable-dynamic-vram")
 
         Shared.log(f"Starting ComfyUI from {comfyui_dir} using {python_exe} ...")
@@ -415,10 +467,7 @@ class Shared:
                     return "xpu"
             except Exception:
                 pass
-        # Intel Arc on Linux — no guaranteed xpu-smi, so reuse the "Intel"+"Arc"
-        # name heuristic from the Windows check on lspci's GPU line. Requiring
-        # "Arc", not just "Intel", avoids misreporting integrated graphics
-        # (e.g. "Intel Iris Xe") with no discrete acceleration path.
+        # No guaranteed xpu-smi on Linux — reuse the "Intel"+"Arc" heuristic on lspci (not just "Intel", to exclude integrated Iris Xe).
         if platform.system() == "Linux":
             try:
                 out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
@@ -456,7 +505,7 @@ class Shared:
         Pad a prompt to approximate a target context length (1 token ≈ 4 chars).
 
         Prepends a unique per-call nonce so repeated calls at the same length
-        don't share a prefix — without it Ollama's slot cache serves a cache
+        don't share a prefix — without it the server's slot cache serves a cache
         hit on every rerun, so every run after the first measures cache-hit
         latency rather than real prompt-processing time.
         """
@@ -472,18 +521,11 @@ class Shared:
 
     @staticmethod
     def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:
-        """Deterministically picks `n` questions out of `questions`, touching
-        every category present rather than risking a run of unlucky luck that
-        skips a whole category. For fast local dev iteration against the full
-        accuracy banks (mcq/math/code) — never used for a full/published run.
+        """Deterministically picks `n` questions round-robin by category.
 
-        Groups by `category`, shuffles each group with a seeded RNG (so the
-        same (bank, n) always yields the same sample — reproducible and
-        diffable across runs), then round-robins across categories in sorted
-        order, one question at a time, until `n` are collected or the bank is
-        exhausted. Round-robin naturally gives larger categories more picks
-        without needing an explicit proportional-allocation step. Returns
-        `questions` unchanged (not even reordered) if `n >= len(questions)`.
+        Every category is touched when `n` is at least the category count.
+        This is for fast dev iteration only, never a full/published run.
+        Returns `questions` unchanged if `n >= len(questions)`.
         """
         if n >= len(questions):
             return list(questions)
@@ -521,7 +563,7 @@ class Shared:
     @staticmethod
     def load_crash_cache(path: Path) -> dict:
         """Load a benchmark's cache of tag -> crash record, so a model that
-        deterministically crashes Ollama's runner on a given test isn't
+        deterministically crashes the engine's runner on a given test isn't
         retried forever across separate script invocations."""
         try:
             return json.loads(path.read_text())
@@ -539,15 +581,10 @@ class Shared:
     def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
                            expected_bank_hash: str | None = None) -> dict | None:
         """Returns a skip-result dict if `tag` is a known repeat-crasher on
-        this test, else None.
-
-        `expected_bank_hash`, when given (accuracy benchmarks backed by a
-        versioned question bank), invalidates a cached crash recorded against
-        a different bank version — a model that crashed on the old 185-
-        question bank shouldn't be silently skipped forever on the new
-        360-question one just because the tag matches. The stale entry is
-        left in place (it'll be overwritten if this tag crashes again on the
-        current bank) rather than deleted, so this stays a pure read."""
+        this test, else None. `expected_bank_hash`, when given, invalidates a
+        crash cached against a different (now-stale) bank version instead of
+        silently skipping the tag forever — the stale entry is left in place,
+        not deleted, so this stays a pure read."""
         detail = crash_cache.get(tag)
         if detail is None:
             return None
@@ -556,13 +593,13 @@ class Shared:
                         "— ignoring stale entry and retrying")
             return None
         crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed Ollama's runner repeatedly on "
+        Shared.warn(f"{tag} previously crashed the engine's runner repeatedly on "
                     f"{crashed_at} — skipping (delete {cache_path} to retry)")
         return {
             "label": label,
             "skipped": True,
             "skip_reason": "known_crash",
-            "skip_detail": f"Crashed Ollama's runner repeatedly on {crashed_at}",
+            "skip_detail": f"Crashed the engine's runner repeatedly on {crashed_at}",
         }
 
     @staticmethod
@@ -576,40 +613,27 @@ class Shared:
         crashed_at = datetime.now().isoformat(timespec="seconds")
         crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"Ollama's runner crashed repeatedly {what} — recorded to {cache_path}")
+        Shared.err(f"The engine's runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
 
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str, engine: "InferenceEngine",
                             crash_extra: dict | None = None) -> tuple[list, str, str]:
-        """
-        Call `call(run_i)` up to `n_runs` times, collecting each return value —
-        the shared shape behind every benchmark's "N measured runs" loop.
+        """Call `call(run_i)` up to `n_runs` times — the shared shape behind
+        every benchmark's "N measured runs" loop. A timeout stops
+        immediately; a connection crash retries the same run (up to
+        CRASH_RETRY_MAX, after waiting for the engine to respawn) and, once
+        exhausted, records to `cache_path` so future runs skip this tag/test;
+        any other exception counts as a failed run and moves on.
 
-        A timeout stops immediately. A crash (engine.is_connection_crash)
-        retries the *same* run without counting it, after waiting for the engine
-        to respawn the runner — up to Shared.CRASH_RETRY_MAX attempts, since a
-        deterministic crash would recur forever. Any other exception counts as
-        a failed run and moves on. A crash that exhausts its retries is recorded
-        to `cache_path` so future invocations skip this tag/test. `crash_extra`
-        (e.g. {"bank_hash": ...}) is passed through to Shared.record_crash.
-
-        Returns (samples, status, partial_text) where status is "ok",
-        "timed_out", "loop_detected", or "crashed"; `samples` may be non-empty
-        even when status != "ok". `partial_text` is whatever text had streamed
-        in before a timeout/loop-detection hit (empty otherwise) — a cut-off
-        run that had already written a wrong-format (or even correct) answer
-        is a different failure than one that produced nothing at all, and
-        callers that score free-form answers need to tell them apart rather
-        than treating every cutoff as a blank.
-
-        "timed_out" means the call's full wall-clock budget was exhausted;
-        "loop_detected" means the engine's chat check_loop polling recognized a
-        degenerate generation loop and cut the call short *before* that
-        budget ran out (see OllamaLoopDetected) — kept distinct so a caller
-        counting timeouts doesn't also double-count early loop catches, and
-        vice versa.
+        Returns (samples, status, partial_text): status is "ok"/"timed_out"/
+        "loop_detected"/"crashed"; partial_text is whatever streamed before a
+        timeout/loop cutoff, so a scorer can tell a cut-off (possibly still
+        correct) answer apart from a genuinely blank one. "timed_out" is the
+        full wall-clock budget exhausted; "loop_detected" is check_loop
+        catching a degenerate generation loop before that budget ran out —
+        kept distinct so a caller doesn't double-count one as the other.
         """
         samples = []
         run_i = 0
@@ -619,7 +643,7 @@ class Shared:
                 samples.append(call(run_i))
                 run_i += 1
             except Exception as e:
-                if isinstance(e, OllamaLoopDetected):
+                if isinstance(e, EngineLoopDetected):
                     Shared.err(f"{tag}: detected a generation loop {what} (run {run_i+1})")
                     return samples, "loop_detected", e.partial_text
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
@@ -646,17 +670,11 @@ class Shared:
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
                     return samples, "crashed", ""
-                # don't advance run_i — retry the same run now that Ollama is back
+                # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", ""
 
-    # Self-correction/hedging markers a model repeats when it's spinning in
-    # place on the same reasoning (re-deriving, "catching" the same "mistake",
-    # apologizing) without ever landing on an answer — a paraphrased loop, not
-    # a verbatim one, so _has_repeated_verbatim_ngram alone won't catch it.
-    # Lowercase substrings, checked against lowercased text.
-    # Short, common CoT filler — capable models naturally say these a few
-    # times while reasoning toward a correct answer, so they need a higher
-    # repeat count before they're diagnostic of a stuck loop.
+    # Paraphrased-loop markers (_has_repeated_verbatim_ngram only catches verbatim repeats).
+    # Lowercase substrings. Short/common CoT filler needs a higher repeat count to be diagnostic.
     _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
         "wait,", "wait -", "actually,", "hold on,",
     ]
@@ -676,15 +694,9 @@ class Shared:
     @staticmethod
     def _has_repeated_verbatim_ngram(text: str, ngram_words: int = 12, min_repeats: int = 3) -> bool:
         """Flags `text` if any run of `ngram_words` consecutive words recurs
-        at least `min_repeats` times — the signature of a model restating the
-        same reasoning block (or the same code block, one indentation level
-        deeper each time) verbatim until the wall-clock cutoff hits.
-        Requiring a dozen-word run to repeat three times is deliberately
-        conservative: a real answer might reuse a short phrase a couple
-        times, but a 12+ word verbatim run recurring 3+ times essentially
-        never happens outside an actual loop. Word-level rather than
-        character-level so it isn't thrown off by minor whitespace/formatting
-        differences between repeats."""
+        `min_repeats`+ times — a 12+ word verbatim run repeating 3+ times
+        essentially never happens outside a real stuck loop. Word-level, not
+        character-level, so minor whitespace differences don't defeat it."""
         words = text.split()
         if len(words) < ngram_words * min_repeats:
             return False
@@ -700,16 +712,12 @@ class Shared:
     @staticmethod
     def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3,
                                       high_threshold_repeats: int = 5) -> bool:
-        """Flags `text` if any single phrase from _LOOP_HEDGE_PHRASES occurs at
-        least `min_repeats` times, or any phrase from
-        _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD occurs at least
-        `high_threshold_repeats` times — catches a loop that paraphrases each
-        pass (re-deriving the same result, repeatedly "catching" and
-        "correcting" the same mistake) rather than repeating verbatim. The
-        high-threshold tier covers short, common CoT filler ("wait,",
-        "actually,") that capable models say a few times while reasoning
-        toward a correct answer, so it needs more repeats before it's
-        diagnostic of an actual stuck loop."""
+        """Flags `text` if a _LOOP_HEDGE_PHRASES phrase recurs `min_repeats`+
+        times, or a _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD one recurs
+        `high_threshold_repeats`+ — catches a paraphrased loop (re-deriving,
+        re-"correcting" the same mistake) rather than a verbatim one. The
+        high-threshold tier is common CoT filler ("wait,") that capable
+        models say a few times normally, so it needs more repeats to count."""
         lowered = text.lower()
         return (any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
                 or any(lowered.count(phrase) >= high_threshold_repeats
@@ -718,8 +726,9 @@ class Shared:
     @staticmethod
     def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
                          hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
-        """Heuristic for a degenerate generation loop in a timed-out accuracy-
-        test response: true if the model either repeated a substantial chunk
+        """Heuristic for a degenerate accuracy-response generation loop.
+
+        True if the model either repeated a substantial chunk
         of text verbatim, or repeatedly hedged/self-corrected without ever
         landing on an answer. See _has_repeated_verbatim_ngram and
         _has_repeated_hedging_phrase for the two signals."""
@@ -743,27 +752,17 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None
                                 ) -> dict:
-        """Shared run() body for the MCQ/Math/Code accuracy benchmarks: per-model
-        warmup, crash-cache check, one-question-at-a-time timeout/loop-detection
-        handling, and result/sidecar saving — identical across all three, which
-        only differ in how a question is asked (`ask_fn`), a partial (timed-out)
-        response is rescored (`rescore_partial_fn`), and a completed answer set
-        is tallied (`score_fn`).
-
-        `ask_fn(tag, question) -> (parsed_answer, raw_text)` and
-        `rescore_partial_fn(question, partial_text) -> parsed_answer` mirror each
-        benchmark's own `_ask`/`parse_answer`-or-`evaluate_question` shape.
-        `score_fn(questions, answers) -> dict` is each benchmark's `score()`.
-        `section_label`/`skip_label`/`question_noun` preserve each benchmark's
-        own wording ("MCQ"/"MCQ"/"MCQ questions", "Math"/"math"/"math questions",
-        "Code"/"code"/"coding problems") rather than deriving one from another.
-        """
+        """Shared run() body for the MCQ/Math/Code/Tool accuracy benchmarks — only
+        differ in how a question is asked (`ask_fn`), a partial response is
+        rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
+        `ask_fn(tag, q) -> (parsed_answer, raw_text)`,
+        `rescore_partial_fn(q, partial_text) -> parsed_answer`,
+        `score_fn(questions, answers) -> dict`."""
         results = {}
         answers_out: dict = {}
 
         if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
-            Shared.err("Start with: ollama serve")
             return results
 
         crash_cache = Shared.load_crash_cache(crash_cache_path)
@@ -781,8 +780,8 @@ class Shared:
 
             try:
                 if not engine.model_pulled(tag):
-                    Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn(f"{tag} not downloaded — skipping")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
@@ -791,7 +790,7 @@ class Shared:
                     results[short] = skip_entry
                     continue
 
-                if not engine.warmup(tag, label, config.CONTEXT_LENGTHS[0], warmup_runs,
+                if not engine.warmup(tag, label, config.ACCURACY_CONTEXT, warmup_runs,
                                      crash_cache, crash_cache_path,
                                      crash_extra={"bank_hash": bank_hash}):
                     engine.unload(tag)
@@ -813,39 +812,19 @@ class Shared:
                     if samples:
                         given, raw = samples[0]
                     elif status in ("timed_out", "loop_detected") and partial_text:
-                        # The model had already started answering when the wall-clock
-                        # timeout (or the loop check) cut it off. Score whatever it
-                        # wrote instead of a blank — this is either a genuinely
-                        # correct/incorrect answer cut off right at the end, or
-                        # unparseable (wrong-format) text, not necessarily "the model
-                        # produced nothing."
+                        # Score whatever streamed before the cutoff rather than treating it as blank.
                         given, raw = rescore_partial_fn(q, partial_text), partial_text
                     else:
                         given, raw = None, ""
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
 
-                    # timed_out_ids and likely_loop_ids are independent buckets, not
-                    # a superset/subset: timed_out_ids only counts questions that
-                    # actually burned the full ACC_TIMEOUT (status == "timed_out"),
-                    # while likely_loop_ids only counts questions whose text pattern-
-                    # matches a degenerate loop (Shared.looks_like_loop), whether that
-                    # was caught early (status == "loop_detected", well under
-                    # ACC_TIMEOUT) or only became visible once the full timeout's
-                    # partial text came back. A run can be slow-but-not-looping
-                    # (timed_out only), looping-and-caught-early (loop only), or —
-                    # rarely, if looks_like_loop's heuristic didn't fire until the
-                    # last chunk — both.
+                    # timed_out_ids and likely_loop_ids are independent buckets — a run
+                    # can be slow-but-not-looping, looping-and-caught-early, or both.
                     if status == "timed_out":
-                        # A single stuck question is scored wrong and the run moves
-                        # on — with ACC_TIMEOUT this short, a model that reliably
-                        # gets stuck could otherwise rack up timeouts on a sizeable
-                        # fraction of the bank, but that's still cheaper than the
-                        # old behavior of abandoning the rest of the bank outright
-                        # (and would incorrectly zero out everything after one bad
-                        # question for a model that's merely slow, not stuck).
+                        # The partial response, if any, was rescored above; continue the bank either way.
                         Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
-                                    "scoring as wrong and continuing")
+                                    "scoring the partial response and continuing")
                         timed_out_ids.append(q["id"])
                         if partial_text and Shared.looks_like_loop(partial_text):
                             likely_loop_ids.append(q["id"])

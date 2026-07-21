@@ -8,6 +8,7 @@ def test_catalog_pattern_behaves_like_filter_models_by_pattern():
     assert tags == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
+        "llama3.3:70b-instruct-q4_K_M",
         "llama4:16x17b",
     }
 
@@ -47,10 +48,10 @@ def test_custom_wildcard_matches_multiple_installed_tags():
 
 def test_mixed_catalog_and_custom_patterns():
     result = resolve_custom_models(
-        ["gpt-oss:20b", "qwen3.5:4b"], LLM_MODELS, installed_tags=["qwen3.5:4b"],
+        ["phi4-mini", "qwen3.5:4b"], LLM_MODELS, installed_tags=["qwen3.5:4b"],
     )
     tags = {m["tag"] for m in result}
-    assert tags == {"gpt-oss:20b", "qwen3.5:4b"}
+    assert tags == {"phi4-mini", "qwen3.5:4b"}
 
 
 def test_sanitize_tag_to_short_replaces_colons_and_slashes():

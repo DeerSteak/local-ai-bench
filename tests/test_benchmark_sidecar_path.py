@@ -21,9 +21,11 @@ def test_different_prefixes_share_the_same_hostname_timestamp_suffix():
     mcq_path = sidecar_path(out_path, "answers_mcq_")
     math_path = sidecar_path(out_path, "answers_math_")
     code_path = sidecar_path(out_path, "answers_code_")
+    tool_path = sidecar_path(out_path, "answers_tool_")
     images_path = sidecar_path(out_path, "images_")
     suffix = "Host_20260101_000000"
     assert mcq_path.name == f"answers_mcq_{suffix}.json"
     assert math_path.name == f"answers_math_{suffix}.json"
     assert code_path.name == f"answers_code_{suffix}.json"
+    assert tool_path.name == f"answers_tool_{suffix}.json"
     assert images_path.name == f"images_{suffix}.json"

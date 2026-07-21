@@ -29,18 +29,11 @@ class ImageBenchmark:
 
     @staticmethod
     def comfyui_interrupt_and_clear(timeout: int = 10, confirm_timeout: int = 15) -> None:
-        """Stop ComfyUI's currently running job and drop anything still queued.
-
-        ComfyUI executes one job at a time. Giving up client-side after a
-        timeout without telling the server leaves that job occupying the single
-        execution slot — every later submission queues silently behind it and
-        can time out without ever starting. Call this after a timeout so the
-        next submission starts from a clean queue.
-
-        /interrupt and /queue clear only signal ComfyUI and return before the
-        running job unwinds, so we poll /queue until both queue_running and
-        queue_pending are empty (or give up and warn).
-        """
+        """Stop ComfyUI's currently running job and drop anything queued —
+        call after a timeout, or the dead job occupies ComfyUI's single
+        execution slot and every later submission queues silently behind it.
+        /interrupt and /queue clear return before the job actually unwinds,
+        so this polls /queue until both queue_running/queue_pending are empty."""
         try:
             requests.post(f"{config.COMFYUI_URL}/interrupt", timeout=timeout)
         except Exception as e:
@@ -66,13 +59,9 @@ class ImageBenchmark:
     @staticmethod
     def build_flux_workflow(checkpoint, width, height, steps, cfg,
                             sampler, scheduler, seed, prompt, filename_prefix="bench_flux"):
-        """
-        Flux.1 txt2img workflow.
-
-        The BFL flux1-schnell/dev .safetensors files are transformer-only (no CLIP,
-        no VAE), so we load CLIP and VAE via separate nodes rather than relying on
-        CheckpointLoaderSimple output slots 1 and 2 (which would be None).
-        """
+        """Flux.1 txt2img workflow. BFL's flux1 .safetensors are transformer-only
+        (no CLIP/VAE), so those load via separate nodes instead of
+        CheckpointLoaderSimple's (here, None) output slots 1/2."""
         return {
             # UNet from checkpoint (output 0 = model; slots 1/2 are None for BFL files)
             "1": {"class_type": "CheckpointLoaderSimple",
@@ -133,15 +122,10 @@ class ImageBenchmark:
     @staticmethod
     def build_flux2_workflow(checkpoint, width, height, steps, cfg,
                              sampler, scheduler, seed, prompt, filename_prefix="bench_flux2"):
-        """
-        Flux.2-dev txt2img workflow.
-
-        Flux.2 uses a Mistral-3-24B text encoder (loaded via a single CLIPLoader,
-        type "flux2") instead of the T5-XXL + CLIP-L pair used by Flux.1/SD3, and
-        a dedicated flux2-vae.safetensors — reusing Flux.1's DualCLIPLoader/VAE
-        here silently produces a text-embedding-dimension mismatch deep in the
-        transformer (txt_in linear layer) rather than a clear error.
-        """
+        """Flux.2-dev txt2img workflow. Uses a Mistral-3-24B text encoder
+        (single CLIPLoader, type "flux2") and its own flux2-vae.safetensors —
+        reusing Flux.1's DualCLIPLoader/VAE here fails silently with a
+        dimension mismatch deep in the transformer, not a clear error."""
         return {
             "1": {"class_type": "CheckpointLoaderSimple",
                   "inputs": {"ckpt_name": checkpoint}},
@@ -283,10 +267,7 @@ class ImageBenchmark:
         Returns (elapsed_sec, images) where images is a list of
         {"filename": str, "subfolder": str, "type": str} dicts from all output nodes.
         """
-        # A prior job can still be running or queued if its own timeout handling
-        # didn't clear it (e.g. the interrupt/queue-clear failed). Check first so
-        # a stuck job doesn't silently eat our slot and cause a fresh, unrelated
-        # timeout.
+        # A stuck prior job can still be queued if its own timeout handling failed to clear it.
         try:
             queue_status = requests.get(f"{config.COMFYUI_URL}/queue", timeout=10).json()
             if queue_status.get("queue_running") or queue_status.get("queue_pending"):

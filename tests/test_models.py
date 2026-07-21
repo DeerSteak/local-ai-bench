@@ -29,15 +29,36 @@ def test_llm_tags_and_shorts_unique():
 
 
 def test_llm_models_have_required_keys():
-    required = {"tag", "label", "short", "download_size", "params_b"}
+    required = {"tag", "label", "short", "tier", "download_size", "params_b", "hf_repo", "hf_file"}
     for m in LLM_MODELS:
         assert required <= m.keys()
 
 
+def test_llm_models_tier_matches_source_list():
+    expected = {
+        "xsmall": LLM_MODELS_XSMALL,
+        "small":  LLM_MODELS_SMALL,
+        "medium": LLM_MODELS_MEDIUM,
+        "large":  LLM_MODELS_LARGE,
+    }
+    for tier_name, models in expected.items():
+        for m in models:
+            assert m["tier"] == tier_name
+
+
 def test_embed_models_have_required_keys():
-    required = {"tag", "label", "short", "download_size"}
+    required = {"tag", "label", "short", "download_size", "hf_repo", "hf_file"}
     for m in EMBED_MODELS:
         assert required <= m.keys()
+
+
+def test_hf_file_is_string_or_list_of_strings():
+    for m in LLM_MODELS + EMBED_MODELS:
+        hf_file = m["hf_file"]
+        if isinstance(hf_file, list):
+            assert hf_file and all(isinstance(f, str) for f in hf_file)
+        else:
+            assert isinstance(hf_file, str)
 
 
 def test_image_models_shorts_unique():

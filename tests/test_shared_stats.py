@@ -19,6 +19,11 @@ def test_stdev_basic():
     assert Shared.stdev([1, 2, 3]) > 0
 
 
+def test_context_label_preserves_fractional_kilobyte_checkpoint():
+    assert Shared.context_label(512) == "0.5K"
+    assert Shared.context_label(2048) == "2K"
+
+
 def test_build_prompt_for_context_reaches_target_length():
     target_tokens = 500
     prompt = Shared.build_prompt_for_context(target_tokens)

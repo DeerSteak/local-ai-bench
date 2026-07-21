@@ -33,18 +33,7 @@ COMFYUI_DIR  = config.COMFYUI_DIR
 LLAMACPP_DIR = config.LLAMACPP_DIR
 
 _arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
-_arg_parser.add_argument(
-    "--engine", choices=["ollama", "llamacpp", "both"], default="both",
-    help="Which inference engine(s) to set up (default: both — llama.cpp is "
-         "a light install on top of Ollama, so it's set up unless you opt "
-         "out). Ollama is always needed regardless of choice — even "
-         "'llamacpp' pulls models through it, see engines/llamacpp.py — this "
-         "only controls whether the llama-server binary is also "
-         "detected/installed, for benchmark.py --engine llamacpp. Pass "
-         "--engine ollama to skip it.",
-)
 args = _arg_parser.parse_args()
-setup_llamacpp = args.engine in ("llamacpp", "both")
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -96,27 +85,69 @@ def confirm(prompt, default=True):
         return default
     return reply in ("y", "yes")
 
+def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
+    """Download `filename` (or, if a list, every file in it — used for
+    models split across multiple GGUF parts) from a HuggingFace repo into
+    dest_dir (defaults to CHECKPOINTS, set later once ComfyUI paths are
+    known). Tries the `hf` CLI, then `huggingface-cli`, then the Python API.
+    `save_as` flattens a single remote file that lives in a subdirectory —
+    only meaningful when `filename` is a single string, not a list."""
+    if dest_dir is None:
+        dest_dir = CHECKPOINTS
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    filenames = filename if isinstance(filename, list) else [filename]
+
+    env = os.environ.copy()
+    if token:
+        env["HF_TOKEN"] = token
+
+    success = True
+    for fname in filenames:
+        file_success = False
+        for cli in ["hf", "huggingface-cli"]:
+            if shutil.which(cli):
+                result = subprocess.run(
+                    [cli, "download", repo, fname, "--local-dir", str(dest_dir)],
+                    env=env, capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    file_success = True
+                else:
+                    stderr = (result.stderr or result.stdout or "").strip()
+                    if stderr:
+                        warn(f"{cli} error: {stderr}")
+                break
+        if not file_success:
+            try:
+                from huggingface_hub import hf_hub_download  # type: ignore
+                hf_hub_download(repo_id=repo, filename=fname,
+                                local_dir=str(dest_dir), token=token)
+                file_success = True
+            except Exception as e:
+                warn(f"Python API download failed: {e}")
+        success = success and file_success
+
+        # If the remote file lives in a subdirectory (e.g. a split GGUF's
+        # "UD-Q4_K_XL/foo-00001-of-00002.gguf"), flatten it into dest_dir —
+        # LlamaCppEngine resolves files by basename directly under dest_dir.
+        if file_success:
+            src = dest_dir / fname
+            dst = dest_dir / (save_as if save_as and len(filenames) == 1 else Path(fname).name)
+            if src.exists() and src != dst:
+                shutil.move(str(src), str(dst))
+                try:
+                    src.parent.rmdir()
+                except OSError:
+                    pass
+    return success
+
 issues = []
 
-# Approximate download sizes keyed by filename — shown on the model-selection
-# screen and used to estimate remaining disk space. Each is the on-disk size
-# rounded UP to the next 0.1 GB so the section-8a disk check errs toward
-# requiring more free space, not less.
-CHECKPOINT_SIZES_GB = {
-    "v1-5-pruned-emaonly.safetensors": 4.3,
-    "sd_xl_base_1.0.safetensors": 7.0,
-    "sd3.5_large.safetensors":    16.5,
-    "flux1-dev.safetensors":      23.9,
-    "flux2-dev.safetensors":      64.5,
-}
-ENCODER_SIZES_GB = {
-    "t5xxl_fp16.safetensors":               9.8,
-    "clip_l.safetensors":                   0.3,
-    "clip_g.safetensors":                   1.4,
-    "ae.safetensors":                       0.4,
-    "flux2-vae.safetensors":                0.4,
-    "mistral_3_small_flux2_fp8.safetensors": 18.1,
-}
+# Checkpoint/encoder sizes live in hardware.py (shared with the memory-fit
+# check in select_models() below) — kept as local names here since this file
+# already references them by these names throughout.
+CHECKPOINT_SIZES_GB = hardware.CHECKPOINT_SIZES_GB
+ENCODER_SIZES_GB = hardware.ENCODER_SIZES_GB
 GATED_IMAGE_SHORTS = {"sd35-large", "flux-dev", "flux2-dev"}
 
 # ── 1. Python version ──────────────────────────────────────────────────────────
@@ -188,7 +219,7 @@ elif os_name == "Windows":
 
 section("GPU / Acceleration Backend")
 
-nvidia_vram_gb = 0.0  # sum across GPUs — Ollama can span a model across multiple
+nvidia_vram_gb = 0.0  # sum across GPUs — llama.cpp can span a model across multiple
 
 def check_nvidia():
     global nvidia_vram_gb
@@ -230,18 +261,17 @@ def check_rocm():
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
         )
-        agents = [l for l in out.splitlines() if "Marketing Name" in l]
-        for a in agents[:3]:
-            print(f"  ROCm GPU: {a.split(':', 1)[-1].strip()}")
-        if agents:
-            name = agents[0].split(":", 1)[-1].strip()
-            rocm_gpu_kind = hardware.classify_gpu(name)
+        gpu_names = hardware.rocminfo_gpu_names(out)
+        for name in gpu_names[:3]:
+            print(f"  ROCm GPU: {name}")
+        if gpu_names:
+            rocm_gpu_kind = (
+                "discrete" if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names)
+                else "integrated"
+            )
             if rocm_gpu_kind == "discrete":
-                # An APU's VRAM figure here is often just the small
-                # BIOS-fixed carve-out, not the real usable pool via
-                # GTT/system-RAM addressing — only trust this for a
-                # confirmed-discrete card. Fails open (leaves rocm_vram_gb
-                # None) on any missing binary or unexpected output.
+                # Only trust rocm-smi's VRAM figure for a confirmed-discrete card —
+                # an APU's is often just a small BIOS-fixed carve-out, not the real usable pool.
                 try:
                     mem_out = subprocess.check_output(
                         ["rocm-smi", "--showmeminfo", "vram", "--json"],
@@ -257,7 +287,7 @@ def check_rocm():
                 except (FileNotFoundError, subprocess.CalledProcessError,
                         json.JSONDecodeError, ValueError):
                     pass
-        return bool(agents)
+        return bool(gpu_names)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
@@ -313,11 +343,10 @@ linux_intel_gpu_kind = None  # "discrete" or "integrated", set by check_linux_in
 def check_linux_intel_gpu():
     """Detect an Intel Arc GPU on Linux via lspci. Detection/labeling only —
     unlike the AMD/NVIDIA paths it unlocks no GPU-accelerated install path
-    here: whether LLM tests use the GPU depends on the user's own Ollama
-    version (native Intel SYCL support landed in v0.17, Feb 2026 —
-    https://github.com/ollama/ollama/pull/11160), not anything this script
-    installs. Requires 'Arc' in the name (not just 'Intel') so integrated
-    graphics with no discrete acceleration aren't misreported."""
+    here: whether LLM tests use the GPU depends on llama.cpp being built with
+    its SYCL backend, which this script doesn't currently automate (see
+    install_llamacpp). Requires 'Arc' in the name (not just 'Intel') so
+    integrated graphics with no discrete acceleration aren't misreported."""
     global linux_intel_gpu_kind
     if platform.system() != "Linux":
         return False
@@ -334,12 +363,9 @@ def check_linux_intel_gpu():
         pass
     return False
 
-# Intel's Level Zero / OpenCL GPU compute runtime — the actual missing piece
-# for XPU-accelerated PyTorch/ComfyUI on Linux, distinct from the GPU merely
-# appearing in lspci. Packages from Intel's install guide
-# (https://dgpu-docs.intel.com/driver/installation.html), via a third-party
-# APT repo this script deliberately does NOT add itself (see
-# check_linux_intel_gpu_runtime()).
+# Intel's Level Zero/OpenCL GPU runtime — the actual missing piece for XPU-accelerated
+# PyTorch/ComfyUI, distinct from the GPU merely appearing in lspci. From a third-party
+# APT repo (https://dgpu-docs.intel.com/driver/installation.html) this script doesn't add itself.
 INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
 
 def check_linux_intel_gpu_runtime():
@@ -389,16 +415,19 @@ elif amd_windows:
 elif intel_windows:
     ok("Intel Arc GPU detected on Windows")
     info("Intel Arc support is experimental — this project's maintainers don't have "
-         "Arc hardware to test against, so the Ollama version check below is unverified")
-    # Whether Ollama actually accelerates on this GPU depends on its version —
-    # reported precisely against the installed Ollama below, once it's found.
+         "Arc hardware to test against, so treat this as unverified")
+    warn("LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which "
+         "this script doesn't build; they'll run on CPU unless you build it yourself "
+         "with -DGGML_SYCL=ON")
 elif intel_linux:
     ok("Intel Arc GPU detected on Linux")
     info("Intel Arc support is experimental — this project's maintainers don't have "
          "Arc hardware to test against, so everything below (runtime check, XPU "
-         "PyTorch install, Ollama version check) is unverified. Please report back "
+         "PyTorch install) is unverified. Please report back "
          "if you try it: https://github.com/DeerSteak/local-ai-bench/issues")
-    # Same as above for Ollama — see report_gpu_acceleration_status() below.
+    warn("LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which "
+         "this script doesn't build; they'll run on CPU unless you build it yourself "
+         "with -DGGML_SYCL=ON")
     if intel_linux_runtime:
         ok("Intel GPU compute runtime (Level Zero/OpenCL) detected — ready for XPU-accelerated PyTorch")
     else:
@@ -413,11 +442,7 @@ else:
     warn("No GPU acceleration detected — LLM and image tests may run slowly")
 
 # ── 3a. Memory ceiling ─────────────────────────────────────────────────────────
-# How much memory a model can realistically use on this machine — VRAM for a
-# confirmed-discrete GPU, total system RAM for everything else (Apple Silicon
-# unified memory, integrated GPUs, or no GPU at all). Used below to default
-# models that clearly won't fit to unchecked in the picker — informational,
-# not a hard block (see hardware.py).
+# Defaults models that clearly won't fit to unchecked in the picker below — informational, not a hard block.
 
 section("Memory")
 
@@ -451,145 +476,10 @@ if memory_ceiling_gb is not None:
 else:
     warn(memory_ceiling_note)
 
-# ── 4. Ollama detection (read-only — nothing is installed or started here) ────
-
-section("Ollama")
-
-def parse_ollama_version(ver_string):
-    """Extract a (major, minor, patch) tuple from an 'ollama version X.Y.Z'
-    string (or any string containing a dotted version number). Returns None
-    if no version number can be found, e.g. malformed --version output."""
-    m = re.search(r"(\d+)\.(\d+)\.(\d+)", ver_string)
-    if not m:
-        return None
-    return tuple(int(g) for g in m.groups())
-
-# Ollama's native Intel GPU (SYCL) backend landed in this release — an Intel
-# Arc GPU needs at least this version for LLM tests to run on the GPU instead
-# of silently falling back to CPU. Source:
-# https://github.com/ollama/ollama/pull/11160
-OLLAMA_INTEL_SYCL_MIN_VERSION = (0, 17, 0)
-
-def report_gpu_acceleration_status(ollama_version):
-    """Print whether the already-detected GPU backend is actually accelerated
-    by the installed Ollama version. NVIDIA/AMD/Metal acceleration isn't
-    version-gated for any Ollama version users are expected to have, so those
-    report unconditionally; Intel Arc is the one case that depends on
-    OLLAMA_INTEL_SYCL_MIN_VERSION. Prints nothing if no GPU was detected."""
-    if nvidia_ok:
-        ok("GPU acceleration: CUDA/NVIDIA — supported")
-    elif rocm_ok or amd_windows:
-        ok("GPU acceleration: ROCm/AMD — supported")
-    elif metal_ok:
-        ok("GPU acceleration: Apple Metal — supported")
-    elif intel_windows or intel_linux:
-        min_str = ".".join(map(str, OLLAMA_INTEL_SYCL_MIN_VERSION))
-        if ollama_version is None:
-            warn(f"GPU acceleration: Intel Arc — could not determine Ollama version; "
-                 f"native SYCL support requires >= {min_str} "
-                 "(https://github.com/ollama/ollama/pull/11160)")
-        elif ollama_version >= OLLAMA_INTEL_SYCL_MIN_VERSION:
-            ver_str = ".".join(map(str, ollama_version))
-            ok(f"GPU acceleration: Intel Arc — supported (Ollama {ver_str} has native SYCL support)")
-        else:
-            ver_str = ".".join(map(str, ollama_version))
-            warn(f"GPU acceleration: Intel Arc — NOT supported by Ollama {ver_str} "
-                 f"(native SYCL support requires >= {min_str}, added Feb 2026: "
-                 "https://github.com/ollama/ollama/pull/11160). LLM tests will run on "
-                 "CPU until you update Ollama — don't install IPEX-LLM instead, Intel "
-                 "archived that repo in Jan 2026 citing security issues.")
-
-def ollama_running():
-    try:
-        import requests
-        r = requests.get("http://localhost:11434/api/tags", timeout=5)
-        return r.status_code == 200, r.json()
-    except Exception:
-        return False, {}
-
-def find_ollama_binary():
-    """
-    Return the path to the ollama binary, or None if not found.
-    On Windows, Ollama installs to %LOCALAPPDATA%\\Programs\\Ollama which is
-    not always on the subprocess PATH even when it works in PowerShell.
-    """
-    found = shutil.which("ollama")
-    if found:
-        return found
-    if os_name == "Windows":
-        candidates = [
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
-            r"C:\Program Files\Ollama\ollama.exe",
-        ]
-        for c in candidates:
-            if Path(c).exists():
-                return c
-    return None
-
-def ollama_pull(tag, ollama_bin="ollama"):
-    """Pull a model via ollama CLI, streaming progress to stdout."""
-    print(f"  Pulling {tag} ...")
-    result = subprocess.run([ollama_bin, "pull", tag])
-    return result.returncode == 0
-
-def install_ollama():
-    """Install Ollama using the appropriate method for this OS."""
-    if os_name == "Darwin":
-        if shutil.which("brew"):
-            info("Installing Ollama via Homebrew ...")
-            # --no-ask / HOMEBREW_NO_ASK skips brew's "proceed? [y/n]"
-            # confirmation (NOT what NONINTERACTIVE controls — that only covers
-            # brew's installer script and sudo). We already got consent in the
-            # prerequisites screen.
-            result = subprocess.run(
-                ["brew", "install", "--no-ask", "ollama"],
-                env={**os.environ, "HOMEBREW_NO_ASK": "1", "NONINTERACTIVE": "1"},
-            )
-            return result.returncode == 0
-        else:
-            fail("Homebrew not found — install Ollama manually from https://ollama.com/download")
-            return False
-
-    elif os_name == "Linux":
-        if shutil.which("snap"):
-            info("Installing Ollama via snap ...")
-            result = subprocess.run(["sudo", "snap", "install", "ollama"])
-            if result.returncode == 0:
-                time.sleep(3)
-                return True
-        info("Installing Ollama via official install script ...")
-        result = subprocess.run(
-            "curl -fsSL https://ollama.com/install.sh | sh",
-            shell=True
-        )
-        return result.returncode == 0
-
-    elif os_name == "Windows":
-        if shutil.which("winget"):
-            info("Installing Ollama via winget ...")
-            result = subprocess.run([
-                "winget", "install", "Ollama.Ollama",
-                "--silent", "--accept-package-agreements", "--accept-source-agreements"
-            ])
-            if result.returncode == 0:
-                time.sleep(5)
-                return True
-        else:
-            fail("winget not found — install Ollama manually from https://ollama.com/download")
-        return False
-
-    return False
-
 def find_llamacpp_binary():
-    """Same resolution LlamaCppEngine uses at runtime (see its _binary_path):
-    vendored under LLAMACPP_DIR first (source build on Linux, prebuilt zip on
-    Windows), then PATH (the Homebrew install path on macOS, or a manual
-    install anywhere), then — if PATH doesn't have it — the two well-known
-    Homebrew prefixes directly. A brew install only updates PATH in the shell
-    that ran it (and only for shells started after its rc-file was touched),
-    so a symlink that brew just created may not be on PATH yet in whatever
-    shell re-runs this script later; checking the fixed prefixes means this
-    never depends on the terminal being restarted or an rc file re-sourced."""
+    """Mirrors LlamaCppEngine._binary_path: LLAMACPP_DIR, then PATH, then (macOS)
+    the two well-known Homebrew prefixes directly — a brew-created symlink may
+    not be on PATH yet in whatever shell re-runs this script."""
     exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
     if LLAMACPP_DIR.exists():
         match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
@@ -666,7 +556,7 @@ def download_llamacpp_windows():
 
 def install_llamacpp():
     """Install llama-server using the appropriate method for this OS. Picks a
-    GPU backend using the same detection this script already ran for Ollama
+    GPU backend using the same detection this script already ran above
     (nvidia_ok/rocm_ok), so it's accelerated the same way — covers DGX Spark
     the same as any other Linux+NVIDIA box, since a source build has no
     prebuilt-binary architecture to match (Spark is ARM64)."""
@@ -744,55 +634,17 @@ def install_llamacpp():
 
     return False
 
-ollama_up, tag_data = ollama_running()
-OLLAMA_BIN = find_ollama_binary()
-ollama_found = OLLAMA_BIN is not None
+# ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
 
-if ollama_found:
-    ollama_version = None
-    try:
-        ver_out = subprocess.check_output(
-            [OLLAMA_BIN, "--version"], text=True,
-            stderr=subprocess.DEVNULL
-        ).strip()
-        ver_line = next(
-            (l for l in ver_out.splitlines() if "ollama version" in l.lower()),
-            ver_out.splitlines()[0] if ver_out else "unknown"
-        )
-        print(f"  Binary:  {ver_line.strip()}")
-        ollama_version = parse_ollama_version(ver_line)
-        ok("Ollama binary found")
-    except Exception:
-        ok("Ollama binary found")
-    report_gpu_acceleration_status(ollama_version)
+section("llama.cpp")
+
+LLAMACPP_BIN = find_llamacpp_binary()
+llamacpp_found = LLAMACPP_BIN is not None
+needs_llamacpp_install = not llamacpp_found
+if llamacpp_found:
+    ok(f"llama-server found: {LLAMACPP_BIN}")
 else:
-    warn("Ollama not found in PATH — will need to be installed")
-
-if ollama_up:
-    ok("Ollama server is running (port 11434)")
-else:
-    warn("Ollama server not running — will need to be started")
-
-needs_ollama_install = not ollama_found
-needs_ollama_start   = not ollama_up
-
-# ── 4a. llama.cpp detection (opt-in via --engine llamacpp/both; read-only) ────
-
-LLAMACPP_BIN = None
-llamacpp_found = False
-needs_llamacpp_install = False
-
-if setup_llamacpp:
-    section("llama.cpp")
-    LLAMACPP_BIN = find_llamacpp_binary()
-    llamacpp_found = LLAMACPP_BIN is not None
-    needs_llamacpp_install = not llamacpp_found
-    if llamacpp_found:
-        ok(f"llama-server found: {LLAMACPP_BIN}")
-    else:
-        warn("llama-server not found — will need to be installed")
-    info("llama.cpp reuses models pulled via Ollama (see engines/llamacpp.py) "
-         "— Ollama itself is still required regardless of --engine")
+    warn("llama-server not found — will need to be installed")
 
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
@@ -800,10 +652,6 @@ section("Setup Plan")
 print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
 print("  This will:")
 print("    • Install Python dependencies from requirements.txt")
-if needs_ollama_install:
-    print("    • Install Ollama")
-if needs_ollama_start:
-    print("    • Start the Ollama server")
 if needs_llamacpp_install:
     build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
     print(f"    • Install llama.cpp{build_note}")
@@ -821,20 +669,14 @@ if not confirm("Continue?", default=True):
 section("Model Selection")
 
 def select_models(memory_ceiling_gb=None):
-    """
-    Flat numbered list spanning every LLM tier, embeddings, and image models,
-    checked by default; returns (selected_llm, selected_images,
-    selected_embed). The toggle syntax is printed to the user below. Plain
-    input() only — no raw terminal mode — so stray keys from earlier prompts
-    can't leak in and there's nothing to restore/flush.
+    """Flat numbered list spanning every LLM tier, embeddings, and image
+    models, checked by default; returns (selected_llm, selected_images,
+    selected_embed). Plain input() only, no raw terminal mode.
 
-    An LLM model that hardware.model_fits() says won't fit in
-    memory_ceiling_gb starts unchecked instead, with a note on its line
-    explaining why — informational, not a hard block, since a model that's
-    merely tight (MoE expert offload, a little KV-cache spillover into
-    system RAM) can still be worth trying. memory_ceiling_gb=None (couldn't
-    be determined) means no filtering — every LLM model still starts checked.
-    """
+    An LLM or image model hardware.model_fits()/image_model_fits() says
+    won't fit starts unchecked with a note why — informational, not a hard
+    block, since a merely-tight model can still be worth trying.
+    memory_ceiling_gb=None means no filtering."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
@@ -852,8 +694,12 @@ def select_models(memory_ceiling_gb=None):
         tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
             entry_tier = tier if kind == "llm" else m.get("tier")
-            fits = (hardware.model_fits(m["download_size"], memory_ceiling_gb)
-                    if kind == "llm" else True)
+            if kind == "llm":
+                fits = hardware.model_fits(m["download_size"], memory_ceiling_gb)
+            elif kind == "image":
+                fits = hardware.image_model_fits(m["checkpoint"], m["short"], memory_ceiling_gb)
+            else:
+                fits = True
             entries.append({"item": m, "kind": kind, "group": group_key,
                             "tier": entry_tier, "checked": fits is not False,
                             "fits": fits})
@@ -868,11 +714,15 @@ def select_models(memory_ceiling_gb=None):
                 label += f"  {YELLOW}⚠ needs ~{needed:.1f} GB, ~{memory_ceiling_gb:.1f} GB available{RESET}"
             return label
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
-        return f"  (~{gb:.1f} GB)" if gb else ""
+        label = f"  (~{gb:.1f} GB)" if gb else ""
+        if kind == "image" and e["fits"] is False:
+            needed = hardware.image_model_memory_requirement_gb(m["checkpoint"], m["short"])
+            label += f"  {YELLOW}⚠ needs ~{needed:.1f} GB, ~{memory_ceiling_gb:.1f} GB available{RESET}"
+        return label
 
     def render():
         header_note = ("all selected by default" if memory_ceiling_gb is None
-                        else "selected by default, except LLMs that likely won't fit in memory")
+                        else "selected by default, except models that likely won't fit in memory")
         print(f"  {BOLD}Choose which models to install ({header_note}){RESET}")
         n = 1
         for header, items, kind, group_key in groups:
@@ -984,18 +834,16 @@ def load_token():
             return token
     needs_gated = bool(GATED_IMAGE_SHORTS & selected_image_shorts)
     print()
+    print(f"  {YELLOW}All models are downloaded from HuggingFace and require a free HuggingFace account.{RESET}")
+    print(f"  1. Create an account at {link('https://huggingface.co')}")
     if needs_gated:
-        print(f"  {YELLOW}SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account.{RESET}")
-        print(f"  1. Create an account at {link('https://huggingface.co')}")
         print(f"  2. Accept the licenses at:")
         print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
         print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
         print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
         print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
     else:
-        print(f"  {CYAN}A free HuggingFace token isn't required for the models you selected,{RESET}")
-        print(f"  {CYAN}but HuggingFace gives token holders faster downloads.{RESET}")
-        print(f"  Generate one (optional) at {link('https://huggingface.co/settings/tokens')}")
+        print(f"  2. Generate a token at {link('https://huggingface.co/settings/tokens')}")
     print()
     try:
         skip_hint = "skip gated models" if needs_gated else "skip and download without one"
@@ -1015,7 +863,7 @@ def load_token():
     _hf_token_cache[0] = token or ""
     return token
 
-if selected_image_shorts:
+if selected_llm or selected_embed or selected_images:
     section("HuggingFace Token")
     load_token()
 
@@ -1038,17 +886,6 @@ else:
     info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
     issues.append("pip install -r requirements.txt")
 
-if needs_ollama_install:
-    installed = install_ollama()
-    if installed:
-        ok("Ollama installed successfully")
-        ollama_found = True
-        OLLAMA_BIN = find_ollama_binary()
-    else:
-        fail("Ollama installation failed")
-        issues.append("Install Ollama manually from https://ollama.com/download")
-        info("On Linux (DGX Spark / Ubuntu): sudo snap install ollama")
-
 if needs_llamacpp_install:
     llamacpp_installed = install_llamacpp()
     if llamacpp_installed:
@@ -1061,37 +898,6 @@ if needs_llamacpp_install:
                        "(needs a 'llama-server' binary on PATH, or built under "
                        f"{LLAMACPP_DIR})")
 
-if needs_ollama_start and ollama_found:
-    info("Starting Ollama server ...")
-    try:
-        if os_name == "Windows":
-            subprocess.Popen(
-                [OLLAMA_BIN or "ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            )
-        else:
-            subprocess.Popen(
-                [OLLAMA_BIN or "ollama", "serve"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        for _ in range(15):
-            time.sleep(1)
-            ollama_up, tag_data = ollama_running()
-            if ollama_up:
-                ok("Ollama started successfully")
-                break
-        else:
-            fail("Ollama did not respond within 15 seconds")
-            issues.append("Start Ollama manually: ollama serve")
-    except FileNotFoundError:
-        fail("Ollama binary not found — cannot start server")
-        issues.append("Install Ollama from https://ollama.com/download")
-elif needs_ollama_start and not ollama_found:
-    issues.append("Start Ollama manually: ollama serve")
-
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 
 section("Disk Space")
@@ -1102,15 +908,26 @@ VAE_DIR     = COMFYUI_DIR / "models" / "vae"
 
 remaining_gb = 0.0
 
+# Namespaced under config.MODELS_DIR by engine name, mirroring
+# LlamaCppEngine._models_dir — so a future engine with its own model
+# format/layout (e.g. MLX) gets its own subtree instead of colliding.
+LLAMACPP_MODELS_DIR = config.MODELS_DIR / "llamacpp"
+
+def model_slug(tag):
+    """Filesystem-safe per-tag directory name under LLAMACPP_MODELS_DIR —
+    mirrors LlamaCppEngine._slug."""
+    return tag.replace(":", "_").replace("/", "_")
+
+def model_downloaded(m):
+    """True if every GGUF file models.py lists for `m` already exists under
+    LLAMACPP_MODELS_DIR/<slug>/ — mirrors LlamaCppEngine._resolve_model_files."""
+    filenames = m["hf_file"] if isinstance(m["hf_file"], list) else [m["hf_file"]]
+    model_dir = LLAMACPP_MODELS_DIR / model_slug(m["tag"])
+    return all((model_dir / Path(name).name).exists() for name in filenames)
+
 all_llm = selected_embed + selected_llm
-if ollama_up:
-    already_pulled = {m["name"] for m in tag_data.get("models", [])}
-    for m in all_llm:
-        tag = m["tag"]
-        if not (tag in already_pulled or any(tag in a for a in already_pulled)):
-            remaining_gb += hardware.parse_size_gb(m["download_size"])
-else:
-    for m in all_llm:
+for m in all_llm:
+    if not model_downloaded(m):
         remaining_gb += hardware.parse_size_gb(m["download_size"])
 
 sd35_selected  = "sd35-large" in selected_image_shorts
@@ -1148,10 +965,7 @@ try:
     if remaining_gb > 0:
         print(f"  Still to download: ~{remaining_gb:.0f} GB")
     def _warn_if_drive_fills_up():
-        # Separate from the absolute-GB checks above: even with room for the
-        # downloads, warn if so little would be left afterward that the drive
-        # gets uncomfortably full. Informational only — doesn't block or add
-        # to `issues`.
+        # Informational only (doesn't block or add to `issues`) — warns even when the downloads themselves fit.
         projected_free_gb = free_gb - remaining_gb
         if projected_free_gb < total_gb * 0.10:
             warn(f"After these downloads, free space would be ~{projected_free_gb:.0f} GB — "
@@ -1175,9 +989,9 @@ try:
 except Exception as e:
     warn(f"Could not check disk space: {e}")
 
-# ── 8b. Ollama models — pull selected, skip the rest ──────────────────────────
+# ── 8b. LLM/embedding models — download selected GGUFs, skip the rest ─────────
 
-section("Ollama Models")
+section("LLM/Embedding Models")
 
 deselected_llm = [
     m for tier in (LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
@@ -1186,26 +1000,19 @@ deselected_llm = [
 for m in deselected_llm:
     info(f"{m['label']} — skipped (not selected)")
 
-if ollama_up:
-    available = {m["name"] for m in tag_data.get("models", [])}
-    all_models = selected_embed + selected_llm
-    for m in all_models:
-        tag, label, size = m["tag"], m["label"], m["download_size"]
-        already = tag in available or any(tag in a for a in available)
-        if already:
-            ok(f"{label} — already pulled")
-        else:
-            warn(f"{label} ({size}) — not found, pulling now ...")
-            success = ollama_pull(tag, ollama_bin=OLLAMA_BIN or "ollama")
-            if success:
-                ok(f"{label} — pulled successfully")
-            else:
-                fail(f"{label} — pull failed")
-                issues.append(f"ollama pull {tag}")
-else:
-    for m in selected_embed + selected_llm:
-        warn(f"Cannot check {m['tag']} — Ollama server not running")
-        issues.append(f"ollama pull {m['tag']}  (once Ollama is running)")
+for m in selected_embed + selected_llm:
+    tag, label, size = m["tag"], m["label"], m["download_size"]
+    if model_downloaded(m):
+        ok(f"{label} — already downloaded")
+        continue
+    warn(f"{label} ({size}) — not found, downloading now ...")
+    dest_dir = LLAMACPP_MODELS_DIR / model_slug(tag)
+    success = hf_download(m["hf_repo"], m["hf_file"], token=load_token(), dest_dir=dest_dir)
+    if success:
+        ok(f"{label} — downloaded successfully")
+    else:
+        fail(f"{label} — download failed")
+        issues.append(f"Download {m['hf_repo']} manually into {dest_dir}")
 
 # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 
@@ -1219,15 +1026,11 @@ else:
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
     def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
-        """
-        ComfyUI's Windows portable build bundles a pinned torch wheel. New GPU
-        architectures (e.g. Blackwell / RTX 50-series, compute capability 12.0)
-        aren't recognized by older cu12x wheels, so every CUDA kernel launch
-        fails with "no kernel image is available for execution on the device"
-        (first seen during CLIP text encoding in warmup). Compare the GPU's
-        compute capability against the bundled torch build and reinstall from
-        the cu128 wheel index if the architecture isn't listed.
-        """
+        """ComfyUI's Windows portable build bundles a pinned torch wheel that
+        doesn't recognize newer GPU architectures (e.g. Blackwell, compute
+        capability 12.0) — every CUDA kernel launch then fails with "no
+        kernel image is available for execution on the device." Reinstalls
+        from the cu128 wheel index if the architecture isn't listed."""
         if not compute_cap:
             return
         major, minor = compute_cap.split(".")
@@ -1248,13 +1051,9 @@ else:
 
         warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
              f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
-        # --force-reinstall is required, not just --upgrade: pip treats an
-        # already-installed torch+cu126 as satisfying a bare "torch" requirement
-        # and skips it, while torchvision/torchaudio get swapped to +cu128 —
-        # leaving a mismatched trio torchaudio's _check_cuda_version() refuses to
-        # import. Forcing reinstall keeps all three in lockstep. The wheels are
-        # ~800MB-2GB each, so stream pip's progress live instead of capturing
-        # silently, which would look hung for minutes.
+        # --force-reinstall (not --upgrade): pip otherwise leaves an already-installed
+        # torch+cu126 alone while swapping torchvision/torchaudio to +cu128, a mismatched
+        # trio torchaudio refuses to import. Streamed, not captured — wheels are 800MB-2GB.
         proc = subprocess.Popen(
             [str(python_exe), "-s", "-m", "pip", "install",
              "--force-reinstall", "--no-deps", "--progress-bar", "raw",
@@ -1464,10 +1263,7 @@ else:
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
 
-        # Intel Arc on Linux: ComfyUI's requirements.txt pulls in a plain
-        # (non-XPU) torch, so overwrite it with Intel's XPU wheels afterward —
-        # a plain pip install from a public index, no sudo or new APT repo
-        # needed. Requires PyTorch >= 2.5; no IPEX involved.
+        # ComfyUI's requirements.txt pulls in plain (non-XPU) torch on Intel Arc — overwrite after. PyTorch >= 2.5, no IPEX.
         if intel_linux and not PORTABLE_PYTHON.exists():
             torch_show = subprocess.run(
                 [sys.executable, "-m", "pip", "show", "torch"],
@@ -1502,48 +1298,6 @@ else:
                     size_gb = p.stat().st_size / (1024**3)
                     ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
                     found_ckpts.append(m["checkpoint"])
-
-        def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
-            if dest_dir is None:
-                dest_dir = CHECKPOINTS
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            env = os.environ.copy()
-            if token:
-                env["HF_TOKEN"] = token
-            # Try `hf` first, fall back to `huggingface-cli`, then Python API
-            success = False
-            for cli in ["hf", "huggingface-cli"]:
-                if shutil.which(cli):
-                    result = subprocess.run(
-                        [cli, "download", repo, filename, "--local-dir", str(dest_dir)],
-                        env=env, capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
-                        success = True
-                    else:
-                        stderr = (result.stderr or result.stdout or "").strip()
-                        if stderr:
-                            warn(f"{cli} error: {stderr}")
-                    break
-            if not success:
-                try:
-                    from huggingface_hub import hf_hub_download  # type: ignore
-                    hf_hub_download(repo_id=repo, filename=filename,
-                                    local_dir=str(dest_dir), token=token)
-                    success = True
-                except Exception as e:
-                    warn(f"Python API download failed: {e}")
-            # If the remote file lives in a subdirectory, move it flat into dest_dir
-            if success and save_as:
-                src = dest_dir / filename
-                dst = dest_dir / save_as
-                if src.exists() and src != dst:
-                    shutil.move(str(src), str(dst))
-                    try:
-                        src.parent.rmdir()
-                    except OSError:
-                        pass
-            return success
 
         # ── Download missing checkpoints for the selected image models ────────
         missing = [m for m in selected_images if m["checkpoint"] not in found_ckpts]

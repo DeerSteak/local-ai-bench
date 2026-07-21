@@ -14,15 +14,12 @@ from shared import Shared
 
 
 class EmbeddingBenchmark:
-    # max_words caps every chunk well under any embedding model's context
-    # length (mxbai-embed-large's is 512 tokens), which also avoids "content
-    # length exceeds context length" errors an unbounded chunker hits on a
-    # document's own markdown tables/code blocks.
+    # Caps every chunk well under any embedding model's context length (mxbai-embed-large's is 512 tokens).
     EMBED_DOCUMENT_PATH = config.SCRIPT_DIR / "sample_document.txt"
     EMBED_CHUNK_MAX_WORDS = 150
     EMBED_CHUNK_MIN_WORDS = 6
 
-    # Records model/document combos that crashed Ollama's runner repeatedly
+    # Records model/document combos that crashed the engine's runner repeatedly
     # (deterministically, not a transient blip) so future runs don't waste time
     # rediscovering the same crash. Delete this file to retry a skipped model.
     EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")
@@ -94,7 +91,7 @@ class EmbeddingBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 Shared.ok(f"Using model: {tag}")
@@ -104,10 +101,7 @@ class EmbeddingBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # Warm up before measuring: the first embed call against a
-                # freshly-unloaded model pays a one-time load/setup cost unrelated
-                # to steady-state throughput, and folding it into a measured run
-                # would understate performance.
+                # First embed call pays a one-time load cost that would skew a measured run.
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:
@@ -147,7 +141,7 @@ class EmbeddingBenchmark:
                         "label": label,
                         "skipped": True,
                         "skip_reason": "known_crash",
-                        "skip_detail": f"Ollama's runner crashed repeatedly embedding this document ({crashed_at})",
+                        "skip_detail": f"The engine's runner crashed repeatedly embedding this document ({crashed_at})",
                     }
                 elif status == "timed_out":
                     results[short] = {

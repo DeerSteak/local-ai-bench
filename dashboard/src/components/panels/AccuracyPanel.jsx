@@ -10,10 +10,10 @@ import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import styles from "../ChartPanel.module.css";
 
-// Accuracy section (MCQ / Math / Code, picked via accuracyTest): one overall
+// Accuracy section (MCQ / Math / Code / Tool, picked via accuracyTest): one overall
 // bar chart (accuracy % per model, systems as bars), then one per-category
-// breakdown chart per model, then — only when at least one question actually
-// timed out — a diagnostics chart of timed_out_count/likely_loop_count. No
+// breakdown chart per model, then — when at least one timeout or likely loop
+// occurs — a diagnostics chart of timed_out_count/likely_loop_count. No
 // "Group By: System" or line-chart variant here, unlike LLM/Images/Embeddings —
 // accuracy is a single scalar per model rather than a metric swept across
 // context lengths or resolutions, so there's no second axis to pivot on.

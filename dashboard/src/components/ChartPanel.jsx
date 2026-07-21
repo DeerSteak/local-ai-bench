@@ -5,6 +5,7 @@ import LLMByModelPanel from "./panels/LLMByModelPanel";
 import ImagesPanel from "./panels/ImagesPanel";
 import EmbeddingsPanel from "./panels/EmbeddingsPanel";
 import AccuracyPanel from "./panels/AccuracyPanel";
+import ConcurrencyPanel from "./panels/ConcurrencyPanel";
 import { EmptyState } from "./panels/shared";
 
 // Picks the right panel for the current section / Group By / Chart Style
@@ -30,6 +31,15 @@ export default function ChartPanel({
       <AccuracyPanel
         containerRef={containerRef} files={files} accuracyTest={accuracyTest} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc}
+      />
+    );
+  }
+
+  if (section === "concurrency_tool" || section === "concurrency_chat") {
+    return (
+      <ConcurrencyPanel
+        containerRef={containerRef} files={files} section={section} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
     );
   }

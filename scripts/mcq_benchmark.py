@@ -15,7 +15,7 @@ from shared import Shared
 class MCQBenchmark:
     MCQ_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "mcq_questions.json"
 
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
@@ -44,17 +44,9 @@ class MCQBenchmark:
     @staticmethod
     def parse_answer(response_text: str, valid_choices) -> str | None:
         """Extract the model's chosen letter from free-form text, or None.
-
-        Takes the *last* standalone valid letter, not the first — MCQ_NUM_PREDICT
-        is unbounded specifically so a reasoning model has room to think before
-        answering, and that reasoning routinely walks through several options by
-        letter ("A is wrong because... B is wrong because... so the answer is
-        C") before landing on a final choice. Taking the first letter would grab
-        a rejected option instead of the model's actual answer; a stray letter
-        that isn't a valid choice for this question ("A" in "As an AI...") is
-        skipped regardless of position. Mirrors MathBenchmark.parse_answer's
-        same last-not-first reasoning for the same reason.
-        """
+        Takes the *last* standalone valid letter, not the first — a reasoning
+        model walks through rejected options by letter before its final
+        choice. Same reasoning as MathBenchmark.parse_answer."""
         if not response_text:
             return None
         valid = {c.upper() for c in valid_choices}
@@ -77,7 +69,8 @@ class MCQBenchmark:
         prompt = MCQBenchmark.build_prompt(question)
         _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.ACC_TIMEOUT, num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
+            num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
             check_loop=True,
         )
         return MCQBenchmark.parse_answer(response_text, question["choices"].keys()), response_text

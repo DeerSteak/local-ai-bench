@@ -1,5 +1,5 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, fmt, modelLabel } from "../utils";
+import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, concurrencySortValue, fmt, modelLabel } from "../utils";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
@@ -155,6 +155,56 @@ function ImagesTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
+function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
+  const isMulti = files.length > 1;
+  const rows = flattenConcurrencyData(files, section).sort((a, b) => {
+    const ak = concurrencySortValue(a, sortConfig.key);
+    const bk = concurrencySortValue(b, sortConfig.key);
+    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
+  });
+
+  return (
+    <table className={styles.table}>
+      <thead>
+        <tr>
+          {isMulti && <th className={styles.th}>Machine</th>}
+          <SortTh label="Model" sortKey="model" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Level" sortKey="level" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="TPS" sortKey="tps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <th className={styles.th}>± stdev</th>
+          <SortTh label="Aggregate TPS" sortKey="aggregate_tps" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <th className={styles.th}>± stdev</th>
+          <SortTh label="Total Tokens" sortKey="total_tokens" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => r.skipped ? (
+          <tr key={i} className={styles.trSkipped}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={styles.td} colSpan={7}>
+              Skipped — {r.skip_detail}
+            </td>
+          </tr>
+        ) : (
+          <tr key={i}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={`${styles.td} ${styles.tdCtx}`}>{r.level}-way</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.tps_mean, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.tps_stdev, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.aggregate_tps, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.total_tokens}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
   const rows = flattenAccuracyData(files, testKey).sort((a, b) => {
@@ -217,6 +267,8 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
       <div className={styles.tableTitle}>{title}</div>
       {(section === "llm" || section === "llm_conversation") &&
         <LLMTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {(section === "concurrency_tool" || section === "concurrency_chat") &&
+        <ConcurrencyTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "accuracy"  && <AccuracyTable files={files} testKey={accuracyTest} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}

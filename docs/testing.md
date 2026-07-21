@@ -74,23 +74,23 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 [`.coveragerc`](../.coveragerc) at the repo root shapes that report so it reflects the code this suite is actually meant to exercise, rather than being diluted by code that can't safely be unit tested:
 
 - `scripts/setup_check.py` is omitted entirely — it has no `__main__` guard, so importing it would run the whole interactive install flow (prompts, downloads).
-- Individual functions that spawn real subprocesses, poll a live Ollama/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `OllamaEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
+- Individual functions that spawn real subprocesses, poll a live llama.cpp/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `LlamaCppEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
 
-With that config in place, coverage sits around 95% for the code the suite targets — the remaining gaps are a handful of fine-grained exception branches inside otherwise-tested functions, not whole untested subsystems.
+The report is intentionally scoped to unit-testable code. Treat its missing-line detail as the useful signal rather than relying on a fixed percentage, which changes as the suite evolves.
 
 ---
 
 ## Test Suite Breakdown
 
-The test suite consists of **25 test modules** validating different components of the application, from configuration structure and model definitions to low-level Ollama/llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **28 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
 - **[test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py)**
   Validates logic in `benchmark.py` for deciding when to skip models during the LLM conversation test. It asserts that:
   - Models with missing or empty LLM data are skipped.
-  - A model that timed out or crashed in the single-shot test skips the conversation test, propagating the failure details.
-  - If decode speeds (Tokens/sec) drop below the threshold (determined by `config.SLOW_MODEL_MIN_TPS`) during the first context check, the model is skipped.
+  - A repeatable crash or a timeout at the first single-shot checkpoint skips conversation and propagates the failure details; a timeout only at a deeper checkpoint does not.
+  - A first-checkpoint decode speed below `config.SLOW_MODEL_MIN_TPS` skips conversation.
   - The `--force-all` flag bypasses the slow model cutoff, but does not override actual timeouts or crashes.
 
 - **[test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py)**
@@ -102,7 +102,7 @@ The test suite consists of **25 test modules** validating different components o
 
 - **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
   Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
-  - `acc` expands to `ACCURACY_TESTS` (currently `mcq`, `math`, and `code`).
+  - `acc` expands to `ACCURACY_TESTS` (currently `mcq`, `math`, `code`, and `tool`), while `conc` expands to both concurrency tests.
   - Ordinary test names pass through unchanged.
   - Order is preserved when `acc` is mixed with other test names.
   - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
@@ -117,27 +117,33 @@ The test suite consists of **25 test modules** validating different components o
   - A pattern matching nothing returns an empty list rather than erroring.
   - Filtering preserves the original model order.
 
+- **[test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py)**
+  Tests the concurrency workload's downloaded-model scoping. It verifies that only installed catalog entries are retained, catalog order is preserved, custom installed tags are ignored at this stage, empty/all-installed inputs behave correctly, and each engine pass resolves against its own installed-model inventory.
+
 - **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
-  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually pulled in Ollama. It verifies:
+  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually downloaded locally. It verifies:
   - A pattern that matches the catalog behaves exactly like `filter_models_by_pattern` and does not also pull in unrelated installed tags.
   - A pattern matching nothing in the catalog falls back to matching installed tags, producing a `"(custom)"`-labeled entry.
   - A pattern matching neither the catalog nor anything installed resolves to nothing (not an error).
   - A wildcard can resolve to multiple installed tags at once.
   - Catalog and custom patterns can be mixed in the same `--models` invocation.
-  - `sanitize_tag_to_short` turns a raw Ollama tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+  - `sanitize_tag_to_short` turns a raw tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+
+- **[test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py)**
+  Tests that a named engine passes through, `all` expands to every registered engine (and is a no-op with one), and the caller's registry list is not mutated.
 
 - **[test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py)**
-  Tests `sidecar_path` in `benchmark.py`, which builds a sibling filename (an `answers_mcq_*.json`, `images_*/`, etc.) alongside the main results JSON. It verifies:
+  Tests `sidecar_path` in `benchmark.py`, which derives a results-directory auxiliary filename from the main output stem. It verifies:
   - A `results_`-prefixed output path has that prefix swapped for the sidecar's own prefix.
   - A custom `--out` filename that doesn't start with `results_` falls back to prepending the sidecar prefix instead.
-  - Every sidecar prefix (`answers_mcq_`, `answers_math_`, `answers_code_`, `images_`) produces the same hostname/timestamp suffix from the same results path, so sidecars from one run are always identifiable as a set.
+  - The MCQ, math, code, tool, and image prefixes preserve the same hostname/timestamp suffix.
 
 - **[test_config.py](../tests/test_config.py)**
   Performs structural sanity checks on the constants in `config.py`. It verifies that:
   - Context lengths are strictly sorted in ascending order and unique.
   - Important directories (`RESULTS_DIR`, `COMFYUI_DIR`) resolve correctly relative to the project root.
   - Execution run count (`N_RUNS`) is positive.
-  - Endpoint URLs (Ollama and ComfyUI) have proper HTTP schemas.
+  - Endpoint URLs (llama.cpp and ComfyUI) have proper HTTP schemas.
 
 - **[test_models.py](../tests/test_models.py)**
   Validates model configuration records in `models.py`. It checks:
@@ -145,6 +151,9 @@ The test suite consists of **25 test modules** validating different components o
   - Within each tier, LLM models are ordered by parameter counts (`params_b`).
   - Model tags and shortcodes are globally unique.
   - Required fields (e.g., download size, model tags, parameters, samplers, schedulers) exist in model definitions.
+
+- **[test_hardware.py](../tests/test_hardware.py)**
+  Tests memory-size parsing, integrated/discrete GPU classification (including processor-name false positives), extraction of GPU agents from CPU-first `rocminfo` output, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
 
 ---
 
@@ -169,6 +178,10 @@ The test suite consists of **25 test modules** validating different components o
   - Follow-up prompts cycle sequentially through sections of the conversation prompt text, wrapping around cleanly.
   - Growth checkpoints (`CONV_CHECKPOINTS`) are sorted and fit within the target ceiling.
   - The step-size calculator (`compute_growth_step`) takes larger steps (`CONV_STEP_MAX_FAR`) when far from the target and smaller ones (`CONV_STEP_MAX`) once within 8K tokens of it, clamps to `CONV_STEP_MIN`, enforces context safety margins (`CONV_SAFETY_MARGIN`) for non-final checks, consumes the full context room on the final step, and signals when the context is full.
+  - `conv_ctx_plan` gives xsmall/small catalog models the shorter 64K/48K plan, gives medium/large/custom models the full plan, and respects native context ceilings and headroom.
+
+- **[test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py)**
+  Tests the chat sweep's slow-TPS floor and `--force-all` bypass, confirms that a `None` floor disables soft exits for the tool sweep, and verifies concurrent batch fan-out, unique nonce prompts, result collection, and error propagation with a fake engine.
 
 - **[test_mcq_benchmark.py](../tests/test_mcq_benchmark.py)**
   Tests the pure logic in `MCQBenchmark`. It verifies:
@@ -185,13 +198,22 @@ The test suite consists of **25 test modules** validating different components o
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
 - **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
-  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no Ollama server needed. It verifies:
+  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no inference server needed. It verifies:
   - `build_prompt` includes the question text and the target function/class name, renders `visible_tests` as worked examples (for both function and stateful problems, including constructor `init` args), omits the examples block entirely when there are no visible tests, and never leaks `hidden_tests` values into the prompt — proven not just by substring-scanning the rendered text but by deleting the `hidden_tests` key from every real question in the bank and confirming `build_prompt` doesn't raise (i.e. never even looks it up).
   - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
   - `execute_tests` runs a candidate function against a list of test cases in an isolated subprocess: correct/incorrect results score independently per test case, a runtime error in one test case doesn't abort the others, a syntax error or reference to an undefined function name fails every test case with an error message, and an infinite loop is killed and reported as a `"timeout"` rather than hanging the test run.
   - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
   - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/code_problems.json` file — unique IDs, and every problem has a function name and at least one visible and one hidden test case, each with `args` and `expected`.
+
+- **[test_tool_benchmark.py](../tests/test_tool_benchmark.py)**
+  Tests the pure logic in `ToolBenchmark`. It verifies:
+  - `evaluate_question` scores a call case correct only when exactly one tool call names the expected tool with matching arguments — flagging a wrong tool name, missing or wrong arguments, unintended additional calls, and extra arguments on questions marked for strict matching, while numeric strings (`"10"`) still match numeric expected values and baseline questions retain loose extra-argument compatibility.
+  - Recursive comparison handles nested strict objects, keeps booleans distinct from numbers, preserves positional arrays by default, and treats configured `unordered_keys` arrays as multisets (including arrays of objects).
+  - `evaluate_question` scores a decline case (`call: false`) correct only when nothing was called — an empty/`None` call list is a correct decline, and firing any tool is wrong; conversely a call case with an empty/`None` list is a wrong (incorrect) decline.
+  - `rescore_partial_fn` parses a tool-call list out of a timed-out question's partial text, falling back to a decline (`[]`) when the text won't parse or isn't a list.
+  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list.
+  - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none).
 
 ---
 
@@ -200,7 +222,7 @@ The test suite consists of **25 test modules** validating different components o
 - **[test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py)**
   Tests the question-bank-versioning helpers in `Shared` that back `--sample` and the accuracy tests' bank-aware crash cache. It verifies:
   - `file_hash` is stable for identical file content, differs when content differs, and returns a short (12-character) hex digest.
-  - `stratified_sample` returns the bank unchanged (not even reordered) once `n` meets or exceeds its size, otherwise returns exactly `n` questions, touches every category represented within the requested `n`, is deterministic across repeated calls for the same `(bank, n)`, and never produces duplicate IDs.
+  - `stratified_sample` returns the bank unchanged once `n` meets or exceeds its size; otherwise it returns exactly `n` deterministic, duplicate-free questions in category round-robin order, covering every category when `n` reaches the category count.
   - `check_crash_cache`'s `expected_bank_hash` parameter ignores a cached crash recorded against a different bank version (so a stale crash doesn't skip a model forever after the bank changes) while still honoring one that matches, and non-bank-aware callers that omit `expected_bank_hash` still honor a `bank_hash`-tagged entry as before.
   - `record_crash`'s `extra` parameter is merged into the stored cache record (e.g. `bank_hash`), and is simply omitted when not passed.
 
@@ -220,24 +242,15 @@ The test suite consists of **25 test modules** validating different components o
   4. The current external active virtual environment (`VIRTUAL_ENV`).
   5. The current system interpreter (`sys.executable`).
 
-- **[test_ollama_engine.py](../tests/test_ollama_engine.py)**
-  Tests `OllamaEngine` (`scripts/engines/ollama.py`) — lifecycle hooks, server state controls, and NDJSON stream parsing:
-  - `reachable_or_abort` detects whether the Ollama server is running.
-  - `model_pulled` checks for exact or implicit matches (like tags missing `:latest`) in the local image list.
-  - `max_context_length` parses architectural options to identify a model's true context limit, falling back to configuration defaults on failure.
-  - `unload` issues a keep-alive termination request and handles network errors.
-  - `unload_all` queries loaded models and terminates them.
-  - `wait_until_unloaded` polls until a model is fully evicted.
-  - Derivation of TTFT and tokens/sec from server performance fields, with fallback to local system time if fields are missing.
-  - Resilience against empty, blank, or malformed NDJSON stream lines.
-  - Response extraction preferring the standard content payload over reasoning (`thinking`) fields, but falling back to reasoning text if needed.
-  - Intercepting HTTP 500 error payloads to extract clean diagnostic messages (e.g. "model requires more system memory") rather than raising generic HTTP error statuses.
+- **[test_engines_registry.py](../tests/test_engines_registry.py)**
+  Tests that the engine registry lists the registered names, resolves `llamacpp` to a `LlamaCppEngine`, and rejects unknown names clearly.
 
 - **[test_llamacpp_engine.py](../tests/test_llamacpp_engine.py)**
-  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — Ollama manifest/blob resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`, same convention as `OllamaEngine.start`):
-  - `_split_tag`/`_resolve_blob_path`/`model_pulled`/`list_installed_models` walk Ollama's manifest tree straight from disk, including a missing manifest, a missing blob file, and a missing model store entirely.
-  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't pulled or the file doesn't parse.
-  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `OllamaTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
+  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — local GGUF-file resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`):
+  - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, and a multi-part (`hf_file` as a list) model with one part missing.
+  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't downloaded or the file doesn't parse.
+  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `EngineTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
+  - `chat_tools` reassembles a tool call whose `arguments` stream as partial JSON fragments across multiple SSE chunks (accumulated by index), returns an empty tool-call list when the model answers in prose instead, falls back to `{}` on malformed/truncated argument JSON rather than crashing, and orders multiple calls by their streamed index.
   - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
   - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
 
@@ -250,10 +263,10 @@ The test suite consists of **25 test modules** validating different components o
   - `slow_tps_early_exit` early termination logic based on performance speeds.
 
 - **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early.
+  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
-  Tests the degenerate-generation-loop heuristic used on timed-out accuracy-test responses (`Shared.looks_like_loop`):
+  Tests the degenerate-generation-loop heuristic applied periodically to streaming accuracy responses (`Shared.looks_like_loop`):
   - Detects a 12+ word run repeated verbatim 3+ times; false on normal prose, short text, and below-threshold repetition; respects custom `ngram_words`/`min_repeats`.
   - Detects a paraphrased loop via repeated hedging/self-correction phrases (e.g. "let me reconsider", "there seems to have been") even with no verbatim repeated run; false when a hedge phrase appears only once.
 
@@ -293,7 +306,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
   - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
 
 - **[constants.test.js](../dashboard/src/constants.test.js)**
-  Cross-checks the model registries in `constants.js` against each other — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), and none of the order lists contain duplicates. This catches the most common maintenance mistake here: adding a model to one registry without adding it to the others it's expected to appear in.
+  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), and none of the order lists contain duplicates.
 
 ---
 

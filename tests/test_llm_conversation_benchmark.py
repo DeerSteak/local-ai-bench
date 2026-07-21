@@ -110,3 +110,46 @@ def test_growth_step_out_of_room_even_on_last_checkpoint_if_room_below_min():
         num_ctx=num_ctx, is_last_checkpoint=True)
     assert out_of_room is True
     assert step is None
+
+
+# ── conv_ctx_plan ──
+
+def test_ctx_plan_uncapped_tier_uses_full_target_and_checkpoints():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("large", 131072)
+    assert target_ctx == Conv.CONV_TARGET_CTX
+    assert checkpoints == Conv.CONV_CHECKPOINTS
+    assert num_ctx == min(target_ctx + Conv.CONV_CTX_HEADROOM, 131072)
+
+
+def test_ctx_plan_xsmall_tier_caps_target_ctx_and_top_checkpoint():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("xsmall", 131072)
+    assert target_ctx == Conv.CONV_SMALL_TIER_TARGET_CTX
+    assert checkpoints[-1] == Conv.CONV_SMALL_TIER_TOP_CHECKPOINT
+    assert all(c <= Conv.CONV_SMALL_TIER_TOP_CHECKPOINT for c in checkpoints)
+
+
+def test_ctx_plan_small_tier_caps_the_same_as_xsmall():
+    xsmall_plan = Conv.conv_ctx_plan("xsmall", 131072)
+    small_plan = Conv.conv_ctx_plan("small", 131072)
+    assert xsmall_plan == small_plan
+
+
+def test_ctx_plan_small_tier_still_respects_a_lower_model_max():
+    # A small-tier model whose real ceiling is below the small-tier cap
+    # shouldn't have its checkpoints or num_ctx inflated past that ceiling.
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("small", 32768)
+    assert target_ctx == 32768
+    assert checkpoints[-1] == 32768
+    # target_ctx + headroom would exceed model_max, so num_ctx clamps to it.
+    assert num_ctx == 32768
+
+
+def test_ctx_plan_missing_tier_falls_back_to_uncapped_behavior():
+    target_ctx, checkpoints, _ = Conv.conv_ctx_plan(None, 131072)
+    assert target_ctx == Conv.CONV_TARGET_CTX
+    assert checkpoints == Conv.CONV_CHECKPOINTS
+
+
+def test_ctx_plan_num_ctx_never_exceeds_model_max():
+    _, _, num_ctx = Conv.conv_ctx_plan("large", 100000)
+    assert num_ctx == 100000

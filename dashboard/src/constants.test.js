@@ -3,7 +3,7 @@ import {
   LLM_MODEL_ORDER, LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
   IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
-  SIZE_TIER_ORDER,
+  SIZE_TIER_ORDER, RES_ORDER, RES_COLORS,
 } from "./constants";
 
 // These catch the most common maintenance mistake in this file: adding a
@@ -11,6 +11,15 @@ import {
 // without also adding it to the others (label, color, size tier) that other
 // code assumes are present for every ordered model.
 describe("model registry consistency", () => {
+  it("contains the complete 12-model LLM catalog in tier order", () => {
+    expect(LLM_MODEL_ORDER).toEqual([
+      "gemma3-1b", "llama3.2-3b-q4", "phi4-mini",
+      "mistral-7b-q4", "llama3.1-8b-q4", "phi4-14b",
+      "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+      "llama3.3-70b-q4", "llama4-16x17b", "nemotron3-super-120b",
+    ]);
+  });
+
   it("every LLM model in LLM_MODEL_ORDER has a label, a color, and a valid size tier", () => {
     for (const model of LLM_MODEL_ORDER) {
       expect(LLM_MODEL_LABELS[model], `${model} missing a label`).toBeDefined();
@@ -42,5 +51,15 @@ describe("model registry consistency", () => {
   it("IMAGE_MODEL_ORDER and EMBED_MODEL_ORDER have no duplicate entries", () => {
     expect(new Set(IMAGE_MODEL_ORDER).size).toBe(IMAGE_MODEL_ORDER.length);
     expect(new Set(EMBED_MODEL_ORDER).size).toBe(EMBED_MODEL_ORDER.length);
+  });
+});
+
+describe("image resolution registry", () => {
+  it("includes SD 1.5 native resolutions before the larger-model defaults", () => {
+    expect(RES_ORDER).toEqual(["512x512", "768x768", "1024x1024", "1536x1536"]);
+  });
+
+  it("assigns a color to every ordered resolution", () => {
+    for (const resolution of RES_ORDER) expect(RES_COLORS[resolution]).toBeDefined();
   });
 });

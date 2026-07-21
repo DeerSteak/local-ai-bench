@@ -1,8 +1,9 @@
 import config
 from benchmark import conv_skip_entry
+from shared import Shared
 
 MODEL = {"label": "Llama 3.2 3B Q4_K_M", "short": "llama3.2-3b-q4"}
-FIRST_CTX = "2K"
+FIRST_CTX = Shared.context_label(config.CONTEXT_LENGTHS[0])
 
 
 def test_no_llm_data_skips():
@@ -38,42 +39,42 @@ def test_timeout_at_first_context_skips():
 
 
 def test_timeout_at_deeper_context_does_not_disqualify():
-    # Timed out at 8K, not the first (2K) context — it passed the 2K prefill,
+    # Timed out at 8K, not the configured first context — it passed prefill there,
     # so it should fall through to the tok/s check rather than being skipped
     # outright.
-    llm_data = {"timed_out": "8K", "2K": {"tps_mean": 50.0}}
+    llm_data = {"timed_out": "8K", FIRST_CTX: {"tps_mean": 50.0}}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=False)
     assert entry is None
 
 
 def test_slow_tps_flag_skips():
-    llm_data = {"slow_tps": "2K"}
+    llm_data = {"slow_tps": FIRST_CTX}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=False)
     assert entry["skip_reason"] == "slow_tps"
-    assert "2K" in entry["skip_detail"]
+    assert FIRST_CTX in entry["skip_detail"]
 
 
 def test_slow_tps_derived_from_first_context_tps_mean():
-    llm_data = {"2K": {"tps_mean": config.SLOW_MODEL_MIN_TPS - 1.0}}
+    llm_data = {FIRST_CTX: {"tps_mean": config.SLOW_MODEL_MIN_TPS - 1.0}}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=False)
     assert entry["skip_reason"] == "slow_tps"
     assert f"{config.SLOW_MODEL_MIN_TPS - 1.0:.1f} tok/s" in entry["skip_detail"]
 
 
 def test_fast_enough_model_is_not_skipped():
-    llm_data = {"2K": {"tps_mean": config.SLOW_MODEL_MIN_TPS + 10.0}}
+    llm_data = {FIRST_CTX: {"tps_mean": config.SLOW_MODEL_MIN_TPS + 10.0}}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=False)
     assert entry is None
 
 
 def test_force_all_ignores_explicit_slow_tps_flag():
-    llm_data = {"slow_tps": "2K"}
+    llm_data = {"slow_tps": FIRST_CTX}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=True)
     assert entry is None
 
 
 def test_force_all_ignores_derived_slow_tps():
-    llm_data = {"2K": {"tps_mean": config.SLOW_MODEL_MIN_TPS - 1.0}}
+    llm_data = {FIRST_CTX: {"tps_mean": config.SLOW_MODEL_MIN_TPS - 1.0}}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=True)
     assert entry is None
 

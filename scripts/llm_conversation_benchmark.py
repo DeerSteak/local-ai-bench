@@ -1,19 +1,13 @@
 """
 llm_conversation_benchmark.py — simulates a real multi-turn chat (rather than
-one huge padded single-shot prompt): the model explains Plato's Allegory of
-the Cave in numbered sections, then each turn asks for more detail on one
-section. Every turn is sent with the full message history via /api/chat, so
-llama.cpp's slot cache carries prior turns forward — TTFT/TPS at each depth
-reflect processing the new turn against an already-filled context, not a cold
-fill from empty.
-
-Expensive, so it runs a single conversation per model (the --runs flag is
-ignored here). The conversation grows from empty up to the model's real
-context ceiling (looked up live via the engine's max_context_length), sampling
-TTFT/tokens-per-sec at 0, 2K, 4K, 8K, 16K, 32K, 64K, and 96K (whichever the
-ceiling reaches). The model gets the full 128K of room, but sampling stops at
-96K, since 96K-to-128K is where models with an exact 128K native ceiling have
-no slack left and the growth loop's final turns risk tipping into truncation.
+one padded single-shot prompt): the model explains Plato's Allegory of the
+Cave in sections, then each turn asks for more detail on one. Every turn
+sends the full history via /api/chat, so the slot cache carries prior turns
+forward — TTFT/TPS at each depth reflect a new turn against an already-filled
+context, not a cold fill. Expensive, so it runs one conversation per model
+(--runs ignored), grown from empty toward the model's real context ceiling,
+sampling at 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, and 96K. The
+xsmall/small tiers stop at 48K. See docs/workloads.md.
 """
 
 from pathlib import Path
@@ -23,50 +17,40 @@ from shared import Shared
 
 
 class LLMConversationBenchmark:
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
+    # Deterministic-crash memo; delete to retry a skipped model.
     CONV_CRASH_CACHE = Path(".conv_crash_cache.json")
 
     CONV_NUM_SECTIONS = 6
+    CONV_RUNS = 1   # too expensive to repeat --runs times like the other benchmarks
 
-    # Single try per model — too expensive (many turns growing to the context
-    # ceiling) to repeat --runs times like the other benchmarks.
-    CONV_RUNS = 1
-
-    # Context window handed to a model: 128K if supported, else its real
-    # ceiling (see the engine's max_context_length). Higher than the top sampled
-    # checkpoint (96K) so the growth loop always has headroom against num_ctx
-    # instead of scraping the ceiling.
+    # Higher than the top sampled checkpoint (96K) so the growth loop always has headroom, never scrapes the ceiling.
     CONV_TARGET_CTX = 131072
 
-    # Checkpoints to sample: 0, then 2K doubling to 64K, plus 48K/80K in the
-    # higher gaps (where an early-exiting model most likely drops out) and the
-    # 96K cap. Filtered per model to its real ceiling. Stops short of the 128K
-    # window (CONV_TARGET_CTX) so there's always headroom to grow into.
+    # xsmall/small models can have a native context window (e.g. Phi 4 Mini's 128K) far
+    # beyond what a constrained-memory machine can actually reserve KV-cache for — a small
+    # model's value is being cheap to run everywhere, not exercising every token it's rated
+    # for. Cap their context budget and top sampled checkpoint at half the large-tier ones,
+    # same headroom ratio as CONV_TARGET_CTX leaves above the 96K checkpoint.
+    CONV_SMALL_TIERS = {"xsmall", "small"}
+    CONV_SMALL_TIER_TARGET_CTX = 65536
+    CONV_SMALL_TIER_TOP_CHECKPOINT = 49152
+
+    # 2K doubling to 64K, plus 48K/80K in the higher gaps and the 96K cap. Filtered per model to its real ceiling.
     CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
-    # Bounds on any single growth turn's num_predict. Crossing a gap in
-    # several turns (remaining // CONV_STEP_DIVISOR, clamped here) rather than
-    # one big jump gives the smaller checkpoints (0->2K, 2K->4K, ...) real
-    # resolution instead of overshooting them, while the cap bounds any single
-    # generation call.
+    # Growth-turn num_predict bounds — crossing a gap in several steps (remaining // CONV_STEP_DIVISOR)
+    # gives the smaller checkpoints real resolution instead of overshooting them.
     CONV_STEP_MIN = 32
     CONV_STEP_MAX = 1024
     CONV_STEP_MAX_FAR = 4096
     CONV_STEP_DIVISOR = 4
 
-    # Opening turn is a full structured answer, not a small growth step.
-    CONV_OPENING_PREDICT = 2048
+    CONV_OPENING_PREDICT = 2048   # opening turn is a full structured answer, not a small growth step
 
-    # Extra num_ctx beyond the top checkpoint reached, when the real ceiling
-    # allows it — growing a prompt right up against num_ctx forces Ollama to
-    # truncate/context-shift, corrupting that measurement.
+    # Room beyond the top checkpoint reached — growing right up against num_ctx forces a truncating context-shift.
     CONV_CTX_HEADROOM = 4096
 
-    # Reserved tokens so a non-final growth turn's new user message plus its
-    # generation can't push the *next* turn's prompt past num_ctx. Not applied
-    # to the last turn of a run, which has no next turn to protect.
+    # Reserves room so a non-final turn's new message + generation can't push the *next* turn past num_ctx.
     CONV_SAFETY_MARGIN = 64
 
     CONV_OPENING_PROMPT = (
@@ -80,16 +64,10 @@ class LLMConversationBenchmark:
     @staticmethod
     def compute_growth_step(cumulative_tokens: int, target: int, num_ctx: int,
                              is_last_checkpoint: bool) -> tuple[int | None, bool]:
-        """Compute num_predict for the next growth turn, crossing the gap
-        toward `target` in bounded steps (see CONV_STEP_MIN/MAX/DIVISOR) rather
-        than one big jump, keeping enough num_ctx in reserve for the next turn
-        (see CONV_SAFETY_MARGIN) — except on the last step of the last
-        checkpoint, which can use every token of room left.
-
-        Returns (step, out_of_room). step is None when out_of_room is True
-        (less than CONV_STEP_MIN tokens of room left), and the caller should
-        stop growing this run.
-        """
+        """Compute num_predict for the next growth turn toward `target` in
+        bounded steps, reserving CONV_SAFETY_MARGIN for the next turn (except
+        the last step of the last checkpoint). Returns (step, out_of_room);
+        step is None when out_of_room, meaning the caller should stop growing."""
         remaining = target - cumulative_tokens
         step_max = (LLMConversationBenchmark.CONV_STEP_MAX_FAR
                     if remaining > 8192
@@ -109,6 +87,25 @@ class LLMConversationBenchmark:
         return min(step, room), False
 
     @staticmethod
+    def conv_ctx_plan(tier: str | None, model_max: int) -> tuple[int, list[int], int]:
+        """Resolve a model's conversation-test context budget from its tier and
+        real max context: (target_ctx, checkpoints, num_ctx). xsmall/small-tier
+        models get CONV_SMALL_TIER_TARGET_CTX/CONV_SMALL_TIER_TOP_CHECKPOINT
+        instead of the full CONV_TARGET_CTX/CONV_CHECKPOINTS ceiling — see those
+        constants' docstring. An unrecognized/missing tier (e.g. a custom
+        --models tag outside the catalog) falls back to the uncapped behavior."""
+        is_small_tier = tier in LLMConversationBenchmark.CONV_SMALL_TIERS
+        target_ctx_cap = (LLMConversationBenchmark.CONV_SMALL_TIER_TARGET_CTX if is_small_tier
+                          else LLMConversationBenchmark.CONV_TARGET_CTX)
+        target_ctx = min(model_max, target_ctx_cap)
+        checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
+        if is_small_tier:
+            checkpoints = [c for c in checkpoints
+                           if c <= LLMConversationBenchmark.CONV_SMALL_TIER_TOP_CHECKPOINT]
+        num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+        return target_ctx, checkpoints, num_ctx
+
+    @staticmethod
     def _conv_followup_prompt(section_n: int) -> str:
         section = ((section_n - 1) % LLMConversationBenchmark.CONV_NUM_SECTIONS) + 1
         return (
@@ -121,7 +118,6 @@ class LLMConversationBenchmark:
 
         if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM conversation benchmarks")
-            Shared.err("Start with: ollama serve")
             return results
 
         crash_cache = Shared.load_crash_cache(LLMConversationBenchmark.CONV_CRASH_CACHE)
@@ -139,7 +135,7 @@ class LLMConversationBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
-                    Shared.warn(f"Pull with: ollama pull {tag}")
+                    Shared.warn("Download it with: python setup_check.py")
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)
@@ -148,9 +144,8 @@ class LLMConversationBenchmark:
                     continue
 
                 model_max = engine.max_context_length(tag)
-                target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
-                checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
-                num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(
+                    model.get("tier"), model_max)
                 top_checkpoint = checkpoints[-1] if checkpoints else 0
 
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
@@ -188,13 +183,8 @@ class LLMConversationBenchmark:
                             num_predict=num_predict,
                         )
                         messages.append({"role": "assistant", "content": response_text})
-                        # prompt_eval_count is the *total* prompt length Ollama reports for this
-                        # call — ground truth of what's in context, even when the slot cache
-                        # recomputed only the suffix (why ttft stays flat as this grows). We don't
-                        # add eval_count: for reasoning models a turn's generated tokens can
-                        # include thinking content a template silently drops from history next
-                        # turn, so eval_count doesn't predict what persists. The next turn's
-                        # prompt_eval_count is what tells the truth.
+                        # prompt_eval_count is ground truth for what's in context; eval_count isn't —
+                        # a reasoning model's thinking content can get silently dropped from history next turn.
                         cumulative_tokens = prompt_eval_count
                         return ttft, tps
 
@@ -258,21 +248,14 @@ class LLMConversationBenchmark:
                             Shared.err(f"{label}: run {run_i+1} timed out — stopping this run here")
                             partial_text = getattr(e, "partial_text", "")
                             if partial_text:
-                                # Not scored here (this benchmark measures TTFT/TPS, not
-                                # correctness), but surfacing what the model had already
-                                # written tells a genuine stall apart from a response that
-                                # was mid-stream right up to the deadline.
+                                # Not scored (this test measures TTFT/TPS), just surfaced to tell a stall apart from a mid-stream cutoff.
                                 Shared.warn(f"{label}: run {run_i+1} had streamed "
                                             f"{len(partial_text)} chars before the timeout: "
                                             f"{partial_text[:200]!r}")
                             run_timed_out = True
                             timed_out_label = timed_out_label or f"{cumulative_tokens // 1024}K"
                         elif engine.is_connection_crash(e):
-                            # The engine's model runner died mid-conversation (commonly OOM).
-                            # Mid-turn state (this turn's user prompt is already appended)
-                            # makes retrying unsafe, so stop the run here — but wait for
-                            # the server to recover before the next model, rather than
-                            # letting its warmup discover the engine is still down.
+                            # Mid-turn state makes retrying unsafe — stop the run, but wait for recovery before the next model.
                             Shared.err(f"{label}: run {run_i+1} — the engine's model runner appears to have crashed "
                                        f"— last server output:\n{engine.tail_log()}")
                             if not engine.wait_for_recovery():

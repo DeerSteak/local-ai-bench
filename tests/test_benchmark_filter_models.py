@@ -8,8 +8,8 @@ def test_no_patterns_returns_models_unchanged():
 
 
 def test_exact_tag_matches_only_that_model():
-    result = filter_models_by_pattern(LLM_MODELS, ["gpt-oss:20b"])
-    assert [m["tag"] for m in result] == ["gpt-oss:20b"]
+    result = filter_models_by_pattern(LLM_MODELS, ["phi4-mini"])
+    assert [m["tag"] for m in result] == ["phi4-mini"]
 
 
 def test_wildcard_matches_every_tag_with_that_prefix():
@@ -18,6 +18,7 @@ def test_wildcard_matches_every_tag_with_that_prefix():
     assert tags == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
+        "llama3.3:70b-instruct-q4_K_M",
         "llama4:16x17b",
     }
 
@@ -34,6 +35,7 @@ def test_multiple_patterns_are_unioned_without_duplicates():
     assert set(tags) == {
         "llama3.2:3b-instruct-q4_K_M",
         "llama3.1:8b-instruct-q4_K_M",
+        "llama3.3:70b-instruct-q4_K_M",
         "llama4:16x17b",
     }
 

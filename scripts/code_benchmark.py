@@ -1,24 +1,14 @@
 """code_benchmark.py — coding accuracy benchmark: each model answers every
 problem in scripts/data/code_problems.json once at temperature 0, then that
 answer is run against the problem's visible and hidden test cases in an
-isolated subprocess. A problem counts as correct only if every one of its
-test cases passes. Scored overall and broken down by category, same shape
-as MCQBenchmark/MathBenchmark.
+isolated subprocess; correct only if every test case passes. Scored overall
+and per-category, same shape as MCQBenchmark/MathBenchmark.
 
-Two problem shapes:
-- Function problems (`function_name`): the model writes one function; each
-  test is {"args": [...], "expected": ...}, called as function_name(*args).
-- Stateful problems (`class_name`): the model writes a class; each test is
-  {"init": [...] (optional, default []), "ops": [[method, args], ...],
-  "expected": [...]} — a fresh instance per test, constructed as
-  class_name(*init), then each method called in sequence and every return
-  value collected and compared to `expected` as a whole.
-
-`visible_tests` are rendered into the prompt as worked examples (the model
-is meant to see them, same as example I/O in a real problem statement);
-`hidden_tests` are never shown and only used for scoring. Both are run
-together at grading time, so a model can't game the split by memorizing
-just the visible cases.
+Two problem shapes: function problems (model writes one function, tests are
+args/expected pairs) and stateful problems (model writes a class, tests are
+init/ops/expected sequences run against one fresh instance). visible_tests
+are shown in the prompt as worked examples; hidden_tests are grading-only,
+run alongside them so memorizing the visible cases isn't enough.
 """
 
 import json
@@ -35,7 +25,7 @@ from shared import Shared
 class CodeBenchmark:
     CODE_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "code_problems.json"
 
-    # Records models that crashed Ollama's runner repeatedly (deterministically,
+    # Records models that crashed the engine's runner repeatedly (deterministically,
     # not a transient blip) so future runs don't waste time rediscovering the
     # same crash. Delete this file to retry a skipped model.
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")
@@ -44,11 +34,7 @@ class CodeBenchmark:
     # answer. The wall-clock timeout in the engine's chat is the real bound.
     CODE_NUM_PREDICT = -1
 
-    # Wall-clock budget for running a model's generated code against one
-    # problem's tests in the execute_tests() subprocess. Not a security sandbox
-    # — just enough isolation that bad code (infinite loop, crash, stray print)
-    # can't hang or corrupt the benchmark process. Generous for these problems'
-    # scale, so a real timeout is treated as the code being wrong.
+    # Process-isolation timeout, not a security sandbox — just enough to survive bad generated code.
     CODE_EXEC_TIMEOUT = 5
 
     # Pulls the code out of a fenced block (```python ... ``` or ``` ... ```);
@@ -103,17 +89,10 @@ class CodeBenchmark:
 
     @staticmethod
     def extract_code(response_text: str) -> str:
-        """Pull the model's code out of its free-form reply.
-
-        Prefers the *last* fenced code block if more than one is present, not
-        the first — CODE_NUM_PREDICT is unbounded specifically so a reasoning
-        model has room to think before answering, and that reasoning routinely
-        includes a scratch/draft code block (a plan, a first attempt it then
-        revises) before the actual final answer. Taking the first block would
-        grab that draft instead of the model's real answer. Falls back to the
-        whole stripped reply for models that ignore the fencing instruction
-        and write bare code with no fence at all.
-        """
+        """Pull the model's code out of its free-form reply. Prefers the
+        *last* fenced code block, not the first — a reasoning model's
+        unbounded output often drafts/revises before its final answer. Falls
+        back to the whole stripped reply if there's no fence at all."""
         if not response_text:
             return ""
         matches = list(CodeBenchmark._FENCE_RE.finditer(response_text))
@@ -123,19 +102,11 @@ class CodeBenchmark:
 
     @staticmethod
     def _values_close(got, expected) -> bool:
-        """Grading comparison between a candidate's return value and a test
-        case's stored `expected`: recursive exact equality for everything
-        except floats, which are compared with a relative/absolute tolerance
-        (`math.isclose`, both 1e-9) instead. Several problems in the bank
-        have a float `expected` derived from arithmetic (an average, a
-        median, a probability, a distance) — a correct solution computing
-        that value via a different but equally valid order of operations can
-        legitimately differ from the stored value in the last bit or two of
-        precision, and exact `==` would mark that correct answer wrong.
-        Recurses into lists (stateful problems return a list of per-op
-        results) so a float anywhere inside gets the same tolerance; every
-        other type (str/int/bool/None) stays exact, so this only widens
-        acceptance for the specific case it's meant for."""
+        """Exact equality, except floats use math.isclose (1e-9) — a
+        legitimately correct solution can differ from a stored float
+        `expected` in the last bit from a different but valid order of
+        operations. Recurses into lists so this reaches stateful problems'
+        per-op results too."""
         if isinstance(got, list) and isinstance(expected, list):
             return len(got) == len(expected) and all(
                 CodeBenchmark._values_close(g, e) for g, e in zip(got, expected)
@@ -149,15 +120,10 @@ class CodeBenchmark:
     @staticmethod
     def _run_harness(harness: str, payload: str, tests: list[dict],
                       timeout: int) -> list[dict]:
-        """Run `harness` (candidate code plus a driver that prints one JSON
-        {"ok": bool, "got"|"error": ...} object per test) against `payload`
-        on stdin, in a separate subprocess so generated code can't hang,
-        crash, or leak into the benchmark process. Returns one {"passed":
-        bool, "got": ..., "error": str|None} entry per test, in order. A
-        subprocess-level failure (syntax error, timeout, non-serializable
-        return, ...) marks every test failed with the same error rather than
-        raising.
-        """
+        """Run `harness` (candidate code + a driver printing one JSON result
+        per test) in a subprocess so generated code can't hang or crash the
+        benchmark. Returns one {"passed", "got", "error"} entry per test; a
+        subprocess-level failure marks every test failed instead of raising."""
         try:
             proc = subprocess.run(
                 [sys.executable, "-c", harness],
@@ -267,7 +233,8 @@ class CodeBenchmark:
         prompt = CodeBenchmark.build_prompt(question)
         _, _, _, _, response_text = engine.chat(
             tag, [{"role": "user", "content": prompt}],
-            timeout=config.ACC_TIMEOUT, num_predict=CodeBenchmark.CODE_NUM_PREDICT,
+            timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
+            num_predict=CodeBenchmark.CODE_NUM_PREDICT,
             check_loop=True,
         )
         code = CodeBenchmark.extract_code(response_text)
@@ -322,11 +289,7 @@ class CodeBenchmark:
         questions = questions if questions is not None else CodeBenchmark.load_questions()
 
         def _rescore_partial(q, text):
-            # Score whatever code the model had written before the wall-clock
-            # timeout hit, rather than treating it as unanswered —
-            # evaluate_question already handles incomplete/unparseable code by
-            # failing every test, so this just tells "wrote wrong/incomplete
-            # code" apart from "produced nothing before the deadline."
+            # Score whatever code streamed before the timeout rather than treating it as unanswered.
             return CodeBenchmark.evaluate_question(q, CodeBenchmark.extract_code(text))
 
         return Shared.run_accuracy_benchmark(
