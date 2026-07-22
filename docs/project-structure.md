@@ -59,6 +59,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `math_benchmark.py` | Numeric-answer math accuracy test |
 | `code_benchmark.py` | Isolated Python code-generation accuracy test |
 | `tool_benchmark.py` | Tool-calling accuracy test |
+| `regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
 | `data/` | Question banks used by accuracy tests (see above) |
@@ -86,6 +87,8 @@ Each auxiliary name is derived from the main results filename's stem by swapping
 `--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
 
 The `answers_*.json` sidecars hold every question's answer for that accuracy test, keyed by model, each with the model's full raw response text and a `correct` flag — kept out of the main results JSON since raw model output (unbounded generation, see `docs/workloads.md`) is large relative to everything else in there and would otherwise bloat it substantially. The main results JSON's own `incorrect` list (per model, per test) is unaffected and still covers only wrong answers.
+
+`python scripts/regrade.py results/results_...json` reapplies all four current accuracy graders when the recorded bank hashes exactly match the banks in `scripts/data/`. It writes a complete `regraded_results_...json` plus matching `regraded_answers_*_...json` sidecars and never edits the source files. `--dry-run` validates and scores without writing. Code answers run again through the existing timeout harness, which provides process isolation and timeout recovery rather than a security sandbox.
 
 ### Main results JSON
 

@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **29 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **30 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -193,7 +193,7 @@ The test suite consists of **29 test modules** validating different components o
 - **[test_math_benchmark.py](../tests/test_math_benchmark.py)**
   Tests the pure logic in `MathBenchmark`. It verifies:
   - `build_prompt` includes the question text and asks for a numeric-only answer.
-  - `parse_answer` handles bare integers, decimals, negative numbers, thousands separators, and trailing `%`, then applies the documented bare/boxed-or-explicit/stated-result/last-number cascade. It covers all five fresh corpus divergences, hard line boundaries and final-number/final-equality corroboration for leading answers, sentence-boundary conclusion cues, same-clause post-`=` results, expression-operand rejection, chronological self-corrections, the conservative unchanged `math_104`/`2/e` outcomes, and defensive invalid-token conversion.
+  - `parse_answer` handles bare integers, decimals, negative numbers, thousands separators, and trailing `%`, then applies the documented bare/boxed-or-explicit/stated-result/last-number cascade. It covers all five fresh corpus divergences, hard line boundaries and final-number/final-equality corroboration for leading answers, sentence-boundary conclusion cues, same-clause post-`=` results, expression-operand rejection, chronological self-corrections, the conservative unchanged `math_104`/`2/e` outcomes, defensive invalid-token conversion, and rejection of values that overflow to infinity.
   - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
@@ -215,6 +215,9 @@ The test suite consists of **29 test modules** validating different components o
   - `_ask` never discards a model's prose: a pure tool call raw-responds as the tool-calls JSON, a decline (no tool calls) raw-responds as the prose itself, and a turn that emits *both* narration and a tool call keeps both, as a `{"tool_calls": ..., "text": ...}` object.
   - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none). It also validates `normalized_string_keys` metadata and the intended free-text fields; new free-text arguments such as titles, messages, notes, and bodies must be added to that list when normalized matching is desired.
+
+- **[test_regrade.py](../tests/test_regrade.py)**
+  Tests offline regrading of stored raw-answer sidecars. It covers exact bank-hash gating, sampled-bank ordering, input/model/question completeness checks, every stored tool-call representation, preservation of unrelated result data and generation diagnostics, rebuilding all four grading blocks and sidecars, strict JSON output, contextual evaluation failures, non-overwriting output behavior, and score-change reporting.
 
 ---
 
@@ -302,7 +305,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
   Tests the pure data-transformation and formatting functions in `utils.js`. Notably:
   - `getBarStatusLabel` — the crashed/timed-out/slow-tps precedence and "which checkpoints get relabeled Skipped vs. show real data" logic (the slow checkpoint's own value is always shown, never hidden behind a status label; only checkpoints *after* it get relabeled).
   - `getImageBarStatusLabel` — the equivalent for image generation timeouts.
-  - `buildLLMBarData`/`buildLLMBarConfigs` — that per-checkpoint values and status overlays are correctly assembled, and that a file which stopped early still gets chart columns for depths another compared file reached.
+  - `buildLLMBarData`/`buildLLMBarConfigs`/`flattenGroupedBarData` — that per-checkpoint values and status overlays are correctly assembled, that a file which stopped early still gets chart columns for depths another compared file reached, and that by-model LLM and conversation bars retain numeric `CTX_ORDER` after being flattened for deterministic rendering.
   - `sortBarData`/`findMostStrenuousKey` — ranking rows by the deepest metric with real data, in both directions (higher/lower is better), with missing values always sorted last regardless of direction.
   - `getModelSizeTier` — the known-model lookup and the param-count-parsed fallback for unrecognized models, including its tier boundaries.
   - `fmt` — unit-specific formatting (ms/sec/tps/sps thresholds, K-notation cutoffs, null handling).
