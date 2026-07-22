@@ -759,7 +759,7 @@ class Shared:
         crash mid-run doesn't lose collected answers. Kept out of that JSON
         since raw model output is large and bloats it fast."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2))
+        path.write_text(json.dumps(data, indent=2, allow_nan=False))
 
     @staticmethod
     def run_accuracy_benchmark(section_label: str, skip_label: str, question_noun: str,

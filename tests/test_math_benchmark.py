@@ -205,6 +205,11 @@ def test_to_float_defensively_rejects_non_numeric_input():
     assert MathBenchmark._to_float("not-a-number") is None
 
 
+def test_parse_answer_rejects_numbers_that_overflow_to_infinity():
+    huge_integer = "1" + "0" * 1000
+    assert MathBenchmark.parse_answer(huge_integer) is None
+
+
 # ── score ──
 
 def _questions():

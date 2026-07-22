@@ -5,6 +5,7 @@ temperature 0, scored right/wrong against the dataset's known numeric answer
 """
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -98,9 +99,10 @@ class MathBenchmark:
     @staticmethod
     def _to_float(value: str) -> float | None:
         try:
-            return float(value.replace(",", ""))
+            parsed = float(value.replace(",", ""))
         except ValueError:
             return None
+        return parsed if math.isfinite(parsed) else None
 
     @staticmethod
     def _conclusion_value(response_text: str, match: re.Match) -> str | None:
