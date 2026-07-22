@@ -90,7 +90,7 @@ every listed file exists under that tag's subdirectory, and
 file's GGUF metadata. The existing `tag` field values (e.g.
 `"llama3.2:3b-instruct-q4_K_M"`) are unchanged in shape — they're now opaque
 catalog identifiers rather than literal server tags, but every other file
-that already keyed off them (results JSON, crash caches, `--models`) doesn't
+that already keyed off them (results JSON, crash caches, `--llm-models`/`--models`) doesn't
 need to change. A non-catalog directory can contain either one GGUF or one
 complete, consistently named multipart GGUF set; its directory name becomes
 the custom tag advertised by `list_installed_models` and resolved by the same

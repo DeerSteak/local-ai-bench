@@ -46,21 +46,25 @@ run_bench.bat [options]   # Windows
                         models at this tier and below: xsmall (<6B / +SD1.5),
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
---models TAGS           Only test these LLM models (llm/conv/mcq/math/code/tool/
+--llm-models TAGS       Only test these LLM models (llm/conv/mcq/math/code/tool/
                         conc_tool/conc_chat tests) —
                         exact catalog tags or wildcards, e.g. 'llama*' matches
                         every tag starting with 'llama'. Applied after
-                        --maxtier, narrowing the catalog's models further; a
-                        pattern matching nothing in the catalog falls back to
-                        matching tags actually downloaded locally, so a model
-                        outside the curated catalog can still be tested (see
-                        --list-models). Quote wildcards so your shell doesn't
+                        --maxtier, narrowing the catalog's models further while
+                        also matching installed custom-model tags, so one wildcard
+                        can select both catalog and custom models (see --list-models).
+                        Quote wildcards so your shell doesn't
                         glob-expand them first (default: every catalog model
-                        in the selected tier)
---list-models           List every model actually downloaded locally,
-                        marking which are in the curated catalog (models.py)
-                        vs custom/extra, then exit without running anything.
-                        Useful for finding the exact tag to pass to --models
+                        in the selected tier). --models is a backward-compatible
+                        alias with identical behavior
+--embedding-models TAGS Only test these embedding catalog tags or wildcards
+                        (default: every embedding model)
+--image-models SHORTS   Only test these image-model short IDs or wildcards,
+                        applied after --maxtier (default: every image model in
+                        the selected tier)
+--list-models           List installed catalog LLMs, embeddings, custom LLMs,
+                        and catalog image checkpoints, then exit. Image discovery
+                        uses the effective --comfyui path
 --sample N              Dev-only: run the accuracy tests (mcq/math/code/tool)
                         against a deterministic N-question subset of each
                         bank instead of the full thing, selected round-robin
@@ -94,12 +98,16 @@ run_bench.bat [options]   # Windows
 | `--timeout` | integer (seconds) | `300` | Per generation/chat call for single-shot, conversation, concurrency, and their engine warmups. Images use twice this value (600s by default). Embedding calls retain the engine's fixed 120s timeout; accuracy questions use `--acc-timeout` |
 | `--acc-timeout` | integer (seconds) | `60` | Per question for `mcq`/`math`/`code`/`tool`; the partial response is scored normally, the timeout is recorded, and the bank continues — see [Accuracy](workloads.md#accuracy) |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. `conc_tool`/`conc_chat` ignore this — they scope to every LLM model actually downloaded locally instead, since download presence is itself a decent proxy for "this machine can try it" (see [Concurrency](workloads.md#concurrency)) |
-| `--models` | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for `conc_tool`/`conc_chat`, after their downloaded-models scoping), narrowing the models further — but a pattern that matches nothing in the catalog falls back to matching against tags actually downloaded locally, so a model outside the curated catalog (`models.py`) can still be tested. Quote wildcards (`"llama*"`) so your shell doesn't expand them first |
-| `--list-models` | (flag) | off | Lists every model actually downloaded locally, tagging each as `catalog` or `custom`, then exits without running anything — the quickest way to find the exact tag to pass to `--models` |
+| `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
+| `--embedding-models` | space-separated catalog tags and/or wildcards | none (every catalog embedding model) | Affects `emb` only. Matching is case-sensitive and exact-or-wildcard on the model's `tag` |
+| `--image-models` | space-separated catalog short IDs and/or wildcards (e.g. `sd*`) | none (every image model allowed by `--maxtier`) | Affects `img` only. Matching is case-sensitive and exact-or-wildcard on the stable `short` values in `models.py`; it narrows the image list after `--maxtier` |
+| `--list-models` | (flag) | off | Read-only inventory of installed catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints, then exit. It does not require or start an inference server. `--engine` selects the inventory (`all` lists each engine), and `--comfyui` selects the image checkpoint directory |
 | `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`code`/`tool` against a deterministic N-question subset of each bank, selected round-robin across categories. Every category is represented only when N is at least that bank's category count. IDs are recorded under `sample_ids`; sampled and full-bank results are not comparable — see [bank versioning](workloads.md#bank-versioning) |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the main JSON path entirely. Accuracy answer sidecars and generated-image folders still go under the repository's `results/` directory, named from the main output's stem — see [Project Structure](project-structure.md) |
 | `--force-all` | (flag) | off | Disables the slow-TPS exits for single-shot LLM, conversation, and chat concurrency. It does not bypass timeouts, crashes, missing data, or load failures |
+
+An explicitly supplied selector that resolves to no models for a selected workload is a command error and exits before hardware profiling, result-file creation, or server orchestration. This applies consistently to `--llm-models`/`--models`, `--embedding-models`, and `--image-models`. Selectors for workload families absent from `--tests` are ignored for this validation. Omitted selectors retain the defaults above; selecting a catalog model that is not downloaded still reaches the workload's existing missing-model handling.
 
 ## Examples
 
@@ -125,10 +133,16 @@ bash run_bench.sh --tests mcq math code tool
 bash run_bench.sh --maxtier small
 
 # Only the Llama models, every tier — wildcard matches every Llama tag
-bash run_bench.sh --tests llm --models "llama*"
+bash run_bench.sh --tests llm --llm-models "llama*"
 
 # One specific model plus a wildcard group
-bash run_bench.sh --tests llm --models phi4-mini "nemotron-3*"
+bash run_bench.sh --tests llm --llm-models phi4-mini "nemotron-3*"
+
+# One embedding model only
+bash run_bench.sh --tests emb --embedding-models nomic-embed-text
+
+# SD-family image checkpoints only, still subject to --maxtier
+bash run_bench.sh --tests img --image-models "sd*"
 
 # Find the exact tag for a model you've downloaded but isn't in the catalog
 bash run_bench.sh --list-models

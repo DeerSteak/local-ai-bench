@@ -93,7 +93,7 @@ class LLMConversationBenchmark:
         models get CONV_SMALL_TIER_TARGET_CTX/CONV_SMALL_TIER_TOP_CHECKPOINT
         instead of the full CONV_TARGET_CTX/CONV_CHECKPOINTS ceiling — see those
         constants' docstring. An unrecognized/missing tier (e.g. a custom
-        --models tag outside the catalog) falls back to the uncapped behavior."""
+        --llm-models tag outside the catalog) falls back to the uncapped behavior."""
         is_small_tier = tier in LLMConversationBenchmark.CONV_SMALL_TIERS
         target_ctx_cap = (LLMConversationBenchmark.CONV_SMALL_TIER_TARGET_CTX if is_small_tier
                           else LLMConversationBenchmark.CONV_TARGET_CTX)

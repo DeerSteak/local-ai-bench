@@ -47,6 +47,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 |---|---|
 | `benchmark.py` | CLI entry point — argument parsing and test orchestration |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
+| `model_inventory.py` | Read-only installed-model discovery/classification for catalog LLMs, embeddings, custom LLM folders, and ComfyUI image checkpoints |
 | `shared.py` | Cross-cutting helpers: logging, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
 | `hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
 | `engines/base.py`, `engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |

@@ -29,12 +29,21 @@ def test_pattern_not_installed_and_not_in_catalog_matches_nothing():
 
 
 def test_wildcard_matching_catalog_does_not_pull_in_unrelated_installed_tags():
-    # "llama*" already matches the catalog, so it should NOT additionally
-    # pull in an unrelated installed tag like "qwen3.5:4b" even though that
-    # tag is present in installed_tags.
+    # Installed custom entries still have to match the same pattern.
     result = resolve_custom_models(["llama*"], LLM_MODELS, installed_tags=["qwen3.5:4b"])
     tags = {m["tag"] for m in result}
     assert "qwen3.5:4b" not in tags
+
+
+def test_wildcard_unions_catalog_matches_with_matching_installed_custom_tags():
+    result = resolve_custom_models(
+        ["llama*"], LLM_MODELS,
+        installed_tags=["llama-local-finetune", "unrelated-custom"],
+    )
+    tags = {m["tag"] for m in result}
+    assert "llama-local-finetune" in tags
+    assert "unrelated-custom" not in tags
+    assert {m["tag"] for m in LLM_MODELS if m["tag"].startswith("llama")} < tags
 
 
 def test_custom_wildcard_matches_multiple_installed_tags():
@@ -44,6 +53,14 @@ def test_custom_wildcard_matches_multiple_installed_tags():
     )
     tags = {m["tag"] for m in result}
     assert tags == {"my-finetune:v1", "my-finetune:v2"}
+
+
+def test_overlapping_custom_patterns_do_not_duplicate_installed_tag():
+    result = resolve_custom_models(
+        ["my-finetune*", "*:v1"], LLM_MODELS,
+        installed_tags=["my-finetune:v1"],
+    )
+    assert [m["tag"] for m in result] == ["my-finetune:v1"]
 
 
 def test_mixed_catalog_and_custom_patterns():

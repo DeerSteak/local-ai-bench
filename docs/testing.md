@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **30 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **32 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -108,7 +108,7 @@ The test suite consists of **30 test modules** validating different components o
   - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
 
 - **[test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py)**
-  Tests the `--models` filtering logic (`filter_models_by_pattern` in `benchmark.py`). It verifies:
+  Tests the shared selector filtering logic (`filter_models_by_pattern` in `benchmark.py`). It verifies:
   - No patterns (`None` or `[]`) returns the model list unchanged.
   - An exact tag matches only that model.
   - A wildcard (`llama*`) matches every tag sharing that prefix.
@@ -117,17 +117,37 @@ The test suite consists of **30 test modules** validating different components o
   - A pattern matching nothing returns an empty list rather than erroring.
   - Filtering preserves the original model order.
 
+- **[test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py)**
+  Tests the public per-family selector contract and preflight scope resolution. It verifies:
+  - `--llm-models` and its backward-compatible `--models` alias share one destination.
+  - Embedding tags and image short IDs support exact, wildcard, and case-sensitive matching.
+  - Omitted selectors preserve full catalog scopes, while relevant empty selectors produce validation errors and irrelevant selectors do not.
+  - Normal LLM, standalone conversation, accuracy, and concurrency scopes validate independently.
+  - Catalog-only selection avoids an inventory read, custom selection reads it, and concurrency keeps its all-downloaded default.
+  - A wildcard that can also match custom tags reads inventory and unions those installed matches with catalog matches.
+  - A validation pre-pass caches every engine scope and aggregates a failure from any engine before orchestration.
+  - A catalog model outside `--maxtier` cannot reappear mislabeled as a custom model.
+
 - **[test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py)**
   Tests the concurrency workload's downloaded-model scoping. It verifies that only installed catalog entries are retained, catalog order is preserved, custom installed tags are ignored at this stage, empty/all-installed inputs behave correctly, and each engine pass resolves against its own installed-model inventory.
 
 - **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
-  Tests the `--models` catalog-fallback logic (`resolve_custom_models` in `benchmark.py`) that lets a pattern matching nothing in the curated catalog still resolve against a model actually downloaded locally. It verifies:
+  Tests `--llm-models`/`--models` resolution across catalog entries and installed custom models. It verifies:
   - A pattern that matches the catalog behaves exactly like `filter_models_by_pattern` and does not also pull in unrelated installed tags.
   - A pattern matching nothing in the catalog falls back to matching installed tags, producing a `"(custom)"`-labeled entry.
   - A pattern matching neither the catalog nor anything installed resolves to nothing (not an error).
   - A wildcard can resolve to multiple installed tags at once.
+  - A wildcard matching catalog entries also includes distinct matching custom tags without pulling in unrelated installed models.
   - Catalog and custom patterns can be mixed in the same `--models` invocation.
   - `sanitize_tag_to_short` turns a raw tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+
+- **[test_model_inventory.py](../tests/test_model_inventory.py)**
+  Tests the shared read-only inventory module. It verifies:
+  - Installed engine entries are classified into catalog LLM, embedding, and sorted custom groups while absent catalog entries are omitted.
+  - Custom folder names get safe short identifiers without invented tier metadata.
+  - Image checkpoint discovery honors an explicit ComfyUI path and handles a missing checkpoint directory.
+  - A complete inventory reads the engine once and combines it with image discovery.
+  - `--list-models` formatting includes every family, sizes, and accurate empty/non-empty counts.
 
 - **[test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py)**
   Tests that a named engine passes through, `all` expands to every registered engine (and is a no-op with one), and the caller's registry list is not mutated.

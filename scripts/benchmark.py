@@ -36,6 +36,7 @@ from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
 from concurrency_benchmark import ConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
+from model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -70,40 +71,25 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
     return llm_models, tier_label, image_models
 
 
-def filter_models_by_pattern(models: list, patterns: list[str] | None) -> list:
-    """Filter `models` down to those whose tag matches any of `patterns` —
-    each an exact catalog tag or a shell-style wildcard (fnmatch), e.g. "llama*".
+def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str = "tag") -> list:
+    """Filter models by exact or shell-style wildcard matches on `key`.
     Case-sensitive (`fnmatchcase`) so behavior is identical across platforms
-    (plain `fnmatch` case-normalizes on Windows only). `patterns=None` or empty
-    disables filtering, which is what makes --models optional."""
+    (plain `fnmatch` case-normalizes on Windows only)."""
     if not patterns:
         return models
-    return [m for m in models if any(fnmatch.fnmatchcase(m["tag"], p) for p in patterns)]
+    return [m for m in models if any(fnmatch.fnmatchcase(m[key], p) for p in patterns)]
 
 
-def sanitize_tag_to_short(tag: str) -> str:
-    """Turn a raw tag ("qwen3.5:4b-instruct") into a filesystem/JSON-key
-    -safe "short" identifier ("qwen3.5-4b-instruct"), mirroring the style of
-    the hand-picked "short" values in models.py for catalog entries."""
-    return re.sub(r'[:/]', '-', tag)
-
-
-def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str]) -> list[dict]:
-    """Extends filter_models_by_pattern so a pattern matching nothing in the
-    curated catalog can still resolve to a model that's actually downloaded
-    locally (see LlamaCppEngine.list_installed_models) — lets someone
-    benchmark a self-installed model without adding it to models.py first.
-    Only patterns with zero catalog matches fall through to the
-    installed-tag lookup."""
-    catalog_tags = {m["tag"] for m in catalog}
+def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str],
+                          known_catalog: list[dict] = LLM_MODELS + EMBED_MODELS) -> list[dict]:
+    """Resolve patterns against catalog entries and installed custom models."""
+    known_catalog_tags = {m["tag"] for m in known_catalog}
     resolved = list(filter_models_by_pattern(catalog, patterns))
     seen = {m["tag"] for m in resolved}
 
     for pattern in patterns:
-        if any(fnmatch.fnmatchcase(t, pattern) for t in catalog_tags):
-            continue  # already satisfied by the catalog match above
         for tag in installed_tags:
-            if tag in seen or tag in catalog_tags:
+            if tag in seen or tag in known_catalog_tags:
                 continue
             if fnmatch.fnmatchcase(tag, pattern):
                 resolved.append({"tag": tag, "label": f"{tag} (custom)", "short": sanitize_tag_to_short(tag)})
@@ -128,7 +114,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          ) -> tuple[list[dict], list[dict]]:
     """Resolve normal and concurrency model scopes for one engine's local
     model inventory. Concurrency ignores the tier cap but still honors
-    --models; normal workloads retain the selected tier."""
+    --llm-models/--models; normal workloads retain the selected tier."""
     run_models = (
         resolve_custom_models(patterns, tier_models, installed_tags)
         if patterns else tier_models
@@ -143,15 +129,94 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
     return run_models, concurrency_models
 
 
+ACCURACY_TESTS = ["mcq", "math", "code", "tool"]
+CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
+LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS]
+
+
+def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
+                           image_patterns: list[str] | None) -> tuple[list[dict], list[dict]]:
+    """Resolve the engine-independent embedding and image model scopes."""
+    embedding_models = filter_models_by_pattern(EMBED_MODELS, embedding_patterns)
+    image_models = filter_models_by_pattern(image_models, image_patterns, key="short")
+    return embedding_models, image_models
+
+
+def validate_catalog_scopes(tests: list[str], embedding_patterns: list[str] | None,
+                            image_patterns: list[str] | None, embedding_models: list[dict],
+                            image_models: list[dict]) -> list[str]:
+    """Return selector errors for engine-independent workload scopes."""
+    errors = []
+    if "emb" in tests and embedding_patterns and not embedding_models:
+        errors.append(
+            f"--embedding-models {' '.join(embedding_patterns)} matched no embedding models"
+        )
+    if "img" in tests and image_patterns and not image_models:
+        errors.append(f"--image-models {' '.join(image_patterns)} matched no image models")
+    return errors
+
+
+def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: list[str] | None,
+                           llm_models: list[dict], concurrency_models: list[dict],
+                           tier_label: str) -> list[str]:
+    """Return selector errors for one engine's LLM-backed workload scopes."""
+    if not llm_patterns:
+        return []
+    errors = []
+    if any(test in tests for test in LLM_TESTS) and not llm_models:
+        errors.append(
+            f"--llm-models {' '.join(llm_patterns)} matched no LLM models in the "
+            f"selected tier ({tier_label}) or installed for {engine_name}"
+        )
+    if any(test in tests for test in CONCURRENCY_TESTS) and not concurrency_models:
+        errors.append(
+            f"--llm-models {' '.join(llm_patterns)} matched no downloaded concurrency "
+            f"models for {engine_name}"
+        )
+    return errors
+
+
+def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
+                          tier_label: str, llm_patterns: list[str] | None, tests: list[str]
+                          ) -> tuple[list[dict], list[str]]:
+    """Resolve and validate every engine before benchmark orchestration."""
+    concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
+    normal_llm_enabled = any(test in tests for test in LLM_TESTS)
+    known_tags = [model["tag"] for model in LLM_MODELS + EMBED_MODELS]
+    custom_lookup_needed = bool(
+        llm_patterns and normal_llm_enabled
+        and any(pattern not in known_tags for pattern in llm_patterns)
+    )
+    inventory_needed = custom_lookup_needed or concurrency_enabled
+    scopes = []
+    errors = []
+    for engine_name in engine_names:
+        engine = engine_factory(engine_name)
+        installed_tags = (
+            [model["tag"] for model in engine.list_installed_models()]
+            if inventory_needed else []
+        )
+        llm_models, concurrency_models = resolve_model_scopes(
+            tier_models, installed_tags, llm_patterns, concurrency_enabled,
+        )
+        scopes.append({
+            "name": engine_name,
+            "engine": engine,
+            "llm_models": llm_models,
+            "concurrency_models": concurrency_models,
+        })
+        errors.extend(validate_engine_scopes(
+            tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
+        ))
+    return scopes, errors
+
+
 def sidecar_path(out_path: str, prefix: str) -> Path:
     """Build a results-directory sidecar path from the main output's stem."""
     stem = Path(out_path).stem
     name = prefix + stem[len("results_"):] if stem.startswith("results_") else f"{prefix}{stem}"
     return config.RESULTS_DIR / f"{name}.json"
 
-
-ACCURACY_TESTS = ["mcq", "math", "code", "tool"]
-CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 
 # --tests shorthand groups, expanded by expand_tests below.
 TEST_GROUPS = {
@@ -179,6 +244,32 @@ def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
     engine name, passed through as-is (argparse's `choices` already rejects
     an unregistered one before this is called)."""
     return list(available) if engine == "all" else [engine]
+
+
+def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register the public per-family model selector arguments."""
+    parser.add_argument(
+        "--llm-models", "--models", dest="llm_models", nargs="+", default=None,
+        help="Only test these LLM models (llm, conv, mcq, math, code, tool, and "
+             "concurrency tests) — exact tags or shell-style wildcards, e.g. "
+             "'llama*' matches every tag starting with 'llama' (default: every model "
+             "in the selected tier). Applied after --maxtier, so it can only narrow "
+             "that selection further within the catalog. Patterns also match models "
+             "actually downloaded locally, so a model outside our curated catalog can be "
+             "tested (see --list-models). Quote wildcards so your shell doesn't expand "
+             "them first. --models is retained as a backward-compatible alias.",
+    )
+    parser.add_argument(
+        "--embedding-models", nargs="+", default=None,
+        help="Only test these embedding model tags — exact tags or shell-style wildcards "
+             "(default: every catalog embedding model). Quote wildcards in a shell.",
+    )
+    parser.add_argument(
+        "--image-models", nargs="+", default=None, metavar="SHORT",
+        help="Only test these image model short identifiers from models.py — exact values "
+             "or shell-style wildcards (default: every image model allowed by --maxtier). "
+             "Applied after --maxtier. Quote wildcards in a shell.",
+    )
 
 
 def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
@@ -302,22 +393,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and below (default: all tiers). xsmall: <6B params. small: adds ≤20B. "
              "medium: adds 26-35B. large: adds 70B+ (i.e. no cap).",
     )
-    parser.add_argument(
-        "--models", nargs="+", default=None,
-        help="Only test these LLM models (llm, conv, mcq, math, code, and tool tests) — exact "
-             "tags or shell-style wildcards, e.g. 'llama*' matches every tag "
-             "starting with 'llama' (default: every model in the selected tier). "
-             "Applied after --maxtier, so it can only narrow that selection further "
-             "within the catalog — but a pattern that matches nothing in the catalog "
-             "falls back to matching against models actually downloaded locally, so a "
-             "model outside our curated catalog can still be tested (see --list-models). "
-             "Quote wildcards (e.g. \"llama*\") so your shell doesn't glob-expand them first.",
-    )
+    add_model_selection_arguments(parser)
     parser.add_argument(
         "--list-models", action="store_true",
-        help="List every model actually downloaded locally, marking which are in "
-             "the curated catalog (models.py) vs custom/extra, then exit without running "
-             "anything. Useful for finding the exact tag to pass to --models.",
+        help="List every LLM, embedding, custom LLM, and catalog image model installed "
+             "locally, then exit without running anything. Uses --comfyui for image "
+             "checkpoint discovery.",
     )
     parser.add_argument(
         "--sample", type=int, default=None, metavar="N",
@@ -350,32 +431,21 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     args = parser.parse_args()
 
-    # --list-models uses the first registered engine (alphabetically); normal
-    # runs resolve --models against each selected engine's own inventory.
-    engine = get_engine(_engines[0])
-    # Held on Shared so shutdown_managed() (called from the signal handler and
-    # the finally block) can consult the live engine without threading it in.
-    Shared._active_engine = engine
+    args.tests = expand_tests(args.tests)
+    comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
+    run_engine_names = resolve_engine_names(args.engine, _engines)
 
     if args.list_models:
-        if not engine.ensure_running():
-            sys.exit(1)
-        installed = engine.list_installed_models()
-        if not installed:
-            Shared.warn("No models are downloaded — run: python setup_check.py")
-            sys.exit(0)
-        catalog_tags = {m["tag"] for m in LLM_MODELS} | {m["tag"] for m in EMBED_MODELS}
-        print(f"\n{config.BOLD}Downloaded models{config.RESET}")
-        n_catalog = 0
-        for m in sorted(installed, key=lambda m: m["tag"]):
-            in_catalog = m["tag"] in catalog_tags
-            n_catalog += in_catalog
-            size_gb = f"{m['size'] / 1e9:.1f} GB" if m.get("size") else "? GB"
-            print(f"  {m['tag']:<40} {size_gb:>10}   ({'catalog' if in_catalog else 'custom'})")
-        print(f"\n  {len(installed)} installed, {n_catalog} in catalog, {len(installed) - n_catalog} custom")
+        any_installed = False
+        for engine_name in run_engine_names:
+            inventory = build_model_inventory(get_engine(engine_name), comfyui_dir)
+            any_installed = any_installed or any(inventory.values())
+            print()
+            for line in format_model_inventory(inventory, engine_name):
+                print(line)
+        if not any_installed:
+            Shared.warn("No models are installed — run setup to add catalog models")
         sys.exit(0)
-
-    args.tests = expand_tests(args.tests)
 
     # Apply CLI overrides to shared config
     if args.timeout is not None:
@@ -384,9 +454,21 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         config.ACC_TIMEOUT = args.acc_timeout
     config.N_RUNS = args.runs
 
-    tier_models, tier_label, image_models = select_tier(args.maxtier, IMAGE_MODELS)
-
-    comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
+    tier_models, tier_label, tier_image_models = select_tier(args.maxtier, IMAGE_MODELS)
+    embedding_models, image_models = resolve_catalog_scopes(
+        tier_image_models, args.embedding_models, args.image_models,
+    )
+    validation_errors = validate_catalog_scopes(
+        args.tests, args.embedding_models, args.image_models, embedding_models, image_models,
+    )
+    engine_scopes, engine_errors = resolve_engine_scopes(
+        run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
+    )
+    validation_errors.extend(engine_errors)
+    if validation_errors:
+        for error in validation_errors:
+            Shared.err(error)
+        sys.exit(2)
 
     hardware_profile = Shared.build_profile()
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
@@ -394,11 +476,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     base_out_path = args.out or str(config.RESULTS_DIR / f"results_{_safe}_{_start_stamp}.json")
 
-    run_engine_names = resolve_engine_names(args.engine, _engines)
     multi_engine = len(run_engine_names) > 1
 
-    for run_idx, engine_name in enumerate(run_engine_names):
-        engine = get_engine(engine_name)
+    for run_idx, engine_scope in enumerate(engine_scopes):
+        engine_name = engine_scope["name"]
+        engine = engine_scope["engine"]
+        llm_models = engine_scope["llm_models"]
+        conc_models = engine_scope["concurrency_models"]
         # Held on Shared so shutdown_managed() (called from the signal handler and
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
@@ -416,19 +500,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
-
-        concurrency_enabled = "conc_tool" in tests or "conc_chat" in tests
-        installed_tags = []
-        if args.models or concurrency_enabled:
-            engine.ensure_running()
-            installed_tags = [m["tag"] for m in engine.list_installed_models()]
-        llm_models, conc_models = resolve_model_scopes(
-            tier_models, installed_tags, args.models, concurrency_enabled,
-        )
-        if args.models and not llm_models:
-            Shared.err(f"--models {' '.join(args.models)} matched no LLM models "
-                       f"in the selected tier ({tier_label}) or downloaded for {engine_name} — "
-                       "llm/conv/mcq/math/code/tool tests will have nothing to run")
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "mcq", "math", "code", "tool", "emb",
@@ -453,9 +524,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         print(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
         print(f"  Models:    {tier_label}")
-        if args.models:
-            print(f"  --models:  {', '.join(m['label'] for m in llm_models) or '(none matched)'}")
-        if args.maxtier:
+        if args.llm_models:
+            print(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
+        if args.embedding_models:
+            print(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
+        if args.maxtier or args.image_models:
             print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
         print(f"  Tests:     {', '.join(tests)}")
         print(f"  ComfyUI:   {comfyui_dir}")
@@ -619,7 +692,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
                 results["embeddings"] = EmbeddingBenchmark().run(
                     engine=engine,
-                    models=EMBED_MODELS,
+                    models=embedding_models,
                     warmup_runs=args.warmup,
                     save_fn=_emb_save,
                 )

@@ -82,7 +82,7 @@ Because decode speed tracks active parameters far more closely than total size o
 
 **Llama versions:** Llama 3.2 tops out at 3B parameters; the 8B slot uses Llama 3.1; the large tier's dense entry uses Llama 3.3 70B. Llama 4 Scout is the large tier's MoE entry, at 16 experts (17B active of ~109B total).
 
-`--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--models` narrows further to specific tags or wildcards (e.g. `--models "llama*"`) within whatever tier is selected — see [CLI Reference](cli-reference.md).
+`--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--llm-models` narrows further to specific tags or wildcards (e.g. `--llm-models "llama*"`) within whatever tier is selected. The old `--models` spelling remains an identical alias — see [CLI Reference](cli-reference.md).
 
 ## Image Generation
 
@@ -100,7 +100,7 @@ Each measured run (`--runs`, default 3) uses a different seed, starting at 42 �
 
 **Stable Diffusion 1.5** was trained at 512×512; testing it at the other models' 1024/1536 resolutions produces visibly degraded (duplicated-subject) output, so it gets its own native-range pair — 512×512 and 768×768 (the same 1.5x step used for everything else) — instead of the shared resolution list.
 
-`--maxtier` caps image models the same way it caps LLMs — see [CLI Reference](cli-reference.md).
+`--maxtier` caps image models the same way it caps LLMs. `--image-models` then narrows that tier-capped list using the stable short IDs in the table (`sd15`, `sdxl`, `sd35-large`, `flux-dev`, `flux2-dev`) or case-sensitive wildcards such as `"sd*"` — see [CLI Reference](cli-reference.md).
 
 SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide.
 
@@ -119,9 +119,13 @@ If you see repeated connection errors or crashes during the embedding tests (som
 | Nomic Embed Text | `nomic-embed-text` | ~0.3 GB |
 | MixedBread Embed Large | `mxbai-embed-large` | ~0.7 GB |
 
+`--embedding-models` narrows this workload to exact catalog tags or case-sensitive wildcards, such as `--embedding-models nomic-embed-text`.
+
 ## Accuracy
 
 Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+
+All four accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias.
 
 The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — with introductory items retained for score continuity and a substantially harder second half. Correct-answer positions are balanced across A–D (38/38/37/37) *and* randomly ordered (seeded, so the file is reproducible) — balance alone doesn't rule out an exploitable fixed-cycle ordering (e.g. "guess A, then B, then C, then D, repeat"), so both properties matter. A model's free-form reply is parsed conservatively: a bare answer letter wins first; otherwise the last boxed or explicitly marked answer wins, including negated and resultative corrections such as `making C the correct answer`; then comes a leading answer marker or leading letter, and finally a single unambiguous uppercase choice mentioned anywhere. Repeated mentions of the same choice are accepted, but competing unmarked choices count as unanswered (wrong).
 
@@ -191,7 +195,7 @@ Question banks grow and change over time (the MCQ and math banks each doubled in
 
 Every other LLM test in this suite is strictly one request at a time — these two measure how per-request latency and aggregate throughput scale as multiple simultaneous requests hit the same loaded model, which matters far more than single-stream numbers for anyone thinking about serving more than one user (or one agent's parallel tool-calls) at once. They're two separate tests because "agentic tool-calling fan-out" and "many simultaneous chat users" are genuinely different workload shapes — different concurrency ceilings, different per-request context, and different early-exit tradeoffs — not one sweep with one shape. Both are opt-in via `--tests conc_tool`/`--tests conc_chat` (`--tests conc` runs both) — not part of the default set, since each takes noticeably longer per model than a single request.
 
-Both tests scope to **every LLM model actually downloaded locally**, ignoring `--maxtier` — a machine that only downloaded xsmall/small models tests those; one that downloaded medium/large too tests those as well. This is deliberate: unlike the fixed-tier restriction these tests used to have, download presence is itself a decent proxy for "this machine has the memory to try." `--models` still narrows further within whatever's downloaded.
+Both tests scope to **every LLM model actually downloaded locally**, ignoring `--maxtier` — a machine that only downloaded xsmall/small models tests those; one that downloaded medium/large too tests those as well. This is deliberate: unlike the fixed-tier restriction these tests used to have, download presence is itself a decent proxy for "this machine has the memory to try." An explicit `--llm-models` selection (or its `--models` alias) still narrows further within whatever is downloaded.
 
 Every level respawns `llama-server` (the concurrency level is part of `LlamaCppEngine._ensure_model`'s want/have check, so a level change always forces a fresh process), which means each level's first-ever inference is on a brand-new process at that specific concurrent shape. `--warmup` (default 2) throwaway concurrent batches are fired and discarded at each level before the real measured one, for exactly the same reason every other test in this suite warms up before measuring — a fresh process's first real decode can carry one-time overhead (kernel autotuning, CUDA graph capture, and similar) that has nothing to do with steady-state throughput.
 

@@ -9,6 +9,10 @@
 
 ## Execution order
 
+Before profiling hardware or creating an output path, the CLI expands test groups, applies `--maxtier`, resolves the LLM/embedding/image selectors, and performs a validation-only pre-pass for every selected engine. Local inventory is read only when custom LLM matching or concurrency scoping needs it; no model is loaded and no inference server is started. An explicit selector that leaves one of its selected workload families empty aborts the invocation at this point. With `--engine all`, every engine must validate before any runs; the resolved scopes are cached so hardware profiling and the filename timestamp still happen once and all per-engine files share the same stem.
+
+`--list-models` uses the same read-only inventory helpers and exits before profiling. It reports catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints from the effective `--comfyui` directory.
+
 Selected tests run in a fixed stage order, independent of the order passed to `--tests`:
 
 ```
@@ -40,6 +44,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 |---|---|
 | `scripts/benchmark.py` | CLI argument parsing and orchestration (`main()`) — calls each test class in order and writes results |
 | `scripts/config.py` | Shared constants: URLs, paths (`SCRIPT_DIR`, `RESULTS_DIR`, `COMFYUI_DIR`), timeouts, run counts |
+| `scripts/model_inventory.py` | Read-only catalog/custom/embedding/image inventory classification shared by CLI listing and launch preflight |
 | `scripts/shared.py` | Cross-cutting helpers: logging, ComfyUI server lifecycle/HTTP client, machine profiling, engine-agnostic run/crash-cache orchestration |
 | `scripts/hardware.py` | GPU/system-memory detection and model-fit classification shared by setup and concurrency snapshots |
 | `scripts/engines/base.py` | `InferenceEngine` interface — start/stop, model lifecycle, generate/chat/embed, see [Engines](engines.md) |
