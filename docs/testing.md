@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **32 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **35 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -148,6 +148,15 @@ The test suite consists of **32 test modules** validating different components o
   - Image checkpoint discovery honors an explicit ComfyUI path and handles a missing checkpoint directory.
   - A complete inventory reads the engine once and combines it with image discovery.
   - `--list-models` formatting includes every family, sizes, and accurate empty/non-empty counts.
+
+- **[test_benchmark_frontend.py](../tests/test_benchmark_frontend.py)**
+  Tests the interactive launcher's pure menu and command-construction seams: installed-only inventory, the complete documented defaults, individual/tier/custom/embedding toggles, invalid input and cancellation, engine/ComfyUI selection, shared LLM scope, exact emitted CLI arguments, and child exit-code propagation.
+
+- **[test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py)**
+  Exercises an isolated copy of the Unix wrapper with fake activation/Python executables to verify zero-argument frontend routing, argument-preserving CLI bypass, exit codes, and timestamped missing-venv output. It also checks the Windows batch file's label-based forwarding, saved exit code, and Explorer-only pause heuristic; cmd.exe behavior still receives a manual Windows matrix.
+
+- **[test_shared_console.py](../tests/test_shared_console.py)**
+  Patches the console clock to verify timestamp format, severity colors, neutral output, multi-line sections, and custom line endings, and guards benchmark/workload modules against reintroducing direct runtime `print()` calls.
 
 - **[test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py)**
   Tests that a named engine passes through, `all` expands to every registered engine (and is a no-op with one), and the caller's registry list is not mutated.

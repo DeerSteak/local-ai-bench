@@ -230,8 +230,11 @@ class LLMConversationBenchmark:
                             # (or the opening turn for target == 0).
                             samples_by_label.setdefault(label_ctx, []).append(
                                 (ttft, tps, cumulative_tokens))
-                            print(f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: {label_ctx}  TTFT={ttft:.2f}s  "
-                                  f"TPS={tps:.1f}  (depth~{cumulative_tokens})")
+                            Shared.output(
+                                f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: "
+                                f"{label_ctx}  TTFT={ttft:.2f}s  TPS={tps:.1f}  "
+                                f"(depth~{cumulative_tokens})"
+                            )
 
                             # A model below the cutoff at any depth isn't worth growing further —
                             # deeper turns only spend more of the expensive growth budget to

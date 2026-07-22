@@ -9,6 +9,8 @@
 
 ## Execution order
 
+With no wrapper arguments, `run_bench.sh`/`run_bench.bat` starts `scripts/benchmark_frontend.py`. The frontend performs read-only inventory discovery, collects one engine/test/model selection, and launches `benchmark.py` as a child process with explicit `--engine`, `--comfyui`, `--tests`, and applicable model-selector arguments. It never calls benchmark orchestration directly. Any wrapper argument bypasses the frontend and is forwarded to `benchmark.py`, which remains completely non-interactive.
+
 Before profiling hardware or creating an output path, the CLI expands test groups, applies `--maxtier`, resolves the LLM/embedding/image selectors, and performs a validation-only pre-pass for every selected engine. Local inventory is read only when custom LLM matching or concurrency scoping needs it; no model is loaded and no inference server is started. An explicit selector that leaves one of its selected workload families empty aborts the invocation at this point. With `--engine all`, every engine must validate before any runs; the resolved scopes are cached so hardware profiling and the filename timestamp still happen once and all per-engine files share the same stem.
 
 `--list-models` uses the same read-only inventory helpers and exits before profiling. It reports catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints from the effective `--comfyui` directory.
@@ -43,6 +45,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | Module | Responsibility |
 |---|---|
 | `scripts/benchmark.py` | CLI argument parsing and orchestration (`main()`) — calls each test class in order and writes results |
+| `scripts/benchmark_frontend.py` | Interactive installed-model/test picker that constructs and launches the public benchmark CLI |
 | `scripts/config.py` | Shared constants: URLs, paths (`SCRIPT_DIR`, `RESULTS_DIR`, `COMFYUI_DIR`), timeouts, run counts |
 | `scripts/model_inventory.py` | Read-only catalog/custom/embedding/image inventory classification shared by CLI listing and launch preflight |
 | `scripts/shared.py` | Cross-cutting helpers: logging, ComfyUI server lifecycle/HTTP client, machine profiling, engine-agnostic run/crash-cache orchestration |
@@ -62,6 +65,8 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
 
 Values that CLI flags can override at runtime (`RUN_TIMEOUT` via `--timeout`, `ACC_TIMEOUT` via `--acc-timeout`, `N_RUNS` via `--runs`) are read via `config.RUN_TIMEOUT`/`config.ACC_TIMEOUT`/`config.N_RUNS` (a dotted attribute lookup) everywhere, rather than imported by name — a plain `from config import RUN_TIMEOUT` would bind a stale copy at import time and silently ignore the CLI override.
+
+Benchmark/frontend console output goes through `Shared.output` and the existing severity helpers, which prefix each independently emitted status or progress message with local `[HH:MM:SS]` time. This display layer does not touch result JSON, captured model responses, answer sidecars, caches, or generated artifacts.
 
 ## Parameters
 

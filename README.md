@@ -1,4 +1,4 @@
-# Local AI Bench v3.3
+# Local AI Bench v3.4
 
 Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and opt-in concurrency/load testing. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 
@@ -28,6 +28,8 @@ bash run_bench.sh
 # Windows
 run_bench.bat
 ```
+
+With no arguments, the benchmark launcher shows an interactive checklist of the installed tests and models before anything runs. Accuracy tests, concurrency tests, custom LLMs, and large-tier LLM/image models start unchecked. Passing any CLI argument skips the menu and forwards the arguments directly to the non-interactive benchmark CLI, so existing scripts keep working unchanged. Console status and progress messages include local `[HH:MM:SS]` timestamps.
 
 A full run takes several hours, depending on your hardware and which options you select. When it's done, explore the results in the [dashboard](docs/dashboard.md):
 

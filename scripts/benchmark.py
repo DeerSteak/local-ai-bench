@@ -440,9 +440,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         for engine_name in run_engine_names:
             inventory = build_model_inventory(get_engine(engine_name), comfyui_dir)
             any_installed = any_installed or any(inventory.values())
-            print()
-            for line in format_model_inventory(inventory, engine_name):
-                print(line)
+            for line_i, line in enumerate(format_model_inventory(inventory, engine_name)):
+                Shared.output(line, leading_blank=line_i == 0)
         if not any_installed:
             Shared.warn("No models are installed — run setup to add catalog models")
         sys.exit(0)
@@ -513,36 +512,42 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                         if engine_backed_tests else hardware_backend),
         }
 
-        print(f"\n{config.BOLD}LLM Benchmark Suite{config.RESET}")
-        print(f"  Host:      {profile['hostname']}")
-        print(f"  OS:        {profile['os']}")
-        print(f"  Backend:   {profile['backend']}")
+        Shared.output(f"{config.BOLD}LLM Benchmark Suite{config.RESET}", leading_blank=True)
+        Shared.output(f"  Host:      {profile['hostname']}")
+        Shared.output(f"  OS:        {profile['os']}")
+        Shared.output(f"  Backend:   {profile['backend']}")
         if profile["backend"] != profile["hardware_backend"]:
-            print(f"  Hardware:  {profile['hardware_backend']}")
-        print(f"  RAM:       {profile['ram_gb']} GB")
-        print(f"  Engine:    {engine_name}")
-        print(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
-        print(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
-        print(f"  Models:    {tier_label}")
+            Shared.output(f"  Hardware:  {profile['hardware_backend']}")
+        Shared.output(f"  RAM:       {profile['ram_gb']} GB")
+        Shared.output(f"  Engine:    {engine_name}")
+        Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
+        Shared.output(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
+        Shared.output(f"  Models:    {tier_label}")
         if args.llm_models:
-            print(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
+            Shared.output(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
         if args.embedding_models:
-            print(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
+            Shared.output(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
         if args.maxtier or args.image_models:
-            print(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
-        print(f"  Tests:     {', '.join(tests)}")
-        print(f"  ComfyUI:   {comfyui_dir}")
+            Shared.output(f"  Images:    {', '.join(m['label'] for m in image_models) or '(none — tier too small)'}")
+        Shared.output(f"  Tests:     {', '.join(tests)}")
+        Shared.output(f"  ComfyUI:   {comfyui_dir}")
 
         # Register cleanup for Ctrl-C and normal exit
         def _cleanup(sig=None, frame=None):
             if sig is not None:
-                print(f"\n{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}")
+                Shared.output(
+                    f"{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}",
+                    leading_blank=True,
+                )
             if engine.available():
                 engine.unload_all()
             if Shared.comfyui_available():
                 ImageBenchmark.comfyui_free_models()
             if Shared._managed_procs:
-                print(f"\n{config.YELLOW}Cleaning up managed servers ...{config.RESET}")
+                Shared.output(
+                    f"{config.YELLOW}Cleaning up managed servers ...{config.RESET}",
+                    leading_blank=True,
+                )
                 Shared.shutdown_managed()
             if sig is not None:
                 sys.exit(0)
@@ -801,9 +806,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False))
         Shared.ok(f"Results saved to: {out_path}")
 
-    print(f"\n  Compare it against other machines in the dashboard:")
+    Shared.output("  Compare it against other machines in the dashboard:", leading_blank=True)
     dash_hint = "launch_dashboard.bat" if platform.system() == "Windows" else "bash launch_dashboard.sh"
-    print(f"  {dash_hint}\n")
+    Shared.output(f"  {dash_hint}")
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")
 

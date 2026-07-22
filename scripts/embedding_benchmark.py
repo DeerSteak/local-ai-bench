@@ -117,7 +117,7 @@ class EmbeddingBenchmark:
                 def _embed_once(run_i):
                     _, elapsed = engine.embed(tag, chunks)
                     rate = len(chunks) / elapsed
-                    print(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
+                    Shared.output(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
                     return rate
 
                 rates, status, _ = Shared.run_measured_calls(

@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     from engines.base import InferenceEngine
 
 
+def _console_now():
+    return datetime.now()
+
+
 class EngineTimeout(TimeoutError):
     """Raised when an engine's chat() exceeds its wall-clock timeout. Carries
     whatever text had streamed in before the deadline hit, so callers can tell
@@ -81,15 +85,23 @@ class Shared:
 
     # ── logging ──
     @staticmethod
-    def log(msg):   print(f"  {config.CYAN}→{config.RESET}  {msg}")
+    def output(msg, *, leading_blank=False, end="\n"):
+        if leading_blank:
+            print()
+        print(f"[{_console_now().strftime('%H:%M:%S')}] {msg}", end=end)
+
     @staticmethod
-    def ok(msg):    print(f"  {config.GREEN}✓{config.RESET}  {msg}")
+    def log(msg):   Shared.output(f"  {config.CYAN}→{config.RESET}  {msg}")
     @staticmethod
-    def warn(msg):  print(f"  {config.YELLOW}!{config.RESET}  {msg}")
+    def ok(msg):    Shared.output(f"  {config.GREEN}✓{config.RESET}  {msg}")
     @staticmethod
-    def err(msg):   print(f"  {config.RED}✗{config.RESET}  {msg}")
+    def warn(msg):  Shared.output(f"  {config.YELLOW}!{config.RESET}  {msg}")
     @staticmethod
-    def section(t): print(f"\n{config.BOLD}{'─'*50}\n  {t}\n{'─'*50}{config.RESET}")
+    def err(msg):   Shared.output(f"  {config.RED}✗{config.RESET}  {msg}")
+    @staticmethod
+    def section(t): Shared.output(
+        f"{config.BOLD}{'─'*50}\n  {t}\n{'─'*50}{config.RESET}", leading_blank=True,
+    )
 
     # ── stats ──
     @staticmethod

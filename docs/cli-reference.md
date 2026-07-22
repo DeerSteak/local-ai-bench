@@ -3,6 +3,7 @@
 # CLI Reference
 
 **Contents**
+- [Launch modes](#launch-modes)
 - [Flag details](#flag-details)
 - [Examples](#examples)
 - [Comparing results](#comparing-results)
@@ -84,6 +85,37 @@ run_bench.bat [options]   # Windows
                         default: false
 ```
 
+## Launch modes
+
+Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactive launcher. It reads the selected engine and ComfyUI installation, shows only installed models, then translates the confirmed selection into the public flags below and launches the non-interactive `scripts/benchmark.py` CLI. The launcher selects one engine at a time; `--engine all` remains available through the direct CLI because inventories can differ between engines. Its ComfyUI path is editable before image checkpoints are discovered.
+
+Passing even one argument bypasses the launcher and forwards every argument directly to `benchmark.py`, preserving existing automation and direct CLI defaults. This includes `--help` and `--list-models`. Calling `python scripts/benchmark.py ...` directly is also always non-interactive.
+
+On Windows, double-clicking `run_bench.bat` uses a best-effort Explorer-launch check to pause after completion so the final status remains visible. Launches from an existing command prompt exit normally. The pause affects presentation only; the batch file saves and returns the benchmark's original exit code.
+
+The interactive launcher's initial state is:
+
+| Area | Initial state |
+|---|---|
+| Engine | The CLI's default registered engine (currently `llamacpp`); selectable first if multiple engines exist |
+| ComfyUI directory | `./ComfyUI`, editable before image discovery |
+| Single-shot LLM and conversation | Checked when an installed catalog or custom LLM is available |
+| Embeddings | Checked when an installed embedding model is available |
+| Image generation | Checked when an installed catalog image checkpoint is available |
+| MCQ, math, code, and tool accuracy | Unchecked |
+| Tool and chat concurrency | Unchecked |
+| Installed xsmall/small/medium catalog LLMs | Checked |
+| Installed large catalog LLMs | Unchecked |
+| Installed custom LLMs | Unchecked; displayed by folder name and excluded from tier toggles |
+| Installed embedding models | Checked; individually toggleable or grouped with `emb` |
+| Installed xsmall/small/medium image models | Checked |
+| Installed large-tier image models | Unchecked, including Flux.1-dev and Flux.2-dev |
+| Uninstalled models | Not displayed |
+
+The model screen uses one LLM selection for single-shot, conversation, accuracy, and concurrency tests. Number/range controls toggle individual models. `xs`, `s`, `m`, and `l` toggle installed catalog LLM and image models in that tier together: an all-selected tier becomes unselected, while a partially selected or unselected tier becomes fully selected. `custom` and `emb` independently toggle those groups. If catalog models are missing, a read-only hint reports counts by family and suggests `bash setup.sh` or `setup.bat`; it never runs setup.
+
+All project-generated launcher and benchmark status/progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
+
 `--runs` applies only to single-shot LLM, embeddings, and image generation. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
 
 ## Flag details
@@ -112,7 +144,7 @@ An explicitly supplied selector that resolves to no models for a selected worklo
 ## Examples
 
 ```bash
-# Full run — large models skipped automatically if they don't fit
+# Open the interactive launcher (only installed models are shown)
 bash run_bench.sh
 
 # LLM only, quick check

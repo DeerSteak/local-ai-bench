@@ -428,7 +428,7 @@ class ImageBenchmark:
                             elapsed, images = ImageBenchmark.comfyui_submit(wf, timeout=timeout)
                             times.append(elapsed)
                             last_images = images
-                            print(f"    run {run_i+1}/{config.N_RUNS}: {elapsed:.1f}s")
+                            Shared.output(f"    run {run_i+1}/{config.N_RUNS}: {elapsed:.1f}s")
                         except TimeoutError:
                             Shared.err(f"Run {run_i+1} timed out — skipping {label}")
                             model_timed_out = True

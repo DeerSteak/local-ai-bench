@@ -11,8 +11,8 @@
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
 | `setup.bat` | One-shot setup for Windows |
-| `run_bench.sh` | Activates the venv and runs `scripts/benchmark.py` on Linux / macOS |
-| `run_bench.bat` | Activates the venv and runs `scripts/benchmark.py` on Windows |
+| `run_bench.sh` | Activates the venv; opens the interactive frontend with no arguments or forwards arguments directly to `scripts/benchmark.py` on Linux / macOS |
+| `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
 | `launch_dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
@@ -46,9 +46,10 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | Module | Purpose |
 |---|---|
 | `benchmark.py` | CLI entry point — argument parsing and test orchestration |
+| `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `model_inventory.py` | Read-only installed-model discovery/classification for catalog LLMs, embeddings, custom LLM folders, and ComfyUI image checkpoints |
-| `shared.py` | Cross-cutting helpers: logging, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
+| `shared.py` | Cross-cutting helpers: timestamped console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
 | `hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
 | `engines/base.py`, `engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
 | `llm_prefill_benchmark.py` | Single-shot LLM test |

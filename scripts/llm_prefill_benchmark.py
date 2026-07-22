@@ -65,7 +65,7 @@ class LLMPrefillBenchmark:
                         ttft, tokens, tps = engine.generate(
                             tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=ctx_len
                         )
-                        print(
+                        Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "
                             f"TTFT={ttft:.2f}s  "
                             f"TPS={tps:.1f}"
