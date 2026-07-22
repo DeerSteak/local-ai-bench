@@ -95,6 +95,14 @@
   color: #0969da;
 }
 
+.fileError {
+  max-width: 360px;
+  color: #cf222e;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
 .fileRow {
   display: flex;
   align-items: center;

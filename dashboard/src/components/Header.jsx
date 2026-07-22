@@ -18,7 +18,7 @@ function formatTimestamp(ts) {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeave, onRemoveFile, onFileInput }) {
+export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeave, onRemoveFile, onFileInput, fileError }) {
   const fileInputRef = useRef(null);
 
   const atMax = files.length >= MAX_FILES;
@@ -75,6 +75,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
         >
           <div className={styles.dropZoneText}>{dropText}</div>
         </div>
+        {fileError && <div className={styles.fileError} role="alert">{fileError}</div>}
         {files.map((file, i) => {
           const color = FILE_COLORS[i % FILE_COLORS.length];
           return (

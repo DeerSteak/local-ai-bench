@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, sanitizeForFilename, fmt,
+  parseJSON, parseResultsJSON, sanitizeForFilename, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier,
   getSkipInfo, getBarStatusLabel, getImageBarStatusLabel,
   getAllLLMModels,
   buildImagesDataForModel, buildImagesBarDataByModel,
   getEmbedLabel,
-  buildLLMBarData, buildLLMBarConfigs,
+  buildLLMBarData, buildLLMBarConfigs, flattenGroupedBarData,
   sortBarData, findMostStrenuousKey,
   flattenLLMData,
   getAllAccuracyModels,
@@ -25,6 +25,27 @@ describe("parseJSON", () => {
   });
   it("returns null for invalid JSON instead of throwing", () => {
     expect(parseJSON("not json")).toBeNull();
+  });
+});
+
+describe("parseResultsJSON", () => {
+  it("returns a results object with no error", () => {
+    expect(parseResultsJSON('{"profile":{"hostname":"host"}}')).toEqual({
+      data: { profile: { hostname: "host" } }, error: null,
+    });
+  });
+  it("rejects non-object JSON roots", () => {
+    expect(parseResultsJSON("[]")).toEqual({
+      data: null, error: "Expected a results JSON object.",
+    });
+  });
+  it("explains invalid JSON including Python's non-standard Infinity token", () => {
+    const expected = {
+      data: null,
+      error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
+    };
+    expect(parseResultsJSON("not json")).toEqual(expected);
+    expect(parseResultsJSON('{"given":Infinity}')).toEqual(expected);
   });
 });
 
@@ -288,6 +309,27 @@ describe("buildLLMBarConfigs", () => {
     const configs = buildLLMBarConfigs(files, "m", "llm");
     expect(configs.map(c => c.dataKey)).toEqual(["2K", "8K"]);
   });
+});
+
+describe("flattenGroupedBarData", () => {
+  it.each(["llm", "llm_conversation"])(
+    "preserves numeric context order for %s by-model bar charts",
+    (section) => {
+      const files = [{
+        hostname: "Host",
+        data: { [section]: { m: {
+          "32K": { tps_mean: 32 }, "8K": { tps_mean: 8 },
+          "2K": { tps_mean: 2 }, "16K": { tps_mean: 16 },
+        } } },
+      }];
+      const configs = buildLLMBarConfigs(files, "m", section);
+      const rows = buildLLMBarData(files, "m", "tps", section);
+      const flattened = flattenGroupedBarData(rows, configs, "systemLabel");
+      expect(flattened.map(row => row._seriesKey)).toEqual(["2K", "8K", "16K", "32K"]);
+      expect(flattened.map(row => row._value)).toEqual([2, 8, 16, 32]);
+      expect(flattened.filter(row => row._axisLabel).map(row => row._axisLabel)).toEqual(["Host"]);
+    },
+  );
 });
 
 describe("sortBarData", () => {

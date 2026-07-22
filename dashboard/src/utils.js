@@ -11,6 +11,21 @@ export function parseJSON(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
+export function parseResultsJSON(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return { data: null, error: "Expected a results JSON object." };
+    }
+    return { data, error: null };
+  } catch {
+    return {
+      data: null,
+      error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
+    };
+  }
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-
@@ -427,6 +442,20 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
       name: ctx,
       fill: CTX_COLORS[ctx] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
     }));
+}
+
+export function flattenGroupedBarData(data, barConfigs, labelKey) {
+  const labelIndex = Math.floor((barConfigs.length - 1) / 2);
+  return data.flatMap(row => barConfigs.map((config, configIndex) => ({
+    _axisLabel: configIndex === labelIndex ? row[labelKey] : "",
+    _groupLabel: row[labelKey],
+    _seriesKey: config.dataKey,
+    _seriesName: config.name,
+    _fill: config.fill,
+    _value: row[config.dataKey] ?? 0,
+    _na: row[config.dataKey] == null,
+    _status: row[`_status_${config.dataKey}`],
+  })));
 }
 
 // Embeddings bar chart: rows = files/systems, cols = models
