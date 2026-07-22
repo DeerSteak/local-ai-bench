@@ -304,8 +304,9 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
 - **[utils.test.js](../dashboard/src/utils.test.js)**
   Tests the pure data-transformation and formatting functions in `utils.js`. Notably:
   - `getBarStatusLabel` — the crashed/timed-out/slow-tps precedence and "which checkpoints get relabeled Skipped vs. show real data" logic (the slow checkpoint's own value is always shown, never hidden behind a status label; only checkpoints *after* it get relabeled).
+  - `getLLMModelsWithSectionResults` — that Group By → System keeps models attempted by any loaded system, excludes models represented only by `no_llm_data` placeholders, and retains meaningful whole-model skip outcomes.
   - `getImageBarStatusLabel` — the equivalent for image generation timeouts.
-  - `buildLLMBarData`/`buildLLMBarConfigs`/`flattenGroupedBarData` — that per-checkpoint values and status overlays are correctly assembled, that a file which stopped early still gets chart columns for depths another compared file reached, and that by-model LLM and conversation bars retain numeric `CTX_ORDER` after being flattened for deterministic rendering.
+  - `buildLLMBarData`/`buildLLMBarConfigs`/`prepareOrderedBarGroupData` — that per-checkpoint values and status overlays are correctly assembled, that a file which stopped early still gets chart columns for depths another compared file reached, and that by-model LLM and conversation bars retain numeric `CTX_ORDER` while each system remains one native chart group.
   - `sortBarData`/`findMostStrenuousKey` — ranking rows by the deepest metric with real data, in both directions (higher/lower is better), with missing values always sorted last regardless of direction.
   - `getModelSizeTier` — the known-model lookup and the param-count-parsed fallback for unrecognized models, including its tier boundaries.
   - `fmt` — unit-specific formatting (ms/sec/tps/sps thresholds, K-notation cutoffs, null handling).

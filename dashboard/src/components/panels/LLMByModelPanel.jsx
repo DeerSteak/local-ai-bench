@@ -73,7 +73,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               barConfigs={tpsBarConfigs}
               xKey="systemLabel" yLabel="Tokens/sec" unit="tps"
               chartName={`${chartNamePrefix}tps`} chartModel={model}
-              logoSrc={logoSrc} direction="higher" preserveSeriesOrder
+              logoSrc={logoSrc} direction="higher" orderedSeries
             />
           ) : (
             <ChartCard
@@ -94,7 +94,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               barConfigs={ttftBarConfigs}
               xKey="systemLabel" yLabel={ttftYLabel} unit={ttftUnit}
               chartName={`${chartNamePrefix}ttft`} chartModel={model}
-              logoSrc={logoSrc} direction="lower" preserveSeriesOrder
+              logoSrc={logoSrc} direction="lower" orderedSeries
             />
           ) : (
             <ChartCard

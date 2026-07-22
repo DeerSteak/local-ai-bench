@@ -1,5 +1,5 @@
-import { LineChart, Line, BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { flattenGroupedBarData, fmt } from "../../utils";
+import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { prepareOrderedBarGroupData, fmt } from "../../utils";
 import { CATEGORY_COLORS } from "../../constants";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
@@ -93,6 +93,31 @@ function BarLabel({ x, y, width, height, value, naKey, statusKey, rowData, forma
   );
 }
 
+function OrderedBarGroup({ x, y, width, height, payload, barConfigs, formatter }) {
+  const slotHeight = height / barConfigs.length;
+  const barHeight = Math.max(1, slotHeight - 4);
+  const maxValue = payload._groupMax;
+  return (
+    <g>
+      {barConfigs.map((config, index) => {
+        const value = payload[config.dataKey];
+        const barWidth = value == null || maxValue <= 0 ? 0 : Math.max(1, width * value / maxValue);
+        const barY = y + index * slotHeight + (slotHeight - barHeight) / 2;
+        return (
+          <g key={config.dataKey}>
+            <Rectangle x={x} y={barY} width={barWidth} height={barHeight} fill={config.fill} radius={[0, 3, 3, 0]} />
+            <BarLabel
+              x={x} y={barY} width={barWidth} height={barHeight} value={value}
+              naKey={`_na_${config.dataKey}`} statusKey={`_status_${config.dataKey}`}
+              rowData={payload} formatter={formatter}
+            />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // Reserve enough Y-axis width for the longest category label (in a vertical-layout chart).
 function computeYAxisWidth(rows, key) {
   const lines = rows.flatMap(row => String(row[key] ?? '').split('\n'));
@@ -114,7 +139,7 @@ function computeRightMargin(rows, barConfigs) {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction, preserveSeriesOrder = false }) {
+export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction, orderedSeries = false }) {
   const valFormatter = v => fmt(v, unit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.
@@ -125,8 +150,8 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
     }
     return r;
   });
-  const processedData = preserveSeriesOrder
-    ? flattenGroupedBarData(data, barConfigs, xKey)
+  const processedData = orderedSeries
+    ? prepareOrderedBarGroupData(groupedData, barConfigs)
     : groupedData;
 
   const maxLabelLines = Math.max(1, ...data.map(row => String(row[xKey] ?? '').split('\n').length));
@@ -158,23 +183,20 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
           />
           <YAxis
             type="category"
-            dataKey={preserveSeriesOrder ? "_axisLabel" : xKey}
+            dataKey={xKey}
             tick={<MultiLineTick />}
             width={yAxisWidth}
           />
-          <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
+          <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />
           {barConfigs.length > 1 && (
-            <Legend content={(props) => <CustomLegend {...props} payload={preserveSeriesOrder ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
+            <Legend content={(props) => <CustomLegend {...props} payload={orderedSeries ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           )}
-          {preserveSeriesOrder ? (
-            <Bar dataKey="_value" name="Value" fill="#57606a" maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
-              {processedData.map((row, index) => (
-                <Cell key={`${row._groupLabel}-${row._seriesKey}`} fill={row._fill || CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
-              ))}
-              <LabelList dataKey="_value" content={(props) => (
-                <BarLabel {...props} naKey="_na" statusKey="_status" rowData={processedData[props.index]} formatter={valFormatter} />
-              )} />
-            </Bar>
+          {orderedSeries ? (
+            <Bar
+              dataKey="_groupMax" name="Value" fill="#57606a" radius={[0, 3, 3, 0]}
+              shape={(props) => <OrderedBarGroup {...props} barConfigs={barConfigs} formatter={valFormatter} />}
+              isAnimationActive={false}
+            />
           ) : barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
               {barConfigs.length === 1 && processedData.map((_, i) => (

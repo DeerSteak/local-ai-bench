@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import {
   buildLLMBarDataByModel, buildLLMBarConfigsByModel,
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
-  getAllLLMModels, sortBarData, getModelSizeTier, getSkipInfo, modelLabel,
+  getLLMModelsWithSectionResults, sortBarData, getModelSizeTier, getSkipInfo, modelLabel,
 } from "../../utils";
 import { SECTION_LABELS, SIZE_TIER_ORDER, SIZE_TIER_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -14,7 +14,7 @@ import styles from "../ChartPanel.module.css";
 // "Model Sizes" toggle.
 export default function LLMBySystemPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isSplit }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
-  const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
+  const allModels = getLLMModelsWithSectionResults(files, section).filter(m => enabledModels.has(m));
   const isConv = section === "llm_conversation";
   const titleSuffix = isConv ? " (Conversation)" : "";
   const chartNamePrefix = isConv ? "conv_" : "";

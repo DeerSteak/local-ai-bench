@@ -211,6 +211,18 @@ export function getAllLLMModels(files) {
   return [...known, ...unknown];
 }
 
+export function getLLMModelsWithSectionResults(files, section) {
+  return getAllLLMModels(files).filter(model => files.some(file => {
+    const result = file.data[section]?.[model];
+    if (!result) return false;
+    if (result.skipped) return result.skip_reason !== "no_llm_data";
+    return CTX_ORDER.some(ctx => result[ctx] != null)
+      || result.crashed != null
+      || result.timed_out != null
+      || result.slow_tps != null;
+  }));
+}
+
 // Return all image model keys from the loaded files, in canonical order
 export function getAllImageModels(files) {
   const s = new Set();
@@ -444,18 +456,11 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     }));
 }
 
-export function flattenGroupedBarData(data, barConfigs, labelKey) {
-  const labelIndex = Math.floor((barConfigs.length - 1) / 2);
-  return data.flatMap(row => barConfigs.map((config, configIndex) => ({
-    _axisLabel: configIndex === labelIndex ? row[labelKey] : "",
-    _groupLabel: row[labelKey],
-    _seriesKey: config.dataKey,
-    _seriesName: config.name,
-    _fill: config.fill,
-    _value: row[config.dataKey] ?? 0,
-    _na: row[config.dataKey] == null,
-    _status: row[`_status_${config.dataKey}`],
-  })));
+export function prepareOrderedBarGroupData(data, barConfigs) {
+  return data.map(row => ({
+    ...row,
+    _groupMax: Math.max(0, ...barConfigs.map(config => row[config.dataKey] ?? 0)),
+  }));
 }
 
 // Embeddings bar chart: rows = files/systems, cols = models

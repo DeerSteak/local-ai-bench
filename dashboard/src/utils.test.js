@@ -4,10 +4,10 @@ import {
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier,
   getSkipInfo, getBarStatusLabel, getImageBarStatusLabel,
-  getAllLLMModels,
+  getAllLLMModels, getLLMModelsWithSectionResults,
   buildImagesDataForModel, buildImagesBarDataByModel,
   getEmbedLabel,
-  buildLLMBarData, buildLLMBarConfigs, flattenGroupedBarData,
+  buildLLMBarData, buildLLMBarConfigs, prepareOrderedBarGroupData,
   sortBarData, findMostStrenuousKey,
   flattenLLMData,
   getAllAccuracyModels,
@@ -244,6 +244,34 @@ describe("getAllLLMModels", () => {
   });
 });
 
+describe("getLLMModelsWithSectionResults", () => {
+  it("keeps a model attempted by one system and excludes models with only no-data placeholders", () => {
+    const files = [
+      { data: { llm: {
+        "qwen3.6-27b-q4": { "0.5K": { tps_mean: 0 }, slow_tps: "0.5K" },
+      }, llm_conversation: {
+        "qwen3.6-27b-q4": { skipped: true, skip_reason: "slow_tps" },
+        "nemotron3-nano-30b-a3b": { skipped: true, skip_reason: "no_llm_data" },
+      } } },
+      { data: { llm: {}, llm_conversation: {
+        "qwen3.6-27b-q4": { skipped: true, skip_reason: "no_llm_data" },
+        "nemotron3-nano-30b-a3b": { skipped: true, skip_reason: "no_llm_data" },
+      } } },
+    ];
+
+    expect(getLLMModelsWithSectionResults(files, "llm")).toEqual(["qwen3.6-27b-q4"]);
+    expect(getLLMModelsWithSectionResults(files, "llm_conversation")).toEqual(["qwen3.6-27b-q4"]);
+  });
+
+  it("retains meaningful whole-model skip outcomes", () => {
+    const files = [{ data: { llm: {
+      "phi4-mini": { skipped: true, skip_reason: "known_crash" },
+    } } }];
+
+    expect(getLLMModelsWithSectionResults(files, "llm")).toEqual(["phi4-mini"]);
+  });
+});
+
 describe("SD 1.5 image resolutions", () => {
   const file = {
     data: { images: { sd15: { label: "Stable Diffusion 1.5", resolutions: {
@@ -311,9 +339,9 @@ describe("buildLLMBarConfigs", () => {
   });
 });
 
-describe("flattenGroupedBarData", () => {
+describe("prepareOrderedBarGroupData", () => {
   it.each(["llm", "llm_conversation"])(
-    "preserves numeric context order for %s by-model bar charts",
+    "keeps each system as one native group while deriving its scale for %s",
     (section) => {
       const files = [{
         hostname: "Host",
@@ -324,12 +352,27 @@ describe("flattenGroupedBarData", () => {
       }];
       const configs = buildLLMBarConfigs(files, "m", section);
       const rows = buildLLMBarData(files, "m", "tps", section);
-      const flattened = flattenGroupedBarData(rows, configs, "systemLabel");
-      expect(flattened.map(row => row._seriesKey)).toEqual(["2K", "8K", "16K", "32K"]);
-      expect(flattened.map(row => row._value)).toEqual([2, 8, 16, 32]);
-      expect(flattened.filter(row => row._axisLabel).map(row => row._axisLabel)).toEqual(["Host"]);
+      const prepared = prepareOrderedBarGroupData(rows, configs);
+
+      expect(configs.map(config => config.dataKey)).toEqual(["2K", "8K", "16K", "32K"]);
+      expect(prepared).toEqual([{
+        systemLabel: "Host", "2K": 2, "8K": 8, "16K": 16, "32K": 32, _groupMax: 32,
+      }]);
+      expect(rows[0]).not.toHaveProperty("_groupMax");
     },
   );
+
+  it("ignores missing values while preserving status metadata", () => {
+    const rows = [{ systemLabel: "System", "2K": null, "8K": 9, _status_2K: "Skipped" }];
+    const configs = [
+      { dataKey: "2K", name: "2K", fill: "red" },
+      { dataKey: "8K", name: "8K", fill: "blue" },
+    ];
+
+    const prepared = prepareOrderedBarGroupData(rows, configs);
+
+    expect(prepared[0]).toMatchObject({ systemLabel: "System", _status_2K: "Skipped", _groupMax: 9 });
+  });
 });
 
 describe("sortBarData", () => {
