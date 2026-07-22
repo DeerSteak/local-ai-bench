@@ -539,7 +539,10 @@
       "arguments": {
         "title": "dentist appointment",
         "date": "2026-08-01"
-      }
+      },
+      "normalized_string_keys": [
+        "title"
+      ]
     }
   },
   {
@@ -618,7 +621,10 @@
       "arguments": {
         "recipient": "Alice",
         "message": "the meeting is moved to 3pm"
-      }
+      },
+      "normalized_string_keys": [
+        "message"
+      ]
     }
   },
   {
@@ -1083,7 +1089,10 @@
       "arguments": {
         "minutes": 45,
         "note": "call mom"
-      }
+      },
+      "normalized_string_keys": [
+        "note"
+      ]
     }
   },
   {
@@ -4967,7 +4976,10 @@
         "to": "Priya",
         "body": "the review is complete"
       },
-      "strict_arguments": true
+      "strict_arguments": true,
+      "normalized_string_keys": [
+        "body"
+      ]
     }
   },
   {

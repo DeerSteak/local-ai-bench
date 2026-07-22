@@ -1,3 +1,5 @@
+import pytest
+
 from mcq_benchmark import MCQBenchmark
 
 
@@ -26,11 +28,19 @@ def test_parse_answer_lowercase_letter():
 def test_parse_answer_letter_with_punctuation():
     assert MCQBenchmark.parse_answer("B.", {"A", "B", "C", "D"}) == "B"
     assert MCQBenchmark.parse_answer("(B)", {"A", "B", "C", "D"}) == "B"
+    assert MCQBenchmark.parse_answer(r"\boxed{B}", {"A", "B", "C", "D"}) == "B"
 
 
 def test_parse_answer_reasoning_before_letter():
     text = "Gold's chemical symbol comes from Latin aurum, so the answer is B."
     assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
+def test_parse_answer_explicit_statement_forms():
+    choices = {"A", "B", "C", "D"}
+    assert MCQBenchmark.parse_answer("Final answer: D", choices) == "D"
+    assert MCQBenchmark.parse_answer("I choose A", choices) == "A"
+    assert MCQBenchmark.parse_answer("C is correct", choices) == "C"
 
 
 def test_parse_answer_skips_stray_letters_not_in_valid_choices():
@@ -61,12 +71,68 @@ def test_parse_answer_takes_last_letter_when_multiple_are_mentioned():
     assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "C"
 
 
-def test_parse_answer_takes_last_letter_even_when_final_answer_stated_first():
-    # The model states its answer, then contrasts it with a rejected option
-    # mentioned afterward — "last letter" still wins here, a known tradeoff
-    # of this heuristic versus the more common "state answer last" pattern.
+def test_parse_answer_explicit_answer_beats_later_rejected_option():
     text = "The answer is C, not D, since gold's symbol is Au, not Go."
-    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "D"
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "C"
+
+
+def test_parse_answer_negated_choice_followed_by_correction():
+    text = "The answer is not A, it's B."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
+@pytest.mark.parametrize("response", [
+    "A is not correct, D is.",
+    "A is not right, D is.",
+    "A isn't correct, D is.",
+    "A isn’t right, D is.",
+    "A is wrong. D is right.",
+    "A is incorrect; D is correct.",
+])
+def test_parse_answer_rejected_then_affirmed_choice(response):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == "D"
+
+
+@pytest.mark.parametrize(("case", "response", "answer_key", "parsed", "correct"), [
+    ("mcq_126/phi4-mini", "C. A 5% decrease", "A", "C", False),
+    ("mcq_126/mistral-7b-q4", " C. A 5% decrease", "A", "C", False),
+    ("mcq_140/phi4-mini", "B. Raises it to 100 A", "A", "B", False),
+    ("mcq_140/phi4-14b", "C. Halves it to 5 A\n\nThis leaves 5 amperes.", "A", "C", False),
+    ("mcq_111/phi4-mini", "C. A and 7", "C", "C", True),
+    ("mcq_111/phi4-14b", "C\n\nTherefore, you must turn over the cards A and 7.", "C", "C", True),
+    ("mcq_116/phi4-14b", "C\n\nA cube has 12 edges, so the result is 12.", "C", "C", True),
+])
+def test_parse_answer_audited_mcq_verdict_flips(case, response, answer_key, parsed, correct):
+    assert case
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == parsed
+    assert (parsed == answer_key) is correct
+
+
+def test_parse_answer_later_explicit_correction_beats_leading_choice():
+    text = "C. 21%. After recalculating, the correct answer is B."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
+@pytest.mark.parametrize(("response", "expected"), [
+    ("C. Rechecking: the correct answer is B. 42%", "B"),
+    ("B. Rechecking. So, the correct answer is: A. 7", "A"),
+])
+def test_parse_answer_preserves_audited_explicit_self_corrections(response, expected):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == expected
+
+
+def test_parse_answer_single_distinct_fallback_letter_can_repeat():
+    text = "Considering C carefully, the evidence still supports C."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "C"
+
+
+def test_parse_answer_ambiguous_unstructured_letters_returns_none():
+    text = "Both C and A may work."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) is None
+
+
+def test_parse_answer_does_not_convert_boxed_choice_value_using_answer_key():
+    assert MCQBenchmark.parse_answer(r"$\boxed{452}$", {"A", "B", "C", "D"}) is None
 
 
 # ── score ──

@@ -14,6 +14,7 @@ run alongside them so memorizing the visible cases isn't enough.
 import json
 import math
 import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -120,30 +121,59 @@ class CodeBenchmark:
     @staticmethod
     def _run_harness(harness: str, payload: str, tests: list[dict],
                       timeout: int) -> list[dict]:
-        """Run `harness` (candidate code + a driver printing one JSON result
-        per test) in a subprocess so generated code can't hang or crash the
-        benchmark. Returns one {"passed", "got", "error"} entry per test; a
-        subprocess-level failure marks every test failed instead of raising."""
+        """Run one streamed-result harness under one total timeout."""
+        prefix = f"__LOCAL_AI_BENCH_RESULT_{secrets.token_hex(16)}__"
+        harness_head, _, harness_tail = harness.rpartition("__RESULT_PREFIX__")
+        harness = harness_head + repr(prefix) + harness_tail
+        proc = subprocess.Popen(
+            [sys.executable, "-c", harness],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        timed_out = False
         try:
-            proc = subprocess.run(
-                [sys.executable, "-c", harness],
-                input=payload, capture_output=True, text=True, timeout=timeout,
-            )
+            stdout, stderr = proc.communicate(payload, timeout=timeout)
         except subprocess.TimeoutExpired:
-            return [{"passed": False, "got": None, "error": "timeout"} for _ in tests]
+            timed_out = True
+            proc.kill()
+            stdout, stderr = proc.communicate()
 
-        if proc.returncode != 0 or not proc.stdout.strip():
-            stderr_lines = (proc.stderr or "").strip().splitlines()
-            err = stderr_lines[-1] if stderr_lines else "process failed"
-            return [{"passed": False, "got": None, "error": err} for _ in tests]
+        if timed_out:
+            missing_error = "timeout"
+        elif proc.returncode != 0:
+            stderr_lines = (stderr or "").strip().splitlines()
+            missing_error = stderr_lines[-1] if stderr_lines else "process failed"
+        else:
+            missing_error = "malformed output"
+        return CodeBenchmark._parse_harness_output(stdout, prefix, tests, missing_error)
 
-        try:
-            raw_results = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return [{"passed": False, "got": None, "error": "malformed output"} for _ in tests]
+    @staticmethod
+    def _parse_harness_output(stdout: str, prefix: str, tests: list[dict],
+                              missing_error: str) -> list[dict]:
+        """Parse framed per-test records and reject invalid protocol data."""
+        raw_results = {}
+        for line in (stdout or "").splitlines():
+            if not line.startswith(prefix):
+                continue
+            try:
+                raw = json.loads(line[len(prefix):])
+            except json.JSONDecodeError:
+                return CodeBenchmark._failed_test_results(tests, "malformed output")
+            index = raw.get("index") if isinstance(raw, dict) else None
+            if (isinstance(index, bool) or not isinstance(index, int)
+                    or not 0 <= index < len(tests) or index in raw_results
+                    or not isinstance(raw.get("ok"), bool)
+                    or (raw["ok"] and "got" not in raw)
+                    or (not raw["ok"] and "error" not in raw)):
+                return CodeBenchmark._failed_test_results(tests, "malformed output")
+            raw_results[index] = raw
 
         results = []
-        for test, raw in zip(tests, raw_results):
+        for index, test in enumerate(tests):
+            raw = raw_results.get(index)
+            if raw is None:
+                results.append({"passed": False, "got": None, "error": missing_error})
+                continue
             if not raw.get("ok"):
                 results.append({"passed": False, "got": None, "error": raw.get("error")})
             else:
@@ -151,6 +181,10 @@ class CodeBenchmark:
                 results.append({"passed": CodeBenchmark._values_close(got, test["expected"]),
                                  "got": got, "error": None})
         return results
+
+    @staticmethod
+    def _failed_test_results(tests: list[dict], error: str) -> list[dict]:
+        return [{"passed": False, "got": None, "error": error} for _ in tests]
 
     @staticmethod
     def execute_tests(code: str, function_name: str, tests: list[dict],
@@ -163,13 +197,13 @@ class CodeBenchmark:
             "import json, sys\n\n"
             + code + "\n\n"
             "_args_list = json.loads(sys.stdin.read())\n"
-            "_results = []\n"
-            "for _args in _args_list:\n"
+            "for _index, _args in enumerate(_args_list):\n"
             "    try:\n"
-            "        _results.append({'ok': True, 'got': " + function_name + "(*_args)})\n"
+            "        _result = {'index': _index, 'ok': True, 'got': " + function_name + "(*_args)}\n"
+            "        _encoded = json.dumps(_result)\n"
             "    except Exception as _e:\n"
-            "        _results.append({'ok': False, 'error': str(_e)})\n"
-            "print(json.dumps(_results))\n"
+            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': str(_e)})\n"
+            "    print('\\n' + __RESULT_PREFIX__ + _encoded, flush=True)\n"
         )
         payload = json.dumps([t["args"] for t in tests])
         return CodeBenchmark._run_harness(harness, payload, tests, timeout)
@@ -189,15 +223,15 @@ class CodeBenchmark:
             "import json, sys\n\n"
             + code + "\n\n"
             "_scenarios = json.loads(sys.stdin.read())\n"
-            "_results = []\n"
-            "for _scenario in _scenarios:\n"
+            "for _index, _scenario in enumerate(_scenarios):\n"
             "    try:\n"
             "        _obj = " + class_name + "(*_scenario.get('init', []))\n"
             "        _outputs = [getattr(_obj, _m)(*_a) for _m, _a in _scenario['ops']]\n"
-            "        _results.append({'ok': True, 'got': _outputs})\n"
+            "        _result = {'index': _index, 'ok': True, 'got': _outputs}\n"
+            "        _encoded = json.dumps(_result)\n"
             "    except Exception as _e:\n"
-            "        _results.append({'ok': False, 'error': str(_e)})\n"
-            "print(json.dumps(_results))\n"
+            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': str(_e)})\n"
+            "    print('\\n' + __RESULT_PREFIX__ + _encoded, flush=True)\n"
         )
         payload = json.dumps([{"init": t.get("init", []), "ops": t["ops"]} for t in tests])
         return CodeBenchmark._run_harness(harness, payload, tests, timeout)
