@@ -336,8 +336,8 @@ def run_frontend(input_fn=input, output_fn=Shared.output, process_runner=None,
         hint = missing_catalog_hint(inventory, system)
         choose_models(model_entries, tests, hint, input_fn, output_fn)
         render_summary(selected_engine, comfyui_dir, tests, model_entries, output_fn)
-        confirmation = read_choice("Start this benchmark? [y/N]", input_fn, output_fn).lower()
-        if confirmation not in ("y", "yes"):
+        confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
+        if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled
         command = build_benchmark_command(
             selected_engine, comfyui_dir, tests, model_entries,

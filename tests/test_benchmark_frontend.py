@@ -374,7 +374,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
         returncode = 7
 
     result = run_frontend(
-        input_fn=InputSequence(["", "", "yes"]),
+        input_fn=InputSequence(["", "", ""]),
         output_fn=output,
         process_runner=lambda command: commands.append(command) or Result(),
         engine_names_fn=lambda: ["fake"],
@@ -389,6 +389,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     assert commands[0][0] == "python-test"
     assert str(config.COMFYUI_DIR) in commands[0]
     assert any("Launching benchmark.py" in message for message in messages)
+    assert "Start this benchmark? [Y/n]" in messages
 
 
 def test_run_frontend_default_output_function_is_timestamped(monkeypatch, capsys):
@@ -441,11 +442,11 @@ def test_run_frontend_shows_tests_without_a_path_prompt():
     assert not any(message.startswith("ComfyUI directory [") for message in messages)
 
 
-def test_run_frontend_final_confirmation_defaults_to_cancel():
+def test_run_frontend_explicit_no_cancels_final_confirmation():
     called = []
     messages, output = output_collector()
     result = run_frontend(
-        input_fn=InputSequence(["", "", ""]),
+        input_fn=InputSequence(["", "", "n"]),
         output_fn=output,
         process_runner=lambda command: called.append(command),
         engine_names_fn=lambda: ["fake"],

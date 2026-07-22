@@ -114,6 +114,8 @@ The interactive launcher's initial state is:
 
 The model screen uses one LLM selection for single-shot, conversation, accuracy, and concurrency tests. Number/range controls toggle individual models. `xs`, `s`, `m`, and `l` toggle installed catalog LLM and image models in that tier together: an all-selected tier becomes unselected, while a partially selected or unselected tier becomes fully selected. `custom` and `emb` independently toggle those groups. If catalog models are missing, a read-only hint reports counts by family and suggests `bash setup.sh` or `setup.bat`; it never runs setup.
 
+After the selection summary, `Start this benchmark? [Y/n]` defaults to yes; press Enter to launch or enter `n` to cancel.
+
 All project-generated launcher and benchmark status/progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
 
 `--runs` applies only to single-shot LLM, embeddings, and image generation. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
