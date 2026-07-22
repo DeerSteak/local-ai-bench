@@ -24,10 +24,32 @@ class MCQBenchmark:
     # answer. The wall-clock timeout in the engine's chat is the real bound.
     MCQ_NUM_PREDICT = -1
 
-    # Uppercase-only: models answer in uppercase ("B"), so scanning for A-D as
-    # written avoids false hits on lowercase words/contractions a case-
-    # insensitive scan would catch (the "d" in "I'd", the article "a").
+    # Keep the unstructured fallback uppercase-only so articles and ordinary
+    # words do not become choice candidates.
     _LETTER_RE = re.compile(r"\b([A-D])\b")
+    _BOXED_RE = re.compile(r"\\boxed\s*\{\s*([A-D])\s*\}", re.IGNORECASE)
+    _ANSWER_RE = re.compile(
+        r"(?:\b(?:final\s+answer|correct\s+(?:answer|choice)|the\s+answer|my\s+answer|answer)\b"
+        r"\s*(?:is\b\s*:?|:|=)\s*[\[(]?([A-D])\b"
+        r"|\bI\s+(?:choose|select|pick)\s*[\[(]?([A-D])\b"
+        r"|\b(?:I(?:'ll|\s+will)?\s+)?go(?:ing)?\s+with\s*[\[(]?([A-D])\b"
+        r"|\b([A-D])\s+is\s+(?:the\s+)?correct(?:\s+(?:answer|choice))?\b)",
+        re.IGNORECASE,
+    )
+    _NEGATED_CORRECTION_RE = re.compile(
+        r"\bnot\s+[A-D]\b[\s\S]{0,40}?\b"
+        r"(?:it(?:'s|\s+is)|(?:the\s+)?answer\s+is|rather|instead)\s*:?\s*([A-D])\b",
+        re.IGNORECASE,
+    )
+    _REJECTED_THEN_AFFIRMED_RE = re.compile(
+        r"\b[A-D]\s+(?:is\s+(?:not\s+(?:correct|right)|wrong|incorrect)"
+        r"|isn['’]t\s+(?:correct|right))\b"
+        r"[\s\S]{0,80}?"
+        r"\b([A-D])\s+is(?:\s+(?:right|correct)\b|\s*(?=[.!?,;]|$))",
+        re.IGNORECASE,
+    )
+    _LEADING_MARKED_RE = re.compile(r"^\s*([A-D])\s*[.):]", re.IGNORECASE)
+    _LEADING_LINE_RE = re.compile(r"^\s*([A-D])(?:\s*(?:\r?\n|$)|\s+)")
 
     @staticmethod
     def load_questions(path: Path = MCQ_DATA_PATH) -> list[dict]:
@@ -43,26 +65,48 @@ class MCQBenchmark:
 
     @staticmethod
     def parse_answer(response_text: str, valid_choices) -> str | None:
-        """Extract the model's chosen letter from free-form text, or None.
-        Takes the *last* standalone valid letter, not the first — a reasoning
-        model walks through rejected options by letter before its final
-        choice. Same reasoning as MathBenchmark.parse_answer."""
+        """Extract a structurally stated choice from free-form text."""
         if not response_text:
             return None
         valid = {c.upper() for c in valid_choices}
 
-        # Handle a bare single letter case-insensitively (before the
-        # uppercase-only scan below), so a lowercase "b" or "(b)" still counts.
         stripped = response_text.strip().strip(".()[]:*").strip()
         if len(stripped) == 1 and stripped.upper() in valid:
             return stripped.upper()
 
-        found = None
-        for match in MCQBenchmark._LETTER_RE.finditer(response_text):
-            letter = match.group(1)
+        candidates = [
+            (match.start(), match.group(1).upper())
+            for match in MCQBenchmark._BOXED_RE.finditer(response_text)
+            if match.group(1).upper() in valid
+        ]
+        for match in MCQBenchmark._ANSWER_RE.finditer(response_text):
+            letter = next(group for group in match.groups() if group is not None).upper()
             if letter in valid:
-                found = letter
-        return found
+                candidates.append((match.start(), letter))
+        candidates.extend(
+            (match.start(), match.group(1).upper())
+            for match in MCQBenchmark._NEGATED_CORRECTION_RE.finditer(response_text)
+            if match.group(1).upper() in valid
+        )
+        candidates.extend(
+            (match.start(1), match.group(1).upper())
+            for match in MCQBenchmark._REJECTED_THEN_AFFIRMED_RE.finditer(response_text)
+            if match.group(1).upper() in valid
+        )
+        if candidates:
+            return max(candidates, key=lambda candidate: candidate[0])[1]
+
+        for pattern in (MCQBenchmark._LEADING_MARKED_RE, MCQBenchmark._LEADING_LINE_RE):
+            match = pattern.search(response_text)
+            if match and match.group(1).upper() in valid:
+                return match.group(1).upper()
+
+        found = {
+            match.group(1)
+            for match in MCQBenchmark._LETTER_RE.finditer(response_text)
+            if match.group(1) in valid
+        }
+        return found.pop() if len(found) == 1 else None
 
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[str | None, str]:

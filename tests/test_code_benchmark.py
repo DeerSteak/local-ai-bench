@@ -1,3 +1,5 @@
+import pytest
+
 from code_benchmark import CodeBenchmark
 
 
@@ -196,6 +198,91 @@ def test_execute_tests_infinite_loop_times_out_instead_of_hanging():
     assert results == [{"passed": False, "got": None, "error": "timeout"}]
 
 
+def test_execute_tests_preserves_results_completed_before_timeout():
+    code = (
+        "def f(value):\n"
+        "    if value == 2:\n"
+        "        while True:\n"
+        "            pass\n"
+        "    return value\n"
+    )
+    tests = [
+        {"args": [1], "expected": 1},
+        {"args": [2], "expected": 2},
+        {"args": [3], "expected": 3},
+    ]
+    results = CodeBenchmark.execute_tests(code, "f", tests, timeout=1)
+    assert results == [
+        {"passed": True, "got": 1, "error": None},
+        {"passed": False, "got": None, "error": "timeout"},
+        {"passed": False, "got": None, "error": "timeout"},
+    ]
+
+
+def test_execute_tests_ignores_candidate_stdout_noise():
+    code = "def f(value):\n    print('candidate noise')\n    return value"
+    tests = [{"args": [1], "expected": 1}]
+    results = CodeBenchmark.execute_tests(code, "f", tests)
+    assert results == [{"passed": True, "got": 1, "error": None}]
+
+
+def test_execute_tests_does_not_replace_prefix_placeholder_in_candidate_code():
+    code = 'def f():\n    return "__RESULT_PREFIX__"'
+    tests = [{"args": [], "expected": "__RESULT_PREFIX__"}]
+    results = CodeBenchmark.execute_tests(code, "f", tests)
+    assert results == [{"passed": True, "got": "__RESULT_PREFIX__", "error": None}]
+
+
+def test_execute_tests_preserves_results_before_process_failure():
+    code = (
+        "def f(value):\n"
+        "    if value == 2:\n"
+        "        import os\n"
+        "        os._exit(7)\n"
+        "    return value\n"
+    )
+    tests = [
+        {"args": [1], "expected": 1},
+        {"args": [2], "expected": 2},
+        {"args": [3], "expected": 3},
+    ]
+    results = CodeBenchmark.execute_tests(code, "f", tests)
+    assert results[0] == {"passed": True, "got": 1, "error": None}
+    assert results[1]["passed"] is False
+    assert results[1]["got"] is None
+    assert results[1]["error"] != "timeout"
+    assert results[2] == results[1]
+
+
+def test_parse_harness_output_rejects_malformed_or_duplicate_records():
+    tests = [{"expected": 1}, {"expected": 2}]
+    prefix = "RESULT:"
+    malformed = CodeBenchmark._parse_harness_output(
+        f"{prefix}not-json", prefix, tests, "timeout",
+    )
+    assert all(result["error"] == "malformed output" for result in malformed)
+    duplicate = "\n".join([
+        prefix + '{"index": 0, "ok": true, "got": 1}',
+        prefix + '{"index": 0, "ok": true, "got": 1}',
+    ])
+    results = CodeBenchmark._parse_harness_output(duplicate, prefix, tests, "timeout")
+    assert all(result["error"] == "malformed output" for result in results)
+
+
+@pytest.mark.parametrize("record", [
+    '{"index": 2, "ok": true, "got": 1}',
+    '{"index": true, "ok": true, "got": 1}',
+    '{"index": 0, "ok": true}',
+    '{"index": 0, "ok": false}',
+    '{"index": 0, "ok": "true", "got": 1}',
+])
+def test_parse_harness_output_rejects_out_of_range_or_incomplete_records(record):
+    tests = [{"expected": 1}, {"expected": 2}]
+    prefix = "RESULT:"
+    results = CodeBenchmark._parse_harness_output(prefix + record, prefix, tests, "timeout")
+    assert all(result["error"] == "malformed output" for result in results)
+
+
 def test_execute_tests_missing_function_name_fails_with_error():
     code = "def some_other_name(a, b):\n    return a + b"
     tests = [{"args": [1, 2], "expected": 3}]
@@ -298,6 +385,28 @@ def test_execute_stateful_tests_infinite_loop_times_out_instead_of_hanging():
     assert results == [{"passed": False, "got": None, "error": "timeout"}]
 
 
+def test_execute_stateful_tests_preserves_scenarios_completed_before_timeout():
+    code = (
+        "class Loopy:\n"
+        "    def go(self, value):\n"
+        "        if value == 2:\n"
+        "            while True:\n"
+        "                pass\n"
+        "        return value\n"
+    )
+    tests = [
+        {"ops": [["go", [1]]], "expected": [1]},
+        {"ops": [["go", [2]]], "expected": [2]},
+        {"ops": [["go", [3]]], "expected": [3]},
+    ]
+    results = CodeBenchmark.execute_stateful_tests(code, "Loopy", tests, timeout=1)
+    assert results == [
+        {"passed": True, "got": [1], "error": None},
+        {"passed": False, "got": None, "error": "timeout"},
+        {"passed": False, "got": None, "error": "timeout"},
+    ]
+
+
 # ── evaluate_question ──
 
 def _question():
@@ -321,6 +430,15 @@ def test_evaluate_question_partial_pass_is_not_correct():
     assert result["correct"] is False
     assert result["tests_passed"] == 1
     assert result["tests_total"] == 2
+
+
+def test_evaluate_question_reports_completed_passes_before_timeout(monkeypatch):
+    monkeypatch.setattr(CodeBenchmark, "execute_tests", lambda *_: [
+        {"passed": True, "got": 5, "error": None},
+        {"passed": False, "got": None, "error": "timeout"},
+    ])
+    result = CodeBenchmark.evaluate_question(_question(), "def sum_two(a, b): pass")
+    assert result == {"correct": False, "tests_passed": 1, "tests_total": 2, "error": "timeout"}
 
 
 def test_evaluate_question_no_code_short_circuits_without_running():

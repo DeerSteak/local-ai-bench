@@ -24,9 +24,20 @@ class MathBenchmark:
     # answer. The wall-clock timeout in the engine's chat is the real bound.
     MATH_NUM_PREDICT = -1
 
-    # Matches an optionally-negative, optionally-decimal number, with commas
-    # allowed as thousands separators (stripped before parsing).
-    _NUMBER_RE = re.compile(r"-?\d[\d,]*\.?\d*")
+    _NUMBER_PATTERN = r"-?\d[\d,]*\.?\d*"
+    _NUMBER_RE = re.compile(_NUMBER_PATTERN)
+    _BARE_NUMBER_RE = re.compile(rf"^\s*({_NUMBER_PATTERN})\s*%?\s*$")
+    _BOXED_RE = re.compile(rf"\\boxed\s*\{{\s*({_NUMBER_PATTERN})\s*%?\s*\}}", re.IGNORECASE)
+    _ANSWER_RE = re.compile(
+        rf"\b(?:final\s+answer|answer)\b\s*(?:is|:|=)\s*"
+        rf"(?:actually\s+)?(?:\$|\\?\(|\\?\[)?\s*({_NUMBER_PATTERN})",
+        re.IGNORECASE,
+    )
+    _CONCLUSION_RE = re.compile(
+        rf"\b(?:therefore|thus|so)\b[\s\S]{{0,500}}?"
+        rf"\b(?:is|equals|has|gives|yields)\b\s*(?:approximately\s+)?({_NUMBER_PATTERN})",
+        re.IGNORECASE,
+    )
 
     @staticmethod
     def load_questions(path: Path = MATH_DATA_PATH) -> list[dict]:
@@ -41,22 +52,33 @@ class MathBenchmark:
 
     @staticmethod
     def parse_answer(response_text: str) -> float | None:
-        """Extract the model's numeric answer from free-form text, or None.
-
-        Takes the *last* number, not the first — a model reasoning out loud
-        ("347 + 589 = 936, so the answer is 936") states its final answer
-        last, and intermediate numbers shouldn't be mistaken for it.
-        """
+        """Extract a stated numeric result from free-form text, or None."""
         if not response_text:
             return None
+
+        bare = MathBenchmark._BARE_NUMBER_RE.fullmatch(response_text)
+        if bare:
+            return MathBenchmark._to_float(bare.group(1))
+
+        structured = [
+            (match.start(), match.group(1))
+            for pattern in (MathBenchmark._BOXED_RE, MathBenchmark._ANSWER_RE)
+            for match in pattern.finditer(response_text)
+        ]
+        if structured:
+            return MathBenchmark._to_float(max(structured, key=lambda candidate: candidate[0])[1])
+
+        conclusions = list(MathBenchmark._CONCLUSION_RE.finditer(response_text))
+        if conclusions:
+            return MathBenchmark._to_float(conclusions[-1].group(1))
+
         matches = MathBenchmark._NUMBER_RE.findall(response_text)
-        if not matches:
-            return None
-        last = matches[-1].replace(",", "")
-        if not last or last == "-":
-            return None
+        return MathBenchmark._to_float(matches[-1]) if matches else None
+
+    @staticmethod
+    def _to_float(value: str) -> float | None:
         try:
-            return float(last)
+            return float(value.replace(",", ""))
         except ValueError:
             return None
 

@@ -43,6 +43,32 @@ def test_parse_answer_takes_last_number_when_intermediate_steps_shown():
     assert MathBenchmark.parse_answer(text) == 7.0
 
 
+def test_parse_answer_prefers_conclusion_result_over_trailing_context_number():
+    text = "Therefore, 100! has 48 trailing zeros when written in base 12."
+    assert MathBenchmark.parse_answer(text) == 48.0
+
+
+def test_parse_answer_leaves_audited_unfinished_math_104_partial_conservative():
+    text = "The result is 66.6667%. As a decimal this is 0.6667. Recalculate"
+    assert MathBenchmark.parse_answer(text) == 0.6667
+
+
+def test_parse_answer_does_not_evaluate_expression_only_response():
+    assert MathBenchmark.parse_answer("2/e") == 2.0
+
+
+def test_parse_answer_structured_candidates_follow_response_order():
+    text = r"\boxed{48}. Wait, the answer is actually 52."
+    assert MathBenchmark.parse_answer(text) == 52.0
+    text = r"The answer is 48. Rechecking gives \boxed{52}."
+    assert MathBenchmark.parse_answer(text) == 52.0
+
+
+def test_parse_answer_explicit_and_boxed_values():
+    assert MathBenchmark.parse_answer("Final answer: 936") == 936.0
+    assert MathBenchmark.parse_answer(r"\boxed{936}") == 936.0
+
+
 def test_parse_answer_returns_none_when_no_number_found():
     assert MathBenchmark.parse_answer("I'm not sure.") is None
 
@@ -54,6 +80,10 @@ def test_parse_answer_returns_none_for_empty_response():
 
 def test_parse_answer_returns_none_for_bare_minus_sign():
     assert MathBenchmark.parse_answer("-") is None
+
+
+def test_to_float_defensively_rejects_non_numeric_input():
+    assert MathBenchmark._to_float("not-a-number") is None
 
 
 # ── score ──

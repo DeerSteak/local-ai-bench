@@ -17,6 +17,10 @@ def _q_call():
     }
 
 
+def _real_question(question_id):
+    return next(q for q in ToolBenchmark.load_questions() if q["id"] == question_id)
+
+
 def test_evaluate_correct_call():
     calls = [{"name": "get_weather", "arguments": {"location": "Paris", "unit": "celsius"}}]
     assert ToolBenchmark.evaluate_question(_q_call(), calls)["correct"] is True
@@ -70,6 +74,105 @@ def test_evaluate_float_string_coercion():
     q = {"expected": {"call": True, "name": "calculate_tip", "arguments": {"percent": 20.0}}}
     calls = [{"name": "calculate_tip", "arguments": {"percent": "20"}}]
     assert ToolBenchmark.evaluate_question(q, calls)["correct"] is True
+
+
+@pytest.mark.parametrize(("case", "question_id", "key", "given"), [
+    ("llama3.2-3b-q4/tool_010", "tool_010", "title", "Dentist Appointment"),
+    ("llama3.1-8b-q4/tool_010", "tool_010", "title", "Dentist appointment"),
+    ("llama3.2-3b-q4/tool_012", "tool_012", "message", "The meeting is moved to 3pm."),
+    ("llama3.1-8b-q4/tool_012", "tool_012", "message", "The meeting is moved to 3pm."),
+    ("llama3.1-8b-q4/tool_024", "tool_024", "note", "Call mom"),
+    ("llama3.2-3b-q4/tool_098", "tool_098", "body", "The review is complete."),
+    ("llama3.1-8b-q4/tool_098", "tool_098", "body", "The review is complete."),
+])
+def test_evaluate_accepts_all_seven_audited_free_text_calls(case, question_id, key, given):
+    question = _real_question(question_id)
+    arguments = dict(question["expected"]["arguments"])
+    arguments[key] = given
+    calls = [{"name": question["expected"]["name"], "arguments": arguments}]
+    assert case
+    assert ToolBenchmark.evaluate_question(question, calls)["correct"] is True
+
+
+def test_evaluate_free_text_stays_exact_without_configuration():
+    q = {"expected": {"call": True, "name": "send", "arguments": {"body": "Ready"}}}
+    calls = [{"name": "send", "arguments": {"body": "ready."}}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+def test_evaluate_normalized_free_text_still_requires_same_content():
+    q = {"expected": {"call": True, "name": "send", "arguments": {"body": "review is complete"},
+                      "normalized_string_keys": ["body"]}}
+    calls = [{"name": "send", "arguments": {"body": "review is incomplete."}}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+def test_evaluate_normalized_free_text_preserves_internal_punctuation():
+    q = {"expected": {"call": True, "name": "book", "arguments": {"name": "Luigi's"},
+                      "normalized_string_keys": ["name"]}}
+    calls = [{"name": "book", "arguments": {"name": "Luigis"}}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+def test_evaluate_normalized_key_applies_recursively_without_relaxing_siblings():
+    q = {"expected": {"call": True, "name": "send", "arguments": {
+        "payload": {"body": "Ready", "status": "OPEN"},
+    }, "normalized_string_keys": ["body"]}}
+    calls = [{"name": "send", "arguments": {
+        "payload": {"body": "ready.", "status": "OPEN"},
+    }}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is True
+    calls = [{"name": "send", "arguments": {
+        "payload": {"body": "ready.", "status": "open"},
+    }}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+def test_evaluate_normalization_does_not_coerce_string_boolean():
+    q = {"expected": {"call": True, "name": "set_light", "arguments": {"on": True},
+                      "normalized_string_keys": ["on"]}}
+    calls = [{"name": "set_light", "arguments": {"on": "true"}}]
+    assert ToolBenchmark.evaluate_question(q, calls)["correct"] is False
+
+
+@pytest.mark.parametrize(("question_id", "key", "given"), [
+    ("tool_004", "on", "true"),
+    ("tool_046", "enabled", "false"),
+    ("tool_048", "muted", "true"),
+    ("tool_049", "subscribed", "false"),
+])
+def test_evaluate_keeps_audited_string_booleans_wrong(question_id, key, given):
+    question = _real_question(question_id)
+    arguments = dict(question["expected"]["arguments"])
+    arguments[key] = given
+    calls = [{"name": question["expected"]["name"], "arguments": arguments}]
+    assert ToolBenchmark.evaluate_question(question, calls)["correct"] is False
+
+
+@pytest.mark.parametrize(("question_id", "key", "given"), [
+    ("tool_011", "restaurant", "Luigi"),
+    ("tool_087", "destination", "archive/slides.pptx"),
+    ("tool_056", "seconds", 30),
+    ("tool_059", "inches", 77),
+])
+def test_evaluate_keeps_audited_identifier_and_wrong_values_wrong(question_id, key, given):
+    question = _real_question(question_id)
+    arguments = dict(question["expected"]["arguments"])
+    arguments[key] = given
+    calls = [{"name": question["expected"]["name"], "arguments": arguments}]
+    assert ToolBenchmark.evaluate_question(question, calls)["correct"] is False
+
+
+@pytest.mark.parametrize(("question_id", "key"), [
+    ("tool_061", "address"),
+    ("tool_065", "items"),
+])
+def test_evaluate_keeps_audited_json_encoded_structures_wrong(question_id, key):
+    question = _real_question(question_id)
+    arguments = dict(question["expected"]["arguments"])
+    arguments[key] = json.dumps(arguments[key])
+    calls = [{"name": question["expected"]["name"], "arguments": arguments}]
+    assert ToolBenchmark.evaluate_question(question, calls)["correct"] is False
 
 
 def test_evaluate_incorrectly_declined_when_should_call():
@@ -379,5 +482,35 @@ def test_load_questions_returns_well_formed_dataset():
                     t["function"]["parameters"]["properties"]
                     for t in q["tools"] if t["function"]["name"] == expected["name"]
                 ))
+            normalized_keys = expected.get("normalized_string_keys", [])
+            assert len(normalized_keys) == len(set(normalized_keys))
+            for key in normalized_keys:
+                values = []
+
+                def collect(value):
+                    if isinstance(value, dict):
+                        values.extend(v for k, v in value.items() if k == key)
+                        for child in value.values():
+                            collect(child)
+                    elif isinstance(value, list):
+                        for child in value:
+                            collect(child)
+
+                collect(expected["arguments"])
+                assert values and all(isinstance(value, str) for value in values)
         else:
             assert "name" not in expected  # a decline case names no tool
+
+
+def test_real_bank_declares_only_reviewed_free_text_normalization():
+    configured = {
+        q["id"]: q["expected"]["normalized_string_keys"]
+        for q in ToolBenchmark.load_questions()
+        if q["expected"].get("normalized_string_keys")
+    }
+    assert configured == {
+        "tool_010": ["title"],
+        "tool_012": ["message"],
+        "tool_024": ["note"],
+        "tool_098": ["body"],
+    }

@@ -45,14 +45,21 @@ class ToolBenchmark:
         return value
 
     @staticmethod
-    def _values_equal(given, expected, strict: bool, unordered_keys: frozenset = frozenset()) -> bool:
+    def _normalize_string(value: str) -> str:
+        return value.strip().casefold().rstrip(".!?")
+
+    @staticmethod
+    def _values_equal(given, expected, strict: bool, unordered_keys: frozenset = frozenset(),
+                      normalized_string_keys: frozenset = frozenset(),
+                      normalize_string: bool = False) -> bool:
         """Recursively compare `given` against `expected`, coercing numeric
         strings to numbers at every level (not just the top one) so a nested
         object or array-of-objects argument gets the same tolerant matching
         as a flat one. `unordered_keys` names dict keys (matched by name at
         any depth) whose list value should be compared as a multiset rather
         than positionally, for genuinely order-insensitive arguments like a
-        set of labels or recipients."""
+        set of labels or recipients. `normalized_string_keys` opts named
+        free-text fields into limited string normalization at any depth."""
         if isinstance(expected, dict):
             if not isinstance(given, dict):
                 return False
@@ -62,23 +69,33 @@ class ToolBenchmark:
                 if key not in given:
                     return False
                 if key in unordered_keys and isinstance(exp, list):
-                    if not ToolBenchmark._multiset_equal(given[key], exp, strict, unordered_keys):
+                    if not ToolBenchmark._multiset_equal(
+                            given[key], exp, strict, unordered_keys,
+                            normalized_string_keys, key in normalized_string_keys):
                         return False
-                elif not ToolBenchmark._values_equal(given[key], exp, strict, unordered_keys):
+                elif not ToolBenchmark._values_equal(
+                        given[key], exp, strict, unordered_keys,
+                        normalized_string_keys, key in normalized_string_keys):
                     return False
             return True
         if isinstance(expected, list):
             if not isinstance(given, list) or len(given) != len(expected):
                 return False
-            return all(ToolBenchmark._values_equal(g, e, strict, unordered_keys) for g, e in zip(given, expected))
+            return all(ToolBenchmark._values_equal(
+                g, e, strict, unordered_keys, normalized_string_keys, normalize_string,
+            ) for g, e in zip(given, expected))
         # bool is a subclass of int in Python (True == 1), so without this
         # check a boolean argument would wrongly match a numeric one.
         if isinstance(given, bool) != isinstance(expected, bool):
             return False
+        if normalize_string and isinstance(given, str) and isinstance(expected, str):
+            return ToolBenchmark._normalize_string(given) == ToolBenchmark._normalize_string(expected)
         return ToolBenchmark._coerce(given) == ToolBenchmark._coerce(expected)
 
     @staticmethod
-    def _multiset_equal(given, expected: list, strict: bool, unordered_keys: frozenset) -> bool:
+    def _multiset_equal(given, expected: list, strict: bool, unordered_keys: frozenset,
+                        normalized_string_keys: frozenset = frozenset(),
+                        normalize_string: bool = False) -> bool:
         """Order-insensitive list match: every expected element is matched to
         a distinct given element (recursively), regardless of position."""
         if not isinstance(given, list) or len(given) != len(expected):
@@ -91,6 +108,7 @@ class ToolBenchmark:
                 given_i not in used
                 and ToolBenchmark._values_equal(
                     value, expected[expected_i], strict, unordered_keys,
+                    normalized_string_keys, normalize_string,
                 )
                 and match(expected_i + 1, used | {given_i})
                 for given_i, value in enumerate(given)
@@ -99,14 +117,18 @@ class ToolBenchmark:
         return match(0, frozenset())
 
     @staticmethod
-    def _args_match(given: dict, expected: dict, allow_extra: bool = True, unordered_keys=()) -> bool:
+    def _args_match(given: dict, expected: dict, allow_extra: bool = True,
+                    unordered_keys=(), normalized_string_keys=()) -> bool:
         """Loose-equality argument match: every expected key present with an
         equal value, numeric strings coerced to numbers first so "20" == 20.
         Extra keys are allowed unless the question requests strict matching."""
         if not isinstance(given, dict):
             return False
-        return ToolBenchmark._values_equal(given, expected, strict=not allow_extra,
-                                            unordered_keys=frozenset(unordered_keys))
+        return ToolBenchmark._values_equal(
+            given, expected, strict=not allow_extra,
+            unordered_keys=frozenset(unordered_keys),
+            normalized_string_keys=frozenset(normalized_string_keys),
+        )
 
     @staticmethod
     def evaluate_question(question: dict, tool_calls: list | None) -> dict:
@@ -129,6 +151,7 @@ class ToolBenchmark:
                        first.get("arguments", {}), expected["arguments"],
                        allow_extra=not expected.get("strict_arguments", False),
                        unordered_keys=expected.get("unordered_keys", ()),
+                       normalized_string_keys=expected.get("normalized_string_keys", ()),
                    ))
         return {"correct": correct}
 
