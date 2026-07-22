@@ -5,6 +5,7 @@ temperature 0, scored right/wrong against the dataset's known numeric answer
 """
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -33,9 +34,17 @@ class MathBenchmark:
         rf"(?:actually\s+)?(?:\$|\\?\(|\\?\[)?\s*({_NUMBER_PATTERN})",
         re.IGNORECASE,
     )
+    _LEADING_NUMBER_RE = re.compile(
+        rf"^\s*({_NUMBER_PATTERN})[ \t]*%?[ \t]*(?:\r?\n|$)",
+    )
     _CONCLUSION_RE = re.compile(
-        rf"\b(?:therefore|thus|so)\b[\s\S]{{0,500}}?"
-        rf"\b(?:is|equals|has|gives|yields)\b\s*(?:approximately\s+)?({_NUMBER_PATTERN})",
+        rf"(?:^|(?<=[.!?])|(?<=\n))[ \t]*(?:therefore|thus|so)\b[\s\S]{{0,500}}?"
+        rf"\b(?:is|equals|has|gives|yields)\b\s*(?:approximately\s+)?"
+        rf"({_NUMBER_PATTERN})(?![\d,.])",
+        re.IGNORECASE,
+    )
+    _EQUAL_RESULT_RE = re.compile(
+        rf"=\s*(?:approximately\s+)?({_NUMBER_PATTERN})(?![\d,.])",
         re.IGNORECASE,
     )
 
@@ -68,19 +77,86 @@ class MathBenchmark:
         if structured:
             return MathBenchmark._to_float(max(structured, key=lambda candidate: candidate[0])[1])
 
-        conclusions = list(MathBenchmark._CONCLUSION_RE.finditer(response_text))
-        if conclusions:
-            return MathBenchmark._to_float(conclusions[-1].group(1))
+        fallback_matches = MathBenchmark._NUMBER_RE.findall(response_text)
+        fallback = fallback_matches[-1] if fallback_matches else None
+        stated = []
+        leading = MathBenchmark._LEADING_NUMBER_RE.match(response_text)
+        if leading:
+            leading_value = MathBenchmark._to_float(leading.group(1))
+            fallback_value = MathBenchmark._to_float(fallback) if fallback is not None else None
+            equality_value = MathBenchmark._last_completed_equality_value(response_text)
+            if leading_value in (fallback_value, equality_value):
+                stated.append((leading.start(1), leading.group(1)))
+        for conclusion in MathBenchmark._CONCLUSION_RE.finditer(response_text):
+            value = MathBenchmark._conclusion_value(response_text, conclusion)
+            if value is not None:
+                stated.append((conclusion.start(1), value))
+        if stated:
+            return MathBenchmark._to_float(max(stated, key=lambda candidate: candidate[0])[1])
 
-        matches = MathBenchmark._NUMBER_RE.findall(response_text)
-        return MathBenchmark._to_float(matches[-1]) if matches else None
+        return MathBenchmark._to_float(fallback) if fallback is not None else None
 
     @staticmethod
     def _to_float(value: str) -> float | None:
         try:
-            return float(value.replace(",", ""))
+            parsed = float(value.replace(",", ""))
         except ValueError:
             return None
+        return parsed if math.isfinite(parsed) else None
+
+    @staticmethod
+    def _conclusion_value(response_text: str, match: re.Match) -> str | None:
+        line_start = response_text.rfind("\n", 0, match.start()) + 1
+        line_prefix = response_text[line_start:match.start()]
+        if re.fullmatch(r"\s*(?:[-*]\s*)?\d+\.", line_prefix):
+            return None
+
+        tail_start = match.end(1)
+        cursor = tail_start
+        if cursor < len(response_text) and response_text[cursor] == "%":
+            cursor += 1
+        while cursor < len(response_text) and response_text[cursor] in " \t":
+            cursor += 1
+        if cursor == len(response_text) or response_text[cursor] not in "+-*/^=":
+            return match.group(1)
+
+        clause_end = MathBenchmark._clause_end(response_text, cursor)
+        clause = response_text[cursor:clause_end]
+        results = list(MathBenchmark._EQUAL_RESULT_RE.finditer(clause))
+        if not results:
+            return None
+        result = results[-1]
+        result_end = result.end(1)
+        while result_end < len(clause) and clause[result_end] in "% \t":
+            result_end += 1
+        if result_end < len(clause) and clause[result_end] in "+-*/^=":
+            return None
+        return result.group(1)
+
+    @staticmethod
+    def _clause_end(response_text: str, start: int) -> int:
+        for index in range(start, len(response_text)):
+            char = response_text[index]
+            if char in "\n;?!":
+                return index
+            if char == ".":
+                before_digit = index > 0 and response_text[index - 1].isdigit()
+                after_digit = index + 1 < len(response_text) and response_text[index + 1].isdigit()
+                if not (before_digit and after_digit):
+                    return index
+        return len(response_text)
+
+    @staticmethod
+    def _last_completed_equality_value(response_text: str) -> float | None:
+        completed = []
+        for result in MathBenchmark._EQUAL_RESULT_RE.finditer(response_text):
+            cursor = result.end(1)
+            while cursor < len(response_text) and response_text[cursor] in "% \t":
+                cursor += 1
+            if cursor < len(response_text) and response_text[cursor] in "+-*/^=":
+                continue
+            completed.append(result.group(1))
+        return MathBenchmark._to_float(completed[-1]) if completed else None
 
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[float | None, str]:

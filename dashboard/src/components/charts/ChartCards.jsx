@@ -1,5 +1,5 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { fmt } from "../../utils";
+import { flattenGroupedBarData, fmt } from "../../utils";
 import { CATEGORY_COLORS } from "../../constants";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
@@ -114,23 +114,29 @@ function computeRightMargin(rows, barConfigs) {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction }) {
+export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction, preserveSeriesOrder = false }) {
   const valFormatter = v => fmt(v, unit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.
-  const processedData = data.map(row => {
+  const groupedData = data.map(row => {
     const r = { ...row };
     for (const bc of barConfigs) {
       if (r[bc.dataKey] == null) { r[`_na_${bc.dataKey}`] = true; r[bc.dataKey] = 0; }
     }
     return r;
   });
+  const processedData = preserveSeriesOrder
+    ? flattenGroupedBarData(data, barConfigs, xKey)
+    : groupedData;
 
-  const maxLabelLines = Math.max(1, ...processedData.map(row => String(row[xKey] ?? '').split('\n').length));
+  const maxLabelLines = Math.max(1, ...data.map(row => String(row[xKey] ?? '').split('\n').length));
   const rowH = Math.max(32, maxLabelLines * 16);
-  const chartHeight = Math.max(280, processedData.length * barConfigs.length * rowH + 104);
-  const yAxisWidth = computeYAxisWidth(processedData, xKey);
-  const rightMargin = computeRightMargin(processedData, barConfigs);
+  const chartHeight = Math.max(280, data.length * barConfigs.length * rowH + 104);
+  const yAxisWidth = computeYAxisWidth(data, xKey);
+  const rightMargin = computeRightMargin(data, barConfigs);
+  const legendPayload = barConfigs.map(config => ({
+    dataKey: config.dataKey, value: config.name, color: config.fill,
+  }));
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -152,15 +158,24 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
           />
           <YAxis
             type="category"
-            dataKey={xKey}
+            dataKey={preserveSeriesOrder ? "_axisLabel" : xKey}
             tick={<MultiLineTick />}
             width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" />} />
           {barConfigs.length > 1 && (
-            <Legend content={(props) => <CustomLegend {...props} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
+            <Legend content={(props) => <CustomLegend {...props} payload={preserveSeriesOrder ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           )}
-          {barConfigs.map(bc => (
+          {preserveSeriesOrder ? (
+            <Bar dataKey="_value" name="Value" fill="#57606a" maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
+              {processedData.map((row, index) => (
+                <Cell key={`${row._groupLabel}-${row._seriesKey}`} fill={row._fill || CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
+              ))}
+              <LabelList dataKey="_value" content={(props) => (
+                <BarLabel {...props} naKey="_na" statusKey="_status" rowData={processedData[props.index]} formatter={valFormatter} />
+              )} />
+            </Bar>
+          ) : barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
               {barConfigs.length === 1 && processedData.map((_, i) => (
                 <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />

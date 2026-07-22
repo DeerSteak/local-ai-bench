@@ -93,6 +93,35 @@ def test_parse_answer_rejected_then_affirmed_choice(response):
     assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == "D"
 
 
+@pytest.mark.parametrize("response", [
+    "The reasoning makes B unlikely, making C the correct answer.",
+    "The reasoning makes B unlikely, making C the correct choice.",
+    "The reasoning eliminates B, leaving C as the correct answer.",
+])
+def test_parse_answer_resultative_correction(response):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == "C"
+
+
+def test_parse_answer_resultative_correction_overrides_earlier_explicit_choice():
+    text = "The answer is B. Rechecking leaves C as the correct answer."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "C"
+
+
+def test_parse_answer_does_not_treat_uncued_correct_answer_phrase_as_explicit():
+    text = "B\n\nThe prompt quotes the phrase C the correct answer as an example."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
+def test_parse_answer_fresh_phi4_mcq_109_uses_final_resultative_choice():
+    text = (
+        "B\n\nHere's the reasoning:\n\nIf B is true, that leads to a consistent scenario. "
+        "Thus, the only consistent scenario is when B is true, making C the correct answer."
+    )
+    parsed = MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"})
+    assert parsed == "C"
+    assert parsed != "D"
+
+
 @pytest.mark.parametrize(("case", "response", "answer_key", "parsed", "correct"), [
     ("mcq_126/phi4-mini", "C. A 5% decrease", "A", "C", False),
     ("mcq_126/mistral-7b-q4", " C. A 5% decrease", "A", "C", False),

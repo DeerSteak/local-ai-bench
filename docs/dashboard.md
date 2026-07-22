@@ -28,7 +28,7 @@ Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuild
 
 ## Loading results
 
-Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`.
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file now displays an import error below the drop zone rather than failing silently.
 
 ## Sections
 
@@ -46,7 +46,7 @@ The **Models** filter and **Machine** labels are shared between the LLM, LLM Con
 
 ## Chart Style and Group By
 
-**Chart Style** (Bar / Line) and **Group By** (Model / System) apply to the LLM, LLM Conversation, Embeddings, and Images sections — Bar vs. Line picks the chart type, and Group By flips which axis becomes the per-chart grouping (one chart per model with systems as series, vs. one chart per system with models as series). Group By → System also reveals a **Model Sizes** toggle (Split by tier vs. Combined) for the LLM/LLM Conversation sections, since a single combined line chart with every model tier at once is unreadable.
+**Chart Style** (Bar / Line) and **Group By** (Model / System) apply to the LLM, LLM Conversation, Embeddings, and Images sections — Bar vs. Line picks the chart type, and Group By flips which axis becomes the per-chart grouping (one chart per model with systems as series, vs. one chart per system with models as series). In by-model LLM bar charts, context bars always follow the numeric checkpoint order from `CTX_ORDER`, rather than lexicographic label order. Group By → System also reveals a **Model Sizes** toggle (Split by tier vs. Combined) for the LLM/LLM Conversation sections, since a single combined line chart with every model tier at once is unreadable.
 
 Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy charts are always bar charts grouped by model, since accuracy is a single scalar per model rather than a metric swept across context lengths or resolutions. Concurrency charts are always line charts grouped by model, with request count on the horizontal axis.
 

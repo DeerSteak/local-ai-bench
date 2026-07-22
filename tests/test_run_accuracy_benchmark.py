@@ -316,6 +316,13 @@ def test_answers_sidecar_includes_correct_and_incorrect_responses(tmp_path):
     assert results["fake"]["correct"] == 1
 
 
+def test_answers_sidecar_rejects_non_finite_numbers(tmp_path):
+    path = tmp_path / "answers.json"
+    with pytest.raises(ValueError, match="Out of range float values"):
+        Shared.write_answers_sidecar(path, {"given": float("inf")})
+    assert not path.exists()
+
+
 def test_tool_crashed_run_stops_early(tmp_path):
     questions = [
         _tool_question("q1", {"call": True, "name": "do_it", "arguments": {}}),

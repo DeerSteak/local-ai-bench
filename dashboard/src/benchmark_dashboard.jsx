@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, sanitizeForFilename } from "./utils";
+import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, sanitizeForFilename } from "./utils";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [logoDragOver, setLogoDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filenameSuffix, setFilenameSuffix] = useState("");
+  const [fileError, setFileError] = useState("");
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -103,12 +104,18 @@ export default function Dashboard() {
   };
 
   const parseFile = async (file) => {
-    const text = await file.text();
-    const data = parseJSON(text);
-    if (!data) return null;
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      return { entry: null, error: `${file.name}: Could not read this file.` };
+    }
+    const parsed = parseResultsJSON(text);
+    if (parsed.error) return { entry: null, error: `${file.name}: ${parsed.error}` };
+    const data = parsed.data;
     const p = data.profile || {};
     const baseHostname = p.hostname || file.name.replace(".json", "");
-    return {
+    return { entry: {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
       // Fold the engine into the default label so two --engine both runs off
@@ -121,13 +128,15 @@ export default function Dashboard() {
       ram_gb:   p.ram_gb   || null,
       timestamp: p.timestamp || null,
       data,
-    };
+    }, error: null };
   };
 
   const processJsonFiles = useCallback(async (jsonFiles) => {
     const limited = jsonFiles.slice(0, MAX_FILES);
     if (!limited.length) return;
-    const entries = (await Promise.all(limited.map(parseFile))).filter(Boolean);
+    const parsed = await Promise.all(limited.map(parseFile));
+    const entries = parsed.map(result => result.entry).filter(Boolean);
+    setFileError(parsed.map(result => result.error).filter(Boolean).join(" "));
     if (!entries.length) return;
 
     if (entries.length > 1 || filesRef.current.length >= MAX_FILES) {
@@ -215,6 +224,7 @@ export default function Dashboard() {
         onDragLeave={handleDragLeave}
         onRemoveFile={removeFile}
         onFileInput={handleFileInput}
+        fileError={fileError}
       />
 
       <Controls
