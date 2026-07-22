@@ -324,17 +324,13 @@ def run_frontend(input_fn=input, output_fn=Shared.output, process_runner=None,
     try:
         output_fn("Local AI Bench interactive launcher")
         selected_engine = choose_engine(engine_names_fn(), input_fn, output_fn)
-        comfyui_raw = read_choice(
-            f"ComfyUI directory [{config.COMFYUI_DIR}]:", input_fn, output_fn,
-        )
-        if comfyui_raw.lower() in ("q", "quit", "cancel"):
-            raise FrontendCancelled
-        comfyui_dir = Path(comfyui_raw).expanduser() if comfyui_raw else config.COMFYUI_DIR
+        comfyui_dir = config.COMFYUI_DIR
         inventory = inventory_builder(engine_factory(selected_engine), comfyui_dir)
         test_entries = build_test_entries(inventory)
         if not any(entry.available for entry in test_entries):
             output_fn("No installed benchmark models were found. Run setup to add catalog models.")
             return 1
+
         tests = choose_tests(test_entries, input_fn, output_fn)
         model_entries = build_model_entries(inventory, tests)
         hint = missing_catalog_hint(inventory, system)

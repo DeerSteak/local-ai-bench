@@ -87,7 +87,7 @@ run_bench.bat [options]   # Windows
 
 ## Launch modes
 
-Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactive launcher. It reads the selected engine and ComfyUI installation, shows only installed models, then translates the confirmed selection into the public flags below and launches the non-interactive `scripts/benchmark.py` CLI. The launcher selects one engine at a time; `--engine all` remains available through the direct CLI because inventories can differ between engines. Its ComfyUI path is editable before image checkpoints are discovered.
+Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactive launcher. It reads the selected engine and the setup-managed `./ComfyUI` installation, then immediately shows the test checklist. Only installed models are shown. The confirmed selection is translated into the public flags below and launches the non-interactive `scripts/benchmark.py` CLI. The launcher selects one engine at a time; `--engine all` remains available through the direct CLI because inventories can differ between engines.
 
 Passing even one argument bypasses the launcher and forwards every argument directly to `benchmark.py`, preserving existing automation and direct CLI defaults. This includes `--help` and `--list-models`. Calling `python scripts/benchmark.py ...` directly is also always non-interactive.
 
@@ -98,7 +98,7 @@ The interactive launcher's initial state is:
 | Area | Initial state |
 |---|---|
 | Engine | The CLI's default registered engine (currently `llamacpp`); selectable first if multiple engines exist |
-| ComfyUI directory | `./ComfyUI`, editable before image discovery |
+| ComfyUI directory | The setup-managed `./ComfyUI` directory; there is no extra path prompt |
 | Single-shot LLM and conversation | Checked when an installed catalog or custom LLM is available |
 | Embeddings | Checked when an installed embedding model is available |
 | Image generation | Checked when an installed catalog image checkpoint is available |

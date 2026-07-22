@@ -150,7 +150,7 @@ The test suite consists of **35 test modules** validating different components o
   - `--list-models` formatting includes every family, sizes, and accurate empty/non-empty counts.
 
 - **[test_benchmark_frontend.py](../tests/test_benchmark_frontend.py)**
-  Tests the interactive launcher's pure menu and command-construction seams: installed-only inventory, the complete documented defaults, individual/tier/custom/embedding toggles, invalid input and cancellation, engine/ComfyUI selection, shared LLM scope, exact emitted CLI arguments, and child exit-code propagation.
+  Tests the interactive launcher's pure menu and command-construction seams: installed-only inventory, the complete documented defaults, individual/tier/custom/embedding toggles, invalid input and cancellation, engine selection, setup-managed ComfyUI discovery without a path prompt, shared LLM scope, exact emitted CLI arguments, and child exit-code propagation.
 
 - **[test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py)**
   Exercises an isolated copy of the Unix wrapper with fake activation/Python executables to verify zero-argument frontend routing, argument-preserving CLI bypass, exit codes, and timestamped missing-venv output. It also checks the Windows batch file's label-based forwarding, saved exit code, and Explorer-only pause heuristic; cmd.exe behavior still receives a manual Windows matrix.

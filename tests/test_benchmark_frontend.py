@@ -374,7 +374,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
         returncode = 7
 
     result = run_frontend(
-        input_fn=InputSequence(["", "", "", "yes"]),
+        input_fn=InputSequence(["", "", "yes"]),
         output_fn=output,
         process_runner=lambda command: commands.append(command) or Result(),
         engine_names_fn=lambda: ["fake"],
@@ -394,7 +394,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
 def test_run_frontend_default_output_function_is_timestamped(monkeypatch, capsys):
     monkeypatch.setattr(shared, "_console_now", lambda: datetime(2026, 7, 22, 9, 8, 7))
     result = run_frontend(
-        input_fn=InputSequence(["", "", "", "y"]),
+        input_fn=InputSequence(["", "", "y"]),
         process_runner=lambda command: 0,
         engine_names_fn=lambda: ["fake"],
         engine_factory=FakeEngine,
@@ -406,12 +406,11 @@ def test_run_frontend_default_output_function_is_timestamped(monkeypatch, capsys
     assert all(line.startswith("[09:08:07] ") for line in lines)
 
 
-def test_run_frontend_uses_selected_engine_and_custom_comfyui_path(tmp_path):
+def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
     commands = []
     seen = []
-    custom_comfy = tmp_path / "Custom ComfyUI"
     result = run_frontend(
-        input_fn=InputSequence(["2", str(custom_comfy), "", "", "y"]),
+        input_fn=InputSequence(["2", "", "", "y"]),
         output_fn=lambda _: None,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["llamacpp", "mlx"],
@@ -422,16 +421,31 @@ def test_run_frontend_uses_selected_engine_and_custom_comfyui_path(tmp_path):
         benchmark_path=Path("/benchmark.py"),
     )
     assert result == 0
-    assert seen == [("mlx", custom_comfy)]
+    assert seen == [("mlx", config.COMFYUI_DIR)]
     assert commands[0][commands[0].index("--engine") + 1] == "mlx"
-    assert commands[0][commands[0].index("--comfyui") + 1] == str(custom_comfy)
+    assert commands[0][commands[0].index("--comfyui") + 1] == str(config.COMFYUI_DIR)
+
+
+def test_run_frontend_shows_tests_without_a_path_prompt():
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence(["q"]),
+        output_fn=output,
+        process_runner=lambda command: 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+    )
+    assert result == 0
+    assert any(message == "Choose benchmark tests:" for message in messages)
+    assert not any(message.startswith("ComfyUI directory [") for message in messages)
 
 
 def test_run_frontend_final_confirmation_defaults_to_cancel():
     called = []
     messages, output = output_collector()
     result = run_frontend(
-        input_fn=InputSequence(["", "", "", ""]),
+        input_fn=InputSequence(["", "", ""]),
         output_fn=output,
         process_runner=lambda command: called.append(command),
         engine_names_fn=lambda: ["fake"],
@@ -461,7 +475,7 @@ def test_run_frontend_q_eof_or_interrupt_cancels_without_process():
 def test_run_frontend_returns_error_without_any_installed_models():
     called = []
     result = run_frontend(
-        input_fn=InputSequence([""]),
+        input_fn=InputSequence([]),
         output_fn=lambda _: None,
         process_runner=lambda command: called.append(command),
         engine_names_fn=lambda: ["fake"],
