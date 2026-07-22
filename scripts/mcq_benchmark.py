@@ -48,6 +48,10 @@ class MCQBenchmark:
         r"\b([A-D])\s+is(?:\s+(?:right|correct)\b|\s*(?=[.!?,;]|$))",
         re.IGNORECASE,
     )
+    _RESULTATIVE_ANSWER_RE = re.compile(
+        r"\b(?:making|leav(?:ing|es))\s+([A-D])\s+(?:as\s+)?the\s+correct\s+(?:answer|choice)\b",
+        re.IGNORECASE,
+    )
     _LEADING_MARKED_RE = re.compile(r"^\s*([A-D])\s*[.):]", re.IGNORECASE)
     _LEADING_LINE_RE = re.compile(r"^\s*([A-D])(?:\s*(?:\r?\n|$)|\s+)")
 
@@ -91,6 +95,11 @@ class MCQBenchmark:
         candidates.extend(
             (match.start(1), match.group(1).upper())
             for match in MCQBenchmark._REJECTED_THEN_AFFIRMED_RE.finditer(response_text)
+            if match.group(1).upper() in valid
+        )
+        candidates.extend(
+            (match.start(1), match.group(1).upper())
+            for match in MCQBenchmark._RESULTATIVE_ANSWER_RE.finditer(response_text)
             if match.group(1).upper() in valid
         )
         if candidates:
