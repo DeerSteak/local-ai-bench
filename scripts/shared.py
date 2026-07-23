@@ -752,7 +752,7 @@ class Shared:
                               all_results: list, incorrect: list) -> bool:
         """Record one scored question into by_category/all/incorrect — the
         common tail of every accuracy benchmark's per-question scoring loop
-        (MCQ/Math/Code/Tool), which otherwise differ only in how `entry` and
+        (MCQ/Math/Reasoning/Code/Tool), which otherwise differ only in how `entry` and
         `is_correct` are built. Returns `is_correct` so the caller can bump
         its own correct counter."""
         all_results.append({**entry, "correct": is_correct})
@@ -780,7 +780,7 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None
                                 ) -> dict:
-        """Shared run() body for the MCQ/Math/Code/Tool accuracy benchmarks — only
+        """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy benchmarks — only
         differ in how a question is asked (`ask_fn`), a partial response is
         rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
         `ask_fn(tag, q) -> (parsed_answer, raw_text)`,

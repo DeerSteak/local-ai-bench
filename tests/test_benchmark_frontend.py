@@ -77,7 +77,7 @@ def test_default_test_state_matches_documented_matrix():
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
-        "mcq", "math", "code", "tool", "conc_tool", "conc_chat",
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
     ))
 
 
@@ -106,7 +106,7 @@ def test_model_defaults_select_nonlarge_catalog_and_embeddings_only():
 
 
 def test_model_entries_only_include_families_used_by_selected_tests():
-    llm_entries = build_model_entries(sample_inventory(), ["mcq", "conc_chat"])
+    llm_entries = build_model_entries(sample_inventory(), ["reasoning", "conc_chat"])
     assert {entry.kind for entry in llm_entries} == {"llm", "custom"}
     image_entries = build_model_entries(sample_inventory(), ["img"])
     assert {entry.kind for entry in image_entries} == {"image"}
@@ -338,7 +338,7 @@ def test_build_command_uses_one_llm_selection_for_accuracy_and_concurrency():
         MenuEntry("custom-one", "Custom", "custom", "Custom", True),
     ]
     command = build_benchmark_command(
-        "fake", Path("/comfy"), ["mcq", "conc_chat"], entries,
+        "fake", Path("/comfy"), ["reasoning", "conc_chat"], entries,
         python_executable="python", benchmark_path=Path("/benchmark.py"),
     )
     index = command.index("--llm-models")

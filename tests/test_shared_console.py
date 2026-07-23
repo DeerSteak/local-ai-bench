@@ -54,6 +54,7 @@ def test_runtime_modules_do_not_bypass_shared_console_output():
         "llm_conversation_benchmark.py",
         "embedding_benchmark.py",
         "image_benchmark.py",
+        "reasoning_benchmark.py",
     )
     for filename in runtime_files:
         assert "print(" not in (scripts_dir / filename).read_text()

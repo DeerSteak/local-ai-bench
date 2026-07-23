@@ -65,7 +65,7 @@ WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
 RUN_TIMEOUT = 300   # base generation/chat timeout; images use 2x — overridden by --timeout
 
-# Per accuracy question (mcq/math/code/tool), overridden by --acc-timeout — much shorter than RUN_TIMEOUT
+# Per accuracy question (mcq/math/reasoning/code/tool), overridden by --acc-timeout.
 # since a stuck model's unbounded token budget would otherwise burn 300s per question before anyone noticed.
 ACC_TIMEOUT = 60
 

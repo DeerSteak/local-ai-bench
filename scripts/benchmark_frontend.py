@@ -22,6 +22,7 @@ TEST_DEFINITIONS = [
     ("img", "Image generation", "image", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),
+    ("reasoning", "Reasoning accuracy", "llm", False),
     ("code", "Code accuracy", "llm", False),
     ("tool", "Tool accuracy", "llm", False),
     ("conc_tool", "Tool concurrency", "llm", False),

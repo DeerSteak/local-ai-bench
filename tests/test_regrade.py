@@ -69,6 +69,14 @@ def test_tool_calls_from_raw_handles_stored_response_shapes(raw, expected):
     assert regrade.tool_calls_from_raw(raw) == expected
 
 
+def test_evaluate_raw_reasoning_uses_strict_choice_parsing():
+    question = {"choices": {"A": "one", "B": "two", "C": "three", "D": "four"}}
+    assert regrade.evaluate_raw_answer("reasoning", question, "Final answer: C") == "C"
+    assert regrade.evaluate_raw_answer(
+        "reasoning", question, "Considering C carefully, C remains plausible.",
+    ) is None
+
+
 def test_validate_bank_hashes_reports_every_mismatch(tmp_path, monkeypatch):
     bank = tmp_path / "bank.json"
     bank.write_text("[]")
@@ -84,6 +92,23 @@ def test_validate_bank_hashes_requires_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(regrade, "WORKLOADS", {})
     with pytest.raises(regrade.RegradeError, match="has no bank_versions object"):
         regrade.validate_bank_hashes({}, tmp_path / "results.json")
+
+
+def test_recorded_workloads_keeps_legacy_results_regradeable(monkeypatch):
+    monkeypatch.setattr(regrade, "WORKLOADS", {
+        "mcq": (Path("mcq"), lambda: []),
+        "reasoning": (Path("reasoning"), lambda: []),
+    })
+    results = {"bank_versions": {"mcq": "hash"}, "mcq": {}}
+    assert regrade.recorded_workloads(results, Path("legacy.json")) == ["mcq"]
+
+
+def test_recorded_workloads_rejects_unrecognized_bank_metadata(monkeypatch):
+    monkeypatch.setattr(regrade, "WORKLOADS", {"reasoning": (Path("bank"), lambda: [])})
+    with pytest.raises(regrade.RegradeError, match="no recognized accuracy bank versions"):
+        regrade.recorded_workloads(
+            {"bank_versions": {"removed_workload": "hash"}}, Path("results.json"),
+        )
 
 
 def test_questions_for_result_uses_recorded_sample_order(monkeypatch):
@@ -327,6 +352,31 @@ def test_build_regraded_outputs_requires_every_accuracy_block(tmp_path, monkeypa
     results.pop("tool")
     write_json(results_path, results)
     with pytest.raises(regrade.RegradeError, match="has no tool grading block"):
+        regrade.build_regraded_outputs(results_path)
+
+
+def test_build_regraded_outputs_skips_unrun_empty_accuracy_blocks(tmp_path, monkeypatch):
+    results_path, _ = make_result_set(tmp_path, monkeypatch)
+    results = json.loads(results_path.read_text())
+    for workload in ("math", "code", "tool"):
+        results[workload] = {}
+        regrade.answer_sidecar_path(results_path, workload).unlink()
+    write_json(results_path, results)
+
+    outputs = regrade.build_regraded_outputs(results_path)
+
+    assert set(outputs) == {
+        regrade.regraded_path(results_path),
+        regrade.regraded_path(regrade.answer_sidecar_path(results_path, "mcq")),
+    }
+
+
+def test_build_regraded_outputs_rejects_non_object_empty_like_block(tmp_path, monkeypatch):
+    results_path, _ = make_result_set(tmp_path, monkeypatch)
+    results = json.loads(results_path.read_text())
+    results["math"] = []
+    write_json(results_path, results)
+    with pytest.raises(regrade.RegradeError, match="math results must be a JSON object"):
         regrade.build_regraded_outputs(results_path)
 
 

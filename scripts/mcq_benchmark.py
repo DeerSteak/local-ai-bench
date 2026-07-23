@@ -24,10 +24,33 @@ class MCQBenchmark:
     # answer. The wall-clock timeout in the engine's chat is the real bound.
     MCQ_NUM_PREDICT = -1
 
-    # Keep the unstructured fallback uppercase-only so articles and ordinary
-    # words do not become choice candidates.
+    # Uppercase-only avoids ordinary words; leading article A is filtered separately.
     _LETTER_RE = re.compile(r"\b([A-D])\b")
     _BOXED_RE = re.compile(r"\\boxed\s*\{\s*([A-D])\s*\}", re.IGNORECASE)
+    _BOXED_TEXT_RE = re.compile(
+        r"\\boxed\s*\{\s*\\(?:text|mathrm|mathbf|operatorname)\s*"
+        r"\{\s*([A-D])\s*\}\s*\}", re.IGNORECASE,
+    )
+    _TAGGED_RE = re.compile(
+        r"<(answer|final_answer|final)>\s*([A-D])\s*</\1>", re.IGNORECASE,
+    )
+    _JSON_ANSWER_RE = re.compile(
+        r'["\'](?:answer|final_answer)["\']\s*:\s*["\']([A-D])["\']', re.IGNORECASE,
+    )
+    _DECORATED_ANSWER_RE = re.compile(
+        r"\b(?:final\s+answer|correct\s+(?:answer|choice)|the\s+answer|my\s+answer|answer)\b"
+        r"\s*(?:is\b\s*:?|:|=)\s*(?:option|choice)?\s*[*_`]{1,3}\s*[\[(]?([A-D])\b",
+        re.IGNORECASE,
+    )
+    # A missing separator is safe only when a heading puts the choice on a new line.
+    _HEADER_ANSWER_RE = re.compile(
+        r"\b(?:final\s+answer|correct\s+(?:answer|choice)|the\s+answer|my\s+answer|answer)\b"
+        r"\s*[*_`#]{0,3}\s*"
+        r"(?:(?:is\b\s*:?|:|=)\s*[*_`\"'“”‘’]{0,3}\s*[\[(\"'“”‘’]?"
+        r"|[ \t]*\r?\n\s*[*_`\"'“”‘’]{0,3}\s*[\[(\"'“”‘’]?)"
+        r"([A-D])\b",
+        re.IGNORECASE,
+    )
     _ANSWER_RE = re.compile(
         r"(?:\b(?:final\s+answer|correct\s+(?:answer|choice)|the\s+answer|my\s+answer|answer)\b"
         r"\s*(?:is\b\s*:?|:|=)\s*[\[(]?([A-D])\b"
@@ -38,7 +61,7 @@ class MCQBenchmark:
     )
     _NEGATED_CORRECTION_RE = re.compile(
         r"\bnot\s+[A-D]\b[\s\S]{0,40}?\b"
-        r"(?:it(?:'s|\s+is)|(?:the\s+)?answer\s+is|rather|instead)\s*:?\s*([A-D])\b",
+        r"(?:it(?:['’]s|\s+is)|(?:the\s+)?answer\s+is|rather|instead)\s*:?\s*([A-D])\b",
         re.IGNORECASE,
     )
     _REJECTED_THEN_AFFIRMED_RE = re.compile(
@@ -53,7 +76,12 @@ class MCQBenchmark:
         re.IGNORECASE,
     )
     _LEADING_MARKED_RE = re.compile(r"^\s*([A-D])\s*[.):]", re.IGNORECASE)
-    _LEADING_LINE_RE = re.compile(r"^\s*([A-D])(?:\s*(?:\r?\n|$)|\s+)")
+    # Same-line prose after A is ambiguous with the English article.
+    _LEADING_LINE_RE = re.compile(r"^\s*([A-D])\s*(?:\r?\n|$)")
+    _LEADING_LINE_CONTINUATION_RE = re.compile(r"^\s*([B-D])\s+")
+    _LEADING_ARTICLE_A_RE = re.compile(
+        r"^\s*(A)\s+(?=(?:[\"'“”‘’(\[]\s*)?(?:[^\W_]{2}|[^\W_]-[^\W_]))",
+    )
 
     @staticmethod
     def load_questions(path: Path = MCQ_DATA_PATH) -> list[dict]:
@@ -68,7 +96,8 @@ class MCQBenchmark:
         )
 
     @staticmethod
-    def parse_answer(response_text: str, valid_choices) -> str | None:
+    def parse_answer(response_text: str, valid_choices,
+                     allow_unstructured_fallback: bool = True) -> str | None:
         """Extract a structurally stated choice from free-form text."""
         if not response_text:
             return None
@@ -78,11 +107,24 @@ class MCQBenchmark:
         if len(stripped) == 1 and stripped.upper() in valid:
             return stripped.upper()
 
-        candidates = [
-            (match.start(), match.group(1).upper())
-            for match in MCQBenchmark._BOXED_RE.finditer(response_text)
-            if match.group(1).upper() in valid
-        ]
+        candidates = []
+        for pattern in (
+            MCQBenchmark._BOXED_RE,
+            MCQBenchmark._BOXED_TEXT_RE,
+            MCQBenchmark._DECORATED_ANSWER_RE,
+            MCQBenchmark._HEADER_ANSWER_RE,
+            MCQBenchmark._JSON_ANSWER_RE,
+        ):
+            candidates.extend(
+                (match.start(), match.group(1).upper())
+                for match in pattern.finditer(response_text)
+                if match.group(1).upper() in valid
+            )
+        candidates.extend(
+            (match.start(), match.group(2).upper())
+            for match in MCQBenchmark._TAGGED_RE.finditer(response_text)
+            if match.group(2).upper() in valid
+        )
         for match in MCQBenchmark._ANSWER_RE.finditer(response_text):
             letter = next(group for group in match.groups() if group is not None).upper()
             if letter in valid:
@@ -105,15 +147,24 @@ class MCQBenchmark:
         if candidates:
             return max(candidates, key=lambda candidate: candidate[0])[1]
 
-        for pattern in (MCQBenchmark._LEADING_MARKED_RE, MCQBenchmark._LEADING_LINE_RE):
+        for pattern in (
+            MCQBenchmark._LEADING_MARKED_RE,
+            MCQBenchmark._LEADING_LINE_RE,
+            MCQBenchmark._LEADING_LINE_CONTINUATION_RE,
+        ):
             match = pattern.search(response_text)
             if match and match.group(1).upper() in valid:
                 return match.group(1).upper()
 
+        if not allow_unstructured_fallback:
+            return None
+
+        leading_article = MCQBenchmark._LEADING_ARTICLE_A_RE.match(response_text)
         found = {
             match.group(1)
             for match in MCQBenchmark._LETTER_RE.finditer(response_text)
             if match.group(1) in valid
+            and not (match.group(1) == "A" and leading_article and match.start() == leading_article.start(1))
         }
         return found.pop() if len(found) == 1 else None
 

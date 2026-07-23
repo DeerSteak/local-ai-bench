@@ -10,6 +10,7 @@ import config
 from code_benchmark import CodeBenchmark
 from math_benchmark import MathBenchmark
 from mcq_benchmark import MCQBenchmark
+from reasoning_benchmark import ReasoningBenchmark
 from shared import Shared
 from tool_benchmark import ToolBenchmark
 
@@ -17,6 +18,7 @@ from tool_benchmark import ToolBenchmark
 WORKLOADS = {
     "mcq": (MCQBenchmark.MCQ_DATA_PATH, MCQBenchmark.load_questions),
     "math": (MathBenchmark.MATH_DATA_PATH, MathBenchmark.load_questions),
+    "reasoning": (ReasoningBenchmark.REASONING_DATA_PATH, ReasoningBenchmark.load_questions),
     "code": (CodeBenchmark.CODE_DATA_PATH, CodeBenchmark.load_questions),
     "tool": (ToolBenchmark.TOOL_DATA_PATH, ToolBenchmark.load_questions),
 }
@@ -46,15 +48,25 @@ def load_json_object(path: Path) -> dict:
     return value
 
 
-def current_bank_hashes() -> dict[str, str]:
-    return {name: Shared.file_hash(path) for name, (path, _) in WORKLOADS.items()}
+def recorded_workloads(results: dict, results_path: Path) -> list[str]:
+    recorded = results.get("bank_versions")
+    if not isinstance(recorded, dict):
+        raise RegradeError(f"{results_path} has no bank_versions object")
+    workloads = [name for name in WORKLOADS if name in recorded]
+    if not workloads:
+        raise RegradeError(f"{results_path} has no recognized accuracy bank versions")
+    return workloads
+
+
+def current_bank_hashes(workloads=None) -> dict[str, str]:
+    workloads = WORKLOADS if workloads is None else workloads
+    return {name: Shared.file_hash(WORKLOADS[name][0]) for name in workloads}
 
 
 def validate_bank_hashes(results: dict, results_path: Path) -> None:
     recorded = results.get("bank_versions")
-    if not isinstance(recorded, dict):
-        raise RegradeError(f"{results_path} has no bank_versions object")
-    current = current_bank_hashes()
+    workloads = recorded_workloads(results, results_path)
+    current = current_bank_hashes(workloads)
     mismatches = [
         f"{name}: stored {recorded.get(name, 'missing')}, current {current_hash}"
         for name, current_hash in current.items()
@@ -102,6 +114,8 @@ def evaluate_raw_answer(workload: str, question: dict, raw_response: str):
         return MCQBenchmark.parse_answer(raw_response, question["choices"].keys())
     if workload == "math":
         return MathBenchmark.parse_answer(raw_response)
+    if workload == "reasoning":
+        return ReasoningBenchmark.parse_answer(raw_response, question["choices"].keys())
     if workload == "code":
         code = CodeBenchmark.extract_code(raw_response)
         return CodeBenchmark.evaluate_question(question, code)
@@ -114,6 +128,7 @@ def score_answers(workload: str, questions: list[dict], answers: dict) -> dict:
     scorer = {
         "mcq": MCQBenchmark.score,
         "math": MathBenchmark.score,
+        "reasoning": ReasoningBenchmark.score,
         "code": CodeBenchmark.score,
         "tool": ToolBenchmark.score,
     }[workload]
@@ -209,13 +224,19 @@ def build_regraded_outputs(results_path: Path) -> dict[Path, dict]:
     results_path = Path(results_path)
     results = load_json_object(results_path)
     validate_bank_hashes(results, results_path)
+    workloads = recorded_workloads(results, results_path)
+
+    for workload in workloads:
+        if workload not in results:
+            raise RegradeError(f"{results_path} has no {workload} grading block")
+        if not isinstance(results[workload], dict):
+            raise RegradeError(f"{workload} results must be a JSON object")
+    workloads = [workload for workload in workloads if results[workload]]
 
     output_results = dict(results)
     output_results["version"] = config.VERSION
     outputs = {}
-    for workload in WORKLOADS:
-        if workload not in results:
-            raise RegradeError(f"{results_path} has no {workload} grading block")
+    for workload in workloads:
         sidecar_path = answer_sidecar_path(results_path, workload)
         sidecar = load_json_object(sidecar_path)
         questions = questions_for_result(results, workload)
@@ -255,6 +276,8 @@ def write_outputs(outputs: dict[Path, dict]) -> None:
 def score_changes(original: dict, regraded: dict) -> list[str]:
     changes = []
     for workload in WORKLOADS:
+        if workload not in original or workload not in regraded:
+            continue
         for model, new_score in regraded[workload].items():
             old_score = original[workload][model]
             if (old_score.get("correct"), old_score.get("answered")) != (

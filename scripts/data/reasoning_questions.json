@@ -1,0 +1,491 @@
+{
+  "schema_version": 1,
+  "bank_version": "1.1",
+  "title": "Local AI Bench Reasoning Question Bank",
+  "description": "Original, knowledge-light multiple-choice questions designed to isolate distinct forms of reasoning. Rationales are included for audit and future grader development, not for presentation to a model.",
+  "research_basis": [
+    {
+      "name": "BIG-Bench Hard",
+      "url": "https://aclanthology.org/2023.findings-acl.824/",
+      "contribution": "Motivated broad coverage of logical deduction, temporal sequencing, object tracking, navigation, and multi-step symbolic reasoning."
+    },
+    {
+      "name": "ReClor",
+      "url": "https://arxiv.org/abs/2002.04326",
+      "contribution": "Motivated argument analysis questions that test assumptions, flaws, strengthening, and weakening."
+    },
+    {
+      "name": "CLUTRR",
+      "url": "https://arxiv.org/abs/1908.06177",
+      "contribution": "Motivated compositional relational inference over short natural-language fact chains."
+    },
+    {
+      "name": "DROP",
+      "url": "https://arxiv.org/abs/1903.00161",
+      "contribution": "Motivated discrete reasoning over self-contained passages rather than reliance on outside knowledge."
+    },
+    {
+      "name": "ZebraLogic",
+      "url": "https://arxiv.org/abs/2502.01100",
+      "contribution": "Motivated constraint-satisfaction items with explicit, auditable solution spaces."
+    },
+    {
+      "name": "CRASS",
+      "url": "https://arxiv.org/abs/2112.11941",
+      "contribution": "Motivated explicit counterfactual scenarios whose answers follow only from stated causal rules."
+    }
+  ],
+  "categories": [
+    {"id": "formal_deduction", "label": "Formal Deduction", "description": "Derive conclusions that must follow from quantified or conditional premises, including negation."},
+    {"id": "constraint_satisfaction", "label": "Constraint Satisfaction", "description": "Find assignments or orderings that satisfy several simultaneous restrictions."},
+    {"id": "relational_reasoning", "label": "Relational Reasoning", "description": "Compose directed relationships across entities and infer an unstated relation."},
+    {"id": "temporal_reasoning", "label": "Temporal Reasoning", "description": "Reason about dates, durations, overlaps, and the ordering of events."},
+    {"id": "spatial_reasoning", "label": "Spatial Reasoning", "description": "Track positions, directions, rotations, and relative locations from textual descriptions."},
+    {"id": "causal_counterfactual", "label": "Causal and Counterfactual Reasoning", "description": "Apply stated causal mechanisms and interventions without importing outside assumptions."},
+    {"id": "argument_analysis", "label": "Argument Analysis", "description": "Identify assumptions, logical flaws, and evidence that strengthens or weakens a conclusion."},
+    {"id": "state_tracking", "label": "State Tracking", "description": "Maintain changing object, container, sequence, or Boolean state across multiple operations."},
+    {"id": "discrete_passage_reasoning", "label": "Discrete Passage Reasoning", "description": "Combine facts, counts, and comparisons contained in a short passage."},
+    {"id": "rule_induction", "label": "Rule Induction", "description": "Infer a latent transformation or classification rule from examples and apply it to a new case."}
+  ],
+  "questions": [
+    {
+      "id": "reason_001", "category": "formal_deduction", "difficulty": "easy",
+      "prompt": "All lumes are feras. No feras are nids. Which statement must be true?",
+      "choices": {"A": "No lume is a nid.", "B": "Every nid is a lume.", "C": "Some feras are lumes.", "D": "No nid is a fera only when it is a lume."},
+      "answer": "A", "rationale": "A lume must be a fera, and no fera can be a nid, so no lume can be a nid.",
+      "skills": ["quantifier_reasoning", "set_inclusion", "negation"], "provenance": "original"
+    },
+    {
+      "id": "reason_002", "category": "formal_deduction", "difficulty": "medium",
+      "prompt": "Some pivets are rals. Every ral is a tov. Which statement must be true?",
+      "choices": {"A": "Every pivet is a tov.", "B": "Some pivets are tovs.", "C": "No tov is a pivet.", "D": "Some tovs are not rals."},
+      "answer": "B", "rationale": "The pivets that are rals must also be tovs because every ral is a tov.",
+      "skills": ["quantifier_reasoning", "existential_inference"], "provenance": "original"
+    },
+    {
+      "id": "reason_003", "category": "formal_deduction", "difficulty": "medium",
+      "prompt": "No poet is a miner. Some teachers are poets. Which conclusion must follow?",
+      "choices": {"A": "No teacher is a miner.", "B": "Some miners are not teachers.", "C": "Some teachers are not miners.", "D": "Every poet is a teacher."},
+      "answer": "C", "rationale": "At least one teacher is a poet, and every poet is excluded from being a miner.",
+      "skills": ["quantifier_reasoning", "existential_inference", "negation"], "provenance": "original"
+    },
+    {
+      "id": "reason_004", "category": "formal_deduction", "difficulty": "hard",
+      "prompt": "Every zor that is not blue is tall. No tall zor is quiet. Mira is a zor and is quiet. What must be true of Mira?",
+      "choices": {"A": "Mira is tall.", "B": "Mira is not a zor.", "C": "Mira is both blue and tall.", "D": "Mira is blue."},
+      "answer": "D", "rationale": "If Mira were not blue, the first rule would make her tall; the second would then make her not quiet, contradicting the premise. Therefore she is blue.",
+      "skills": ["conditional_reasoning", "contraposition", "negation"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_005", "category": "constraint_satisfaction", "difficulty": "easy",
+      "prompt": "Four runners—Jin, Kai, Lia, and Mona—finish in different places. Kai finishes before Lia, Lia before Mona, and Jin after Mona. Who finishes first?",
+      "choices": {"A": "Kai", "B": "Lia", "C": "Mona", "D": "Jin"},
+      "answer": "A", "rationale": "The constraints form the complete order Kai, Lia, Mona, Jin.",
+      "skills": ["ordering", "constraint_propagation"], "provenance": "original"
+    },
+    {
+      "id": "reason_006", "category": "constraint_satisfaction", "difficulty": "medium",
+      "prompt": "Ava, Bo, and Cy each choose a different room: red, green, or blue. Ava does not choose red. Bo does not choose blue. Cy chooses red. Which room does Ava choose?",
+      "choices": {"A": "Red", "B": "Blue", "C": "Green", "D": "It cannot be determined"},
+      "answer": "B", "rationale": "Cy takes red. Bo cannot take blue, so Bo takes green, leaving blue for Ava.",
+      "skills": ["assignment", "elimination"], "provenance": "original"
+    },
+    {
+      "id": "reason_007", "category": "constraint_satisfaction", "difficulty": "medium",
+      "prompt": "A three-session workshop schedules Design, Ethics, and Testing once each. Ethics must be immediately before Testing. Design cannot be first. Which schedule is valid?",
+      "choices": {"A": "Design, Ethics, Testing", "B": "Ethics, Design, Testing", "C": "Ethics, Testing, Design", "D": "Testing, Ethics, Design"},
+      "answer": "C", "rationale": "Only Ethics, Testing, Design keeps Ethics immediately before Testing while keeping Design out of the first slot.",
+      "skills": ["scheduling", "adjacency_constraint", "elimination"], "provenance": "original"
+    },
+    {
+      "id": "reason_008", "category": "constraint_satisfaction", "difficulty": "hard",
+      "prompt": "Five books P, Q, R, S, and T stand left to right. R is immediately right of P. Q is somewhere left of P. T is at an end. S is not next to Q. Which arrangement is possible?",
+      "choices": {"A": "T, Q, S, P, R", "B": "Q, S, P, R, T", "C": "T, S, Q, P, R", "D": "Q, P, R, S, T"},
+      "answer": "D", "rationale": "D satisfies P-R adjacency, Q left of P, T at an end, and S not next to Q. Each other option places S next to Q or violates another stated constraint.",
+      "skills": ["ordering", "adjacency_constraint", "constraint_checking"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_009", "category": "relational_reasoning", "difficulty": "easy",
+      "prompt": "Nora is north of Omar. Omar is east of Priya. Where is Nora relative to Priya?",
+      "choices": {"A": "Northeast", "B": "Northwest", "C": "Southeast", "D": "Southwest"},
+      "answer": "A", "rationale": "From Priya, Omar is east and Nora is north of Omar, placing Nora northeast of Priya.",
+      "skills": ["relation_composition", "directional_reasoning"], "provenance": "original"
+    },
+    {
+      "id": "reason_010", "category": "relational_reasoning", "difficulty": "medium",
+      "prompt": "The copper key is heavier than the silver key. The silver key is heavier than the glass key. Which relation follows?",
+      "choices": {"A": "The glass key is heavier than the copper key.", "B": "The copper key is heavier than the glass key.", "C": "The copper and glass keys weigh the same.", "D": "Their relation cannot be determined."},
+      "answer": "B", "rationale": "The heavier-than relation is transitive across the two comparisons.",
+      "skills": ["relation_composition", "transitivity"], "provenance": "original"
+    },
+    {
+      "id": "reason_011", "category": "relational_reasoning", "difficulty": "medium",
+      "prompt": "Rhea mentors Sol. Sol supervises Tavi. In this organization, anyone who mentors a supervisor is an indirect mentor of that supervisor's staff. What is Rhea to Tavi?",
+      "choices": {"A": "Direct supervisor", "B": "Peer", "C": "Indirect mentor", "D": "No stated relation"},
+      "answer": "C", "rationale": "Sol is a supervisor of Tavi, and Rhea mentors Sol, so the stated rule makes Rhea Tavi's indirect mentor.",
+      "skills": ["relation_composition", "rule_application"], "provenance": "original"
+    },
+    {
+      "id": "reason_012", "category": "relational_reasoning", "difficulty": "hard",
+      "prompt": "A link points from U to V. A link points from V to W. A link points from X to W. A reverse-link relation holds when two nodes point to the same target. Which pair has the reverse-link relation?",
+      "choices": {"A": "U and V", "B": "U and W", "C": "V and X only if W points to both", "D": "V and X"},
+      "answer": "D", "rationale": "V and X both point to W, exactly satisfying the defined reverse-link relation.",
+      "skills": ["graph_reasoning", "relation_definition", "distractor_resistance"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_013", "category": "temporal_reasoning", "difficulty": "easy",
+      "prompt": "A review starts at 2:20 p.m. and lasts 45 minutes. When does it end?",
+      "choices": {"A": "3:05 p.m.", "B": "2:55 p.m.", "C": "3:15 p.m.", "D": "3:25 p.m."},
+      "answer": "A", "rationale": "Forty minutes reaches 3:00 p.m., and five more minutes reaches 3:05 p.m.",
+      "skills": ["time_arithmetic", "duration"], "provenance": "original"
+    },
+    {
+      "id": "reason_014", "category": "temporal_reasoning", "difficulty": "medium",
+      "prompt": "The archive closes two days after the audit. The audit is one day before the briefing. The briefing is Thursday. On what day does the archive close?",
+      "choices": {"A": "Thursday", "B": "Friday", "C": "Saturday", "D": "Wednesday"},
+      "answer": "B", "rationale": "The audit is Wednesday, and two days after Wednesday is Friday.",
+      "skills": ["temporal_chain", "day_arithmetic"], "provenance": "original"
+    },
+    {
+      "id": "reason_015", "category": "temporal_reasoning", "difficulty": "medium",
+      "prompt": "Task A runs from 9:10 to 9:50. Task B runs from 9:40 to 10:05. Task C runs from 10:00 to 10:30. Which pair overlaps for exactly 10 minutes?",
+      "choices": {"A": "A and C", "B": "B and C", "C": "A and B", "D": "No pair"},
+      "answer": "C", "rationale": "A and B overlap from 9:40 through 9:50, exactly 10 minutes; B and C overlap for 5 minutes.",
+      "skills": ["interval_reasoning", "duration"], "provenance": "original"
+    },
+    {
+      "id": "reason_016", "category": "temporal_reasoning", "difficulty": "hard",
+      "prompt": "Event K happened before L. M happened after N but before K. P happened after L. Which ordering from earliest to latest must be correct?",
+      "choices": {"A": "M, N, K, L, P", "B": "N, K, M, L, P", "C": "N, M, L, K, P", "D": "N, M, K, L, P"},
+      "answer": "D", "rationale": "M is after N and before K; K is before L; and P is after L, yielding N, M, K, L, P.",
+      "skills": ["temporal_ordering", "constraint_propagation"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_017", "category": "spatial_reasoning", "difficulty": "easy",
+      "prompt": "You face north, turn right, then turn right again. Which direction are you facing?",
+      "choices": {"A": "South", "B": "East", "C": "West", "D": "North"},
+      "answer": "A", "rationale": "Two right turns from north face east and then south.",
+      "skills": ["rotation", "direction_tracking"], "provenance": "original"
+    },
+    {
+      "id": "reason_018", "category": "spatial_reasoning", "difficulty": "medium",
+      "prompt": "A robot starts at (0, 0), moves 3 units east, 2 units north, then 1 unit west. Where does it finish?",
+      "choices": {"A": "(3, 1)", "B": "(2, 2)", "C": "(2, 1)", "D": "(4, 2)"},
+      "answer": "B", "rationale": "The east-west coordinate is 3 minus 1, and the north coordinate is 2.",
+      "skills": ["coordinate_tracking", "vector_composition"], "provenance": "original"
+    },
+    {
+      "id": "reason_019", "category": "spatial_reasoning", "difficulty": "medium",
+      "prompt": "The lamp is left of the vase. The book is right of the vase. The coin is between the lamp and the vase. Which object is farthest right?",
+      "choices": {"A": "Lamp", "B": "Coin", "C": "Book", "D": "Vase"},
+      "answer": "C", "rationale": "The order is lamp, coin, vase, book, so the book is farthest right.",
+      "skills": ["relative_position", "ordering"], "provenance": "original"
+    },
+    {
+      "id": "reason_020", "category": "spatial_reasoning", "difficulty": "hard",
+      "prompt": "A courier faces west. She walks forward, turns left and walks forward, then turns around and walks forward. Relative to her starting point, in which direction is she now? Assume all three walks are the same distance.",
+      "choices": {"A": "Northwest", "B": "Southwest", "C": "Southeast", "D": "West"},
+      "answer": "D", "rationale": "She moves west, then south, then north by the same distance. The north-south moves cancel, leaving her west of the start.",
+      "skills": ["rotation", "path_composition", "cancellation"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_021", "category": "causal_counterfactual", "difficulty": "easy",
+      "prompt": "In a toy system, the fan starts off. Pressing the green button turns on the fan, and nothing else turns it on. The green button was not pressed. What follows?",
+      "choices": {"A": "The fan is off.", "B": "The fan is on.", "C": "The fan alternates on and off.", "D": "The fan state cannot depend on the button."},
+      "answer": "A", "rationale": "The system explicitly states that the button is the only cause that turns on the fan, and it was not pressed.",
+      "skills": ["causal_rule_application", "closed_world_reasoning"], "provenance": "original"
+    },
+    {
+      "id": "reason_022", "category": "causal_counterfactual", "difficulty": "medium",
+      "prompt": "A sensor alarm sounds whenever either gate A or gate B is open. Both gates were closed, so the alarm was silent. If gate B had instead been open while gate A stayed closed, what would have happened?",
+      "choices": {"A": "The alarm would remain silent.", "B": "The alarm would sound.", "C": "Gate A would open.", "D": "There is not enough information."},
+      "answer": "B", "rationale": "The stated rule is an inclusive either-or: opening gate B is sufficient for the alarm to sound.",
+      "skills": ["counterfactual_reasoning", "causal_rule_application"], "provenance": "original"
+    },
+    {
+      "id": "reason_023", "category": "causal_counterfactual", "difficulty": "medium",
+      "prompt": "Fertilizer increases growth only when a plant receives water. Plant Q received fertilizer but no water and did not grow. Which change, under the stated rule, is sufficient to make fertilizer increase Q's growth?",
+      "choices": {"A": "Remove the fertilizer.", "B": "Reduce the light.", "C": "Give Q water while keeping the fertilizer.", "D": "Keep all conditions unchanged."},
+      "answer": "C", "rationale": "Water is the stated enabling condition; with both water and fertilizer present, the fertilizer increases growth.",
+      "skills": ["causal_condition", "sufficiency", "intervention"], "provenance": "original"
+    },
+    {
+      "id": "reason_024", "category": "causal_counterfactual", "difficulty": "hard",
+      "prompt": "In a circuit, switch X directly powers lamp L and also activates relay R. Relay R powers lamp M. Suppose an intervention forces R off even when X is on. If X is turned on under that intervention, what happens?",
+      "choices": {"A": "Both lamps turn on.", "B": "Only lamp M turns on.", "C": "Neither lamp turns on.", "D": "Only lamp L turns on."},
+      "answer": "D", "rationale": "X still directly powers L, but the intervention blocks R, so the path from X through R to M is disabled.",
+      "skills": ["causal_graph", "intervention", "path_reasoning"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_025", "category": "argument_analysis", "difficulty": "easy",
+      "prompt": "A café owner says, 'We should stay open later because three customers asked whether we serve food after 9 p.m.' Which assumption is required?",
+      "choices": {"A": "Enough late-night demand exists to justify the added cost.", "B": "Every customer prefers breakfast food.", "C": "The café should close earlier on weekends.", "D": "No other café stays open after 9 p.m."},
+      "answer": "A", "rationale": "The recommendation depends on late demand being sufficient to outweigh the cost of staying open; the other statements are not required.",
+      "skills": ["assumption_identification", "practical_reasoning"], "provenance": "original"
+    },
+    {
+      "id": "reason_026", "category": "argument_analysis", "difficulty": "medium",
+      "prompt": "After a school introduced optional tutoring, average test scores rose. Therefore, the tutoring caused the increase. What most weakens the argument?",
+      "choices": {"A": "Some students dislike taking tests.", "B": "The school also replaced the test with an easier version that term.", "C": "Tutoring sessions were held after school.", "D": "Average attendance stayed constant."},
+      "answer": "B", "rationale": "An easier test is a competing explanation for the score increase, undermining the causal conclusion.",
+      "skills": ["causal_argument", "confounder_detection", "weakening"], "provenance": "original"
+    },
+    {
+      "id": "reason_027", "category": "argument_analysis", "difficulty": "medium",
+      "prompt": "A manager claims that shorter meetings improve productivity because teams using 20-minute meetings completed more tasks than teams using 60-minute meetings. Which evidence most strengthens the claim?",
+      "choices": {"A": "The shorter meetings used smaller rooms.", "B": "Some employees prefer long discussions.", "C": "The teams had similar workloads and prior completion rates before meeting lengths changed.", "D": "The 60-minute meetings included more slides."},
+      "answer": "C", "rationale": "Similarity before the change reduces alternative explanations based on team ability or workload.",
+      "skills": ["causal_argument", "control_comparison", "strengthening"], "provenance": "original"
+    },
+    {
+      "id": "reason_028", "category": "argument_analysis", "difficulty": "hard",
+      "prompt": "Every award-winning article in this journal was peer reviewed. This article was peer reviewed, so it will win an award. What is the flaw?",
+      "choices": {"A": "It assumes no article can win more than one award.", "B": "It treats peer review as unnecessary for an award.", "C": "It concludes the article was not peer reviewed.", "D": "It treats a necessary condition for award winners as if it were sufficient."},
+      "answer": "D", "rationale": "The premise says award winning implies peer reviewed, not that peer reviewed implies award winning.",
+      "skills": ["conditional_reasoning", "necessary_vs_sufficient", "fallacy_detection"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_029", "category": "state_tracking", "difficulty": "easy",
+      "prompt": "A red token starts in box 1 and a blue token in box 2. Swap the contents of boxes 1 and 2. Where is the red token?",
+      "choices": {"A": "Box 2", "B": "Box 1", "C": "Both boxes", "D": "Neither box"},
+      "answer": "A", "rationale": "The swap moves the red token from box 1 to box 2.",
+      "skills": ["object_tracking", "swap_operation"], "provenance": "original"
+    },
+    {
+      "id": "reason_030", "category": "state_tracking", "difficulty": "medium",
+      "prompt": "A stack starts bottom-to-top as [A, B]. Push C, pop once, then push D. What is the final top item?",
+      "choices": {"A": "A", "B": "D", "C": "B", "D": "C"},
+      "answer": "B", "rationale": "Push C gives [A, B, C], pop removes C, and push D gives [A, B, D].",
+      "skills": ["sequence_state", "stack_operations"], "provenance": "original"
+    },
+    {
+      "id": "reason_031", "category": "state_tracking", "difficulty": "medium",
+      "prompt": "Three lights A, B, and C start off. Toggle A, toggle B, toggle A, then toggle C. Which lights are on?",
+      "choices": {"A": "A and B", "B": "A and C", "C": "B and C", "D": "C only"},
+      "answer": "C", "rationale": "A is toggled twice and returns off; B and C are each toggled once and are on.",
+      "skills": ["boolean_state", "toggle_tracking"], "provenance": "original"
+    },
+    {
+      "id": "reason_032", "category": "state_tracking", "difficulty": "hard",
+      "prompt": "A token starts in slot A. Swap the contents of slots A and B, then B and C, then A and C. Which slot contains the token at the end?",
+      "choices": {"A": "Slot C", "B": "Slot B", "C": "No slot", "D": "Slot A"},
+      "answer": "D", "rationale": "The token moves A to B in the first swap, B to C in the second, and C to A in the final swap.",
+      "skills": ["object_tracking", "permutation", "multi_step_state"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_033", "category": "discrete_passage_reasoning", "difficulty": "easy",
+      "prompt": "A library received 12 mystery books and 8 history books. It lent out 5 mystery books and 3 history books. Which genre has more books remaining?",
+      "choices": {"A": "Mystery", "B": "History", "C": "They are equal", "D": "It cannot be determined"},
+      "answer": "A", "rationale": "Seven mystery books remain compared with five history books.",
+      "skills": ["passage_arithmetic", "comparison"], "provenance": "original"
+    },
+    {
+      "id": "reason_034", "category": "discrete_passage_reasoning", "difficulty": "medium",
+      "prompt": "Mira submitted her report before Theo but after Jun. Sal submitted after Theo. Who submitted second?",
+      "choices": {"A": "Jun", "B": "Mira", "C": "Theo", "D": "Sal"},
+      "answer": "B", "rationale": "The complete order is Jun, Mira, Theo, Sal.",
+      "skills": ["passage_ordering", "information_integration"], "provenance": "original"
+    },
+    {
+      "id": "reason_035", "category": "discrete_passage_reasoning", "difficulty": "medium",
+      "prompt": "On Monday, a clinic saw 18 adults and half as many children. On Tuesday, it saw 5 fewer adults than Monday and 4 more children than Monday. How many patients did it see Tuesday?",
+      "choices": {"A": "22", "B": "24", "C": "26", "D": "31"},
+      "answer": "C", "rationale": "Monday had 9 children. Tuesday had 13 adults and 13 children, totaling 26.",
+      "skills": ["passage_arithmetic", "multi_step_computation"], "provenance": "original"
+    },
+    {
+      "id": "reason_036", "category": "discrete_passage_reasoning", "difficulty": "hard",
+      "prompt": "A trail has three sections. The first is twice as long as the second. The third is 3 km shorter than the first. Together they total 17 km. How long is the third section?",
+      "choices": {"A": "4 km", "B": "6 km", "C": "7 km", "D": "5 km"},
+      "answer": "D", "rationale": "Let the second section be x. Then the lengths are 2x, x, and 2x-3; 5x-3=17 gives x=4, so the third is 5 km.",
+      "skills": ["passage_algebra", "multi_step_computation", "consistency_checking"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_037", "category": "rule_induction", "difficulty": "easy",
+      "prompt": "A machine transforms CAT to DBU and DOG to EPH by the same rule. What does it produce from MAP?",
+      "choices": {"A": "NBQ", "B": "LBQ", "C": "NAQ", "D": "MBP"},
+      "answer": "A", "rationale": "Each letter advances by one alphabet position: M to N, A to B, and P to Q.",
+      "skills": ["pattern_induction", "symbol_transformation"], "provenance": "original"
+    },
+    {
+      "id": "reason_038", "category": "rule_induction", "difficulty": "medium",
+      "prompt": "Under a hidden rule, [2, 5] becomes 12 and [3, 4] becomes 15. The rule is: multiply the two numbers, then add the first number. What does [6, 2] become?",
+      "choices": {"A": "14", "B": "18", "C": "16", "D": "20"},
+      "answer": "B", "rationale": "Six times two is 12, and adding the first number 6 gives 18.",
+      "skills": ["rule_application", "multi_step_computation"], "provenance": "original"
+    },
+    {
+      "id": "reason_039", "category": "rule_induction", "difficulty": "medium",
+      "prompt": "Words are labeled 'vek' when their first and last letters are the same. LEVEL is vek; TABLE is not. Which word is vek?",
+      "choices": {"A": "TRAIN", "B": "CLOUD", "C": "RADAR", "D": "PLANT"},
+      "answer": "C", "rationale": "RADAR begins and ends with R, satisfying the induced rule.",
+      "skills": ["classification_rule", "feature_detection"], "provenance": "original"
+    },
+    {
+      "id": "reason_040", "category": "rule_induction", "difficulty": "hard",
+      "prompt": "A sequence follows this rule: each term is the previous term doubled, with 1 subtracted on alternating steps and 1 added on the other steps. Starting 4, the sequence is 4, 7, 15, 29, 59. What is the next term?",
+      "choices": {"A": "119", "B": "120", "C": "116", "D": "117"},
+      "answer": "D", "rationale": "The operations alternate ×2−1 and ×2+1: 4→7, 7→15, 15→29, 29→59, so the next step is 59×2−1=117.",
+      "skills": ["sequence_induction", "alternating_rule", "multi_step_tracking"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_041", "category": "formal_deduction", "difficulty": "very_hard",
+      "prompt": "Every archivist who is not a botanist is a cryptographer. No cryptographer is a diver. Some archivists are divers. Every diver is patient. Which statement must be true?",
+      "choices": {"A": "Some archivists are botanists and patient.", "B": "Every botanist is patient.", "C": "No archivist is a cryptographer.", "D": "Some cryptographers are patient."},
+      "answer": "A", "rationale": "Take an archivist who is a diver. That person is patient. If the person were not a botanist, the first premise would make them a cryptographer, contradicting that no cryptographer is a diver. Thus at least one archivist is both a botanist and patient.",
+      "skills": ["quantifier_reasoning", "contradiction", "conditional_chain", "existential_inference"], "provenance": "original"
+    },
+    {
+      "id": "reason_042", "category": "formal_deduction", "difficulty": "very_hard",
+      "prompt": "Every vek is exactly one of a lin or a mor. Every lin is a dar. No dar is an ess. Every mor is an ess. Some veks are esses. Which conclusion must follow?",
+      "choices": {"A": "Every ess is a mor.", "B": "Some veks are mors and are not lins.", "C": "No vek is a dar.", "D": "Some lins are esses."},
+      "answer": "B", "rationale": "A vek that is an ess cannot be a lin, because every lin is a dar and no dar is an ess. Since every vek is exactly one of lin or mor, that vek must be a mor and not a lin.",
+      "skills": ["exclusive_disjunction", "quantifier_reasoning", "negation", "existential_inference"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_043", "category": "constraint_satisfaction", "difficulty": "very_hard",
+      "prompt": "Six books J, G, H, K, M, and L occupy positions 1 through 6. G is immediately before H. K is exactly two positions after G. J is before G. L is after H. M is not at either end. Which ordering is possible?",
+      "choices": {"A": "J, G, H, M, K, L", "B": "M, J, G, H, K, L", "C": "J, G, H, K, M, L", "D": "J, M, G, K, H, L"},
+      "answer": "C", "rationale": "In C, G-H occupy 2-3, K is two positions after G at 4, J is before G, L is after H, and M is internal. A puts K three positions after G, B puts M at an end, and D breaks both G-H adjacency and the G-to-K distance.",
+      "skills": ["ordering", "adjacency_constraint", "distance_constraint", "constraint_checking"], "provenance": "original"
+    },
+    {
+      "id": "reason_044", "category": "constraint_satisfaction", "difficulty": "very_hard",
+      "prompt": "Asha, Bram, Ciro, Dena, and Enzo live on different floors 1 through 5. Bram lives above Asha. Ciro lives immediately below Dena. Enzo lives on neither floor 1 nor floor 5. Asha lives exactly two floors below Enzo. Who must live on floor 5?",
+      "choices": {"A": "Asha", "B": "Bram", "C": "Ciro", "D": "Dena"},
+      "answer": "D", "rationale": "If Asha were on 2 and Enzo on 4, no two remaining floors would be consecutive for Ciro-Dena. Therefore Asha is on 1 and Enzo on 3. The only remaining consecutive pair is 4-5, placing Ciro on 4 and Dena on 5; Bram occupies 2.",
+      "skills": ["assignment", "distance_constraint", "adjacency_constraint", "case_elimination"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_045", "category": "relational_reasoning", "difficulty": "very_hard",
+      "prompt": "Relations obey two rules: if X maps Y and Y indexes Z, then X reaches Z; if X reaches Z and Z maps W, then X spans W. Lumen maps Nadir, Nadir indexes Orin, and Orin maps Pava. What relation must Lumen have to Pava?",
+      "choices": {"A": "Lumen spans Pava.", "B": "Lumen indexes Pava.", "C": "Pava reaches Lumen.", "D": "No relation follows."},
+      "answer": "A", "rationale": "Lumen maps Nadir and Nadir indexes Orin, so Lumen reaches Orin. Orin maps Pava, so the second rule makes Lumen span Pava.",
+      "skills": ["relation_composition", "multi_rule_inference", "symbolic_reasoning"], "provenance": "original"
+    },
+    {
+      "id": "reason_046", "category": "relational_reasoning", "difficulty": "very_hard",
+      "prompt": "Relations obey three rules. If X endorses Y and Y supervises Z, X sponsors Z. If X sponsors Z and Z consults W, X indirectly backs W. If V audits X, V challenges every entity that X indirectly backs. Arin endorses Bex, Bex supervises Cato, Cato consults Duri, and Ema audits Arin. What must follow?",
+      "choices": {"A": "Ema sponsors Cato.", "B": "Ema challenges Duri.", "C": "Arin challenges Duri.", "D": "Duri indirectly backs Ema."},
+      "answer": "B", "rationale": "Arin sponsors Cato by the first rule, then indirectly backs Duri by the second. Because Ema audits Arin, the third rule makes Ema challenge Duri.",
+      "skills": ["relation_composition", "multi_rule_inference", "three_hop_reasoning"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_047", "category": "temporal_reasoning", "difficulty": "very_hard",
+      "prompt": "Task A starts at 1:40 and lasts 35 minutes. Task B starts when A ends and lasts 50 minutes. Task C starts 20 minutes after A starts and lasts 75 minutes. For how many minutes is at least one task running, from the first start until the last finish?",
+      "choices": {"A": "85", "B": "90", "C": "95", "D": "110"},
+      "answer": "C", "rationale": "A runs 1:40-2:15, B runs 2:15-3:05, and C runs 2:00-3:15. Their union is continuous from 1:40 to 3:15, which is 95 minutes.",
+      "skills": ["interval_union", "time_arithmetic", "multi_event_reasoning"], "provenance": "original"
+    },
+    {
+      "id": "reason_048", "category": "temporal_reasoning", "difficulty": "very_hard",
+      "prompt": "Three days before the day after tomorrow was Friday. A milestone is scheduled 47 days after today, and a review is scheduled 9 days before the milestone. On what weekday is the review?",
+      "choices": {"A": "Thursday", "B": "Sunday", "C": "Wednesday", "D": "Tuesday"},
+      "answer": "D", "rationale": "Three days before the day after tomorrow is yesterday, so yesterday was Friday and today is Saturday. Forty-seven days later is Thursday; nine days before Thursday is the preceding Tuesday.",
+      "skills": ["relative_date_reasoning", "modular_arithmetic", "multi_step_temporal_chain"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_049", "category": "spatial_reasoning", "difficulty": "very_hard",
+      "prompt": "A courier starts facing north. She walks 4 blocks forward, turns right and walks 3, turns left and walks 2, turns around and walks 5, then turns right and walks 1. Where is she relative to her start?",
+      "choices": {"A": "Northeast", "B": "Northwest", "C": "Southeast", "D": "Southwest"},
+      "answer": "A", "rationale": "Using east as +x and north as +y, the moves end at (2,1): (0,4), (3,4), (3,6), (3,1), then (2,1). That is northeast of the start.",
+      "skills": ["rotation", "path_composition", "coordinate_tracking"], "provenance": "original"
+    },
+    {
+      "id": "reason_050", "category": "spatial_reasoning", "difficulty": "very_hard",
+      "prompt": "Let A be at (0,0). B is 2 units east and 1 unit north of A. C is 4 units west and 3 units north of B. D is the midpoint of A and C. Where is B relative to D?",
+      "choices": {"A": "Northwest", "B": "Southeast", "C": "Northeast", "D": "Southwest"},
+      "answer": "B", "rationale": "B=(2,1), C=(-2,4), and D=(-1,2). From D to B is (+3,-1), so B is southeast of D.",
+      "skills": ["coordinate_tracking", "midpoint", "relative_position", "multi_step_spatial_reasoning"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_051", "category": "causal_counterfactual", "difficulty": "very_hard",
+      "prompt": "A binary system obeys B = A OR U, C = B AND NOT V, D = C XOR U, and E = D OR V. An intervention sets A=0, U=1, and V=0. Which resulting state (B,C,D,E) is correct?",
+      "choices": {"A": "(1,0,1,1)", "B": "(0,1,0,0)", "C": "(1,1,0,0)", "D": "(1,1,1,1)"},
+      "answer": "C", "rationale": "B=1, C=1 AND 1=1, D=1 XOR 1=0, and E=0 OR 0=0.",
+      "skills": ["structural_equations", "intervention", "boolean_reasoning", "multi_stage_causal_chain"], "provenance": "original"
+    },
+    {
+      "id": "reason_052", "category": "causal_counterfactual", "difficulty": "very_hard",
+      "prompt": "A system obeys D = X AND Y, E = D OR Z, and F = E AND NOT X. An intervention forces D=0 while setting X=1, Y=1, and Z=1. What are (D,E,F) after the intervention?",
+      "choices": {"A": "(1,1,1)", "B": "(0,0,1)", "C": "(1,1,0)", "D": "(0,1,0)"},
+      "answer": "D", "rationale": "The intervention overrides D's normal value of 1, fixing D=0. Then E=0 OR 1=1, and F=1 AND NOT 1=0.",
+      "skills": ["structural_equations", "intervention_override", "counterfactual_propagation"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_053", "category": "argument_analysis", "difficulty": "very_hard",
+      "prompt": "Every successful pilot store had an experienced manager. Therefore, assigning an experienced manager to any new store will ensure that store succeeds. Which flaw is most precise?",
+      "choices": {"A": "It treats a condition observed in every successful case as sufficient for success.", "B": "It assumes experienced managers never work at unsuccessful stores because no managers were observed.", "C": "It concludes that successful stores do not need managers.", "D": "It compares stores from different industries."},
+      "answer": "A", "rationale": "The evidence establishes experienced management as a necessary feature among observed successes, not as a sufficient cause that guarantees success.",
+      "skills": ["necessary_vs_sufficient", "causal_argument", "fallacy_detection"], "provenance": "original"
+    },
+    {
+      "id": "reason_054", "category": "argument_analysis", "difficulty": "very_hard",
+      "prompt": "A city found that neighborhoods with more public benches also had more pedestrians. Officials conclude that adding benches will increase walking. Which new fact most strongly weakens that conclusion?",
+      "choices": {"A": "Many existing benches are made of wood.", "B": "Bench-rich neighborhoods are concentrated around transit stations that already generate heavy foot traffic.", "C": "Residents generally say they like benches.", "D": "Some pedestrians never sit down."},
+      "answer": "B", "rationale": "Transit access is a plausible common cause of both benches and pedestrian volume, so the observed association need not show that benches cause more walking.",
+      "skills": ["confounder_detection", "causal_argument", "weakening", "alternative_explanation"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_055", "category": "state_tracking", "difficulty": "very_hard",
+      "prompt": "Slots 1-4 initially contain [A, B, C, D]. Swap slots 1 and 3. Rotate the contents of slots 2,3,4 one place to the right. Swap slots 1 and 4. Finally reverse all four slots. Which slot contains B?",
+      "choices": {"A": "Slot 4", "B": "Slot 3", "C": "Slot 2", "D": "Slot 1"},
+      "answer": "C", "rationale": "The states are [C,B,A,D], then [C,D,B,A], then [A,D,B,C], then [C,B,D,A]. B ends in slot 2.",
+      "skills": ["permutation", "rotation_operation", "multi_step_state"], "provenance": "original"
+    },
+    {
+      "id": "reason_056", "category": "state_tracking", "difficulty": "very_hard",
+      "prompt": "Variables start x=2, y=5, z=1. Execute sequentially, using updated values immediately: x←y−z; z←x+z; swap y and z; x←x+y; y←x−z. What is (x,y,z)?",
+      "choices": {"A": "(9,5,4)", "B": "(10,4,5)", "C": "(9,3,5)", "D": "(9,4,5)"},
+      "answer": "D", "rationale": "The states become (4,5,1), (4,5,5), (4,5,5) after the equal-value swap, then (9,5,5), and finally (9,4,5).",
+      "skills": ["variable_state", "sequential_assignment", "multi_step_state"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_057", "category": "discrete_passage_reasoning", "difficulty": "very_hard",
+      "prompt": "A warehouse begins with 72 units of X. It has five-sixths as many units of Y as X, and Z equals half the combined X and Y inventory. It ships one-third of X, one-quarter of Y, and two-elevenths of Z. Later, half the shipped X units and one-third of the shipped Y units are returned; no Z is returned. How many units remain in total?",
+      "choices": {"A": "164", "B": "159", "C": "169", "D": "176"},
+      "answer": "A", "rationale": "Y starts at 60 and Z at 66. Shipments are 24, 15, and 12; returns are 12 X and 5 Y. Final stocks are X=60, Y=50, and Z=54, totaling 164.",
+      "skills": ["passage_arithmetic", "fraction_reasoning", "multi_stage_inventory", "multi_step_computation"], "provenance": "original"
+    },
+    {
+      "id": "reason_058", "category": "discrete_passage_reasoning", "difficulty": "very_hard",
+      "prompt": "Of 120 reports, 65 discuss security, 55 privacy, and 50 reliability. The pairwise overlaps are 28 security-and-privacy, 24 security-and-reliability, and 20 privacy-and-reliability; each pairwise count includes 10 reports that discuss all three. How many reports discuss exactly one of the three topics?",
+      "choices": {"A": "46", "B": "56", "C": "66", "D": "76"},
+      "answer": "B", "rationale": "Security-only is 65−28−24+10=23, privacy-only is 55−28−20+10=17, and reliability-only is 50−24−20+10=16. Their sum is 56.",
+      "skills": ["set_reasoning", "three_set_inclusion_exclusion", "passage_arithmetic"], "provenance": "original"
+    },
+
+    {
+      "id": "reason_059", "category": "rule_induction", "difficulty": "very_hard",
+      "prompt": "The odd-positioned and even-positioned terms follow separate rules: 2, 3, 6, 8, 18, 15, 54, 24, ?. What is the next term?",
+      "choices": {"A": "33", "B": "72", "C": "162", "D": "81"},
+      "answer": "C", "rationale": "Odd-positioned terms are 2, 6, 18, 54, each three times the previous odd term. The ninth term is therefore 162. Even terms independently increase by 5, 7, and 9.",
+      "skills": ["interleaved_sequence", "rule_induction", "distractor_resistance"], "provenance": "original"
+    },
+    {
+      "id": "reason_060", "category": "rule_induction", "difficulty": "very_hard",
+      "prompt": "A machine reverses a four-letter word, advances letters in output positions 1 and 3 by one alphabet step, and moves letters in positions 2 and 4 back one step. Thus MIND becomes EMJL and COLD becomes EKPB. What does WAVE become?",
+      "choices": {"A": "FWBX", "B": "EVAV", "C": "GUBV", "D": "FUBV"},
+      "answer": "D", "rationale": "Reversing WAVE gives EVAW. Applying +1,−1,+1,−1 by position produces F,U,B,V: FUBV.",
+      "skills": ["composed_transformation", "string_reversal", "alternating_rule", "symbol_transformation"], "provenance": "original"
+    }
+  ]
+}

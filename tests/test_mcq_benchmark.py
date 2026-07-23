@@ -81,6 +81,13 @@ def test_parse_answer_negated_choice_followed_by_correction():
     assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
 
 
+def test_parse_answer_negated_choice_followed_by_correction_curly_apostrophe():
+    # Many models default to typographic quotes; the straight-apostrophe-only
+    # pattern silently dropped this correction.
+    text = "The answer is not A, it’s B."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
 @pytest.mark.parametrize("response", [
     "A is not correct, D is.",
     "A is not right, D is.",
@@ -162,6 +169,73 @@ def test_parse_answer_ambiguous_unstructured_letters_returns_none():
 
 def test_parse_answer_does_not_convert_boxed_choice_value_using_answer_key():
     assert MCQBenchmark.parse_answer(r"$\boxed{452}$", {"A", "B", "C", "D"}) is None
+
+
+@pytest.mark.parametrize(("response", "expected"), [
+    ("**Final Answer**: A", "A"),
+    ("**Answer**: A", "A"),
+    ("Final Answer\nA", "A"),
+    ("### Final Answer\nA", "A"),
+    ('The answer is: "A"', "A"),
+    ("The answer is: 'A'", "A"),
+    ("The answer is: “A”", "A"),
+    ("The answer is: ‘A’", "A"),
+])
+def test_parse_answer_handles_markdown_headers_and_quoted_values(response, expected):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == expected
+
+
+def test_parse_answer_header_label_does_not_reach_across_unrelated_words():
+    text = "The answer is not entirely clear, though Alice thinks A might work, but Bob prefers D."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) is None
+
+
+@pytest.mark.parametrize(("response", "expected"), [
+    # A bare "answer <letter>" with no colon/newline is too weak a signal on
+    # its own line — without a separator, this must not resolve to the first
+    # mentioned letter when a real answer is stated later without one either.
+    ("A reasonable answer A is one option among many, though I lean towards D.", None),
+    ("The sample answer A shown in the textbook differs from mine, which is D.", None),
+    # These still resolve, but only via the later explicit "answer is X" —
+    # not via the earlier unseparated "answer <letter>" mention.
+    ("One possible answer B seems plausible, but the real answer is D.", "D"),
+    ("This puzzle has answer A as a distractor; the real answer is C.", "C"),
+])
+def test_parse_answer_header_label_requires_separator_or_newline(response, expected):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) == expected
+
+
+@pytest.mark.parametrize("response", [
+    # The English article "A" starting a sentence must never be read as a
+    # stated choice — unlike B/C/D, "A" is a real word, not just a letter.
+    "A wise man once said the answer would depend on context.",
+    "A number of factors point to a plausible reading, none conclusive.",
+    "A tempting option, though nothing here settles it either way.",
+    "A Number of factors make this uncertain.",
+    "A JSON object can represent the result.",
+    'A "wise choice" depends on context.',
+    "A URL by itself does not settle the question.",
+    "A 5-step argument is still inconclusive.",
+    "A X-ray result would not settle this puzzle.",
+])
+def test_parse_answer_leading_article_a_is_not_mistaken_for_a_stated_choice(response):
+    assert MCQBenchmark.parse_answer(response, {"A", "B", "C", "D"}) is None
+
+
+def test_parse_answer_leading_letter_b_through_d_inline_continuation_still_works():
+    # Unlike "A", B/C/D are never ordinary sentence-starting English words,
+    # so treating a leading "B ..." as the stated choice is safe.
+    text = "B seems most consistent with the given constraints overall."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "B"
+
+
+def test_parse_answer_leading_bare_a_alone_on_its_own_line_still_works():
+    text = "A\n\nThis is the only self-consistent option."
+    assert MCQBenchmark.parse_answer(text, {"A", "B", "C", "D"}) == "A"
+
+
+def test_parse_answer_does_not_treat_ambiguous_a_then_choice_as_an_article():
+    assert MCQBenchmark.parse_answer("A C", {"A", "B", "C", "D"}) is None
 
 
 # ── score ──
