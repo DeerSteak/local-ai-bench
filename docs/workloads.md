@@ -64,9 +64,11 @@ The small tier scales the same worker-model experiment upward. Granite 4.1 8B me
 
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
-| Qwen3.6 27B Q4_K_M | `qwen3.6:27b-q4_K_M` | ~16.8 GB | Dense |
+| Gemma 3 27B Q4_K_M | `gemma3:27b-it-q4_K_M` | ~16.6 GB | Dense |
 | Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
 | Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~24.0 GB | MoE — 3B active of 35B total |
+
+The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron 3 Nano represents hybrid long-context reasoning with only 3B parameters active per token. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
 
 ### Large tier (70B+ params)
 
@@ -84,7 +86,7 @@ The tier is intentionally limited to one model per role and avoids spending mult
 
 A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen3.6 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super use a hybrid Mamba-Transformer architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super use a hybrid Mamba-Transformer architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
 **Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Single-shot TTFT is measured from request start until the first output reaches the client, while conversation TTFT retains llama-server's prompt-evaluation duration so it represents only the newly-prefilled turn against the reused conversation cache.
 

@@ -34,6 +34,22 @@ def test_granite_and_qwen_worker_models_form_cross_tier_scaling_pairs():
         assert any(model["short"] == small_short for model in LLM_MODELS_SMALL)
 
 
+def test_medium_roster_preserves_dense_and_sparse_architecture_mix():
+    assert [model["short"] for model in LLM_MODELS_MEDIUM] == [
+        "gemma3-27b-q4",
+        "nemotron3-nano-30b-a3b",
+        "qwen3.6-35b-a3b",
+    ]
+
+
+def test_gemma3_27b_uses_official_llamacpp_q4_model():
+    model = next(model for model in LLM_MODELS_MEDIUM
+                 if model["short"] == "gemma3-27b-q4")
+    assert model["hf_repo"] == "ggml-org/gemma-3-27b-it-GGUF"
+    assert model["hf_file"] == "gemma-3-27b-it-Q4_K_M.gguf"
+    assert model["download_size"] == "~16.6 GB"
+
+
 def test_large_roster_preserves_distinct_baseline_agent_and_planner_roles():
     assert [model["short"] for model in LLM_MODELS_LARGE] == [
         "llama3.3-70b-q4",

@@ -7,7 +7,7 @@ export const MODEL_COLORS = {
   "granite4.1-8b-q4":       "#ffab40",
   "qwen3.5-9b-q4":          "#76ff03",
   "phi4-14b":               "#ff4081",
-  "qwen3.6-27b-q4":         "#ff6e40",
+  "gemma3-27b-q4":          "#ff9100",
   "nemotron3-nano-30b-a3b": "#00e676",
   "qwen3.6-35b-a3b":        "#ea80fc",
   "llama3.3-70b-q4":        "#69f0ae",
@@ -20,6 +20,7 @@ export const MODEL_COLORS = {
   "mistral-7b-q4":          "#ff8a80",
   "llama3.1-8b-q4":         "#7c4dff",
   "llama4-16x17b":          "#ffd740",
+  "qwen3.6-27b-q4":         "#ff6e40",
 };
 
 // Matches models.py's IMAGE_MODELS list
@@ -97,7 +98,7 @@ export const LLM_MODEL_LABELS = {
   "granite4.1-8b-q4":       "Granite 4.1 8B Q4_K_M",
   "qwen3.5-9b-q4":          "Qwen3.5 9B Q4_K_M",
   "phi4-14b":               "Phi 4 14B",
-  "qwen3.6-27b-q4":         "Qwen3.6 27B Q4_K_M",
+  "gemma3-27b-q4":          "Gemma 3 27B Q4_K_M",
   "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
   "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
   "llama3.3-70b-q4":        "Llama 3.3 70B Q4_K_M",
@@ -110,6 +111,7 @@ export const LLM_MODEL_LABELS = {
   "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
   "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
   "llama4-16x17b":          "Llama 4 Scout 16x17B",
+  "qwen3.6-27b-q4":         "Qwen3.6 27B Q4_K_M",
 };
 
 // Canonical model order (determines chart line order and color assignment).
@@ -118,13 +120,13 @@ export const LLM_MODEL_LABELS = {
 export const LLM_MODEL_ORDER = [
   "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
   "granite4.1-8b-q4", "qwen3.5-9b-q4", "phi4-14b",
-  "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+  "gemma3-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
   "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
 ];
 
 export const LEGACY_LLM_MODEL_ORDER = [
   "llama3.2-3b-q4", "phi4-mini", "mistral-7b-q4", "llama3.1-8b-q4",
-  "llama4-16x17b",
+  "llama4-16x17b", "qwen3.6-27b-q4",
 ];
 
 export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER];
@@ -140,7 +142,7 @@ export const MODEL_SIZE_TIER = {
   "granite4.1-8b-q4":       "small",
   "qwen3.5-9b-q4":          "small",
   "phi4-14b":               "small",
-  "qwen3.6-27b-q4":         "medium",
+  "gemma3-27b-q4":          "medium",
   "nemotron3-nano-30b-a3b": "medium",
   "qwen3.6-35b-a3b":        "medium",
   "llama3.3-70b-q4":        "large",
@@ -153,6 +155,7 @@ export const MODEL_SIZE_TIER = {
   "mistral-7b-q4":          "small",
   "llama3.1-8b-q4":         "small",
   "llama4-16x17b":          "large",
+  "qwen3.6-27b-q4":         "medium",
 };
 
 export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flux2-dev"];

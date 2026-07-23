@@ -169,21 +169,21 @@ LLM_MODELS_SMALL = sorted([
     },
 ], key=lambda m: m["params_b"])
 
-# Medium-tier models (26–35B parameters). One dense (Qwen3.6 27B) alongside
+# Medium-tier models (26–35B parameters). One dense (Gemma 3 27B) alongside
 # the two MoE entries — MoE download size doesn't track active/compute cost
 # (both MoE entries here run at roughly xsmall-model speed despite the
 # tier-scale download), so a dense model keeps this tier representative of
 # what "medium" actually costs to run, not just to store.
 LLM_MODELS_MEDIUM = sorted([
     {
-        "tag":            "qwen3.6:27b-q4_K_M",
-        "label":          "Qwen3.6 27B Q4_K_M",
-        "short":          "qwen3.6-27b-q4",
+        "tag":            "gemma3:27b-it-q4_K_M",
+        "label":          "Gemma 3 27B Q4_K_M",
+        "short":          "gemma3-27b-q4",
         "tier":           "medium",
-        "download_size":  "~16.8 GB",
+        "download_size":  "~16.6 GB",
         "params_b":       27,
-        "hf_repo":        "bartowski/Qwen_Qwen3.6-27B-GGUF",
-        "hf_file":        "Qwen_Qwen3.6-27B-Q4_K_M.gguf",
+        "hf_repo":        "ggml-org/gemma-3-27b-it-GGUF",
+        "hf_file":        "gemma-3-27b-it-Q4_K_M.gguf",
     },
     {
         "tag":            "nemotron-3-nano:30b-a3b-q4_K_M",

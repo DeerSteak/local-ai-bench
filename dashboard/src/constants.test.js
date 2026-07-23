@@ -17,7 +17,7 @@ describe("model registry consistency", () => {
     expect(LLM_MODEL_ORDER).toEqual([
       "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
       "granite4.1-8b-q4", "qwen3.5-9b-q4", "phi4-14b",
-      "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+      "gemma3-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
       "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
     ]);
   });
