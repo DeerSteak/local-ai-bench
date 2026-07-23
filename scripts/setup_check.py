@@ -23,7 +23,9 @@ from pathlib import Path
 
 import config
 import hardware
+from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
+from setup_selection import selected_cleanup_names, toggle_all_models
 
 # Every asset this script manages (requirements.txt, ComfyUI/, hf.txt, ...)
 # lives at the repo root, one level up. Sourced from config.py rather than
@@ -671,13 +673,19 @@ section("Model Selection")
 def select_models(memory_ceiling_gb=None):
     """Flat numbered list spanning every LLM tier, embeddings, and image
     models, checked by default; returns (selected_llm, selected_images,
-    selected_embed). Plain input() only, no raw terminal mode.
+    selected_embed, cleanup_names). Plain input() only, no raw terminal mode.
 
     An LLM or image model hardware.model_fits()/image_model_fits() says
     won't fit starts unchecked with a note why — informational, not a hard
     block, since a merely-tight model can still be worth trying.
     memory_ceiling_gb=None means no filtering."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
+    non_catalog_dirs = find_non_catalog_model_dirs(config.MODELS_DIR / "llamacpp")
+    folder_word = "folder" if len(non_catalog_dirs) == 1 else "folders"
+    cleanup_items = [{
+        "label": f"Delete {len(non_catalog_dirs)} installed non-catalog model {folder_word}",
+        "directory_names": [path.name for path in non_catalog_dirs],
+    }] if non_catalog_dirs else []
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
         ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
@@ -685,8 +693,9 @@ def select_models(memory_ceiling_gb=None):
         ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm",   "l"),
         ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
         ("Image generation models",           IMAGE_MODELS,      "image", "img"),
+        ("Optional cleanup",                   cleanup_items,     "cleanup", "clean"),
     ]
-    group_keys = {g[3] for g in groups}
+    group_keys = {group_key for _, items, _, group_key in groups if items}
     entries = []
     for _, items, kind, group_key in groups:
         # LLM groups are already one-per-tier; image models carry their own
@@ -694,17 +703,25 @@ def select_models(memory_ceiling_gb=None):
         tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
             entry_tier = tier if kind == "llm" else m.get("tier")
-            if kind == "llm":
+            if kind == "cleanup":
+                fits = None
+                checked = False
+            elif kind == "llm":
                 fits = hardware.model_fits(m["download_size"], memory_ceiling_gb)
+                checked = fits is not False
             elif kind == "image":
                 fits = hardware.image_model_fits(m["checkpoint"], m["short"], memory_ceiling_gb)
+                checked = fits is not False
             else:
                 fits = True
+                checked = True
             entries.append({"item": m, "kind": kind, "group": group_key,
-                            "tier": entry_tier, "checked": fits is not False,
+                            "tier": entry_tier, "checked": checked,
                             "fits": fits})
 
     def size_label(e, m, kind):
+        if kind == "cleanup":
+            return "  (unchecked by default)"
         if kind == "embed":
             return f"  ({m['download_size']})"
         if kind == "llm":
@@ -733,13 +750,18 @@ def select_models(memory_ceiling_gb=None):
                 e = entries[n - 1]
                 box = "[x]" if e["checked"] else "[ ]"
                 print(f"    {box} {n:>2}  {m['label']}{size_label(e, m, kind)}")
+                if kind == "cleanup":
+                    for name in m["directory_names"]:
+                        print(f"             {name!r}")
                 n += 1
             print()
 
     render()
     print("  Type numbers to toggle (e.g. '2 4 7-9'), a size tier (xs/s/m/l — LLM")
     print("  and image checkpoints together) or 'emb'/'img' to toggle a whole")
-    print("  section, 'a' to select/deselect all, 'q' to cancel,")
+    cleanup_hint = ", 'clean' to toggle non-catalog cleanup" if cleanup_items else ""
+    print(f"  section{cleanup_hint}, 'a' to select/deselect")
+    print("  all models (cleanup is excluded), 'q' to cancel,")
     while True:
         try:
             raw = input("  or press Enter to install everything checked above: ").strip().lower()
@@ -751,9 +773,7 @@ def select_models(memory_ceiling_gb=None):
         if raw in ("q", "quit", "cancel"):
             cancel_setup()
         if raw in ("a", "all"):
-            all_checked = all(e["checked"] for e in entries)
-            for e in entries:
-                e["checked"] = not all_checked
+            toggle_all_models(entries)
             print()
             render()
             continue
@@ -801,9 +821,10 @@ def select_models(memory_ceiling_gb=None):
     selected_llm    = [e["item"] for e in entries if e["checked"] and e["kind"] == "llm"]
     selected_images = [e["item"] for e in entries if e["checked"] and e["kind"] == "image"]
     selected_embed  = [e["item"] for e in entries if e["checked"] and e["kind"] == "embed"]
-    return selected_llm, selected_images, selected_embed
+    cleanup_names = selected_cleanup_names(entries)
+    return selected_llm, selected_images, selected_embed, cleanup_names
 
-selected_llm, selected_images, selected_embed = select_models(memory_ceiling_gb)
+selected_llm, selected_images, selected_embed, cleanup_names = select_models(memory_ceiling_gb)
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
@@ -811,6 +832,8 @@ print()
 info(f"LLM models selected: {len(selected_llm)}/{len(LLM_MODELS_XSMALL) + len(LLM_MODELS_SMALL) + len(LLM_MODELS_MEDIUM) + len(LLM_MODELS_LARGE)}")
 info(f"Image models selected: {len(selected_images)}/{len(IMAGE_MODELS)}")
 info(f"Embeddings models selected: {len(selected_embed)}/{len(EMBED_MODELS)}")
+if cleanup_names:
+    warn(f"Non-catalog model cleanup selected: {len(cleanup_names)} folder(s)")
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
@@ -896,7 +919,17 @@ if needs_llamacpp_install:
         fail("llama.cpp installation failed")
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
                        "(needs a 'llama-server' binary on PATH, or built under "
-                       f"{LLAMACPP_DIR})")
+                      f"{LLAMACPP_DIR})")
+
+if cleanup_names:
+    section("Non-catalog Model Cleanup")
+    cleanup_root = config.MODELS_DIR / "llamacpp"
+    removed, cleanup_failures = delete_non_catalog_model_dirs(cleanup_root, cleanup_names)
+    for name in removed:
+        ok(f"{name!r} — deleted")
+    for name, reason in cleanup_failures.items():
+        fail(f"{name!r} — could not delete: {reason}")
+        issues.append(f"Delete non-catalog model folder {str(cleanup_root / name)!r}")
 
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 

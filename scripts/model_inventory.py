@@ -1,6 +1,7 @@
-"""Read-only installed-model discovery shared by the CLI and frontend."""
+"""Installed-model discovery and cleanup helpers."""
 
 import re
+import shutil
 from pathlib import Path
 
 from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
@@ -9,6 +10,64 @@ from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 def sanitize_tag_to_short(tag: str) -> str:
     """Turn a raw tag into a filesystem/JSON-key-safe short identifier."""
     return re.sub(r"[:/]", "-", tag)
+
+
+def model_tag_slug(tag: str) -> str:
+    """Return the llama.cpp model-directory name for a catalog tag."""
+    return tag.replace(":", "_").replace("/", "_")
+
+
+def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None = None,
+                                embed_catalog: list[dict] | None = None) -> list[Path]:
+    """Return installed model directories not owned by the current catalog."""
+    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
+    catalog_slugs = {model_tag_slug(model["tag"])
+                     for model in llm_catalog + embed_catalog}
+    models_dir = Path(models_dir)
+    if not models_dir.is_dir():
+        return []
+    return sorted(
+        (path for path in models_dir.iterdir()
+         if (path.is_dir() or path.is_symlink())
+         and path.name not in catalog_slugs
+         and any(path.glob("*.gguf"))),
+        key=lambda path: path.name,
+    )
+
+
+def delete_non_catalog_model_dirs(models_dir: Path, directory_names: list[str],
+                                  llm_catalog: list[dict] | None = None,
+                                  embed_catalog: list[dict] | None = None,
+                                  ) -> tuple[list[str], dict[str, str]]:
+    """Delete explicitly named non-catalog directories without following symlinks."""
+    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
+    catalog_slugs = {model_tag_slug(model["tag"])
+                     for model in llm_catalog + embed_catalog}
+    models_dir = Path(models_dir)
+    removed = []
+    failures = {}
+    for name in directory_names:
+        if name != Path(name).name or name in catalog_slugs:
+            failures[name] = "not an eligible non-catalog directory"
+            continue
+        target = models_dir / name
+        if not target.is_dir() and not target.is_symlink():
+            failures[name] = "directory no longer exists"
+            continue
+        if not any(target.glob("*.gguf")):
+            failures[name] = "directory does not contain a GGUF model"
+            continue
+        try:
+            if target.is_symlink():
+                target.unlink()
+            else:
+                shutil.rmtree(target)
+            removed.append(name)
+        except OSError as exc:
+            failures[name] = str(exc)
+    return removed, failures
 
 
 def classify_engine_models(installed: list[dict], llm_catalog: list[dict] | None = None,

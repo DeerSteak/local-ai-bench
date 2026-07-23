@@ -142,12 +142,17 @@ The test suite consists of **37 test modules** validating different components o
   - `sanitize_tag_to_short` turns a raw tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
 
 - **[test_model_inventory.py](../tests/test_model_inventory.py)**
-  Tests the shared read-only inventory module. It verifies:
+  Tests the shared inventory and cleanup module. It verifies:
   - Installed engine entries are classified into catalog LLM, embedding, and sorted custom groups while absent catalog entries are omitted.
   - Custom folder names get safe short identifiers without invented tier metadata.
   - Image checkpoint discovery honors an explicit ComfyUI path and handles a missing checkpoint directory.
   - A complete inventory reads the engine once and combines it with image discovery.
   - `--list-models` formatting includes every family, sizes, and accurate empty/non-empty counts.
+  - Non-catalog folder discovery is sorted, excludes catalog folders and loose files, and handles a missing model root.
+  - Cleanup rejects traversal and catalog targets, removes only explicitly named custom directories, and unlinks directory symlinks without touching their targets.
+
+- **[test_setup_selection.py](../tests/test_setup_selection.py)**
+  Tests the setup picker's extracted cleanup-selection rules: cleanup is included only when explicitly checked, and the broad `a` toggle changes installable models without enabling or disabling cleanup.
 
 - **[test_benchmark_frontend.py](../tests/test_benchmark_frontend.py)**
   Tests the interactive launcher's pure menu and command-construction seams: installed-only inventory, the complete documented defaults, strict/atomic saved-state loading and writing, stale-entry fallback, exact engine/test/model restoration and visible reset guidance, cancellation and write-failure behavior, individual/tier/custom/embedding toggles, banner-preserving initial display, clean redraws with feedback preserved, untimestamped default output, invalid input, setup-managed ComfyUI discovery without a path prompt, shared LLM scope, exact emitted CLI arguments, and child exit-code propagation.

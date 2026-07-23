@@ -42,6 +42,8 @@ tests.sh / .bat                Activates bench-env, runs pytest
 - `mcq_benchmark.py`, `math_benchmark.py`, `reasoning_benchmark.py`, `code_benchmark.py`, `tool_benchmark.py` — accuracy tests
 - `hardware.py` — GPU/system-memory detection and model-fit estimates
 - `models.py` — single source of truth for every model definition (tags, checkpoints, tiers, sizes)
+- `model_inventory.py` — installed-model classification and safe non-catalog folder cleanup helpers
+- `setup_selection.py` — pure selection rules extracted from the side-effectful setup picker
 - `setup_check.py` — hardware detection, interactive model picker, unattended install (called by `setup.sh`/`setup.bat`)
 
 ## Critical safety rules

@@ -19,16 +19,19 @@
 `setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
 
 1. Detects your hardware (OS, GPU backend, RAM).
-2. Shows a numbered list of all 12 LLMs, two embedding models, and five image models — everything selected by default except LLM/image models estimated not to fit in detected RAM/VRAM, which start unchecked with a note on how much they'd need. The estimate includes model weights, required image encoders, a 20% runtime allowance, and a small OS/driver reserve; it is guidance rather than a hard block.
+2. Shows a numbered list of all 12 LLMs, two embedding models, and five image models — everything selected by default except LLM/image models estimated not to fit in detected RAM/VRAM, which start unchecked with a note on how much they'd need. If `models/llamacpp/` contains GGUF model folders that do not belong to the current LLM or embedding catalog, the list also includes one optional cleanup row naming those folders; cleanup is always unchecked by default. Folders without a GGUF and loose files are not cleanup candidates. The estimate includes model weights, required image encoders, a 20% runtime allowance, and a small OS/driver reserve; it is guidance rather than a hard block.
 3. Lets you toggle the selection interactively:
    - Numbers to toggle individual models (`2 4 7-9`)
    - A size tier (`xs`/`s`/`m`/`l`) to toggle every model at that tier — LLM and image checkpoints together, e.g. `s` toggles the small-tier LLMs and SDXL as a group
    - `emb`/`img` to toggle a whole section
-   - `a` to select/deselect all
+   - `clean` to toggle deletion of the listed non-catalog model folders
+   - `a` to select/deselect all models; it deliberately does not enable cleanup
    - Enter to install everything shown
    - `q` or Ctrl-C to cancel at any point with nothing installed yet
 4. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
-5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts.
+5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts. If cleanup was selected, it first deletes only the non-catalog folders shown in the picker; catalog folders and loose files are never cleanup targets.
+
+Non-catalog cleanup is permanent rather than a move to Trash or Recycle Bin. It is deliberately excluded from the default selection and the `a` shortcut; select its numbered row or type `clean` only after checking the displayed folder names for models you want to keep.
 
 When setup is complete, run the benchmark:
 
