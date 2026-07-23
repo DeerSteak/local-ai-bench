@@ -1,24 +1,30 @@
-from datetime import datetime
+import json
 from pathlib import Path
 
 import pytest
 
+import benchmark_frontend
 import config
-import shared
 from benchmark_frontend import (
+    FRONTEND_STATE_VERSION,
     FrontendCancelled,
     MenuEntry,
+    apply_saved_model_selection,
+    apply_saved_test_selection,
     build_benchmark_command,
     build_model_entries,
+    build_frontend_state,
     build_test_entries,
     choose_engine,
     choose_models,
     choose_tests,
+    load_frontend_state,
     missing_catalog_hint,
     model_selection_error,
     parse_toggle_numbers,
     render_model_menu,
     run_frontend,
+    save_frontend_state,
     toggle_group,
 )
 from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
@@ -38,6 +44,14 @@ class InputSequence:
 class FakeEngine:
     def __init__(self, name="fake"):
         self.name = name
+
+
+@pytest.fixture(autouse=True)
+def isolate_frontend_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        benchmark_frontend, "FRONTEND_STATE_PATH",
+        tmp_path / ".benchmark_frontend_state.json",
+    )
 
 
 def sample_inventory():
@@ -68,6 +82,127 @@ def full_inventory():
 def output_collector():
     messages = []
     return messages, messages.append
+
+
+def saved_state(**overrides):
+    state = {
+        "version": FRONTEND_STATE_VERSION,
+        "engine": "fake",
+        "tests": ["llm", "emb"],
+        "models": {
+            "llm": [LLM_MODELS[-1]["tag"], "custom-folder"],
+            "embedding": [EMBED_MODELS[-1]["tag"]],
+            "image": [],
+        },
+    }
+    state.update(overrides)
+    return state
+
+
+def test_frontend_state_round_trip_uses_strict_json(tmp_path):
+    path = tmp_path / "state.json"
+    state = saved_state()
+    assert save_frontend_state(state, path)
+    assert load_frontend_state(path) == state
+    assert json.loads(path.read_text()) == state
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("contents", [
+    "{",
+    "[]",
+    json.dumps({"version": FRONTEND_STATE_VERSION}),
+    json.dumps(saved_state(version=999)),
+    json.dumps(saved_state(engine=1)),
+    json.dumps(saved_state(tests=[])),
+    json.dumps(saved_state(tests=["llm", "llm"])),
+    json.dumps(saved_state(models={"llm": [], "embedding": []})),
+    json.dumps(saved_state(models={"llm": [1], "embedding": [], "image": []})),
+])
+def test_load_frontend_state_rejects_missing_or_malformed_state(tmp_path, contents):
+    path = tmp_path / "state.json"
+    path.write_text(contents)
+    assert load_frontend_state(path) is None
+    assert load_frontend_state(tmp_path / "missing.json") is None
+
+
+def test_save_frontend_state_failure_cleans_temporary_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(benchmark_frontend.os, "replace", lambda *args: (_ for _ in ()).throw(
+        OSError("read only")
+    ))
+    assert not save_frontend_state(saved_state(), tmp_path / "state.json")
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_save_frontend_state_ignores_post_replace_cleanup_failure(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    real_unlink = Path.unlink
+
+    def fail_only_for_moved_temporary(candidate, *args, **kwargs):
+        if candidate.name.startswith(".state.json."):
+            raise OSError("cleanup blocked")
+        return real_unlink(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_only_for_moved_temporary)
+    assert save_frontend_state(saved_state(), path)
+    assert json.loads(path.read_text()) == saved_state()
+
+
+def test_build_frontend_state_records_every_selected_family():
+    entries = [
+        MenuEntry("stock", "Stock", "llm", "LLM", True),
+        MenuEntry("custom", "Custom", "custom", "Custom", True),
+        MenuEntry("embed", "Embed", "embedding", "Embeddings", False),
+        MenuEntry("image", "Image", "image", "Images", True),
+    ]
+    assert build_frontend_state("mlx", ["llm", "img"], entries) == {
+        "version": FRONTEND_STATE_VERSION,
+        "engine": "mlx",
+        "tests": ["llm", "img"],
+        "models": {
+            "llm": ["stock", "custom"],
+            "embedding": [],
+            "image": ["image"],
+        },
+    }
+
+
+def test_saved_test_selection_applies_only_available_remembered_tests():
+    entries = build_test_entries(sample_inventory())
+    entries_by_name = {entry.value: entry for entry in entries}
+    entries_by_name["emb"].available = False
+    assert apply_saved_test_selection(entries, saved_state(tests=["mcq", "emb"]))
+    assert [entry.value for entry in entries if entry.checked] == ["mcq"]
+
+
+def test_saved_test_selection_keeps_defaults_when_nothing_still_applies():
+    entries = build_test_entries(sample_inventory())
+    defaults = [entry.value for entry in entries if entry.checked]
+    assert not apply_saved_test_selection(entries, saved_state(tests=["unknown"]))
+    assert [entry.value for entry in entries if entry.checked] == defaults
+    assert not apply_saved_test_selection(entries, None)
+
+
+def test_saved_model_selection_restores_exact_installed_values_per_family():
+    entries = build_model_entries(sample_inventory(), ["llm", "emb", "img"])
+    apply_saved_model_selection(entries, saved_state())
+    selected = {entry.value for entry in entries if entry.checked}
+    assert selected == {
+        LLM_MODELS[-1]["tag"], "custom-folder", EMBED_MODELS[-1]["tag"],
+        IMAGE_MODELS[0]["short"],  # no remembered image remains, so defaults survive
+    }
+
+
+def test_saved_model_selection_keeps_family_defaults_when_all_values_are_stale():
+    entries = build_model_entries(sample_inventory(), ["llm"])
+    defaults = [entry.value for entry in entries if entry.checked]
+    state = saved_state(models={
+        "llm": ["removed-model"], "embedding": [], "image": [],
+    })
+    apply_saved_model_selection(entries, state)
+    assert [entry.value for entry in entries if entry.checked] == defaults
+    apply_saved_model_selection(entries, None)
+    assert [entry.value for entry in entries if entry.checked] == defaults
 
 
 def test_default_test_state_matches_documented_matrix():
@@ -189,6 +324,15 @@ def test_choose_engine_accepts_default_and_reprompts_after_invalid_input():
     assert any("Couldn't parse" in message for message in messages)
 
 
+def test_choose_engine_preserves_first_render_then_clears_each_redraw():
+    clears = []
+    assert choose_engine(
+        ["llamacpp", "mlx"], InputSequence(["invalid", ""]), lambda _: None,
+        clear_fn=lambda: clears.append(True),
+    ) == "llamacpp"
+    assert len(clears) == 1
+
+
 def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     entries = build_test_entries(sample_inventory())
     entries[2].available = False
@@ -219,6 +363,20 @@ def test_choose_tests_q_cancels_and_invalid_input_reprompts():
     with pytest.raises(FrontendCancelled):
         choose_tests(entries, InputSequence(["invalid", "q"]), output)
     assert any("Couldn't parse" in message for message in messages)
+
+
+def test_choose_tests_clears_each_redraw_and_keeps_feedback_visible():
+    entries = build_test_entries(sample_inventory())
+    messages, output = output_collector()
+    clears = []
+    selected = choose_tests(
+        entries, InputSequence(["invalid", ""]), output,
+        clear_fn=lambda: clears.append(len(messages)),
+    )
+    assert selected == ["llm", "conv", "emb", "img"]
+    assert len(clears) == 1
+    second_menu = messages[clears[0]:]
+    assert "Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`." in second_menu
 
 
 def test_choose_models_tier_partial_to_all_then_all_to_none():
@@ -256,6 +414,19 @@ def test_choose_models_handles_unavailable_groups_invalid_input_and_cancel():
     assert any("tier large" in message for message in messages)
     assert any("custom models" in message for message in messages)
     assert any("Couldn't parse" in message for message in messages)
+
+
+def test_choose_models_clears_each_redraw_and_keeps_feedback_visible():
+    entries = build_model_entries(sample_inventory(), ["llm"])
+    messages, output = output_collector()
+    clears = []
+    choose_models(
+        entries, ["llm"], None, InputSequence(["invalid", ""]), output,
+        clear_fn=lambda: clears.append(len(messages)),
+    )
+    assert len(clears) == 1
+    second_menu = messages[clears[0]:]
+    assert any("Couldn't parse" in message for message in second_menu)
 
 
 def test_model_selection_error_covers_each_required_family():
@@ -390,21 +561,159 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     assert str(config.COMFYUI_DIR) in commands[0]
     assert any("Launching benchmark.py" in message for message in messages)
     assert "Start this benchmark? [Y/n]" in messages
+    state = load_frontend_state(tmp_path / ".benchmark_frontend_state.json")
+    assert state["engine"] == "fake"
+    assert state["tests"] == ["llm", "conv", "emb", "img"]
 
 
-def test_run_frontend_default_output_function_is_timestamped(monkeypatch, capsys):
-    monkeypatch.setattr(shared, "_console_now", lambda: datetime(2026, 7, 22, 9, 8, 7))
+def test_run_frontend_default_output_function_is_untimestamped(capsys):
     result = run_frontend(
         input_fn=InputSequence(["", "", "y"]),
         process_runner=lambda command: 0,
         engine_names_fn=lambda: ["fake"],
         engine_factory=FakeEngine,
         inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
     )
     lines = capsys.readouterr().out.splitlines()
     assert result == 0
     assert lines
-    assert all(line.startswith("[09:08:07] ") for line in lines)
+    assert all(not line.startswith("[") for line in lines)
+
+
+def test_run_frontend_keeps_model_selection_visible_for_confirmation():
+    clears = []
+    result = run_frontend(
+        input_fn=InputSequence(["", "", ""]),
+        output_fn=lambda _: None,
+        process_runner=lambda command: 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: clears.append(True),
+    )
+    assert result == 0
+    assert len(clears) == 2
+
+
+def test_run_frontend_banner_survives_until_single_engine_test_menu():
+    visible = []
+
+    def clear():
+        visible.clear()
+
+    result = run_frontend(
+        input_fn=InputSequence(["q"]),
+        output_fn=visible.append,
+        process_runner=lambda command: pytest.fail("cancel must not launch"),
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=clear,
+    )
+    assert result == 0
+    assert visible[:3] == [
+        "Local AI Bench interactive launcher",
+        "Engine: fake",
+        "Choose benchmark tests:",
+    ]
+
+
+def test_run_frontend_marks_restored_selections_and_explains_reset(tmp_path):
+    state_path = tmp_path / "remembered.json"
+    assert save_frontend_state(saved_state(), state_path)
+    visible = []
+
+    result = run_frontend(
+        input_fn=InputSequence(["q"]),
+        output_fn=visible.append,
+        process_runner=lambda command: pytest.fail("cancel must not launch"),
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        state_path=state_path,
+    )
+    assert result == 0
+    assert any(
+        "Restored saved selections" in message
+        and "`remembered.json`" in message
+        and "delete this file to reset" in message
+        for message in visible
+    )
+
+
+def test_run_frontend_restores_saved_tests_models_and_engine(tmp_path):
+    state_path = tmp_path / "state.json"
+    state = saved_state(
+        engine="mlx",
+        tests=["reasoning"],
+        models={
+            "llm": [LLM_MODELS[-1]["tag"], "custom-folder"],
+            "embedding": [],
+            "image": [],
+        },
+    )
+    assert save_frontend_state(state, state_path)
+    commands = []
+
+    result = run_frontend(
+        input_fn=InputSequence(["", "", "", ""]),
+        output_fn=lambda _: None,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["llamacpp", "mlx"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        state_path=state_path,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+
+    assert result == 0
+    command = commands[0]
+    assert command[command.index("--engine") + 1] == "mlx"
+    tests_index = command.index("--tests")
+    assert command[tests_index + 1:command.index("--llm-models")] == ["reasoning"]
+    assert command[command.index("--llm-models") + 1:] == [
+        LLM_MODELS[-1]["tag"], "custom-folder",
+    ]
+
+
+def test_run_frontend_cancel_does_not_create_state_file(tmp_path):
+    state_path = tmp_path / "state.json"
+    result = run_frontend(
+        input_fn=InputSequence(["", "", "n"]),
+        output_fn=lambda _: None,
+        process_runner=lambda command: pytest.fail("cancel must not launch"),
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        state_path=state_path,
+    )
+    assert result == 0
+    assert not state_path.exists()
+
+
+def test_run_frontend_state_write_failure_warns_but_still_launches(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(benchmark_frontend, "save_frontend_state", lambda *args: False)
+    messages, output = output_collector()
+    called = []
+    result = run_frontend(
+        input_fn=InputSequence(["", "", ""]),
+        output_fn=output,
+        process_runner=lambda command: called.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        state_path=tmp_path / "state.json",
+    )
+    assert result == 0
+    assert called
+    assert any("continuing without persistence" in message for message in messages)
 
 
 def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():

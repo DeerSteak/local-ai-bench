@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Interactive launcher that translates selections into benchmark CLI flags."""
 
+import json
+import os
 import platform
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +33,13 @@ TEST_DEFINITIONS = [
 ]
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
+FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
+FRONTEND_STATE_VERSION = 1
+FRONTEND_MODEL_FAMILIES = {
+    "llm": {"llm", "custom"},
+    "embedding": {"embedding"},
+    "image": {"image"},
+}
 
 
 class FrontendCancelled(Exception):
@@ -45,6 +55,92 @@ class MenuEntry:
     checked: bool
     available: bool = True
     tier: str | None = None
+
+
+def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
+    try:
+        state = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(state, dict) or set(state) != {"version", "engine", "tests", "models"}:
+        return None
+    if state["version"] != FRONTEND_STATE_VERSION or not isinstance(state["engine"], str):
+        return None
+    tests = state["tests"]
+    models = state["models"]
+    if (not isinstance(tests, list) or not tests
+            or not all(isinstance(test, str) for test in tests)
+            or len(tests) != len(set(tests))):
+        return None
+    if not isinstance(models, dict) or set(models) != set(FRONTEND_MODEL_FAMILIES):
+        return None
+    for values in models.values():
+        if (not isinstance(values, list)
+                or not all(isinstance(value, str) for value in values)
+                or len(values) != len(set(values))):
+            return None
+    return state
+
+
+def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
+    path = Path(path)
+    temporary_path = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+                mode="w", dir=path.parent, prefix=f".{path.name}.",
+                suffix=".tmp", delete=False) as stream:
+            temporary_path = Path(stream.name)
+            json.dump(state, stream, indent=2, allow_nan=False)
+        os.replace(temporary_path, path)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def build_frontend_state(engine_name: str, tests: list[str],
+                         entries: list[MenuEntry]) -> dict:
+    selected = [entry for entry in entries if entry.checked]
+    return {
+        "version": FRONTEND_STATE_VERSION,
+        "engine": engine_name,
+        "tests": list(tests),
+        "models": {
+            family: [
+                entry.value for entry in selected if entry.kind in kinds
+            ]
+            for family, kinds in FRONTEND_MODEL_FAMILIES.items()
+        },
+    }
+
+
+def apply_saved_test_selection(entries: list[MenuEntry], state: dict | None) -> bool:
+    if state is None:
+        return False
+    saved = set(state["tests"])
+    if not any(entry.available and entry.value in saved for entry in entries):
+        return False
+    for entry in entries:
+        entry.checked = entry.available and entry.value in saved
+    return True
+
+
+def apply_saved_model_selection(entries: list[MenuEntry], state: dict | None) -> None:
+    if state is None:
+        return
+    for family, kinds in FRONTEND_MODEL_FAMILIES.items():
+        family_entries = [entry for entry in entries if entry.kind in kinds]
+        saved = set(state["models"][family])
+        if not any(entry.value in saved for entry in family_entries):
+            continue
+        for entry in family_entries:
+            entry.checked = entry.value in saved
 
 
 def read_choice(prompt: str, input_fn, output_fn) -> str:
@@ -82,17 +178,25 @@ def toggle_group(entries: list[MenuEntry], predicate) -> bool:
     return True
 
 
-def choose_engine(available: list[str], input_fn, output_fn) -> str:
+def choose_engine(available: list[str], input_fn, output_fn, clear_fn=lambda: None,
+                  preferred: str | None = None) -> str:
     if len(available) == 1:
         output_fn(f"Engine: {available[0]}")
         return available[0]
 
-    selected = 0
+    selected = available.index(preferred) if preferred in available else 0
+    feedback = None
+    redraw = False
     while True:
+        if redraw:
+            clear_fn()
+        redraw = True
         output_fn("Choose one inference engine (`--engine all` remains CLI-only):")
         for index, name in enumerate(available, 1):
             box = "[x]" if index - 1 == selected else "[ ]"
             output_fn(f"  {box} {index:>2}  {name}")
+        if feedback:
+            output_fn(feedback)
         raw = read_choice("Enter a number, or press Enter to accept:", input_fn, output_fn).lower()
         if raw in ("q", "quit", "cancel"):
             raise FrontendCancelled
@@ -101,7 +205,7 @@ def choose_engine(available: list[str], input_fn, output_fn) -> str:
         if raw.isdigit() and 1 <= int(raw) <= len(available):
             selected = int(raw) - 1
             return available[selected]
-        output_fn("Couldn't parse that engine selection.")
+        feedback = "Couldn't parse that engine selection."
 
 
 def build_test_entries(inventory: dict[str, list[dict]]) -> list[MenuEntry]:
@@ -123,17 +227,29 @@ def build_test_entries(inventory: dict[str, list[dict]]) -> list[MenuEntry]:
     ]
 
 
-def render_test_menu(entries: list[MenuEntry], output_fn) -> None:
+def render_test_menu(entries: list[MenuEntry], output_fn,
+                     selection_note: str | None = None) -> None:
     output_fn("Choose benchmark tests:")
+    if selection_note:
+        output_fn(selection_note)
     for index, entry in enumerate(entries, 1):
         box = "[x]" if entry.checked else "[ ]"
         unavailable = "  (no installed model available)" if not entry.available else ""
         output_fn(f"  {box} {index:>2}  {entry.label}{unavailable}")
 
 
-def choose_tests(entries: list[MenuEntry], input_fn, output_fn) -> list[str]:
+def choose_tests(entries: list[MenuEntry], input_fn, output_fn,
+                 clear_fn=lambda: None, selection_note: str | None = None) -> list[str]:
+    feedback = None
+    redraw = False
     while True:
-        render_test_menu(entries, output_fn)
+        if redraw:
+            clear_fn()
+        redraw = True
+        render_test_menu(entries, output_fn, selection_note)
+        if feedback:
+            output_fn(feedback)
+        feedback = None
         raw = read_choice(
             "Toggle tests with numbers/ranges, press Enter to continue, or q to cancel:",
             input_fn, output_fn,
@@ -144,16 +260,16 @@ def choose_tests(entries: list[MenuEntry], input_fn, output_fn) -> list[str]:
             selected = [entry.value for entry in entries if entry.checked]
             if selected:
                 return selected
-            output_fn("Select at least one available test.")
+            feedback = "Select at least one available test."
             continue
         try:
             numbers = parse_toggle_numbers(raw, len(entries))
         except ValueError:
-            output_fn("Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`.")
+            feedback = "Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`."
             continue
         unavailable = [number for number in numbers if not entries[number - 1].available]
         if unavailable:
-            output_fn("A test with no applicable installed model cannot be selected.")
+            feedback = "A test with no applicable installed model cannot be selected."
             continue
         for number in numbers:
             entries[number - 1].checked = not entries[number - 1].checked
@@ -205,8 +321,11 @@ def missing_catalog_hint(inventory: dict[str, list[dict]], system: str) -> str |
     )
 
 
-def render_model_menu(entries: list[MenuEntry], hint: str | None, output_fn) -> None:
+def render_model_menu(entries: list[MenuEntry], hint: str | None, output_fn,
+                      selection_note: str | None = None) -> None:
     output_fn("Choose installed models:")
+    if selection_note:
+        output_fn(selection_note)
     previous_section = None
     for index, entry in enumerate(entries, 1):
         if entry.section != previous_section:
@@ -234,9 +353,18 @@ def model_selection_error(entries: list[MenuEntry], tests: list[str]) -> str | N
 
 
 def choose_models(entries: list[MenuEntry], tests: list[str], hint: str | None,
-                  input_fn, output_fn) -> list[MenuEntry]:
+                  input_fn, output_fn, clear_fn=lambda: None,
+                  selection_note: str | None = None) -> list[MenuEntry]:
+    feedback = None
+    redraw = False
     while True:
-        render_model_menu(entries, hint, output_fn)
+        if redraw:
+            clear_fn()
+        redraw = True
+        render_model_menu(entries, hint, output_fn, selection_note)
+        if feedback:
+            output_fn(feedback)
+        feedback = None
         raw = read_choice(
             "Toggle numbers/ranges, xs/s/m/l, custom, or emb; press Enter to continue:",
             input_fn, output_fn,
@@ -246,7 +374,7 @@ def choose_models(entries: list[MenuEntry], tests: list[str], hint: str | None,
         if raw == "":
             error = model_selection_error(entries, tests)
             if error:
-                output_fn(error)
+                feedback = error
                 continue
             return entries
         if raw in TIER_KEYS:
@@ -254,17 +382,17 @@ def choose_models(entries: list[MenuEntry], tests: list[str], hint: str | None,
             if not toggle_group(
                 entries, lambda entry: entry.kind in ("llm", "image") and entry.tier == tier,
             ):
-                output_fn(f"No installed catalog LLM/image models are available in tier {tier}.")
+                feedback = f"No installed catalog LLM/image models are available in tier {tier}."
             continue
         if raw in ("custom", "emb"):
             kind = "custom" if raw == "custom" else "embedding"
             if not toggle_group(entries, lambda entry: entry.kind == kind):
-                output_fn(f"No installed {kind} models are available in this selection.")
+                feedback = f"No installed {kind} models are available in this selection."
             continue
         try:
             numbers = parse_toggle_numbers(raw, len(entries))
         except ValueError:
-            output_fn("Couldn't parse that selection; use numbers/ranges or a documented group key.")
+            feedback = "Couldn't parse that selection; use numbers/ranges or a documented group key."
             continue
         for number in numbers:
             entries[number - 1].checked = not entries[number - 1].checked
@@ -315,31 +443,60 @@ def render_summary(engine_name: str, comfyui_dir: Path, tests: list[str],
             output_fn(f"  {label}: {', '.join(names)}")
 
 
-def run_frontend(input_fn=input, output_fn=Shared.output, process_runner=None,
+def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=None,
                  engine_names_fn=engine_names, engine_factory=get_engine,
                  inventory_builder=build_model_inventory, system: str | None = None,
                  python_executable: str = sys.executable,
-                 benchmark_path: Path | None = None) -> int:
+                 benchmark_path: Path | None = None,
+                 clear_fn=Shared.clear_terminal,
+                 state_path: Path | None = None) -> int:
     process_runner = process_runner or subprocess.run
     system = system or platform.system()
+    state_path = state_path or FRONTEND_STATE_PATH
+    saved_state = load_frontend_state(state_path)
+    selection_note = None
+    if saved_state:
+        selection_note = (
+            f"Restored saved selections from `{Path(state_path).name}`; "
+            "delete this file to reset them."
+        )
     try:
+        clear_fn()
         output_fn("Local AI Bench interactive launcher")
-        selected_engine = choose_engine(engine_names_fn(), input_fn, output_fn)
+        available_engines = engine_names_fn()
+        selected_engine = choose_engine(
+            available_engines, input_fn, output_fn, clear_fn,
+            preferred=saved_state["engine"] if saved_state else None,
+        )
         comfyui_dir = config.COMFYUI_DIR
         inventory = inventory_builder(engine_factory(selected_engine), comfyui_dir)
         test_entries = build_test_entries(inventory)
+        apply_saved_test_selection(test_entries, saved_state)
         if not any(entry.available for entry in test_entries):
             output_fn("No installed benchmark models were found. Run setup to add catalog models.")
             return 1
 
-        tests = choose_tests(test_entries, input_fn, output_fn)
+        if len(available_engines) > 1:
+            clear_fn()
+        tests = choose_tests(
+            test_entries, input_fn, output_fn, clear_fn,
+            selection_note=selection_note,
+        )
         model_entries = build_model_entries(inventory, tests)
+        apply_saved_model_selection(model_entries, saved_state)
         hint = missing_catalog_hint(inventory, system)
-        choose_models(model_entries, tests, hint, input_fn, output_fn)
+        clear_fn()
+        choose_models(
+            model_entries, tests, hint, input_fn, output_fn, clear_fn,
+            selection_note=selection_note,
+        )
         render_summary(selected_engine, comfyui_dir, tests, model_entries, output_fn)
         confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
         if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled
+        state = build_frontend_state(selected_engine, tests, model_entries)
+        if not save_frontend_state(state, state_path):
+            output_fn("Could not save this launcher selection; continuing without persistence.")
         command = build_benchmark_command(
             selected_engine, comfyui_dir, tests, model_entries,
             python_executable=python_executable, benchmark_path=benchmark_path,

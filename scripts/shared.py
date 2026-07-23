@@ -85,10 +85,22 @@ class Shared:
 
     # ── logging ──
     @staticmethod
-    def output(msg, *, leading_blank=False, end="\n"):
+    def plain_output(msg="", *, end="\n"):
+        print(msg, end=end)
+
+    @staticmethod
+    def clear_terminal():
+        if platform.system() == "Windows":
+            os.system("cls")
+        else:
+            Shared.plain_output("\033[2J\033[H", end="")
+
+    @staticmethod
+    def output(msg, *, leading_blank=False, timestamp_newline=False, end="\n"):
         if leading_blank:
             print()
-        print(f"[{_console_now().strftime('%H:%M:%S')}] {msg}", end=end)
+        separator = "\n" if timestamp_newline else " "
+        print(f"[{_console_now().strftime('%H:%M:%S')}]{separator}{msg}", end=end)
 
     @staticmethod
     def log(msg):   Shared.output(f"  {config.CYAN}→{config.RESET}  {msg}")
@@ -100,7 +112,8 @@ class Shared:
     def err(msg):   Shared.output(f"  {config.RED}✗{config.RESET}  {msg}")
     @staticmethod
     def section(t): Shared.output(
-        f"{config.BOLD}{'─'*50}\n  {t}\n{'─'*50}{config.RESET}", leading_blank=True,
+        f"{config.BOLD}{'─'*50}\n  {t}\n{'─'*50}{config.RESET}",
+        leading_blank=True, timestamp_newline=True,
     )
 
     # ── stats ──

@@ -196,8 +196,10 @@ hf.txt
 .math_crash_cache.json
 .code_crash_cache.json
 .tool_crash_cache.json
+.reasoning_crash_cache.json
 .concurrency_tool_crash_cache.json
 .concurrency_chat_crash_cache.json
+.benchmark_frontend_state.json
 /scripts/.omc
 /.claude
 /mba-results

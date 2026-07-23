@@ -91,9 +91,11 @@ Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactiv
 
 Passing even one argument bypasses the launcher and forwards every argument directly to `benchmark.py`, preserving existing automation and direct CLI defaults. This includes `--help` and `--list-models`. Calling `python scripts/benchmark.py ...` directly is also always non-interactive.
 
+After confirmation, the launcher saves the selected engine, tests, and model IDs to the gitignored `.benchmark_frontend_state.json` in the project root. The next no-argument launch restores entries that are still installed and available and labels the menus as restored. Delete `.benchmark_frontend_state.json` to reset the launcher to current defaults. A missing, malformed, or incompatible file uses the defaults below. If an entire remembered test or model family is no longer applicable, that family also falls back to the current defaults; stale entries never make an installed model appear or block the menu. Cancelling does not save, and a state-write failure warns but does not prevent the benchmark from starting.
+
 On Windows, double-clicking `run_bench.bat` uses a best-effort Explorer-launch check to pause after completion so the final status remains visible. Launches from an existing command prompt exit normally. The pause affects presentation only; the batch file saves and returns the benchmark's original exit code.
 
-The interactive launcher's initial state is:
+On first use or when no saved selection applies, the interactive launcher's state is:
 
 | Area | Initial state |
 |---|---|
@@ -116,7 +118,7 @@ The model screen uses one LLM selection for single-shot, conversation, accuracy,
 
 After the selection summary, `Start this benchmark? [Y/n]` defaults to yes; press Enter to launch or enter `n` to cancel.
 
-All project-generated launcher and benchmark status/progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
+The interactive launcher clears the terminal before its initial display, between menu screens, and before subsequent redraws while preserving the welcome banner through the first single-engine test screen and the final model choices through confirmation. It uses the native `cls` command on Windows and ANSI terminal clearing elsewhere. Launcher prompts remain untimestamped. Once execution starts, benchmark status and progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
 
 `--runs` applies only to single-shot LLM, embeddings, and image generation. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
 

@@ -29,7 +29,7 @@ bash run_bench.sh
 run_bench.bat
 ```
 
-With no arguments, the benchmark launcher shows an interactive checklist of the installed tests and models before anything runs. Accuracy tests, concurrency tests, custom LLMs, and large-tier LLM/image models start unchecked. Passing any CLI argument skips the menu and forwards the arguments directly to the non-interactive benchmark CLI, so existing scripts keep working unchanged. Console status and progress messages include local `[HH:MM:SS]` timestamps.
+With no arguments, the benchmark launcher shows an interactive checklist of the installed tests and models before anything runs. It remembers the last confirmed selection locally and identifies restored selections on screen; delete `.benchmark_frontend_state.json` to reset them. On first use—or when saved items are unavailable—it falls back to the documented defaults, where accuracy tests, concurrency tests, custom LLMs, and large-tier LLM/image models start unchecked. Passing any CLI argument skips the menu and forwards the arguments directly to the non-interactive benchmark CLI, so existing scripts keep working unchanged. The launcher redraws each menu on a clean terminal without timestamps; benchmark status and progress messages include local `[HH:MM:SS]` timestamps.
 
 A full run takes several hours, depending on your hardware and which options you select. When it's done, explore the results in the [dashboard](docs/dashboard.md):
 
