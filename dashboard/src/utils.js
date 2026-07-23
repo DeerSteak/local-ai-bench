@@ -5,6 +5,7 @@ import {
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS,
   LLM_MODEL_ORDER, IMAGE_MODEL_ORDER, EMBED_MODEL_ORDER,
   CTX_COLORS, IMAGE_BAR_COLORS, EMBED_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
+  ACCURACY_TESTS,
 } from "./constants";
 
 export function parseJSON(text) {
@@ -199,10 +200,8 @@ export function getAllLLMModels(files) {
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
-    for (const m of Object.keys(f.data.mcq || {})) s.add(m);
-    for (const m of Object.keys(f.data.math || {})) s.add(m);
-    for (const m of Object.keys(f.data.code || {})) s.add(m);
-    for (const m of Object.keys(f.data.tool || {})) s.add(m);
+    for (const test of ACCURACY_TESTS)
+      for (const m of Object.keys(f.data[test] || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
   }
@@ -815,6 +814,29 @@ export function buildAccuracyCategoryConfigs(files) {
     name: f.hostname,
     fill: FILE_COLORS[fi % FILE_COLORS.length],
   }));
+}
+
+const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very_hard"];
+
+export function buildAccuracyDifficultyData(files, testKey, model) {
+  const found = new Set();
+  for (const f of files)
+    for (const difficulty of Object.keys(f.data[testKey]?.[model]?.by_difficulty || {}))
+      found.add(difficulty);
+  const difficulties = [
+    ...DIFFICULTY_ORDER.filter(difficulty => found.has(difficulty)),
+    ...[...found].filter(difficulty => !DIFFICULTY_ORDER.includes(difficulty)).sort(),
+  ];
+  return difficulties.map(difficulty => {
+    const row = {
+      difficultyLabel: difficulty.replaceAll("_", " ").replace(/^./, c => c.toUpperCase()),
+    };
+    files.forEach((f, fi) => {
+      const score = f.data[testKey]?.[model]?.by_difficulty?.[difficulty];
+      if (score) row[`f${fi}`] = score.accuracy_pct;
+    });
+    return row;
+  });
 }
 
 // Accuracy timeout/loop-detection diagnostics: one row per (file, model),

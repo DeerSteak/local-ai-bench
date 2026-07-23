@@ -50,7 +50,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | Doc | Covers |
 |---|---|
 | [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
-| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/code/tool accuracy, and concurrency |
+| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, and concurrency |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |

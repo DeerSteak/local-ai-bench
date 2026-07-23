@@ -13,6 +13,7 @@ import {
   getAllAccuracyModels,
   buildAccuracyGroupedBarData, buildAccuracyGroupedBarConfigs,
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
+  buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
   flattenAccuracyData,
   getAllConcurrencyModels, buildConcurrencyDataForModel,
@@ -232,6 +233,10 @@ describe("getAllLLMModels", () => {
   });
   it("includes a model present only in tool accuracy results", () => {
     const files = [{ data: { tool: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toEqual(["phi4-mini"]);
+  });
+  it("includes a model present only in reasoning accuracy results", () => {
+    const files = [{ data: { reasoning: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toEqual(["phi4-mini"]);
   });
   it("includes a model present only in concurrency_tool, leaving llm/llm_conversation empty", () => {
@@ -488,6 +493,31 @@ describe("buildAccuracyCategoryData / buildAccuracyCategoryConfigs", () => {
   it("returns an empty array for a model with no category breakdown at all", () => {
     const files = [{ data: { mcq: { m: {} } } }];
     expect(buildAccuracyCategoryData(files, "mcq", "m")).toEqual([]);
+  });
+});
+
+describe("buildAccuracyDifficultyData", () => {
+  it("uses semantic difficulty order, keeps missing file values absent, and labels underscores", () => {
+    const files = [
+      { hostname: "HostA", data: { reasoning: { m: { by_difficulty: {
+        very_hard: { accuracy_pct: 25 }, easy: { accuracy_pct: 100 },
+      } } } } },
+      { hostname: "HostB", data: { reasoning: { m: { by_difficulty: {
+        hard: { accuracy_pct: 50 }, novel_level: { accuracy_pct: 75 },
+      } } } } },
+    ];
+    expect(buildAccuracyDifficultyData(files, "reasoning", "m")).toEqual([
+      { difficultyLabel: "Easy", f0: 100 },
+      { difficultyLabel: "Hard", f1: 50 },
+      { difficultyLabel: "Very hard", f0: 25 },
+      { difficultyLabel: "Novel level", f1: 75 },
+    ]);
+  });
+
+  it("returns an empty array for older accuracy results without a difficulty breakdown", () => {
+    expect(buildAccuracyDifficultyData(
+      [{ data: { reasoning: { m: { by_category: {} } } } }], "reasoning", "m",
+    )).toEqual([]);
   });
 });
 

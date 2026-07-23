@@ -38,7 +38,7 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (xsmall/small catalog models stop at 48K) |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
-| Accuracy | A **Test** sub-picker for MCQ / Math / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when any timeout or likely loop was recorded — a Timeouts & Likely Loops diagnostics chart. See [Accuracy](workloads.md#accuracy) |
+| Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. A Timeouts & Likely Loops diagnostics chart appears when any incident was recorded. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 

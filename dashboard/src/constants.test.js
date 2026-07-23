@@ -4,6 +4,7 @@ import {
   IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
   SIZE_TIER_ORDER, RES_ORDER, RES_COLORS,
+  ACCURACY_TESTS, ACCURACY_TEST_LABELS,
 } from "./constants";
 
 // These catch the most common maintenance mistake in this file: adding a
@@ -61,5 +62,12 @@ describe("image resolution registry", () => {
 
   it("assigns a color to every ordered resolution", () => {
     for (const resolution of RES_ORDER) expect(RES_COLORS[resolution]).toBeDefined();
+  });
+});
+
+describe("accuracy registry", () => {
+  it("matches the benchmark workload order and labels every test", () => {
+    expect(ACCURACY_TESTS).toEqual(["mcq", "math", "reasoning", "code", "tool"]);
+    for (const test of ACCURACY_TESTS) expect(ACCURACY_TEST_LABELS[test]).toBeTruthy();
   });
 });

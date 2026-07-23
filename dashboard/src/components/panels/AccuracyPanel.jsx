@@ -2,6 +2,7 @@ import {
   getAllAccuracyModels, modelLabel,
   buildAccuracyGroupedBarData, buildAccuracyGroupedBarConfigs,
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
+  buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
   sortBarData, findMostStrenuousKey,
 } from "../../utils";
@@ -10,7 +11,7 @@ import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import styles from "../ChartPanel.module.css";
 
-// Accuracy section (MCQ / Math / Code / Tool, picked via accuracyTest): one overall
+// Accuracy section (picked via accuracyTest): one overall
 // bar chart (accuracy % per model, systems as bars), then one per-category
 // breakdown chart per model, then — when at least one timeout or likely loop
 // occurs — a diagnostics chart of timed_out_count/likely_loop_count. No
@@ -50,6 +51,7 @@ export default function AccuracyPanel({ containerRef, files, accuracyTest, enabl
 
       {allModels.map(model => {
         const catData = buildAccuracyCategoryData(files, accuracyTest, model);
+        const difficultyData = buildAccuracyDifficultyData(files, accuracyTest, model);
         if (!catData.length) return null;
         return (
           <div key={model} className={styles.modelGroup}>
@@ -63,6 +65,17 @@ export default function AccuracyPanel({ containerRef, files, accuracyTest, enabl
               chartName={`${accuracyTest}-category`} chartModel={model}
               logoSrc={logoSrc} direction="higher"
             />
+            {difficultyData.length > 0 && (
+              <GroupedBarCard
+                title={`${testLabel} Accuracy by Difficulty`}
+                modelName={modelLabel(model)}
+                data={difficultyData}
+                barConfigs={categoryConfigs}
+                xKey="difficultyLabel" yLabel="Accuracy (%)" unit="pct"
+                chartName={`${accuracyTest}-difficulty`} chartModel={model}
+                logoSrc={logoSrc} direction="higher"
+              />
+            )}
           </div>
         );
       })}

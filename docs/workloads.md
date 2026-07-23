@@ -112,7 +112,7 @@ Two models — Nomic Embed Text and MixedBread Embed Large — measured on a sin
 
 Each model gets `--warmup` discarded calls first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it is absorbed before the `--runs` measured calls (default 3) rather than skewing them. Embedding calls use the engine interface's fixed 120-second request timeout.
 
-If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only`. This restarts the active engine with GPU devices hidden for every engine-backed test in the run (`llm`/`conv`/`mcq`/`math`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
+If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only`. This restarts the active engine with GPU devices hidden for every engine-backed test in the run (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
 
 | Model | Tag | Size |
 |---|---|---|
@@ -123,9 +123,11 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 ## Accuracy
 
-Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer. Since decoding is deterministic (temperature 0), a single pass through the question bank is representative — repeating it wouldn't change the answers, unlike the performance tests, so this workload ignores `--runs`.
+All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding is deterministic (temperature 0), each workload makes one measured pass and ignores `--runs`.
 
-All four accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias.
+### MCQ
+
+Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer.
 
 The question bank (`scripts/data/mcq_questions.json`) covers eight categories — science, history, geography, logic, literature, arithmetic, commonsense, and language — with introductory items retained for score continuity and a substantially harder second half. Correct-answer positions are balanced across A–D (38/38/37/37) *and* randomly ordered (seeded, so the file is reproducible) — balance alone doesn't rule out an exploitable fixed-cycle ordering (e.g. "guess A, then B, then C, then D, repeat"), so both properties matter. A model's free-form reply is parsed conservatively: a bare answer letter wins first; otherwise the last boxed or explicitly marked answer wins, including negated and resultative corrections such as `making C the correct answer`; then comes a leading answer marker or leading letter, and finally a single unambiguous uppercase choice mentioned anywhere. Repeated mentions of the same choice are accepted, but competing unmarked choices count as unanswered (wrong).
 
@@ -153,6 +155,18 @@ Results report overall accuracy plus a per-category breakdown, same as MCQ.
 
 Run just this test with `--tests math`.
 
+### Reasoning
+
+Every LLM model answers 60 original, knowledge-light A–D questions from `scripts/data/reasoning_questions.json`. The bank has six questions in each of ten categories: formal deduction, constraint satisfaction, relational, temporal, spatial, causal/counterfactual, argument analysis, state tracking, discrete passage reasoning, and rule induction. Questions 41–60 form a deliberately difficult tail: every category contributes two `very_hard` items, and answer positions remain balanced across the full bank.
+
+The bank is validated before use rather than trusted as arbitrary JSON. Its versioned top-level shape, research-source metadata, categories, exact question fields, unique IDs, A–D choices, category references, difficulty values, rationales, skill tags, and original provenance must all be valid; malformed content aborts with a clear error instead of silently changing what gets scored.
+
+Reasoning uses MCQ's tested explicit-answer patterns—bare choices, leading markers, boxed/Markdown/tagged answers, and explicit corrections—but disables its final unstructured-letter fallback. This matters for long reasoning: merely mentioning `A` or `C` in an explanation is not a final selection. If the model ignores the request to return only a letter, it must still state the answer structurally; otherwise the response counts as unanswered rather than risking a false positive.
+
+Results report overall accuracy, per-category accuracy, and per-difficulty accuracy. The dashboard shows both category and difficulty charts, making performance on the `very_hard` tail visible rather than hiding it in the aggregate.
+
+Run just this test with `--tests reasoning`.
+
 ### Code
 
 Every LLM model answers a fixed bank of 60 coding problems once each (temperature 0, same deterministic-decoding reasoning as MCQ/math, so this workload also ignores `--runs`). The question bank (`scripts/data/code_problems.json`) covers 13 categories — algorithms, arithmetic, divide-and-conquer, dynamic programming, graph, intervals, list, matrix, number theory, search, stack, stateful, and string — with visible and hidden expected-output cases for each problem.
@@ -179,14 +193,14 @@ Results report overall accuracy plus a per-category breakdown, same as MCQ/math/
 
 Run just this test with `--tests tool`.
 
-Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, code, and tool, and de-duplicates against any of them also listed explicitly, without changing how `--tests acc` itself is invoked as more benchmarks join this group in the future. See [CLI Reference](cli-reference.md).
+Run every accuracy-style test at once with `--tests acc` — expands to MCQ, math, reasoning, code, and tool, and de-duplicates against any of them also listed explicitly. See [CLI Reference](cli-reference.md).
 
 ### Bank versioning
 
 Question banks grow and change over time (the MCQ and math banks each doubled in size in one revision, for example), so a raw correct count from one results file is never safely comparable to another without knowing which version of the bank produced it — 40/50 and 40/150 both look like "40 correct" but mean very different things. To make that comparison safe:
 
-- Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `code`, `tool`) at the time of that run, computed from the raw bytes of `scripts/data/*_questions.json` / `code_problems.json` (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
-- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.code_crash_cache.json`, `.tool_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried.
+- Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `reasoning`, `code`, `tool`) at the time of that run, computed from the raw bank bytes (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
+- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.reasoning_crash_cache.json`, `.code_crash_cache.json`, `.tool_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried.
 - Percentages normalize for bank size, but a changed bank can also change difficulty and composition. Use matching `bank_versions` hashes for direct model/system comparisons; treat cross-version percentages as contextual rather than apples-to-apples.
 
 `--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration. It uses a deterministic round-robin across categories; every category is represented when `N` is at least that bank's category count, while smaller samples cover as many categories as their size permits. The exact sampled IDs are recorded under `sample_ids`. Sampled runs are reproducible, but are not comparable with full-bank or differently sampled runs.

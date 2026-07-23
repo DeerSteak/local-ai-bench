@@ -20,7 +20,7 @@ Selected tests run in a fixed stage order, independent of the order passed to `-
 ```
 single-shot LLM (all selected models, xsmall → large)
   → conversation LLM (all eligible selected models)
-  → accuracy (MCQ → math → code → tool)
+  → accuracy (MCQ → math → reasoning → code → tool)
   → embeddings
   → concurrency (tool → chat)
   → images
@@ -34,7 +34,7 @@ The single-shot test builds an independent padded prompt for every measured call
 
 When single-shot and conversation are selected together, conversation excludes models with no usable single-shot result, a repeatable runner crash, a timeout at the first 512-token checkpoint, or a slow marker there. A deeper single-shot timeout alone does not exclude it. Conversation also stops after recording any sampled checkpoint below the slow-TPS cutoff. `--force-all` bypasses these speed gates, not actual failures. See [LLM workload](workloads.md#llm).
 
-Each accuracy test warms a model, makes one deterministic call per question, scores it, and unloads the model. A question that reaches `--acc-timeout` keeps and normally scores its partial response, records the timeout, and continues. Periodic loop detection can stop a likely loop before that timeout; it is a separate diagnostic. MCQ and math use confidence-ordered parsing so explicit final answers and later self-corrections take precedence over incidental reasoning text. Math accepts only completed scalar conclusions or same-clause results stated after `=`, while a leading numeric line must be corroborated by the response's final number or final completed equality result. Code answers run visible and hidden cases in one isolated Python subprocess, streaming per-test diagnostics so completed results survive a later timeout. Tool answers use `chat_tools` and require either exactly one matching call or a correct decline; question metadata can opt free-text arguments into limited normalization while identifiers remain exact.
+Each accuracy test warms a model, makes one deterministic call per question, scores it, and unloads the model. A question that reaches `--acc-timeout` keeps and normally scores its partial response, records the timeout, and continues. Periodic loop detection can stop a likely loop before that timeout; it is a separate diagnostic. MCQ and reasoning use confidence-ordered choice parsing so explicit final answers and later self-corrections take precedence over incidental reasoning text; reasoning deliberately disables MCQ's last-resort unstructured-letter fallback. Math accepts only completed scalar conclusions or same-clause results stated after `=`, while a leading numeric line must be corroborated by the response's final number or final completed equality result. Code answers run visible and hidden cases in one isolated Python subprocess, streaming per-test diagnostics so completed results survive a later timeout. Tool answers use `chat_tools` and require either exactly one matching call or a correct decline; question metadata can opt free-text arguments into limited normalization while identifiers remain exact.
 
 Before images, the active inference engine is stopped entirely to free memory. ComfyUI is started only if it is not already reachable; processes managed by the benchmark are shut down after images or on exit, while a pre-existing external ComfyUI process is left running. Its loaded models and queue are still cleared during cleanup.
 
@@ -59,6 +59,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/concurrency_benchmark.py` | The tool-style and chat-server concurrency sweeps |
 | `scripts/mcq_benchmark.py` | The MCQ accuracy test |
 | `scripts/math_benchmark.py` | The math accuracy test |
+| `scripts/reasoning_benchmark.py` | The knowledge-light reasoning accuracy test and validated bank loader |
 | `scripts/code_benchmark.py` | The code accuracy test |
 | `scripts/tool_benchmark.py` | The tool-calling accuracy test |
 | `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
@@ -78,7 +79,7 @@ Benchmark/frontend console output goes through `Shared.output` and the existing 
 | LLM warmup runs | `--warmup` at each context-specific server configuration (default: 2, discarded) |
 | LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |
 | Run timeout | `--timeout` is a total model-load-plus-generation/chat deadline and also bounds engine warmup (default: 300s); image generation uses 2× this value. Embeddings retain a fixed 120s request timeout |
-| Accuracy question timeout | `--acc-timeout` per question (default: 60s), for `mcq`/`math`/`code`/`tool`; partial output is scored normally, the timeout is recorded, and the bank continues |
+| Accuracy question timeout | `--acc-timeout` per question (default: 60s), for `mcq`/`math`/`reasoning`/`code`/`tool`; partial output is scored normally, the timeout is recorded, and the bank continues |
 | LLM metrics | TTFT, tokens/sec (TPS) |
 | Conversation pre-flight | When single-shot also ran: excludes no/failed data, repeatable crashes, first-checkpoint timeouts, and first-checkpoint slow markers; deeper timeouts alone do not exclude conversation |
 | Embedding models | `nomic-embed-text`, `mxbai-embed-large` |
@@ -99,6 +100,9 @@ Benchmark/frontend console output goes through `Shared.output` and the existing 
 | Math warmup runs | `--warmup` (default: 2, discarded) |
 | Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
 | Math metrics | Overall and per-category accuracy; timeout and likely-loop counts/IDs when those separate diagnostics occur |
+| Reasoning question bank | `scripts/data/reasoning_questions.json` — 60 original A–D questions across 10 knowledge-light categories, with a 20-question `very_hard` tail |
+| Reasoning warmup/measured runs | `--warmup` discarded warmups, then 1 pass through the bank; `--runs` is ignored |
+| Reasoning metrics | Overall, per-category, and per-difficulty accuracy; timeout and likely-loop counts/IDs when those separate diagnostics occur |
 | Code question bank | `scripts/data/code_problems.json` — 60 problems across 13 categories, including dynamic programming, graph, interval, divide-and-conquer, and advanced stateful structures |
 | Code warmup runs | `--warmup` (default: 2, discarded) |
 | Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |

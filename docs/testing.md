@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **35 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **37 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -102,7 +102,7 @@ The test suite consists of **35 test modules** validating different components o
 
 - **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
   Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
-  - `acc` expands to `ACCURACY_TESTS` (currently `mcq`, `math`, `code`, and `tool`), while `conc` expands to both concurrency tests.
+  - `acc` expands to `ACCURACY_TESTS` (`mcq`, `math`, `reasoning`, `code`, and `tool`), while `conc` expands to both concurrency tests.
   - Ordinary test names pass through unchanged.
   - Order is preserved when `acc` is mixed with other test names.
   - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
@@ -165,7 +165,7 @@ The test suite consists of **35 test modules** validating different components o
   Tests `sidecar_path` in `benchmark.py`, which derives a results-directory auxiliary filename from the main output stem. It verifies:
   - A `results_`-prefixed output path has that prefix swapped for the sidecar's own prefix.
   - A custom `--out` filename that doesn't start with `results_` falls back to prepending the sidecar prefix instead.
-  - The MCQ, math, code, tool, and image prefixes preserve the same hostname/timestamp suffix.
+  - The MCQ, math, reasoning, code, tool, and image prefixes preserve the same hostname/timestamp suffix.
 
 - **[test_config.py](../tests/test_config.py)**
   Performs structural sanity checks on the constants in `config.py`. It verifies that:
@@ -180,6 +180,9 @@ The test suite consists of **35 test modules** validating different components o
   - Within each tier, LLM models are ordered by parameter counts (`params_b`).
   - Model tags and shortcodes are globally unique.
   - Required fields (e.g., download size, model tags, parameters, samplers, schedulers) exist in model definitions.
+
+- **[test_reasoning_questions.py](../tests/test_reasoning_questions.py)**
+  Validates whole-bank composition independently of the runtime loader: exact versioned shape, unique IDs and choices, six questions and all difficulty levels per category, the 20-question `very_hard` tail, balanced answer positions, original provenance, and research-source metadata.
 
 - **[test_hardware.py](../tests/test_hardware.py)**
   Tests memory-size parsing, integrated/discrete GPU classification (including processor-name false positives), extraction of GPU agents from CPU-first `rocminfo` output, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
@@ -226,6 +229,9 @@ The test suite consists of **35 test modules** validating different components o
   - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
+- **[test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py)**
+  Tests the reasoning workload's prompt, strict answer parser, scorer, runtime call parameters, and validated loader. It covers bare, leading, boxed, tagged, Markdown, explicit, negated, and later-correction answers; rejects incidental or ambiguous option mentions that MCQ's compatibility fallback accepts; verifies per-category and per-difficulty scoring; and adversarially mutates every bank layer to exercise invalid field sets, metadata, categories, IDs, choices, answers, rationales, skills, provenance, malformed JSON, and missing files.
+
 - **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
   Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no inference server needed. It verifies:
   - `build_prompt` includes the question text and the target function/class name, renders `visible_tests` as worked examples (for both function and stateful problems, including constructor `init` args), omits the examples block entirely when there are no visible tests, and never leaks `hidden_tests` values into the prompt — proven not just by substring-scanning the rendered text but by deleting the `hidden_tests` key from every real question in the bank and confirming `build_prompt` doesn't raise (i.e. never even looks it up).
@@ -246,7 +252,7 @@ The test suite consists of **35 test modules** validating different components o
   - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none). It also validates `normalized_string_keys` metadata and the intended free-text fields; new free-text arguments such as titles, messages, notes, and bodies must be added to that list when normalized matching is desired.
 
 - **[test_regrade.py](../tests/test_regrade.py)**
-  Tests offline regrading of stored raw-answer sidecars. It covers exact bank-hash gating, sampled-bank ordering, input/model/question completeness checks, every stored tool-call representation, preservation of unrelated result data and generation diagnostics, rebuilding all four grading blocks and sidecars, strict JSON output, contextual evaluation failures, non-overwriting output behavior, and score-change reporting.
+  Tests offline regrading of stored raw-answer sidecars. It covers exact bank-hash gating, sampled-bank ordering, input/model/question completeness checks, strict reasoning reparsing, every stored tool-call representation, preservation of unrelated result data and generation diagnostics, rebuilding populated grading blocks while skipping unrun empty blocks, compatibility with pre-reasoning result files, strict JSON output, contextual evaluation failures, non-overwriting output behavior, and score-change reporting.
 
 ---
 
@@ -296,7 +302,7 @@ The test suite consists of **35 test modules** validating different components o
   - `slow_tps_early_exit` early termination logic based on performance speeds.
 
 - **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling. Also verifies the `answers_*.json` sidecar: it's built from `score_fn`'s `all` list, so it carries every question's raw response and `correct` flag (not just wrong answers), while the main results dict stays on the separate incorrect-only schema and never picks up the `all` key.
+  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/reasoning/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling. Also verifies the `answers_*.json` sidecar: it's built from `score_fn`'s `all` list, so it carries every question's raw response and `correct` flag (not just wrong answers), while the main results dict stays on the separate incorrect-only schema and never picks up the `all` key.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
   Tests the degenerate-generation-loop heuristic applied periodically to streaming accuracy responses (`Shared.looks_like_loop`):
@@ -309,7 +315,7 @@ The test suite consists of **35 test modules** validating different components o
   - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
 
 - **[test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py)**
-  Tests `Shared.tally_accuracy_entry` — the common by_category/`all`/`incorrect` recording tail shared by all four accuracy `score()` methods (MCQ/Math/Code/Tool). Verifies a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`), an incorrect entry lands in both `all` and `incorrect` (the latter without a `correct` key, preserving the existing `incorrect` shape) without bumping the category count, and that the original `entry` dict passed in is never mutated.
+  Tests `Shared.tally_accuracy_entry` — the common by_category/`all`/`incorrect` recording tail shared by all five accuracy `score()` methods. Verifies a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`), an incorrect entry lands in both `all` and `incorrect` (the latter without a `correct` key, preserving the existing `incorrect` shape) without bumping the category count, and that the original `entry` dict passed in is never mutated.
 
 ---
 

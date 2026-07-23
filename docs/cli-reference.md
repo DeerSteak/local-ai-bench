@@ -13,10 +13,10 @@ run_bench.sh [options]  # Linux / macOS
 run_bench.bat [options]   # Windows
 
 --tests TESTS           Tests to run: any of llm conv, emb, img, mcq, math,
-                        code, tool, acc as shorthand for every accuracy-style
-                        test (currently mcq, math, code, and tool), or
+                        reasoning, code, tool, acc as shorthand for every accuracy-style
+                        test (mcq, math, reasoning, code, and tool), or
                         conc_tool/conc_chat (conc is shorthand for both)
-                        (default: all eight — llm conv emb img mcq math code
+                        (default: all nine — llm conv emb img mcq math reasoning code
                         tool; conc_tool/conc_chat are opt-in — see Workloads)
 --engine ENGINE         Inference engine to benchmark against, or 'all' to run
                         the full --tests suite once per registered engine (default:
@@ -27,7 +27,7 @@ run_bench.bat [options]   # Windows
                         need to change once a second engine (e.g. MLX) is added.
                         See Engines
 --cpu-only              Force CPU-only inference for every test that goes
-                        through the active engine (llm, conv, mcq, math, code,
+                        through the active engine (llm, conv, mcq, math, reasoning, code,
                         tool, emb, conc_tool, conc_chat) by restarting it with
                         GPU devices hidden, then restores normal GPU mode afterward
 --warmup N              Engine-backed warmups before measuring (default: 2).
@@ -40,14 +40,14 @@ run_bench.bat [options]   # Windows
                         (default: 300). Images use 2x this value, embeddings
                         use a fixed 120s, and accuracy uses --acc-timeout
 --acc-timeout N         Seconds per question before giving up on it, for the
-                        accuracy tests (mcq/math/code/tool). Any partial response
+                        accuracy tests (mcq/math/reasoning/code/tool). Any partial response
                         is scored normally, the timeout is recorded, and the
                         run moves on to the next question (default: 60)
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
                         models at this tier and below: xsmall (<6B / +SD1.5),
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
                         large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
---llm-models TAGS       Only test these LLM models (llm/conv/mcq/math/code/tool/
+--llm-models TAGS       Only test these LLM models (llm/conv/mcq/math/reasoning/code/tool/
                         conc_tool/conc_chat tests) —
                         exact catalog tags or wildcards, e.g. 'llama*' matches
                         every tag starting with 'llama'. Applied after
@@ -66,7 +66,7 @@ run_bench.bat [options]   # Windows
 --list-models           List installed catalog LLMs, embeddings, custom LLMs,
                         and catalog image checkpoints, then exit. Image discovery
                         uses the effective --comfyui path
---sample N              Dev-only: run the accuracy tests (mcq/math/code/tool)
+--sample N              Dev-only: run the accuracy tests (mcq/math/reasoning/code/tool)
                         against a deterministic N-question subset of each
                         bank instead of the full thing, selected round-robin
                         across categories. Every category is represented when
@@ -102,7 +102,7 @@ The interactive launcher's initial state is:
 | Single-shot LLM and conversation | Checked when an installed catalog or custom LLM is available |
 | Embeddings | Checked when an installed embedding model is available |
 | Image generation | Checked when an installed catalog image checkpoint is available |
-| MCQ, math, code, and tool accuracy | Unchecked |
+| MCQ, math, reasoning, code, and tool accuracy | Unchecked |
 | Tool and chat concurrency | Unchecked |
 | Installed xsmall/small/medium catalog LLMs | Checked |
 | Installed large catalog LLMs | Unchecked |
@@ -124,19 +124,19 @@ All project-generated launcher and benchmark status/progress messages are prefix
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
-| `--tests` | any of `llm conv emb img mcq math code tool`, plus `acc`, `conc_tool`, `conc_chat`, and `conc` | all eight (`llm conv emb img mcq math code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (currently `mcq`, `math`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `conc_tool` (agentic/tool-calling fan-out, 1–16-way) and `conc_chat` (many simultaneous chat users, 1–32-way) — see [Concurrency](workloads.md#concurrency) — are opt-in, not part of the default set |
+| `--tests` | any of `llm conv emb img mcq math reasoning code tool`, plus `acc`, `conc_tool`, `conc_chat`, and `conc` | all nine (`llm conv emb img mcq math reasoning code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (`mcq`, `math`, `reasoning`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `conc_tool` (agentic/tool-calling fan-out, 1–16-way) and `conc_chat` (many simultaneous chat users, 1–32-way) — see [Concurrency](workloads.md#concurrency) — are opt-in, not part of the default set |
 | `--engine` | any registered engine name, or `all` | `llamacpp` | Which inference engine to benchmark against. `all` runs the full `--tests` suite once per registered engine (sorted order) and writes a separate results file for each (engine name appended to the filename). Only llama.cpp is registered today, so `all` behaves identically to the default until a second engine (e.g. MLX) is added. See [Engines](engines.md) |
-| `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
+| `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
 | `--warmup` | integer | `2` | Discarded warmups before measurement for every engine-backed workload: once per loaded model for LLM/conversation/accuracy, per model call for embeddings, and per concurrency level. Image generation always performs one warmup at the model's first resolution and does not use this flag |
 | `--runs` | integer, `1`–`10` | `3` | Measured runs averaged for single-shot LLM at each context, embeddings, and images at each resolution. Ignored by conversation, accuracy, and concurrency. Warmup count is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per generation/chat call for single-shot, conversation, concurrency, and their engine warmups. Images use twice this value (600s by default). Embedding calls retain the engine's fixed 120s timeout; accuracy questions use `--acc-timeout` |
-| `--acc-timeout` | integer (seconds) | `60` | Per question for `mcq`/`math`/`code`/`tool`; the partial response is scored normally, the timeout is recorded, and the bank continues — see [Accuracy](workloads.md#accuracy) |
+| `--acc-timeout` | integer (seconds) | `60` | Per question for `mcq`/`math`/`reasoning`/`code`/`tool`; the partial response is scored normally, the timeout is recorded, and the bank continues — see [Accuracy](workloads.md#accuracy) |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. `conc_tool`/`conc_chat` ignore this — they scope to every LLM model actually downloaded locally instead, since download presence is itself a decent proxy for "this machine can try it" (see [Concurrency](workloads.md#concurrency)) |
-| `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
+| `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
 | `--embedding-models` | space-separated catalog tags and/or wildcards | none (every catalog embedding model) | Affects `emb` only. Matching is case-sensitive and exact-or-wildcard on the model's `tag` |
 | `--image-models` | space-separated catalog short IDs and/or wildcards (e.g. `sd*`) | none (every image model allowed by `--maxtier`) | Affects `img` only. Matching is case-sensitive and exact-or-wildcard on the stable `short` values in `models.py`; it narrows the image list after `--maxtier` |
 | `--list-models` | (flag) | off | Read-only inventory of installed catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints, then exit. It does not require or start an inference server. `--engine` selects the inventory (`all` lists each engine), and `--comfyui` selects the image checkpoint directory |
-| `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`code`/`tool` against a deterministic N-question subset of each bank, selected round-robin across categories. Every category is represented only when N is at least that bank's category count. IDs are recorded under `sample_ids`; sampled and full-bank results are not comparable — see [bank versioning](workloads.md#bank-versioning) |
+| `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`reasoning`/`code`/`tool` against a deterministic N-question subset of each bank, selected round-robin across categories. Every category is represented only when N is at least that bank's category count. IDs are recorded under `sample_ids`; sampled and full-bank results are not comparable — see [bank versioning](workloads.md#bank-versioning) |
 | `--comfyui` | path | `./ComfyUI` | Only needed if ComfyUI lives somewhere else |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the main JSON path entirely. Accuracy answer sidecars and generated-image folders still go under the repository's `results/` directory, named from the main output's stem — see [Project Structure](project-structure.md) |
 | `--force-all` | (flag) | off | Disables the slow-TPS exits for single-shot LLM, conversation, and chat concurrency. It does not bypass timeouts, crashes, missing data, or load failures |
@@ -158,8 +158,8 @@ bash run_bench.sh --tests llm conv emb
 # Conversation benchmark only
 bash run_bench.sh --tests conv
 
-# Accuracy tests only — MCQ, math, code, and tool (also: --tests acc)
-bash run_bench.sh --tests mcq math code tool
+# Accuracy tests only — MCQ, math, reasoning, code, and tool (also: --tests acc)
+bash run_bench.sh --tests mcq math reasoning code tool
 
 # Cap at small-tier models and below — skips medium/large LLMs and
 # medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
