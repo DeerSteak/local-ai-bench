@@ -64,6 +64,8 @@ Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy
 
 **Accuracy → Accuracy by Category.** The same test's questions broken down by category (e.g. arithmetic, logic, geometry — see [Accuracy](workloads.md#accuracy) for the full list per test), one chart per model. With a single file loaded, each category bar gets its own color from a fixed palette (and no legend, since there's only one system on the chart) purely to make individual bars easier to tell apart at a glance — the colors don't carry cross-chart meaning the way file/model colors do elsewhere.
 
+All model, file, category, context, image, embedding, and fallback data colors meet the WCAG AA 4.5:1 contrast threshold against the dashboard's white chart background. Backend badge foreground colors meet the same threshold; their pale backgrounds and borders are decorative surfaces rather than foreground data marks.
+
 **Accuracy → Timeouts & Likely Loops.** Per model, how many questions reached `--acc-timeout` (default 60s), and how many were stopped as likely generation loops (see [Accuracy → Timeouts and loop detection](workloads.md#timeouts-and-loop-detection)). These are separate diagnostics: a loop may be stopped before the timeout, and a timed-out partial response may still score correctly. Lower is better. The chart appears when either count is nonzero.
 
 **Concurrency → Per-Request Tokens/sec.** Decode throughput for one individual request within a batch of N simultaneous requests. Higher is better. Typically drops as concurrency climbs, since requests share the same compute/memory bandwidth — this is the number that shows per-user latency degrading under load.

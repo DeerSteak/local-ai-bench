@@ -131,7 +131,7 @@ describe("getModelSizeTier", () => {
 
 describe("color/label lookups", () => {
   it("returns the known color/label for a known model", () => {
-    expect(getModelColor("llama3.2-3b-q4")).toBe("#536dfe");
+    expect(getModelColor("llama3.2-3b-q4")).toBe("#0550ae");
     expect(modelLabel("llama3.2-3b-q4")).toBe("Llama 3.2 3B Q4_K_M");
   });
   it("falls back to a deterministic hash color for an unknown model", () => {

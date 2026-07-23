@@ -1,35 +1,35 @@
 // Colors per known LLM model short key (order follows LLM_MODEL_ORDER, i.e.
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
-  "gemma3-1b":              "#00e5ff",
-  "granite4.1-3b-q4":       "#18ffff",
-  "qwen3.5-4b-q4":          "#b388ff",
-  "granite4.1-8b-q4":       "#ffab40",
-  "qwen3.5-9b-q4":          "#76ff03",
-  "phi4-14b":               "#ff4081",
-  "gemma3-27b-q4":          "#ff9100",
-  "nemotron3-nano-30b-a3b": "#00e676",
-  "qwen3.6-35b-a3b":        "#ea80fc",
-  "llama3.3-70b-q4":        "#69f0ae",
-  "qwen3-coder-next-80b-a3b-q4": "#ffea00",
-  "nemotron3-super-120b":   "#40c4ff",
+  "gemma3-1b":              "#0969da",
+  "granite4.1-3b-q4":       "#8250df",
+  "qwen3.5-4b-q4":          "#b54708",
+  "granite4.1-8b-q4":       "#1a7f37",
+  "qwen3.5-9b-q4":          "#cf222e",
+  "phi4-14b":               "#9a3078",
+  "gemma3-27b-q4":          "#0e7490",
+  "nemotron3-nano-30b-a3b": "#5c6bc0",
+  "qwen3.6-35b-a3b":        "#00796b",
+  "llama3.3-70b-q4":        "#6a1b9a",
+  "qwen3-coder-next-80b-a3b-q4": "#9a6700",
+  "nemotron3-super-120b":   "#8d6e63",
 
-  // Retained so results created by earlier catalog versions keep stable colors.
-  "llama3.2-3b-q4":         "#536dfe",
-  "phi4-mini":              "#64ffda",
-  "mistral-7b-q4":          "#ff8a80",
-  "llama3.1-8b-q4":         "#7c4dff",
-  "llama4-16x17b":          "#ffd740",
-  "qwen3.6-27b-q4":         "#ff6e40",
+  // Retained so results created by earlier catalog versions use known colors.
+  "llama3.2-3b-q4":         "#0550ae",
+  "phi4-mini":              "#6639ba",
+  "mistral-7b-q4":          "#953800",
+  "llama3.1-8b-q4":         "#116329",
+  "llama4-16x17b":          "#a40e26",
+  "qwen3.6-27b-q4":         "#0a3069",
 };
 
 // Matches models.py's IMAGE_MODELS list
 export const IMAGE_MODEL_COLORS = {
-  "sd15":         "#ff4081",
-  "sdxl":         "#00e5ff",
+  "sd15":         "#cf222e",
+  "sdxl":         "#0969da",
   "sd35-large":   "#7c4dff",
-  "flux-dev":     "#ff6d00",
-  "flux2-dev":    "#00e676",
+  "flux-dev":     "#b54708",
+  "flux2-dev":    "#1a7f37",
 };
 
 export const IMAGE_MODEL_LABELS = {
@@ -42,15 +42,15 @@ export const IMAGE_MODEL_LABELS = {
 
 // Fallback palette for unknown model keys (hash-assigned)
 export const FALLBACK_COLORS = [
-  "#00e5ff", "#7c4dff", "#ff6d00", "#00e676",
-  "#ff4081", "#ffd740", "#69f0ae", "#40c4ff",
-  "#ea80fc", "#ccff90", "#ff6e40", "#80d8ff",
+  "#0969da", "#8250df", "#b54708", "#1a7f37",
+  "#cf222e", "#9a3078", "#0e7490", "#5c6bc0",
+  "#00796b", "#6a1b9a", "#9a6700", "#8d6e63",
 ];
 
 // Per-file colors for multi-file comparison (up to MAX_FILES)
 export const FILE_COLORS = [
   "#0969da", // blue
-  "#e36209", // orange
+  "#b54708", // orange
   "#1a7f37", // green
   "#9a3078", // purple
   "#cf222e", // red
@@ -64,14 +64,14 @@ export const FILE_COLORS = [
 // category names) don't land next to each other.
 export const CATEGORY_COLORS = [
   "#0969da", // blue
-  "#e36209", // orange
+  "#b54708", // orange
   "#1a7f37", // green
   "#9a3078", // purple
   "#cf222e", // red
   "#0e7490", // teal
   "#5c6bc0", // indigo
   "#c2185b", // pink
-  "#00897b", // teal-green
+  "#00796b", // teal-green
   "#6a1b9a", // deep purple
 ];
 
@@ -163,7 +163,7 @@ export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flu
 // Matches models.py's EMBED_MODELS list
 export const EMBED_MODEL_COLORS = {
   "nomic-embed-text":  "#0969da",
-  "mxbai-embed-large": "#e36209",
+  "mxbai-embed-large": "#b54708",
 };
 
 export const EMBED_MODEL_LABELS = {
@@ -228,7 +228,7 @@ export const ACCURACY_TEST_LABELS = {
 // not per-model, so this doesn't need a color-assignment helper like the
 // other bar configs.
 export const ACCURACY_TIMEOUT_BAR_CONFIGS = [
-  { dataKey: "timed_out_count",   name: "Timed out",   fill: "#e36209" },
+  { dataKey: "timed_out_count",   name: "Timed out",   fill: "#b54708" },
   { dataKey: "likely_loop_count", name: "Likely loop", fill: "#cf222e" },
 ];
 
@@ -240,11 +240,11 @@ export const LLM_METRIC_LABELS = { tps: "Tokens/sec", ttft: "TTFT (sec)" };
 export const CTX_COLORS = {
   "0K":   "#5c6bc0",
   "2K":   "#9a3078",
-  "4K":   "#00acc1",
+  "4K":   "#00758f",
   "8K":   "#0969da",
-  "16K":  "#f9a825",
-  "32K":  "#e36209",
-  "48K":  "#00897b",
+  "16K":  "#7a5d00",
+  "32K":  "#b54708",
+  "48K":  "#00796b",
   "64K":  "#1a7f37",
   "80K":  "#6a1b9a",
   "96K":  "#8d6e63",
@@ -255,7 +255,7 @@ export const CTX_COLORS = {
 export const IMAGE_BAR_COLORS = {
   "sd15":         "#cf222e",
   "sdxl":         "#0969da",
-  "sd35-large":   "#e36209",
+  "sd35-large":   "#b54708",
   "flux-dev":     "#1a7f37",
   "flux2-dev":    "#9a3078",
 };
@@ -263,7 +263,7 @@ export const IMAGE_BAR_COLORS = {
 // Colors per embedding model (used in bar chart mode — matches CTX/BATCH palette)
 export const EMBED_BAR_COLORS = {
   "nomic-embed-text":  "#0969da",
-  "mxbai-embed-large": "#e36209",
+  "mxbai-embed-large": "#b54708",
 };
 
 // Ordered context length labels (match benchmark.py output). The LLM section
@@ -279,17 +279,17 @@ export const RES_ORDER = ["512x512", "768x768", "1024x1024", "1536x1536"];
 // Colors per image resolution (used in "Group by System" bar chart mode)
 export const RES_COLORS = {
   "512x512":   "#0969da",
-  "768x768":   "#e36209",
+  "768x768":   "#b54708",
   "1024x1024": "#1a7f37",
   "1536x1536": "#9a3078",
 };
 
 // Backend badge colors
 export const BACKEND_COLORS = {
-  cuda:  { bg: "#dafbe1", color: "#3fb950", border: "#aceebb" },
+  cuda:  { bg: "#dafbe1", color: "#116329", border: "#aceebb" },
   rocm:  { bg: "#f0ebff", color: "#7c4dff", border: "#c8b8f8" },
   metal: { bg: "#dff0ff", color: "#0969da", border: "#b6d4fb" },
-  xpu:   { bg: "#e0f7f7", color: "#0e8a8a", border: "#a8e6e6" },
+  xpu:   { bg: "#e0f7f7", color: "#006d5b", border: "#a8e6e6" },
   vulkan:{ bg: "#fff4e5", color: "#b45309", border: "#f3c98b" },
-  cpu:   { bg: "#f6f8fa", color: "#8c959f", border: "#d0d7de" },
+  cpu:   { bg: "#f6f8fa", color: "#57606a", border: "#d0d7de" },
 };

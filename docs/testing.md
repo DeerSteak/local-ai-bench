@@ -350,7 +350,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
   - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
 
 - **[constants.test.js](../dashboard/src/constants.test.js)**
-  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), none of the order lists contain duplicates, and removed catalog models retain legacy labels, colors, tiers, and deterministic display order for historical results.
+  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), none of the order lists contain duplicates, and removed catalog models retain legacy labels, colors, tiers, and deterministic display order for historical results. It also calculates relative luminance for every foreground and data-series palette entry and requires WCAG AA contrast of at least 4.5:1 against white.
 
 ---
 

@@ -4,9 +4,25 @@ import {
   LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
   IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
-  SIZE_TIER_ORDER, RES_ORDER, RES_COLORS,
+  SIZE_TIER_ORDER, RES_ORDER, RES_COLORS, FALLBACK_COLORS,
+  FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
+  EMBED_BAR_COLORS, BACKEND_COLORS, ACCURACY_TIMEOUT_BAR_CONFIGS,
   ACCURACY_TESTS, ACCURACY_TEST_LABELS,
 } from "./constants";
+
+function relativeLuminance(hex) {
+  const channels = [1, 3, 5].map((offset) => {
+    const channel = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastAgainstWhite(hex) {
+  return 1.05 / (relativeLuminance(hex) + 0.05);
+}
 
 // These catch the most common maintenance mistake in this file: adding a
 // model to one registry (e.g. LLM_MODEL_ORDER, to make it show up at all)
@@ -80,5 +96,28 @@ describe("accuracy registry", () => {
   it("matches the benchmark workload order and labels every test", () => {
     expect(ACCURACY_TESTS).toEqual(["mcq", "math", "reasoning", "code", "tool"]);
     for (const test of ACCURACY_TESTS) expect(ACCURACY_TEST_LABELS[test]).toBeTruthy();
+  });
+});
+
+describe("dashboard color contrast", () => {
+  it("keeps every foreground and data-series color WCAG AA compliant on white", () => {
+    const colors = [
+      ...Object.values(MODEL_COLORS),
+      ...Object.values(IMAGE_MODEL_COLORS),
+      ...Object.values(EMBED_MODEL_COLORS),
+      ...FALLBACK_COLORS,
+      ...FILE_COLORS,
+      ...CATEGORY_COLORS,
+      ...Object.values(CTX_COLORS),
+      ...Object.values(IMAGE_BAR_COLORS),
+      ...Object.values(EMBED_BAR_COLORS),
+      ...Object.values(RES_COLORS),
+      ...Object.values(BACKEND_COLORS).map(({ color }) => color),
+      ...ACCURACY_TIMEOUT_BAR_CONFIGS.map(({ fill }) => fill),
+    ];
+    for (const color of colors) {
+      expect(contrastAgainstWhite(color), `${color} has insufficient contrast`)
+        .toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
