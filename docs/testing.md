@@ -177,6 +177,7 @@ The test suite consists of **37 test modules** validating different components o
 - **[test_models.py](../tests/test_models.py)**
   Validates model configuration records in `models.py`. It checks:
   - LLM models list matches the concatenated list of individual size tiers.
+  - The extra-small/small rosters preserve the Gemma speed floor, paired Granite/Qwen scaling ladders, and Phi reasoning ceiling.
   - Within each tier, LLM models are ordered by parameter counts (`params_b`).
   - Model tags and shortcodes are globally unique.
   - Required fields (e.g., download size, model tags, parameters, samplers, schedulers) exist in model definitions.
@@ -286,7 +287,7 @@ The test suite consists of **37 test modules** validating different components o
 
 - **[test_llamacpp_engine.py](../tests/test_llamacpp_engine.py)**
   Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — local GGUF-file resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`):
-  - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, and a multi-part (`hf_file` as a list) model with one part missing.
+  - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, a multi-part (`hf_file` as a list) model with one part missing, and a removed catalog entry remaining runnable as a custom folder.
   - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't downloaded or the file doesn't parse.
   - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `EngineTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
   - `chat_tools` reassembles a tool call whose `arguments` stream as partial JSON fragments across multiple SSE chunks (accumulated by index), returns an empty tool-call list when the model answers in prose instead, falls back to `{}` on malformed/truncated argument JSON rather than crashing, and orders multiple calls by their streamed index.
@@ -349,7 +350,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
   - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
 
 - **[constants.test.js](../dashboard/src/constants.test.js)**
-  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), and none of the order lists contain duplicates.
+  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), none of the order lists contain duplicates, and removed catalog models retain legacy labels, colors, tiers, and deterministic display order for historical results.
 
 ---
 

@@ -106,24 +106,24 @@ LLM_MODELS_XSMALL = sorted([
         "hf_file":        "google_gemma-3-1b-it-Q4_K_M.gguf",
     },
     {
-        "tag":            "llama3.2:3b-instruct-q4_K_M",
-        "label":          "Llama 3.2 3B Q4_K_M",
-        "short":          "llama3.2-3b-q4",
+        "tag":            "granite4.1:3b-q4_K_M",
+        "label":          "Granite 4.1 3B Q4_K_M",
+        "short":          "granite4.1-3b-q4",
         "tier":           "xsmall",
         "download_size":  "~2.1 GB",
         "params_b":       3,
-        "hf_repo":        "bartowski/Llama-3.2-3B-Instruct-GGUF",
-        "hf_file":        "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "hf_repo":        "ibm-granite/granite-4.1-3b-GGUF",
+        "hf_file":        "granite-4.1-3b-Q4_K_M.gguf",
     },
     {
-        "tag":            "phi4-mini",
-        "label":          "Phi 4 Mini",
-        "short":          "phi4-mini",
+        "tag":            "qwen3.5:4b-q4_K_M",
+        "label":          "Qwen3.5 4B Q4_K_M",
+        "short":          "qwen3.5-4b-q4",
         "tier":           "xsmall",
-        "download_size":  "~2.5 GB",
-        "params_b":       3.8,
-        "hf_repo":        "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
-        "hf_file":        "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
+        "download_size":  "~3.1 GB",
+        "params_b":       4,
+        "hf_repo":        "bartowski/Qwen_Qwen3.5-4B-GGUF",
+        "hf_file":        "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 
@@ -131,24 +131,24 @@ LLM_MODELS_XSMALL = sorted([
 # "params_b" is total parameters (not active, for MoE models) and sets sort order below.
 LLM_MODELS_SMALL = sorted([
     {
-        "tag":            "mistral:7b-instruct-v0.3-q4_K_M",
-        "label":          "Mistral 7B v0.3 Q4_K_M",
-        "short":          "mistral-7b-q4",
+        "tag":            "granite4.1:8b-q4_K_M",
+        "label":          "Granite 4.1 8B Q4_K_M",
+        "short":          "granite4.1-8b-q4",
         "tier":           "small",
-        "download_size":  "~4.4 GB",
-        "params_b":       7,
-        "hf_repo":        "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
-        "hf_file":        "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+        "download_size":  "~5.4 GB",
+        "params_b":       8,
+        "hf_repo":        "ibm-granite/granite-4.1-8b-GGUF",
+        "hf_file":        "granite-4.1-8b-Q4_K_M.gguf",
     },
     {
-        "tag":            "llama3.1:8b-instruct-q4_K_M",
-        "label":          "Llama 3.1 8B Q4_K_M",
-        "short":          "llama3.1-8b-q4",
+        "tag":            "qwen3.5:9b-q4_K_M",
+        "label":          "Qwen3.5 9B Q4_K_M",
+        "short":          "qwen3.5-9b-q4",
         "tier":           "small",
-        "download_size":  "~5.0 GB",
-        "params_b":       8,
-        "hf_repo":        "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
-        "hf_file":        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "download_size":  "~6.2 GB",
+        "params_b":       9,
+        "hf_repo":        "bartowski/Qwen_Qwen3.5-9B-GGUF",
+        "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
     },
     {
         "tag":            "phi4:14b-q4_K_M",
@@ -208,7 +208,7 @@ LLM_MODELS_MEDIUM = sorted([
 ], key=lambda m: m["params_b"])
 
 # Large-tier models (70B+ parameters). One dense (Llama 3.3 70B) alongside
-# the two MoE entries, same rationale as medium above. Llama 4 Scout and
+# the two MoE entries, same rationale as medium above. Qwen3-Coder-Next and
 # Nemotron 3 Super ship as multi-part GGUF splits — "hf_file" is a list,
 # part 1 first; llama.cpp auto-discovers the sibling parts next to it, so
 # only the first path is ever passed to -m.
@@ -224,16 +224,18 @@ LLM_MODELS_LARGE = sorted([
         "hf_file":        "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
     },
     {
-        "tag":            "llama4:16x17b",
-        "label":          "Llama 4 Scout 16x17B",
-        "short":          "llama4-16x17b",
+        "tag":            "qwen3-coder-next:80b-a3b-q4_K_M",
+        "label":          "Qwen3-Coder-Next 80B-A3B Q4_K_M",
+        "short":          "qwen3-coder-next-80b-a3b-q4",
         "tier":           "large",
-        "download_size":  "~67.0 GB",
-        "params_b":       109,   # 17B active
-        "hf_repo":        "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF",
+        "download_size":  "~48.4 GB",
+        "params_b":       80,   # 3B active — hybrid attention MoE
+        "hf_repo":        "Qwen/Qwen3-Coder-Next-GGUF",
         "hf_file":        [
-            "UD-Q4_K_XL/Llama-4-Scout-17B-16E-Instruct-UD-Q4_K_XL-00001-of-00002.gguf",
-            "UD-Q4_K_XL/Llama-4-Scout-17B-16E-Instruct-UD-Q4_K_XL-00002-of-00002.gguf",
+            "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00001-of-00004.gguf",
+            "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00002-of-00004.gguf",
+            "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00003-of-00004.gguf",
+            "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00004-of-00004.gguf",
         ],
     },
     {

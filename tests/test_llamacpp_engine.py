@@ -143,6 +143,21 @@ def test_list_installed_models_includes_custom_dropped_in_model(fake_catalog):
     assert installed == {"my-custom-model": 2}
 
 
+def test_removed_catalog_model_remains_available_by_its_folder_name(
+        fake_catalog, monkeypatch):
+    old_tag = "llama3.2:3b-instruct-q4_K_M"
+    _write_model_file(fake_catalog, old_tag, "llama32-3b.Q4_K_M.gguf", b"legacy")
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [])
+
+    installed = LlamaCppEngine().list_installed_models()
+
+    assert installed == [{
+        "tag": LlamaCppEngine._slug(old_tag),
+        "size": len(b"legacy"),
+    }]
+    assert LlamaCppEngine().model_pulled(LlamaCppEngine._slug(old_tag)) is True
+
+
 def test_list_installed_models_omits_ambiguous_custom_directory(fake_catalog):
     custom_dir = fake_catalog / "llamacpp" / "ambiguous"
     custom_dir.mkdir(parents=True)

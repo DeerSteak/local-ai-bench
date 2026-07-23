@@ -2,17 +2,24 @@
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
   "gemma3-1b":              "#00e5ff",
-  "llama3.2-3b-q4":         "#536dfe",
-  "phi4-mini":              "#64ffda",
-  "mistral-7b-q4":          "#ff8a80",
-  "llama3.1-8b-q4":         "#7c4dff",
+  "granite4.1-3b-q4":       "#18ffff",
+  "qwen3.5-4b-q4":          "#b388ff",
+  "granite4.1-8b-q4":       "#ffab40",
+  "qwen3.5-9b-q4":          "#76ff03",
   "phi4-14b":               "#ff4081",
   "qwen3.6-27b-q4":         "#ff6e40",
   "nemotron3-nano-30b-a3b": "#00e676",
   "qwen3.6-35b-a3b":        "#ea80fc",
   "llama3.3-70b-q4":        "#69f0ae",
-  "llama4-16x17b":          "#ffd740",
+  "qwen3-coder-next-80b-a3b-q4": "#ffea00",
   "nemotron3-super-120b":   "#40c4ff",
+
+  // Retained so results created by earlier catalog versions keep stable colors.
+  "llama3.2-3b-q4":         "#536dfe",
+  "phi4-mini":              "#64ffda",
+  "mistral-7b-q4":          "#ff8a80",
+  "llama3.1-8b-q4":         "#7c4dff",
+  "llama4-16x17b":          "#ffd740",
 };
 
 // Matches models.py's IMAGE_MODELS list
@@ -85,28 +92,42 @@ export const MAX_FILES = 6;
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
   "gemma3-1b":              "Gemma 3 1B",
-  "llama3.2-3b-q4":         "Llama 3.2 3B Q4_K_M",
-  "phi4-mini":              "Phi 4 Mini",
-  "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
-  "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
+  "granite4.1-3b-q4":       "Granite 4.1 3B Q4_K_M",
+  "qwen3.5-4b-q4":          "Qwen3.5 4B Q4_K_M",
+  "granite4.1-8b-q4":       "Granite 4.1 8B Q4_K_M",
+  "qwen3.5-9b-q4":          "Qwen3.5 9B Q4_K_M",
   "phi4-14b":               "Phi 4 14B",
   "qwen3.6-27b-q4":         "Qwen3.6 27B Q4_K_M",
   "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
   "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
   "llama3.3-70b-q4":        "Llama 3.3 70B Q4_K_M",
-  "llama4-16x17b":          "Llama 4 Scout 16x17B",
+  "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B Q4_K_M",
   "nemotron3-super-120b":   "Nemotron 3 Super 120B",
+
+  // Retained so older results remain human-readable.
+  "llama3.2-3b-q4":         "Llama 3.2 3B Q4_K_M",
+  "phi4-mini":              "Phi 4 Mini",
+  "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
+  "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
+  "llama4-16x17b":          "Llama 4 Scout 16x17B",
 };
 
 // Canonical model order (determines chart line order and color assignment).
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "gemma3-1b", "llama3.2-3b-q4", "phi4-mini",
-  "mistral-7b-q4", "llama3.1-8b-q4", "phi4-14b",
+  "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
+  "granite4.1-8b-q4", "qwen3.5-9b-q4", "phi4-14b",
   "qwen3.6-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
-  "llama3.3-70b-q4", "llama4-16x17b", "nemotron3-super-120b",
+  "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
 ];
+
+export const LEGACY_LLM_MODEL_ORDER = [
+  "llama3.2-3b-q4", "phi4-mini", "mistral-7b-q4", "llama3.1-8b-q4",
+  "llama4-16x17b",
+];
+
+export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER];
 
 // Size tier per model short key — mirrors models.py's LLM_MODELS_XSMALL /
 // _SMALL / _MEDIUM / _LARGE groupings (defined by parameter count; VRAM
@@ -114,17 +135,24 @@ export const LLM_MODEL_ORDER = [
 // depend on it).
 export const MODEL_SIZE_TIER = {
   "gemma3-1b":              "xsmall",
-  "llama3.2-3b-q4":         "xsmall",
-  "phi4-mini":              "xsmall",
-  "mistral-7b-q4":          "small",
-  "llama3.1-8b-q4":         "small",
+  "granite4.1-3b-q4":       "xsmall",
+  "qwen3.5-4b-q4":          "xsmall",
+  "granite4.1-8b-q4":       "small",
+  "qwen3.5-9b-q4":          "small",
   "phi4-14b":               "small",
   "qwen3.6-27b-q4":         "medium",
   "nemotron3-nano-30b-a3b": "medium",
   "qwen3.6-35b-a3b":        "medium",
   "llama3.3-70b-q4":        "large",
-  "llama4-16x17b":          "large",
+  "qwen3-coder-next-80b-a3b-q4": "large",
   "nemotron3-super-120b":   "large",
+
+  // Retained so older results continue to group into their original tiers.
+  "llama3.2-3b-q4":         "xsmall",
+  "phi4-mini":              "xsmall",
+  "mistral-7b-q4":          "small",
+  "llama3.1-8b-q4":         "small",
+  "llama4-16x17b":          "large",
 };
 
 export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flux2-dev"];

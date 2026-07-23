@@ -172,7 +172,7 @@ bash run_bench.sh --maxtier small
 bash run_bench.sh --tests llm --llm-models "llama*"
 
 # One specific model plus a wildcard group
-bash run_bench.sh --tests llm --llm-models phi4-mini "nemotron-3*"
+bash run_bench.sh --tests llm --llm-models qwen3.5:4b-q4_K_M "nemotron-3*"
 
 # One embedding model only
 bash run_bench.sh --tests emb --embedding-models nomic-embed-text

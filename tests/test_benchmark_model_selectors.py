@@ -146,10 +146,13 @@ def test_engine_validation_ignores_irrelevant_llm_selector():
 def test_engine_prepass_does_not_read_inventory_for_catalog_only_normal_run():
     engine = FakeEngine("fake", [])
     scopes, errors = resolve_engine_scopes(
-        ["fake"], lambda _: engine, LLM_MODELS, "all", ["phi4-mini"], ["llm"],
+        ["fake"], lambda _: engine, LLM_MODELS, "all",
+        ["qwen3.5:4b-q4_K_M"], ["llm"],
     )
     assert engine.list_calls == 0
-    assert [model["tag"] for model in scopes[0]["llm_models"]] == ["phi4-mini"]
+    assert [model["tag"] for model in scopes[0]["llm_models"]] == [
+        "qwen3.5:4b-q4_K_M",
+    ]
     assert errors == []
 
 

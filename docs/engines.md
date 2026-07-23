@@ -82,13 +82,13 @@ tag under that, named from the tag with `:`/`/` replaced by `_`
 model store. `models.py`'s catalog entries carry
 `hf_repo` (a HuggingFace repo id) and `hf_file` (a filename, or a list of
 filenames for a model split across multiple GGUF parts — the two large-tier
-models, Llama 4 Scout and Nemotron 3 Super, are split 2-way and 3-way
+models, Qwen3-Coder-Next and Nemotron 3 Super, are split 4-way and 3-way
 respectively) so `setup_check.py` and `LlamaCppEngine` agree on exactly which
 file(s) a tag resolves to; `model_pulled`/`list_installed_models` check that
 every listed file exists under that tag's subdirectory, and
 `max_context_length` reads the real context length straight from the first
 file's GGUF metadata. The existing `tag` field values (e.g.
-`"llama3.2:3b-instruct-q4_K_M"`) are unchanged in shape — they're now opaque
+`"granite4.1:3b-q4_K_M"`) are unchanged in shape — they're now opaque
 catalog identifiers rather than literal server tags, but every other file
 that already keyed off them (results JSON, crash caches, `--llm-models`/`--models`) doesn't
 need to change. A non-catalog directory can contain either one GGUF or one

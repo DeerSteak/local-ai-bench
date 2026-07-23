@@ -88,7 +88,7 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _slug(tag: str) -> str:
         """Filesystem-safe per-tag directory name under _models_dir(),
-        e.g. "llama3.2:3b-instruct-q4_K_M" -> "llama3.2_3b-instruct-q4_K_M"."""
+        e.g. "granite4.1:3b-q4_K_M" -> "granite4.1_3b-q4_K_M"."""
         return tag.replace(":", "_").replace("/", "_")
 
     @staticmethod

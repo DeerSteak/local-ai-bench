@@ -45,16 +45,20 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
 | Gemma 3 1B | `gemma3:1b-it-q4_K_M` | ~0.8 GB | Dense |
-| Llama 3.2 3B Q4_K_M | `llama3.2:3b-instruct-q4_K_M` | ~2.1 GB | Dense |
-| Phi 4 Mini | `phi4-mini` | ~2.5 GB | Dense |
+| Granite 4.1 3B Q4_K_M | `granite4.1:3b-q4_K_M` | ~2.1 GB | Dense |
+| Qwen3.5 4B Q4_K_M | `qwen3.5:4b-q4_K_M` | ~3.1 GB | Dense |
+
+The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-light speed floor, showing what the suite costs on the smallest practical general model. Granite 4.1 3B is the compact structured-execution and tool-calling specialist. Qwen3.5 4B is the more capable general executor, trading some speed for stronger instruction following, reasoning, coding, and tool use. This makes the tier useful for evaluating fast worker models rather than filling it with three interchangeable general chat baselines.
 
 ### Small tier (≤20B params)
 
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
-| Mistral 7B v0.3 Q4_K_M | `mistral:7b-instruct-v0.3-q4_K_M` | ~4.4 GB | Dense |
-| Llama 3.1 8B Q4_K_M | `llama3.1:8b-instruct-q4_K_M` | ~5.0 GB | Dense |
+| Granite 4.1 8B Q4_K_M | `granite4.1:8b-q4_K_M` | ~5.4 GB | Dense |
+| Qwen3.5 9B Q4_K_M | `qwen3.5:9b-q4_K_M` | ~6.2 GB | Dense |
 | Phi 4 14B | `phi4:14b-q4_K_M` | ~8.3 GB | Dense |
+
+The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Phi 4 14B anchors the top of the tier as a reasoning-focused dense model and preserves Microsoft representation without duplicating Phi at extra-small size. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Phi 4 14B bracket the two tiers with a speed floor and reasoning ceiling.
 
 ### Medium tier (26–35B params)
 
@@ -69,20 +73,24 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 | Model | Tag | Size | Architecture |
 |---|---|---|---|
 | Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~39.7 GB | Dense |
-| Llama 4 Scout 16x17B | `llama4:16x17b` | ~67.0 GB | MoE — 17B active of ~109B total |
+| Qwen3-Coder-Next 80B-A3B Q4_K_M | `qwen3-coder-next:80b-a3b-q4_K_M` | ~48.4 GB | Hybrid-attention MoE — 3B active of 80B total |
 | Nemotron 3 Super 120B | `nemotron-3-super:120b` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
+
+The large tier assigns each slot a distinct role. Llama 3.3 70B is the dense general-purpose baseline. Qwen3-Coder-Next is the long-horizon execution specialist, trained for coding agents, complex tool use, and recovery after failed actions. Nemotron 3 Super is the broader agentic reasoning model and represents the planner/verifier role for long-context, multi-step workflows. This combination measures a dense generalist, a fast sparse tool specialist, and a more capable sparse planner instead of using two large Llama-family models with overlapping general-purpose roles.
+
+The tier is intentionally limited to one model per role and avoids spending multiple slots on overlapping general-purpose models. Its capabilities also align with what the suite can measure: the code and tool accuracy tests exercise structured execution, while conversation and concurrency exercise sustained context and multi-request behavior. Qwen3-Coder-Next therefore represents carrying out long sequences of tool-heavy steps, while Nemotron 3 Super represents planning and verifying the broader workflow. Their different sparse architectures add an inference comparison that model size alone would not expose.
 
 ### Dense vs. Mixture-of-Experts (MoE)
 
 A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen3.6 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super are a different kind of MoE than the others: a hybrid Mamba-Transformer architecture, where Mamba's state-space layers handle most sequence processing (linear-time in sequence length) and only a subset of experts activate per token on top of that — distinct from Qwen3.6 and Llama 4's more conventional transformer-based MoE, despite similar active/total parameter ratios.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen3.6 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super use a hybrid Mamba-Transformer architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
 **Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Single-shot TTFT is measured from request start until the first output reaches the client, while conversation TTFT retains llama-server's prompt-evaluation duration so it represents only the newly-prefilled turn against the reused conversation cache.
 
-**Llama versions:** Llama 3.2 tops out at 3B parameters; the 8B slot uses Llama 3.1; the large tier's dense entry uses Llama 3.3 70B. Llama 4 Scout is the large tier's MoE entry, at 16 experts (17B active of ~109B total).
+**Llama representation:** Llama 3.3 70B supplies the large tier's dense general-purpose baseline, complementing the specialized sparse models without duplicating their roles.
 
-`--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--llm-models` narrows further to specific tags or wildcards (e.g. `--llm-models "llama*"`) within whatever tier is selected. The old `--models` spelling remains an identical alias — see [CLI Reference](cli-reference.md).
+`--maxtier` caps LLM models (and image models, see below) at a given tier and below; `--llm-models` narrows further to specific tags or wildcards (e.g. `--llm-models "qwen*"`) within whatever tier is selected. The old `--models` spelling remains an identical alias — see [CLI Reference](cli-reference.md).
 
 ## Image Generation
 

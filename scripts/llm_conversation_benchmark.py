@@ -26,7 +26,7 @@ class LLMConversationBenchmark:
     # Higher than the top sampled checkpoint (96K) so the growth loop always has headroom, never scrapes the ceiling.
     CONV_TARGET_CTX = 131072
 
-    # xsmall/small models can have a native context window (e.g. Phi 4 Mini's 128K) far
+    # xsmall/small models can have a native context window (e.g. Qwen3.5's 256K) far
     # beyond what a constrained-memory machine can actually reserve KV-cache for — a small
     # model's value is being cheap to run everywhere, not exercising every token it's rated
     # for. Cap their context budget and top sampled checkpoint at half the large-tier ones,

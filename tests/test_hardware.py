@@ -173,7 +173,7 @@ def test_model_fits_against_real_catalog_values():
     just synthetic strings — catches drift if MEMORY_OVERHEAD_MULTIPLIER or
     a model's download_size changes in a way that flips a real model's
     fit/no-fit outcome unexpectedly."""
-    xsmall = next(m for m in LLM_MODELS if m["short"] == "llama3.2-3b-q4")
+    xsmall = next(m for m in LLM_MODELS if m["short"] == "granite4.1-3b-q4")
     assert hardware.model_fits(xsmall["download_size"], 8.0) is True
 
     large = next(m for m in LLM_MODELS if m["short"] == "nemotron3-super-120b")

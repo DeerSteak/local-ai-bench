@@ -15,6 +15,43 @@ def test_llm_models_is_concatenation_of_tiers():
     assert LLM_MODELS == LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
 
 
+def test_xsmall_and_small_rosters_preserve_the_worker_model_structure():
+    assert [model["short"] for model in LLM_MODELS_XSMALL] == [
+        "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
+    ]
+    assert [model["short"] for model in LLM_MODELS_SMALL] == [
+        "granite4.1-8b-q4", "qwen3.5-9b-q4", "phi4-14b",
+    ]
+
+
+def test_granite_and_qwen_worker_models_form_cross_tier_scaling_pairs():
+    pairs = {
+        "granite": ("granite4.1-3b-q4", "granite4.1-8b-q4"),
+        "qwen": ("qwen3.5-4b-q4", "qwen3.5-9b-q4"),
+    }
+    for xsmall_short, small_short in pairs.values():
+        assert any(model["short"] == xsmall_short for model in LLM_MODELS_XSMALL)
+        assert any(model["short"] == small_short for model in LLM_MODELS_SMALL)
+
+
+def test_large_roster_preserves_distinct_baseline_agent_and_planner_roles():
+    assert [model["short"] for model in LLM_MODELS_LARGE] == [
+        "llama3.3-70b-q4",
+        "qwen3-coder-next-80b-a3b-q4",
+        "nemotron3-super-120b",
+    ]
+
+
+def test_qwen3_coder_next_uses_complete_official_q4_multipart_set():
+    model = next(model for model in LLM_MODELS_LARGE
+                 if model["short"] == "qwen3-coder-next-80b-a3b-q4")
+    assert model["hf_repo"] == "Qwen/Qwen3-Coder-Next-GGUF"
+    assert model["hf_file"] == [
+        f"Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-{part:05d}-of-00004.gguf"
+        for part in range(1, 5)
+    ]
+
+
 def test_each_llm_tier_sorted_by_params():
     for tier in ALL_LLM_TIERS:
         params = [m["params_b"] for m in tier]

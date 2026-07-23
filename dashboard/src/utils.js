@@ -3,7 +3,7 @@ import {
   MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, MODEL_DASH_PATTERNS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS,
-  LLM_MODEL_ORDER, IMAGE_MODEL_ORDER, EMBED_MODEL_ORDER,
+  LLM_DISPLAY_ORDER, IMAGE_MODEL_ORDER, EMBED_MODEL_ORDER,
   CTX_COLORS, IMAGE_BAR_COLORS, EMBED_BAR_COLORS, RES_COLORS, MODEL_SIZE_TIER,
   ACCURACY_TESTS,
 } from "./constants";
@@ -205,8 +205,8 @@ export function getAllLLMModels(files) {
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
   }
-  const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
-  const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
+  const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
   return [...known, ...unknown];
 }
 
@@ -745,12 +745,12 @@ export function flattenImageData(files) {
 
 // Return all model keys present in a given accuracy test (mcq/math/code)
 // across files, in canonical order — the same LLM roster runs every
-// accuracy test, so LLM_MODEL_ORDER applies here too.
+// accuracy test, so the current-plus-legacy display order applies here too.
 export function getAllAccuracyModels(files, testKey) {
   const s = new Set();
   for (const f of files) for (const m of Object.keys(f.data[testKey] || {})) s.add(m);
-  const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
-  const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
+  const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
   return [...known, ...unknown];
 }
 
@@ -877,8 +877,8 @@ export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
 export function getAllConcurrencyModels(files, section) {
   const s = new Set();
   for (const f of files) for (const m of Object.keys(f.data[section] || {})) s.add(m);
-  const known   = LLM_MODEL_ORDER.filter(m => s.has(m));
-  const unknown = [...s].filter(m => !LLM_MODEL_ORDER.includes(m));
+  const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
   return [...known, ...unknown];
 }
 
