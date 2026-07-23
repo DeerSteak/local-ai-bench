@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, sanitizeForFilename } from "./utils";
+import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, getAccuracySettingsWarning, sanitizeForFilename } from "./utils";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -88,6 +88,10 @@ export default function Dashboard() {
 
   const effectiveFilesRef = useRef(effectiveFiles);
   useEffect(() => { effectiveFilesRef.current = effectiveFiles; }, [effectiveFiles]);
+  const accuracySettingsWarning = useMemo(
+    () => getAccuracySettingsWarning(effectiveFiles),
+    [effectiveFiles],
+  );
 
   const updateHostnameOverride = useCallback((fileId, value) => {
     setHostnameOverrides(prev => ({ ...prev, [fileId]: value }));
@@ -224,7 +228,7 @@ export default function Dashboard() {
         onDragLeave={handleDragLeave}
         onRemoveFile={removeFile}
         onFileInput={handleFileInput}
-        fileError={fileError}
+        fileError={[fileError, accuracySettingsWarning].filter(Boolean).join(" ")}
       />
 
       <Controls

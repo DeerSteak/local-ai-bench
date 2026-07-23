@@ -21,8 +21,7 @@ class ToolBenchmark:
     # same crash. Delete this file to retry a skipped model.
     TOOL_CRASH_CACHE = Path(".tool_crash_cache.json")
 
-    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in the engine's chat is the real bound.
+    # -1 delegates the finite per-pass limits to chat_tools' token_budget split.
     TOOL_NUM_PREDICT = -1
 
     @staticmethod
@@ -156,12 +155,13 @@ class ToolBenchmark:
         return {"correct": correct}
 
     @staticmethod
-    def _ask(engine, tag: str, question: dict) -> tuple[dict, str]:
-        _, _, _, _, response_text, tool_calls = engine.chat_tools(
+    def _ask(engine, tag: str, question: dict) -> tuple[dict, str, bool]:
+        _, _, _, _, response_text, tool_calls, budget_nudged = engine.chat_tools(
             tag, [{"role": "user", "content": question["prompt"]}],
             tools=question["tools"], timeout=config.ACC_TIMEOUT,
             num_ctx=config.ACCURACY_CONTEXT,
             num_predict=ToolBenchmark.TOOL_NUM_PREDICT, check_loop=True,
+            token_budget=config.ACC_TOKEN_BUDGET,
         )
         # Keep prose alongside tool calls — a decline is prose with no calls at all.
         if tool_calls and response_text:
@@ -170,7 +170,7 @@ class ToolBenchmark:
             raw = json.dumps(tool_calls)
         else:
             raw = response_text
-        return ToolBenchmark.evaluate_question(question, tool_calls), raw
+        return ToolBenchmark.evaluate_question(question, tool_calls), raw, budget_nudged
 
     @staticmethod
     def rescore_partial_fn(question: dict, partial_text: str) -> dict:

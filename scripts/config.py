@@ -3,7 +3,7 @@ config.py — shared constants for the benchmark suite.
 
 Other modules should `import config` and reference `config.NAME` rather than
 `from config import NAME` for any value main() can override via CLI flags
-(currently RUN_TIMEOUT, ACC_TIMEOUT, and N_RUNS) — a `from` import binds a
+(currently RUN_TIMEOUT, ACC_TIMEOUT, ACC_TOKEN_BUDGET, and N_RUNS) — a `from` import binds a
 local copy at import time and won't see a later `config.RUN_TIMEOUT = ...`
 assignment.
 """
@@ -66,8 +66,15 @@ N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
 RUN_TIMEOUT = 300   # base generation/chat timeout; images use 2x — overridden by --timeout
 
 # Per accuracy question (mcq/math/reasoning/code/tool), overridden by --acc-timeout.
-# since a stuck model's unbounded token budget would otherwise burn 300s per question before anyone noticed.
+# A single shared deadline covers both bounded accuracy-generation passes.
 ACC_TIMEOUT = 60
+ACC_TOKEN_BUDGET = 8192
+ACC_FINALIZE_FRACTION = 0.60
+ACC_FINALIZE_MESSAGE = (
+    "You reached the generation limit. Return a complete final answer now. "
+    "Be concise and follow the requested answer format. Do not continue the "
+    "previous fragment; provide the complete answer that should be graded."
+)
 
 # How often the accuracy tests re-check a streaming response for a degenerate loop (Shared.looks_like_loop),
 # rather than waiting the full ACC_TIMEOUT to look.

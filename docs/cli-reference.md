@@ -43,6 +43,9 @@ run_bench.bat [options]   # Windows
                         accuracy tests (mcq/math/reasoning/code/tool). Any partial response
                         is scored normally, the timeout is recorded, and the
                         run moves on to the next question (default: 60)
+--acc-token-budget N    Positive completion-token budget per accuracy question
+                        (default: 8192), split 60/40 between the initial response
+                        and an optional final-answer pass
 --maxtier TIER          Cap LLM models (single-shot + conversation) AND image
                         models at this tier and below: xsmall (<6B / +SD1.5),
                         small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
@@ -133,6 +136,7 @@ The interactive launcher clears the terminal before its initial display, between
 | `--runs` | integer, `1`–`10` | `3` | Measured runs averaged for single-shot LLM at each context, embeddings, and images at each resolution. Ignored by conversation, accuracy, and concurrency. Warmup count is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per generation/chat call for single-shot, conversation, concurrency, and their engine warmups. Images use twice this value (600s by default). Embedding calls retain the engine's fixed 120s timeout; accuracy questions use `--acc-timeout` |
 | `--acc-timeout` | integer (seconds) | `60` | Per question for `mcq`/`math`/`reasoning`/`code`/`tool`; the partial response is scored normally, the timeout is recorded, and the bank continues — see [Accuracy](workloads.md#accuracy) |
+| `--acc-token-budget` | positive integer (tokens) | `8192` | Total completion-token budget per accuracy question. The first pass receives 60%; only a literal length stop triggers a second pass with the remaining 40%. Both passes share `--acc-timeout` |
 | `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. `conc_tool`/`conc_chat` ignore this — they scope to every LLM model actually downloaded locally instead, since download presence is itself a decent proxy for "this machine can try it" (see [Concurrency](workloads.md#concurrency)) |
 | `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
 | `--embedding-models` | space-separated catalog tags and/or wildcards | none (every catalog embedding model) | Affects `emb` only. Matching is case-sensitive and exact-or-wildcard on the model's `tag` |
@@ -195,7 +199,7 @@ bash run_bench.sh --tests acc --sample 10
 bash run_bench.sh --timeout 600
 
 # Give a slower model more time per accuracy question before its partial answer is scored
-bash run_bench.sh --tests acc --acc-timeout 120
+bash run_bench.sh --tests acc --acc-timeout 120 --acc-token-budget 12288
 
 # Both concurrency tests — 1-16-way tool-style + 1-32-way chat-server sweeps
 # on every downloaded model

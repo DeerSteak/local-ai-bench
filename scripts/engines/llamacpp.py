@@ -24,7 +24,13 @@ import requests
 import config
 from engines.base import InferenceEngine
 from models import EMBED_MODELS, LLM_MODELS
-from shared import EngineLoopDetected, EngineTimeout, Shared
+from shared import (
+    EngineBudgetExceeded,
+    EngineLoopDetected,
+    EngineTimeout,
+    Shared,
+    split_token_budget,
+)
 
 
 class LlamaCppEngine(InferenceEngine):
@@ -607,167 +613,55 @@ class LlamaCppEngine(InferenceEngine):
             self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
         return ttft, tokens, sanitized
 
-    def chat(self, tag: str, messages: list, timeout: int = 600,
-             num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False):
-        """Generate via llama-server's OpenAI-compatible /v1/chat/completions.
-        Returns (ttft_sec, tokens_generated, tokens_per_sec, prompt_eval_count,
-        response_text). The trailing usage.completion_tokens value is the
-        authoritative generated-token count and includes reasoning output.
-        n_predict is passed straight through as an
-        extension field (-1 = unbounded). check_loop, when set, polls the
-        streaming response for a degenerate generation loop (see
-        Shared.looks_like_loop) and raises EngineLoopDetected early rather
-        than waiting out the full timeout. stream_options.include_usage asks
-        for a trailing usage chunk — prompt_eval_count reads its
-        prompt_tokens (the true running total), not timings.prompt_n (only
-        newly-prefilled tokens this call, which under-counts once the prefix
-        cache kicks in)."""
-        t_start = time.perf_counter()
-        deadline = t_start + timeout
-        self._ensure_model(tag, num_ctx, deadline=deadline)
-
-        payload = json.dumps({
-            "messages":       messages,
-            "n_predict":      num_predict,
-            "temperature":    0.0,
-            "stream":         True,
+    def _chat_request(self, tag: str, messages: list, tools: list | None,
+                      deadline: float, request_start: float, num_predict: int,
+                      check_loop: bool, budget_nudged: bool) -> dict:
+        payload = {
+            "messages": messages,
+            "n_predict": num_predict,
+            "temperature": 0.0,
+            "stream": True,
             "stream_options": {"include_usage": True},
-        }).encode()
+        }
+        if tools is not None:
+            payload.update({"tools": tools, "tool_choice": "auto"})
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/v1/chat/completions",
-            data=payload, headers={"Content-Type": "application/json"}, method="POST",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
 
-        ttft   = None
+        ttft = None
         tokens = 0
-        tps    = 0
         server_predicted_n = 0
-        predicted_ms       = 0
+        predicted_ms = 0
         prompt_eval_count = 0
-        response_parts    = []
-        reasoning_parts    = []
-        last_loop_check   = t_start
-
-        remaining = max(deadline - time.perf_counter(), 0.001)
-        with self._urlopen(req, remaining) as resp:
-            for chunk in self._iter_sse(resp):
-                choices   = chunk.get("choices") or [{}]
-                delta     = choices[0].get("delta", {})
-                content   = delta.get("content")
-                reasoning = delta.get("reasoning_content")
-
-                if ttft is None and (content or reasoning):
-                    ttft = time.perf_counter() - t_start
-
-                if content:
-                    response_parts.append(content)
-                if reasoning:
-                    reasoning_parts.append(reasoning)
-
-                now = time.perf_counter()
-
-                # urlopen()'s timeout is per-read, not total duration — it
-                # resets on every token. Enforce the real wall-clock deadline.
-                if now > deadline:
-                    partial_text = "".join(response_parts) or "".join(reasoning_parts)
-                    raise EngineTimeout(f"llamacpp_chat exceeded {timeout}s wall-clock timeout",
-                                        partial_text=partial_text)
-
-                if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
-                    last_loop_check = now
-                    partial_text = "".join(response_parts) or "".join(reasoning_parts)
-                    if partial_text and Shared.looks_like_loop(partial_text):
-                        raise EngineLoopDetected(
-                            f"llamacpp_chat detected a generation loop after {now - t_start:.0f}s",
-                            partial_text=partial_text)
-
-                timings = chunk.get("timings")
-                if timings:
-                    server_predicted_n = timings.get("predicted_n", tokens)
-                    predicted_ms       = timings.get("predicted_ms") or 0
-                    prompt_ms          = timings.get("prompt_ms")
-                    prompt_n           = timings.get("prompt_n")
-                    if not tokens:
-                        tokens = server_predicted_n
-                    if prompt_ms is not None and prompt_ms > 0:
-                        ttft = prompt_ms / 1000
-                    if prompt_n is not None:
-                        prompt_eval_count = prompt_n
-
-                # Trailing chunk, so this overrides prompt_n above with the true total.
-                usage = chunk.get("usage")
-                if usage and usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
-                if usage and usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-
-        total = time.perf_counter() - t_start
-        if ttft is None:
-            ttft = total
-        if predicted_ms:
-            tps = tokens / (predicted_ms / 1000)
-        elif total > ttft:
-            tps = tokens / (total - ttft)
-        sanitized = self._sanitize_tps(tps, tokens, ttft, total)
-        if sanitized != tps:
-            self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
-        # A reasoning model can stream its whole turn via reasoning_content with content empty;
-        # falling back avoids an empty assistant turn corrupting history.
-        response_text = "".join(response_parts) or "".join(reasoning_parts)
-        return ttft, tokens, sanitized, prompt_eval_count, response_text
-
-    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_ctx: int | None = None, num_predict: int = 1024,
-                   check_loop: bool = False):
-        """Tool-calling chat via /v1/chat/completions with tools/tool_choice.
-        Same 5-tuple as chat() plus a tool_calls list of {"name", "arguments"}
-        (empty if nothing was called). delta.tool_calls fragments stream by
-        index — id/name arrive once, arguments as partial JSON text — so they
-        accumulate per index the way content does; each arguments string is
-        JSON-parsed once at the end, falling back to {} if it won't parse."""
-        t_start = time.perf_counter()
-        deadline = t_start + timeout
-        self._ensure_model(tag, num_ctx, deadline=deadline)
-
-        payload = json.dumps({
-            "messages":       messages,
-            "tools":          tools,
-            "tool_choice":    "auto",
-            "n_predict":      num_predict,
-            "temperature":    0.0,
-            "stream":         True,
-            "stream_options": {"include_usage": True},
-        }).encode()
-        req = urllib.request.Request(
-            f"{config.LLAMACPP_URL}/v1/chat/completions",
-            data=payload, headers={"Content-Type": "application/json"}, method="POST",
-        )
-
-        ttft   = None
-        tokens = 0
-        tps    = 0
-        server_predicted_n = 0
-        predicted_ms       = 0
-        prompt_eval_count = 0
-        response_parts    = []
-        reasoning_parts    = []
-        # index -> {"name": str, "arguments": str}: fragments arrive by index.
+        response_parts = []
+        reasoning_parts = []
         tool_fragments: dict[int, dict] = {}
-        last_loop_check   = t_start
+        finish_reason = None
+        last_loop_check = request_start
 
-        remaining = max(deadline - time.perf_counter(), 0.001)
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            raise EngineTimeout(
+                "llamacpp_chat exceeded its wall-clock deadline",
+                budget_nudged=budget_nudged,
+            )
         with self._urlopen(req, remaining) as resp:
             for chunk in self._iter_sse(resp):
-                choices   = chunk.get("choices") or [{}]
-                delta     = choices[0].get("delta", {})
-                content   = delta.get("content")
+                choices = chunk.get("choices") or [{}]
+                choice = choices[0]
+                delta = choice.get("delta", {})
+                content = delta.get("content")
                 reasoning = delta.get("reasoning_content")
                 tool_calls = delta.get("tool_calls")
+                if choice.get("finish_reason") is not None:
+                    finish_reason = choice["finish_reason"]
 
                 if ttft is None and (content or reasoning or tool_calls):
-                    ttft = time.perf_counter() - t_start
-
+                    ttft = time.perf_counter() - request_start
                 if content:
                     response_parts.append(content)
                 if reasoning:
@@ -775,66 +669,176 @@ class LlamaCppEngine(InferenceEngine):
                 if tool_calls:
                     for call in tool_calls:
                         idx = call.get("index", 0)
-                        frag = tool_fragments.setdefault(idx, {"name": "", "arguments": ""})
-                        fn = call.get("function") or {}
-                        if fn.get("name"):
-                            frag["name"] = fn["name"]
-                        if fn.get("arguments"):
-                            frag["arguments"] += fn["arguments"]
+                        fragment = tool_fragments.setdefault(
+                            idx, {"name": "", "arguments": ""},
+                        )
+                        function = call.get("function") or {}
+                        if function.get("name"):
+                            fragment["name"] = function["name"]
+                        if function.get("arguments"):
+                            fragment["arguments"] += function["arguments"]
 
                 now = time.perf_counter()
-
+                response_text = "".join(response_parts) or "".join(reasoning_parts)
+                parsed_calls = self._tool_calls_from_fragments(tool_fragments)
+                partial_text = (
+                    json.dumps(parsed_calls) if tools is not None and parsed_calls
+                    else response_text
+                )
                 if now > deadline:
-                    partial_calls = self._tool_calls_from_fragments(tool_fragments)
-                    partial_text = (json.dumps(partial_calls) if partial_calls
-                                    else "".join(response_parts) or "".join(reasoning_parts))
-                    raise EngineTimeout(f"llamacpp_chat_tools exceeded {timeout}s wall-clock timeout",
-                                        partial_text=partial_text)
-
+                    raise EngineTimeout(
+                        "llamacpp_chat exceeded its wall-clock deadline",
+                        partial_text=partial_text,
+                        budget_nudged=budget_nudged,
+                    )
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
-                    partial_text = "".join(response_parts) or "".join(reasoning_parts)
-                    if partial_text and Shared.looks_like_loop(partial_text):
+                    if response_text and Shared.looks_like_loop(response_text):
                         raise EngineLoopDetected(
-                            f"llamacpp_chat_tools detected a generation loop after {now - t_start:.0f}s",
-                            partial_text=partial_text)
+                            f"llamacpp_chat detected a generation loop after "
+                            f"{now - request_start:.0f}s",
+                            partial_text=response_text,
+                            budget_nudged=budget_nudged,
+                        )
 
                 timings = chunk.get("timings")
                 if timings:
                     server_predicted_n = timings.get("predicted_n", tokens)
-                    predicted_ms       = timings.get("predicted_ms") or 0
-                    prompt_ms          = timings.get("prompt_ms")
-                    prompt_n           = timings.get("prompt_n")
+                    predicted_ms = timings.get("predicted_ms") or 0
+                    prompt_ms = timings.get("prompt_ms")
+                    prompt_n = timings.get("prompt_n")
                     if not tokens:
                         tokens = server_predicted_n
                     if prompt_ms is not None and prompt_ms > 0:
                         ttft = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
-
                 usage = chunk.get("usage")
                 if usage and usage.get("prompt_tokens") is not None:
                     prompt_eval_count = usage["prompt_tokens"]
                 if usage and usage.get("completion_tokens") is not None:
                     tokens = usage["completion_tokens"]
 
-        total = time.perf_counter() - t_start
+        total = time.perf_counter() - request_start
         if ttft is None:
             ttft = total
-        if predicted_ms:
-            tps = tokens / (predicted_ms / 1000)
-        elif total > ttft:
-            tps = tokens / (total - ttft)
-        sanitized = self._sanitize_tps(tps, tokens, ttft, total)
-        if sanitized != tps:
-            self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
+        decode_seconds = predicted_ms / 1000 if predicted_ms else max(total - ttft, 0)
+        raw_tps = tokens / decode_seconds if decode_seconds else 0
+        tps = self._sanitize_tps(raw_tps, tokens, ttft, total)
+        if tps != raw_tps:
+            self._warn_tps_sanitized(
+                tag, raw_tps, tps, tokens, server_predicted_n, predicted_ms,
+            )
+            decode_seconds = tokens / tps if tps else 0
+        return {
+            "ttft": ttft,
+            "tokens": tokens,
+            "tps": tps,
+            "decode_seconds": decode_seconds,
+            "prompt_eval_count": prompt_eval_count,
+            "response_text": "".join(response_parts) or "".join(reasoning_parts),
+            "tool_calls": self._tool_calls_from_fragments(tool_fragments),
+            "finish_reason": finish_reason,
+        }
 
-        tool_calls_out = self._tool_calls_from_fragments(tool_fragments)
+    @staticmethod
+    def _graded_response(result: dict, tools: list | None) -> str:
+        if tools is not None and result["tool_calls"]:
+            return json.dumps(result["tool_calls"])
+        return result["response_text"]
 
-        # A reasoning model can stream its whole turn via reasoning_content with content empty;
-        # falling back avoids an empty assistant turn corrupting history.
-        response_text = "".join(response_parts) or "".join(reasoning_parts)
-        return ttft, tokens, sanitized, prompt_eval_count, response_text, tool_calls_out
+    def _chat_with_optional_finalize(
+            self, tag: str, messages: list, tools: list | None, timeout: int,
+            num_ctx: int | None, num_predict: int, check_loop: bool,
+            token_budget: int | None):
+        if token_budget is not None and num_predict != -1:
+            raise ValueError("token_budget cannot be combined with finite num_predict")
+        t_start = time.perf_counter()
+        deadline = t_start + timeout
+        self._ensure_model(tag, num_ctx, deadline=deadline)
+
+        if token_budget is None:
+            result = self._chat_request(
+                tag, messages, tools, deadline, t_start, num_predict, check_loop, False,
+            )
+            return result, None, False
+
+        first_budget, second_budget = split_token_budget(
+            token_budget, config.ACC_FINALIZE_FRACTION,
+        )
+        first = self._chat_request(
+            tag, messages, tools, deadline, t_start, first_budget, check_loop, False,
+        )
+        if first["finish_reason"] != "length":
+            return first, None, False
+        if second_budget == 0:
+            raise EngineBudgetExceeded(
+                "llamacpp_chat exhausted its completion-token budget",
+                partial_text=self._graded_response(first, tools),
+                budget_nudged=False,
+            )
+
+        first_response = self._graded_response(first, tools)
+        if time.perf_counter() >= deadline:
+            raise EngineTimeout(
+                "llamacpp_chat exceeded its wall-clock deadline before finalization",
+                partial_text=first_response,
+            )
+        followup = [dict(message) for message in messages]
+        followup.extend([
+            {"role": "assistant", "content": first_response},
+            {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
+        ])
+        second_start = time.perf_counter()
+        second = self._chat_request(
+            tag, followup, tools, deadline, second_start, second_budget, check_loop, True,
+        )
+        if second["finish_reason"] == "length":
+            raise EngineBudgetExceeded(
+                "llamacpp_chat exhausted its completion-token budget",
+                partial_text=self._graded_response(second, tools),
+            )
+        return first, second, True
+
+    @staticmethod
+    def _combined_metrics(first: dict, second: dict | None) -> tuple[float, int, float, int]:
+        if second is None:
+            return (
+                first["ttft"], first["tokens"], first["tps"],
+                first["prompt_eval_count"],
+            )
+        tokens = first["tokens"] + second["tokens"]
+        decode_seconds = first["decode_seconds"] + second["decode_seconds"]
+        return (
+            first["ttft"],
+            tokens,
+            tokens / decode_seconds if decode_seconds else 0,
+            second["prompt_eval_count"],
+        )
+
+    def chat(self, tag: str, messages: list, timeout: int = 600,
+             num_ctx: int | None = None, num_predict: int = 1024,
+             check_loop: bool = False, token_budget: int | None = None):
+        """Chat once, or use a bounded final-answer pass after a length stop."""
+        first, second, budget_nudged = self._chat_with_optional_finalize(
+            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
+        )
+        graded = second or first
+        metrics = self._combined_metrics(first, second)
+        result = (*metrics, graded["response_text"])
+        return (*result, budget_nudged) if token_budget is not None else result
+
+    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
+                   num_ctx: int | None = None, num_predict: int = 1024,
+                   check_loop: bool = False, token_budget: int | None = None):
+        """Tool chat once, or request one complete replacement after a length stop."""
+        first, second, budget_nudged = self._chat_with_optional_finalize(
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
+        )
+        graded = second or first
+        metrics = self._combined_metrics(first, second)
+        result = (*metrics, graded["response_text"], graded["tool_calls"])
+        return (*result, budget_nudged) if token_budget is not None else result
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:

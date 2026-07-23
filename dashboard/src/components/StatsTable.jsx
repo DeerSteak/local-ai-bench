@@ -225,6 +225,8 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
           <SortTh label="Answered" sortKey="answered" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Timed Out" sortKey="timed_out_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Likely Loop" sortKey="likely_loop_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Nudged" sortKey="budget_nudged_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Budget Exhausted" sortKey="budget_exceeded_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -232,7 +234,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={6}>
+            <td className={styles.td} colSpan={8}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -248,6 +250,8 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.answered}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.timed_out_count || "—"}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.likely_loop_count || "—"}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_nudged_count || "—"}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_exceeded_count || "—"}</td>
           </tr>
         ))}
       </tbody>

@@ -23,7 +23,7 @@ import requests
 import config
 from engines.llamacpp import LlamaCppEngine
 import engines.llamacpp as llamacpp_module
-from shared import EngineLoopDetected, EngineTimeout
+from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -517,6 +517,231 @@ def test_chat_raises_engine_timeout_type_for_run_measured_calls_compat(monkeypat
     ])
     with pytest.raises(EngineTimeout):
         LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}], timeout=5)
+
+
+def _chat_result(text, finish_reason, *, calls=None, tokens=2, prompt_tokens=10):
+    return {
+        "ttft": 0.2,
+        "tokens": tokens,
+        "tps": 2.0,
+        "decode_seconds": 1.0,
+        "prompt_eval_count": prompt_tokens,
+        "response_text": text,
+        "tool_calls": calls or [],
+        "finish_reason": finish_reason,
+    }
+
+
+@pytest.mark.parametrize("finish_reason", ["stop", "tool_calls", None, "content_filter"])
+def test_budgeted_chat_only_retries_literal_length(monkeypatch, finish_reason):
+    _patch_ensure_model(monkeypatch)
+    calls = []
+
+    def fake_request(self, tag, messages, tools, deadline, request_start,
+                     num_predict, check_loop, budget_nudged):
+        calls.append((messages, num_predict, deadline, budget_nudged))
+        return _chat_result("Answer: B", finish_reason)
+
+    monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
+    result = LlamaCppEngine().chat(
+        "tag", [{"role": "user", "content": "question"}],
+        num_predict=-1, token_budget=10,
+    )
+    assert result[-2:] == ("Answer: B", False)
+    assert [call[1] for call in calls] == [6]
+
+
+def test_budgeted_chat_retries_with_original_history_and_grades_only_second(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    original = [{"role": "system", "content": "rules"}, {"role": "user", "content": "question"}]
+    snapshot = [dict(message) for message in original]
+    calls = []
+    responses = iter([
+        _chat_result("unfinished fragment", "length", tokens=6, prompt_tokens=20),
+        _chat_result("Answer: C", "stop", tokens=2, prompt_tokens=30),
+    ])
+
+    def fake_request(self, tag, messages, tools, deadline, request_start,
+                     num_predict, check_loop, budget_nudged):
+        calls.append({
+            "messages": [dict(message) for message in messages],
+            "deadline": deadline,
+            "num_predict": num_predict,
+            "budget_nudged": budget_nudged,
+        })
+        return next(responses)
+
+    monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
+    ttft, tokens, tps, prompt_tokens, text, nudged = LlamaCppEngine().chat(
+        "tag", original, timeout=60, num_predict=-1, token_budget=10,
+    )
+    assert original == snapshot
+    assert [call["num_predict"] for call in calls] == [6, 4]
+    assert calls[0]["deadline"] == calls[1]["deadline"]
+    assert calls[1]["messages"] == snapshot + [
+        {"role": "assistant", "content": "unfinished fragment"},
+        {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
+    ]
+    assert calls[1]["budget_nudged"] is True
+    assert (ttft, tokens, tps, prompt_tokens, text, nudged) == (0.2, 8, 4.0, 30, "Answer: C", True)
+
+
+def test_budgeted_chat_two_streams_send_exact_split_and_return_second(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    captured = []
+    streams = iter([
+        [
+            {"choices": [{"delta": {"content": "unfinished"}}]},
+            {"choices": [{"delta": {}, "finish_reason": "length"}],
+             "timings": {"predicted_n": 6, "predicted_ms": 1000, "prompt_n": 10}},
+            {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 6}},
+        ],
+        [
+            {"choices": [{"delta": {"content": "Answer: B"}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}],
+             "timings": {"predicted_n": 2, "predicted_ms": 500, "prompt_n": 20}},
+            {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 2}},
+        ],
+    ])
+
+    def urlopen(req, timeout):
+        captured.append({"payload": json.loads(req.data), "timeout": timeout})
+        return _FakeResponse(next(streams))
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    result = LlamaCppEngine().chat(
+        "tag", [{"role": "user", "content": "question"}],
+        timeout=60, num_predict=-1, token_budget=10,
+    )
+    assert [request["payload"]["n_predict"] for request in captured] == [6, 4]
+    assert captured[1]["payload"]["messages"][-2:] == [
+        {"role": "assistant", "content": "unfinished"},
+        {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
+    ]
+    assert result[1] == 8
+    assert result[-2:] == ("Answer: B", True)
+
+
+def test_budgeted_tool_chat_grades_replacement_call_without_merging(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    responses = iter([
+        _chat_result("", "length", calls=[{"name": "partial", "arguments": {}, "incomplete": True}]),
+        _chat_result("", "tool_calls", calls=[{"name": "final", "arguments": {"x": 1}}]),
+    ])
+    monkeypatch.setattr(
+        LlamaCppEngine, "_chat_request",
+        lambda self, *args, **kwargs: next(responses),
+    )
+    result = LlamaCppEngine().chat_tools(
+        "tag", [{"role": "user", "content": "call"}], [{"type": "function"}],
+        num_predict=-1, token_budget=10,
+    )
+    assert result[-2] == [{"name": "final", "arguments": {"x": 1}}]
+    assert result[-1] is True
+
+
+def test_budgeted_chat_pass_two_length_raises_gradeable_exhaustion(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    responses = iter([
+        _chat_result("first", "length"),
+        _chat_result("Answer: D", "length"),
+    ])
+    monkeypatch.setattr(
+        LlamaCppEngine, "_chat_request",
+        lambda self, *args, **kwargs: next(responses),
+    )
+    with pytest.raises(EngineBudgetExceeded) as exc_info:
+        LlamaCppEngine().chat(
+            "tag", [{"role": "user", "content": "q"}],
+            num_predict=-1, token_budget=10,
+        )
+    assert exc_info.value.partial_text == "Answer: D"
+    assert exc_info.value.budget_nudged is True
+
+
+def test_one_token_budget_scores_pass_one_as_exhausted_without_nudge(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    requests = []
+
+    def fake_request(self, tag, messages, tools, deadline, request_start,
+                     num_predict, check_loop, budget_nudged):
+        requests.append(num_predict)
+        return _chat_result("Answer: B", "length", tokens=1)
+
+    monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
+    with pytest.raises(EngineBudgetExceeded) as exc_info:
+        LlamaCppEngine().chat(
+            "tag", [{"role": "user", "content": "q"}],
+            num_predict=-1, token_budget=1,
+        )
+    assert requests == [1]
+    assert exc_info.value.partial_text == "Answer: B"
+    assert exc_info.value.budget_nudged is False
+
+
+def test_budgeted_chat_pass_two_timeout_keeps_nudge_flag(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    calls = 0
+
+    def fake_request(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _chat_result("first", "length")
+        raise EngineTimeout("timed out", partial_text="Answer: A", budget_nudged=True)
+
+    monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
+    with pytest.raises(EngineTimeout) as exc_info:
+        LlamaCppEngine().chat(
+            "tag", [{"role": "user", "content": "q"}],
+            num_predict=-1, token_budget=10,
+        )
+    assert exc_info.value.partial_text == "Answer: A"
+    assert exc_info.value.budget_nudged is True
+
+
+def test_budgeted_chat_deadline_expiry_before_pass_two_scores_pass_one(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(0.0, 61.0))
+    monkeypatch.setattr(
+        LlamaCppEngine, "_chat_request",
+        lambda self, *args, **kwargs: _chat_result("Answer: D", "length"),
+    )
+    with pytest.raises(EngineTimeout) as exc_info:
+        LlamaCppEngine().chat(
+            "tag", [{"role": "user", "content": "q"}],
+            timeout=60, num_predict=-1, token_budget=10,
+        )
+    assert exc_info.value.partial_text == "Answer: D"
+    assert exc_info.value.budget_nudged is False
+
+
+def test_budgeted_chat_pass_two_loop_keeps_nudge_flag(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    calls = 0
+
+    def fake_request(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _chat_result("first", "length")
+        raise EngineLoopDetected(
+            "loop", partial_text="wait, wait, wait", budget_nudged=True,
+        )
+
+    monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
+    with pytest.raises(EngineLoopDetected) as exc_info:
+        LlamaCppEngine().chat(
+            "tag", [{"role": "user", "content": "q"}],
+            num_predict=-1, token_budget=10,
+        )
+    assert exc_info.value.partial_text == "wait, wait, wait"
+    assert exc_info.value.budget_nudged is True
+
+
+def test_budgeted_chat_rejects_finite_num_predict(monkeypatch):
+    with pytest.raises(ValueError, match="finite num_predict"):
+        LlamaCppEngine().chat("tag", [], num_predict=10, token_budget=10)
 
 
 # ── chat_tools ──

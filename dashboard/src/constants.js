@@ -223,13 +223,14 @@ export const ACCURACY_TEST_LABELS = {
   mcq: "MCQ", math: "Math", reasoning: "Reasoning", code: "Code", tool: "Tool Use",
 };
 
-// Fixed two-series bar config for the accuracy timeout/loop-detection chart
-// (scripts/*_benchmark.py's timed_out_count / likely_loop_count fields) —
+// Fixed incident-series config for accuracy cutoffs. A successful nudge is
+// intentionally absent because it is not itself an incident.
 // not per-model, so this doesn't need a color-assignment helper like the
 // other bar configs.
 export const ACCURACY_TIMEOUT_BAR_CONFIGS = [
   { dataKey: "timed_out_count",   name: "Timed out",   fill: "#b54708" },
   { dataKey: "likely_loop_count", name: "Likely loop", fill: "#cf222e" },
+  { dataKey: "budget_exceeded_count", name: "Budget exhausted", fill: "#7a3e9d" },
 ];
 
 // LLM metric options

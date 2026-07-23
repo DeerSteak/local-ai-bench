@@ -180,6 +180,10 @@ def test_regrade_workload_reparses_raw_mcq_and_rebuilds_sidecar():
     original["timed_out_ids"] = ["mcq_001"]
     original["likely_loop_count"] = 1
     original["likely_loop_ids"] = ["mcq_001"]
+    original["budget_nudged_count"] = 1
+    original["budget_nudged_ids"] = ["mcq_001"]
+    original["budget_exceeded_count"] = 1
+    original["budget_exceeded_ids"] = ["mcq_001"]
     sidecar = {
         "label": "Model",
         "answers": [{
@@ -195,6 +199,8 @@ def test_regrade_workload_reparses_raw_mcq_and_rebuilds_sidecar():
     assert results["model"]["correct"] == 1
     assert results["model"]["answered"] == 1
     assert results["model"]["timed_out_ids"] == ["mcq_001"]
+    assert results["model"]["budget_nudged_ids"] == ["mcq_001"]
+    assert results["model"]["budget_exceeded_ids"] == ["mcq_001"]
     assert "likely_loop_ids" not in results["model"]
     assert answers["model"]["answers"] == [{
         "id": "mcq_001", "category": "test", "given": "B", "expected": "B",

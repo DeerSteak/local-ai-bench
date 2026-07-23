@@ -72,7 +72,7 @@ class LLMPrefillBenchmark:
                         )
                         return ttft, tps
 
-                    samples, status, _ = Shared.run_measured_calls(
+                    samples, status, _, _metadata = Shared.run_measured_calls(
                         config.N_RUNS, _prefill_once, tag, crash_cache,
                         LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}", engine)
                     ttfts    = [s[0] for s in samples]

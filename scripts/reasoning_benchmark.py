@@ -140,18 +140,19 @@ class ReasoningBenchmark:
         )
 
     @staticmethod
-    def _ask(engine, tag: str, question: dict) -> tuple[str | None, str]:
-        _, _, _, _, response_text = engine.chat(
+    def _ask(engine, tag: str, question: dict) -> tuple[str | None, str, bool]:
+        _, _, _, _, response_text, budget_nudged = engine.chat(
             tag,
             [{"role": "user", "content": ReasoningBenchmark.build_prompt(question)}],
             timeout=config.ACC_TIMEOUT,
             num_ctx=config.ACCURACY_CONTEXT,
             num_predict=ReasoningBenchmark.REASONING_NUM_PREDICT,
             check_loop=True,
+            token_budget=config.ACC_TOKEN_BUDGET,
         )
         return ReasoningBenchmark.parse_answer(
             response_text, question["choices"].keys(),
-        ), response_text
+        ), response_text, budget_nudged
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

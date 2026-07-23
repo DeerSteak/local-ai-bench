@@ -839,8 +839,8 @@ export function buildAccuracyDifficultyData(files, testKey, model) {
   });
 }
 
-// Accuracy timeout/loop-detection diagnostics: one row per (file, model),
-// cols = timed_out_count / likely_loop_count (0 for a model with a clean
+// Accuracy cutoff diagnostics: one row per (file, model),
+// cols = timeout / loop / exhausted budget (0 for a model with a clean
 // run, so it's still visible alongside the ones that had trouble). The whole
 // chart (and its EmptyState fallback) only appears when at least one
 // model/file had either incident — otherwise it'd always render with
@@ -855,11 +855,13 @@ export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
       const s = f.data[testKey]?.[model];
       const timedOut = s?.timed_out_count || 0;
       const likelyLoop = s?.likely_loop_count || 0;
-      if (timedOut || likelyLoop) hasIncident = true;
+      const budgetExceeded = s?.budget_exceeded_count || 0;
+      if (timedOut || likelyLoop || budgetExceeded) hasIncident = true;
       rows.push({
         rowLabel: isMulti ? `${f.hostname}\n${modelLabel(model)}` : modelLabel(model),
         timed_out_count: timedOut,
         likely_loop_count: likelyLoop,
+        budget_exceeded_count: budgetExceeded,
       });
     }
   }
@@ -973,8 +975,31 @@ export function flattenAccuracyData(files, testKey) {
         accuracy_pct: s.accuracy_pct,
         timed_out_count: s.timed_out_count || 0,
         likely_loop_count: s.likely_loop_count || 0,
+        budget_nudged_count: s.budget_nudged_count || 0,
+        budget_exceeded_count: s.budget_exceeded_count || 0,
         crashed: s.crashed || false,
       };
     })
   );
+}
+
+export function getAccuracySettingsWarning(files) {
+  if (!files.length) return "";
+  const settings = files.map(file => file.data?.accuracy_settings);
+  const valid = settings.every(s =>
+    s != null
+    && Number.isFinite(s.timeout_seconds)
+    && Number.isInteger(s.token_budget)
+    && Number.isFinite(s.first_pass_fraction)
+  );
+  if (!valid) {
+    return "Accuracy settings are unknown for one or more loaded files; accuracy comparisons may use different limits.";
+  }
+  const first = settings[0];
+  const matches = settings.every(s =>
+    s.timeout_seconds === first.timeout_seconds
+    && s.token_budget === first.token_budget
+    && s.first_pass_fraction === first.first_pass_fraction
+  );
+  return matches ? "" : "Loaded files use different accuracy timeout or token-budget settings.";
 }

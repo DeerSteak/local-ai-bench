@@ -12,6 +12,7 @@ the class.
 
 import hashlib
 import json
+import math
 import os
 import platform
 import random
@@ -48,9 +49,11 @@ class EngineTimeout(TimeoutError):
     wrong-format answer regardless of the timeout, or might have been about to
     be correct."""
 
-    def __init__(self, message: str, partial_text: str = ""):
+    def __init__(self, message: str, partial_text: str = "",
+                 budget_nudged: bool = False):
         super().__init__(message)
         self.partial_text = partial_text
+        self.budget_nudged = budget_nudged
 
 
 class EngineLoopDetected(EngineTimeout):
@@ -62,6 +65,25 @@ class EngineLoopDetected(EngineTimeout):
     already looked pointless — callers that count "timed out" vs. "looped"
     need to tell those apart rather than lumping every early loop catch into
     the timeout bucket."""
+
+
+class EngineBudgetExceeded(Exception):
+    """Raised when the finalize pass consumes the remaining token budget."""
+
+    def __init__(self, message: str, partial_text: str = "",
+                 budget_nudged: bool = True):
+        super().__init__(message)
+        self.partial_text = partial_text
+        self.budget_nudged = budget_nudged
+
+
+def split_token_budget(token_budget: int, first_pass_fraction: float) -> tuple[int, int]:
+    if isinstance(token_budget, bool) or not isinstance(token_budget, int) or token_budget <= 0:
+        raise ValueError("token_budget must be a positive integer")
+    if not 0 < first_pass_fraction < 1:
+        raise ValueError("first_pass_fraction must be between 0 and 1")
+    first_pass = max(1, math.floor(token_budget * first_pass_fraction))
+    return first_pass, token_budget - first_pass
 
 
 class Shared:
@@ -644,7 +666,7 @@ class Shared:
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str, engine: "InferenceEngine",
-                            crash_extra: dict | None = None) -> tuple[list, str, str]:
+                            crash_extra: dict | None = None) -> tuple[list, str, str, dict]:
         """Call `call(run_i)` up to `n_runs` times — the shared shape behind
         every benchmark's "N measured runs" loop. A timeout stops
         immediately; a connection crash retries the same run (up to
@@ -652,14 +674,14 @@ class Shared:
         exhausted, records to `cache_path` so future runs skip this tag/test;
         any other exception counts as a failed run and moves on.
 
-        Returns (samples, status, partial_text): status is "ok"/"timed_out"/
-        "loop_detected"/"crashed"; partial_text is whatever streamed before a
+        Returns (samples, status, partial_text, metadata): status is "ok"/
+        "budget_exceeded"/"timed_out"/"loop_detected"/"crashed"; partial_text is whatever streamed before a
         timeout/loop cutoff, so a scorer can tell a cut-off (possibly still
         correct) answer apart from a genuinely blank one. "timed_out" is the
         full wall-clock budget exhausted; "loop_detected" is check_loop
         catching a degenerate generation loop before that budget ran out —
         kept distinct so a caller doesn't double-count one as the other.
-        """
+        Metadata currently carries whether a finalize pass was sent."""
         samples = []
         run_i = 0
         crash_retries = 0
@@ -668,9 +690,13 @@ class Shared:
                 samples.append(call(run_i))
                 run_i += 1
             except Exception as e:
+                metadata = {"budget_nudged": getattr(e, "budget_nudged", False)}
+                if isinstance(e, EngineBudgetExceeded):
+                    Shared.err(f"{tag}: exhausted its generation budget {what} (run {run_i+1})")
+                    return samples, "budget_exceeded", e.partial_text, metadata
                 if isinstance(e, EngineLoopDetected):
                     Shared.err(f"{tag}: detected a generation loop {what} (run {run_i+1})")
-                    return samples, "loop_detected", e.partial_text
+                    return samples, "loop_detected", e.partial_text, metadata
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
                     # What happens next (abandon the rest of this tag vs. score this
@@ -678,7 +704,7 @@ class Shared:
                     # reports the timeout itself — not what the caller does about it.
                     Shared.err(f"{tag}: timed out {what} (run {run_i+1})")
                     partial_text = getattr(e, "partial_text", "")
-                    return samples, "timed_out", partial_text
+                    return samples, "timed_out", partial_text, metadata
                 Shared.err(f"Run {run_i+1} failed: {e}")
                 if not engine.is_connection_crash(e):
                     run_i += 1
@@ -689,14 +715,14 @@ class Shared:
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
-                    return samples, "crashed", ""
+                    return samples, "crashed", "", metadata
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not engine.wait_for_recovery():
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
                     Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
-                    return samples, "crashed", ""
+                    return samples, "crashed", "", metadata
                 # don't advance run_i — retry the same run now that the engine is back
-        return samples, "ok", ""
+        return samples, "ok", "", {"budget_nudged": False}
 
     # Paraphrased-loop markers (_has_repeated_verbatim_ngram only catches verbatim repeats).
     # Lowercase substrings. Short/common CoT filler needs a higher repeat count to be diagnostic.
@@ -796,7 +822,7 @@ class Shared:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy benchmarks — only
         differ in how a question is asked (`ask_fn`), a partial response is
         rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
-        `ask_fn(tag, q) -> (parsed_answer, raw_text)`,
+        `ask_fn(tag, q) -> (parsed_answer, raw_text, budget_nudged)`,
         `rescore_partial_fn(q, partial_text) -> parsed_answer`,
         `score_fn(questions, answers) -> dict` with `"incorrect"` and `"all"`
         keys (one entry per question each, `"all"` covering every question
@@ -839,22 +865,27 @@ class Shared:
                     engine.unload(tag)
                     continue
 
-                Shared.log(f"Answering {len(questions)} {question_noun} "
-                           f"({config.ACC_TIMEOUT}s timeout each) ...")
+                Shared.log(
+                    f"Answering {len(questions)} {question_noun} "
+                    f"({config.ACC_TIMEOUT}s and {config.ACC_TOKEN_BUDGET} completion tokens each) ..."
+                )
                 answers: dict = {}
                 raw_responses: dict[str, str] = {}
                 timed_out_ids: list[str] = []
                 likely_loop_ids: list[str] = []
+                budget_nudged_ids: list[str] = []
+                budget_exceeded_ids: list[str] = []
                 stopped_early = None
 
                 for i, q in enumerate(questions):
-                    samples, status, partial_text = Shared.run_measured_calls(
+                    samples, status, partial_text, metadata = Shared.run_measured_calls(
                         1, lambda run_i, q=q: ask_fn(tag, q), tag, crash_cache,
                         crash_cache_path, f"answering {q['id']}", engine,
                         crash_extra={"bank_hash": bank_hash})
+                    budget_nudged = metadata["budget_nudged"]
                     if samples:
-                        given, raw = samples[0]
-                    elif status in ("timed_out", "loop_detected") and partial_text:
+                        given, raw, budget_nudged = samples[0]
+                    elif partial_text:
                         # Score whatever streamed before the cutoff rather than treating it as blank.
                         given, raw = rescore_partial_fn(q, partial_text), partial_text
                     else:
@@ -862,9 +893,15 @@ class Shared:
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
 
-                    # timed_out_ids and likely_loop_ids are independent buckets — a run
-                    # can be slow-but-not-looping, looping-and-caught-early, or both.
-                    if status == "timed_out":
+                    if budget_nudged:
+                        budget_nudged_ids.append(q["id"])
+                    if status == "budget_exceeded":
+                        Shared.warn(
+                            f"{q['id']} exhausted its {config.ACC_TOKEN_BUDGET}-token "
+                            "generation budget — scoring the final partial response and continuing"
+                        )
+                        budget_exceeded_ids.append(q["id"])
+                    elif status == "timed_out":
                         # The partial response, if any, was rescored above; continue the bank either way.
                         Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
                                     "scoring the partial response and continuing")
@@ -895,6 +932,12 @@ class Shared:
                 if timed_out_ids:
                     results[short]["timed_out_count"] = len(timed_out_ids)
                     results[short]["timed_out_ids"] = timed_out_ids
+                if budget_nudged_ids:
+                    results[short]["budget_nudged_count"] = len(budget_nudged_ids)
+                    results[short]["budget_nudged_ids"] = budget_nudged_ids
+                if budget_exceeded_ids:
+                    results[short]["budget_exceeded_count"] = len(budget_exceeded_ids)
+                    results[short]["budget_exceeded_ids"] = budget_exceeded_ids
                 if likely_loop_ids:
                     # A question flagged mid-generation (or rescored from partial
                     # text) may still have landed on the correct answer once

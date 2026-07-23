@@ -1,5 +1,6 @@
 import pytest
 
+import config
 from mcq_benchmark import MCQBenchmark
 
 
@@ -13,6 +14,23 @@ def test_build_prompt_includes_question_and_all_choices():
     assert "B. 4" in prompt
     assert "C. 5" in prompt
     assert "D. 6" in prompt
+
+
+def test_ask_passes_shared_accuracy_budget():
+    class Engine:
+        def chat(self, *args, **kwargs):
+            self.kwargs = kwargs
+            return 0, 0, 0, 0, "Answer: B", True
+
+    question = {
+        "prompt": "What is 2+2?",
+        "choices": {"A": "3", "B": "4", "C": "5", "D": "6"},
+    }
+    engine = Engine()
+    parsed, raw, nudged = MCQBenchmark._ask(engine, "tag", question)
+    assert (parsed, raw, nudged) == ("B", "Answer: B", True)
+    assert engine.kwargs["num_predict"] == -1
+    assert engine.kwargs["token_budget"] == config.ACC_TOKEN_BUDGET
 
 
 # ── parse_answer ──

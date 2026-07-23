@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+import config
 from tool_benchmark import ToolBenchmark
 
 
@@ -373,16 +374,26 @@ class _FakeChatToolsEngine:
     def __init__(self, response_text: str, tool_calls: list):
         self._response_text = response_text
         self._tool_calls = tool_calls
+        self.kwargs = None
 
     def chat_tools(self, tag, messages, tools, timeout=None, num_ctx=None,
-                   num_predict=None, check_loop=None):
-        return None, None, None, None, self._response_text, self._tool_calls
+                   num_predict=None, check_loop=None, token_budget=None):
+        self.kwargs = {
+            "num_predict": num_predict,
+            "token_budget": token_budget,
+        }
+        return None, None, None, None, self._response_text, self._tool_calls, False
 
 
 def test_ask_raw_response_is_tool_calls_json_when_a_call_was_made():
     engine = _FakeChatToolsEngine("", [{"name": "get_weather", "arguments": {"location": "Paris"}}])
-    _, raw = ToolBenchmark._ask(engine, "tag", _q_call())
+    _, raw, budget_nudged = ToolBenchmark._ask(engine, "tag", _q_call())
     assert raw == json.dumps([{"name": "get_weather", "arguments": {"location": "Paris"}}])
+    assert budget_nudged is False
+    assert engine.kwargs == {
+        "num_predict": -1,
+        "token_budget": config.ACC_TOKEN_BUDGET,
+    }
 
 
 def test_ask_raw_response_preserves_prose_on_decline():
@@ -392,7 +403,7 @@ def test_ask_raw_response_preserves_prose_on_decline():
          "tools": [{"type": "function", "function": {"name": "get_weather"}}],
          "expected": {"call": False}}
     engine = _FakeChatToolsEngine("I can't help with that request.", [])
-    _, raw = ToolBenchmark._ask(engine, "tag", q)
+    _, raw, _budget_nudged = ToolBenchmark._ask(engine, "tag", q)
     assert raw == "I can't help with that request."
 
 
@@ -401,7 +412,7 @@ def test_ask_raw_response_keeps_both_prose_and_tool_calls_when_model_emits_both(
     # in the same turn — neither should be discarded from the sidecar.
     tool_calls = [{"name": "get_weather", "arguments": {"location": "Paris"}}]
     engine = _FakeChatToolsEngine("Sure, let me check that for you.", tool_calls)
-    _, raw = ToolBenchmark._ask(engine, "tag", _q_call())
+    _, raw, _budget_nudged = ToolBenchmark._ask(engine, "tag", _q_call())
     assert json.loads(raw) == {"tool_calls": tool_calls, "text": "Sure, let me check that for you."}
 
 

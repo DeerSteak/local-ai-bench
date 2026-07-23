@@ -109,7 +109,8 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
 | `llm`, `llm_conversation` | Per-model context/checkpoint measurements and any timeout, crash, slow-TPS, or skip markers |
-| `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus timeout and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
+| `accuracy_settings` | Effective accuracy timeout, completion-token budget, and first-pass fraction used by the run |
+| `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |
 | `concurrency_tool`, `concurrency_chat` | Per-model/per-level TTFT, per-request and aggregate throughput, token/batch timing, memory snapshots, and stop markers |
 

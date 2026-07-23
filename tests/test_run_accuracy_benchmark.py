@@ -21,7 +21,7 @@ import config
 from engines.base import InferenceEngine
 from mcq_benchmark import MCQBenchmark
 from tool_benchmark import ToolBenchmark
-from shared import EngineLoopDetected, EngineTimeout, Shared
+from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
 
 
 class FakeEngine(InferenceEngine):
@@ -76,13 +76,20 @@ class FakeEngine(InferenceEngine):
     def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
         return 0.1, 1, 1.0
 
-    def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024, check_loop=False):
+    def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024,
+             check_loop=False, token_budget=None):
         self.chat_contexts.append(num_ctx)
         content = messages[-1]["content"]
         for marker, (kind, text) in self._behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, len(text.split()), 5.0, 10, text
+                    return 0.1, len(text.split()), 5.0, 10, text, False
+                if kind == "nudged":
+                    return 0.1, len(text.split()), 5.0, 10, text, True
+                if kind == "budget":
+                    raise EngineBudgetExceeded("budget exhausted", partial_text=text)
+                if kind == "nudged_timeout":
+                    raise EngineTimeout("timed out", partial_text=text, budget_nudged=True)
                 if kind == "timeout":
                     raise EngineTimeout("timed out", partial_text=text)
                 if kind == "loop":
@@ -92,13 +99,13 @@ class FakeEngine(InferenceEngine):
         raise AssertionError(f"no canned behavior matched prompt: {content!r}")
 
     def chat_tools(self, tag, messages, tools, timeout=600, num_ctx=None,
-                   num_predict=1024, check_loop=False):
+                   num_predict=1024, check_loop=False, token_budget=None):
         self.tool_contexts.append(num_ctx)
         content = messages[-1]["content"]
         for marker, (kind, payload) in self._tool_behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, 1, 5.0, 10, json.dumps(payload), payload
+                    return 0.1, 1, 5.0, 10, json.dumps(payload), payload, False
                 if kind == "timeout":
                     raise EngineTimeout("timed out", partial_text=payload)
                 if kind == "loop":
@@ -171,6 +178,49 @@ def test_timeout_with_partial_text_gets_rescored(tmp_path):
     assert results["fake"]["answered"] == 1       # rescored, not blank
     assert results["fake"]["timed_out_count"] == 1
     assert results["fake"]["timed_out_ids"] == ["q1"]
+
+
+def test_successful_and_exceptional_retries_record_independent_diagnostics(tmp_path):
+    questions = [_question("q1", "B"), _question("q2", "A"), _question("q3", "C")]
+    behaviors = {
+        "q1": ("nudged", "The answer is B"),
+        "q2": ("budget", "The answer is A"),
+        "q3": ("nudged_timeout", "The answer is C"),
+    }
+    results, _ = _run(tmp_path, questions, behaviors)
+    model = results["fake"]
+    assert model["correct"] == 3
+    assert model["budget_nudged_ids"] == ["q1", "q2", "q3"]
+    assert model["budget_nudged_count"] == 3
+    assert model["budget_exceeded_ids"] == ["q2"]
+    assert model["budget_exceeded_count"] == 1
+    assert model["timed_out_ids"] == ["q3"]
+    assert model["timed_out_count"] == 1
+
+
+def test_budget_exhaustion_continues_bank_and_sidecar_uses_graded_partial(tmp_path):
+    questions = [_question("q1", "B"), _question("q2", "A")]
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    answers_path = tmp_path / "answers.json"
+    engine = FakeEngine({
+        "q1": ("budget", "The answer is B"),
+        "q2": ("ok", "The answer is A"),
+    })
+    results = Shared.run_accuracy_benchmark(
+        section_label="MCQ", skip_label="MCQ", question_noun="questions",
+        data_path=data_path, crash_cache_path=tmp_path / "crash.json",
+        models=[{"tag": "fake:tag", "label": "Fake Model", "short": "fake"}],
+        questions=questions, warmup_runs=1, engine=engine,
+        ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
+        rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
+        score_fn=MCQBenchmark.score, answers_path=answers_path,
+    )
+    assert results["fake"]["correct"] == 2
+    sidecar = json.loads(answers_path.read_text())
+    assert [entry["raw_response"] for entry in sidecar["fake"]["answers"]] == [
+        "The answer is B", "The answer is A",
+    ]
 
 
 def test_loop_detected_question_is_flagged(tmp_path):

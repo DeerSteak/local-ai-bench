@@ -31,8 +31,7 @@ class CodeBenchmark:
     # same crash. Delete this file to retry a skipped model.
     CODE_CRASH_CACHE = Path(".code_crash_cache.json")
 
-    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in the engine's chat is the real bound.
+    # -1 delegates the finite per-pass limits to chat's token_budget split.
     CODE_NUM_PREDICT = -1
 
     # Process-isolation timeout, not a security sandbox — just enough to survive bad generated code.
@@ -263,16 +262,17 @@ class CodeBenchmark:
         }
 
     @staticmethod
-    def _ask(engine, tag: str, question: dict) -> tuple[dict, str]:
+    def _ask(engine, tag: str, question: dict) -> tuple[dict, str, bool]:
         prompt = CodeBenchmark.build_prompt(question)
-        _, _, _, _, response_text = engine.chat(
+        _, _, _, _, response_text, budget_nudged = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=CodeBenchmark.CODE_NUM_PREDICT,
             check_loop=True,
+            token_budget=config.ACC_TOKEN_BUDGET,
         )
         code = CodeBenchmark.extract_code(response_text)
-        return CodeBenchmark.evaluate_question(question, code), response_text
+        return CodeBenchmark.evaluate_question(question, code), response_text, budget_nudged
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

@@ -110,17 +110,19 @@ class InferenceEngine(ABC):
     @abstractmethod
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False) -> tuple[float, int, float, int, str]:
+             check_loop: bool = False, token_budget: int | None = None):
         """Multi-turn chat. Returns (ttft_sec, tokens_generated,
-        tokens_per_sec, prompt_eval_count, response_text)."""
+        tokens_per_sec, prompt_eval_count, response_text). Budgeted calls
+        append budget_nudged and require num_predict=-1."""
 
     @abstractmethod
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_ctx: int | None = None, num_predict: int = 1024, check_loop: bool = False
-                   ) -> tuple[float, int, float, int, str, list[dict]]:
+                   num_ctx: int | None = None, num_predict: int = 1024,
+                   check_loop: bool = False, token_budget: int | None = None):
         """Tool-calling chat. Same return as chat() plus a tool_calls list of
         {"name": str, "arguments": dict} (empty if the model called nothing).
-        `tools` is an OpenAI-style function-tools array."""
+        `tools` is an OpenAI-style function-tools array. Budgeted calls append
+        budget_nudged and require num_predict=-1."""
 
     @abstractmethod
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:

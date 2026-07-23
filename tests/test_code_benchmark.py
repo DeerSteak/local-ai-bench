@@ -1,5 +1,6 @@
 import pytest
 
+import config
 from code_benchmark import CodeBenchmark
 
 
@@ -10,6 +11,27 @@ def test_build_prompt_includes_question_text_and_function_name():
     prompt = CodeBenchmark.build_prompt(q)
     assert "Write a function sum_two(a, b) ..." in prompt
     assert "sum_two" in prompt
+
+
+def test_ask_passes_shared_accuracy_budget(monkeypatch):
+    class Engine:
+        def chat(self, *args, **kwargs):
+            self.kwargs = kwargs
+            return 0, 0, 0, 0, "def sum_two(a, b): return a + b", False
+
+    monkeypatch.setattr(
+        CodeBenchmark, "evaluate_question",
+        staticmethod(lambda question, code: {"correct": code.startswith("def sum_two")}),
+    )
+    engine = Engine()
+    result, raw, nudged = CodeBenchmark._ask(
+        engine, "tag", {"prompt": "Add.", "function_name": "sum_two"},
+    )
+    assert result == {"correct": True}
+    assert raw.startswith("def sum_two")
+    assert nudged is False
+    assert engine.kwargs["num_predict"] == -1
+    assert engine.kwargs["token_budget"] == config.ACC_TOKEN_BUDGET
 
 
 def test_build_prompt_dispatches_to_class_definition_for_stateful_question():

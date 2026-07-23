@@ -120,7 +120,7 @@ class EmbeddingBenchmark:
                     Shared.output(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
                     return rate
 
-                rates, status, _ = Shared.run_measured_calls(
+                rates, status, _, _metadata = Shared.run_measured_calls(
                     config.N_RUNS, _embed_once, tag, crash_cache,
                     EmbeddingBenchmark.EMBED_CRASH_CACHE, "embedding this document", engine)
 

@@ -1,6 +1,13 @@
 import requests
+import pytest
 
-from shared import EngineLoopDetected, EngineTimeout, Shared
+from shared import (
+    EngineBudgetExceeded,
+    EngineLoopDetected,
+    EngineTimeout,
+    Shared,
+    split_token_budget,
+)
 import config
 
 
@@ -26,6 +33,30 @@ class _FakeEngine:
         return self._recovers
 
 
+@pytest.mark.parametrize(("total", "expected"), [
+    (1, (1, 0)),
+    (2, (1, 1)),
+    (3, (1, 2)),
+    (5, (3, 2)),
+    (8192, (4915, 3277)),
+])
+def test_split_token_budget_preserves_total(total, expected):
+    assert split_token_budget(total, 0.60) == expected
+    assert sum(expected) == total
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 1.5, True])
+def test_split_token_budget_rejects_invalid_totals(invalid):
+    with pytest.raises(ValueError):
+        split_token_budget(invalid, 0.60)
+
+
+@pytest.mark.parametrize("fraction", [0, 1, -0.1, 1.1])
+def test_split_token_budget_rejects_invalid_fractions(fraction):
+    with pytest.raises(ValueError):
+        split_token_budget(10, fraction)
+
+
 def test_run_measured_calls_all_succeed(tmp_path):
     cache_path = tmp_path / "crash.json"
     calls = []
@@ -34,10 +65,12 @@ def test_run_measured_calls_all_succeed(tmp_path):
         calls.append(run_i)
         return run_i * 2
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, partial_text, metadata = Shared.run_measured_calls(
+        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0, 2, 4]
     assert status == "ok"
     assert partial_text == ""
+    assert metadata == {"budget_nudged": False}
     assert calls == [0, 1, 2]
 
 
@@ -49,10 +82,12 @@ def test_run_measured_calls_timeout_stops_immediately(tmp_path):
             raise TimeoutError("timed out")
         return run_i
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, partial_text, metadata = Shared.run_measured_calls(
+        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0]
     assert status == "timed_out"
     assert partial_text == ""
+    assert metadata == {"budget_nudged": False}
 
 
 def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
@@ -64,10 +99,12 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
     def call(run_i):
         raise EngineTimeout("timed out", partial_text="The answer is B")
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, partial_text, metadata = Shared.run_measured_calls(
+        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "timed_out"
     assert partial_text == "The answer is B"
+    assert metadata == {"budget_nudged": False}
 
 
 def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
@@ -79,10 +116,24 @@ def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
     def call(run_i):
         raise EngineLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
 
-    samples, status, partial_text = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, partial_text, metadata = Shared.run_measured_calls(
+        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "loop_detected"
     assert partial_text == "wait, wait, wait,"
+    assert metadata == {"budget_nudged": False}
+
+
+def test_run_measured_calls_budget_exhaustion_is_distinct_and_preserves_metadata(tmp_path):
+    def call(_run_i):
+        raise EngineBudgetExceeded("budget exhausted", partial_text="Answer: C")
+
+    samples, status, partial_text, metadata = Shared.run_measured_calls(
+        1, call, "tag", {}, tmp_path / "crash.json", "testing", _FakeEngine())
+    assert samples == []
+    assert status == "budget_exceeded"
+    assert partial_text == "Answer: C"
+    assert metadata == {"budget_nudged": True}
 
 
 def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
@@ -93,7 +144,8 @@ def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
             raise ValueError("some ordinary failure")
         return run_i
 
-    samples, status, _ = Shared.run_measured_calls(3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, _, _metadata = Shared.run_measured_calls(
+        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
     # run_i=1 fails but still counts as attempted (advances), so only 2 samples collected
     assert samples == [0, 2]
     assert status == "ok"
@@ -108,7 +160,8 @@ def test_run_measured_calls_crash_retries_then_gives_up(tmp_path):
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status, _ = Shared.run_measured_calls(3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine())
+    samples, status, _, _metadata = Shared.run_measured_calls(
+        3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine())
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
@@ -126,7 +179,8 @@ def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path):
             raise requests.exceptions.ConnectionError("actively refused")
         return run_i
 
-    samples, status, _ = Shared.run_measured_calls(2, call, "tag", {}, cache_path, "testing", _FakeEngine())
+    samples, status, _, _metadata = Shared.run_measured_calls(
+        2, call, "tag", {}, cache_path, "testing", _FakeEngine())
     assert samples == [0, 1]
     assert status == "ok"
 
@@ -138,7 +192,7 @@ def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path):
     def call(run_i):
         raise requests.exceptions.ConnectionError("actively refused")
 
-    samples, status, _ = Shared.run_measured_calls(
+    samples, status, _, _metadata = Shared.run_measured_calls(
         3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine(recovers=False))
     assert samples == []
     assert status == "crashed"

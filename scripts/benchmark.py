@@ -57,6 +57,13 @@ TIER_LABELS = {
 TIER_ORDER = ["xsmall", "small", "medium", "large"]
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
     """Resolve --maxtier into (llm_models, tier_label, image_models), applying
     the same cumulative cap to both LLM tiers and image-model tiers. No cap
@@ -369,6 +376,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              f"moves on (default: {config.ACC_TIMEOUT})",
     )
     parser.add_argument(
+        "--acc-token-budget", type=positive_int, default=None, metavar="N",
+        help="Total completion-token budget per accuracy question, split 60/40 "
+             f"between the initial and final-answer passes (default: {config.ACC_TOKEN_BUDGET})",
+    )
+    parser.add_argument(
         "--out", type=str, default=None,
         help="Output JSON file (default: results/results_<hostname>_<timestamp>.json)",
     )
@@ -452,6 +464,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         config.RUN_TIMEOUT = args.timeout
     if args.acc_timeout is not None:
         config.ACC_TIMEOUT = args.acc_timeout
+    if args.acc_token_budget is not None:
+        config.ACC_TOKEN_BUDGET = args.acc_token_budget
     config.N_RUNS = args.runs
 
     tier_models, tier_label, tier_image_models = select_tier(args.maxtier, IMAGE_MODELS)
@@ -522,7 +536,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  RAM:       {profile['ram_gb']} GB")
         Shared.output(f"  Engine:    {engine_name}")
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
-        Shared.output(f"  Timeout:   {config.RUN_TIMEOUT}s per run, {config.ACC_TIMEOUT}s per accuracy question")
+        Shared.output(
+            f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
+            f"{config.ACC_TIMEOUT}s per accuracy question"
+        )
+        Shared.output(f"  Accuracy:  {config.ACC_TOKEN_BUDGET} completion tokens (60/40 split)")
         Shared.output(f"  Models:    {tier_label}")
         if args.llm_models:
             Shared.output(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
@@ -560,6 +578,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "version":         config.VERSION,
             "engine":          engine_name,
             "profile":         profile,
+            "accuracy_settings": {
+                "timeout_seconds": config.ACC_TIMEOUT,
+                "token_budget": config.ACC_TOKEN_BUDGET,
+                "first_pass_fraction": config.ACC_FINALIZE_FRACTION,
+            },
             # Fingerprints of the accuracy question banks actually used for this
             # run, so a raw correct count is never compared across bank sizes
             # (e.g. 185 vs. 360 questions) without noticing the version differs.

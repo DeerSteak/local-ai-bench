@@ -20,8 +20,7 @@ class MCQBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
 
-    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in the engine's chat is the real bound.
+    # -1 delegates the finite per-pass limits to chat's token_budget split.
     MCQ_NUM_PREDICT = -1
 
     # Uppercase-only avoids ordinary words; leading article A is filtered separately.
@@ -169,15 +168,20 @@ class MCQBenchmark:
         return found.pop() if len(found) == 1 else None
 
     @staticmethod
-    def _ask(engine, tag: str, question: dict) -> tuple[str | None, str]:
+    def _ask(engine, tag: str, question: dict) -> tuple[str | None, str, bool]:
         prompt = MCQBenchmark.build_prompt(question)
-        _, _, _, _, response_text = engine.chat(
+        _, _, _, _, response_text, budget_nudged = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
             check_loop=True,
+            token_budget=config.ACC_TOKEN_BUDGET,
         )
-        return MCQBenchmark.parse_answer(response_text, question["choices"].keys()), response_text
+        return (
+            MCQBenchmark.parse_answer(response_text, question["choices"].keys()),
+            response_text,
+            budget_nudged,
+        )
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

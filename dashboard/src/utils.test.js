@@ -16,6 +16,7 @@ import {
   buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
   flattenAccuracyData,
+  getAccuracySettingsWarning,
   getAllConcurrencyModels, buildConcurrencyDataForModel,
   getConcurrencyStopInfo, flattenConcurrencyData, concurrencySortValue,
 } from "./utils";
@@ -534,8 +535,8 @@ describe("buildAccuracyTimeoutData", () => {
     }];
     const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["phi4-mini", "mistral-7b-q4"]));
     expect(rows).toEqual([
-      { rowLabel: "Phi 4 Mini", timed_out_count: 2, likely_loop_count: 2 },
-      { rowLabel: "Mistral 7B v0.3 Q4_K_M", timed_out_count: 0, likely_loop_count: 0 },
+      { rowLabel: "Phi 4 Mini", timed_out_count: 2, likely_loop_count: 2, budget_exceeded_count: 0 },
+      { rowLabel: "Mistral 7B v0.3 Q4_K_M", timed_out_count: 0, likely_loop_count: 0, budget_exceeded_count: 0 },
     ]);
   });
   it("prefixes the row label with hostname across multiple files, to tell them apart", () => {
@@ -549,6 +550,20 @@ describe("buildAccuracyTimeoutData", () => {
   it("returns an empty array when nothing timed out anywhere, so the chart cleanly disappears", () => {
     const files = [{ hostname: "TestHost", data: { mcq: { m: { timed_out_count: 0 } } } }];
     expect(buildAccuracyTimeoutData(files, "mcq", new Set(["m"]))).toEqual([]);
+  });
+  it("shows budget exhaustion but not a successful nudge by itself", () => {
+    const nudged = [{ hostname: "Host", data: { mcq: { m: { budget_nudged_count: 2 } } } }];
+    expect(buildAccuracyTimeoutData(nudged, "mcq", new Set(["m"]))).toEqual([]);
+    const exhausted = [{
+      hostname: "Host",
+      data: { mcq: { m: { budget_nudged_count: 2, budget_exceeded_count: 1 } } },
+    }];
+    expect(buildAccuracyTimeoutData(exhausted, "mcq", new Set(["m"]))[0]).toEqual({
+      rowLabel: "m",
+      timed_out_count: 0,
+      likely_loop_count: 0,
+      budget_exceeded_count: 1,
+    });
   });
 });
 
@@ -564,18 +579,38 @@ describe("flattenAccuracyData", () => {
     const rows = flattenAccuracyData(files, "mcq");
     expect(rows[0]).toEqual({
       _fileId: "f1", model: "m", correct: 10, total: 20, answered: 20, accuracy_pct: 50,
-      timed_out_count: 0, likely_loop_count: 0, crashed: false,
+      timed_out_count: 0, likely_loop_count: 0,
+      budget_nudged_count: 0, budget_exceeded_count: 0, crashed: false,
     });
   });
   it("passes through timed_out_count/likely_loop_count/crashed when present", () => {
     const files = [{ id: "f1", data: { mcq: { m: {
       correct: 5, total: 10, answered: 8, accuracy_pct: 50,
-      timed_out_count: 2, likely_loop_count: 1, crashed: true,
+      timed_out_count: 2, likely_loop_count: 1,
+      budget_nudged_count: 3, budget_exceeded_count: 1, crashed: true,
     } } } }];
     const rows = flattenAccuracyData(files, "mcq");
     expect(rows[0].timed_out_count).toBe(2);
     expect(rows[0].likely_loop_count).toBe(1);
+    expect(rows[0].budget_nudged_count).toBe(3);
+    expect(rows[0].budget_exceeded_count).toBe(1);
     expect(rows[0].crashed).toBe(true);
+  });
+});
+
+describe("getAccuracySettingsWarning", () => {
+  const settings = { timeout_seconds: 60, token_budget: 8192, first_pass_fraction: 0.6 };
+  it("returns no warning when settings match", () => {
+    const files = [{ data: { accuracy_settings: settings } }, { data: { accuracy_settings: { ...settings } } }];
+    expect(getAccuracySettingsWarning(files)).toBe("");
+  });
+  it("warns when settings differ or are missing from an old result", () => {
+    const mismatch = [
+      { data: { accuracy_settings: settings } },
+      { data: { accuracy_settings: { ...settings, token_budget: 4096 } } },
+    ];
+    expect(getAccuracySettingsWarning(mismatch)).toMatch(/different/i);
+    expect(getAccuracySettingsWarning([{ data: {} }])).toMatch(/unknown/i);
   });
 });
 

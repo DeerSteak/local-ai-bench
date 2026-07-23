@@ -62,6 +62,12 @@ A few design choices worth knowing if you're reading or extending this:
   back a parsed `tool_calls` list (`[{"name", "arguments"}]`) without changing
   `chat`'s signature or return arity at every existing call site. It returns
   `chat`'s five values plus that list (empty when the model called nothing).
+- **`chat` and `chat_tools` accept optional `token_budget`.** `None` keeps the
+  one-pass return shape and behavior. A budget requires `num_predict=-1`,
+  splits the tokens 60/40, and appends `budget_nudged` to the return tuple.
+  Both low-level requests receive one absolute deadline. A second-pass length
+  stop raises `EngineBudgetExceeded`; timeout and loop exceptions carry the
+  same nudge metadata and gradeable partial response.
 - **`prepare_concurrency(tag, n_parallel, per_slot_ctx, warmup_runs, timeout)`** (used only by the
   concurrency test — see [Workloads](workloads.md#concurrency)) scales
   `per_slot_ctx` up by `n_parallel` before it becomes llama-server's `-c`,

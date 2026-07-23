@@ -21,8 +21,7 @@ class MathBenchmark:
     # same crash. Delete this file to retry a skipped model.
     MATH_CRASH_CACHE = Path(".math_crash_cache.json")
 
-    # Unbounded (-1): a fixed token cap risks truncating a reasoning model's
-    # answer. The wall-clock timeout in the engine's chat is the real bound.
+    # -1 delegates the finite per-pass limits to chat's token_budget split.
     MATH_NUM_PREDICT = -1
 
     _NUMBER_PATTERN = r"-?\d[\d,]*\.?\d*"
@@ -159,15 +158,16 @@ class MathBenchmark:
         return MathBenchmark._to_float(completed[-1]) if completed else None
 
     @staticmethod
-    def _ask(engine, tag: str, question: dict) -> tuple[float | None, str]:
+    def _ask(engine, tag: str, question: dict) -> tuple[float | None, str, bool]:
         prompt = MathBenchmark.build_prompt(question)
-        _, _, _, _, response_text = engine.chat(
+        _, _, _, _, response_text, budget_nudged = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=MathBenchmark.MATH_NUM_PREDICT,
             check_loop=True,
+            token_budget=config.ACC_TOKEN_BUDGET,
         )
-        return MathBenchmark.parse_answer(response_text), response_text
+        return MathBenchmark.parse_answer(response_text), response_text, budget_nudged
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

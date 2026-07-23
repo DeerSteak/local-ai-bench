@@ -82,9 +82,12 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **37 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **39 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
+
+- **[test_benchmark_accuracy_options.py](../tests/test_benchmark_accuracy_options.py)**
+  Verifies that the accuracy token-budget CLI parser accepts positive integers and rejects zero or negative values.
 
 - **[test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py)**
   Validates logic in `benchmark.py` for deciding when to skip models during the LLM conversation test. It asserts that:
@@ -295,6 +298,7 @@ The test suite consists of **37 test modules** validating different components o
   - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, a multi-part (`hf_file` as a list) model with one part missing, and a removed catalog entry remaining runnable as a custom folder.
   - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't downloaded or the file doesn't parse.
   - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `EngineTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
+  - Budgeted chat retries only a literal first-pass length stop, preserves caller history, passes one absolute deadline to both requests, grades only the replacement text/tool call, combines timing metrics, and preserves nudge metadata on successful and exceptional second passes.
   - `chat_tools` reassembles a tool call whose `arguments` stream as partial JSON fragments across multiple SSE chunks (accumulated by index), returns an empty tool-call list when the model answers in prose instead, falls back to `{}` on malformed/truncated argument JSON rather than crashing, and orders multiple calls by their streamed index.
   - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
   - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
@@ -303,12 +307,13 @@ The test suite consists of **37 test modules** validating different components o
   Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:
   - Correct execution count under normal operations.
   - Instant stoppage and exit status marking on timeout.
+  - Exact token-budget splitting (including totals 1/2/3), a distinct budget-exhausted status, gradeable partial text, and nudge metadata.
   - Skipping a single run's metrics if a standard execution error occurs, while proceeding to the next run.
   - If a connection crash occurs, attempting recovery via the engine. If recovery succeeds, the loop retries the failed run. If recovery fails, the benchmark halts and records the model as crashed.
   - `slow_tps_early_exit` early termination logic based on performance speeds.
 
 - **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` — the shared MCQ/math/reasoning/code/tool orchestration loop — against a fake `InferenceEngine` double (in-memory canned responses, no network, and no dependency on which real engine is in use). Covers a normal run scoring correctly, a timed-out question getting rescored from its partial text, a loop-detected question, and a `status == "crashed"` run stopping early — driven through both `MCQBenchmark` (via `chat`) and `ToolBenchmark` (via `chat_tools`), so the tool-calling path exercises the same timeout/crash handling. Also verifies the `answers_*.json` sidecar: it's built from `score_fn`'s `all` list, so it carries every question's raw response and `correct` flag (not just wrong answers), while the main results dict stays on the separate incorrect-only schema and never picks up the `all` key.
+  Tests `Shared.run_accuracy_benchmark` against a fake engine. Covers normal, timed-out, loop-detected, budget-nudged, budget-exhausted, and crashed questions; verifies cutoffs continue the bank; and verifies sidecars retain only the response actually graded while regrade preserves independent diagnostics.
 
 - **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
   Tests the degenerate-generation-loop heuristic applied periodically to streaming accuracy responses (`Shared.looks_like_loop`):

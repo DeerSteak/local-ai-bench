@@ -38,7 +38,7 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (xsmall/small catalog models stop at 48K) |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
-| Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. A Timeouts & Likely Loops diagnostics chart appears when any incident was recorded. See [Accuracy](workloads.md#accuracy) |
+| Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 
@@ -66,7 +66,7 @@ Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy
 
 All model, file, category, context, image, embedding, and fallback data colors meet the WCAG AA 4.5:1 contrast threshold against the dashboard's white chart background. Backend badge foreground colors meet the same threshold; their pale backgrounds and borders are decorative surfaces rather than foreground data marks.
 
-**Accuracy → Timeouts & Likely Loops.** Per model, how many questions reached `--acc-timeout` (default 60s), and how many were stopped as likely generation loops (see [Accuracy → Timeouts and loop detection](workloads.md#timeouts-and-loop-detection)). These are separate diagnostics: a loop may be stopped before the timeout, and a timed-out partial response may still score correctly. Lower is better. The chart appears when either count is nonzero.
+**Accuracy → Accuracy Incidents.** Per model, how many questions reached `--acc-timeout`, were stopped as likely loops, or exhausted the second-pass token allowance. Lower is better. A successful final-answer nudge alone does not show this chart. The raw table adds **Nudged** and **Budget Exhausted** columns. When loaded files have different or unknown `accuracy_settings`, one warning calls out that their accuracy limits may not be comparable.
 
 **Concurrency → Per-Request Tokens/sec.** Decode throughput for one individual request within a batch of N simultaneous requests. Higher is better. Typically drops as concurrency climbs, since requests share the same compute/memory bandwidth — this is the number that shows per-user latency degrading under load.
 
@@ -105,7 +105,7 @@ llama3.1-8b-q4_conc_tool_ttft.png      # Tool concurrency, TTFT
 llama3.1-8b-q4_conc_chat_tps.png       # Chat concurrency, Per-Request Tokens/sec
 mcq-accuracy.png                   # Accuracy section, Overall chart
 llama3.1-8b-q4_mcq-category.png    # Accuracy section, by-Category chart
-mcq-timeouts.png                   # Accuracy section, Timeouts & Likely Loops chart
+mcq-incidents.png                  # Accuracy section, incident diagnostics chart
 embeddings.png
 1024x1024_images.png
 ```

@@ -211,7 +211,7 @@ class FakeEngine:
 
     def chat(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        return 0.0, 0.0, 0.0, 0.0, self.response
+        return 0.0, 0.0, 0.0, 0.0, self.response, False
 
 
 def test_ask_uses_accuracy_limits_loop_detection_and_strict_parser(monkeypatch):
@@ -220,10 +220,11 @@ def test_ask_uses_accuracy_limits_loop_detection_and_strict_parser(monkeypatch):
     engine = FakeEngine("Considering C carefully, the evidence supports C.")
     question = valid_bank()["questions"][0]
 
-    parsed, raw = ReasoningBenchmark._ask(engine, "model", question)
+    parsed, raw, budget_nudged = ReasoningBenchmark._ask(engine, "model", question)
 
     assert parsed is None
     assert raw == engine.response
+    assert budget_nudged is False
     args, kwargs = engine.calls[0]
     assert args[0] == "model"
     assert args[1] == [{"role": "user", "content": ReasoningBenchmark.build_prompt(question)}]
@@ -232,6 +233,7 @@ def test_ask_uses_accuracy_limits_loop_detection_and_strict_parser(monkeypatch):
         "num_ctx": 8192,
         "num_predict": -1,
         "check_loop": True,
+        "token_budget": config.ACC_TOKEN_BUDGET,
     }
 
 

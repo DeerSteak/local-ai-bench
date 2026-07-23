@@ -82,12 +82,12 @@ export default function AccuracyPanel({ containerRef, files, accuracyTest, enabl
 
       {timeoutData.length > 0 && (
         <GroupedBarCard
-          title={`${testLabel} Timeouts & Likely Loops`}
+          title={`${testLabel} Accuracy Incidents`}
           modelName="Diagnostics"
           data={timeoutData}
           barConfigs={ACCURACY_TIMEOUT_BAR_CONFIGS}
           xKey="rowLabel" yLabel="Questions" unit="count"
-          chartName={`${accuracyTest}-timeouts`}
+          chartName={`${accuracyTest}-incidents`}
           logoSrc={logoSrc} direction="lower"
         />
       )}

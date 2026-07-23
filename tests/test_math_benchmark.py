@@ -1,5 +1,6 @@
 import pytest
 
+import config
 from math_benchmark import MathBenchmark
 
 
@@ -10,6 +11,19 @@ def test_build_prompt_includes_question_text():
     prompt = MathBenchmark.build_prompt(q)
     assert "What is 2+2?" in prompt
     assert "numeric answer" in prompt.lower()
+
+
+def test_ask_passes_shared_accuracy_budget():
+    class Engine:
+        def chat(self, *args, **kwargs):
+            self.kwargs = kwargs
+            return 0, 0, 0, 0, "Answer: 42", True
+
+    engine = Engine()
+    parsed, raw, nudged = MathBenchmark._ask(engine, "tag", {"prompt": "What is 6 × 7?"})
+    assert (parsed, raw, nudged) == (42.0, "Answer: 42", True)
+    assert engine.kwargs["num_predict"] == -1
+    assert engine.kwargs["token_budget"] == config.ACC_TOKEN_BUDGET
 
 
 # ── parse_answer ──
