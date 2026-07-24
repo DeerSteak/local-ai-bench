@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, getAccuracySettingsWarning, sanitizeForFilename } from "./utils";
+import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, getAccuracySettingsWarning, sanitizeForFilename, applyEngineLabels } from "./utils";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -80,11 +80,13 @@ export default function Dashboard() {
     setEnabledEmbedModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
   }, []);
 
+  const displayFiles = useMemo(() => applyEngineLabels(files), [files]);
+
   const effectiveFiles = useMemo(() =>
-    files.map(f => {
+    displayFiles.map(f => {
       const ov = hostnameOverrides[f.id];
       return (ov != null && ov !== '') ? { ...f, hostname: ov } : f;
-    }), [files, hostnameOverrides]);
+    }), [displayFiles, hostnameOverrides]);
 
   const effectiveFilesRef = useRef(effectiveFiles);
   useEffect(() => { effectiveFilesRef.current = effectiveFiles; }, [effectiveFiles]);
@@ -122,11 +124,8 @@ export default function Dashboard() {
     return { entry: {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
-      // Fold the engine into the default label so two --engine both runs off
-      // the same host (identical profile.hostname) still show up as distinct
-      // series without a manual rename — still fully overridable via the
-      // per-file hostname override field.
-      hostname: data.engine ? `${baseHostname} (${data.engine})` : baseHostname,
+      hostname: baseHostname,
+      engine:   data.engine || null,
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       ram_gb:   p.ram_gb   || null,
@@ -221,7 +220,7 @@ export default function Dashboard() {
   return (
     <div className={styles.root}>
       <Header
-        files={files}
+        files={displayFiles}
         dragOver={dragOver}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -241,7 +240,7 @@ export default function Dashboard() {
         groupBy={groupBy} setGroupBy={setGroupBy}
         sizeSplit={sizeSplit} setSizeSplit={setSizeSplit}
         chartWidth={chartWidth} setChartWidth={setChartWidth}
-        files={files} hostnameOverrides={hostnameOverrides} onUpdateHostnameOverride={updateHostnameOverride}
+        files={displayFiles} hostnameOverrides={hostnameOverrides} onUpdateHostnameOverride={updateHostnameOverride}
         logoSrc={logoSrc} setLogoSrc={setLogoSrc}
         logoDragOver={logoDragOver}
         onLogoDrop={handleLogoDrop}

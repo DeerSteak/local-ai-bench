@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, sanitizeForFilename, fmt,
+  parseJSON, parseResultsJSON, sanitizeForFilename, applyEngineLabels, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier,
   getSkipInfo, getBarStatusLabel, getImageBarStatusLabel,
@@ -68,6 +68,42 @@ describe("sanitizeForFilename", () => {
   });
   it("preserves hyphens already present in the input", () => {
     expect(sanitizeForFilename("already-hyphenated")).toBe("already-hyphenated");
+  });
+});
+
+describe("applyEngineLabels", () => {
+  it("leaves hostnames untouched when only one engine is present", () => {
+    const files = [
+      { id: 1, hostname: "host-a", engine: "llamacpp" },
+      { id: 2, hostname: "host-b", engine: "llamacpp" },
+    ];
+    expect(applyEngineLabels(files)).toEqual(files);
+  });
+  it("leaves hostnames untouched when no file has an engine field", () => {
+    const files = [{ id: 1, hostname: "host-a", engine: null }];
+    expect(applyEngineLabels(files)).toEqual(files);
+  });
+  it("appends the engine when two distinct engines are loaded together", () => {
+    const files = [
+      { id: 1, hostname: "host-a", engine: "llamacpp" },
+      { id: 2, hostname: "host-a", engine: "mlx" },
+    ];
+    expect(applyEngineLabels(files)).toEqual([
+      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp" },
+      { id: 2, hostname: "host-a (mlx)", engine: "mlx" },
+    ]);
+  });
+  it("skips labeling a file with no engine even when others disagree", () => {
+    const files = [
+      { id: 1, hostname: "host-a", engine: "llamacpp" },
+      { id: 2, hostname: "host-b", engine: "mlx" },
+      { id: 3, hostname: "host-c", engine: null },
+    ];
+    expect(applyEngineLabels(files)).toEqual([
+      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp" },
+      { id: 2, hostname: "host-b (mlx)", engine: "mlx" },
+      { id: 3, hostname: "host-c", engine: null },
+    ]);
   });
 });
 

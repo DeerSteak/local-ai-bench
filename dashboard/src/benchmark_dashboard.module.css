@@ -4,7 +4,7 @@
   color: #1a1f24;
   font-family: 'IBM Plex Mono', monospace;
   padding: 24px 28px;
-  max-width: 1126px;
+  width: clamp(708px, 100vw - 56px, 1920px);
   margin: 0 auto;
   box-sizing: border-box;
 }

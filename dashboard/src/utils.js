@@ -40,6 +40,16 @@ export function sanitizeForFilename(raw) {
     .replace(/^-|-$/g, "");
 }
 
+// Fold each file's engine into its hostname label, but only when needed to
+// disambiguate — e.g. two --engine runs off the same host (identical
+// profile.hostname) loaded side by side. With a single engine among the
+// loaded files, appending "(llamacpp)" to every label is just noise.
+export function applyEngineLabels(files) {
+  const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
+  if (!multiEngine) return files;
+  return files.map(f => f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f);
+}
+
 export function fmt(v, unit) {
   if (v == null) return "—";
   switch (unit) {

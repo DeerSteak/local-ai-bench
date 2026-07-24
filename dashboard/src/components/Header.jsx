@@ -28,7 +28,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
 
   return (
     <header className={styles.header}>
-      <div>
+      <div className={styles.headerLeft}>
         <div className={styles.brand}>local-ai-bench · Results Explorer</div>
         <h1 className={styles.title}>AI Performance Dashboard</h1>
         {files.map((file, i) => {

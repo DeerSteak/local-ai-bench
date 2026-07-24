@@ -78,6 +78,10 @@
   outline: none;
 }
 
+.widthInput::placeholder {
+  color: #8c959f;
+}
+
 .widthUnit {
   font-size: 14px;
   color: #8c959f;
