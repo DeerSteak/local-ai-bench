@@ -112,6 +112,34 @@ def test_growth_step_out_of_room_even_on_last_checkpoint_if_room_below_min():
     assert step is None
 
 
+def test_growth_sequence_at_the_ceiling_never_exceeds_num_ctx():
+    """Caller must pass compute_growth_step an effective depth including the last
+    turn's pending response, or requests can overshoot num_ctx — see docs/workloads.md."""
+    num_ctx = 32768
+    target_threshold = int(num_ctx * 0.995)
+    followup_tokens = 20   # a short synthetic followup prompt, e.g. _conv_followup_prompt's length
+    cumulative_tokens = 16769   # depth entering the final checkpoint's growth phase
+    pending_response_tokens = 0
+
+    for _ in range(1000):
+        if cumulative_tokens >= target_threshold:
+            break
+        effective = cumulative_tokens + pending_response_tokens
+        step, out_of_room = Conv.compute_growth_step(
+            effective, target_threshold, num_ctx, is_last_checkpoint=True)
+        assert out_of_room is False, "should never run out of room in this scenario"
+
+        this_request_tokens = cumulative_tokens + pending_response_tokens + followup_tokens
+        assert this_request_tokens <= num_ctx, (
+            f"request of {this_request_tokens} tokens would exceed num_ctx={num_ctx}"
+        )
+        # Model uses its full requested budget — the worst realistic case.
+        cumulative_tokens = this_request_tokens
+        pending_response_tokens = step
+    else:
+        raise AssertionError("growth loop did not converge")
+
+
 # ── conv_ctx_plan ──
 
 def test_ctx_plan_uncapped_tier_uses_full_target_and_checkpoints():

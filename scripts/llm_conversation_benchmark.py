@@ -140,16 +140,17 @@ class LLMConversationBenchmark:
                 for run_i in range(LLMConversationBenchmark.CONV_RUNS):
                     Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — starting a fresh conversation ...")
 
-                    messages          = []
-                    cumulative_tokens = 0
-                    section_n         = 1
-                    first_turn_done   = False
-                    run_timed_out     = False
-                    run_failed        = False
-                    run_crashed       = False
+                    messages                = []
+                    cumulative_tokens       = 0
+                    pending_response_tokens = 0
+                    section_n               = 1
+                    first_turn_done         = False
+                    run_timed_out           = False
+                    run_failed              = False
+                    run_crashed             = False
 
                     def _turn(prompt_text, num_predict):
-                        nonlocal cumulative_tokens
+                        nonlocal cumulative_tokens, pending_response_tokens
                         messages.append({"role": "user", "content": prompt_text})
                         ttft, eval_count, tps, prompt_eval_count, response_text = engine.chat(
                             tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
@@ -159,6 +160,8 @@ class LLMConversationBenchmark:
                         # prompt_eval_count is ground truth for what's in context; eval_count isn't —
                         # a reasoning model's thinking content can get silently dropped from history next turn.
                         cumulative_tokens = prompt_eval_count
+                        # Not yet in cumulative_tokens until next turn's prompt_eval_count — see docs/workloads.md.
+                        pending_response_tokens = eval_count
                         return ttft, tps
 
                     def _next_prompt():
@@ -187,7 +190,8 @@ class LLMConversationBenchmark:
                                 target_threshold = int(target * 0.995)
                                 while cumulative_tokens < target_threshold:
                                     step, ran_out = LLMConversationBenchmark.compute_growth_step(
-                                        cumulative_tokens, target_threshold, num_ctx, is_last_checkpoint)
+                                        cumulative_tokens + pending_response_tokens, target_threshold,
+                                        num_ctx, is_last_checkpoint)
                                     if ran_out:
                                         out_of_room = True
                                         break
