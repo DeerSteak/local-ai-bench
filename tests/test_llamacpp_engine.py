@@ -276,6 +276,24 @@ def _clock(*values):
 
 # ── generate ──
 
+def test_generate_requests_n_predict_from_config_constant(monkeypatch):
+    # concurrency_benchmark.py's slot_ctx_for headroom relies on this constant.
+    _patch_ensure_model(monkeypatch)
+    captured = []
+
+    def urlopen(req, timeout):
+        captured.append(json.loads(req.data))
+        return _FakeResponse([
+            {"content": "hi", "tokens": [1]},
+            {"content": "", "stop": True,
+             "timings": {"predicted_n": 1, "predicted_ms": 100, "prompt_ms": 10}},
+        ])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    LlamaCppEngine().generate("some-tag", "prompt")
+    assert captured[0]["n_predict"] == config.GENERATE_MAX_TOKENS
+
+
 def test_generate_uses_server_reported_timings(monkeypatch):
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [

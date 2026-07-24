@@ -563,7 +563,7 @@ class LlamaCppEngine(InferenceEngine):
 
         payload = json.dumps({
             "prompt": prompt,
-            "n_predict": 512,
+            "n_predict": config.GENERATE_MAX_TOKENS,
             "temperature": 0.0,
             "stream": True,
             "return_tokens": True,

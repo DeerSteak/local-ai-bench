@@ -44,14 +44,21 @@ def test_none_floor_never_stops_regardless_of_level_or_speed():
         1, mean_tps=0.01, force_all=False, soft_exit_floor=None) is False
 
 
+def test_slot_ctx_for_adds_generation_headroom_to_padded_prompt():
+    # Slot ctx must exceed the prompt target or generation has no room.
+    assert ConcurrencyBenchmark.slot_ctx_for(4096) == 4096 + config.GENERATE_MAX_TOKENS
+
+
 class _FakeEngine:
     name = "fake"
 
     def __init__(self):
         self.seen_prompts = []
+        self.seen_num_ctx = []
 
     def generate(self, tag, prompt, timeout, per_request_context, level):
         self.seen_prompts.append(prompt)
+        self.seen_num_ctx.append(per_request_context)
         return (0.1, 10, 100.0)
 
 
@@ -59,6 +66,12 @@ def test_fire_batch_returns_one_sample_per_concurrent_request():
     engine = _FakeEngine()
     samples = ConcurrencyBenchmark._fire_batch(engine, "tag", 4, 2048)
     assert samples == [(0.1, 10, 100.0)] * 4
+
+
+def test_fire_batch_passes_slot_ctx_with_generation_headroom_not_bare_prompt_size():
+    engine = _FakeEngine()
+    ConcurrencyBenchmark._fire_batch(engine, "tag", 2, 4096)
+    assert engine.seen_num_ctx == [4096 + config.GENERATE_MAX_TOKENS] * 2
 
 
 def test_fire_batch_gives_each_concurrent_request_a_distinct_prompt():

@@ -47,10 +47,12 @@ ACCURACY_CONTEXT = 32768   # fixed llama-server allocation shared by accuracy wa
 # that's already clearly too slow doesn't burn huge wall-clock time climbing
 # to 32-way for a foregone conclusion.
 CONCURRENCY_TOOL_LEVELS  = [1, 2, 4, 6, 8, 12, 16]
-CONCURRENCY_TOOL_CONTEXT = 4096    # tokens per concurrent request/slot
+CONCURRENCY_TOOL_CONTEXT = 4096    # tokens per concurrent request/slot (padded prompt size)
 CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
-CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot
+CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot (padded prompt size)
 CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT = 8
+
+GENERATE_MAX_TOKENS = 512   # n_predict for engine.generate(); concurrency slot ctx must add this on top of the padded prompt
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42
