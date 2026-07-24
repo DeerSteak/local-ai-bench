@@ -203,3 +203,13 @@ hf.txt
 /scripts/.omc
 /.claude
 /mba-results
+/llama.cpp
+/python_embeded
+/benchmark_images
+scratch_nonascii_report.txt
+run_nvidia_gpu_fast_fp16_accumulation.bat
+run_nvidia_gpu.bat
+run_cpu.bat
+README_VERY_IMPORTANT.txt
+/advanced
+/update
