@@ -20,7 +20,7 @@ def test_xsmall_and_small_rosters_preserve_the_worker_model_structure():
         "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
     ]
     assert [model["short"] for model in LLM_MODELS_SMALL] == [
-        "granite4.1-8b-q4", "qwen3.5-9b-q4", "phi4-14b",
+        "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
     ]
 
 
@@ -32,6 +32,14 @@ def test_granite_and_qwen_worker_models_form_cross_tier_scaling_pairs():
     for xsmall_short, small_short in pairs.values():
         assert any(model["short"] == xsmall_short for model in LLM_MODELS_XSMALL)
         assert any(model["short"] == small_short for model in LLM_MODELS_SMALL)
+
+
+def test_gemma4_12b_uses_bartowski_q4_model():
+    model = next(model for model in LLM_MODELS_SMALL
+                 if model["short"] == "gemma4-12b-q4")
+    assert model["hf_repo"] == "bartowski/gemma-4-12B-it-GGUF"
+    assert model["hf_file"] == "gemma-4-12B-it-Q4_K_M.gguf"
+    assert model["download_size"] == "~7.7 GB"
 
 
 def test_medium_roster_preserves_dense_and_sparse_architecture_mix():

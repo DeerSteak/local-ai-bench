@@ -139,15 +139,14 @@ LLM_MODELS_SMALL = sorted([
         "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
     },
     {
-        "tag":            "phi4:14b-q4_K_M",
-        "label":          "Phi 4 14B",
-        "short":          "phi4-14b",
+        "tag":            "gemma4:12b-it-q4_K_M",
+        "label":          "Gemma 4 12B Q4_K_M",
+        "short":          "gemma4-12b-q4",
         "tier":           "small",
-        "download_size":  "~8.3 GB",
-        "params_b":       14,
-        # unsloth's repo, not bartowski's — fixes a tokenizer bug, see docs/workloads.md.
-        "hf_repo":        "unsloth/phi-4-GGUF",
-        "hf_file":        "phi-4-Q4_K_M.gguf",
+        "download_size":  "~7.7 GB",
+        "params_b":       12,
+        "hf_repo":        "bartowski/gemma-4-12B-it-GGUF",
+        "hf_file":        "gemma-4-12B-it-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 

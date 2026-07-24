@@ -60,11 +60,9 @@ The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-lig
 |---|---|---|---|
 | Granite 4.1 8B Q4_K_M | `granite4.1:8b-q4_K_M` | ~5.4 GB | Dense |
 | Qwen3.5 9B Q4_K_M | `qwen3.5:9b-q4_K_M` | ~6.2 GB | Dense |
-| Phi 4 14B | `phi4:14b-q4_K_M` | ~8.3 GB | Dense |
+| Gemma 4 12B Q4_K_M | `gemma4:12b-it-q4_K_M` | ~7.7 GB | Dense |
 
-The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Phi 4 14B anchors the top of the tier as a reasoning-focused dense model and preserves Microsoft representation without duplicating Phi at extra-small size. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Phi 4 14B bracket the two tiers with a speed floor and reasoning ceiling.
-
-Phi 4 14B's catalog entry deliberately points at unsloth's GGUF repo rather than bartowski's: Microsoft's original tokenizer config registers `<|endoftext|>` as both BOS and EOS, which under a raw (non-chat-templated) `/completion` request — exactly what this suite's LLM and concurrency tests send — makes `llama-server` treat generation as immediately over right after the auto-prepended BOS token. Unsloth found and fixed this upstream; their GGUF bakes in the corrected tokenizer config.
+The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
 
 ### Medium tier (26–35B params)
 
