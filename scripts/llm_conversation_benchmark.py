@@ -75,7 +75,7 @@ class LLMConversationBenchmark:
         if is_small_tier:
             checkpoints = [c for c in checkpoints
                            if c <= LLMConversationBenchmark.CONV_SMALL_TIER_TOP_CHECKPOINT]
-        num_ctx = min(target_ctx + LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
+        num_ctx = Shared.ctx_with_headroom(target_ctx, LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
         return target_ctx, checkpoints, num_ctx
 
     @staticmethod

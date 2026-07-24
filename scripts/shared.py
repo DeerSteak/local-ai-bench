@@ -512,6 +512,11 @@ class Shared:
     )
 
     @staticmethod
+    def ctx_with_headroom(base_ctx: int, headroom: int, model_max: int) -> int:
+        """base_ctx plus generation headroom, clamped to the model's real max."""
+        return min(base_ctx + headroom, model_max)
+
+    @staticmethod
     def build_prompt_for_context(target_tokens: int) -> str:
         """Pad a prompt to ~target_tokens (1 token ≈ 4 chars), prefixed with a
         unique nonce so reruns don't share a prefix the slot cache can hit."""

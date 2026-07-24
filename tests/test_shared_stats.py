@@ -30,6 +30,18 @@ def test_build_prompt_for_context_reaches_target_length():
     assert len(prompt) == target_tokens * 4
 
 
+def test_ctx_with_headroom_adds_headroom():
+    assert Shared.ctx_with_headroom(32768, 512, 131072) == 32768 + 512
+
+
+def test_ctx_with_headroom_clamps_to_model_max():
+    assert Shared.ctx_with_headroom(65536, 4096, 65536 + 100) == 65536 + 100
+
+
+def test_ctx_with_headroom_no_room_when_base_equals_model_max():
+    assert Shared.ctx_with_headroom(65536, 512, 65536) == 65536
+
+
 def test_build_prompt_for_context_small_target_still_includes_base_prompt():
     # Even a tiny target can't be shorter than the nonce prefix; just confirm
     # it doesn't crash and returns a non-empty, truncated string.

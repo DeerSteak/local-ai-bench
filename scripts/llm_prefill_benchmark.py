@@ -9,6 +9,12 @@ from shared import Shared
 class LLMPrefillBenchmark:
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")  # see docs/project-structure.md
 
+    @staticmethod
+    def prefill_server_ctx(ctx_len: int, model_max: int) -> int:
+        """num_ctx to load the server at for a padded-to-ctx_len prompt — headroom
+        for the n_predict generation on top, clamped to the model's real max."""
+        return Shared.ctx_with_headroom(ctx_len, config.GENERATE_MAX_TOKENS, model_max)
+
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
@@ -43,11 +49,16 @@ class LLMPrefillBenchmark:
                 results[short] = {}
 
                 model_ctx_lengths = [c for c in context_lengths if c <= model_max]
+                Shared.log(f"{label}: model supports {model_max} ctx")
 
                 model_timed_out = False
                 for ctx_len in model_ctx_lengths:
                     label_ctx = Shared.context_label(ctx_len)
-                    if not engine.warmup(tag, label, ctx_len, warmup_runs,
+                    server_ctx = LLMPrefillBenchmark.prefill_server_ctx(ctx_len, model_max)
+                    if server_ctx <= ctx_len:
+                        Shared.warn(f"{label}: no headroom left for generation at {label_ctx} "
+                                    f"(model max {model_max}) — TPS at this depth may read as ~0")
+                    if not engine.warmup(tag, label, server_ctx, warmup_runs,
                                          crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
                         results[short]["crashed"] = label_ctx
                         results[short]["crashed_at"] = crash_cache.get(tag, {}).get(
@@ -60,7 +71,7 @@ class LLMPrefillBenchmark:
                     def _prefill_once(run_i):
                         prompt = Shared.build_prompt_for_context(ctx_len)
                         ttft, tokens, tps = engine.generate(
-                            tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=ctx_len
+                            tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx
                         )
                         Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "
