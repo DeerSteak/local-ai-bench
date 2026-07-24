@@ -1026,6 +1026,41 @@ def test_ensure_model_deadline_stops_in_progress_process(monkeypatch, tmp_path):
     assert engine._proc is None
 
 
+@pytest.mark.parametrize(("gpu_visible", "expected_ngl"), [
+    (True, "auto"),
+    (False, "0"),
+])
+def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gpu_visible, expected_ngl):
+    """-ngl must be "auto" (not a forced max) so --fit can offload only what fits in
+    free VRAM, instead of OOM-ing when all layers are forced onto the GPU."""
+    captured_args = {}
+
+    class Proc:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    def fake_popen(args, **kwargs):
+        captured_args["args"] = args
+        return Proc()
+
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"x")
+    monkeypatch.setattr(LlamaCppEngine, "_resolve_model_files", classmethod(lambda cls, tag: [model_path]))
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "available", lambda: True)
+    engine._gpu_visible = gpu_visible
+
+    engine._ensure_model("tag", 2048)
+
+    args = captured_args["args"]
+    assert args[args.index("-ngl") + 1] == expected_ngl
+
+
 @pytest.mark.parametrize(("n_parallel", "num_ctx", "expected_ctx_arg"), [
     (1, 2048, "2048"),
     (4, 2048, "8192"),

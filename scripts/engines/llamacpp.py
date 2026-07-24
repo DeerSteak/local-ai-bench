@@ -420,7 +420,9 @@ class LlamaCppEngine(InferenceEngine):
                 "-m", str(paths[0]),
                 "--host", "127.0.0.1",
                 "--port", str(config.LLAMACPP_PORT),
-                "-ngl", "0" if not self._gpu_visible else "999",
+                # "auto" lets llama-server's own --fit logic offload as many layers as fit in
+                # free VRAM and run the rest on CPU, instead of forcing all layers and OOM-ing.
+                "-ngl", "0" if not self._gpu_visible else "auto",
                 "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
                 "-b", str(config.LLAMACPP_NUM_BATCH),
             ]
