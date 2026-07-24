@@ -4,6 +4,7 @@
 
 **Contents**
 - [What the setup scripts do](#what-the-setup-scripts-do)
+- [Memory-fit estimate](#memory-fit-estimate)
 - [Disk space check](#disk-space-check)
 - [HuggingFace token](#huggingface-token)
 - [Platform notes](#platform-notes)
@@ -33,6 +34,8 @@
 
 Non-catalog cleanup is permanent rather than a move to Trash or Recycle Bin. It is deliberately excluded from the default selection and the `a` shortcut; select its numbered row or type `clean` only after checking the displayed folder names for models you want to keep.
 
+The picker is deliberately a plain-`input()`, numbered-list interface rather than an arrow-key checkbox menu — an earlier arrow-key version was tried and dropped after repeated bugs (stray keystrokes leaking between prompts, a sub-installer's own confirmation prompt swallowing a keypress). Reading a full line via `input()` is immune to that class of bug, at the cost of typing `2 4 7-9` instead of arrowing and spacebar-toggling.
+
 When setup is complete, run the benchmark:
 
 ```bash
@@ -44,6 +47,22 @@ run_bench.bat
 ```
 
 These scripts activate the virtual environment automatically and forward any arguments to `scripts/benchmark.py` — see the [CLI Reference](cli-reference.md) for available flags.
+
+## Memory-fit estimate
+
+`hardware.py`'s memory ceiling is VRAM (discrete GPU) or total system RAM
+(unified memory, integrated GPU, or CPU-only), minus a reserve — 1.0 GB for
+VRAM (driver/other GPU processes), 8.0 GB for RAM (OS, the inference server,
+and everything else sharing that pool). A model's estimated footprint is its
+download size plus a flat 20% runtime overhead (KV-cache for LLMs,
+activations for image models) — an approximation, not a per-context-length
+calculation.
+
+Discrete-vs-integrated GPU classification is a naming-convention heuristic
+(AMD: `RX`/`PRO`/`INSTINCT` in the name; Intel: a model number like `A770`),
+not authoritative. An unknown or ambiguous name defaults to "integrated" —
+the more permissive failure mode, since it falls back to the system-RAM
+ceiling instead of wrongly capping to a VRAM number that doesn't apply.
 
 ## Disk space check
 
@@ -92,7 +111,9 @@ For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfy
 
 **macOS and Linux** — If the script fails with a permissions error, run `sudo bash setup.sh` instead.
 
-**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required.
+**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required. The `llama.cpp` install on Windows is always the cross-vendor Vulkan build regardless of GPU vendor — it runs on NVIDIA/AMD/Intel alike without having to match a specific CUDA toolkit version to whatever's installed, which is the safer bet for an unattended install (a mismatched CUDA-specific build would simply fail to load its driver at runtime).
+
+ComfyUI's Windows portable build bundles a pinned torch wheel that doesn't recognize newer GPU architectures (e.g. Blackwell, compute capability 12.0) — every CUDA kernel launch then fails with "no kernel image is available for execution on the device." `setup_check.py` detects this by checking whether the GPU's compute capability appears in `torch.cuda.get_arch_list()`, and if not, reinstalls torch/torchvision/torchaudio from the cu128 wheel index with `--force-reinstall` rather than `--upgrade` — `--upgrade` would leave an already-installed torch+cu126 alone while swapping only torchvision/torchaudio to +cu128, a mismatched trio that torchaudio then refuses to import.
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 

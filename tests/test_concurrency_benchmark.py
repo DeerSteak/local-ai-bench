@@ -75,9 +75,7 @@ def test_fire_batch_passes_slot_ctx_with_generation_headroom_not_bare_prompt_siz
 
 
 def test_fire_batch_gives_each_concurrent_request_a_distinct_prompt():
-    # Without a unique nonce per request, an engine's prefix cache would
-    # serve some requests near-instantly regardless of real concurrency —
-    # see Shared.build_prompt_for_context.
+    # Without a unique nonce per request, a prefix cache would serve some requests near-instantly.
     engine = _FakeEngine()
     ConcurrencyBenchmark._fire_batch(engine, "tag", 5, 512)
     assert len(engine.seen_prompts) == 5

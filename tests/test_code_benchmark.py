@@ -604,10 +604,7 @@ def test_load_questions_dataset_has_stateful_problems():
 
 
 def test_build_prompt_never_reads_hidden_tests_key():
-    # Stronger than a substring scan (which small shared values like 0/1/True
-    # could pass by coincidence): build_prompt must not even look up
-    # "hidden_tests", proven by deleting the key and confirming no KeyError,
-    # across every real question in both problem shapes.
+    # Stronger than a substring scan: proves build_prompt never looks up "hidden_tests" by deleting the key.
     for q in CodeBenchmark.load_questions():
         q_without_hidden = {k: v for k, v in q.items() if k != "hidden_tests"}
         CodeBenchmark.build_prompt(q_without_hidden)  # raises if it were accessed

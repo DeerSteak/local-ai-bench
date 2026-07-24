@@ -98,18 +98,14 @@ def test_ceiling_darwin_uses_ram_minus_reserve():
 
 
 def test_ceiling_integrated_gpu_uses_ram_not_vram():
-    """Integrated GPUs are treated like unified memory regardless of OS —
-    even if a vram_gb figure were somehow passed in, the ceiling is total
-    system RAM, not that number."""
+    """Integrated GPUs use total system RAM as ceiling even if vram_gb is passed."""
     ceiling, _ = hardware.compute_memory_ceiling_gb(
         os_name="Linux", total_ram_gb=64, gpu_vendor="integrated", vram_gb=None)
     assert ceiling == pytest.approx(64 - hardware.RAM_RESERVE_GB)
 
 
 def test_ceiling_ram_undetermined_returns_none():
-    """RAM detection itself can fail (e.g. unparsable /proc/meminfo) — that
-    must come back None rather than silently computing a bogus negative
-    ceiling from a 0.0 fallback."""
+    """Failed RAM detection must return None, not a bogus negative ceiling."""
     ceiling, note = hardware.compute_memory_ceiling_gb(
         os_name="Linux", total_ram_gb=None, gpu_vendor="integrated", vram_gb=None)
     assert ceiling is None
@@ -130,10 +126,7 @@ def test_ceiling_discrete_amd_with_known_vram():
 
 
 def test_ceiling_discrete_amd_unknown_vram_returns_none():
-    """No driver-agnostic VRAM query exists for discrete AMD/Intel on
-    Windows — the ceiling must come back None (don't filter) rather than
-    silently falling back to system RAM, which would be wrong for a
-    discrete GPU."""
+    """Unknown discrete VRAM must return None, not fall back to system RAM."""
     ceiling, note = hardware.compute_memory_ceiling_gb(
         os_name="Windows", total_ram_gb=32, gpu_vendor="amd", vram_gb=None)
     assert ceiling is None
@@ -169,10 +162,7 @@ def test_model_fits_accounts_for_overhead_multiplier():
 
 
 def test_model_fits_against_real_catalog_values():
-    """Sanity check against models.py's actual download_size values, not
-    just synthetic strings — catches drift if MEMORY_OVERHEAD_MULTIPLIER or
-    a model's download_size changes in a way that flips a real model's
-    fit/no-fit outcome unexpectedly."""
+    """Sanity check against models.py's real download_size values, not synthetic strings."""
     xsmall = next(m for m in LLM_MODELS if m["short"] == "granite4.1-3b-q4")
     assert hardware.model_fits(xsmall["download_size"], 8.0) is True
 
@@ -205,9 +195,7 @@ def test_image_model_fits_none_when_ceiling_unknown():
 
 
 def test_image_model_fits_false_when_encoders_push_it_over():
-    """A checkpoint alone might fit, but Flux.2-dev's Mistral text encoder
-    (~18 GB) is large enough that omitting it from the requirement — the bug
-    this test guards against — would wrongly say it fits a 24 GB machine."""
+    """Regression guard: omitting Flux.2-dev's ~18GB Mistral encoder would wrongly say it fits 24 GB."""
     assert hardware.image_model_fits("flux2-dev.safetensors", "flux2-dev", 24.0) is False
 
 

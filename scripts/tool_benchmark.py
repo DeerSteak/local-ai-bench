@@ -1,10 +1,4 @@
-"""tool_benchmark.py — tool-calling accuracy benchmark: each model is offered
-an OpenAI-style tools array per question in scripts/data/tool_questions.json
-and asked to answer once at temperature 0, scored on whether it called the
-right tool with the right arguments (or correctly declined to call anything
-when none of the offered tools fit), broken down by category. Same result
-shape as MCQBenchmark/MathBenchmark/CodeBenchmark.
-"""
+"""Tool-calling accuracy benchmark — see docs/workloads.md#tool-use."""
 
 import json
 from pathlib import Path
@@ -16,10 +10,7 @@ from shared import Shared
 class ToolBenchmark:
     TOOL_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "tool_questions.json"
 
-    # Records models that crashed the engine's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
-    TOOL_CRASH_CACHE = Path(".tool_crash_cache.json")
+    TOOL_CRASH_CACHE = Path(".tool_crash_cache.json")  # see docs/project-structure.md
 
     # -1 delegates the finite per-pass limits to chat_tools' token_budget split.
     TOOL_NUM_PREDICT = -1
@@ -30,9 +21,7 @@ class ToolBenchmark:
 
     @staticmethod
     def _coerce(value):
-        """Coerce a numeric string to a number so a model emitting "20" for a
-        numeric argument still matches an expected 20. Non-numeric strings and
-        everything else pass through unchanged."""
+        """Coerce a numeric string to a number so "20" matches an expected 20."""
         if isinstance(value, str):
             try:
                 return int(value)
@@ -51,14 +40,8 @@ class ToolBenchmark:
     def _values_equal(given, expected, strict: bool, unordered_keys: frozenset = frozenset(),
                       normalized_string_keys: frozenset = frozenset(),
                       normalize_string: bool = False) -> bool:
-        """Recursively compare `given` against `expected`, coercing numeric
-        strings to numbers at every level (not just the top one) so a nested
-        object or array-of-objects argument gets the same tolerant matching
-        as a flat one. `unordered_keys` names dict keys (matched by name at
-        any depth) whose list value should be compared as a multiset rather
-        than positionally, for genuinely order-insensitive arguments like a
-        set of labels or recipients. `normalized_string_keys` opts named
-        free-text fields into limited string normalization at any depth."""
+        """Recursively compare `given` against `expected` — see docs/workloads.md#tool-use
+        for `unordered_keys`/`normalized_string_keys` semantics."""
         if isinstance(expected, dict):
             if not isinstance(given, dict):
                 return False
@@ -118,9 +101,8 @@ class ToolBenchmark:
     @staticmethod
     def _args_match(given: dict, expected: dict, allow_extra: bool = True,
                     unordered_keys=(), normalized_string_keys=()) -> bool:
-        """Loose-equality argument match: every expected key present with an
-        equal value, numeric strings coerced to numbers first so "20" == 20.
-        Extra keys are allowed unless the question requests strict matching."""
+        """Loose-equality argument match — see docs/workloads.md#tool-use for
+        subset-vs-strict matching."""
         if not isinstance(given, dict):
             return False
         return ToolBenchmark._values_equal(
@@ -131,10 +113,8 @@ class ToolBenchmark:
 
     @staticmethod
     def evaluate_question(question: dict, tool_calls: list | None) -> dict:
-        """Score `tool_calls` against `question["expected"]`: {"correct": bool}.
-        A decline case (`call` is False) is correct only if nothing was called;
-        a call case is correct only if exactly one call names the expected tool
-        with matching arguments. None/empty tool_calls means the model declined."""
+        """Score `tool_calls` against `question["expected"]` — see docs/workloads.md#tool-use
+        for decline-vs-call semantics."""
         expected = question["expected"]
         calls = tool_calls or []
 
@@ -174,9 +154,7 @@ class ToolBenchmark:
 
     @staticmethod
     def rescore_partial_fn(question: dict, partial_text: str) -> dict:
-        """Best-effort rescore of a timed-out question: try to parse a
-        tool-call list out of whatever text streamed before the cutoff,
-        falling back to [] (a decline) if it won't parse."""
+        """Best-effort rescore of a timed-out question, falling back to [] (a decline) if it won't parse."""
         try:
             parsed = json.loads(partial_text)
         except (json.JSONDecodeError, TypeError):
@@ -188,8 +166,7 @@ class ToolBenchmark:
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
-        evaluate_question_result_or_None} map. Pure, so it's directly
-        testable."""
+        evaluate_question_result_or_None} map."""
         by_category: dict[str, dict] = {}
         incorrect = []
         all_results = []

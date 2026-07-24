@@ -1,9 +1,5 @@
-"""llamacpp.py — LlamaCppEngine, a llama.cpp (llama-server) implementation of
-InferenceEngine. Resolves each tag to GGUF file(s) downloaded ahead of time by
-setup_check.py into config.MODELS_DIR, and restarts its single-model-per-
-process server whenever the requested (tag, num_ctx, embedding-mode) changes.
-See docs/engines.md#llamacppengine for the full rationale.
-"""
+"""LlamaCppEngine — a llama.cpp (llama-server) InferenceEngine.
+See docs/engines.md#llamacppengine for the full rationale."""
 
 import http.client
 import json
@@ -38,23 +34,18 @@ class LlamaCppEngine(InferenceEngine):
 
     BINARY = "llama-server"
 
-    # Seconds to wait for llama-server's /health once a model's subprocess is
-    # spawned. Generous — this is model *load* time (disk read + VRAM
-    # placement), not inference time, and large models can take a while.
+    # Model *load* time (disk read + VRAM placement), not inference time — generous since large models can take a while.
     LOAD_TIMEOUT = 300
 
     def __init__(self):
         self._proc: subprocess.Popen | None = None
         self._log_path: Path | None = None
-        # What llama-server is currently serving, so _ensure_model knows
-        # whether a restart is needed. None until the first model loads.
+        # What llama-server is serving, so _ensure_model knows whether a restart is needed.
         self._loaded_tag: str | None = None
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
-        # Remembered across calls so a lazily-spawned server (there's no
-        # tag at start()/ensure_running() time to load yet) still launches
-        # in the right mode.
+        # Remembered for the lazy spawn in _ensure_model — no tag yet at start()/ensure_running() time.
         self._gpu_visible = True
         self._cpu_only_active = False
         self._model_lock = threading.RLock()
@@ -63,10 +54,7 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _binary_path() -> str | None:
-        """Locate llama-server: config.LLAMACPP_DIR (vendored installs) first,
-        then PATH, then (macOS) the two well-known Homebrew prefixes directly
-        — a brew install may not be on PATH yet in another already-open shell.
-        See docs/engines.md#llamacppengine."""
+        """Locate llama-server — see docs/engines.md's "Binary resolution"."""
         exe_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
         if config.LLAMACPP_DIR.exists():
             match = next(iter(config.LLAMACPP_DIR.rglob(exe_name)), None)
@@ -86,21 +74,17 @@ class LlamaCppEngine(InferenceEngine):
 
     @classmethod
     def _models_dir(cls) -> Path:
-        """This engine's namespaced model directory — config.MODELS_DIR/llamacpp/
-        — so a future engine with its own model format/layout (e.g. MLX)
-        gets its own subtree instead of colliding with this one's."""
+        """This engine's namespaced model directory — see docs/engines.md."""
         return config.MODELS_DIR / cls.name
 
     @staticmethod
     def _slug(tag: str) -> str:
-        """Filesystem-safe per-tag directory name under _models_dir(),
-        e.g. "granite4.1:3b-q4_K_M" -> "granite4.1_3b-q4_K_M"."""
+        """Filesystem-safe per-tag directory name, e.g. "x:3b" -> "x_3b"."""
         return tag.replace(":", "_").replace("/", "_")
 
     @staticmethod
     def _catalog_entry(tag: str) -> dict | None:
-        """Look up `tag` in models.py's LLM_MODELS/EMBED_MODELS catalog to
-        find its hf_repo/hf_file — the only place that mapping lives."""
+        """Look up `tag`'s hf_repo/hf_file in models.py's catalog."""
         for model in LLM_MODELS + EMBED_MODELS:
             if model["tag"] == tag:
                 return model
@@ -108,14 +92,8 @@ class LlamaCppEngine(InferenceEngine):
 
     @classmethod
     def _resolve_model_files(cls, tag: str) -> list[Path] | None:
-        """Map a catalog tag to its downloaded GGUF file(s) under
-        _models_dir()/<slug>/, as placed there by setup_check.py's
-        HuggingFace download step. `hf_file` in models.py is a single
-        filename, or a list for a model split across multiple GGUF parts
-        (large-tier models) — every listed file must exist locally for the
-        model to count as resolved. Custom tags resolve one GGUF or a complete
-        multipart set from a same-named directory. None if required files are
-        absent or a custom directory is ambiguous."""
+        """Map a catalog or custom tag to its downloaded GGUF file(s), or None
+        if incomplete/ambiguous — see docs/engines.md's model-directory layout."""
         entry = cls._catalog_entry(tag)
         if entry is None:
             if tag != Path(tag).name:
@@ -153,12 +131,8 @@ class LlamaCppEngine(InferenceEngine):
             return False
 
     def ensure_running(self) -> bool:
-        """llama-server has no standalone "up but no model loaded" state to
-        start — a process needs a model to launch with. This is the preflight
-        instead: confirm the binary and model storage directory both exist,
-        so a caller (e.g. --list-models, or the top of a run) gets a clear
-        error before wasting time on the first per-model load. The actual
-        subprocess spawns lazily per tag in _ensure_model."""
+        """Preflight only (binary + model dir exist) — see docs/engines.md's
+        "No standalone up-but-idle state". The real spawn is lazy, per tag, in _ensure_model."""
         if self._binary_path() is None:
             Shared.err(f"'{self.BINARY}' not found — run setup_check.py "
                        "to install it, or build/install llama.cpp yourself: "
@@ -172,18 +146,14 @@ class LlamaCppEngine(InferenceEngine):
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper over ensure_running
-        """Remember gpu_visible for the next lazy spawn in _ensure_model —
-        there's no tag yet to actually load a model with here. gpu_visible is
-        the interface-level version of llama-server's -ngl flag (see
-        InferenceEngine's docstring)."""
+        """Remember gpu_visible for the next lazy spawn in _ensure_model."""
         self._gpu_visible = gpu_visible
         self._cpu_only_active = not gpu_visible
         return self.ensure_running()
 
     def stop(self, *, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
-        """Stop this engine's own subprocess, then also reap any stray
-        llama-server left behind by a previous crashed run, so a fresh
-        instance can bind the port again."""
+        """Stop this engine's subprocess, then reap any stray llama-server
+        from a previous crashed run so a fresh instance can bind the port."""
         self._stop_process(timeout=timeout)
         os_name = platform.system()
         try:
@@ -211,28 +181,20 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_n_parallel = 1
 
     def is_connection_crash(self, e: Exception) -> bool:
-        """True for the exception shapes a dead HTTP server surfaces as
-        (requests/urllib connection errors, or a refused connection)."""
+        """True for the exception shapes a dead HTTP server surfaces as."""
         if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
                           http.client.IncompleteRead, ConnectionError)):
             return True
         return "actively refused" in str(e).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
-        """Always True: llama-server's whole process *is* the model runner,
-        so there's no separate daemon to poll for recovery. Recovery instead
-        happens synchronously on the next generate/chat/embed call, via
-        _ensure_model respawning; an unrecoverable model still gets caught
-        there, just on that attempt."""
+        """Always True — see docs/engines.md; recovery happens synchronously
+        in _ensure_model on the next call instead."""
         return True
 
     def reachable_or_abort(self) -> bool:
-        """Always True: there's no shared server that stays up between models
-        to check here — llama-server is spawned fresh per model in
-        _ensure_model, which is its own health check for that specific
-        model. model_pulled() reads local GGUF files straight off disk, no
-        server involved, so it's never at risk of a down server making
-        'reachable' and 'not downloaded' indistinguishable."""
+        """Always True — see docs/engines.md; _ensure_model is its own
+        per-model health check, so there's no shared server state to poll here."""
         return True
 
     def tail_log(self, n_lines: int = 40) -> str:
@@ -244,10 +206,8 @@ class LlamaCppEngine(InferenceEngine):
         return self._resolve_model_files(tag) is not None
 
     def list_installed_models(self) -> list[dict]:
-        """Every catalog tag whose GGUF file(s) are fully present under
-        _models_dir(), plus any extra subdirectory there that doesn't match a
-        catalog slug — lets someone benchmark a model they dropped in
-        manually without adding it to models.py first."""
+        """Every fully-present catalog tag, plus any non-catalog directory —
+        see docs/engines.md's custom-tag resolution."""
         installed = []
         for model in LLM_MODELS + EMBED_MODELS:
             paths = self._resolve_model_files(model["tag"])
@@ -316,9 +276,8 @@ class LlamaCppEngine(InferenceEngine):
     def warmup(self, tag: str, label: str, num_ctx: int, warmup_runs: int,  # pragma: no cover — real model load/inference
                crash_cache: dict | None = None, cache_path: Path | None = None,
                crash_extra: dict | None = None) -> bool:
-        """Warm the exact server configuration used by the following calls.
-        generate() enforces one deadline across model load and inference, so a
-        timed-out load is synchronously stopped before this returns."""
+        """Warm the exact server configuration used by the following calls;
+        a timed-out load is synchronously stopped before returning."""
         Shared.log(f"Warming up {label} at num_ctx={num_ctx} (timeout: {config.RUN_TIMEOUT}s per run) ...")
         for warmup_i in range(warmup_runs):
             t_start = time.perf_counter()
@@ -327,9 +286,7 @@ class LlamaCppEngine(InferenceEngine):
             except Exception as e:
                 elapsed = time.perf_counter() - t_start
                 Shared.warn(f"Warmup run {warmup_i+1} failed after {elapsed:.0f}s: {e}")
-                # Every warmup exception here (not just connection-crash shapes) means this tag
-                # failed to load — llama-server is freshly spawned per model, so it's as
-                # deterministic as a hang.
+                # Any warmup exception means this tag failed to load, not just connection-crash shapes.
                 if crash_cache is not None and cache_path is not None:
                     if self.is_connection_crash(e):
                         self.wait_for_recovery()
@@ -340,9 +297,7 @@ class LlamaCppEngine(InferenceEngine):
         return True
 
     def unload(self, tag: str) -> None:
-        """llama-server serves one model per process, so "unload" just means
-        stopping that process — a no-op if `tag` isn't the one currently
-        loaded."""
+        """Stop the process if `tag` is the one currently loaded, else no-op."""
         if self._loaded_tag is not None and tag == self._loaded_tag:
             self._stop_process()
             Shared.ok(f"Unloaded {tag}")
@@ -354,24 +309,13 @@ class LlamaCppEngine(InferenceEngine):
             Shared.ok("No models currently loaded")
 
     def wait_until_unloaded(self, tag: str, timeout: int = 30) -> bool:
-        """unload() is synchronous (it terminates and waits on the
-        subprocess), so by the time either it or _stop_process returns
-        there's nothing left to poll for — this just reports the current
-        state."""
+        """unload() is synchronous, so this just reports current state."""
         return self._loaded_tag is None or tag != self._loaded_tag
 
     def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
                              warmup_runs: int = 1, timeout: int = 300) -> bool:  # pragma: no cover — spawns a real subprocess
         """(Re)spawn llama-server with --parallel n_parallel slots at
-        per_slot_ctx tokens each. `warmup_runs` is accepted for interface
-        parity with other engines but unused *here* — this only blocks until
-        the process is up and the KV cache is allocated (process-level
-        readiness), not until a real decode has run at this concurrent
-        shape. ConcurrencyBenchmark.run fires the actual throwaway warmup
-        batches itself, after this returns, since every level respawns the
-        process (n_parallel is part of _ensure_model's want/have check) —
-        each level's first real inference is on a fresh process, so it
-        genuinely needs its own warmup."""
+        per_slot_ctx tokens each — see docs/engines.md's "prepare_concurrency"."""
         try:
             self._ensure_model(
                 tag, per_slot_ctx, n_parallel=n_parallel,
@@ -387,9 +331,8 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _urlopen(req, timeout):
-        """urlopen wrapper that surfaces the response body on HTTP error
-        status — the bare HTTPError only says "HTTP Error 500: Internal
-        Server Error" and hides llama-server's actual JSON error detail."""
+        """urlopen wrapper that surfaces llama-server's JSON error body on
+        HTTP errors, instead of the bare "HTTP Error 500" HTTPError message."""
         try:
             return urllib.request.urlopen(req, timeout=timeout)
         except urllib.error.HTTPError as e:
@@ -402,12 +345,8 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _iter_sse(resp):
-        """Yield parsed JSON objects from a streaming Server-Sent-Events
-        response body (llama-server's /completion and /v1/chat/completions
-        both stream this way: 'data: {...}' lines, terminated by 'data:
-        [DONE]'). Empty objects are yielded for comments, malformed lines,
-        and the terminal sentinel so callers can enforce a total deadline
-        even while the server emits only keepalive traffic."""
+        """Yield parsed JSON from an SSE response body ('data: {...}' lines).
+        Empty dicts for comments/malformed/[DONE] lines, so callers can still enforce a deadline on keepalive-only traffic."""
         for raw_line in resp:
             line = raw_line.decode(errors="replace") if isinstance(raw_line, bytes) else raw_line
             line = line.strip()
@@ -425,11 +364,8 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
-        """Replace a self-reported tps with a wall-clock estimate whenever it
-        exceeds config.MAX_PLAUSIBLE_TPS — see that constant's docstring for
-        why llama-server's own numbers occasionally aren't trustworthy.
-        `tokens` is an authoritative generated-token count from native token
-        IDs or OpenAI-compatible usage, not a transport-fragment count."""
+        """Replace an implausible self-reported tps with a wall-clock estimate
+        — see docs/engines.md's "_sanitize_tps"."""
         if tps <= config.MAX_PLAUSIBLE_TPS:
             return tps
         decode_elapsed = total - ttft
@@ -438,16 +374,8 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _warn_tps_sanitized(tag: str, raw_tps: float, sanitized_tps: float,
                              tokens: int, server_predicted_n: int, predicted_ms: float) -> None:
-        """Surfaces the raw server values behind a _sanitize_tps substitution
-        — without this, the only trace of the bad reading is the corrected
-        number, which is useless for tracking down what llama-server
-        actually reported. Prints `tokens` (the authoritative response count)
-        right next to `server_predicted_n`
-        (timings.predicted_n) specifically so the two can be compared — if
-        they diverge, predicted_n itself is unreliable under this workload,
-        not just predicted_ms. predicted_ms is printed at full precision
-        (not rounded) since the anomaly is specifically that it's an
-        implausibly tiny fraction of a millisecond."""
+        """Logs the raw server values behind a _sanitize_tps substitution —
+        see docs/engines.md's "_warn_tps_sanitized"."""
         Shared.warn(f"{tag}: implausible tps from server (server predicted_n={server_predicted_n}, "
                     f"response tokens={tokens}, predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
                     f"using wall-clock estimate ({sanitized_tps:.1f} tok/s) instead")
@@ -456,12 +384,8 @@ class LlamaCppEngine(InferenceEngine):
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, deadline: float | None = None) -> None:
-        """Make sure llama-server is up and serving `tag` at `num_ctx`,
-        (re)spawning the subprocess if a different model, context size,
-        embedding-vs-chat mode, or parallel-slot count is requested. See the
-        module docstring for why every mismatch means a full restart
-        (llama-server is single-model-per-process).
-        `n_parallel` > 1 is only used by the concurrency test."""
+        """Ensure llama-server is serving `tag` at `num_ctx`, respawning on any
+        mismatch (model/context/mode/parallel-slots) — llama-server is single-model-per-process."""
         want = (tag, num_ctx, embedding, n_parallel)
 
         def ready():
@@ -501,15 +425,11 @@ class LlamaCppEngine(InferenceEngine):
                 "-b", str(config.LLAMACPP_NUM_BATCH),
             ]
             if num_ctx is not None:
-                # -c is a total KV-cache budget split across --parallel slots, so
-                # scale it up here; num_ctx stays the per-slot value everywhere
-                # else (self._loaded_num_ctx below, the want/have check above).
+                # -c is a total KV-cache budget split across --parallel slots — see docs/engines.md.
                 args += ["-c", str(num_ctx * n_parallel)]
             if embedding:
                 args += ["--embeddings", "--pooling", "mean"]
-            # Always pinned, even at 1 — omitting it lets llama-server fall back
-            # to its own auto-slot resolution (4 slots on this project's test
-            # hardware), which silently diverges from the n_parallel we record.
+            # Always pinned, even at 1 — see docs/engines.md's "--parallel is always pinned".
             args += ["--parallel", str(n_parallel)]
 
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
@@ -546,12 +466,8 @@ class LlamaCppEngine(InferenceEngine):
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
-        """Generate via llama-server's native /completion endpoint. Returns
-        (ttft_sec, tokens_generated, tokens_per_sec). Native streamed token
-        IDs provide the generated-token count; timings.predicted_n is only an
-        older-server fallback. n_parallel must match the last
-        prepare_concurrency call (default 1 elsewhere); concurrent callers
-        passing the same values takes _ensure_model's process-alive fast path."""
+        """Generate via /completion. Returns (ttft_sec, tokens_generated,
+        tokens_per_sec). n_parallel must match the last prepare_concurrency call."""
         t_start = time.perf_counter()
         deadline = t_start + timeout
         self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
@@ -849,12 +765,8 @@ class LlamaCppEngine(InferenceEngine):
         return tool_calls_out
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
-        """Embed every string in `inputs` in a single /v1/embeddings call.
-        Returns (embeddings_list, elapsed_seconds).
-
-        Loads the model in embedding mode (--embeddings --pooling mean) —
-        embedding models need this for the endpoint to be enabled at all.
-        """
+        """Embed every string in `inputs` in one /v1/embeddings call, loading
+        the model in embedding mode. Returns (embeddings_list, elapsed_seconds)."""
         self._ensure_model(tag, num_ctx=None, embedding=True)
 
         t0 = time.perf_counter()

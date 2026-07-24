@@ -12,14 +12,7 @@ from shared import Shared
 class ImageBenchmark:
     @staticmethod
     def comfyui_free_models(timeout: int = 10) -> None:
-        """Unload whatever checkpoint(s) ComfyUI currently has resident.
-
-        ComfyUI's automatic model-swap-on-load is the only thing that would
-        otherwise free a previous checkpoint, and on the MPS backend its
-        free-VRAM detection is unreliable — models can stay resident far longer
-        than on CUDA. Call this between models so each starts from a clean
-        memory state.
-        """
+        """Unload whatever checkpoint(s) ComfyUI has resident — see docs/workloads.md's image-generation section."""
         try:
             requests.post(f"{config.COMFYUI_URL}/free",
                           json={"unload_models": True, "free_memory": True},
@@ -29,11 +22,8 @@ class ImageBenchmark:
 
     @staticmethod
     def comfyui_interrupt_and_clear(timeout: int = 10, confirm_timeout: int = 15) -> None:
-        """Stop ComfyUI's currently running job and drop anything queued —
-        call after a timeout, or the dead job occupies ComfyUI's single
-        execution slot and every later submission queues silently behind it.
-        /interrupt and /queue clear return before the job actually unwinds,
-        so this polls /queue until both queue_running/queue_pending are empty."""
+        """Stop ComfyUI's running job and drop the queue, then poll until both
+        are empty — see docs/workloads.md's image-generation section."""
         try:
             requests.post(f"{config.COMFYUI_URL}/interrupt", timeout=timeout)
         except Exception as e:
@@ -60,8 +50,7 @@ class ImageBenchmark:
     def build_flux_workflow(checkpoint, width, height, steps, cfg,
                             sampler, scheduler, seed, prompt, filename_prefix="bench_flux"):
         """Flux.1 txt2img workflow. BFL's flux1 .safetensors are transformer-only
-        (no CLIP/VAE), so those load via separate nodes instead of
-        CheckpointLoaderSimple's (here, None) output slots 1/2."""
+        (no CLIP/VAE), so those load via separate nodes, not checkpoint output slots 1/2."""
         return {
             # UNet from checkpoint (output 0 = model; slots 1/2 are None for BFL files)
             "1": {"class_type": "CheckpointLoaderSimple",
@@ -122,10 +111,8 @@ class ImageBenchmark:
     @staticmethod
     def build_flux2_workflow(checkpoint, width, height, steps, cfg,
                              sampler, scheduler, seed, prompt, filename_prefix="bench_flux2"):
-        """Flux.2-dev txt2img workflow. Uses a Mistral-3-24B text encoder
-        (single CLIPLoader, type "flux2") and its own flux2-vae.safetensors —
-        reusing Flux.1's DualCLIPLoader/VAE here fails silently with a
-        dimension mismatch deep in the transformer, not a clear error."""
+        """Flux.2-dev txt2img workflow — its own CLIPLoader/VAE; reusing
+        Flux.1's DualCLIPLoader/VAE fails silently with a dimension mismatch."""
         return {
             "1": {"class_type": "CheckpointLoaderSimple",
                   "inputs": {"ckpt_name": checkpoint}},
@@ -172,14 +159,8 @@ class ImageBenchmark:
     @staticmethod
     def build_sd3_workflow(checkpoint, width, height, steps, cfg,
                            sampler, scheduler, seed, prompt, filename_prefix="bench_sd3"):
-        """
-        SD3.5 Large txt2img workflow for ComfyUI.
-
-        sd3.5_large.safetensors contains the UNet and VAE but NOT the text encoders.
-        clip_l.safetensors, clip_g.safetensors, and t5xxl_fp16.safetensors must be
-        present in ComfyUI/models/clip/ (downloaded by setup_check.py).
-        SD3 uses 16-channel latents — EmptySD3LatentImage is required.
-        """
+        """SD3.5 Large txt2img workflow. Checkpoint has UNet+VAE but not the
+        text encoders (loaded separately); SD3's 16-channel latents need EmptySD3LatentImage."""
         return {
             "1": {"class_type": "CheckpointLoaderSimple",
                   "inputs": {"ckpt_name": checkpoint}},
@@ -245,10 +226,8 @@ class ImageBenchmark:
     @staticmethod
     def build_workflow(workflow_t, checkpoint, width, height, steps, cfg,
                        sampler, scheduler, seed, prompt, filename_prefix):
-        """Route to the right workflow builder for `workflow_t` (see models.py's
-        "workflow" field). Unrecognized types fall through to the plain SDXL
-        graph, which is the minimal loader→CLIP→KSampler→VAE shape that also
-        works unchanged for SD1.5 (see models.py's IMAGE_MODELS comment)."""
+        """Route to the right workflow builder for `workflow_t`; unrecognized
+        types fall through to the SDXL graph, which also works for SD1.5."""
         if workflow_t == "flux":
             builder = ImageBenchmark.build_flux_workflow
         elif workflow_t == "flux2":
@@ -262,11 +241,8 @@ class ImageBenchmark:
 
     @staticmethod
     def comfyui_submit(workflow: dict, timeout: int = 300) -> tuple[float, list[dict]]:  # pragma: no cover — submits to and polls a real ComfyUI server
-        """Submit a workflow to ComfyUI, poll until done.
-
-        Returns (elapsed_sec, images) where images is a list of
-        {"filename": str, "subfolder": str, "type": str} dicts from all output nodes.
-        """
+        """Submit a workflow to ComfyUI, poll until done. Returns
+        (elapsed_sec, images), images being {"filename", "subfolder", "type"} dicts."""
         # A stuck prior job can still be queued if its own timeout handling failed to clear it.
         try:
             queue_status = requests.get(f"{config.COMFYUI_URL}/queue", timeout=10).json()
@@ -386,10 +362,7 @@ class ImageBenchmark:
                 w0, h0 = model_resolutions[0]
                 Shared.log(f"{label}: warmup run ({w0}x{h0}, timeout: {timeout}s) ...")
                 warmup_ok = True
-                # Use a seed outside the measured runs' range (seed .. seed+N_RUNS-1) so
-                # this warmup can't hit the same ComfyUI node cache as measured run 1,
-                # which would otherwise return near-instantly instead of regenerating.
-                warmup_seed = seed - 1
+                warmup_seed = seed - 1  # outside the measured runs' range — see docs/workloads.md
                 try:
                     wf = ImageBenchmark.build_workflow(workflow_t, checkpoint, w0, h0, steps, cfg,
                                                        sampler, scheduler, warmup_seed, prompt,
@@ -417,10 +390,7 @@ class ImageBenchmark:
                     for run_i in range(config.N_RUNS):
                         try:
                             prefix = f"{short}_{res_label}_run{run_i + 1}"
-                            # Vary the seed per run — an identical seed/workflow lets
-                            # ComfyUI cache every node, so repeat runs return near-
-                            # instantly instead of re-running generation.
-                            run_seed = seed + run_i
+                            run_seed = seed + run_i  # varied per run — see docs/workloads.md
                             wf = ImageBenchmark.build_workflow(workflow_t, checkpoint, w, h, steps, cfg,
                                                                sampler, scheduler, run_seed, prompt,
                                                                filename_prefix=prefix)

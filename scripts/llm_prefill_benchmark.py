@@ -7,10 +7,7 @@ from shared import Shared
 
 
 class LLMPrefillBenchmark:
-    # Records models that crashed the engine's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
-    LLM_CRASH_CACHE = Path(".llm_crash_cache.json")
+    LLM_CRASH_CACHE = Path(".llm_crash_cache.json")  # see docs/project-structure.md
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
         results = {}

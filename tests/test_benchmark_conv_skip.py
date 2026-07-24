@@ -39,9 +39,7 @@ def test_timeout_at_first_context_skips():
 
 
 def test_timeout_at_deeper_context_does_not_disqualify():
-    # Timed out at 8K, not the configured first context — it passed prefill there,
-    # so it should fall through to the tok/s check rather than being skipped
-    # outright.
+    # Timed out at 8K, not the first context — falls through to the tok/s check instead of being skipped.
     llm_data = {"timed_out": "8K", FIRST_CTX: {"tps_mean": 50.0}}
     entry = conv_skip_entry(MODEL, llm_data, FIRST_CTX, force_all=False)
     assert entry is None

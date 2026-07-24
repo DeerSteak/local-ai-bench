@@ -1,8 +1,4 @@
-"""
-concurrency_benchmark.py — per-request latency and aggregate throughput at
-increasing simultaneous request counts. Shared implementation for both the
-"tool" and "chat" concurrency tests — see docs/workloads.md#concurrency.
-"""
+"""Shared implementation for the "tool" and "chat" concurrency tests — see docs/workloads.md#concurrency."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -13,17 +9,14 @@ from shared import Shared
 
 
 class ConcurrencyBenchmark:
-    # Separate crash caches per test — a crash on one doesn't affect retry
-    # state on the other, since they run different levels/context sizes.
+    # Separate per test — see docs/workloads.md#concurrency's hard-stop bullet.
     TOOL_CRASH_CACHE = Path(".concurrency_tool_crash_cache.json")
     CHAT_CRASH_CACHE = Path(".concurrency_chat_crash_cache.json")
 
     @staticmethod
     def should_stop_escalating(level: int, mean_tps: float, force_all: bool,
                                 soft_exit_floor: int | None) -> bool:
-        """True if the sweep shouldn't climb past `level` for this model.
-        `soft_exit_floor=None` means this test never soft-exits (the tool
-        test) — only a hard stop (crash/load-failure) ends its sweep early."""
+        """True if the sweep shouldn't climb past `level` — see docs/workloads.md#concurrency."""
         if force_all or soft_exit_floor is None:
             return False
         if level < soft_exit_floor:
@@ -38,12 +31,8 @@ class ConcurrencyBenchmark:
 
     @staticmethod
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
-        """Fire `level` concurrent generate() requests, each its own uniquely
-        padded prompt so none of them share a cached prefix with each other
-        (see docs/workloads.md#concurrency). Returns the raw (ttft, tokens,
-        tps) samples — used for both a discarded warmup batch and the real
-        measured one, so a level's warmup exercises the exact same
-        concurrent shape it's about to be measured at."""
+        """Fire `level` concurrent generate() requests — see docs/workloads.md#concurrency.
+        Returns raw (ttft, tokens, tps) samples."""
         prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
         slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
         with ThreadPoolExecutor(max_workers=level) as pool:
@@ -132,13 +121,7 @@ class ConcurrencyBenchmark:
                         mem_bits.append(f"{memory['gpu_vram_used_gb']:.1f}/{memory['gpu_vram_total_gb']:.1f} GB VRAM")
                     Shared.log(f"{label}: loaded at {level}-way — {', '.join(mem_bits)} in use")
 
-                    # Every level respawns llama-server (n_parallel is part of
-                    # _ensure_model's want/have check), so this level's first
-                    # batch is also that fresh process's first-ever inference
-                    # at this concurrent shape — warm it up the same way every
-                    # other test warms up before measuring, rather than
-                    # letting first-call overhead (kernel autotune, CUDA graph
-                    # capture, etc.) land in the measured numbers.
+                    # Every level respawns llama-server — see docs/workloads.md#concurrency.
                     warmup_failed = False
                     for warmup_i in range(warmup_runs):
                         Shared.log(f"{label}: warming up {level}-way concurrency "

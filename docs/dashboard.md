@@ -50,6 +50,8 @@ The **Models** filter and **Machine** labels are shared between the LLM, LLM Con
 
 Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy charts are always bar charts grouped by model, since accuracy is a single scalar per model rather than a metric swept across context lengths or resolutions. Concurrency charts are always line charts grouped by model, with request count on the horizontal axis.
 
+A checkpoint past a slow-model cutoff (see [Concurrency](workloads.md#concurrency) and the LLM Conversation early-exit above) renders as a "Skipped (X Too Slow)" label instead of a bar, driven entirely by each checkpoint's position in `CTX_ORDER` — this is why the dashboard already handles the cutoff firing at any depth, not just the first one, with no special-casing per depth. Adding a new checkpoint to the suite's own checkpoint list only requires adding it to `CTX_ORDER` too; the rest follows automatically.
+
 ## What the charts mean
 
 **LLM → Tokens/sec.** Decode throughput (tokens generated per second) for the single-shot test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
@@ -111,6 +113,13 @@ embeddings.png
 ```
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
+
+A results file is never guaranteed to have every field a newer schema might
+expect, since people compare files produced by different versions of this
+suite across different machines — `dashboard/src/utils.js` leans on optional
+chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`)
+throughout for exactly this reason. New dashboard code reading the results
+JSON should assume any given key might be missing on an older file.
 
 ## Development
 

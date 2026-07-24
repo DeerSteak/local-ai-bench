@@ -1,10 +1,4 @@
-"""engines — pluggable inference-engine registry.
-
-get_engine(name) returns a fresh InferenceEngine instance. llama.cpp is
-implemented today; a second engine (e.g. MLX) registers here later without
-any change to the benchmark orchestration that drives them through the
-interface.
-"""
+"""Pluggable inference-engine registry — see docs/engines.md."""
 
 from engines.base import InferenceEngine
 from engines.llamacpp import LlamaCppEngine
@@ -25,7 +19,5 @@ def get_engine(name: str) -> InferenceEngine:
 
 
 def engine_names() -> list[str]:
-    """Every registered engine name, sorted — the full set --engine all runs
-    across. Only "llamacpp" today; a second engine appearing in _REGISTRY
-    extends this automatically."""
+    """Every registered engine name, sorted — the set --engine all runs across."""
     return sorted(_REGISTRY)

@@ -1,18 +1,4 @@
-"""Tests for LlamaCppEngine — the llama.cpp (llama-server) implementation of
-InferenceEngine that resolves each tag to GGUF file(s) downloaded ahead of
-time by setup_check.py into config.MODELS_DIR.
-
-Three groups:
-  1. Local model-file resolution (_slug, _resolve_model_files, model_pulled,
-     list_installed_models, max_context_length) — built against a fake
-     catalog and tmp_path, monkeypatching config.MODELS_DIR and
-     models.LLM_MODELS/EMBED_MODELS so no real download is needed.
-  2. Streaming / timing parsing in generate()/chat() — mocked at the
-     _urlopen seam.
-  3. Maintenance seams (is_connection_crash, reachable_or_abort, unload,
-     unload_all, wait_until_unloaded) — exercise LlamaCppEngine's
-     single-process-per-model lifecycle.
-"""
+"""Tests for LlamaCppEngine — see docs/testing.md for the full coverage breakdown."""
 
 import json
 
@@ -190,12 +176,7 @@ def test_max_context_length_reads_architecture_prefixed_key(tmp_path, monkeypatc
 
 
 def test_max_context_length_ignores_rope_scaling_original_context_length(tmp_path, monkeypatch):
-    """YaRN-scaled models (e.g. Qwen3-Coder-Next) carry a second GGUF key,
-    "{arch}.rope.scaling.original_context_length", holding the smaller
-    pre-scaling base context — not the model's real max context. Regression
-    test for a bug where the first ".context_length"-suffixed key won
-    regardless of which one it was, since GGUFReader preserves file order and
-    the rope-scaling key is written before the real one here."""
+    """Regression test for the rope-scaling-key bug — see max_context_length's docstring."""
     gguf_path = tmp_path / "model.gguf"
     w = gguf.GGUFWriter(str(gguf_path), "qwen3next")
     w.add_rope_scaling_orig_ctx_len(512)
@@ -339,11 +320,7 @@ def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch
 
 
 def test_generate_sanitizes_implausible_server_reported_tps(monkeypatch):
-    # Reproduces the exact real-world observed failure: under heavy
-    # concurrent-slot contention, llama-server's timings.predicted_ms can be
-    # implausibly tiny (predicted_n=1, predicted_ms=0.001 -> raw tps of
-    # exactly 1000000.0) — this must fall back to a wall-clock estimate
-    # instead of returning garbage.
+    # Reproduces the real observed failure: predicted_n=1, predicted_ms=0.001 -> raw tps of 1000000.0.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(100.0, 100.0, 100.5, 100.5, 110.5))
     _patch_urlopen(monkeypatch, [
@@ -367,10 +344,7 @@ def test_generate_counts_native_token_ids_not_sse_fragments(monkeypatch):
 
 
 def test_generate_logs_raw_server_values_when_sanitizing(monkeypatch):
-    # The whole point of surfacing this warning is to make the raw
-    # predicted_n/predicted_ms diagnosable, and to show whether our own
-    # count agrees with the server's — assert the actual numbers appear,
-    # not just that some warning fired.
+    # Assert the actual predicted_n/predicted_ms numbers appear, not just that some warning fired.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(100.0, 100.0, 100.5, 100.5, 110.5))
     _patch_urlopen(monkeypatch, [
@@ -542,10 +516,7 @@ def test_chat_check_loop_raises_early_on_repeated_hedging(monkeypatch):
 
 
 def test_chat_raises_engine_timeout_type_for_run_measured_calls_compat(monkeypatch):
-    # run_measured_calls (shared.py) does isinstance(e, EngineLoopDetected) /
-    # isinstance(e, TimeoutError) checks by type — LlamaCppEngine must raise
-    # the *same* shared.py types, not engine-specific subclasses, or that
-    # dispatch silently breaks for this engine.
+    # run_measured_calls dispatches by isinstance on shared.py's types, not engine-specific subclasses.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 1.0, 1.0, 100.0))
     _patch_urlopen(monkeypatch, [
@@ -820,10 +791,7 @@ def test_chat_tools_zero_tool_calls_returns_empty_list(monkeypatch):
 
 
 def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
-    # A truncated/invalid arguments string must not crash the parse — it falls
-    # back to {} while still reporting the tool name, and is marked incomplete
-    # even though this stream completed normally (didn't time out) — a
-    # completed-but-unparseable call is not a genuine empty-argument call.
+    # Truncated arguments fall back to {} and are marked incomplete, distinct from a genuine empty-argument call.
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"tool_calls": [
@@ -892,9 +860,7 @@ def test_chat_tools_timeout_with_text_only_keeps_text(monkeypatch):
 
 
 def test_chat_tools_falls_back_to_reasoning_text_when_content_empty(monkeypatch):
-    # Mirrors chat()'s reasoning fallback (test_chat_falls_back_to_reasoning_
-    # text_when_content_empty) — a reasoning model that declines to call
-    # anything can stream its whole turn via reasoning_content.
+    # Mirrors chat()'s reasoning fallback — a declining model can stream its whole turn via reasoning_content.
     _patch_ensure_model(monkeypatch)
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"reasoning_content": "Let me consider... "}}]},
@@ -910,9 +876,7 @@ def test_chat_tools_falls_back_to_reasoning_text_when_content_empty(monkeypatch)
 
 
 def test_chat_tools_check_loop_raises_during_reasoning_phase(monkeypatch):
-    # Before the fix, check_loop only inspected `content`, so a model stuck
-    # looping in reasoning_content (with content still empty) would never
-    # trip loop detection and would burn the full accuracy timeout instead.
+    # Regression: check_loop must inspect reasoning_content too, not just content.
     _patch_ensure_model(monkeypatch)
     import itertools
 
@@ -1067,9 +1031,7 @@ def test_ensure_model_deadline_stops_in_progress_process(monkeypatch, tmp_path):
     (4, 2048, "8192"),
 ])
 def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_parallel, num_ctx, expected_ctx_arg):
-    """--parallel must be passed even at 1 — omitting it lets llama-server
-    fall back to its own auto-slot resolution instead of the single slot
-    this engine records via _loaded_n_parallel."""
+    """--parallel must be pinned even at 1 — see docs/engines.md's "--parallel is always pinned"."""
     captured_args = {}
 
     class Proc:
@@ -1101,9 +1063,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
 
 
 def test_reachable_or_abort_always_true_regardless_of_available(monkeypatch):
-    # There's no always-on daemon to check between models — llama-server
-    # spawns fresh per model, so reachable_or_abort() never blocks a loop
-    # over models on it (see its docstring).
+    # See reachable_or_abort's docstring — no shared daemon to check between models.
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: False)
     assert LlamaCppEngine().reachable_or_abort() is True
     monkeypatch.setattr(LlamaCppEngine, "available", lambda self: True)

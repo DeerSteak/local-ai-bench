@@ -1,12 +1,5 @@
-"""
-config.py — shared constants for the benchmark suite.
-
-Other modules should `import config` and reference `config.NAME` rather than
-`from config import NAME` for any value main() can override via CLI flags
-(currently RUN_TIMEOUT, ACC_TIMEOUT, ACC_TOKEN_BUDGET, and N_RUNS) — a `from` import binds a
-local copy at import time and won't see a later `config.RUN_TIMEOUT = ...`
-assignment.
-"""
+"""Shared constants. CLI-overridable ones (RUN_TIMEOUT, ACC_TIMEOUT, ACC_TOKEN_BUDGET, N_RUNS)
+need `config.NAME` access — `from config import NAME` binds a stale copy before any override applies."""
 
 from pathlib import Path
 
@@ -28,9 +21,7 @@ COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 
-# Model downloads land here (setup_check.py), namespaced one subdirectory
-# per engine (e.g. "llamacpp") so a future engine with its own model format/
-# layout (e.g. MLX) doesn't collide with this one's.
+# Model downloads land here (setup_check.py), namespaced one subdirectory per engine — see docs/engines.md.
 MODELS_DIR = SCRIPT_DIR / "models"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
@@ -38,14 +29,7 @@ RESULTS_DIR = SCRIPT_DIR / "results"
 CONTEXT_LENGTHS = [512, 2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
 ACCURACY_CONTEXT = 32768   # fixed llama-server allocation shared by accuracy warmup and questions
 
-# Concurrency tests (scripts/concurrency_benchmark.py) — see docs/workloads.md.
-# "tool" simulates agentic/tool-calling fan-out: a handful of concurrent
-# requests, each a short tool-call-shaped turn — always runs every level, no
-# soft-exit (see benchmark.py). "chat" simulates a chat server under load:
-# many simultaneous long-conversation users, with a soft-exit once mean
-# tok/s craters (CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT) so a model
-# that's already clearly too slow doesn't burn huge wall-clock time climbing
-# to 32-way for a foregone conclusion.
+# See docs/workloads.md#concurrency for "tool" vs. "chat" and the soft-exit rationale.
 CONCURRENCY_TOOL_LEVELS  = [1, 2, 4, 6, 8, 12, 16]
 CONCURRENCY_TOOL_CONTEXT = 4096    # tokens per concurrent request/slot (padded prompt size)
 CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
@@ -84,13 +68,7 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
-# tokens/sec above which a single request's self-reported tps is treated as
-# unreliable rather than real — llama-server's streamed timings.predicted_ms
-# can, under heavy concurrent-slot contention, report an implausibly small
-# cumulative decode time for a chunk relative to predicted_n, producing a
-# tps ratio with no physical basis (observed up to ~1e6 tok/s on real
-# hardware). No real single-request stream gets remotely close to this on
-# any current hardware, so it's a safe tripwire, not a tuned threshold.
+# Above this, a self-reported tps is treated as unreliable — see docs/engines.md's "_sanitize_tps".
 MAX_PLAUSIBLE_TPS = 5000.0
 
 GREEN  = "\033[92m"

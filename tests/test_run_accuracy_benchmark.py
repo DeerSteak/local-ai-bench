@@ -1,17 +1,5 @@
-"""Tests for Shared.run_accuracy_benchmark driven by a fake InferenceEngine.
-
-This function was previously `pragma: no cover` because it was entangled with
-real network/process calls. Now that those live behind the
-InferenceEngine interface, a fully in-memory test double implementing the
-interface with canned per-question responses can drive it through every branch
-that matters: a normal run scored correctly, a question that times out with
-partial text that gets rescored, a question caught in a generation loop, and a
-run that crashes and stops early — the actual payoff of the engine refactor.
-
-The double drives the real MCQBenchmark ask/rescore/score functions (the
-thinnest accuracy benchmark), so the orchestration is exercised end-to-end,
-not against a stubbed scorer.
-"""
+"""Tests for Shared.run_accuracy_benchmark driven by a fake InferenceEngine —
+see docs/testing.md for the coverage breakdown."""
 
 import json
 
@@ -25,13 +13,8 @@ from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shar
 
 
 class FakeEngine(InferenceEngine):
-    """In-memory InferenceEngine. chat() dispatches on a per-question behavior
-    keyed by a marker embedded in the question prompt (so the fake needs no
-    knowledge of message formatting): "ok" returns canned text, "timeout"
-    raises EngineTimeout with partial text, "loop" raises EngineLoopDetected,
-    "crash" raises a ConnectionError (the runner-died shape). Everything else
-    is a no-op or trivially-true, since run_accuracy_benchmark only needs the
-    server/model to look available and to load."""
+    """In-memory InferenceEngine; chat() dispatches on a marker embedded in
+    the question prompt: "ok"/"timeout"/"loop"/"crash"."""
 
     name = "fake"
 
@@ -168,9 +151,7 @@ def test_normal_run_scores_correctly(tmp_path):
 
 def test_timeout_with_partial_text_gets_rescored(tmp_path):
     questions = [_question("q1", "B")]
-    # Times out, but had already written a parseable (wrong) answer: it's
-    # rescored from the partial text rather than treated as a blank, and still
-    # counted as a timeout.
+    # Rescored from the partial text rather than treated as blank, and still counted as a timeout.
     behaviors = {"q1": ("timeout", "I think the answer is C")}
     results, _ = _run(tmp_path, questions, behaviors)
 
@@ -236,10 +217,7 @@ def test_loop_detected_question_is_flagged(tmp_path):
 
 
 def test_loop_detected_but_correct_answer_is_not_flagged(tmp_path):
-    # The model got caught in a loop-detection cutoff, but the partial text
-    # already contained a correct, parseable answer — it should be scored
-    # correct and never show up in likely_loop_ids, since that list is a
-    # diagnostic of wrong answers, not of raw detector hits.
+    # likely_loop_ids is a diagnostic of wrong answers, not raw detector hits.
     questions = [_question("q1", "B")]
     behaviors = {"q1": ("loop", "The answer is B, wait, wait, wait, let me restate: B")}
     results, _ = _run(tmp_path, questions, behaviors)

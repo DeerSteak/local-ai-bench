@@ -182,10 +182,7 @@ def test_evaluate_incorrectly_declined_when_should_call():
 
 
 def test_evaluate_incomplete_call_with_empty_expected_arguments_is_wrong():
-    # Regression for tool_070/tool_089 (real bank questions with expected
-    # arguments == {}): a completed-but-unparseable-JSON call must not be
-    # scored correct just because its coerced-to-{} arguments happen to
-    # match an empty expectation — the incomplete flag has to override it.
+    # Regression for tool_070/tool_089: the incomplete flag must override a coincidental {} argument match.
     q = {
         "id": "tool_z", "category": "single_tool_call",
         "prompt": "Show me the latest headlines.",
@@ -198,11 +195,7 @@ def test_evaluate_incomplete_call_with_empty_expected_arguments_is_wrong():
 
 @pytest.mark.parametrize("bogus_arguments", [None, [], False, 0, ""])
 def test_evaluate_non_dict_arguments_with_empty_expected_arguments_is_wrong(bogus_arguments):
-    # Regression: `first.get("arguments") or {}` used Python truthiness, so
-    # any falsy-but-valid-JSON value (null, [], false, 0, "") was silently
-    # coerced to {} before ever reaching _args_match's isinstance(dict)
-    # guard — scoring correct against an empty-expected-arguments question
-    # even though the model never actually produced an empty object.
+    # Regression: `... or {}` truthiness silently coerced any falsy JSON value to {} before the isinstance guard.
     q = {
         "id": "tool_z", "category": "single_tool_call",
         "prompt": "Show me the latest headlines.",

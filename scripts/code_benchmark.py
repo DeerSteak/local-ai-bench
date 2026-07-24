@@ -1,15 +1,4 @@
-"""code_benchmark.py — coding accuracy benchmark: each model answers every
-problem in scripts/data/code_problems.json once at temperature 0, then that
-answer is run against the problem's visible and hidden test cases in an
-isolated subprocess; correct only if every test case passes. Scored overall
-and per-category, same shape as MCQBenchmark/MathBenchmark.
-
-Two problem shapes: function problems (model writes one function, tests are
-args/expected pairs) and stateful problems (model writes a class, tests are
-init/ops/expected sequences run against one fresh instance). visible_tests
-are shown in the prompt as worked examples; hidden_tests are grading-only,
-run alongside them so memorizing the visible cases isn't enough.
-"""
+"""Coding accuracy benchmark — see docs/workloads.md#code."""
 
 import json
 import math
@@ -26,10 +15,7 @@ from shared import Shared
 class CodeBenchmark:
     CODE_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "code_problems.json"
 
-    # Records models that crashed the engine's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
-    CODE_CRASH_CACHE = Path(".code_crash_cache.json")
+    CODE_CRASH_CACHE = Path(".code_crash_cache.json")  # see docs/project-structure.md
 
     # -1 delegates the finite per-pass limits to chat's token_budget split.
     CODE_NUM_PREDICT = -1
@@ -89,10 +75,8 @@ class CodeBenchmark:
 
     @staticmethod
     def extract_code(response_text: str) -> str:
-        """Pull the model's code out of its free-form reply. Prefers the
-        *last* fenced code block, not the first — a reasoning model's
-        unbounded output often drafts/revises before its final answer. Falls
-        back to the whole stripped reply if there's no fence at all."""
+        """Pull code from the *last* fenced block, not the first (a reasoning
+        model drafts/revises), falling back to the whole stripped reply."""
         if not response_text:
             return ""
         matches = list(CodeBenchmark._FENCE_RE.finditer(response_text))
@@ -102,11 +86,8 @@ class CodeBenchmark:
 
     @staticmethod
     def _values_close(got, expected) -> bool:
-        """Exact equality, except floats use math.isclose (1e-9) — a
-        legitimately correct solution can differ from a stored float
-        `expected` in the last bit from a different but valid order of
-        operations. Recurses into lists so this reaches stateful problems'
-        per-op results too."""
+        """Exact equality, except floats use math.isclose (1e-9) since a valid
+        solution can differ in the last bit. Recurses into lists."""
         if isinstance(got, list) and isinstance(expected, list):
             return len(got) == len(expected) and all(
                 CodeBenchmark._values_close(g, e) for g, e in zip(got, expected)
@@ -188,10 +169,8 @@ class CodeBenchmark:
     @staticmethod
     def execute_tests(code: str, function_name: str, tests: list[dict],
                        timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
-        """Run every test case in `tests` (each {"args": [...], "expected": ...})
-        against `function_name` as defined by `code`. See `_run_harness` for
-        the isolation/failure-handling contract.
-        """
+        """Run every {"args", "expected"} test in `tests` against `function_name`
+        — see docs/workloads.md#code for the isolation/failure-handling contract."""
         harness = (
             "import json, sys\n\n"
             + code + "\n\n"
@@ -210,14 +189,8 @@ class CodeBenchmark:
     @staticmethod
     def execute_stateful_tests(code: str, class_name: str, tests: list[dict],
                                 timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
-        """Run every test case in `tests` (each {"init": [...] (optional,
-        default []), "ops": [[method, args], ...], "expected": [...]})
-        against `class_name` as defined by `code`: construct a fresh instance
-        per test as class_name(*init), call each method in `ops` in order,
-        and collect every return value into a list compared as a whole
-        against `expected`. See `_run_harness` for the isolation/
-        failure-handling contract.
-        """
+        """Run every {"init", "ops", "expected"} test against a fresh `class_name`
+        instance — see docs/workloads.md#code for the isolation contract."""
         harness = (
             "import json, sys\n\n"
             + code + "\n\n"
@@ -237,13 +210,8 @@ class CodeBenchmark:
 
     @staticmethod
     def evaluate_question(question: dict, code: str | None) -> dict:
-        """Run every visible+hidden test for `question` against `code` and
-        summarize: {"correct": bool, "tests_passed": int, "tests_total": int,
-        "error": str|None}. Empty/None `code` short-circuits to every test
-        failing, without a subprocess call. Dispatches to
-        `execute_stateful_tests` for a class-based problem (`class_name`
-        present), `execute_tests` otherwise.
-        """
+        """Run every visible+hidden test for `question` against `code`;
+        empty/None `code` short-circuits to every test failing."""
         tests = question["visible_tests"] + question["hidden_tests"]
         if not code:
             return {"correct": False, "tests_passed": 0, "tests_total": len(tests), "error": "no code found"}
@@ -277,8 +245,7 @@ class CodeBenchmark:
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
-        evaluate_question_result_or_None} map. Pure, so it's directly
-        testable."""
+        evaluate_question_result_or_None} map."""
         by_category: dict[str, dict] = {}
         incorrect = []
         all_results = []
@@ -323,7 +290,6 @@ class CodeBenchmark:
         questions = questions if questions is not None else CodeBenchmark.load_questions()
 
         def _rescore_partial(q, text):
-            # Score whatever code streamed before the timeout rather than treating it as unanswered.
             return CodeBenchmark.evaluate_question(q, CodeBenchmark.extract_code(text))
 
         return Shared.run_accuracy_benchmark(

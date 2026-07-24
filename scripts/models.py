@@ -1,14 +1,7 @@
-"""
-models.py — Single source of truth for all model definitions.
+"""Single source of truth for all model definitions. No external
+dependencies, so this is safe to import before packages are installed."""
 
-No external dependencies: safe to import before packages are installed.
-Both benchmark.py and setup_check.py import from here.
-"""
-
-# "download_size" is each model's on-disk size, rounded UP to the next 0.1 GB
-# so setup's disk-space check errs toward requiring more free space, not less.
-# "hf_repo"/"hf_file" locate the GGUF on HuggingFace for setup_check.py's downloader;
-# "hf_file" is a list for models split across multiple GGUF parts.
+# "download_size" is rounded UP to the next 0.1 GB — see docs/workloads.md.
 EMBED_MODELS = [
     {
         "tag":            "nomic-embed-text",
@@ -28,9 +21,7 @@ EMBED_MODELS = [
     },
 ]
 
-# Checkpoints missing from ComfyUI/models/checkpoints/ are skipped automatically.
-# "tier" maps each checkpoint onto the LLM tiers' xsmall/small/medium/large
-# scale so --maxtier caps both together.
+# "tier" maps onto the LLM tiers so --maxtier caps both together — see docs/cli-reference.md's `--maxtier` row.
 IMAGE_MODELS = [
     {
         "label":       "Stable Diffusion 1.5",
@@ -42,10 +33,7 @@ IMAGE_MODELS = [
         "scheduler":   "normal",
         "short":       "sd15",
         "tier":        "xsmall",  # ~4.3 GB
-        # SD1.5 was trained at 512x512; the default 1024/1536 resolutions push
-        # it far outside that range and produce degraded (duplicated-subject)
-        # output, so it gets its own native-range pair instead.
-        "resolutions": [(512, 512), (768, 768)],
+        "resolutions": [(512, 512), (768, 768)],  # SD1.5's native range — see docs/workloads.md
     },
     {
         "label":      "SDXL",
@@ -157,23 +145,13 @@ LLM_MODELS_SMALL = sorted([
         "tier":           "small",
         "download_size":  "~8.3 GB",
         "params_b":       14,
-        # unsloth's repo specifically, not bartowski's — Microsoft's original
-        # Phi-4 tokenizer config has <|endoftext|> registered as BOS *and*
-        # EOS, which under a raw (non-chat-templated) /completion request —
-        # exactly what this benchmark's LLM/concurrency tests send — makes
-        # llama-server treat generation as immediately over after the
-        # auto-prepended BOS token. Unsloth found and fixed this upstream;
-        # their GGUF bakes in the corrected tokenizer config.
+        # unsloth's repo, not bartowski's — fixes a tokenizer bug, see docs/workloads.md.
         "hf_repo":        "unsloth/phi-4-GGUF",
         "hf_file":        "phi-4-Q4_K_M.gguf",
     },
 ], key=lambda m: m["params_b"])
 
-# Medium-tier models (26–35B parameters). One dense (Gemma 3 27B) alongside
-# the two MoE entries — MoE download size doesn't track active/compute cost
-# (both MoE entries here run at roughly xsmall-model speed despite the
-# tier-scale download), so a dense model keeps this tier representative of
-# what "medium" actually costs to run, not just to store.
+# Medium-tier models (26-35B params) — one dense alongside two MoE entries; see docs/workloads.md#dense-vs-mixture-of-experts-moe.
 LLM_MODELS_MEDIUM = sorted([
     {
         "tag":            "gemma3:27b-it-q4_K_M",
@@ -207,11 +185,8 @@ LLM_MODELS_MEDIUM = sorted([
     },
 ], key=lambda m: m["params_b"])
 
-# Large-tier models (70B+ parameters). One dense (Llama 3.3 70B) alongside
-# the two MoE entries, same rationale as medium above. Qwen3-Coder-Next and
-# Nemotron 3 Super ship as multi-part GGUF splits — "hf_file" is a list,
-# part 1 first; llama.cpp auto-discovers the sibling parts next to it, so
-# only the first path is ever passed to -m.
+# Large-tier models (70B+ params), same dense/MoE rationale as medium.
+# Qwen3-Coder-Next and Nemotron 3 Super ship as multi-part GGUF splits (see docs/engines.md).
 LLM_MODELS_LARGE = sorted([
     {
         "tag":            "llama3.3:70b-instruct-q4_K_M",

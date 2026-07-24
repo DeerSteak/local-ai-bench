@@ -1,8 +1,4 @@
-"""math_benchmark.py — math word-problem accuracy benchmark: each model
-answers every question in scripts/data/math_questions.json once at
-temperature 0, scored right/wrong against the dataset's known numeric answer
-(within its per-question tolerance) and broken down by category.
-"""
+"""Math word-problem accuracy benchmark — see docs/workloads.md#math."""
 
 import json
 import math
@@ -16,10 +12,7 @@ from shared import Shared
 class MathBenchmark:
     MATH_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "math_questions.json"
 
-    # Records models that crashed the engine's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
-    MATH_CRASH_CACHE = Path(".math_crash_cache.json")
+    MATH_CRASH_CACHE = Path(".math_crash_cache.json")  # see docs/project-structure.md
 
     # -1 delegates the finite per-pass limits to chat's token_budget split.
     MATH_NUM_PREDICT = -1
@@ -171,9 +164,8 @@ class MathBenchmark:
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
-        """Tally correct/total overall and per category from a {question_id:
-        given_number_or_None} map, comparing each answer against its own
-        question's tolerance. Pure, so it's directly testable."""
+        """Tally correct/total overall and per category, comparing each
+        answer against its own question's tolerance."""
         by_category: dict[str, dict] = {}
         incorrect = []
         all_results = []

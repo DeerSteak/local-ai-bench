@@ -1,14 +1,5 @@
-"""
-llm_conversation_benchmark.py — simulates a real multi-turn chat (rather than
-one padded single-shot prompt): the model explains Plato's Allegory of the
-Cave in sections, then each turn asks for more detail on one. Every turn
-sends the full history via /api/chat, so the slot cache carries prior turns
-forward — TTFT/TPS at each depth reflect a new turn against an already-filled
-context, not a cold fill. Expensive, so it runs one conversation per model
-(--runs ignored), grown from empty toward the model's real context ceiling,
-sampling at 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, and 96K. The
-xsmall/small tiers stop at 48K. See docs/workloads.md.
-"""
+"""Simulates a real multi-turn chat, grown from empty toward the model's real
+context ceiling. See docs/workloads.md's conversation-test section."""
 
 from pathlib import Path
 
@@ -17,41 +8,29 @@ from shared import Shared
 
 
 class LLMConversationBenchmark:
-    # Deterministic-crash memo; delete to retry a skipped model.
     CONV_CRASH_CACHE = Path(".conv_crash_cache.json")
 
     CONV_NUM_SECTIONS = 6
     CONV_RUNS = 1   # too expensive to repeat --runs times like the other benchmarks
 
-    # Higher than the top sampled checkpoint (96K) so the growth loop always has headroom, never scrapes the ceiling.
-    CONV_TARGET_CTX = 131072
+    CONV_TARGET_CTX = 131072   # above the top checkpoint (96K) so growth never scrapes the ceiling
 
-    # xsmall/small models can have a native context window (e.g. Qwen3.5's 256K) far
-    # beyond what a constrained-memory machine can actually reserve KV-cache for — a small
-    # model's value is being cheap to run everywhere, not exercising every token it's rated
-    # for. Cap their context budget and top sampled checkpoint at half the large-tier ones,
-    # same headroom ratio as CONV_TARGET_CTX leaves above the 96K checkpoint.
+    # Small hardware can't reserve KV-cache for a small model's full native window — see docs/workloads.md.
     CONV_SMALL_TIERS = {"xsmall", "small"}
     CONV_SMALL_TIER_TARGET_CTX = 65536
     CONV_SMALL_TIER_TOP_CHECKPOINT = 49152
 
-    # 2K doubling to 64K, plus 48K/80K in the higher gaps and the 96K cap. Filtered per model to its real ceiling.
     CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
-    # Growth-turn num_predict bounds — crossing a gap in several steps (remaining // CONV_STEP_DIVISOR)
-    # gives the smaller checkpoints real resolution instead of overshooting them.
+    # See docs/workloads.md's conversation-test growth-step paragraph.
     CONV_STEP_MIN = 32
     CONV_STEP_MAX = 1024
     CONV_STEP_MAX_FAR = 4096
     CONV_STEP_DIVISOR = 4
 
     CONV_OPENING_PREDICT = 2048   # opening turn is a full structured answer, not a small growth step
-
-    # Room beyond the top checkpoint reached — growing right up against num_ctx forces a truncating context-shift.
-    CONV_CTX_HEADROOM = 4096
-
-    # Reserves room so a non-final turn's new message + generation can't push the *next* turn past num_ctx.
-    CONV_SAFETY_MARGIN = 64
+    CONV_CTX_HEADROOM = 4096      # room beyond the top checkpoint so growth never scrapes num_ctx
+    CONV_SAFETY_MARGIN = 64       # reserved so a non-final turn can't push the next one past num_ctx
 
     CONV_OPENING_PROMPT = (
         "Explain Plato's Allegory of the Cave in detail. Structure your answer into "
@@ -64,10 +43,8 @@ class LLMConversationBenchmark:
     @staticmethod
     def compute_growth_step(cumulative_tokens: int, target: int, num_ctx: int,
                              is_last_checkpoint: bool) -> tuple[int | None, bool]:
-        """Compute num_predict for the next growth turn toward `target` in
-        bounded steps, reserving CONV_SAFETY_MARGIN for the next turn (except
-        the last step of the last checkpoint). Returns (step, out_of_room);
-        step is None when out_of_room, meaning the caller should stop growing."""
+        """num_predict for the next growth turn — see docs/workloads.md's
+        conversation-test growth-step paragraph. Returns (step, out_of_room)."""
         remaining = target - cumulative_tokens
         step_max = (LLMConversationBenchmark.CONV_STEP_MAX_FAR
                     if remaining > 8192
@@ -88,12 +65,8 @@ class LLMConversationBenchmark:
 
     @staticmethod
     def conv_ctx_plan(tier: str | None, model_max: int) -> tuple[int, list[int], int]:
-        """Resolve a model's conversation-test context budget from its tier and
-        real max context: (target_ctx, checkpoints, num_ctx). xsmall/small-tier
-        models get CONV_SMALL_TIER_TARGET_CTX/CONV_SMALL_TIER_TOP_CHECKPOINT
-        instead of the full CONV_TARGET_CTX/CONV_CHECKPOINTS ceiling — see those
-        constants' docstring. An unrecognized/missing tier (e.g. a custom
-        --llm-models tag outside the catalog) falls back to the uncapped behavior."""
+        """Resolve (target_ctx, checkpoints, num_ctx) from tier and real max
+        context. An unrecognized/missing tier falls back to the uncapped plan."""
         is_small_tier = tier in LLMConversationBenchmark.CONV_SMALL_TIERS
         target_ctx_cap = (LLMConversationBenchmark.CONV_SMALL_TIER_TARGET_CTX if is_small_tier
                           else LLMConversationBenchmark.CONV_TARGET_CTX)
@@ -236,9 +209,7 @@ class LLMConversationBenchmark:
                                 f"(depth~{cumulative_tokens})"
                             )
 
-                            # A model below the cutoff at any depth isn't worth growing further —
-                            # deeper turns only spend more of the expensive growth budget to
-                            # confirm what we've already shown.
+                            # See docs/workloads.md's within-conversation slow-model early exit.
                             if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
                                 Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at {label_ctx} is below "
                                             f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")

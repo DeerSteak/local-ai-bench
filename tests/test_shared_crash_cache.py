@@ -64,9 +64,7 @@ def test_record_crash_persists_to_cache(tmp_path):
     BrokenPipeError("boom"),
 ])
 def test_is_connection_crash_true_for_connection_errors(exc):
-    # is_connection_crash moved off Shared onto the engine (its exception-shape
-    # heuristic is HTTP-client-specific) — the cases/reasoning are
-    # unchanged, just retargeted onto a LlamaCppEngine instance.
+    # is_connection_crash lives on the engine now, not Shared — same cases, retargeted.
     assert LlamaCppEngine().is_connection_crash(exc) is True
 
 

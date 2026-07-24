@@ -1,9 +1,4 @@
-"""
-embedding_benchmark.py — real document-ingestion workload: chunk one document
-into paragraph-sized pieces (as a RAG pipeline would), then embed every chunk
-in a single call, the way an app ingests one document — rather than sweeping
-arbitrary batch sizes that match no real client behavior.
-"""
+"""Real document-ingestion workload — see docs/workloads.md#embeddings."""
 
 import re
 import time
@@ -14,25 +9,18 @@ from shared import Shared
 
 
 class EmbeddingBenchmark:
-    # Caps every chunk well under any embedding model's context length (mxbai-embed-large's is 512 tokens).
     EMBED_DOCUMENT_PATH = config.SCRIPT_DIR / "sample_document.txt"
     EMBED_CHUNK_MAX_WORDS = 150
     EMBED_CHUNK_MIN_WORDS = 6
 
-    # Records model/document combos that crashed the engine's runner repeatedly
-    # (deterministically, not a transient blip) so future runs don't waste time
-    # rediscovering the same crash. Delete this file to retry a skipped model.
-    EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")
+    EMBED_CRASH_CACHE = Path(".embed_crash_cache.json")  # see docs/project-structure.md
 
     @staticmethod
     def chunk_document(path: Path = EMBED_DOCUMENT_PATH,
                         max_words: int = EMBED_CHUNK_MAX_WORDS,
                         min_words: int = EMBED_CHUNK_MIN_WORDS) -> list[str]:
-        """Split a document into paragraph-sized chunks, each capped at
-        max_words. Paragraphs longer than max_words are packed sentence-by-
-        sentence up to the cap; anything that's still too long after that
-        (e.g. a code block or table with no sentence punctuation) is hard-split
-        by word count so no chunk can ever exceed the cap."""
+        """Split into paragraph-sized chunks capped at max_words, packing
+        oversized paragraphs sentence-by-sentence and hard-splitting the rest."""
         paragraphs = [p.strip() for p in path.read_text(encoding="utf-8").split("\n\n") if p.strip()]
 
         def split_oversized(words: list[str]) -> list[str]:
@@ -101,7 +89,6 @@ class EmbeddingBenchmark:
                     results[short] = skip_entry
                     continue
 
-                # First embed call pays a one-time load cost that would skew a measured run.
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:

@@ -1,14 +1,5 @@
-"""
-shared.py — cross-cutting helpers used by more than one test: logging, the
-ComfyUI server lifecycle, machine profiling, crash-cache bookkeeping, and the
-engine-agnostic benchmark orchestration (run_measured_calls,
-run_accuracy_benchmark, loop detection). The inference engine's own
-HTTP/process client lives behind the InferenceEngine interface (see
-engines/llamacpp.py); what stays here is driven through that interface, not
-tied to any one engine. Most helpers are stateless-per-call, so methods are
-static and the little state there is (managed-process bookkeeping) lives on
-the class.
-"""
+"""Cross-cutting helpers shared by more than one workload: logging, ComfyUI
+lifecycle, machine profiling, crash caches, engine-agnostic orchestration."""
 
 import hashlib
 import json
@@ -42,12 +33,8 @@ def _console_now():
 
 
 class EngineTimeout(TimeoutError):
-    """Raised when an engine's chat() exceeds its wall-clock timeout. Carries
-    whatever text had streamed in before the deadline hit, so callers can tell
-    a bare timeout (no text at all) apart from a timeout that cut off a
-    response the model had already started writing — which might have been a
-    wrong-format answer regardless of the timeout, or might have been about to
-    be correct."""
+    """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
+    had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
 
     def __init__(self, message: str, partial_text: str = "",
                  budget_nudged: bool = False):
@@ -57,14 +44,8 @@ class EngineTimeout(TimeoutError):
 
 
 class EngineLoopDetected(EngineTimeout):
-    """Raised when chat()'s check_loop polling flags a degenerate generation
-    loop *before* the wall-clock timeout elapses. Deliberately a distinct type
-    from a bare EngineTimeout (though still a TimeoutError subclass, so
-    generic timeout handling elsewhere keeps working): the model didn't run
-    out of its time budget here, it was cut off early because the stream
-    already looked pointless — callers that count "timed out" vs. "looped"
-    need to tell those apart rather than lumping every early loop catch into
-    the timeout bucket."""
+    """A degenerate-loop cutoff before the timeout elapsed — kept distinct
+    from EngineTimeout so callers keep "timed out" vs. "looped" counts apart."""
 
 
 class EngineBudgetExceeded(Exception):
@@ -87,22 +68,16 @@ def split_token_budget(token_budget: int, first_pass_fraction: float) -> tuple[i
 
 
 class Shared:
-    # Tracks processes we started so we can shut them down cleanly. Both the
-    # inference engine's server and ComfyUI register here, so
-    # shutdown_managed() can clean up everything from one list on crash/exit.
+    # Both the inference engine's server and ComfyUI register here so shutdown_managed() can clean up everything at once.
     _managed_procs: list[subprocess.Popen] = []
 
-    # The live inference engine for this run, set once by benchmark.py. Held so
-    # shutdown_managed() can ask it (e.g. whether it's in forced CPU-only mode)
-    # without the caller having to thread the instance into every cleanup path.
+    # Set once by benchmark.py so shutdown_managed() can reach the engine without every caller threading it through.
     _active_engine: "InferenceEngine | None" = None
 
-    # Kept for the process's life (not deleted on success) so a later crash still has a log to inspect.
+    # Kept for the process's life so a later crash still has a log to inspect.
     _comfyui_log_path: Path | None = None
 
-    # Cap on how many times a benchmark retries a request after the engine's
-    # model runner subprocess crashes (commonly OOM) before giving up on that
-    # model — a deterministic crash would otherwise recur identically forever.
+    # A deterministic crash (e.g. OOM) would otherwise recur identically forever.
     CRASH_RETRY_MAX = 2
 
     # ── logging ──
@@ -154,11 +129,8 @@ class Shared:
 
     @staticmethod
     def sample_memory_gb() -> dict:  # pragma: no cover — shells out to GPU tools + psutil
-        """Point-in-time memory snapshot: system RAM always (psutil), plus GPU
-        VRAM when nvidia-smi/rocm-smi answers (rocm-smi only for a confirmed
-        discrete AMD card — an APU's VRAM figure is often just a small
-        BIOS-fixed carve-out, same caution as setup_check.py's check_rocm).
-        gpu_* fields are None if no GPU query succeeds."""
+        """System RAM always; GPU VRAM only when nvidia-smi/rocm-smi answers
+        (rocm-smi gated to a confirmed discrete AMD card, same as setup_check.py's check_rocm)."""
         vm = psutil.virtual_memory()
         snapshot = {
             "system_ram_used_gb":  round(vm.used / (1024 ** 3), 2),
@@ -209,9 +181,8 @@ class Shared:
 
     @staticmethod
     def shutdown_managed(engine: "InferenceEngine | None" = None):  # pragma: no cover — manages real subprocesses
-        """Terminate any servers we started. If the inference engine is running
-        in forced CPU-only mode, stop it first so the script doesn't exit
-        leaving a GPU-hidden server running silently in the background."""
+        """Terminate any servers we started. A forced-CPU-only engine is
+        stopped first so it doesn't linger with GPU devices hidden."""
         engine = engine or Shared._active_engine
         if engine is not None and getattr(engine, "_cpu_only_active", False):
             Shared.warn("Exiting while the engine is in forced CPU-only mode — killing it "
@@ -246,11 +217,8 @@ class Shared:
 
     @staticmethod
     def find_comfyui_python(comfyui_dir: Path) -> str:
-        """
-        Return the Python executable to use for ComfyUI.
-        Prefers a venv inside comfyui_dir, then the venv running this script,
-        then whatever 'python' resolves to.
-        """
+        """Python executable for ComfyUI: a venv inside comfyui_dir, else this
+        script's venv, else whatever 'python' resolves to."""
         # Official AMD portable build: python_embeded sits next to ComfyUI/, not inside it
         for candidate in [
             comfyui_dir.parent / "python_embeded" / "python.exe",
@@ -274,10 +242,7 @@ class Shared:
 
     @staticmethod
     def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
-        """
-        Start ComfyUI if not already running.
-        Returns True if ComfyUI is available (either was already running or we started it).
-        """
+        """Start ComfyUI if not already running. Returns whether it's now available."""
         if Shared.comfyui_available():
             Shared.ok("ComfyUI already running")
             return True
@@ -548,14 +513,8 @@ class Shared:
 
     @staticmethod
     def build_prompt_for_context(target_tokens: int) -> str:
-        """
-        Pad a prompt to approximate a target context length (1 token ≈ 4 chars).
-
-        Prepends a unique per-call nonce so repeated calls at the same length
-        don't share a prefix — without it the server's slot cache serves a cache
-        hit on every rerun, so every run after the first measures cache-hit
-        latency rather than real prompt-processing time.
-        """
+        """Pad a prompt to ~target_tokens (1 token ≈ 4 chars), prefixed with a
+        unique nonce so reruns don't share a prefix the slot cache can hit."""
         nonce = uuid.uuid4().hex
         prefix = f"[run {nonce}] "
         chars_needed = target_tokens * 4
@@ -568,12 +527,7 @@ class Shared:
 
     @staticmethod
     def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:
-        """Deterministically picks `n` questions round-robin by category.
-
-        Every category is touched when `n` is at least the category count.
-        This is for fast dev iteration only, never a full/published run.
-        Returns `questions` unchanged if `n >= len(questions)`.
-        """
+        """Deterministically pick `n` questions round-robin by category — see `--sample` in docs/cli-reference.md."""
         if n >= len(questions):
             return list(questions)
         by_category: dict[str, list[dict]] = {}
@@ -600,18 +554,13 @@ class Shared:
 
     @staticmethod
     def file_hash(path: Path) -> str:
-        """First 12 hex chars of the sha256 of `path`'s raw bytes — a short,
-        stable fingerprint for a question bank so results can record exactly
-        which version of the data they were scored against. Doesn't parse
-        the JSON, so it also catches whitespace-only or key-order changes
-        that wouldn't show up in the question count."""
+        """First 12 hex chars of `path`'s sha256 — a bank-version fingerprint
+        that catches whitespace/key-order changes a question count wouldn't."""
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
     @staticmethod
     def load_crash_cache(path: Path) -> dict:
-        """Load a benchmark's cache of tag -> crash record, so a model that
-        deterministically crashes the engine's runner on a given test isn't
-        retried forever across separate script invocations."""
+        """Load a benchmark's tag -> crash record cache — see docs/project-structure.md's *_crash_cache.json entries."""
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
@@ -627,11 +576,8 @@ class Shared:
     @staticmethod
     def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
                            expected_bank_hash: str | None = None) -> dict | None:
-        """Returns a skip-result dict if `tag` is a known repeat-crasher on
-        this test, else None. `expected_bank_hash`, when given, invalidates a
-        crash cached against a different (now-stale) bank version instead of
-        silently skipping the tag forever — the stale entry is left in place,
-        not deleted, so this stays a pure read."""
+        """Skip-result dict if `tag` is a known repeat-crasher, else None.
+        `expected_bank_hash` treats a crash cached against a stale bank version as not-crashed, without deleting it."""
         detail = crash_cache.get(tag)
         if detail is None:
             return None
@@ -652,11 +598,8 @@ class Shared:
     @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
                       extra: dict | None = None) -> str:
-        """Records a deterministic crash for `tag` in the cache. Returns the
-        crash timestamp so callers can fold it into their own result detail.
-        `extra` is merged into the stored record — accuracy benchmarks pass
-        {"bank_hash": ...} so check_crash_cache can tell a stale crash record
-        (from a since-changed question bank) apart from a current one."""
+        """Record a crash for `tag`; `extra` (e.g. {"bank_hash": ...}) lets
+        check_crash_cache later tell a stale record from a current one."""
         crashed_at = datetime.now().isoformat(timespec="seconds")
         crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
@@ -667,21 +610,8 @@ class Shared:
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str, engine: "InferenceEngine",
                             crash_extra: dict | None = None) -> tuple[list, str, str, dict]:
-        """Call `call(run_i)` up to `n_runs` times — the shared shape behind
-        every benchmark's "N measured runs" loop. A timeout stops
-        immediately; a connection crash retries the same run (up to
-        CRASH_RETRY_MAX, after waiting for the engine to respawn) and, once
-        exhausted, records to `cache_path` so future runs skip this tag/test;
-        any other exception counts as a failed run and moves on.
-
-        Returns (samples, status, partial_text, metadata): status is "ok"/
-        "budget_exceeded"/"timed_out"/"loop_detected"/"crashed"; partial_text is whatever streamed before a
-        timeout/loop cutoff, so a scorer can tell a cut-off (possibly still
-        correct) answer apart from a genuinely blank one. "timed_out" is the
-        full wall-clock budget exhausted; "loop_detected" is check_loop
-        catching a degenerate generation loop before that budget ran out —
-        kept distinct so a caller doesn't double-count one as the other.
-        Metadata currently carries whether a finalize pass was sent."""
+        """Shared "N measured runs" loop — see docs/workloads.md#timeouts-and-loop-detection
+        and docs/project-structure.md's *_crash_cache.json entries. Returns (samples, status, partial_text, metadata)."""
         samples = []
         run_i = 0
         crash_retries = 0
@@ -699,9 +629,6 @@ class Shared:
                     return samples, "loop_detected", e.partial_text, metadata
                 is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
                 if is_timeout:
-                    # What happens next (abandon the rest of this tag vs. score this
-                    # one attempt wrong and move on) is caller-specific, so this only
-                    # reports the timeout itself — not what the caller does about it.
                     Shared.err(f"{tag}: timed out {what} (run {run_i+1})")
                     partial_text = getattr(e, "partial_text", "")
                     return samples, "timed_out", partial_text, metadata
@@ -724,13 +651,11 @@ class Shared:
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
 
-    # Paraphrased-loop markers (_has_repeated_verbatim_ngram only catches verbatim repeats).
-    # Lowercase substrings. Short/common CoT filler needs a higher repeat count to be diagnostic.
+    # Common CoT filler — needs a higher repeat count to be diagnostic of a real loop.
     _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
         "wait,", "wait -", "actually,", "hold on,",
     ]
-    # Longer, diagnostically specific phrases — a model saying these even a
-    # few times is a real signal of re-deriving/re-catching the same mistake.
+    # More specific phrases — a few repeats already signals a stuck loop.
     _LOOP_HEDGE_PHRASES = [
         "let me reconsider", "let me recalculate",
         "let me re-check", "let me recheck", "let me recompute", "let me redo",
@@ -744,10 +669,7 @@ class Shared:
 
     @staticmethod
     def _has_repeated_verbatim_ngram(text: str, ngram_words: int = 12, min_repeats: int = 3) -> bool:
-        """Flags `text` if any run of `ngram_words` consecutive words recurs
-        `min_repeats`+ times — a 12+ word verbatim run repeating 3+ times
-        essentially never happens outside a real stuck loop. Word-level, not
-        character-level, so minor whitespace differences don't defeat it."""
+        """True if any run of `ngram_words` consecutive words recurs `min_repeats`+ times. Word-level, not character-level."""
         words = text.split()
         if len(words) < ngram_words * min_repeats:
             return False
@@ -763,12 +685,8 @@ class Shared:
     @staticmethod
     def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3,
                                       high_threshold_repeats: int = 5) -> bool:
-        """Flags `text` if a _LOOP_HEDGE_PHRASES phrase recurs `min_repeats`+
-        times, or a _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD one recurs
-        `high_threshold_repeats`+ — catches a paraphrased loop (re-deriving,
-        re-"correcting" the same mistake) rather than a verbatim one. The
-        high-threshold tier is common CoT filler ("wait,") that capable
-        models say a few times normally, so it needs more repeats to count."""
+        """True if a _LOOP_HEDGE_PHRASES phrase recurs `min_repeats`+ times, or
+        a _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD one recurs `high_threshold_repeats`+."""
         lowered = text.lower()
         return (any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
                 or any(lowered.count(phrase) >= high_threshold_repeats
@@ -777,23 +695,15 @@ class Shared:
     @staticmethod
     def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
                          hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
-        """Heuristic for a degenerate accuracy-response generation loop.
-
-        True if the model either repeated a substantial chunk
-        of text verbatim, or repeatedly hedged/self-corrected without ever
-        landing on an answer. See _has_repeated_verbatim_ngram and
-        _has_repeated_hedging_phrase for the two signals."""
+        """Heuristic for a degenerate generation loop — see docs/workloads.md#timeouts-and-loop-detection."""
         return (Shared._has_repeated_verbatim_ngram(text, ngram_words, min_repeats)
                 or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
 
     @staticmethod
     def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
                               all_results: list, incorrect: list) -> bool:
-        """Record one scored question into by_category/all/incorrect — the
-        common tail of every accuracy benchmark's per-question scoring loop
-        (MCQ/Math/Reasoning/Code/Tool), which otherwise differ only in how `entry` and
-        `is_correct` are built. Returns `is_correct` so the caller can bump
-        its own correct counter."""
+        """Common tail of every accuracy benchmark's per-question scoring loop.
+        Returns `is_correct` so the caller can bump its own counter."""
         all_results.append({**entry, "correct": is_correct})
         if is_correct:
             cat["correct"] += 1
@@ -803,12 +713,7 @@ class Shared:
 
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
-        """Write an accuracy test's per-model raw-answer sidecar (every
-        question's full raw_response text, correct and incorrect alike) to
-        `path`, overwriting each call so it updates incrementally as models
-        finish — same checkpoint-as-you-go as the main results JSON, so a
-        crash mid-run doesn't lose collected answers. Kept out of that JSON
-        since raw model output is large and bloats it fast."""
+        """Write an accuracy test's raw-answer sidecar — see docs/project-structure.md's "answers_*.json" section."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
 
@@ -819,14 +724,8 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None
                                 ) -> dict:
-        """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy benchmarks — only
-        differ in how a question is asked (`ask_fn`), a partial response is
-        rescored (`rescore_partial_fn`), and answers are tallied (`score_fn`).
-        `ask_fn(tag, q) -> (parsed_answer, raw_text, budget_nudged)`,
-        `rescore_partial_fn(q, partial_text) -> parsed_answer`,
-        `score_fn(questions, answers) -> dict` with `"incorrect"` and `"all"`
-        keys (one entry per question each, `"all"` covering every question
-        correct or not) — `"all"` feeds the answers sidecar below."""
+        """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
+        parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
         results = {}
         answers_out: dict = {}
 
@@ -939,9 +838,7 @@ class Shared:
                     results[short]["budget_exceeded_count"] = len(budget_exceeded_ids)
                     results[short]["budget_exceeded_ids"] = budget_exceeded_ids
                 if likely_loop_ids:
-                    # A question flagged mid-generation (or rescored from partial
-                    # text) may still have landed on the correct answer once
-                    # score_fn ran — don't list it as a loop if it wasn't wrong.
+                    # Only list a flagged question as a loop if it also scored wrong.
                     incorrect_ids = {entry["id"] for entry in scored["incorrect"]}
                     likely_loop_ids = [qid for qid in likely_loop_ids if qid in incorrect_ids]
                 if likely_loop_ids:
@@ -981,9 +878,7 @@ class Shared:
 
     @staticmethod
     def slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
-        """Shared by the LLM prefill and conversation tests: if the first context
-        depth's decode speed is below SLOW_MODEL_MIN_TPS, mark the model slow and
-        tell the caller to stop testing deeper contexts (unless force_all)."""
+        """Shared by the LLM prefill/conversation tests — see docs/workloads.md's slow-model check."""
         if not (is_first_ctx and tps_list and Shared.mean(tps_list) < config.SLOW_MODEL_MIN_TPS):
             return False
         if force_all:

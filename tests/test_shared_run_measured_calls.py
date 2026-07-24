@@ -12,13 +12,8 @@ import config
 
 
 class _FakeEngine:
-    """Minimal test double satisfying just the three methods run_measured_calls
-    now calls on the engine: is_connection_crash (to tell a runner crash apart
-    from an ordinary failure), tail_log (surfaced in the crash message), and
-    wait_for_recovery (polled between crash retries). No network — the crash
-    path is exercised entirely in-memory. recovers controls whether a crash is
-    treated as recoverable, matching the two real-engine outcomes the tests
-    below used to force by monkeypatching the engine's wait_for_recovery."""
+    """Minimal double for the three engine methods run_measured_calls calls;
+    `recovers` controls whether a crash is treated as recoverable."""
 
     def __init__(self, recovers=True):
         self._recovers = recovers
@@ -91,9 +86,7 @@ def test_run_measured_calls_timeout_stops_immediately(tmp_path):
 
 
 def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
-    """A timeout that cut off a response already in progress should surface
-    that text, not just a bare 'timed_out' status — the caller needs to tell
-    a genuine blank apart from a cut-off (possibly wrong-format) answer."""
+    """A timeout must surface the partial text, not just a bare 'timed_out' status."""
     cache_path = tmp_path / "crash.json"
 
     def call(run_i):
@@ -108,9 +101,7 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
 
 
 def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
-    """EngineLoopDetected (raised by the engine's chat check_loop) must surface
-    as its own "loop_detected" status, not get folded into "timed_out" — the
-    two are independent buckets for the caller (see run_accuracy_benchmark)."""
+    """EngineLoopDetected must surface as "loop_detected", not fold into "timed_out"."""
     cache_path = tmp_path / "crash.json"
 
     def call(run_i):

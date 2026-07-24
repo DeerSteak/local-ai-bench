@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
-"""
-benchmark.py — Cross-platform LLM benchmark suite.
-
-Tests: llm, conv, img, emb, mcq, math, reasoning, code, tool, conc_tool, conc_chat
-(conc_tool/conc_chat both opt-in) — see docs/workloads.md for what each
-measures. Servers start/stop
-automatically — see docs/how-it-works.md.
-
-Usage:
-  python benchmark.py                  # run all tests except conc_tool/conc_chat
-  python benchmark.py --tests llm      # run only LLM single-shot tests
-  python benchmark.py --help           # full flag reference
-"""
+"""Cross-platform LLM benchmark suite — CLI entry point.
+See docs/workloads.md for what each test measures, docs/cli-reference.md for flags."""
 
 import argparse
 import fnmatch
@@ -65,9 +54,8 @@ def positive_int(value: str) -> int:
 
 
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
-    """Resolve --maxtier into (llm_models, tier_label, image_models), applying
-    the same cumulative cap to both LLM tiers and image-model tiers. No cap
-    (maxtier=None) means every tier."""
+    """Resolve --maxtier into (llm_models, tier_label, image_models) — see
+    the `--maxtier` row in docs/cli-reference.md."""
     if maxtier:
         llm_models = TIER_MODELS[maxtier]
         tier_label = TIER_LABELS[maxtier]
@@ -80,9 +68,8 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 
 
 def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str = "tag") -> list:
-    """Filter models by exact or shell-style wildcard matches on `key`.
-    Case-sensitive (`fnmatchcase`) so behavior is identical across platforms
-    (plain `fnmatch` case-normalizes on Windows only)."""
+    """Filter models by exact/wildcard match on `key`. Case-sensitive
+    (`fnmatchcase`) so behavior is identical across platforms."""
     if not patterns:
         return models
     return [m for m in models if any(fnmatch.fnmatchcase(m[key], p) for p in patterns)]
@@ -107,12 +94,8 @@ def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_ta
 
 
 def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[dict]:
-    """Filter `catalog` down to entries whose tag is actually downloaded
-    locally (per `installed_tags`, from LlamaCppEngine.list_installed_models),
-    preserving catalog order. Used by the concurrency tests, which scale to
-    whatever's on the machine — small hardware that only downloaded
-    xsmall/small models tests those; a machine with medium/large downloaded
-    tests those too — rather than a fixed tier cap like --maxtier."""
+    """Filter `catalog` to entries actually downloaded locally, preserving
+    order — see docs/workloads.md#concurrency."""
     installed = set(installed_tags)
     return [m for m in catalog if m["tag"] in installed]
 
@@ -120,9 +103,8 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          patterns: list[str] | None, concurrency_enabled: bool
                          ) -> tuple[list[dict], list[dict]]:
-    """Resolve normal and concurrency model scopes for one engine's local
-    model inventory. Concurrency ignores the tier cap but still honors
-    --llm-models/--models; normal workloads retain the selected tier."""
+    """Resolve normal and concurrency model scopes — concurrency ignores the
+    tier cap (see docs/workloads.md#concurrency) but still honors --models."""
     run_models = (
         resolve_custom_models(patterns, tier_models, installed_tags)
         if patterns else tier_models
@@ -234,9 +216,7 @@ TEST_GROUPS = {
 
 
 def expand_tests(tests: list[str]) -> list[str]:
-    """Expand shorthand groups (see TEST_GROUPS) in --tests into their
-    underlying individual test names, preserving order and de-duplicating so
-    e.g. --tests acc mcq doesn't run the MCQ benchmark twice."""
+    """Expand TEST_GROUPS shorthand in --tests, preserving order and de-duplicating."""
     expanded = []
     for t in tests:
         for name in TEST_GROUPS.get(t, [t]):
@@ -246,11 +226,8 @@ def expand_tests(tests: list[str]) -> list[str]:
 
 
 def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
-    """Resolve --engine into the ordered list of engine names to run this
-    pass over: "all" expands to every registered engine (sorted, so the run
-    order is deterministic across invocations); anything else is a single
-    engine name, passed through as-is (argparse's `choices` already rejects
-    an unregistered one before this is called)."""
+    """Resolve --engine into an ordered engine-name list; "all" expands to
+    every registered engine, sorted for a deterministic run order."""
     return list(available) if engine == "all" else [engine]
 
 
@@ -281,11 +258,8 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
-    """Decide whether `model` should be skipped from the (expensive) conversation
-    test, based on how it did in the single-shot LLM prefill test. Returns a
-    skip-result dict (the schema written into results["llm_conversation"]) if
-    it should be skipped, or None if it should proceed to the conversation test.
-    """
+    """Conversation-test skip decision from single-shot LLM results — see
+    docs/workloads.md's LLM pre-flight section."""
     label = model["label"]
 
     if not llm_data:
@@ -306,8 +280,6 @@ def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, fo
         return {"label": label, "skipped": True,
                 "skip_reason": "timed_out", "skip_detail": detail}
 
-    # A timeout at a deeper context doesn't disqualify the model — it passed
-    # the first prefill checkpoint, so fall through to the tok/s check below.
     slow_ctx = None if force_all else llm_data.get("slow_tps") or (
         first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
         and llm_data[first_ctx_label].get("tps_mean") is not None
@@ -583,9 +555,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "token_budget": config.ACC_TOKEN_BUDGET,
                 "first_pass_fraction": config.ACC_FINALIZE_FRACTION,
             },
-            # Fingerprints of the accuracy question banks actually used for this
-            # run, so a raw correct count is never compared across bank sizes
-            # (e.g. 185 vs. 360 questions) without noticing the version differs.
+            # See docs/workloads.md#bank-versioning.
             "bank_versions": {
                 "mcq":  Shared.file_hash(MCQBenchmark.MCQ_DATA_PATH),
                 "math": Shared.file_hash(MathBenchmark.MATH_DATA_PATH),
@@ -593,10 +563,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
-            # Populated only when --sample is used, with the exact question IDs
-            # drawn from each bank — so a dev-mode run is reproducible/auditable
-            # and never mistaken for a full-bank result.
-            "sample_ids": {},
+            "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
             "embeddings":      {},
@@ -684,9 +651,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 results["llm_conversation"].update(llm_conv_skips)
                 _checkpoint("LLM conversation done")
 
-            # ── Accuracy tests (MCQ / Math / Code / Tool) ─────────────────────────
-            # Identical wiring for all five — only the test name, benchmark class,
-            # and display label vary.
+            # ── Accuracy tests (MCQ / Math / Code / Tool) — identical wiring, only test/class/label vary ──
             for test_name, Bench, done_label in (
                 ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"),
                 ("reasoning", ReasoningBenchmark, "Reasoning"),
@@ -778,9 +743,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
                 _checkpoint("concurrency (chat) done")
 
-            # Done with every LLM-backed test — restore normal GPU-enabled mode if
-            # this run forced CPU-only, so the machine isn't left in that state
-            # (and so image generation, if it runs next, starts from a clean state).
+            # Restore normal GPU-enabled mode — see docs/workloads.md's --cpu-only note.
             if llm_tests and args.cpu_only and engine._cpu_only_active:
                 Shared.log("Restoring normal (GPU-enabled) engine ...")
                 engine.stop()
@@ -801,9 +764,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                         results["images"] = img_partial
                         _checkpoint()
 
-                    # Same hostname+timestamp as the results JSON, so both can be
-                    # grabbed together in a file browser — a sibling folder under
-                    # results/, not nested inside a shared "images" folder.
+                    # See docs/project-structure.md's auxiliary-filename convention.
                     _out_stem = Path(out_path).stem
                     _images_dirname = (
                         "images_" + _out_stem[len("results_"):]

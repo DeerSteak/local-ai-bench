@@ -18,9 +18,7 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:
-        """Start the engine's server. gpu_visible=False forces CPU-only
-        inference (the engine picks the right knob). Returns True once
-        reachable."""
+        """Start the engine's server; gpu_visible=False forces CPU-only. Returns True once reachable."""
 
     @abstractmethod
     def stop(self, *, timeout: int = 15) -> None:
@@ -74,9 +72,7 @@ class InferenceEngine(ABC):
     def warmup(self, tag: str, label: str, num_ctx: int, warmup_runs: int,
                crash_cache: dict | None = None, cache_path: Path | None = None,
                crash_extra: dict | None = None) -> bool:
-        """Load `tag` into memory with `warmup_runs` blocking calls, each
-        watchdogged so a hung load times out. Returns False on the first hung
-        or failed run."""
+        """Load `tag` with `warmup_runs` watchdogged calls. Returns False on the first hung/failed run."""
 
     @abstractmethod
     def unload(self, tag: str) -> None:
@@ -93,36 +89,29 @@ class InferenceEngine(ABC):
     @abstractmethod
     def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,
                              warmup_runs: int = 1, timeout: int = 300) -> bool:
-        """Load `tag` configured to serve `n_parallel` simultaneous requests
-        at `per_slot_ctx` tokens each. Call once before any concurrent
-        generate() calls, which must pass the same n_parallel back. Returns
-        False on a load failure (a hard stop, no retry at a lower level)."""
+        """Load `tag` to serve `n_parallel` requests at `per_slot_ctx` tokens
+        each; subsequent generate() calls must pass the same n_parallel back."""
 
     # ── inference ──
 
     @abstractmethod
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
-        """Single-shot generate. Returns (ttft_sec, tokens_generated,
-        tokens_per_sec). n_parallel must match the last prepare_concurrency
-        call (default 1 everywhere outside the concurrency test)."""
+        """Single-shot generate. Returns (ttft_sec, tokens_generated, tokens_per_sec)."""
 
     @abstractmethod
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
              check_loop: bool = False, token_budget: int | None = None):
-        """Multi-turn chat. Returns (ttft_sec, tokens_generated,
-        tokens_per_sec, prompt_eval_count, response_text). Budgeted calls
-        append budget_nudged and require num_predict=-1."""
+        """Multi-turn chat. Returns (ttft_sec, tokens_generated, tokens_per_sec,
+        prompt_eval_count, response_text). Budgeted calls append budget_nudged."""
 
     @abstractmethod
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
                    check_loop: bool = False, token_budget: int | None = None):
         """Tool-calling chat. Same return as chat() plus a tool_calls list of
-        {"name": str, "arguments": dict} (empty if the model called nothing).
-        `tools` is an OpenAI-style function-tools array. Budgeted calls append
-        budget_nudged and require num_predict=-1."""
+        {"name": str, "arguments": dict}. `tools` is an OpenAI-style array."""
 
     @abstractmethod
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:

@@ -73,6 +73,10 @@ A few design choices worth knowing if you're reading or extending this:
   `per_slot_ctx` up by `n_parallel` before it becomes llama-server's `-c`,
   because `-c` is a *total* KV-cache budget split across `--parallel` slots,
   not a per-slot size.
+- **`--parallel` is always pinned**, even at `n_parallel=1` — omitting it lets
+  `llama-server` fall back to its own auto-slot resolution (4 slots on this
+  project's test hardware), which would silently diverge from the
+  `n_parallel` value the benchmark records.
 
 ## `LlamaCppEngine`
 
@@ -93,7 +97,10 @@ respectively) so `setup_check.py` and `LlamaCppEngine` agree on exactly which
 file(s) a tag resolves to; `model_pulled`/`list_installed_models` check that
 every listed file exists under that tag's subdirectory, and
 `max_context_length` reads the real context length straight from the first
-file's GGUF metadata. The existing `tag` field values (e.g.
+file's GGUF metadata. For a multi-part model, only that first part's path is
+ever passed to `llama-server -m` — `llama-server` auto-discovers the sibling
+parts sitting next to it, so the rest of `hf_file`'s list only matters for
+`model_pulled`'s completeness check. The existing `tag` field values (e.g.
 `"granite4.1:3b-q4_K_M"`) are unchanged in shape — they're now opaque
 catalog identifiers rather than literal server tags, but every other file
 that already keyed off them (results JSON, crash caches, `--llm-models`/`--models`) doesn't

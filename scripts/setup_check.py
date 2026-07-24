@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-setup_check.py — Pre-flight verification for LLM benchmark suite.
-Run this on each machine before running benchmark.py.
-
-Flow: detect the machine -> show what prerequisites need installing and ask
-once -> let the user pick which models to install (numbered list, defaults
-to all) -> gather any HuggingFace token needed for the picks -> install
-everything with no further prompts.
-"""
+"""Pre-flight setup/install assistant — see docs/setup.md."""
 
 import argparse
 import sys
@@ -27,9 +19,7 @@ from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_mode
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from setup_selection import selected_cleanup_names, toggle_all_models
 
-# Every asset this script manages (requirements.txt, ComfyUI/, hf.txt, ...)
-# lives at the repo root, one level up. Sourced from config.py rather than
-# redefined here.
+# Repo root, one level up — sourced from config.py rather than redefined here.
 SCRIPT_DIR   = config.SCRIPT_DIR
 COMFYUI_DIR  = config.COMFYUI_DIR
 LLAMACPP_DIR = config.LLAMACPP_DIR
@@ -57,12 +47,7 @@ def link(url, text=None):
 INSTALL_STARTED = False  # flipped True once the unattended install phase begins
 
 def cancel_setup(*_args):
-    """
-    Ctrl+C always means 'get me out' — installed as the SIGINT handler so it
-    fires everywhere (mid-subprocess, mid-download), not just at an input()
-    prompt. Nothing rolls back partial work, so the message only claims
-    "nothing installed" if the install phase hadn't started.
-    """
+    """SIGINT handler so Ctrl+C works mid-subprocess/download, not just at input()."""
     if INSTALL_STARTED:
         print("\n\n  Setup cancelled — some components may already be partially installed.\n")
     else:
@@ -72,11 +57,7 @@ def cancel_setup(*_args):
 signal.signal(signal.SIGINT, cancel_setup)
 
 def confirm(prompt, default=True):
-    """
-    Plain (non-raw) y/n prompt — reads a full line via input(), so it's
-    immune to stray keypresses or escape sequences from earlier prompts.
-    Defaults to `default` on a bare Enter or a non-interactive/EOF stdin.
-    """
+    """Plain y/n prompt via input() — see docs/setup.md's picker-design note."""
     hint = "[Y/n]" if default else "[y/N]"
     try:
         reply = input(f"  {CYAN}{prompt} {hint}{RESET} ").strip().lower()
@@ -88,12 +69,8 @@ def confirm(prompt, default=True):
     return reply in ("y", "yes")
 
 def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
-    """Download `filename` (or, if a list, every file in it — used for
-    models split across multiple GGUF parts) from a HuggingFace repo into
-    dest_dir (defaults to CHECKPOINTS, set later once ComfyUI paths are
-    known). Tries the `hf` CLI, then `huggingface-cli`, then the Python API.
-    `save_as` flattens a single remote file that lives in a subdirectory —
-    only meaningful when `filename` is a single string, not a list."""
+    """Download `filename` (or every file, if a list) from a HuggingFace repo,
+    trying the `hf` CLI, then `huggingface-cli`, then the Python API."""
     if dest_dir is None:
         dest_dir = CHECKPOINTS
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -129,9 +106,7 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
                 warn(f"Python API download failed: {e}")
         success = success and file_success
 
-        # If the remote file lives in a subdirectory (e.g. a split GGUF's
-        # "UD-Q4_K_XL/foo-00001-of-00002.gguf"), flatten it into dest_dir —
-        # LlamaCppEngine resolves files by basename directly under dest_dir.
+        # Flatten a subdirectory-nested remote file into dest_dir — LlamaCppEngine resolves by basename.
         if file_success:
             src = dest_dir / fname
             dst = dest_dir / (save_as if save_as and len(filenames) == 1 else Path(fname).name)
@@ -145,9 +120,7 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
 
 issues = []
 
-# Checkpoint/encoder sizes live in hardware.py (shared with the memory-fit
-# check in select_models() below) — kept as local names here since this file
-# already references them by these names throughout.
+# Local aliases for hardware.py's sizes, shared with select_models()'s memory-fit check.
 CHECKPOINT_SIZES_GB = hardware.CHECKPOINT_SIZES_GB
 ENCODER_SIZES_GB = hardware.ENCODER_SIZES_GB
 GATED_IMAGE_SHORTS = {"sd35-large", "flux-dev", "flux2-dev"}
@@ -171,9 +144,7 @@ print(f"  OS:       {platform.system()} {platform.release()}")
 print(f"  Machine:  {platform.machine()}")
 print(f"  Node:     {platform.node()}")
 
-# Populated below per-OS, used later (section 3a) as the memory ceiling for
-# Darwin/integrated-GPU/CPU-only machines — None if it couldn't be read.
-total_ram_gb = None
+total_ram_gb = None  # populated per-OS below; memory ceiling for Darwin/integrated-GPU/CPU-only machines
 
 if os_name == "Darwin":
     try:
@@ -343,12 +314,8 @@ def check_windows_gpu():
 linux_intel_gpu_kind = None  # "discrete" or "integrated", set by check_linux_intel_gpu()
 
 def check_linux_intel_gpu():
-    """Detect an Intel Arc GPU on Linux via lspci. Detection/labeling only —
-    unlike the AMD/NVIDIA paths it unlocks no GPU-accelerated install path
-    here: whether LLM tests use the GPU depends on llama.cpp being built with
-    its SYCL backend, which this script doesn't currently automate (see
-    install_llamacpp). Requires 'Arc' in the name (not just 'Intel') so
-    integrated graphics with no discrete acceleration aren't misreported."""
+    """Detect an Intel Arc GPU on Linux via lspci — detection/labeling only,
+    see docs/setup.md's Intel Arc platform notes."""
     global linux_intel_gpu_kind
     if platform.system() != "Linux":
         return False
@@ -365,18 +332,12 @@ def check_linux_intel_gpu():
         pass
     return False
 
-# Intel's Level Zero/OpenCL GPU runtime — the actual missing piece for XPU-accelerated
-# PyTorch/ComfyUI, distinct from the GPU merely appearing in lspci. From a third-party
-# APT repo (https://dgpu-docs.intel.com/driver/installation.html) this script doesn't add itself.
+# See docs/setup.md's Intel Arc platform notes.
 INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
 
 def check_linux_intel_gpu_runtime():
-    """Check whether Intel's GPU compute runtime is installed on Linux, via
-    dpkg (Debian/Ubuntu). Detection-only: installing it means adding a
-    third-party APT repo + GPG key, a more invasive, harder-to-reverse change
-    than the plain-package installs this script automates — so it tells the
-    user the commands to run themselves rather than modifying apt sources
-    unattended."""
+    """Detection-only check for Intel's GPU compute runtime via dpkg — see
+    docs/setup.md's Intel Arc platform notes."""
     if platform.system() != "Linux" or not shutil.which("dpkg"):
         return False
     for pkg in INTEL_GPU_RUNTIME_PACKAGES:
@@ -479,9 +440,7 @@ else:
     warn(memory_ceiling_note)
 
 def find_llamacpp_binary():
-    """Mirrors LlamaCppEngine._binary_path: LLAMACPP_DIR, then PATH, then (macOS)
-    the two well-known Homebrew prefixes directly — a brew-created symlink may
-    not be on PATH yet in whatever shell re-runs this script."""
+    """Mirrors LlamaCppEngine._binary_path — see docs/engines.md's "Binary resolution"."""
     exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
     if LLAMACPP_DIR.exists():
         match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
@@ -498,12 +457,8 @@ def find_llamacpp_binary():
     return None
 
 def download_llamacpp_windows():
-    """Download the latest llama.cpp Windows release and extract it into
-    LLAMACPP_DIR. Picks the Vulkan-backend build specifically: it runs on
-    NVIDIA/AMD/Intel GPUs alike without having to match a specific CUDA
-    toolkit version to whatever's installed, which is the safer bet for an
-    unattended install (a CUDA-specific asset that doesn't match the user's
-    toolkit would simply fail to load its driver at runtime)."""
+    """Download the latest llama.cpp Windows Vulkan release into LLAMACPP_DIR
+    — see docs/setup.md's Windows (NVIDIA) note for why Vulkan."""
     import urllib.request
     import zipfile
 
@@ -557,11 +512,8 @@ def download_llamacpp_windows():
     return True
 
 def install_llamacpp():
-    """Install llama-server using the appropriate method for this OS. Picks a
-    GPU backend using the same detection this script already ran above
-    (nvidia_ok/rocm_ok), so it's accelerated the same way — covers DGX Spark
-    the same as any other Linux+NVIDIA box, since a source build has no
-    prebuilt-binary architecture to match (Spark is ARM64)."""
+    """Install llama-server for this OS, using the GPU backend already
+    detected above — see docs/setup.md's DGX Spark platform note."""
     if os_name == "Darwin":
         if shutil.which("brew"):
             info("Installing llama.cpp via Homebrew (includes Metal support) ...")
@@ -671,14 +623,8 @@ if not confirm("Continue?", default=True):
 section("Model Selection")
 
 def select_models(memory_ceiling_gb=None):
-    """Flat numbered list spanning every LLM tier, embeddings, and image
-    models, checked by default; returns (selected_llm, selected_images,
-    selected_embed, cleanup_names). Plain input() only, no raw terminal mode.
-
-    An LLM or image model hardware.model_fits()/image_model_fits() says
-    won't fit starts unchecked with a note why — informational, not a hard
-    block, since a merely-tight model can still be worth trying.
-    memory_ceiling_gb=None means no filtering."""
+    """Flat numbered model picker — see docs/setup.md's "What the setup scripts do".
+    Returns (selected_llm, selected_images, selected_embed, cleanup_names)."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
     non_catalog_dirs = find_non_catalog_model_dirs(config.MODELS_DIR / "llamacpp")
     folder_word = "folder" if len(non_catalog_dirs) == 1 else "folders"
@@ -941,9 +887,7 @@ VAE_DIR     = COMFYUI_DIR / "models" / "vae"
 
 remaining_gb = 0.0
 
-# Namespaced under config.MODELS_DIR by engine name, mirroring
-# LlamaCppEngine._models_dir — so a future engine with its own model
-# format/layout (e.g. MLX) gets its own subtree instead of colliding.
+# Mirrors LlamaCppEngine._models_dir — see docs/engines.md.
 LLAMACPP_MODELS_DIR = config.MODELS_DIR / "llamacpp"
 
 def model_slug(tag):
@@ -1059,11 +1003,8 @@ else:
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
     def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
-        """ComfyUI's Windows portable build bundles a pinned torch wheel that
-        doesn't recognize newer GPU architectures (e.g. Blackwell, compute
-        capability 12.0) — every CUDA kernel launch then fails with "no
-        kernel image is available for execution on the device." Reinstalls
-        from the cu128 wheel index if the architecture isn't listed."""
+        """Reinstall torch from cu128 if this GPU's compute capability isn't
+        supported by ComfyUI's bundled wheel — see docs/setup.md's Windows (NVIDIA) note."""
         if not compute_cap:
             return
         major, minor = compute_cap.split(".")
@@ -1084,9 +1025,7 @@ else:
 
         warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
              f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
-        # --force-reinstall (not --upgrade): pip otherwise leaves an already-installed
-        # torch+cu126 alone while swapping torchvision/torchaudio to +cu128, a mismatched
-        # trio torchaudio refuses to import. Streamed, not captured — wheels are 800MB-2GB.
+        # --force-reinstall, not --upgrade — see docs/setup.md's Windows (NVIDIA) note.
         proc = subprocess.Popen(
             [str(python_exe), "-s", "-m", "pip", "install",
              "--force-reinstall", "--no-deps", "--progress-bar", "raw",

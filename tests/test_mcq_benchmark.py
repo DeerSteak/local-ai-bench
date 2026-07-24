@@ -209,9 +209,7 @@ def test_parse_answer_header_label_does_not_reach_across_unrelated_words():
 
 
 @pytest.mark.parametrize(("response", "expected"), [
-    # A bare "answer <letter>" with no colon/newline is too weak a signal on
-    # its own line — without a separator, this must not resolve to the first
-    # mentioned letter when a real answer is stated later without one either.
+    # A bare "answer <letter>" with no separator is too weak to resolve to the first mentioned letter.
     ("A reasonable answer A is one option among many, though I lean towards D.", None),
     ("The sample answer A shown in the textbook differs from mine, which is D.", None),
     # These still resolve, but only via the later explicit "answer is X" —

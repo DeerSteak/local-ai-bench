@@ -1,8 +1,4 @@
-"""mcq_benchmark.py — multiple-choice accuracy benchmark: each model answers
-every question in scripts/data/mcq_questions.json once at temperature 0,
-scored right/wrong against the dataset's known answer and broken down by
-category.
-"""
+"""Multiple-choice accuracy benchmark — see docs/workloads.md#accuracy."""
 
 import json
 import re
@@ -15,10 +11,7 @@ from shared import Shared
 class MCQBenchmark:
     MCQ_DATA_PATH = config.SCRIPT_DIR / "scripts" / "data" / "mcq_questions.json"
 
-    # Records models that crashed the engine's runner repeatedly (deterministically,
-    # not a transient blip) so future runs don't waste time rediscovering the
-    # same crash. Delete this file to retry a skipped model.
-    MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")
+    MCQ_CRASH_CACHE = Path(".mcq_crash_cache.json")  # see docs/project-structure.md
 
     # -1 delegates the finite per-pass limits to chat's token_budget split.
     MCQ_NUM_PREDICT = -1
