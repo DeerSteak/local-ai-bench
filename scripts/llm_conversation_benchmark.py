@@ -15,11 +15,6 @@ class LLMConversationBenchmark:
 
     CONV_TARGET_CTX = 131072   # above the top checkpoint (96K) so growth never scrapes the ceiling
 
-    # Small hardware can't reserve KV-cache for a small model's full native window — see docs/workloads.md.
-    CONV_SMALL_TIERS = {"xsmall", "small"}
-    CONV_SMALL_TIER_TARGET_CTX = 65536
-    CONV_SMALL_TIER_TOP_CHECKPOINT = 49152
-
     CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 
     # See docs/workloads.md's conversation-test growth-step paragraph.
@@ -64,17 +59,11 @@ class LLMConversationBenchmark:
         return min(step, room), False
 
     @staticmethod
-    def conv_ctx_plan(tier: str | None, model_max: int) -> tuple[int, list[int], int]:
-        """Resolve (target_ctx, checkpoints, num_ctx) from tier and real max
-        context. An unrecognized/missing tier falls back to the uncapped plan."""
-        is_small_tier = tier in LLMConversationBenchmark.CONV_SMALL_TIERS
-        target_ctx_cap = (LLMConversationBenchmark.CONV_SMALL_TIER_TARGET_CTX if is_small_tier
-                          else LLMConversationBenchmark.CONV_TARGET_CTX)
-        target_ctx = min(model_max, target_ctx_cap)
+    def conv_ctx_plan(model_max: int) -> tuple[int, list[int], int]:
+        """Resolve (target_ctx, checkpoints, num_ctx) from a model's real max
+        context — every model gets the same plan, capped only by its own ceiling."""
+        target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
         checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
-        if is_small_tier:
-            checkpoints = [c for c in checkpoints
-                           if c <= LLMConversationBenchmark.CONV_SMALL_TIER_TOP_CHECKPOINT]
         num_ctx = Shared.ctx_with_headroom(target_ctx, LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
         return target_ctx, checkpoints, num_ctx
 
@@ -117,8 +106,7 @@ class LLMConversationBenchmark:
                     continue
 
                 model_max = engine.max_context_length(tag)
-                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(
-                    model.get("tier"), model_max)
+                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(model_max)
                 top_checkpoint = checkpoints[-1] if checkpoints else 0
 
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "

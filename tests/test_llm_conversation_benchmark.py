@@ -142,42 +142,23 @@ def test_growth_sequence_at_the_ceiling_never_exceeds_num_ctx():
 
 # ── conv_ctx_plan ──
 
-def test_ctx_plan_uncapped_tier_uses_full_target_and_checkpoints():
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("large", 131072)
+def test_ctx_plan_uses_full_target_and_checkpoints_regardless_of_tier():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072)
     assert target_ctx == Conv.CONV_TARGET_CTX
     assert checkpoints == Conv.CONV_CHECKPOINTS
     assert num_ctx == min(target_ctx + Conv.CONV_CTX_HEADROOM, 131072)
 
 
-def test_ctx_plan_xsmall_tier_caps_target_ctx_and_top_checkpoint():
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("xsmall", 131072)
-    assert target_ctx == Conv.CONV_SMALL_TIER_TARGET_CTX
-    assert checkpoints[-1] == Conv.CONV_SMALL_TIER_TOP_CHECKPOINT
-    assert all(c <= Conv.CONV_SMALL_TIER_TOP_CHECKPOINT for c in checkpoints)
-
-
-def test_ctx_plan_small_tier_caps_the_same_as_xsmall():
-    xsmall_plan = Conv.conv_ctx_plan("xsmall", 131072)
-    small_plan = Conv.conv_ctx_plan("small", 131072)
-    assert xsmall_plan == small_plan
-
-
-def test_ctx_plan_small_tier_still_respects_a_lower_model_max():
-    # A small-tier model whose real ceiling is below the small-tier cap
-    # shouldn't have its checkpoints or num_ctx inflated past that ceiling.
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan("small", 32768)
+def test_ctx_plan_a_lower_model_max_cuts_off_target_and_checkpoints_early():
+    # A model whose real ceiling is below 128K gets a correspondingly
+    # shorter plan — no tier-based cap involved.
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(32768)
     assert target_ctx == 32768
     assert checkpoints[-1] == 32768
     # target_ctx + headroom would exceed model_max, so num_ctx clamps to it.
     assert num_ctx == 32768
 
 
-def test_ctx_plan_missing_tier_falls_back_to_uncapped_behavior():
-    target_ctx, checkpoints, _ = Conv.conv_ctx_plan(None, 131072)
-    assert target_ctx == Conv.CONV_TARGET_CTX
-    assert checkpoints == Conv.CONV_CHECKPOINTS
-
-
 def test_ctx_plan_num_ctx_never_exceeds_model_max():
-    _, _, num_ctx = Conv.conv_ctx_plan("large", 100000)
+    _, _, num_ctx = Conv.conv_ctx_plan(100000)
     assert num_ctx == 100000

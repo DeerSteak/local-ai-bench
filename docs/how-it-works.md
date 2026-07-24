@@ -30,7 +30,7 @@ See [Engines](engines.md) for `--engine <name>|all`. Each engine gets one pass t
 
 Within each stage, only one model is loaded at a time. `LlamaCppEngine` runs a model-specific llama-server process and restarts it whenever the requested model, context allocation, GPU mode, or concurrency shape changes. Each workload unloads or stops that model before advancing.
 
-The single-shot test builds an independent padded prompt for every measured call. Conversation instead grows one chat from a blank slate and samples it once at each eligible checkpoint. Medium/large catalog models and custom models can grow toward 128K and sample through 96K; xsmall/small catalog models use the shorter 64K plan and sample through 48K. Both are further capped by the GGUF's real context ceiling. Growth uses larger steps while far from a checkpoint and finer steps within 8K, stopping at 99.5% of the target to avoid expensive tiny turns.
+The single-shot test builds an independent padded prompt for every measured call. Conversation instead grows one chat from a blank slate and samples it once at each eligible checkpoint, growing toward 128K and sampling through 96K, capped by the GGUF's real context ceiling. Growth uses larger steps while far from a checkpoint and finer steps within 8K, stopping at 99.5% of the target to avoid expensive tiny turns.
 
 When single-shot and conversation are selected together, conversation excludes models with no usable single-shot result, a repeatable runner crash, a timeout at the first 512-token checkpoint, or a slow marker there. A deeper single-shot timeout alone does not exclude it. Conversation also stops after recording any sampled checkpoint below the slow-TPS cutoff. `--force-all` bypasses these speed gates, not actual failures. See [LLM workload](workloads.md#llm).
 
@@ -74,7 +74,7 @@ The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and A
 | Parameter | Value |
 |---|---|
 | LLM single-shot context lengths | 512, 2K, 8K, 32K, 64K — capped per model at its real context ceiling |
-| LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, 96K — medium/large/custom sample through 96K with up to a 128K growth plan; xsmall/small stop at 48K with a 64K growth plan; all are capped by the GGUF's real context ceiling |
+| LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, 96K — samples through 96K with up to a 128K growth target, capped by the GGUF's real context ceiling |
 | LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
 | LLM warmup runs | `--warmup` at each context-specific server configuration (default: 2, discarded) |
 | LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |

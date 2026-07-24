@@ -219,7 +219,7 @@ The test suite consists of **39 test modules** validating different components o
   - Follow-up prompts cycle sequentially through sections of the conversation prompt text, wrapping around cleanly.
   - Growth checkpoints (`CONV_CHECKPOINTS`) are sorted and fit within the target ceiling.
   - The step-size calculator (`compute_growth_step`) takes larger steps (`CONV_STEP_MAX_FAR`) when far from the target and smaller ones (`CONV_STEP_MAX`) once within 8K tokens of it, clamps to `CONV_STEP_MIN`, enforces context safety margins (`CONV_SAFETY_MARGIN`) for non-final checks, consumes the full context room on the final step, and signals when the context is full.
-  - `conv_ctx_plan` gives xsmall/small catalog models the shorter 64K/48K plan, gives medium/large/custom models the full plan, and respects native context ceilings and headroom.
+  - `conv_ctx_plan` resolves the 128K-growth/96K-sampled plan, capped by a model's own native context ceiling and headroom.
 
 - **[test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py)**
   Tests the chat sweep's slow-TPS floor and `--force-all` bypass, confirms that a `None` floor disables soft exits for the tool sweep, and verifies concurrent batch fan-out, unique nonce prompts, result collection, and error propagation with a fake engine.
