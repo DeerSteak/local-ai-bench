@@ -59,7 +59,7 @@ class MenuEntry:
 
 def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
     try:
-        state = json.loads(Path(path).read_text())
+        state = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(state, dict) or set(state) != {"version", "engine", "tests", "models"}:
@@ -89,7 +89,7 @@ def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
                 mode="w", dir=path.parent, prefix=f".{path.name}.",
-                suffix=".tmp", delete=False) as stream:
+                suffix=".tmp", delete=False, encoding="utf-8") as stream:
             temporary_path = Path(stream.name)
             json.dump(state, stream, indent=2, allow_nan=False)
         os.replace(temporary_path, path)

@@ -26,7 +26,7 @@ class ToolBenchmark:
 
     @staticmethod
     def load_questions(path: Path = TOOL_DATA_PATH) -> list[dict]:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
 
     @staticmethod
     def _coerce(value):

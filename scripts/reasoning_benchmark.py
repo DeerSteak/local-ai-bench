@@ -118,7 +118,7 @@ class ReasoningBenchmark:
     @staticmethod
     def load_questions(path: Path = REASONING_DATA_PATH) -> list[dict]:
         try:
-            bank = json.loads(Path(path).read_text())
+            bank = json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ValueError(f"could not read reasoning bank {path}: {exc}") from exc
         return ReasoningBenchmark.validate_bank(bank)

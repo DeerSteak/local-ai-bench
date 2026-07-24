@@ -40,7 +40,7 @@ def regraded_path(path: Path) -> Path:
 
 def load_json_object(path: Path) -> dict:
     try:
-        value = json.loads(path.read_text())
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RegradeError(f"Could not read {path}: {exc}") from exc
     if not isinstance(value, dict):
@@ -264,7 +264,7 @@ def write_outputs(outputs: dict[Path, dict]) -> None:
             )
             temporary_path = Path(temporary_name)
             staged.append((temporary_path, output_path))
-            with os.fdopen(descriptor, "w") as stream:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 json.dump(data, stream, indent=2, allow_nan=False)
         for temporary_path, output_path in staged:
             os.replace(temporary_path, output_path)

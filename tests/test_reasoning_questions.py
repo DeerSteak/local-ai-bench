@@ -7,7 +7,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "scripts" / "data"
 
 
 def load_json(name):
-    return json.loads((DATA_DIR / name).read_text())
+    return json.loads((DATA_DIR / name).read_text(encoding="utf-8"))
 
 
 def test_reasoning_bank_has_versioned_top_level_and_question_shapes():

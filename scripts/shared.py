@@ -613,14 +613,14 @@ class Shared:
         deterministically crashes the engine's runner on a given test isn't
         retried forever across separate script invocations."""
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}
 
     @staticmethod
     def save_crash_cache(path: Path, cache: dict) -> None:
         try:
-            path.write_text(json.dumps(cache, indent=2))
+            path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
         except Exception as e:
             Shared.warn(f"Failed to save crash cache to {path}: {e}")
 
@@ -810,7 +810,7 @@ class Shared:
         crash mid-run doesn't lose collected answers. Kept out of that JSON
         since raw model output is large and bloats it fast."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, allow_nan=False))
+        path.write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
 
     @staticmethod
     def run_accuracy_benchmark(section_label: str, skip_label: str, question_noun: str,

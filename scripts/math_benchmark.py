@@ -49,7 +49,7 @@ class MathBenchmark:
 
     @staticmethod
     def load_questions(path: Path = MATH_DATA_PATH) -> list[dict]:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
 
     @staticmethod
     def build_prompt(question: dict) -> str:

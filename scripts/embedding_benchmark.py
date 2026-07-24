@@ -33,7 +33,7 @@ class EmbeddingBenchmark:
         sentence up to the cap; anything that's still too long after that
         (e.g. a code block or table with no sentence punctuation) is hard-split
         by word count so no chunk can ever exceed the cap."""
-        paragraphs = [p.strip() for p in path.read_text().split("\n\n") if p.strip()]
+        paragraphs = [p.strip() for p in path.read_text(encoding="utf-8").split("\n\n") if p.strip()]
 
         def split_oversized(words: list[str]) -> list[str]:
             return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)]

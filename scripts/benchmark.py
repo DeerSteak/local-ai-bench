@@ -611,7 +611,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         }
 
         def _checkpoint(label=""):
-            Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False))
+            Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
             if label:
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
@@ -830,7 +830,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         # ── Save results ───────────────────────────────────────────────────────────
         Shared.section("Saving Results")
-        Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False))
+        Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
         Shared.ok(f"Results saved to: {out_path}")
 
     Shared.output("  Compare it against other machines in the dashboard:", leading_blank=True)

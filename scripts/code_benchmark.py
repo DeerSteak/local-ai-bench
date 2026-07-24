@@ -43,7 +43,7 @@ class CodeBenchmark:
 
     @staticmethod
     def load_questions(path: Path = CODE_DATA_PATH) -> list[dict]:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
 
     @staticmethod
     def _format_function_example(function_name: str, test: dict) -> str:
