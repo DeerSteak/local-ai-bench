@@ -189,6 +189,25 @@ def test_max_context_length_reads_architecture_prefixed_key(tmp_path, monkeypatc
     assert LlamaCppEngine().max_context_length("qwen3.5:4b") == 40960
 
 
+def test_max_context_length_ignores_rope_scaling_original_context_length(tmp_path, monkeypatch):
+    """YaRN-scaled models (e.g. Qwen3-Coder-Next) carry a second GGUF key,
+    "{arch}.rope.scaling.original_context_length", holding the smaller
+    pre-scaling base context — not the model's real max context. Regression
+    test for a bug where the first ".context_length"-suffixed key won
+    regardless of which one it was, since GGUFReader preserves file order and
+    the rope-scaling key is written before the real one here."""
+    gguf_path = tmp_path / "model.gguf"
+    w = gguf.GGUFWriter(str(gguf_path), "qwen3next")
+    w.add_rope_scaling_orig_ctx_len(512)
+    w.add_context_length(262144)
+    w.write_header_to_file()
+    w.write_kv_data_to_file()
+    w.write_tensors_to_file()
+    w.close()
+    monkeypatch.setattr(LlamaCppEngine, "_resolve_model_files", classmethod(lambda cls, tag: [gguf_path]))
+    assert LlamaCppEngine().max_context_length("qwen3-coder-next:80b-a3b-q4_K_M") == 262144
+
+
 def test_max_context_length_falls_back_to_default_when_not_pulled(fake_catalog):
     assert LlamaCppEngine().max_context_length("phi4-mini", default=8192) == 8192
 
@@ -275,6 +294,24 @@ def _clock(*values):
 
 
 # ── generate ──
+
+def test_generate_requests_n_predict_from_config_constant(monkeypatch):
+    # concurrency_benchmark.py's slot_ctx_for headroom relies on this constant.
+    _patch_ensure_model(monkeypatch)
+    captured = []
+
+    def urlopen(req, timeout):
+        captured.append(json.loads(req.data))
+        return _FakeResponse([
+            {"content": "hi", "tokens": [1]},
+            {"content": "", "stop": True,
+             "timings": {"predicted_n": 1, "predicted_ms": 100, "prompt_ms": 10}},
+        ])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    LlamaCppEngine().generate("some-tag", "prompt")
+    assert captured[0]["n_predict"] == config.GENERATE_MAX_TOKENS
+
 
 def test_generate_uses_server_reported_timings(monkeypatch):
     _patch_ensure_model(monkeypatch)

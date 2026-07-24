@@ -297,20 +297,15 @@ class LlamaCppEngine(InferenceEngine):
         return self._backend_from_device_listing(output) if completed.returncode == 0 else hardware_backend
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
-        """Read a downloaded model's real max context length straight from
-        its GGUF metadata. GGUFReader memory-maps the file and only walks its
-        key/value header section, so this never loads the model's weights.
-        Scans every architecture-prefixed key convention GGUF uses
-        (llama.context_length, qwen35.context_length, gptoss.context_length,
-        ...) since the prefix varies by model family.
-        """
+        """Read a model's max context from its GGUF metadata, without loading weights.
+        Matches the bare "{arch}.context_length" key, not ".rope.scaling.original_context_length" (YaRN's much smaller pre-scaling base)."""
         paths = self._resolve_model_files(tag)
         if paths is None:
             return default
         try:
             reader = gguf.GGUFReader(str(paths[0]))
             for key, field in reader.fields.items():
-                if key.endswith(".context_length"):
+                if re.fullmatch(r"[^.]+\.context_length", key):
                     value = field.contents()
                     if isinstance(value, int):
                         return value
@@ -563,7 +558,7 @@ class LlamaCppEngine(InferenceEngine):
 
         payload = json.dumps({
             "prompt": prompt,
-            "n_predict": 512,
+            "n_predict": config.GENERATE_MAX_TOKENS,
             "temperature": 0.0,
             "stream": True,
             "return_tokens": True,

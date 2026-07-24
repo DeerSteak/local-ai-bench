@@ -31,6 +31,12 @@ class ConcurrencyBenchmark:
         return mean_tps < config.SLOW_MODEL_MIN_TPS
 
     @staticmethod
+    def slot_ctx_for(per_request_context: int) -> int:
+        """Per-slot ctx budget: padded prompt plus generate()'s n_predict headroom,
+        so a slot isn't sized to exactly the prompt with no room to generate."""
+        return per_request_context + config.GENERATE_MAX_TOKENS
+
+    @staticmethod
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
         """Fire `level` concurrent generate() requests, each its own uniquely
         padded prompt so none of them share a cached prefix with each other
@@ -39,9 +45,10 @@ class ConcurrencyBenchmark:
         measured one, so a level's warmup exercises the exact same
         concurrent shape it's about to be measured at."""
         prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
+        slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
         with ThreadPoolExecutor(max_workers=level) as pool:
             futures = [
-                pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT, per_request_context, level)
+                pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT, slot_ctx, level)
                 for p in prompts
             ]
             return [f.result() for f in futures]
@@ -110,7 +117,7 @@ class ConcurrencyBenchmark:
                                f"{per_request_context} tokens/slot ...")
 
                     if not engine.prepare_concurrency(
-                        tag, level, per_request_context, warmup_runs,
+                        tag, level, self.slot_ctx_for(per_request_context), warmup_runs,
                         timeout=config.RUN_TIMEOUT,
                     ):
                         Shared.warn(f"{label}: couldn't load at {level}-way concurrency — "
