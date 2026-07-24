@@ -114,12 +114,7 @@ embeddings.png
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
 
-A results file is never guaranteed to have every field a newer schema might
-expect, since people compare files produced by different versions of this
-suite across different machines — `dashboard/src/utils.js` leans on optional
-chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`)
-throughout for exactly this reason. New dashboard code reading the results
-JSON should assume any given key might be missing on an older file.
+A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils.js` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 
 ## Development
 

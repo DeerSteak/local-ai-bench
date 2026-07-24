@@ -50,19 +50,9 @@ These scripts activate the virtual environment automatically and forward any arg
 
 ## Memory-fit estimate
 
-`hardware.py`'s memory ceiling is VRAM (discrete GPU) or total system RAM
-(unified memory, integrated GPU, or CPU-only), minus a reserve — 1.0 GB for
-VRAM (driver/other GPU processes), 8.0 GB for RAM (OS, the inference server,
-and everything else sharing that pool). A model's estimated footprint is its
-download size plus a flat 20% runtime overhead (KV-cache for LLMs,
-activations for image models) — an approximation, not a per-context-length
-calculation.
+`hardware.py`'s memory ceiling is VRAM (discrete GPU) or total system RAM (unified memory, integrated GPU, or CPU-only), minus a reserve — 1.0 GB for VRAM (driver/other GPU processes), 8.0 GB for RAM (OS, the inference server, and everything else sharing that pool). A model's estimated footprint is its download size plus a flat 20% runtime overhead (KV-cache for LLMs, activations for image models) — an approximation, not a per-context-length calculation.
 
-Discrete-vs-integrated GPU classification is a naming-convention heuristic
-(AMD: `RX`/`PRO`/`INSTINCT` in the name; Intel: a model number like `A770`),
-not authoritative. An unknown or ambiguous name defaults to "integrated" —
-the more permissive failure mode, since it falls back to the system-RAM
-ceiling instead of wrongly capping to a VRAM number that doesn't apply.
+Discrete-vs-integrated GPU classification is a naming-convention heuristic (AMD: `RX`/`PRO`/`INSTINCT` in the name; Intel: a model number like `A770`), not authoritative. An unknown or ambiguous name defaults to "integrated" — the more permissive failure mode, since it falls back to the system-RAM ceiling instead of wrongly capping to a VRAM number that doesn't apply.
 
 ## Disk space check
 
