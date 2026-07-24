@@ -214,6 +214,17 @@ def check_nvidia():
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
+def get_nvidia_max_cuda_version():
+    """Max CUDA version the installed NVIDIA driver supports, or None —
+    see docs/setup.md's Windows (NVIDIA) note."""
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi"], text=True, stderr=subprocess.DEVNULL
+        )
+        return hardware.parse_nvidia_max_cuda_version(out)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
 def get_nvidia_compute_cap():
     """Return the GPU's CUDA compute capability (e.g. '12.0'), or None."""
     try:
@@ -347,8 +358,9 @@ def check_linux_intel_gpu_runtime():
             return False
     return True
 
-nvidia_ok           = check_nvidia()
-nvidia_compute_cap  = get_nvidia_compute_cap() if nvidia_ok else None
+nvidia_ok               = check_nvidia()
+nvidia_compute_cap      = get_nvidia_compute_cap() if nvidia_ok else None
+nvidia_max_cuda_version = get_nvidia_max_cuda_version() if nvidia_ok else None
 rocm_ok             = False
 metal_ok            = False
 amd_windows         = False
@@ -456,9 +468,9 @@ def find_llamacpp_binary():
                 return str(candidate)
     return None
 
-def download_llamacpp_windows():
-    """Download the latest llama.cpp Windows Vulkan release into LLAMACPP_DIR
-    — see docs/setup.md's Windows (NVIDIA) note for why Vulkan."""
+def download_llamacpp_windows(max_cuda_version=None):
+    """Download the latest llama.cpp Windows release into LLAMACPP_DIR,
+    preferring CUDA over Vulkan — see docs/setup.md's Windows (NVIDIA) note."""
     import urllib.request
     import zipfile
 
@@ -470,45 +482,57 @@ def download_llamacpp_windows():
         )
         with urllib.request.urlopen(req, timeout=15) as r:
             release = json.load(r)
-        asset = next(
-            (a for a in release["assets"]
-             if "win-vulkan-x64" in a["name"].lower() and a["name"].endswith(".zip")),
-            None,
-        )
-        if not asset:
-            fail("No Windows Vulkan build found in the latest llama.cpp release")
-            return False
-        url  = asset["browser_download_url"]
-        size = asset["size"] // (1024 ** 2)
-        tag  = release["tag_name"]
+        tag = release["tag_name"]
     except Exception as e:
         fail(f"Could not fetch llama.cpp release info: {e}")
         return False
 
-    info(f"Downloading llama.cpp {tag} (Vulkan, {size} MB) ...")
-    tmp = SCRIPT_DIR / asset["name"]
+    cuda_pair = hardware.select_cuda_release_assets(release["assets"], max_cuda_version)
+    if cuda_pair is not None:
+        bin_asset, cudart_asset, cuda_ver = cuda_pair
+        label = f"CUDA {cuda_ver}"
+        assets = [bin_asset, cudart_asset]
+    else:
+        vulkan_asset = next(
+            (a for a in release["assets"]
+             if "win-vulkan-x64" in a["name"].lower() and a["name"].endswith(".zip")),
+            None,
+        )
+        if not vulkan_asset:
+            fail("No Windows Vulkan build found in the latest llama.cpp release")
+            return False
+        label = "Vulkan"
+        assets = [vulkan_asset]
+
+    total_size_mb = sum(a["size"] for a in assets) // (1024 ** 2)
+    info(f"Downloading llama.cpp {tag} ({label}, {total_size_mb} MB) ...")
+    tmp_paths = [SCRIPT_DIR / a["name"] for a in assets]
     try:
-        urllib.request.urlretrieve(url, str(tmp))
+        for asset, tmp in zip(assets, tmp_paths):
+            urllib.request.urlretrieve(asset["browser_download_url"], str(tmp))
     except Exception as e:
         fail(f"Download failed: {e}")
-        tmp.unlink(missing_ok=True)
+        for tmp in tmp_paths:
+            tmp.unlink(missing_ok=True)
         return False
 
-    info(f"Extracting {asset['name']} ...")
+    info(f"Extracting {', '.join(a['name'] for a in assets)} ...")
     try:
         LLAMACPP_DIR.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(tmp) as z:
-            z.extractall(LLAMACPP_DIR)
-        tmp.unlink()
+        for tmp in tmp_paths:
+            with zipfile.ZipFile(tmp) as z:
+                z.extractall(LLAMACPP_DIR)
+            tmp.unlink()
     except Exception as e:
         fail(f"Extraction failed: {e}")
-        tmp.unlink(missing_ok=True)
+        for tmp in tmp_paths:
+            tmp.unlink(missing_ok=True)
         return False
 
     if not any(LLAMACPP_DIR.rglob("llama-server.exe")):
-        fail(f"Extracted {asset['name']} but llama-server.exe wasn't found inside it")
+        fail(f"Extracted llama.cpp {tag} ({label}) but llama-server.exe wasn't found inside it")
         return False
-    ok(f"llama.cpp {tag} (Vulkan) extracted to {LLAMACPP_DIR}")
+    ok(f"llama.cpp {tag} ({label}) extracted to {LLAMACPP_DIR}")
     return True
 
 def install_llamacpp():
@@ -584,7 +608,7 @@ def install_llamacpp():
         return True
 
     elif os_name == "Windows":
-        return download_llamacpp_windows()
+        return download_llamacpp_windows(nvidia_max_cuda_version)
 
     return False
 

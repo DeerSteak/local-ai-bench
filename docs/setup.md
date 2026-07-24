@@ -15,7 +15,7 @@
 |---|---|---|
 | macOS | `bash setup.sh` | Homebrew, Python, llama.cpp, ComfyUI |
 | Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI, XPU-enabled PyTorch on Intel Arc (experimental) |
-| Windows | `setup.bat` | Python, llama.cpp Vulkan build, ComfyUI portable |
+| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise), ComfyUI portable |
 
 `setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
 
@@ -101,7 +101,7 @@ For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfy
 
 **macOS and Linux** — If the script fails with a permissions error, run `sudo bash setup.sh` instead.
 
-**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required. The `llama.cpp` install on Windows is always the cross-vendor Vulkan build regardless of GPU vendor — it runs on NVIDIA/AMD/Intel alike without having to match a specific CUDA toolkit version to whatever's installed, which is the safer bet for an unattended install (a mismatched CUDA-specific build would simply fail to load its driver at runtime).
+**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required. The `llama.cpp` install on Windows prefers a prebuilt CUDA build too: `setup_check.py` reads the installed driver's max supported CUDA version straight from plain `nvidia-smi`'s text header (no toolkit install needed to know this — the field is labeled `CUDA Version:` on older drivers and `CUDA UMD Version:` on newer ones, so the parser accepts either) and downloads the highest-versioned `win-cuda-X.Y-x64` binary plus its matching `cudart-llama-bin-win-cuda-X.Y-x64` runtime zip that the driver supports — both are just extracted into `llama.cpp\`, no compiler or MSVC build chain involved, so it stays as unattended-install-safe as the Vulkan path. If no NVIDIA driver is detected, or no compatible CUDA build exists in the latest release, it falls back to the cross-vendor Vulkan build — the same one used on AMD/Intel, and the only option prior to this — which runs on NVIDIA/AMD/Intel alike without having to match a specific CUDA version.
 
 ComfyUI's Windows portable build bundles a pinned torch wheel that doesn't recognize newer GPU architectures (e.g. Blackwell, compute capability 12.0) — every CUDA kernel launch then fails with "no kernel image is available for execution on the device." `setup_check.py` detects this by checking whether the GPU's compute capability appears in `torch.cuda.get_arch_list()`, and if not, reinstalls torch/torchvision/torchaudio from the cu128 wheel index with `--force-reinstall` rather than `--upgrade` — `--upgrade` would leave an already-installed torch+cu126 alone while swapping only torchvision/torchaudio to +cu128, a mismatched trio that torchaudio then refuses to import.
 

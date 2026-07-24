@@ -50,6 +50,61 @@ def rocminfo_gpu_names(output: str) -> list[str]:
     return names
 
 
+def parse_nvidia_max_cuda_version(nvidia_smi_output: str) -> str | None:
+    """Max CUDA version the driver supports, from plain `nvidia-smi`'s text
+    header — see docs/setup.md's Windows (NVIDIA) note."""
+    m = re.search(r"CUDA(?:\s+UMD)?\s+Version:\s*([\d.]+)", nvidia_smi_output)
+    return m.group(1) if m else None
+
+
+_CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
+_CUDA_CUDART_RE = re.compile(r"^cudart-llama-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
+
+
+def select_cuda_release_assets(assets: list[dict], max_cuda_version: str | None
+                                ) -> tuple[dict, dict, str] | None:
+    """Highest win-cuda-X.Y binary/cudart pair the driver supports, or None —
+    see docs/setup.md's Windows (NVIDIA) note."""
+    if not max_cuda_version:
+        return None
+
+    def _ver(v: str) -> tuple[int, ...]:
+        return tuple(int(p) for p in v.split("."))
+
+    try:
+        max_ver = _ver(max_cuda_version)
+    except ValueError:
+        return None
+
+    by_version: dict[str, dict[str, dict]] = {}
+    for asset in assets:
+        name = asset.get("name", "")
+        m = _CUDA_BIN_RE.match(name)
+        if m:
+            by_version.setdefault(m.group(1), {})["bin"] = asset
+            continue
+        m = _CUDA_CUDART_RE.match(name)
+        if m:
+            by_version.setdefault(m.group(1), {})["cudart"] = asset
+
+    candidates = []
+    for version, pair in by_version.items():
+        if "bin" not in pair or "cudart" not in pair:
+            continue
+        try:
+            v = _ver(version)
+        except ValueError:
+            continue
+        if v <= max_ver:
+            candidates.append((v, pair))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    version, pair = candidates[0][0], candidates[0][1]
+    return pair["bin"], pair["cudart"], ".".join(str(p) for p in version)
+
+
 def compute_memory_ceiling_gb(*, os_name: str, total_ram_gb: float | None,
                                gpu_vendor: str, vram_gb: float | None = None
                                ) -> tuple[float | None, str]:

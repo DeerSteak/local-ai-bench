@@ -81,6 +81,89 @@ def test_rocminfo_gpu_names_requires_an_agent_block_and_device_type():
     assert hardware.rocminfo_gpu_names("Marketing Name: AMD Radeon RX 7900 XTX") == []
 
 
+# ── parse_nvidia_max_cuda_version ──
+
+def test_parse_nvidia_max_cuda_version_classic_header():
+    output = """
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.90.07              Driver Version: 550.90.07   CUDA Version: 12.4         |
++-----------------------------------------------------------------------------------------+
+"""
+    assert hardware.parse_nvidia_max_cuda_version(output) == "12.4"
+
+
+def test_parse_nvidia_max_cuda_version_umd_header():
+    """Newer drivers report 'CUDA UMD Version' rather than 'CUDA Version'."""
+    output = """
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.74                 KMD Version: 610.74        CUDA UMD Version: 13.3     |
++-----------------------------------------------------------------------------------------+
+"""
+    assert hardware.parse_nvidia_max_cuda_version(output) == "13.3"
+
+
+def test_parse_nvidia_max_cuda_version_missing_returns_none():
+    assert hardware.parse_nvidia_max_cuda_version("no nvidia here") is None
+
+
+# ── select_cuda_release_assets ──
+
+def _asset(name, size=100):
+    return {"name": name, "size": size, "browser_download_url": f"https://example.com/{name}"}
+
+
+REAL_SHAPED_ASSETS = [
+    _asset("llama-b10106-bin-win-cuda-12.4-x64.zip"),
+    _asset("cudart-llama-bin-win-cuda-12.4-x64.zip"),
+    _asset("llama-b10106-bin-win-cuda-13.3-x64.zip"),
+    _asset("cudart-llama-bin-win-cuda-13.3-x64.zip"),
+    _asset("llama-b10106-bin-win-vulkan-x64.zip"),
+    _asset("llama-b10106-bin-win-cpu-x64.zip"),
+    _asset("llama-b10106-bin-win-hip-x64.zip"),
+]
+
+
+def test_select_cuda_release_assets_picks_exact_match():
+    bin_asset, cudart_asset, version = hardware.select_cuda_release_assets(
+        REAL_SHAPED_ASSETS, "13.3")
+    assert version == "13.3"
+    assert bin_asset["name"] == "llama-b10106-bin-win-cuda-13.3-x64.zip"
+    assert cudart_asset["name"] == "cudart-llama-bin-win-cuda-13.3-x64.zip"
+
+
+def test_select_cuda_release_assets_picks_highest_not_exceeding_driver():
+    """A driver that only supports up to 12.9 must not get the 13.3 build."""
+    _, _, version = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "12.9")
+    assert version == "12.4"
+
+
+def test_select_cuda_release_assets_none_when_driver_too_old():
+    assert hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "11.0") is None
+
+
+def test_select_cuda_release_assets_none_when_no_driver_version():
+    assert hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, None) is None
+
+
+def test_select_cuda_release_assets_none_when_release_has_no_cuda_builds():
+    vulkan_only = [_asset("llama-b10106-bin-win-vulkan-x64.zip")]
+    assert hardware.select_cuda_release_assets(vulkan_only, "13.3") is None
+
+
+def test_select_cuda_release_assets_requires_matching_cudart_pair():
+    """A binary with no matching cudart runtime zip must not be selected —
+    it would be missing DLLs it needs at runtime."""
+    orphan_bin = [_asset("llama-b10106-bin-win-cuda-13.3-x64.zip")]
+    assert hardware.select_cuda_release_assets(orphan_bin, "13.3") is None
+
+
+def test_select_cuda_release_assets_ignores_unrelated_assets():
+    assert hardware.select_cuda_release_assets(
+        [_asset("llama-b10106-bin-win-cpu-x64.zip"), _asset("llama-b10106-bin-win-hip-x64.zip")],
+        "13.3",
+    ) is None
+
+
 # ── compute_memory_ceiling_gb ──
 
 def test_ceiling_nvidia_uses_vram_minus_reserve():

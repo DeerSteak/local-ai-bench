@@ -78,7 +78,7 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).
 
-The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on NVIDIA, AMD, and Intel hardware. The raw results retain that physical classification separately as `profile.hardware_backend`.
+The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD and Intel hardware, and on NVIDIA hardware without a driver new enough for any of the prebuilt CUDA builds. The raw results retain that physical classification separately as `profile.hardware_backend`.
 
 **Embeddings → Chunks/sec.** Throughput embedding one real document's chunks in a single call. Higher is better.
 
