@@ -496,20 +496,15 @@ class Shared:
 
     # ── prompt builders ──
 
-    SHORT_PROMPT = (
-        "You are a hardware reviewer for HotHardware.com. Compare the performance, "
-        "power efficiency, and value proposition of the latest GPU architectures "
-        "for gaming and content creation workloads. Discuss thermal design, memory "
-        "bandwidth, ray tracing capabilities, and how driver maturity affects "
-        "real-world performance across AAA titles and professional applications."
-    )
+    LONG_DOCUMENT_PATH = config.SCRIPT_DIR / "scripts" / "data" / "long_document.txt"
+    _long_document_cache: str | None = None
 
-    _PADDING_UNIT = (
-        " Additionally, analyze how CPU and platform choices — including chiplet "
-        "designs, memory controllers, and PCIe bandwidth — interact with GPU "
-        "performance, and what this means for system builders choosing between "
-        "competing platforms at different price points."
-    )
+    @classmethod
+    def _long_document(cls) -> str:
+        """Lazily load and cache the real, non-repetitive source text used to pad prompts."""
+        if cls._long_document_cache is None:
+            cls._long_document_cache = cls.LONG_DOCUMENT_PATH.read_text(encoding="utf-8")
+        return cls._long_document_cache
 
     @staticmethod
     def ctx_with_headroom(base_ctx: int, headroom: int, model_max: int) -> int:
@@ -518,17 +513,20 @@ class Shared:
 
     @staticmethod
     def build_prompt_for_context(target_tokens: int) -> str:
-        """Pad a prompt to ~target_tokens (1 token ≈ 4 chars), prefixed with a
-        unique nonce so reruns don't share a prefix the slot cache can hit."""
+        """Pad a prompt to ~target_tokens (1 token ≈ 4 chars) from a real document slice,
+        prefixed with a unique nonce so reruns don't share a prefix the slot cache can hit."""
         nonce = uuid.uuid4().hex
         prefix = f"[run {nonce}] "
         chars_needed = target_tokens * 4
-        parts = [prefix, Shared.SHORT_PROMPT]
-        total = len(prefix) + len(Shared.SHORT_PROMPT)
-        while total < chars_needed:
-            parts.append(Shared._PADDING_UNIT)
-            total += len(Shared._PADDING_UNIT)
-        return "".join(parts)[:chars_needed]
+        body_needed = max(0, chars_needed - len(prefix))
+
+        document = Shared._long_document()
+        if body_needed > len(document):
+            document = document * (body_needed // len(document) + 1)
+        start = random.randint(0, len(document) - body_needed) if len(document) > body_needed else 0
+        body = document[start:start + body_needed]
+
+        return (prefix + body)[:chars_needed]
 
     @staticmethod
     def stratified_sample(questions: list[dict], n: int, seed: int = 1337) -> list[dict]:

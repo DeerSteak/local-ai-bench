@@ -54,3 +54,25 @@ def test_build_prompt_for_context_nonce_differs_between_calls():
     p1 = Shared.build_prompt_for_context(2000)
     p2 = Shared.build_prompt_for_context(2000)
     assert p1 != p2
+
+
+def test_build_prompt_for_context_is_not_repetitive_filler():
+    # Regression test: repeated filler used to trigger degenerate EOS responses — see docs/workloads.md.
+    prompt = Shared.build_prompt_for_context(16384)
+    body = prompt.split("] ", 1)[1]
+    first_sentence = body[:60]
+    assert body.count(first_sentence) <= 1
+
+
+def test_build_prompt_for_context_covers_the_largest_checkpoint():
+    # Largest single-shot context length must be servable from one real slice, not wrapping.
+    document_len = len(Shared._long_document())
+    assert document_len >= 65536 * 4
+
+
+def test_build_prompt_for_context_wraps_if_target_exceeds_document_length():
+    # target_tokens * 4 here is far larger than the document, forcing the wrap path.
+    document_len = len(Shared._long_document())
+    target_tokens = document_len
+    prompt = Shared.build_prompt_for_context(target_tokens)
+    assert len(prompt) == target_tokens * 4
