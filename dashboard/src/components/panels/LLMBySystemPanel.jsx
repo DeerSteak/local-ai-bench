@@ -1,25 +1,21 @@
-import { Fragment } from "react";
 import {
   buildLLMBarDataByModel, buildLLMBarConfigsByModel,
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
   getLLMModelsWithSectionResults, sortBarData, getModelSizeTier, getSkipInfo, modelLabel,
 } from "../../utils";
-import { SECTION_LABELS, SIZE_TIER_ORDER, SIZE_TIER_LABELS } from "../../constants";
-import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
-import { EmptyState, ChartGrid } from "./shared";
-import styles from "../ChartPanel.module.css";
+import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
+import BySystemPanel from "./BySystemPanel";
 
-// Group By: System, LLM / LLM Conversation section — one card group per
-// system, split into small/medium/large model tiers (or combined) per the
-// "Model Sizes" toggle.
+const hasValueOrStatus = (rows, key) => rows.some(r => r[key] != null || r[`_status_${key}`] != null);
+
+// Group By: System, LLM / LLM Conversation section — resolves this section's own
+// ctx-keyed data into BySystemPanel's generic { tier, metrics } shape.
 export default function LLMBySystemPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isSplit }) {
-  const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getLLMModelsWithSectionResults(files, section).filter(m => enabledModels.has(m));
   const isConv = section === "llm_conversation";
   const titleSuffix = isConv ? " (Conversation)" : "";
   const chartNamePrefix = isConv ? "conv_" : "";
 
-  // Split into small/medium/large tiers, or a single combined group.
   const modelGroupSpecs = isSplit
     ? SIZE_TIER_ORDER
         .map(tier => ({ tier, models: allModels.filter(m => getModelSizeTier(m) === tier) }))
@@ -27,14 +23,22 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
     : [{ tier: null, models: allModels }];
 
   const systemGroups = files.map(f => {
+    // Resolved once per file from every enabled model, regardless of tier — a tier
+    // split shouldn't change ms vs. sec, only which models are shown.
+    const allTtftBar = buildLLMBarDataByModel(f, allModels, "ttft", section);
+    const allTtftVals = allTtftBar
+      .flatMap(row => Object.entries(row).filter(([k]) => k !== "modelLabel" && !k.startsWith("_status_")).map(([, v]) => v))
+      .filter(v => v != null);
+    const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
+      : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
+      : "sec";
+    const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+
     const groups = modelGroupSpecs.map(({ tier, models }) => {
       const rawTpsBarData = buildLLMBarDataByModel(f, models, "tps", section);
       const rawTtftBarData = buildLLMBarDataByModel(f, models, "ttft", section);
-      const rawTpsBarConfigs = buildLLMBarConfigsByModel(f, models, section);
-      const rawTtftBarConfigs = buildLLMBarConfigsByModel(f, models, section);
-      const hasValueOrStatus = (rows, key) => rows.some(r => r[key] != null || r[`_status_${key}`] != null);
-      const tpsBarConfigs = rawTpsBarConfigs.filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey));
-      const ttftBarConfigs = rawTtftBarConfigs.filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey));
+      const tpsBarConfigs = buildLLMBarConfigsByModel(f, models, section).filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey));
+      const ttftBarConfigs = buildLLMBarConfigsByModel(f, models, section).filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey));
       const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
       const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
 
@@ -45,94 +49,35 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
 
       const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
       const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
-      if (!hasTps && !hasTtft) return null;
-      return { tier, tpsBarData, ttftBarData, tpsBarConfigs, ttftBarConfigs, tpsLineData, ttftLineData, tpsLineConfigs, ttftLineConfigs, hasTps, hasTtft };
+
+      const metrics = [];
+      if (hasTps) metrics.push({
+        key: "tps", title: `Tokens/sec${titleSuffix}`, yLabel: "Tokens/sec", unit: "tps", direction: "higher",
+        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}tps`,
+        barData: tpsBarData, barConfigs: tpsBarConfigs, lineData: tpsLineData, lineConfigs: tpsLineConfigs,
+      });
+      if (hasTtft) metrics.push({
+        key: "ttft", title: `Time to First Token${titleSuffix}`, yLabel: ttftYLabel, unit: ttftUnit, direction: "lower",
+        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}ttft`,
+        barData: ttftBarData, barConfigs: ttftBarConfigs, lineData: ttftLineData, lineConfigs: ttftLineConfigs,
+      });
+      if (!metrics.length) return null;
+      return { tier, metrics };
     }).filter(Boolean);
 
     const skipEntries = allModels
       .map(m => ({ model: m, info: getSkipInfo(f, m, section) }))
-      .filter(e => e.info);
+      .filter(e => e.info)
+      .map(e => ({ key: e.model, label: `${modelLabel(e.model)}: Skipped — ${e.info.detail}` }));
     if (!groups.length && !skipEntries.length) return null;
-
-    const allTtftVals = (isBar
-      ? groups.flatMap(g => g.ttftBarData.flatMap(row => g.ttftBarConfigs.map(bc => row[bc.dataKey])))
-      : groups.flatMap(g => g.ttftLineData.flatMap(row => g.ttftLineConfigs.map(lc => row[lc.dataKey])))
-    ).filter(v => v != null);
-    const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
-      : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
-      : "sec";
-    const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
-    return { file: f, groups, ttftUnit, ttftYLabel, skipEntries };
+    return { file: f, groups, skipEntries };
   }).filter(Boolean);
 
-  if (!systemGroups.length) {
-    return <EmptyState style={containerStyle}>No {SECTION_LABELS[section]} data in the loaded file(s)</EmptyState>;
-  }
-
   return (
-    <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {systemGroups.map(({ file: f, groups, ttftUnit, ttftYLabel, skipEntries }) => (
-        <div key={f.id} className={styles.modelGroup}>
-          <div className={styles.modelGroupTitle}>{f.hostname}</div>
-          {skipEntries.length > 0 && (
-            <div className={styles.skipNote}>
-              {skipEntries.map(e => (
-                <div key={e.model}>{modelLabel(e.model)}: Skipped — {e.info.detail}</div>
-              ))}
-            </div>
-          )}
-          {groups.map(g => {
-            const tierSuffix = g.tier ? ` — ${SIZE_TIER_LABELS[g.tier]}` : "";
-            const tierKey = g.tier ? `_${g.tier}` : "";
-            return (
-              <Fragment key={g.tier || "combined"}>
-                {g.hasTps && (isBar ? (
-                  <GroupedBarCard
-                    title={`Tokens/sec${titleSuffix}${tierSuffix}`}
-                    modelName={f.hostname}
-                    data={g.tpsBarData}
-                    barConfigs={g.tpsBarConfigs}
-                    xKey="modelLabel" yLabel="Tokens/sec" unit="tps"
-                    chartName={`${chartNamePrefix}tps_by_system${tierKey}`} chartModel={f.hostname}
-                    logoSrc={logoSrc} direction="higher"
-                  />
-                ) : (
-                  <ChartCard
-                    title={`Tokens/sec${titleSuffix}${tierSuffix}`}
-                    modelName={f.hostname}
-                    data={g.tpsLineData} lineConfigs={g.tpsLineConfigs}
-                    xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens/sec" unit="tps"
-                    isMultiFile={false}
-                    chartName={`${chartNamePrefix}tps_by_system${tierKey}`} chartModel={f.hostname}
-                    logoSrc={logoSrc} direction="higher"
-                  />
-                ))}
-                {g.hasTtft && (isBar ? (
-                  <GroupedBarCard
-                    title={`Time to First Token${titleSuffix}${tierSuffix}`}
-                    modelName={f.hostname}
-                    data={g.ttftBarData}
-                    barConfigs={g.ttftBarConfigs}
-                    xKey="modelLabel" yLabel={ttftYLabel} unit={ttftUnit}
-                    chartName={`${chartNamePrefix}ttft_by_system${tierKey}`} chartModel={f.hostname}
-                    logoSrc={logoSrc} direction="lower"
-                  />
-                ) : (
-                  <ChartCard
-                    title={`Time to First Token${titleSuffix}${tierSuffix}`}
-                    modelName={f.hostname}
-                    data={g.ttftLineData} lineConfigs={g.ttftLineConfigs}
-                    xKey="ctxLabel" xLabel="Context Length" yLabel={ttftYLabel} unit={ttftUnit}
-                    isMultiFile={false}
-                    chartName={`${chartNamePrefix}ttft_by_system${tierKey}`} chartModel={f.hostname}
-                    logoSrc={logoSrc} direction="lower"
-                  />
-                ))}
-              </Fragment>
-            );
-          })}
-        </div>
-      ))}
-    </ChartGrid>
+    <BySystemPanel
+      containerRef={containerRef} chartWidth={chartWidth} logoSrc={logoSrc}
+      isBar={isBar} emptyLabel={`No ${SECTION_LABELS[section]} data in the loaded file(s)`}
+      systemGroups={systemGroups}
+    />
   );
 }

@@ -50,7 +50,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBench && (
+      {section !== "accuracy" && !isConcurrency && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -63,7 +63,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBench && (
+      {section !== "accuracy" && !isConcurrency && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -76,7 +76,7 @@ export default function Controls({
         </div>
       )}
 
-      {groupBy === "system" && (section === "llm" || section === "llm_conversation") && (
+      {groupBy === "system" && (section === "llm" || section === "llm_conversation" || section === "llamabench") && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Model Sizes</div>
           <div style={{ display: "flex", gap: 6 }}>

@@ -7,6 +7,7 @@ import EmbeddingsPanel from "./panels/EmbeddingsPanel";
 import AccuracyPanel from "./panels/AccuracyPanel";
 import ConcurrencyPanel from "./panels/ConcurrencyPanel";
 import LlamaBenchPanel from "./panels/LlamaBenchPanel";
+import LlamaBenchBySystemPanel from "./panels/LlamaBenchBySystemPanel";
 import { EmptyState } from "./panels/shared";
 
 // Picks the right panel for the current section / Group By / Chart Style
@@ -36,11 +37,20 @@ export default function ChartPanel({
     );
   }
 
+  if (isBySystem && section === "llamabench") {
+    return (
+      <LlamaBenchBySystemPanel
+        containerRef={containerRef} files={files} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar} isSplit={isSplit}
+      />
+    );
+  }
+
   if (section === "llamabench") {
     return (
       <LlamaBenchPanel
         containerRef={containerRef} files={files} enabledModels={enabledModels}
-        chartWidth={chartWidth} logoSrc={logoSrc}
+        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar} isMultiFile={isMultiFile}
       />
     );
   }

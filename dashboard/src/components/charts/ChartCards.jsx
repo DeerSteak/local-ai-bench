@@ -172,7 +172,10 @@ export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabe
         </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart layout="vertical" data={processedData} margin={{ top: 8, right: rightMargin, bottom: 12, left: 8 }}>
+        {/* Fixed pixel gap, not recharts' default 10%-of-band — with many bars per category
+            (e.g. llama-bench's up to 20 checkpoints) the per-category band is tall enough that
+            a percentage gap becomes a very visible dead strip between categories. */}
+        <BarChart layout="vertical" data={processedData} barCategoryGap={8} margin={{ top: 8, right: rightMargin, bottom: 12, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e0e4e8" horizontal={false} />
           <XAxis
             type="number"
