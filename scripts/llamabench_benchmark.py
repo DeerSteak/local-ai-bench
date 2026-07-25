@@ -74,11 +74,13 @@ class LlamaBenchBenchmark:
                 last_activity[0] = time.monotonic()
 
         def _drain_stdout():
+            assert proc.stdout is not None
             for line in proc.stdout:
                 stdout_chunks.append(line)
                 _touch()
 
         def _drain_stderr():
+            assert proc.stderr is not None
             for line in proc.stderr:
                 stderr_chunks.append(line)
                 _touch()
