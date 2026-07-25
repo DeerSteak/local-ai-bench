@@ -13,6 +13,68 @@ from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
 
 # ══════════════════════════════════════════════════════════════════════════
+#  Group 0 — binary resolution
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
+    nested = tmp_path / "build" / "bin"
+    nested.mkdir(parents=True)
+    exe = nested / "llama-server"
+    exe.write_text("")
+    monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
+    assert LlamaCppEngine._binary_path() == str(exe)
+
+
+def test_binary_path_skips_a_same_named_source_directory(monkeypatch, tmp_path):
+    """A CMake source tree has tools/server/ (source) alongside build/bin/llama-server
+    (compiled) — mirrors the real bug where a same-named source directory shadowed
+    llama-bench's compiled binary; rglob must not return the directory."""
+    monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
+    (tmp_path / "tools" / "llama-server").mkdir(parents=True)
+    nested = tmp_path / "build" / "bin"
+    nested.mkdir(parents=True)
+    exe = nested / "llama-server"
+    exe.write_text("")
+    monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
+    assert LlamaCppEngine._binary_path() == str(exe)
+
+
+def test_binary_path_falls_back_to_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
+    monkeypatch.setattr(
+        llamacpp_module.shutil, "which",
+        lambda name: "/usr/local/bin/llama-server" if name == "llama-server" else None,
+    )
+    assert LlamaCppEngine._binary_path() == "/usr/local/bin/llama-server"
+
+
+def test_binary_path_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
+    monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
+
+    real_exists = llamacpp_module.Path.exists
+
+    def fake_exists(self):
+        return str(self) == "/opt/homebrew/bin/llama-server" or real_exists(self)
+
+    monkeypatch.setattr(llamacpp_module.Path, "exists", fake_exists)
+    assert LlamaCppEngine._binary_path() == "/opt/homebrew/bin/llama-server"
+
+
+def test_binary_path_returns_none_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
+    monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
+    assert LlamaCppEngine._binary_path() is None
+
+
+# ══════════════════════════════════════════════════════════════════════════
 #  Group 1 — local model-file resolution
 # ══════════════════════════════════════════════════════════════════════════
 
