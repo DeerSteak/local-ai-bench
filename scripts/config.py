@@ -87,6 +87,11 @@ LLAMABENCH_TIMEOUT = 1800
 # default (-1) isn't documented as meaning "all layers".
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
+# llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
+LLAMABENCH_CONC_PP = 8192
+LLAMABENCH_CONC_TG = [128, 512]
+LLAMABENCH_CONC_NPL = [1, 2, 4, 8, 16]
+
 # Above this, a self-reported tps is treated as unreliable — see docs/engines.md's "_sanitize_tps".
 MAX_PLAUSIBLE_TPS = 5000.0
 

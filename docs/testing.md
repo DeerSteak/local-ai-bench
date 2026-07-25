@@ -311,6 +311,14 @@ The test suite consists of **41 test modules** validating different components o
   - `format_entry` labels a pure prompt-processing entry, a pure generation entry, and a combined pp+tg entry.
   - `run()` skips a non-`LlamaCppEngine` engine and a missing binary, skips an unpulled model, records an `error` entry for missing files/a timeout/a generic exception without stopping the rest of the models, records `entries` on success, calls `save_fn` after each model, and passes the right `-ngl` for `cpu_only` true/false.
 
+- **[test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py)**
+  Tests `LlamaBenchConcurrencyBenchmark` (`scripts/llamabench_concurrency_benchmark.py`), the opt-in `llamabenchconc` test — see [Workloads](../docs/workloads.md#llama-bench-concurrency). Same shape as the `llamabench` tests above, plus the context-fitting logic that test doesn't have:
+  - `find_binary` resolution order for `llama-batched-bench`, mirroring the `llamabench` cases.
+  - `fit_npl` with ample context, with high concurrency levels dropped for not fitting, with the prompt depth clamped to a small model context, with a single-sequence fallback when nothing fits, and with headroom taken from the largest `tg` value rather than the first.
+  - `build_command` assembles the exact `llama-batched-bench` argv (including `-c`/`-npp`/`-ntg`/`-npl` and no `--progress`/`-r`, which this tool doesn't have).
+  - `run_one` parses JSONL rows incrementally and reports each one through `on_progress`, succeeds on empty stderr, skips blank/malformed lines, raises with the tail of stderr on a non-zero exit, raises when nothing parseable arrived at all, and lets a `subprocess.TimeoutExpired` propagate.
+  - `run()`'s dispatch cases mirror `llamabench`'s, plus that `-c` and the swept concurrency levels are derived from the model's real context (mocked `max_context_length`) and recorded alongside `entries`.
+
 - **[test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py)**
   Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:
   - Correct execution count under normal operations.
@@ -353,7 +361,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
 
 `npm run lint` (ESLint) should also pass after any change to `dashboard/src`.
 
-**Scope:** this suite covers `dashboard/src/utils/*.js` (chart data builders, status-label logic, formatting, model-registry lookups — split by section: `shared.js`, `llm.js`, `images.js`, `embeddings.js`, `llamabench.js`, `accuracy.js`, `concurrency.js`) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
+**Scope:** this suite covers `dashboard/src/utils/*.js` (chart data builders, status-label logic, formatting, model-registry lookups — split by section: `shared.js`, `llm.js`, `images.js`, `embeddings.js`, `llamabench.js`, `llamabenchconc.js`, `accuracy.js`, `concurrency.js`) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
 
 - **[utils/*.test.js](../dashboard/src/utils/)**
   One test file per `utils/*.js` module, testing the pure data-transformation and formatting functions in each. Notably:

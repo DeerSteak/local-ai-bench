@@ -2,7 +2,7 @@
 
 # Workloads
 
-Six workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), concurrency (opt-in — see below), and llama-bench (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Seven workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), concurrency (opt-in — see below), llama-bench (opt-in — see below), and llama-bench concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -23,6 +23,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Bank versioning](#bank-versioning)
 - [Concurrency](#concurrency)
 - [llama-bench](#llama-bench)
+- [llama-bench Concurrency](#llama-bench-concurrency)
 
 ## LLM
 
@@ -283,6 +284,20 @@ For each model, one `llama-bench` subprocess call sweeps every combination of `c
 Each model's `llamabench` result is either `{"entries": [...]}` — the parsed `llama-bench -o json` output verbatim, one object per checkpoint with fields like `n_prompt`, `n_gen`, `avg_ts`, `stddev_ts`, and `n_gpu_layers` — or `{"error": "..."}`.
 
 Requires `llama-bench` to be installed — `setup.sh`/`setup.bat` install it alongside `llama-server` (see [Setup](setup.md)); if it's missing, the test prints where to get it and records nothing rather than failing the whole run.
+
+## llama-bench Concurrency
+
+Opt-in (`--tests llamabenchconc`, not part of the default set) — runs llama.cpp's own `llama-batched-bench` tool (a different binary from `llama-bench` above) against every model in the same `--maxtier`/`--llm-models` scope as `llm`/`conv`, measuring how decode throughput scales as more sequences are generated in parallel. It overlaps with [Concurrency](#concurrency)'s `conc_tool`/`conc_chat` on purpose, the same way `llamabench` overlaps with `llm`: those two sweep concurrency through this project's own llama-server and HTTP/SSE client, while this one bypasses all of it and lets llama.cpp batch the sequences itself, so a divergence between them isolates whether a concurrency ceiling comes from the serving layer or from the model/hardware. `conc_tool`/`conc_chat` report both per-request and aggregate tokens/sec; `llamabenchconc` reports only the aggregate — `speed_tg` in each output row is the combined decode throughput across all parallel sequences at that level, not a per-request rate.
+
+Like `llamabench`, this workload is inherently llama.cpp-specific and is skipped with a warning under any future non-llama.cpp engine.
+
+For each model, one `llama-batched-bench` subprocess call sweeps every combination of `config.LLAMABENCH_CONC_PP` (8192-token prompt depth per sequence), `config.LLAMABENCH_CONC_TG` (128/512 generation sizes), and `config.LLAMABENCH_CONC_NPL` (1/2/4/8/16 parallel sequences) via `-npp`/`-ntg`/`-npl`, at `config.LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512). Unlike `llama-bench`, `llama-batched-bench` has no auto-fit for context: `-c` is an explicit unified KV allocation shared by every parallel sequence in the call, so it has to cover the worst-case combination in that sweep — `max(npl) * (pp + max(tg))`. Because that can exceed what a model actually supports, `LlamaBenchConcurrencyBenchmark.fit_npl` first clamps the prompt depth down so `pp + max(tg)` fits the model's real context window (read from GGUF metadata, no model load required), then drops any concurrency level whose total KV need would still exceed it — falling back to single-sequence only if nothing else fits. A model with a 32K context therefore runs 1- and 2-way and stops there rather than failing to allocate at 4-way. GPU offload passes an explicit `-ngl` (999, or 0 under `--cpu-only`), and the engine's own server is stopped entirely before the sweep starts, both exactly as in `llamabench`. A single model's failure records that model's `error` and moves on.
+
+This build of `llama-batched-bench` prints nothing to stderr and has no `--progress` flag, so progress comes from stdout instead: results are requested as `--output-format jsonl`, one JSON object per (pp, tg, pl) combination, and each line is parsed and logged as it arrives. Blank or non-JSON lines are ignored. The same idle timeout as `llamabench` applies (`config.LLAMABENCH_TIMEOUT`) — the sweep is killed only if no output arrives for that long, not after a fixed total duration.
+
+Each model's `llamabenchconc` result is either `{"entries": [...], "pp": <effective prompt depth>, "ctx_size": <-c value used>}` — where `entries` are the parsed JSONL rows verbatim, with `llama-batched-bench`'s own field names (`pp`, `tg`, `pl`, `n_kv`, `t_pp`, `speed_pp`, `t_tg`, `speed_tg`, `t`, `speed`, ...) — or `{"error": "..."}`.
+
+Requires `llama-batched-bench` to be installed — `setup.sh`/`setup.bat` install it alongside `llama-server` (see [Setup](setup.md)); if it's missing, the test prints where to get it and records nothing rather than failing the whole run.
 
 ---
 
