@@ -1,11 +1,11 @@
 import {
-  getAllAccuracyModels, modelLabel,
+  getAllAccuracyModels,
   buildAccuracyGroupedBarData, buildAccuracyGroupedBarConfigs,
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
   buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
-  sortBarData, findMostStrenuousKey,
-} from "../../utils";
+} from "../../utils/accuracy";
+import { modelLabel, sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { ACCURACY_TEST_LABELS, ACCURACY_TIMEOUT_BAR_CONFIGS } from "../../constants";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";

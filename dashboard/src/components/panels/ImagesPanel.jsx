@@ -2,8 +2,8 @@ import {
   getAllImageModels,
   buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
   buildImagesData, buildImagesLineConfigs,
-  sortBarData, findMostStrenuousKey,
-} from "../../utils";
+} from "../../utils/images";
+import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { RES_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";

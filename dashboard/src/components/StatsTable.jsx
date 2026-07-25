@@ -1,5 +1,11 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, flattenLlamaBenchData, concurrencySortValue, fmt, modelLabel } from "../utils";
+import { sortRows, fmt, modelLabel } from "../utils/shared";
+import { flattenLLMData } from "../utils/llm";
+import { flattenEmbedData } from "../utils/embeddings";
+import { flattenImageData } from "../utils/images";
+import { flattenAccuracyData } from "../utils/accuracy";
+import { flattenConcurrencyData, concurrencySortValue } from "../utils/concurrency";
+import { flattenLlamaBenchData } from "../utils/llamabench";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
@@ -25,11 +31,7 @@ function MachineTd({ fileId, files }) {
 
 function LLMTable({ files, section, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenLLMData(files, section).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenLLMData(files, section), sortConfig);
 
   return (
     <table className={styles.table}>
@@ -73,11 +75,7 @@ function LLMTable({ files, section, sortConfig, onCycleSort }) {
 
 function EmbedTable({ files, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenEmbedData(files).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenEmbedData(files), sortConfig);
 
   return (
     <table className={styles.table}>
@@ -119,11 +117,7 @@ function EmbedTable({ files, sortConfig, onCycleSort }) {
 
 function ImagesTable({ files, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenImageData(files).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenImageData(files), sortConfig);
 
   return (
     <table className={styles.table}>
@@ -157,11 +151,7 @@ function ImagesTable({ files, sortConfig, onCycleSort }) {
 
 function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenConcurrencyData(files, section).sort((a, b) => {
-    const ak = concurrencySortValue(a, sortConfig.key);
-    const bk = concurrencySortValue(b, sortConfig.key);
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenConcurrencyData(files, section), sortConfig, concurrencySortValue);
 
   return (
     <table className={styles.table}>
@@ -207,11 +197,7 @@ function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
 
 function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenLlamaBenchData(files).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenLlamaBenchData(files), sortConfig);
 
   return (
     <table className={styles.table}>
@@ -251,11 +237,7 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
 
 function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
-  const rows = flattenAccuracyData(files, testKey).sort((a, b) => {
-    const ak = a[sortConfig.key] ?? "";
-    const bk = b[sortConfig.key] ?? "";
-    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
-  });
+  const rows = sortRows(flattenAccuracyData(files, testKey), sortConfig);
 
   return (
     <table className={styles.table}>

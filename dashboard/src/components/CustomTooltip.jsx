@@ -1,4 +1,4 @@
-import { fmt } from "../utils";
+import { fmt } from "../utils/shared";
 import styles from "./CustomTooltip.module.css";
 
 export default function CustomTooltip({ active, payload, label, unit, xPrefix, orderedBarConfigs }) {

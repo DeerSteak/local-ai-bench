@@ -1,6 +1,10 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, getAllLLMModels, getAllImageModels, getAllEmbedModels, getAccuracySettingsWarning, sanitizeForFilename, applyEngineLabels } from "./utils";
+import { parseResultsJSON, sanitizeForFilename, applyEngineLabels } from "./utils/shared";
+import { getAllLLMModels } from "./utils/llm";
+import { getAllImageModels } from "./utils/images";
+import { getAllEmbedModels } from "./utils/embeddings";
+import { getAccuracySettingsWarning } from "./utils/accuracy";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";

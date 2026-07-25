@@ -1,8 +1,9 @@
 import {
   buildImagesBarDataByModel, buildImagesBarConfigsByModel,
   buildImagesLineDataByRes, buildImagesLineConfigsByRes,
-  getAllImageModels, sortBarData, findMostStrenuousKey,
-} from "../../utils";
+  getAllImageModels,
+} from "../../utils/images";
+import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";

@@ -2,7 +2,7 @@ import { SECTIONS, SECTION_LABELS, FILE_COLORS, ACCURACY_TESTS, ACCURACY_TEST_LA
 import {
   modelLabel, imageModelLabel, embedModelLabel,
   getModelColor, getImageModelColor, getEmbedModelColor, sanitizeForFilename,
-} from "../utils";
+} from "../utils/shared";
 import styles from "./Controls.module.css";
 
 export default function Controls({

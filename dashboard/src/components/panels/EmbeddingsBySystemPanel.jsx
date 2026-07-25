@@ -1,7 +1,5 @@
-import {
-  buildEmbedBarDataByModel, buildEmbedBarConfigsByModel,
-  getAllEmbedModels, sortBarData, findMostStrenuousKey,
-} from "../../utils";
+import { buildEmbedBarDataByModel, buildEmbedBarConfigsByModel, getAllEmbedModels } from "../../utils/embeddings";
+import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";

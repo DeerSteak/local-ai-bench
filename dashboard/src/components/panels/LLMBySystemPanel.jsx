@@ -1,12 +1,13 @@
 import {
   buildLLMBarDataByModel, buildLLMBarConfigsByModel,
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
-  getLLMModelsWithSectionResults, sortBarData, getModelSizeTier, getSkipInfo, modelLabel,
-} from "../../utils";
+  getLLMModelsWithSectionResults,
+} from "../../utils/llm";
+import {
+  sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus,
+} from "../../utils/shared";
 import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
-
-const hasValueOrStatus = (rows, key) => rows.some(r => r[key] != null || r[`_status_${key}`] != null);
 
 // Group By: System, LLM / LLM Conversation section — resolves this section's own
 // ctx-keyed data into BySystemPanel's generic { tier, metrics } shape.
@@ -29,10 +30,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
     const allTtftVals = allTtftBar
       .flatMap(row => Object.entries(row).filter(([k]) => k !== "modelLabel" && !k.startsWith("_status_")).map(([, v]) => v))
       .filter(v => v != null);
-    const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
-      : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
-      : "sec";
-    const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+    const { ttftUnit, ttftYLabel } = deriveTtftUnit(allTtftVals);
 
     const groups = modelGroupSpecs.map(({ tier, models }) => {
       const rawTpsBarData = buildLLMBarDataByModel(f, models, "tps", section);

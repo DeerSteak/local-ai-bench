@@ -1,7 +1,5 @@
-import {
-  buildConcurrencyDataForModel, buildFileLineConfigs,
-  getAllConcurrencyModels, modelLabel, getSkipInfo, getConcurrencyStopInfo,
-} from "../../utils";
+import { buildConcurrencyDataForModel, getAllConcurrencyModels, getConcurrencyStopInfo } from "../../utils/concurrency";
+import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
@@ -28,10 +26,7 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
     const ttftLineConfigs = lineConfigs.filter(lc => ttftData.some(r => r[lc.dataKey] != null));
 
     const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
-    const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
-      : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
-      : "sec";
-    const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+    const { ttftUnit, ttftYLabel } = deriveTtftUnit(allTtftVals);
 
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))

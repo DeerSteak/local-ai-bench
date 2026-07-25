@@ -1,5 +1,5 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { prepareOrderedBarGroupData, fmt } from "../../utils";
+import { prepareOrderedBarGroupData, fmt } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";

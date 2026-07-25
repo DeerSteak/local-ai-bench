@@ -1,7 +1,7 @@
+import { buildLLMDataForModel, buildLLMBarConfigs, buildLLMBarData, getAllLLMModels } from "../../utils/llm";
 import {
-  buildLLMDataForModel, buildFileLineConfigs, buildLLMBarConfigs, buildLLMBarData,
-  getAllLLMModels, modelLabel, sortBarData, getSkipInfo,
-} from "../../utils";
+  buildFileLineConfigs, modelLabel, sortBarData, getSkipInfo, deriveTtftUnit, hasValueOrStatus,
+} from "../../utils/shared";
 import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
@@ -25,16 +25,12 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const rawTpsBarData = buildLLMBarData(files, model, "tps", section);
     const rawTtftBarData = buildLLMBarData(files, model, "ttft", section);
     const byCtxOrder = (a, b) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
-    const hasValueOrStatus = (rows, key) => rows.some(r => r[key] != null || r[`_status_${key}`] != null);
     const tpsBarConfigs = rawTpsBarConfigs.filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey)).sort(byCtxOrder);
     const ttftBarConfigs = rawTtftBarConfigs.filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey)).sort(byCtxOrder);
     const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
     const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
     const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
-    const ttftUnit = allTtftVals.some(v => v >= 60) ? "sec-plain"
-      : allTtftVals.length && allTtftVals.every(v => v < 1) ? "ms"
-      : "sec";
-    const ttftYLabel = ttftUnit === "ms" ? "TTFT (ms)" : "TTFT (sec)";
+    const { ttftUnit, ttftYLabel } = deriveTtftUnit(allTtftVals);
     const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
     const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
     const skipEntries = files

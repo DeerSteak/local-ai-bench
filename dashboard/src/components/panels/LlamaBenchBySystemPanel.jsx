@@ -1,8 +1,10 @@
 import {
   buildLlamaBenchBarDataByModel, buildLlamaBenchBarConfigsByModel,
   buildLlamaBenchLineDataByCheckpoint, buildLlamaBenchLineConfigsByCheckpoint,
-  llamaBenchTgValuesByModel, getAllLLMModels, sortBarData, getModelSizeTier, modelLabel,
-} from "../../utils";
+  llamaBenchTgValuesByModel,
+} from "../../utils/llamabench";
+import { getAllLLMModels } from "../../utils/llm";
+import { sortBarData, getModelSizeTier, modelLabel } from "../../utils/shared";
 import { SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
 

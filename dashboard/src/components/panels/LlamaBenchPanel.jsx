@@ -1,7 +1,8 @@
+import { getAllLLMModels } from "../../utils/llm";
 import {
-  getAllLLMModels, llamaBenchTgValues, buildLlamaBenchBarData, buildLlamaBenchBarConfigs, buildLlamaBenchLineData,
-  buildFileLineConfigs, modelLabel, sortBarData,
-} from "../../utils";
+  llamaBenchTgValues, buildLlamaBenchBarData, buildLlamaBenchBarConfigs, buildLlamaBenchLineData,
+} from "../../utils/llamabench";
+import { buildFileLineConfigs, modelLabel, sortBarData } from "../../utils/shared";
 import { GroupedBarCard, ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import styles from "../ChartPanel.module.css";
