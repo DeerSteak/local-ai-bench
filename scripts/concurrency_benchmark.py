@@ -180,7 +180,8 @@ class ConcurrencyBenchmark:
                     }
                     Shared.ok(
                         f"{level}-way done: per-request TTFT={Shared.mean(ttfts):.2f}s "
-                        f"TPS={mean_tps:.1f} — aggregate {aggregate_tps:.1f} tok/s"
+                        f"decode-only TPS={mean_tps:.1f} — serving throughput "
+                        f"(incl. TTFT) {aggregate_tps:.1f} tok/s"
                     )
 
                     if self.should_stop_escalating(level, mean_tps, force_all, soft_exit_floor):
