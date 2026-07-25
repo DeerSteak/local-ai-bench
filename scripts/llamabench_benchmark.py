@@ -5,6 +5,7 @@ import json
 import platform
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import config
@@ -46,18 +47,51 @@ class LlamaBenchBenchmark:
             "-ngl", str(ngl),
             "-r", str(reps),
             "-o", "json",
+            "--progress",
         ]
 
     @classmethod
     def run_one(cls, binary: str, model_path: Path, pp: list[int], tg: list[int],
-               batch_size: int, ubatch_size: int, reps: int, ngl: int, timeout: int) -> list[dict]:
-        """Runs one llama-bench pass for a single model and returns its parsed JSON entries."""
+               batch_size: int, ubatch_size: int, reps: int, ngl: int, timeout: int,
+               on_progress=None) -> list[dict]:
+        """Runs one llama-bench pass, streaming stderr progress lines to on_progress as they arrive
+        rather than buffering until exit, and returns the parsed stdout JSON entries."""
         cmd = cls.build_command(binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl)
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if completed.returncode != 0:
-            raise RuntimeError(f"llama-bench exited {completed.returncode}: {completed.stderr.strip()[-2000:]}")
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def _drain_stdout():
+            for line in proc.stdout:
+                stdout_chunks.append(line)
+
+        def _drain_stderr():
+            for line in proc.stderr:
+                stderr_chunks.append(line)
+                stripped = line.strip()
+                if stripped and on_progress:
+                    on_progress(stripped)
+
+        stdout_thread = threading.Thread(target=_drain_stdout, daemon=True)
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stdout_thread.start()
+        stderr_thread.start()
+
         try:
-            return json.loads(completed.stdout)
+            returncode = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            stdout_thread.join()
+            stderr_thread.join()
+
+        if returncode != 0:
+            raise RuntimeError(f"llama-bench exited {returncode}: {''.join(stderr_chunks).strip()[-2000:]}")
+        try:
+            return json.loads("".join(stdout_chunks))
         except json.JSONDecodeError as e:
             raise RuntimeError(f"llama-bench produced unparseable JSON: {e}") from None
 
@@ -106,6 +140,7 @@ class LlamaBenchBenchmark:
                         binary, paths[0], config.LLAMABENCH_PP, config.LLAMABENCH_TG,
                         config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
                         reps, ngl, config.LLAMABENCH_TIMEOUT,
+                        on_progress=Shared.log,
                     )
                 except subprocess.TimeoutExpired:
                     Shared.err(f"{label}: llama-bench exceeded {config.LLAMABENCH_TIMEOUT}s — skipping")

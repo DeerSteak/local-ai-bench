@@ -1,5 +1,6 @@
 """Tests for LlamaBenchBenchmark — see docs/testing.md."""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 import config
 from engines.llamacpp import LlamaCppEngine
 from llamabench_benchmark import LlamaBenchBenchmark
+from shared import Shared
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -71,6 +73,7 @@ def test_build_command_shape():
         "-p", "512,2048", "-n", "128",
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "-r", "3", "-o", "json",
+        "--progress",
     ]
 
 
@@ -86,27 +89,59 @@ def test_build_command_cpu_only_ngl():
 # ══════════════════════════════════════════════════════════════════════════
 
 
-class _FakeCompleted:
-    def __init__(self, returncode, stdout="", stderr=""):
+class _FakePopen:
+    """Mimics the slice of subprocess.Popen's interface run_one drains: line-iterable
+    stdout/stderr pipes, wait(timeout=...), and kill()."""
+
+    def __init__(self, returncode=0, stdout_lines=(), stderr_lines=(), timeout_first_wait=False):
         self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+        self.stdout = iter(stdout_lines)
+        self.stderr = iter(stderr_lines)
+        self._timeout_first_wait = timeout_first_wait
+        self._waited = False
+        self.killed = False
+
+    def wait(self, timeout=None):
+        if self._timeout_first_wait and not self._waited:
+            self._waited = True
+            raise subprocess.TimeoutExpired(cmd=["llama-bench"], timeout=timeout)
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
 
 
 def test_run_one_parses_json_on_success(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
+    stdout_line = json.dumps(fake_entries) + "\n"
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.run",
-        lambda cmd, capture_output, text, timeout: _FakeCompleted(0, stdout=__import__("json").dumps(fake_entries)),
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=[stdout_line]),
     )
     entries = LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
     assert entries == fake_entries
 
 
+def test_run_one_streams_stderr_progress_lines(monkeypatch):
+    fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
+    stdout_line = json.dumps(fake_entries) + "\n"
+    monkeypatch.setattr(
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[stdout_line], stderr_lines=["1/6: pp512\n", "2/6: pp512\n"],
+        ),
+    )
+    seen = []
+    LlamaBenchBenchmark.run_one(
+        "llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60, on_progress=seen.append,
+    )
+    assert seen == ["1/6: pp512", "2/6: pp512"]
+
+
 def test_run_one_raises_on_nonzero_exit(monkeypatch):
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.run",
-        lambda cmd, capture_output, text, timeout: _FakeCompleted(1, stderr="error: out of memory"),
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(1, stderr_lines=["error: out of memory\n"]),
     )
     with pytest.raises(RuntimeError, match="out of memory"):
         LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
@@ -114,20 +149,19 @@ def test_run_one_raises_on_nonzero_exit(monkeypatch):
 
 def test_run_one_raises_on_malformed_json(monkeypatch):
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.run",
-        lambda cmd, capture_output, text, timeout: _FakeCompleted(0, stdout="not json"),
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=["not json"]),
     )
     with pytest.raises(RuntimeError, match="unparseable JSON"):
         LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
 
 
 def test_run_one_propagates_timeout(monkeypatch):
-    def fake_run(cmd, capture_output, text, timeout):
-        raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
-
-    monkeypatch.setattr("llamabench_benchmark.subprocess.run", fake_run)
+    fake_proc = _FakePopen(timeout_first_wait=True)
+    monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
     with pytest.raises(subprocess.TimeoutExpired):
         LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+    assert fake_proc.killed
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -211,6 +245,18 @@ def test_run_records_entries_on_success(fake_engine, monkeypatch):
     assert result["m1"] == {"entries": fake_entries}
 
 
+def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch):
+    captured = {}
+
+    def fake_run_one(cls, *a, on_progress=None, **kw):
+        captured["on_progress"] = on_progress
+        return []
+
+    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
+    LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)
+    assert captured["on_progress"] is Shared.log
+
+
 def test_run_calls_save_fn_after_each_model(fake_engine, monkeypatch):
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(lambda cls, *a, **kw: []))
     saved = []
@@ -253,7 +299,7 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
 def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
     captured = {}
 
-    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout):
+    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout, on_progress=None):
         captured["ngl"] = ngl
         return []
 
@@ -265,7 +311,7 @@ def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
 def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch):
     captured = {}
 
-    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout):
+    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout, on_progress=None):
         captured["ngl"] = ngl
         return []
 
