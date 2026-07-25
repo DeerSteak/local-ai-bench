@@ -14,7 +14,7 @@
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Homebrew, Python, llama.cpp, ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI, XPU-enabled PyTorch on Intel Arc (experimental) |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise), ComfyUI portable |
 
 `setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
@@ -87,6 +87,8 @@ Close other apps before running — GPU memory contention affects results.
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
 
 **Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify GPU acceleration after setup: run the benchmark and confirm llama-server loads on GPU in `nvidia-smi`.
+
+**Linux (AMD/ROCm)** — `setup_check.py` detects the GPU via `rocminfo` and builds llama.cpp from source with `-DGGML_HIP=ON`, so LLM tests are GPU-accelerated with no extra steps. Image generation needs a separate piece: ComfyUI's `requirements.txt` installs a plain (CUDA-only) torch build regardless of platform, which raises `RuntimeError: Found no NVIDIA driver` on an AMD box rather than falling back to CPU — so `setup_check.py` reinstalls `torch`/`torchvision`/`torchaudio` from [PyTorch's ROCm wheel index](https://download.pytorch.org/whl/rocm6.4) afterward whenever a ROCm GPU is detected and an image model is selected, the same pattern used for Intel Arc's XPU wheels below. This reinstall is unverified on newer APU architectures (e.g. Strix Halo/gfx1151) — if no wheel matches your GPU, check https://download.pytorch.org/whl/ for a newer ROCm index and install manually.
 
 **Linux (Intel Arc) — experimental, untested on real hardware** — this project's maintainers don't have access to an Intel Arc machine, so everything below is implemented against Intel's published documentation, not verified against a real run. Package names and version numbers may be wrong or out of date. If you have Arc hardware and try this, please report back (open an issue) with what did or didn't work — that's how this graduates out of experimental.
 

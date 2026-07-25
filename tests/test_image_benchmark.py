@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import config
 from image_benchmark import ImageBenchmark
+from shared import Shared
 
 
 def _build_kwargs(**overrides):
@@ -186,3 +189,27 @@ def test_comfyui_interrupt_and_clear_polls_until_queue_drains(monkeypatch):
 
     assert sleeps == [1]
     assert responses == []
+
+
+def test_handle_crashed_warmup_returns_true_when_restart_succeeds(monkeypatch):
+    monkeypatch.setattr(Shared, "ensure_comfyui", lambda comfyui_dir: True)
+    monkeypatch.setattr(Shared, "tail_comfyui_log", lambda: "some log output")
+
+    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "SD3.5 Large") is True
+
+
+def test_handle_crashed_warmup_returns_false_when_restart_fails(monkeypatch):
+    monkeypatch.setattr(Shared, "ensure_comfyui", lambda comfyui_dir: False)
+    monkeypatch.setattr(Shared, "tail_comfyui_log", lambda: "some log output")
+
+    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "SD3.5 Large") is False
+
+
+def test_handle_crashed_warmup_passes_comfyui_dir_through_to_restart(monkeypatch):
+    seen = []
+    monkeypatch.setattr(Shared, "ensure_comfyui", lambda comfyui_dir: seen.append(comfyui_dir) or True)
+    monkeypatch.setattr(Shared, "tail_comfyui_log", lambda: "")
+
+    ImageBenchmark.handle_crashed_warmup(Path("/some/ComfyUI"), "Flux.1-dev")
+
+    assert seen == [Path("/some/ComfyUI")]

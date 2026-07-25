@@ -1286,6 +1286,36 @@ else:
                         "torch torchvision torchaudio"
                     )
 
+        # ComfyUI's requirements.txt pulls in plain (non-ROCm) torch on AMD/ROCm Linux — overwrite after.
+        if rocm_ok and not PORTABLE_PYTHON.exists():
+            torch_show = subprocess.run(
+                [sys.executable, "-m", "pip", "show", "torch"],
+                capture_output=True, text=True
+            )
+            torch_is_rocm = torch_show.returncode == 0 and "+rocm" in torch_show.stdout.lower()
+
+            if torch_is_rocm:
+                ok("ROCm-enabled PyTorch already installed")
+            else:
+                info("AMD/ROCm GPU detected — installing ROCm-enabled PyTorch "
+                     "(https://download.pytorch.org/whl/rocm6.4) so ComfyUI uses the GPU. "
+                     "Unverified on newer APU architectures (e.g. Strix Halo) — if no wheel "
+                     "matches your GPU, check https://download.pytorch.org/whl/ for a newer "
+                     "ROCm index ...")
+                result = subprocess.run([
+                    sys.executable, "-m", "pip", "install", "--upgrade",
+                    "--index-url", "https://download.pytorch.org/whl/rocm6.4",
+                    "torch", "torchvision", "torchaudio",
+                ])
+                if result.returncode == 0:
+                    ok("ROCm-enabled PyTorch installed")
+                else:
+                    fail("ROCm-enabled PyTorch install failed — image tests will run on CPU or may fail to start")
+                    issues.append(
+                        "pip install --upgrade --index-url https://download.pytorch.org/whl/rocm6.4 "
+                        "torch torchvision torchaudio"
+                    )
+
         found_ckpts = []
         if CHECKPOINTS.exists():
             for m in selected_images:

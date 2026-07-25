@@ -224,6 +224,18 @@ class ImageBenchmark:
         }
 
     @staticmethod
+    def handle_crashed_warmup(comfyui_dir: Path, label: str) -> bool:
+        """After a warmup crashes ComfyUI, try to restart it. Returns whether
+        the run should proceed to the next model (False means abort entirely,
+        since a dead server that won't restart will fail every remaining model too)."""
+        Shared.warn(f"ComfyUI appears to have crashed — last output:\n{Shared.tail_comfyui_log()}")
+        if Shared.ensure_comfyui(comfyui_dir):
+            return True
+        Shared.err(f"Could not restart ComfyUI after it crashed during {label}'s warmup "
+                   f"— skipping remaining image models")
+        return False
+
+    @staticmethod
     def build_workflow(workflow_t, checkpoint, width, height, steps, cfg,
                        sampler, scheduler, seed, prompt, filename_prefix):
         """Route to the right workflow builder for `workflow_t`; unrecognized
@@ -371,9 +383,10 @@ class ImageBenchmark:
                     Shared.ok(f"{label}: warmup done")
                 except Exception as e:
                     Shared.warn(f"{label}: warmup failed ({e}) — skipping")
-                    if not Shared.comfyui_available():
-                        Shared.warn(f"ComfyUI appears to have crashed — last output:\n{Shared.tail_comfyui_log()}")
                     warmup_ok = False
+                    if not Shared.comfyui_available():
+                        if not ImageBenchmark.handle_crashed_warmup(comfyui_dir, label):
+                            return results
 
                 if not warmup_ok:
                     continue

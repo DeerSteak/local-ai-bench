@@ -110,6 +110,8 @@ Each measured run (`--runs`, default 3) uses a different seed, starting at 42 �
 
 Between models, ComfyUI is asked to unload whatever checkpoint it has resident (`/free` with `unload_models`/`free_memory`) so each model starts from a clean VRAM state — its automatic model-swap-on-load is the only thing that would otherwise free the previous checkpoint, and on the MPS backend its free-VRAM detection is unreliable, so a model can stay resident far longer than it would on CUDA. After a timed-out generation, the benchmark also interrupts the running job and clears ComfyUI's queue before continuing — `/interrupt` and the queue-clear both return before the job actually unwinds, so a dead job would otherwise occupy ComfyUI's single execution slot and every later submission would queue silently behind it.
 
+If a model's warmup crashes the ComfyUI process outright (e.g. a native segfault while loading text-encoder weights), the benchmark detects the dead server and restarts it before moving to the next model, so a crash on one checkpoint doesn't silently doom every remaining image model to an instant connection-refused failure. If ComfyUI can't be restarted at all, the run stops there and preserves whatever image results were already collected.
+
 | Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
 |---|---|---|---|---|---|
 | Stable Diffusion 1.5 | `v1-5-pruned-emaonly.safetensors` | 20 | ~4.3 GB | xsmall | No |
