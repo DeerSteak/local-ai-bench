@@ -24,6 +24,8 @@ export default function Controls({
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
   const isLlamaBench = section === "llamabench";
+  // Line-only, no tier split — same treatment as the concurrency sections.
+  const isLlamaBenchConc = section === "llamabenchconc";
   return (
     <div className="card" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
       <div>
@@ -50,7 +52,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -63,7 +65,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -118,7 +120,7 @@ export default function Controls({
 
       <div className={styles.rowBreak} />
 
-      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || isConcurrency || isLlamaBench) && allModels.length > 0 && (
+      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || isConcurrency || isLlamaBench || isLlamaBenchConc) && allModels.length > 0 && (
         <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>

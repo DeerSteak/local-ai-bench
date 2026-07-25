@@ -6,6 +6,7 @@ import { flattenImageData } from "../utils/images";
 import { flattenAccuracyData } from "../utils/accuracy";
 import { flattenConcurrencyData, concurrencySortValue } from "../utils/concurrency";
 import { flattenLlamaBenchData } from "../utils/llamabench";
+import { flattenLlamaBenchConcData, llamaBenchConcSortValue } from "../utils/llamabenchconc";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
@@ -235,6 +236,48 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
+function LlamaBenchConcTable({ files, sortConfig, onCycleSort }) {
+  const isMulti = files.length > 1;
+  const rows = sortRows(flattenLlamaBenchConcData(files), sortConfig, llamaBenchConcSortValue);
+
+  return (
+    <table className={styles.table}>
+      <thead>
+        <tr>
+          {isMulti && <th className={styles.th}>Machine</th>}
+          <SortTh label="Model" sortKey="model" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Level" sortKey="level" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Prompt" sortKey="pp" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Gen" sortKey="tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Aggregate TPS" sortKey="speed_tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Prefill TPS" sortKey="speed_pp" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => r.skipped ? (
+          <tr key={i} className={styles.trSkipped}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={styles.td} colSpan={5}>
+              Skipped — {r.skip_detail}
+            </td>
+          </tr>
+        ) : (
+          <tr key={i}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={`${styles.td} ${styles.tdCtx}`}>{r.level != null ? `${r.level}-way` : "—"}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.pp ?? "—"}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.tg ?? "—"}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.speed_tg, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.speed_pp, "tps")}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenAccuracyData(files, testKey), sortConfig);
@@ -303,6 +346,7 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "llamabench" && <LlamaBenchTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {section === "llamabenchconc" && <LlamaBenchConcTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
     </div>
   );
 }

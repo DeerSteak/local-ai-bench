@@ -8,6 +8,7 @@ import AccuracyPanel from "./panels/AccuracyPanel";
 import ConcurrencyPanel from "./panels/ConcurrencyPanel";
 import LlamaBenchPanel from "./panels/LlamaBenchPanel";
 import LlamaBenchBySystemPanel from "./panels/LlamaBenchBySystemPanel";
+import LlamaBenchConcPanel from "./panels/LlamaBenchConcPanel";
 import { EmptyState } from "./panels/shared";
 
 // Picks the right panel for the current section / Group By / Chart Style
@@ -51,6 +52,15 @@ export default function ChartPanel({
       <LlamaBenchPanel
         containerRef={containerRef} files={files} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar} isMultiFile={isMultiFile}
+      />
+    );
+  }
+
+  if (section === "llamabenchconc") {
+    return (
+      <LlamaBenchConcPanel
+        containerRef={containerRef} files={files} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
     );
   }
