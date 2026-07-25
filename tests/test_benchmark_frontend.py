@@ -97,6 +97,8 @@ def saved_state(**overrides):
             "embedding": [EMBED_MODELS[-1]["tag"]],
             "image": [],
         },
+        "max_prompt_tokens": None,
+        "tg_tokens": None,
     }
     state.update(overrides)
     return state
@@ -121,6 +123,13 @@ def test_frontend_state_round_trip_uses_strict_json(tmp_path):
     json.dumps(saved_state(tests=["llm", "llm"])),
     json.dumps(saved_state(models={"llm": [], "embedding": []})),
     json.dumps(saved_state(models={"llm": [1], "embedding": [], "image": []})),
+    json.dumps(saved_state(max_prompt_tokens=0)),
+    json.dumps(saved_state(max_prompt_tokens=-1)),
+    json.dumps(saved_state(max_prompt_tokens="32768")),
+    json.dumps(saved_state(tg_tokens=[])),
+    json.dumps(saved_state(tg_tokens=[128, 128])),
+    json.dumps(saved_state(tg_tokens=[0])),
+    json.dumps(saved_state(tg_tokens="128")),
 ])
 def test_load_frontend_state_rejects_missing_or_malformed_state(tmp_path, contents):
     path = tmp_path / "state.json"
@@ -167,7 +176,18 @@ def test_build_frontend_state_records_every_selected_family():
             "embedding": [],
             "image": ["image"],
         },
+        "max_prompt_tokens": None,
+        "tg_tokens": None,
     }
+
+
+def test_build_frontend_state_records_max_prompt_tokens_and_tg_tokens():
+    assert build_frontend_state(
+        "mlx", ["llamabench"], [], max_prompt_tokens=32768, tg_tokens=[128, 1024],
+    )["max_prompt_tokens"] == 32768
+    assert build_frontend_state(
+        "mlx", ["llamabench"], [], max_prompt_tokens=32768, tg_tokens=[128, 1024],
+    )["tg_tokens"] == [128, 1024]
 
 
 def test_saved_test_selection_applies_only_available_remembered_tests():
@@ -601,6 +621,21 @@ def test_choose_max_prompt_tokens_selects_the_numbered_option():
     ) == 8192
 
 
+def test_choose_max_prompt_tokens_blank_input_accepts_the_restored_preference():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(
+        InputSequence([""]), output, options=[512, 2048, 8192], preferred=2048,
+    ) == 2048
+    assert any("2048 (restored)" in message for message in messages)
+
+
+def test_choose_max_prompt_tokens_explicit_zero_overrides_a_restored_preference():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(
+        InputSequence(["0"]), output, options=[512, 2048, 8192], preferred=2048,
+    ) is None
+
+
 def test_choose_max_prompt_tokens_cancels_on_q():
     with pytest.raises(FrontendCancelled):
         choose_max_prompt_tokens(InputSequence(["q"]), lambda _: None)
@@ -843,6 +878,46 @@ def test_run_frontend_restores_saved_tests_models_and_engine(tmp_path):
     assert command[command.index("--llm-models") + 1:] == [
         LLM_MODELS[-1]["tag"], "custom-folder",
     ]
+
+
+def test_run_frontend_restores_max_prompt_tokens_and_tg_tokens(tmp_path):
+    state_path = tmp_path / "state.json"
+    state = saved_state(
+        tests=["llamabench"],
+        models={
+            "llm": [LLM_MODELS[-1]["tag"], "custom-folder"],
+            "embedding": [],
+            "image": [],
+        },
+        max_prompt_tokens=16384,
+        tg_tokens=[128, 1024],
+    )
+    assert save_frontend_state(state, state_path)
+    commands = []
+
+    result = run_frontend(
+        input_fn=InputSequence(["", "", "", "", ""]),
+        output_fn=lambda _: None,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        state_path=state_path,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+
+    assert result == 0
+    command = commands[0]
+    index = command.index("--max-prompt-tokens")
+    assert command[index + 1] == "16384"
+    index = command.index("--tg-tokens")
+    assert command[index + 1:index + 3] == ["128", "1024"]
+
+    restored_state = load_frontend_state(state_path)
+    assert restored_state["max_prompt_tokens"] == 16384
+    assert restored_state["tg_tokens"] == [128, 1024]
 
 
 def test_run_frontend_skips_max_prompt_tokens_prompt_for_unrelated_tests():

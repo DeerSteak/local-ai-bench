@@ -40,7 +40,7 @@ MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMA
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS = [128, 512, 1024]
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
-FRONTEND_STATE_VERSION = 1
+FRONTEND_STATE_VERSION = 2
 FRONTEND_MODEL_FAMILIES = {
     "llm": {"llm", "custom"},
     "embedding": {"embedding"},
@@ -68,7 +68,8 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         state = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(state, dict) or set(state) != {"version", "engine", "tests", "models"}:
+    required_keys = {"version", "engine", "tests", "models", "max_prompt_tokens", "tg_tokens"}
+    if not isinstance(state, dict) or set(state) != required_keys:
         return None
     if state["version"] != FRONTEND_STATE_VERSION or not isinstance(state["engine"], str):
         return None
@@ -85,6 +86,15 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
                 or not all(isinstance(value, str) for value in values)
                 or len(values) != len(set(values))):
             return None
+    max_prompt_tokens = state["max_prompt_tokens"]
+    if max_prompt_tokens is not None and not (isinstance(max_prompt_tokens, int) and max_prompt_tokens > 0):
+        return None
+    tg_tokens = state["tg_tokens"]
+    if tg_tokens is not None and (
+            not isinstance(tg_tokens, list) or not tg_tokens
+            or not all(isinstance(v, int) and v > 0 for v in tg_tokens)
+            or len(tg_tokens) != len(set(tg_tokens))):
+        return None
     return state
 
 
@@ -111,7 +121,9 @@ def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
 
 
 def build_frontend_state(engine_name: str, tests: list[str],
-                         entries: list[MenuEntry]) -> dict:
+                         entries: list[MenuEntry],
+                         max_prompt_tokens: int | None = None,
+                         tg_tokens: list[int] | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
     return {
         "version": FRONTEND_STATE_VERSION,
@@ -123,6 +135,8 @@ def build_frontend_state(engine_name: str, tests: list[str],
             ]
             for family, kinds in FRONTEND_MODEL_FAMILIES.items()
         },
+        "max_prompt_tokens": max_prompt_tokens,
+        "tg_tokens": list(tg_tokens) if tg_tokens is not None else None,
     }
 
 
@@ -282,7 +296,8 @@ def choose_tests(entries: list[MenuEntry], input_fn, output_fn,
 
 
 def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
-                             options: list[int] | None = None) -> int | None:
+                             options: list[int] | None = None,
+                             preferred: int | None = None) -> int | None:
     options = options if options is not None else MAX_PROMPT_TOKEN_OPTIONS
     feedback = None
     redraw = False
@@ -294,22 +309,25 @@ def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
             "Cap the max prompt-processing size tested (applies to Single-shot LLM, "
             "llama-bench throughput, and llama-bench concurrency):"
         )
-        output_fn("   0  No cap (test every configured depth)")
+        output_fn(f"   0  No cap (test every configured depth){' (restored)' if preferred is None else ''}")
         for index, value in enumerate(options, 1):
-            output_fn(f"  {index:>2}  {value}")
+            marker = " (restored)" if value == preferred else ""
+            output_fn(f"  {index:>2}  {value}{marker}")
         if feedback:
             output_fn(feedback)
         feedback = None
         raw = read_choice(
-            "Enter a number, or press Enter for no cap:", input_fn, output_fn,
+            "Enter a number, or press Enter to accept:", input_fn, output_fn,
         ).strip().lower()
         if raw in ("q", "quit", "cancel"):
             raise FrontendCancelled
-        if raw in ("", "0"):
+        if raw == "":
+            return preferred
+        if raw == "0":
             return None
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return options[int(raw) - 1]
-        feedback = "Couldn't parse that selection; enter a listed number, or press Enter for no cap."
+        feedback = "Couldn't parse that selection; enter a listed number, or press Enter to accept."
 
 
 def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
@@ -582,11 +600,18 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         max_prompt_tokens = None
         if MAX_PROMPT_TOKEN_TESTS & set(tests):
             clear_fn()
-            max_prompt_tokens = choose_max_prompt_tokens(input_fn, output_fn, clear_fn)
+            max_prompt_tokens = choose_max_prompt_tokens(
+                input_fn, output_fn, clear_fn,
+                preferred=saved_state["max_prompt_tokens"] if saved_state else None,
+            )
         tg_tokens = None
         if TG_TOKEN_TESTS & set(tests):
             clear_fn()
-            tg_tokens = choose_tg_tokens(input_fn, output_fn, clear_fn)
+            saved_tg_tokens = saved_state["tg_tokens"] if saved_state else None
+            tg_tokens = choose_tg_tokens(
+                input_fn, output_fn, clear_fn,
+                default_checked=set(saved_tg_tokens) if saved_tg_tokens else None,
+            )
         render_summary(
             selected_engine, comfyui_dir, tests, model_entries, output_fn,
             max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
@@ -594,7 +619,10 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
         if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled
-        state = build_frontend_state(selected_engine, tests, model_entries)
+        state = build_frontend_state(
+            selected_engine, tests, model_entries,
+            max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
+        )
         if not save_frontend_state(state, state_path):
             output_fn("Could not save this launcher selection; continuing without persistence.")
         command = build_benchmark_command(

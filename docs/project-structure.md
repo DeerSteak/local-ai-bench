@@ -29,7 +29,7 @@
 | `scripts/data/` | Active accuracy banks—`mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `reasoning_questions.json` (60 questions), `code_problems.json` (60 problems), and `tool_questions.json` (100 tool-calling questions) |
 | `scripts/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
-| `.benchmark_frontend_state.json` | Gitignored last-confirmed interactive engine/test/model selection; stale or invalid values fall back to current defaults |
+| `.benchmark_frontend_state.json` | Gitignored last-confirmed interactive engine/test/model/max-prompt-tokens/tg-tokens selection; stale or invalid values fall back to current defaults |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
