@@ -330,10 +330,10 @@ def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     result = LBC().run(fake_engine, _MODELS)
-    assert captured["npl"] == [1, 2]
-    assert captured["pp"] == 8192
-    assert captured["ctx_size"] == 2 * (8192 + 512)
-    assert result["m1"]["ctx_size"] == 2 * (8192 + 512)
+    assert captured["npl"] == [1, 2, 4]
+    assert captured["pp"] == 4096
+    assert captured["ctx_size"] == 4 * (4096 + 512)
+    assert result["m1"]["ctx_size"] == 4 * (4096 + 512)
 
 
 def test_run_clamps_prompt_depth_on_small_context_models(fake_engine, monkeypatch):

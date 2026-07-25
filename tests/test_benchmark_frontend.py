@@ -16,13 +16,16 @@ from benchmark_frontend import (
     build_frontend_state,
     build_test_entries,
     choose_engine,
+    choose_max_prompt_tokens,
     choose_models,
     choose_tests,
+    choose_tg_tokens,
     load_frontend_state,
     missing_catalog_hint,
     model_selection_error,
     parse_toggle_numbers,
     render_model_menu,
+    render_summary,
     run_frontend,
     save_frontend_state,
     toggle_group,
@@ -335,10 +338,10 @@ def test_choose_engine_preserves_first_render_then_clears_each_redraw():
 
 def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     entries = build_test_entries(sample_inventory())
-    entries[4].available = False  # emb
-    entries[4].checked = False
+    entries[3].available = False  # emb
+    entries[3].checked = False
     messages, output = output_collector()
-    selected = choose_tests(entries, InputSequence(["6", "5", ""]), output)
+    selected = choose_tests(entries, InputSequence(["5", "4", ""]), output)
     assert "mcq" in selected
     assert "emb" not in selected
     assert any("cannot be selected" in message for message in messages)
@@ -347,9 +350,9 @@ def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
-    # 1/2/5/13 are the default-checked entries (llm, conv, emb, img); toggling them
+    # 1/2/4/13 are the default-checked entries (llm, conv, emb, img); toggling them
     # off leaves nothing selected without disturbing llamabench/llamabenchconc's own default-off state.
-    selected = choose_tests(entries, InputSequence(["1 2 5 13", "", "1", ""]), output)
+    selected = choose_tests(entries, InputSequence(["1 2 4 13", "", "1", ""]), output)
     assert selected == ["llm"]
     assert any("Select at least one" in message for message in messages)
 
@@ -561,6 +564,144 @@ def test_build_command_uses_default_benchmark_path():
     assert command[1] == str(config.SCRIPT_DIR / "scripts" / "benchmark.py")
 
 
+def test_build_command_omits_max_prompt_tokens_by_default():
+    command = build_benchmark_command(
+        "fake", Path("/comfy"), ["llm"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+    )
+    assert "--max-prompt-tokens" not in command
+
+
+def test_build_command_includes_max_prompt_tokens_when_set():
+    command = build_benchmark_command(
+        "fake", Path("/comfy"), ["llamabench"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        max_prompt_tokens=32768,
+    )
+    index = command.index("--max-prompt-tokens")
+    assert command[index + 1] == "32768"
+
+
+def test_choose_max_prompt_tokens_returns_none_on_blank_input():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(InputSequence([""]), output) is None
+
+
+def test_choose_max_prompt_tokens_returns_none_for_the_no_cap_option():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(InputSequence(["0"]), output, options=[512, 2048]) is None
+
+
+def test_choose_max_prompt_tokens_selects_the_numbered_option():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(
+        InputSequence(["3"]), output, options=[512, 2048, 8192, 32768],
+    ) == 8192
+
+
+def test_choose_max_prompt_tokens_cancels_on_q():
+    with pytest.raises(FrontendCancelled):
+        choose_max_prompt_tokens(InputSequence(["q"]), lambda _: None)
+
+
+def test_choose_max_prompt_tokens_reprompts_on_invalid_input():
+    messages, output = output_collector()
+    assert choose_max_prompt_tokens(
+        InputSequence(["not-a-number", "99", "2"]), output, options=[512, 2048, 8192],
+    ) == 2048
+    assert any("Couldn't parse that selection" in message for message in messages)
+
+
+def test_choose_max_prompt_tokens_lists_the_default_option_set():
+    messages, output = output_collector()
+    choose_max_prompt_tokens(InputSequence(["0"]), output)
+    assert any(str(config.LLAMABENCH_PP[-1]) in message for message in messages)
+    assert any(str(config.CONTEXT_LENGTHS[0]) in message for message in messages)
+
+
+def test_render_summary_includes_max_prompt_tokens_when_set():
+    messages, output = output_collector()
+    render_summary("fake", Path("/comfy"), ["llm"], [], output, max_prompt_tokens=32768)
+    assert any("32768" in message for message in messages)
+
+
+def test_render_summary_omits_max_prompt_tokens_line_by_default():
+    messages, output = output_collector()
+    render_summary("fake", Path("/comfy"), ["llm"], [], output)
+    assert not any("Max prompt" in message for message in messages)
+
+
+def test_build_command_omits_tg_tokens_by_default():
+    command = build_benchmark_command(
+        "fake", Path("/comfy"), ["llamabench"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+    )
+    assert "--tg-tokens" not in command
+
+
+def test_build_command_includes_tg_tokens_when_set():
+    command = build_benchmark_command(
+        "fake", Path("/comfy"), ["llamabenchconc"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        tg_tokens=[128, 1024],
+    )
+    index = command.index("--tg-tokens")
+    assert command[index + 1:index + 3] == ["128", "1024"]
+
+
+def test_choose_tg_tokens_accepts_the_defaults_on_blank_input():
+    messages, output = output_collector()
+    assert choose_tg_tokens(
+        InputSequence([""]), output, options=[128, 512, 1024], default_checked={128, 512},
+    ) == [128, 512]
+
+
+def test_choose_tg_tokens_toggles_entries():
+    messages, output = output_collector()
+    assert choose_tg_tokens(
+        InputSequence(["3", ""]), output, options=[128, 512, 1024], default_checked={128, 512},
+    ) == [128, 512, 1024]
+
+
+def test_choose_tg_tokens_cancels_on_q():
+    with pytest.raises(FrontendCancelled):
+        choose_tg_tokens(InputSequence(["q"]), lambda _: None)
+
+
+def test_choose_tg_tokens_reprompts_when_everything_is_deselected():
+    messages, output = output_collector()
+    result = choose_tg_tokens(
+        InputSequence(["1 2", "", "1", ""]), output, options=[128, 512], default_checked={128, 512},
+    )
+    assert result == [128]
+    assert any("Select at least one generation size" in message for message in messages)
+
+
+def test_choose_tg_tokens_reprompts_on_invalid_input():
+    messages, output = output_collector()
+    result = choose_tg_tokens(
+        InputSequence(["invalid", ""]), output, options=[128, 512], default_checked={128},
+    )
+    assert result == [128]
+    assert any("Couldn't parse that selection" in message for message in messages)
+
+
+def test_render_summary_includes_tg_tokens_when_set():
+    messages, output = output_collector()
+    render_summary("fake", Path("/comfy"), ["llamabench"], [], output, tg_tokens=[128, 1024])
+    assert any("128, 1024" in message for message in messages)
+
+
+def test_render_summary_omits_tg_tokens_line_by_default():
+    messages, output = output_collector()
+    render_summary("fake", Path("/comfy"), ["llamabench"], [], output)
+    assert not any("Generation (tg)" in message for message in messages)
+
+
 def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     commands = []
     messages, output = output_collector()
@@ -569,7 +710,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
         returncode = 7
 
     result = run_frontend(
-        input_fn=InputSequence(["", "", ""]),
+        input_fn=InputSequence(["", "", "", ""]),
         output_fn=output,
         process_runner=lambda command: commands.append(command) or Result(),
         engine_names_fn=lambda: ["fake"],
@@ -592,7 +733,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
 
 def test_run_frontend_default_output_function_is_untimestamped(capsys):
     result = run_frontend(
-        input_fn=InputSequence(["", "", "y"]),
+        input_fn=InputSequence(["", "", "", "y"]),
         process_runner=lambda command: 0,
         engine_names_fn=lambda: ["fake"],
         engine_factory=FakeEngine,
@@ -608,7 +749,7 @@ def test_run_frontend_default_output_function_is_untimestamped(capsys):
 def test_run_frontend_keeps_model_selection_visible_for_confirmation():
     clears = []
     result = run_frontend(
-        input_fn=InputSequence(["", "", ""]),
+        input_fn=InputSequence(["", "", "", ""]),
         output_fn=lambda _: None,
         process_runner=lambda command: 0,
         engine_names_fn=lambda: ["fake"],
@@ -617,7 +758,7 @@ def test_run_frontend_keeps_model_selection_visible_for_confirmation():
         clear_fn=lambda: clears.append(True),
     )
     assert result == 0
-    assert len(clears) == 2
+    assert len(clears) == 3
 
 
 def test_run_frontend_banner_survives_until_single_engine_test_menu():
@@ -704,10 +845,52 @@ def test_run_frontend_restores_saved_tests_models_and_engine(tmp_path):
     ]
 
 
+def test_run_frontend_skips_max_prompt_tokens_prompt_for_unrelated_tests():
+    state_path_unused = None
+    commands = []
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence(["1 2 8", "", "", ""]),
+        output_fn=output,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+    assert result == 0
+    assert "--max-prompt-tokens" not in commands[0]
+    assert not any("Cap the max prompt-processing size" in message for message in messages)
+
+
+def test_run_frontend_prompts_for_max_prompt_tokens_when_llamabench_selected():
+    commands = []
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence(["1 2 3 4 13", "", "", "5", "", ""]),
+        output_fn=output,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+    assert result == 0
+    assert any("Cap the max prompt-processing size" in message for message in messages)
+    index = commands[0].index("--max-prompt-tokens")
+    assert commands[0][index + 1] == "16384"
+    assert any("Choose generation (tg) sizes" in message for message in messages)
+    assert commands[0][commands[0].index("--tg-tokens") + 1:commands[0].index("--llm-models")] == ["128", "512"]
+
+
 def test_run_frontend_cancel_does_not_create_state_file(tmp_path):
     state_path = tmp_path / "state.json"
     result = run_frontend(
-        input_fn=InputSequence(["", "", "n"]),
+        input_fn=InputSequence(["", "", "", "n"]),
         output_fn=lambda _: None,
         process_runner=lambda command: pytest.fail("cancel must not launch"),
         engine_names_fn=lambda: ["fake"],
@@ -726,7 +909,7 @@ def test_run_frontend_state_write_failure_warns_but_still_launches(
     messages, output = output_collector()
     called = []
     result = run_frontend(
-        input_fn=InputSequence(["", "", ""]),
+        input_fn=InputSequence(["", "", "", ""]),
         output_fn=output,
         process_runner=lambda command: called.append(command) or 0,
         engine_names_fn=lambda: ["fake"],
@@ -744,7 +927,7 @@ def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
     commands = []
     seen = []
     result = run_frontend(
-        input_fn=InputSequence(["2", "", "", "y"]),
+        input_fn=InputSequence(["2", "", "", "", "y"]),
         output_fn=lambda _: None,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["llamacpp", "mlx"],
@@ -779,7 +962,7 @@ def test_run_frontend_explicit_no_cancels_final_confirmation():
     called = []
     messages, output = output_collector()
     result = run_frontend(
-        input_fn=InputSequence(["", "", "n"]),
+        input_fn=InputSequence(["", "", "", "n"]),
         output_fn=output,
         process_runner=lambda command: called.append(command),
         engine_names_fn=lambda: ["fake"],

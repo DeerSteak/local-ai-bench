@@ -69,6 +69,32 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
     return llm_models, tier_label, image_models
 
 
+def apply_max_prompt_tokens_cap(max_tokens: int | None, context_lengths: list[int],
+                                llamabench_pp: list[int], llamabenchconc_pp: int,
+                                ) -> tuple[list[int], list[int], int]:
+    """Caps 'llm'/'llamabench'/'llamabenchconc' prompt depths to max_tokens — see --max-prompt-tokens.
+    Raises ValueError if the cap excludes every depth from a list-based sweep."""
+    if max_tokens is None:
+        return list(context_lengths), list(llamabench_pp), llamabenchconc_pp
+    capped_context_lengths = [c for c in context_lengths if c <= max_tokens]
+    capped_llamabench_pp = [c for c in llamabench_pp if c <= max_tokens]
+    if not capped_context_lengths or not capped_llamabench_pp:
+        raise ValueError(
+            f"--max-prompt-tokens {max_tokens} is below the smallest tested depth "
+            f"({min(context_lengths[0], llamabench_pp[0])} tokens) — nothing would be tested"
+        )
+    return capped_context_lengths, capped_llamabench_pp, min(llamabenchconc_pp, max_tokens)
+
+
+def apply_tg_tokens_override(tg_tokens: list[int] | None, default_llamabench_tg: list[int],
+                             default_llamabenchconc_tg: list[int]) -> tuple[list[int], list[int]]:
+    """Overrides the tg (generation-size) sweep for 'llamabench'/'llamabenchconc' — see --tg-tokens."""
+    if tg_tokens is None:
+        return list(default_llamabench_tg), list(default_llamabenchconc_tg)
+    selected = sorted(set(tg_tokens))
+    return selected, list(selected)
+
+
 def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str = "tag") -> list:
     """Filter models by exact/wildcard match on `key`. Case-sensitive
     (`fnmatchcase`) so behavior is identical across platforms."""
@@ -361,6 +387,21 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              f"moves on (default: {config.ACC_TIMEOUT})",
     )
     parser.add_argument(
+        "--max-prompt-tokens", type=positive_int, default=None, metavar="N",
+        help="Cap the deepest prompt-processing size swept by 'llm' (drops entries from "
+             f"CONTEXT_LENGTHS {config.CONTEXT_LENGTHS}), 'llamabench' (drops entries from "
+             f"LLAMABENCH_PP {config.LLAMABENCH_PP}), and 'llamabenchconc' (clamps its fixed "
+             f"prompt depth, default {config.LLAMABENCH_CONC_PP}) to at most N tokens — only "
+             "affects whichever of those tests are actually selected via --tests "
+             "(default: no cap, run every configured depth).",
+    )
+    parser.add_argument(
+        "--tg-tokens", type=int, nargs="+", default=None, choices=[128, 512, 1024], metavar="N",
+        help="Which generation (tg) sizes 'llamabench' and 'llamabenchconc' sweep at each "
+             f"prompt depth (default: {config.LLAMABENCH_TG}). Only affects whichever of "
+             "those two tests are actually selected via --tests.",
+    )
+    parser.add_argument(
         "--acc-token-budget", type=positive_int, default=None, metavar="N",
         help="Total completion-token budget per accuracy question, split 60/40 "
              f"between the initial and final-answer passes (default: {config.ACC_TOKEN_BUDGET})",
@@ -454,6 +495,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     if args.acc_token_budget is not None:
         config.ACC_TOKEN_BUDGET = args.acc_token_budget
     config.N_RUNS = args.runs
+    if args.max_prompt_tokens is not None:
+        try:
+            config.CONTEXT_LENGTHS, config.LLAMABENCH_PP, config.LLAMABENCH_CONC_PP = apply_max_prompt_tokens_cap(
+                args.max_prompt_tokens, config.CONTEXT_LENGTHS, config.LLAMABENCH_PP, config.LLAMABENCH_CONC_PP,
+            )
+        except ValueError as e:
+            Shared.err(str(e))
+            sys.exit(2)
+    config.LLAMABENCH_TG, config.LLAMABENCH_CONC_TG = apply_tg_tokens_override(
+        args.tg_tokens, config.LLAMABENCH_TG, config.LLAMABENCH_CONC_TG,
+    )
 
     tier_models, tier_label, tier_image_models = select_tier(args.maxtier, IMAGE_MODELS)
     embedding_models, image_models = resolve_catalog_scopes(

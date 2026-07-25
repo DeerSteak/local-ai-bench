@@ -22,7 +22,6 @@ TEST_DEFINITIONS = [
     ("llm", "Single-shot LLM", "llm", True),
     ("conv", "Conversation", "llm", True),
     ("llamabench", "llama-bench throughput", "llm", False),
-    ("llamabenchconc", "llama-bench concurrency", "llm", False),
     ("emb", "Embeddings", "embedding", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),
@@ -31,10 +30,15 @@ TEST_DEFINITIONS = [
     ("tool", "Tool accuracy", "llm", False),
     ("conc_tool", "Tool concurrency", "llm", False),
     ("conc_chat", "Chat concurrency", "llm", False),
+    ("llamabenchconc", "llama-bench concurrency", "llm", False),
     ("img", "Image generation", "image", True),
 ]
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
+MAX_PROMPT_TOKEN_TESTS = {"llm", "llamabench", "llamabenchconc"}
+MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
+TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
+TG_TOKEN_OPTIONS = [128, 512, 1024]
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 1
 FRONTEND_MODEL_FAMILIES = {
@@ -277,6 +281,77 @@ def choose_tests(entries: list[MenuEntry], input_fn, output_fn,
             entries[number - 1].checked = not entries[number - 1].checked
 
 
+def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
+                             options: list[int] | None = None) -> int | None:
+    options = options if options is not None else MAX_PROMPT_TOKEN_OPTIONS
+    feedback = None
+    redraw = False
+    while True:
+        if redraw:
+            clear_fn()
+        redraw = True
+        output_fn(
+            "Cap the max prompt-processing size tested (applies to Single-shot LLM, "
+            "llama-bench throughput, and llama-bench concurrency):"
+        )
+        output_fn("   0  No cap (test every configured depth)")
+        for index, value in enumerate(options, 1):
+            output_fn(f"  {index:>2}  {value}")
+        if feedback:
+            output_fn(feedback)
+        feedback = None
+        raw = read_choice(
+            "Enter a number, or press Enter for no cap:", input_fn, output_fn,
+        ).strip().lower()
+        if raw in ("q", "quit", "cancel"):
+            raise FrontendCancelled
+        if raw in ("", "0"):
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1]
+        feedback = "Couldn't parse that selection; enter a listed number, or press Enter for no cap."
+
+
+def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
+                     options: list[int] | None = None,
+                     default_checked: set[int] | None = None) -> list[int]:
+    options = options if options is not None else TG_TOKEN_OPTIONS
+    default_checked = default_checked if default_checked is not None else set(config.LLAMABENCH_TG)
+    checked = {value: value in default_checked for value in options}
+    feedback = None
+    redraw = False
+    while True:
+        if redraw:
+            clear_fn()
+        redraw = True
+        output_fn("Choose generation (tg) sizes to sweep for llama-bench / llama-bench concurrency:")
+        for index, value in enumerate(options, 1):
+            box = "[x]" if checked[value] else "[ ]"
+            output_fn(f"  {box} {index:>2}  {value}")
+        if feedback:
+            output_fn(feedback)
+        feedback = None
+        raw = read_choice(
+            "Toggle numbers with spaces/ranges, or press Enter to continue:", input_fn, output_fn,
+        ).lower()
+        if raw in ("q", "quit", "cancel"):
+            raise FrontendCancelled
+        if raw == "":
+            selected = [value for value in options if checked[value]]
+            if selected:
+                return selected
+            feedback = "Select at least one generation size."
+            continue
+        try:
+            numbers = parse_toggle_numbers(raw, len(options))
+        except ValueError:
+            feedback = "Couldn't parse that selection; use numbers/ranges such as `1 3`."
+            continue
+        for number in numbers:
+            value = options[number - 1]
+            checked[value] = not checked[value]
+
+
 def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> list[MenuEntry]:
     entries = []
     if any(test in LLM_BACKED_TESTS for test in tests):
@@ -402,7 +477,9 @@ def choose_models(entries: list[MenuEntry], tests: list[str], hint: str | None,
 
 def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str],
                             entries: list[MenuEntry], python_executable: str = sys.executable,
-                            benchmark_path: Path | None = None) -> list[str]:
+                            benchmark_path: Path | None = None,
+                            max_prompt_tokens: int | None = None,
+                            tg_tokens: list[int] | None = None) -> list[str]:
     benchmark_path = benchmark_path or config.SCRIPT_DIR / "scripts" / "benchmark.py"
     command = [
         python_executable, str(benchmark_path),
@@ -410,6 +487,10 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         "--comfyui", str(comfyui_dir),
         "--tests", *tests,
     ]
+    if max_prompt_tokens is not None:
+        command.extend(["--max-prompt-tokens", str(max_prompt_tokens)])
+    if tg_tokens is not None:
+        command.extend(["--tg-tokens", *[str(v) for v in tg_tokens]])
     selected = [entry for entry in entries if entry.checked]
     if any(test in LLM_BACKED_TESTS for test in tests):
         command.extend([
@@ -430,11 +511,17 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
 
 
 def render_summary(engine_name: str, comfyui_dir: Path, tests: list[str],
-                   entries: list[MenuEntry], output_fn) -> None:
+                   entries: list[MenuEntry], output_fn,
+                   max_prompt_tokens: int | None = None,
+                   tg_tokens: list[int] | None = None) -> None:
     output_fn("Benchmark selection:")
     output_fn(f"  Engine: {engine_name}")
     output_fn(f"  ComfyUI: {comfyui_dir}")
     output_fn(f"  Tests: {', '.join(tests)}")
+    if max_prompt_tokens is not None:
+        output_fn(f"  Max prompt-processing size: {max_prompt_tokens} tokens")
+    if tg_tokens is not None:
+        output_fn(f"  Generation (tg) sizes: {', '.join(str(v) for v in tg_tokens)}")
     for label, kinds in (
         ("LLM models", {"llm", "custom"}),
         ("Embedding models", {"embedding"}),
@@ -492,7 +579,18 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             model_entries, tests, hint, input_fn, output_fn, clear_fn,
             selection_note=selection_note,
         )
-        render_summary(selected_engine, comfyui_dir, tests, model_entries, output_fn)
+        max_prompt_tokens = None
+        if MAX_PROMPT_TOKEN_TESTS & set(tests):
+            clear_fn()
+            max_prompt_tokens = choose_max_prompt_tokens(input_fn, output_fn, clear_fn)
+        tg_tokens = None
+        if TG_TOKEN_TESTS & set(tests):
+            clear_fn()
+            tg_tokens = choose_tg_tokens(input_fn, output_fn, clear_fn)
+        render_summary(
+            selected_engine, comfyui_dir, tests, model_entries, output_fn,
+            max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
+        )
         confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
         if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled
@@ -502,6 +600,7 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         command = build_benchmark_command(
             selected_engine, comfyui_dir, tests, model_entries,
             python_executable=python_executable, benchmark_path=benchmark_path,
+            max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
         )
         output_fn("Launching benchmark.py with the confirmed selection.")
         result = process_runner(command)

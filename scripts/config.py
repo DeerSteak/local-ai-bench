@@ -88,7 +88,7 @@ LLAMABENCH_TIMEOUT = 1800
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
-LLAMABENCH_CONC_PP = 8192
+LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth
 LLAMABENCH_CONC_TG = [128, 512]
 LLAMABENCH_CONC_NPL = [1, 2, 4, 8, 16]
 
