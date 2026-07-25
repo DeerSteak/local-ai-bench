@@ -12,83 +12,26 @@
 run_bench.sh [options]  # Linux / macOS
 run_bench.bat [options]   # Windows
 
---tests TESTS           Tests to run: any of llm conv, emb, img, mcq, math,
-                        reasoning, code, tool, acc as shorthand for every accuracy-style
-                        test (mcq, math, reasoning, code, and tool), or
-                        conc_tool/conc_chat (conc is shorthand for both), or llamabench
-                        (default: all nine — llm conv emb img mcq math reasoning code
-                        tool; conc_tool/conc_chat/llamabench are opt-in — see Workloads)
---engine ENGINE         Inference engine to benchmark against, or 'all' to run
-                        the full --tests suite once per registered engine (default:
-                        llamacpp). 'all' writes a separate results file per
-                        engine (engine name appended to the filename). Only
-                        llama.cpp is registered today, so 'all' is currently a
-                        no-op — kept so scripts/docs referencing --engine don't
-                        need to change once a second engine (e.g. MLX) is added.
-                        See Engines
---cpu-only              Force CPU-only inference for every test that goes
-                        through the active engine (llm, conv, mcq, math, reasoning, code,
-                        tool, emb, conc_tool, conc_chat) by restarting it with
-                        GPU devices hidden, then restores normal GPU mode afterward.
-                        llamabench also honors this (passes -ngl 0 directly)
---warmup N              Engine-backed warmups before measuring (default: 2).
-                        Images always use one warmup and ignore this flag
---runs N                Measured runs averaged for single-shot LLM, embeddings,
-                        and images (default: 3, range: 1-10), also used as
-                        llamabench's own repetitions. Conversation and
-                        accuracy use one pass; concurrency uses one measured
-                        batch per level. Warmup time is unaffected
---timeout N             Seconds per generation/chat call and engine warmup
-                        (default: 300). Images use 2x this value, embeddings
-                        use a fixed 120s, and accuracy uses --acc-timeout
---acc-timeout N         Seconds per question before giving up on it, for the
-                        accuracy tests (mcq/math/reasoning/code/tool). Any partial response
-                        is scored normally, the timeout is recorded, and the
-                        run moves on to the next question (default: 60)
---acc-token-budget N    Positive completion-token budget per accuracy question
-                        (default: 8192), split 60/40 between the initial response
-                        and an optional final-answer pass
---maxtier TIER          Cap LLM models (single-shot + conversation) AND image
-                        models at this tier and below: xsmall (<6B / +SD1.5),
-                        small (≤20B / +SDXL), medium (26–35B / +SD3.5 Large),
-                        large (70B+ / +Flux.1-dev, Flux.2-dev — default, no cap)
---llm-models TAGS       Only test these LLM models (llm/conv/mcq/math/reasoning/code/tool/
-                        conc_tool/conc_chat tests) —
-                        exact catalog tags or wildcards, e.g. 'llama*' matches
-                        every tag starting with 'llama'. Applied after
-                        --maxtier, narrowing the catalog's models further while
-                        also matching installed custom-model tags, so one wildcard
-                        can select both catalog and custom models (see --list-models).
-                        Quote wildcards so your shell doesn't
-                        glob-expand them first (default: every catalog model
-                        in the selected tier). --models is a backward-compatible
-                        alias with identical behavior
---embedding-models TAGS Only test these embedding catalog tags or wildcards
-                        (default: every embedding model)
---image-models SHORTS   Only test these image-model short IDs or wildcards,
-                        applied after --maxtier (default: every image model in
-                        the selected tier)
---list-models           List installed catalog LLMs, embeddings, custom LLMs,
-                        and catalog image checkpoints, then exit. Image discovery
-                        uses the effective --comfyui path
---sample N              Dev-only: run the accuracy tests (mcq/math/reasoning/code/tool)
-                        against a deterministic N-question subset of each
-                        bank instead of the full thing, selected round-robin
-                        across categories. Every category is represented when
-                        N reaches that bank's category count. The same N always
-                        yields the same questions for a given bank version, and the
-                        sampled IDs are recorded in the output JSON under
-                        'sample_ids'. Never use for a result meant to be
-                        compared against a full-bank run, or published
-                        (default: full bank)
+--tests TESTS           Tests to run (default: all nine — see Flag details below)
+--engine ENGINE         Inference engine to benchmark, or 'all' (default: llamacpp)
+--cpu-only              Force CPU-only inference for every engine-backed test
+--warmup N              Engine-backed warmups before measuring (default: 2)
+--runs N                Measured runs to average (default: 3, range: 1-10)
+--timeout N             Seconds per generation/chat call and engine warmup (default: 300)
+--acc-timeout N         Seconds per accuracy question before giving up on it (default: 60)
+--acc-token-budget N    Completion-token budget per accuracy question (default: 8192)
+--maxtier TIER          Cap LLM and image models at this tier and below (default: large, no cap)
+--llm-models TAGS       Only test these LLM models — tags or wildcards (--models alias)
+--embedding-models TAGS Only test these embedding models — tags or wildcards
+--image-models SHORTS   Only test these image models — short IDs or wildcards
+--list-models           List installed models, then exit
+--sample N              Dev-only: run accuracy tests against an N-question subset per bank
 --comfyui /path         Path to ComfyUI directory (default: ./ComfyUI)
 --out filename.json     Output file (default: results/results_<hostname>_<timestamp>.json)
---force-all             Ignore the 15 tok/s slow-model cutoff: run every context
-                        length in the LLM single-shot and conversation tests,
-                        and disable the chat-concurrency soft exit. Doesn't
-                        override real failures (timeouts, missing data). Rarely needed —
-                        default: false
+--force-all             Ignore slow-model cutoffs; doesn't override real failures
 ```
+
+See [Flag details](#flag-details) below for what each flag actually does.
 
 ## Launch modes
 

@@ -228,14 +228,14 @@ The test suite consists of **41 test modules** validating different components o
   Tests the pure logic in `MCQBenchmark`. It verifies:
   - `build_prompt` includes the question text and every answer choice.
   - `parse_answer` follows the confidence cascade for bare letters, boxed/explicit answers, leading markers, and unambiguous uppercase mentions; it accepts repeated mentions of one choice, honors later explicit, negated, rejected-then-affirmed, and resultative self-corrections, rejects competing unmarked choices, and directly covers all seven audited verdict flips, the original correct self-corrections, and the fresh `mcq_109` resultative correction.
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
+  - `score`'s own per-question logic (correct/unanswered) feeds `Shared.tally_accuracy_entry`/`finalize_accuracy_score` for the shared correct/total/category tallying (see `test_shared_tally_accuracy_entry.py` under Shared Helpers & APIs, below).
   - `load_questions` returns a well-formed dataset from the real `scripts/data/mcq_questions.json` file — unique IDs, and every question's answer is one of its own choices.
 
 - **[test_math_benchmark.py](../tests/test_math_benchmark.py)**
   Tests the pure logic in `MathBenchmark`. It verifies:
   - `build_prompt` includes the question text and asks for a numeric-only answer.
   - `parse_answer` handles bare integers, decimals, negative numbers, thousands separators, and trailing `%`, then applies the documented bare/boxed-or-explicit/stated-result/last-number cascade. It covers all five fresh corpus divergences, hard line boundaries and final-number/final-equality corroboration for leading answers, sentence-boundary conclusion cues, same-clause post-`=` results, expression-operand rejection, chronological self-corrections, the conservative unchanged `math_104`/`2/e` outcomes, defensive invalid-token conversion, and rejection of values that overflow to infinity.
-  - `score` tallies correct/total and per-category accuracy correctly, treating an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent), counting unanswered (`None`) responses as incorrect, and producing a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
+  - `score` treats an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent); tallying itself is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
   - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
 
 - **[test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py)**
@@ -247,7 +247,7 @@ The test suite consists of **41 test modules** validating different components o
   - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
   - `execute_tests` runs all cases in one isolated subprocess under one deadline: correct/incorrect results score independently, runtime errors don't abort later cases, syntax errors fail every case, and completed function or stateful results survive when a later case loops and is killed. Protocol tests verify that candidate stdout noise and placeholder text cannot interfere with framing and that malformed, duplicate, out-of-range, or incomplete records fail safely; `evaluate_question` also retains the completed `tests_passed` count while the overall verdict remains wrong.
   - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
+  - `score`'s tallying is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
   - `load_questions` returns a well-formed dataset from the real `scripts/data/code_problems.json` file — unique IDs, and every problem has a function name and at least one visible and one hidden test case, each with `args` and `expected`.
 
 - **[test_tool_benchmark.py](../tests/test_tool_benchmark.py)**
@@ -257,7 +257,7 @@ The test suite consists of **41 test modules** validating different components o
   - `evaluate_question` scores a decline case (`call: false`) correct only when nothing was called — an empty/`None` call list is a correct decline, and firing any tool is wrong; conversely a call case with an empty/`None` list is a wrong (incorrect) decline.
   - `rescore_partial_fn` parses a tool-call list out of a timed-out question's partial text, falling back to a decline (`[]`) when the text won't parse or isn't a list.
   - `_ask` never discards a model's prose: a pure tool call raw-responds as the tool-calls JSON, a decline (no tool calls) raw-responds as the prose itself, and a turn that emits *both* narration and a tool call keeps both, as a `{"tool_calls": ..., "text": ...}` object.
-  - `score` tallies correct/total and per-category accuracy correctly, including unanswered (`None`) responses counting as incorrect, and produces a matching `incorrect` list as well as an `all` list covering every question (correct and incorrect alike) with a `correct` flag on each entry.
+  - `score`'s tallying is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
   - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none). It also validates `normalized_string_keys` metadata and the intended free-text fields; new free-text arguments such as titles, messages, notes, and bodies must be added to that list when normalized matching is desired.
 
 - **[test_regrade.py](../tests/test_regrade.py)**
@@ -334,7 +334,7 @@ The test suite consists of **41 test modules** validating different components o
   - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
 
 - **[test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py)**
-  Tests `Shared.tally_accuracy_entry` — the common by_category/`all`/`incorrect` recording tail shared by all five accuracy `score()` methods. Verifies a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`), an incorrect entry lands in both `all` and `incorrect` (the latter without a `correct` key, preserving the existing `incorrect` shape) without bumping the category count, and that the original `entry` dict passed in is never mutated.
+  Tests the two helpers shared by all five accuracy `score()` methods. `tally_accuracy_entry` is the per-question recording tail: a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`); an incorrect entry lands in both `all` and `incorrect` (without a `correct` key) without bumping the category count; the original `entry` dict is never mutated. `finalize_accuracy_score` is the post-loop tail: fills in each category's (and, via `extra`, reasoning's `by_difficulty`) `accuracy_pct` without dividing by zero, and assembles the final result dict.
 
 ---
 
@@ -353,10 +353,10 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
 
 `npm run lint` (ESLint) should also pass after any change to `dashboard/src`.
 
-**Scope:** this suite covers `dashboard/src/utils.js` (chart data builders, status-label logic, formatting, model-registry lookups) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
+**Scope:** this suite covers `dashboard/src/utils/*.js` (chart data builders, status-label logic, formatting, model-registry lookups — split by section: `shared.js`, `llm.js`, `images.js`, `embeddings.js`, `llamabench.js`, `accuracy.js`, `concurrency.js`) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
 
-- **[utils.test.js](../dashboard/src/utils.test.js)**
-  Tests the pure data-transformation and formatting functions in `utils.js`. Notably:
+- **[utils/*.test.js](../dashboard/src/utils/)**
+  One test file per `utils/*.js` module, testing the pure data-transformation and formatting functions in each. Notably:
   - `getBarStatusLabel` — the crashed/timed-out/slow-tps precedence and "which checkpoints get relabeled Skipped vs. show real data" logic (the slow checkpoint's own value is always shown, never hidden behind a status label; only checkpoints *after* it get relabeled).
   - `getLLMModelsWithSectionResults` — that Group By → System keeps models attempted by any loaded system, excludes models represented only by `no_llm_data` placeholders, and retains meaningful whole-model skip outcomes.
   - `getImageBarStatusLabel` — the equivalent for image generation timeouts.
