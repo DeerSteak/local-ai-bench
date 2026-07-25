@@ -23,7 +23,7 @@ class LlamaBenchBenchmark:
         llama-server — see docs/engines.md's "Binary resolution"."""
         exe_name = "llama-bench.exe" if platform.system() == "Windows" else "llama-bench"
         if config.LLAMACPP_DIR.exists():
-            match = next(iter(config.LLAMACPP_DIR.rglob(exe_name)), None)
+            match = next((p for p in config.LLAMACPP_DIR.rglob(exe_name) if p.is_file()), None)
             if match is not None:
                 return str(match)
         found = shutil.which("llama-bench")

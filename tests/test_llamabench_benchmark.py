@@ -28,6 +28,20 @@ def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
 
+def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
+    """A CMake source tree has tools/llama-bench/ (source) alongside build/bin/llama-bench
+    (compiled) — rglob must not return the directory just because it sorts first."""
+    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
+    (tmp_path / "tools" / "llama-bench").mkdir(parents=True)
+    nested = tmp_path / "build" / "bin"
+    nested.mkdir(parents=True)
+    exe = nested / "llama-bench"
+    exe.write_text("")
+    monkeypatch.setattr("llamabench_benchmark.shutil.which", lambda name: None)
+    assert LlamaBenchBenchmark.find_binary() == str(exe)
+
+
 def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
     monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
