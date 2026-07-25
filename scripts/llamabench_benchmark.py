@@ -6,6 +6,7 @@ import platform
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import config
@@ -14,6 +15,8 @@ from shared import Shared
 
 
 class LlamaBenchBenchmark:
+    IDLE_POLL_INTERVAL = 1.0   # how often run_one checks the idle-output watchdog below
+
     @staticmethod
     def find_binary() -> str | None:
         """Mirrors LlamaCppEngine._binary_path but for llama-bench instead of
@@ -55,20 +58,30 @@ class LlamaBenchBenchmark:
                batch_size: int, ubatch_size: int, reps: int, ngl: int, timeout: int,
                on_progress=None) -> list[dict]:
         """Runs one llama-bench pass, streaming stderr progress lines to on_progress as they arrive
-        rather than buffering until exit, and returns the parsed stdout JSON entries."""
+        rather than buffering until exit, and returns the parsed stdout JSON entries.
+        `timeout` is an idle timeout — killed only if no stdout/stderr line arrives for that long,
+        not a ceiling on the whole sweep's wall-clock time (deep/wide sweeps can legitimately run for hours)."""
         cmd = cls.build_command(binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         stdout_chunks: list[str] = []
         stderr_chunks: list[str] = []
+        activity_lock = threading.Lock()
+        last_activity = [time.monotonic()]
+
+        def _touch():
+            with activity_lock:
+                last_activity[0] = time.monotonic()
 
         def _drain_stdout():
             for line in proc.stdout:
                 stdout_chunks.append(line)
+                _touch()
 
         def _drain_stderr():
             for line in proc.stderr:
                 stderr_chunks.append(line)
+                _touch()
                 stripped = line.strip()
                 if stripped and on_progress:
                     on_progress(stripped)
@@ -78,18 +91,25 @@ class LlamaBenchBenchmark:
         stdout_thread.start()
         stderr_thread.start()
 
-        try:
-            returncode = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            raise
-        finally:
-            stdout_thread.join()
-            stderr_thread.join()
+        idle_timed_out = False
+        while proc.poll() is None:
+            with activity_lock:
+                idle = time.monotonic() - last_activity[0]
+            if idle > timeout:
+                idle_timed_out = True
+                proc.kill()
+                break
+            time.sleep(cls.IDLE_POLL_INTERVAL)
 
-        if returncode != 0:
-            raise RuntimeError(f"llama-bench exited {returncode}: {''.join(stderr_chunks).strip()[-2000:]}")
+        proc.wait()
+        stdout_thread.join()
+        stderr_thread.join()
+
+        if idle_timed_out:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"llama-bench exited {proc.returncode}: {''.join(stderr_chunks).strip()[-2000:]}")
         try:
             return json.loads("".join(stdout_chunks))
         except json.JSONDecodeError as e:
@@ -143,8 +163,8 @@ class LlamaBenchBenchmark:
                         on_progress=Shared.log,
                     )
                 except subprocess.TimeoutExpired:
-                    Shared.err(f"{label}: llama-bench exceeded {config.LLAMABENCH_TIMEOUT}s — skipping")
-                    results[short] = {"error": f"timed out after {config.LLAMABENCH_TIMEOUT}s"}
+                    Shared.err(f"{label}: llama-bench produced no output for {config.LLAMABENCH_TIMEOUT}s — skipping")
+                    results[short] = {"error": f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)"}
                     continue
                 except Exception as e:
                     Shared.err(f"{label}: {e}")

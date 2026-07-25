@@ -13,6 +13,10 @@ LLAMACPP_URL  = f"http://localhost:{LLAMACPP_PORT}"
 # Prompt-processing batch size, pinned on every request instead of left to the server's auto-detected default.
 LLAMACPP_NUM_BATCH = 512
 
+# KV cache quantization for llama-server — q8_0 halves KV cache memory vs f16 with negligible quality loss.
+# Requires flash attention, which LlamaCppEngine.ensure_running passes alongside it.
+LLAMACPP_KV_CACHE_TYPE = "q8_0"
+
 # Repo root — this file lives in scripts/, one level below it.
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
@@ -69,12 +73,15 @@ LOOP_CHECK_INTERVAL = 8
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
-LLAMABENCH_PP = [2048, 8192, 32768]
+# Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
+# (conversation) so llama-bench numbers can stand in for both as they're phased out.
+LLAMABENCH_PP = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
 LLAMABENCH_TG = [128, 512]
 LLAMABENCH_BATCH_SIZE = 2048
 LLAMABENCH_UBATCH_SIZE = 512
-# Per-model ceiling for one whole pp/tg sweep, not per-request like RUN_TIMEOUT —
-# fixed like embeddings' own 120s, independent of --timeout.
+# Idle timeout for one whole pp/tg sweep — killed if no stdout/stderr line arrives for this
+# long, not a ceiling on total sweep time (a full sweep can legitimately run for hours).
+# Independent of --timeout, like embeddings' own fixed 120s.
 LLAMABENCH_TIMEOUT = 1800
 # Exceeds any real model's layer count so every layer offloads — llama-bench's own
 # default (-1) isn't documented as meaning "all layers".

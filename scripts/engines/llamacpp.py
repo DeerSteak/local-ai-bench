@@ -425,6 +425,10 @@ class LlamaCppEngine(InferenceEngine):
                 "-ngl", "0" if not self._gpu_visible else "auto",
                 "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
                 "-b", str(config.LLAMACPP_NUM_BATCH),
+                # Quantized KV cache needs flash attention explicitly on — see config.LLAMACPP_KV_CACHE_TYPE.
+                "--flash-attn", "on",
+                "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
+                "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
             ]
             if num_ctx is not None:
                 # -c is a total KV-cache budget split across --parallel slots — see docs/engines.md.

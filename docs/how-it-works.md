@@ -118,7 +118,7 @@ The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and A
 | Tool-style concurrency | 1, 2, 4, 6, 8, 12, 16 requests; 4,096-token prompts; no slow-TPS soft exit |
 | Chat concurrency | 1, 2, 4, 8, 16, 24, 32 requests; 16,384-token prompts; soft exit after a measured level ≥8 falls below 15 tok/s unless `--force-all` |
 | Concurrency measurement | `--warmup` discarded batches then one measured batch per level; up to 512 output tokens per request; `--runs` is ignored |
-| llama-bench (opt-in) | `config.LLAMABENCH_PP` (2048/8192/32768) × `config.LLAMABENCH_TG` (128/512) swept in one `llama-bench` call per model, at `LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512), `-ngl` 999 (0 under `--cpu-only`), `--runs` repetitions (default 3), `LLAMABENCH_TIMEOUT` (1800s) per model. Same `--maxtier`/`--llm-models` scope as `llm`/`conv`. No warmup — repetitions cover it |
+| llama-bench (opt-in) | `config.LLAMABENCH_PP` (512/2048/4096/8192/16384/32768/49152/65536/81920/98304, matching `CONTEXT_LENGTHS` + `CONV_CHECKPOINTS`) × `config.LLAMABENCH_TG` (128/512) swept in one `llama-bench` call per model, at `LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512), `-ngl` 999 (0 under `--cpu-only`), `--runs` repetitions (default 3), `LLAMABENCH_TIMEOUT` (1800s, idle timeout — no output for that long, not a total-sweep ceiling) per model. Same `--maxtier`/`--llm-models` scope as `llm`/`conv`. No warmup — repetitions cover it |
 
 ---
 

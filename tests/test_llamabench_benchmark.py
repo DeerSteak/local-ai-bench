@@ -91,20 +91,22 @@ def test_build_command_cpu_only_ngl():
 
 class _FakePopen:
     """Mimics the slice of subprocess.Popen's interface run_one drains: line-iterable
-    stdout/stderr pipes, wait(timeout=...), and kill()."""
+    stdout/stderr pipes, poll(), wait(), and kill(). `hang=True` simulates a process that
+    never finishes on its own, so run_one's idle watchdog is what has to kill it."""
 
-    def __init__(self, returncode=0, stdout_lines=(), stderr_lines=(), timeout_first_wait=False):
+    def __init__(self, returncode=0, stdout_lines=(), stderr_lines=(), hang=False):
         self.returncode = returncode
         self.stdout = iter(stdout_lines)
         self.stderr = iter(stderr_lines)
-        self._timeout_first_wait = timeout_first_wait
-        self._waited = False
+        self._hang = hang
         self.killed = False
 
+    def poll(self):
+        if self._hang and not self.killed:
+            return None
+        return self.returncode
+
     def wait(self, timeout=None):
-        if self._timeout_first_wait and not self._waited:
-            self._waited = True
-            raise subprocess.TimeoutExpired(cmd=["llama-bench"], timeout=timeout)
         return self.returncode
 
     def kill(self):
@@ -157,11 +159,23 @@ def test_run_one_raises_on_malformed_json(monkeypatch):
 
 
 def test_run_one_propagates_timeout(monkeypatch):
-    fake_proc = _FakePopen(timeout_first_wait=True)
+    fake_proc = _FakePopen(hang=True)
     monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
+    monkeypatch.setattr(LlamaBenchBenchmark, "IDLE_POLL_INTERVAL", 0.001)
     with pytest.raises(subprocess.TimeoutExpired):
-        LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+        LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 0.01)
     assert fake_proc.killed
+
+
+def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
+    """A process that never idles for longer than the timeout should complete normally,
+    not get killed just because the whole sweep runs long."""
+    fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.1, "n_gpu_layers": 999}]
+    fake_proc = _FakePopen(0, stdout_lines=[json.dumps(fake_entries) + "\n"])
+    monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
+    entries = LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+    assert entries == fake_entries
+    assert not fake_proc.killed
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -270,7 +284,7 @@ def test_run_records_timeout_error(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)
-    assert "timed out" in result["m1"]["error"]
+    assert "no output" in result["m1"]["error"]
 
 
 def test_run_records_generic_exception(fake_engine, monkeypatch):
