@@ -185,19 +185,8 @@ class MathBenchmark:
             if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
                 correct += 1
 
-        for cat in by_category.values():
-            cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
-
-        total = len(questions)
-        return {
-            "correct":      correct,
-            "total":        total,
-            "answered":     answered,
-            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
-            "by_category":  by_category,
-            "incorrect":    incorrect,
-            "all":          all_results,
-        }
+        return Shared.finalize_accuracy_score(len(questions), correct, answered, by_category,
+                                               incorrect, all_results)
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
             answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs

@@ -191,24 +191,9 @@ class ReasoningBenchmark:
                 correct += 1
                 difficulty_score["correct"] += 1
 
-        for breakdown in (by_category, by_difficulty):
-            for score in breakdown.values():
-                score["accuracy_pct"] = (
-                    round(100 * score["correct"] / score["total"], 1)
-                    if score["total"] else 0.0
-                )
-
-        total = len(questions)
-        return {
-            "correct": correct,
-            "total": total,
-            "answered": answered,
-            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
-            "by_category": by_category,
-            "by_difficulty": by_difficulty,
-            "incorrect": incorrect,
-            "all": all_results,
-        }
+        return Shared.finalize_accuracy_score(len(questions), correct, answered, by_category,
+                                               incorrect, all_results,
+                                               extra={"by_difficulty": by_difficulty})
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS,
             save_fn=None, answers_path: Path | None = None
