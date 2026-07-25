@@ -592,6 +592,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if label:
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
+        def make_save(key):
+            def _save(partial):
+                results[key] = partial
+                _checkpoint()
+            return _save
+
         try:
             # ── LLM-backed tests share one server lifecycle
             llm_tests = engine_backed_tests
@@ -617,17 +623,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
             # ── LLM ───────────────────────────────────────────────────────────────
             if "llm" in tests:
-                def _llm_save(partial):
-                    results["llm"] = partial
-                    _checkpoint()
-
                 results["llm"] = LLMPrefillBenchmark().run(
                     engine=engine,
                     models=llm_models,
                     context_lengths=config.CONTEXT_LENGTHS,
                     warmup_runs=args.warmup,
                     force_all=args.force_all,
-                    save_fn=_llm_save,
+                    save_fn=make_save("llm"),
                 )
                 _checkpoint("LLM done")
 
@@ -647,16 +649,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                             continue
                         conv_models.append(model)
 
-                def _conv_save(partial):
-                    results["llm_conversation"] = partial
-                    _checkpoint()
-
                 results["llm_conversation"] = LLMConversationBenchmark().run(
                     engine=engine,
                     models=conv_models,
                     warmup_runs=args.warmup,
                     force_all=args.force_all,
-                    save_fn=_conv_save,
+                    save_fn=make_save("llm_conversation"),
                 )
                 results["llm_conversation"].update(llm_conv_skips)
                 _checkpoint("LLM conversation done")
@@ -667,30 +665,22 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     Shared.log("Stopping the engine entirely to free memory for llama-bench ...")
                     engine.stop()
 
-                def _llamabench_save(partial):
-                    results["llamabench"] = partial
-                    _checkpoint()
-
                 results["llamabench"] = LlamaBenchBenchmark().run(
                     engine=engine,
                     models=llm_models,
                     reps=config.N_RUNS,
                     cpu_only=args.cpu_only,
-                    save_fn=_llamabench_save,
+                    save_fn=make_save("llamabench"),
                 )
                 _checkpoint("llama-bench done")
 
             # ── Embeddings ─────────────────────────────────────────────────────────
             if "emb" in tests:
-                def _emb_save(partial):
-                    results["embeddings"] = partial
-                    _checkpoint()
-
                 results["embeddings"] = EmbeddingBenchmark().run(
                     engine=engine,
                     models=embedding_models,
                     warmup_runs=args.warmup,
-                    save_fn=_emb_save,
+                    save_fn=make_save("embeddings"),
                 )
                 _checkpoint("embeddings done")
 
@@ -703,10 +693,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if test_name not in tests:
                     continue
 
-                def _save(partial, test_name=test_name):
-                    results[test_name] = partial
-                    _checkpoint()
-
                 questions = Bench.load_questions()
                 if args.sample is not None:
                     questions = Shared.stratified_sample(questions, args.sample)
@@ -718,7 +704,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     models=llm_models,
                     questions=questions,
                     warmup_runs=args.warmup,
-                    save_fn=_save,
+                    save_fn=make_save(test_name),
                     answers_path=answers_path,
                 )
                 _checkpoint(f"{done_label} done")
@@ -726,10 +712,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
             # ── Concurrency: tool-style (agentic fan-out, no early exit) ───────────
             if "conc_tool" in tests:
-                def _conc_tool_save(partial):
-                    results["concurrency_tool"] = partial
-                    _checkpoint()
-
                 if not conc_models:
                     Shared.warn("No downloaded models to test — "
                                 "conc_tool test will have nothing to run")
@@ -744,16 +726,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     section_label="Concurrency (Tool)",
                     soft_exit_floor=None,
                     force_all=args.force_all,
-                    save_fn=_conc_tool_save,
+                    save_fn=make_save("concurrency_tool"),
                 )
                 _checkpoint("concurrency (tool) done")
 
             # ── Concurrency: chat-server (many simultaneous users, soft exit) ──────
             if "conc_chat" in tests:
-                def _conc_chat_save(partial):
-                    results["concurrency_chat"] = partial
-                    _checkpoint()
-
                 if not conc_models:
                     Shared.warn("No downloaded models to test — "
                                 "conc_chat test will have nothing to run")
@@ -768,7 +746,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     section_label="Concurrency (Chat)",
                     soft_exit_floor=config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
                     force_all=args.force_all,
-                    save_fn=_conc_chat_save,
+                    save_fn=make_save("concurrency_chat"),
                 )
                 _checkpoint("concurrency (chat) done")
 
@@ -789,10 +767,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not comfyui_started:
                     Shared.warn("Image benchmarks will be skipped")
                 else:
-                    def _img_save(img_partial):
-                        results["images"] = img_partial
-                        _checkpoint()
-
                     # See docs/project-structure.md's auxiliary-filename convention.
                     _out_stem = Path(out_path).stem
                     _images_dirname = (
@@ -807,7 +781,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                         prompt=config.IMAGE_PROMPT,
                         comfyui_dir=comfyui_dir,
                         timeout=config.RUN_TIMEOUT * 2,
-                        save_fn=_img_save,
+                        save_fn=make_save("images"),
                         images_dir=config.RESULTS_DIR / _images_dirname,
                     )
                     # Shut down ComfyUI as soon as image tests are done
