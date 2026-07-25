@@ -1,6 +1,7 @@
 import argparse
 
 from benchmark import (
+    LLM_TESTS,
     add_model_selection_arguments,
     filter_models_by_pattern,
     resolve_catalog_scopes,
@@ -115,6 +116,20 @@ def test_image_selector_narrows_after_maxtier():
     )
     assert image_models == []
     assert errors == ["--image-models flux* matched no image models"]
+
+
+def test_llamabench_shares_the_llm_test_scope():
+    assert "llamabench" in LLM_TESTS
+
+
+def test_engine_validation_rejects_empty_llamabench_scope():
+    errors = validate_engine_scopes(
+        ["llamabench"], "fake", ["missing*"], [], [], "small and below",
+    )
+    assert errors == [
+        "--llm-models missing* matched no LLM models in the selected tier "
+        "(small and below) or installed for fake"
+    ]
 
 
 def test_engine_validation_rejects_empty_normal_llm_scope():

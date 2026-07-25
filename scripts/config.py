@@ -68,6 +68,18 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
+# llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
+LLAMABENCH_PP = [2048, 8192, 32768]
+LLAMABENCH_TG = [128, 512]
+LLAMABENCH_BATCH_SIZE = 2048
+LLAMABENCH_UBATCH_SIZE = 512
+# Per-model ceiling for one whole pp/tg sweep, not per-request like RUN_TIMEOUT —
+# fixed like embeddings' own 120s, independent of --timeout.
+LLAMABENCH_TIMEOUT = 1800
+# Exceeds any real model's layer count so every layer offloads — llama-bench's own
+# default (-1) isn't documented as meaning "all layers".
+LLAMABENCH_FULL_OFFLOAD_NGL = 999
+
 # Above this, a self-reported tps is treated as unreliable — see docs/engines.md's "_sanitize_tps".
 MAX_PLAUSIBLE_TPS = 5000.0
 

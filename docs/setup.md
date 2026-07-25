@@ -13,9 +13,9 @@
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp, ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
-| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise), ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench), ComfyUI |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
+| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench), ComfyUI portable |
 
 `setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
 
@@ -31,6 +31,8 @@
    - `q` or Ctrl-C to cancel at any point with nothing installed yet
 4. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
 5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts. If cleanup was selected, it first deletes only the non-catalog folders shown in the picker; catalog folders and loose files are never cleanup targets.
+
+The llama.cpp install also includes `llama-bench`, llama.cpp's own throughput-benchmarking tool, needed only for the opt-in `llamabench` test (`--tests llamabench`) — see [Workloads](workloads.md#llama-bench).
 
 Non-catalog cleanup is permanent rather than a move to Trash or Recycle Bin. It is deliberately excluded from the default selection and the `a` shortcut; select its numbered row or type `clean` only after checking the displayed folder names for models you want to keep.
 

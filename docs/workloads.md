@@ -2,7 +2,7 @@
 
 # Workloads
 
-Five workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Six workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), concurrency (opt-in — see below), and llama-bench (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 
@@ -22,6 +22,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Tool Use](#tool-use)
   - [Bank versioning](#bank-versioning)
 - [Concurrency](#concurrency)
+- [llama-bench](#llama-bench)
 
 ## LLM
 
@@ -266,6 +267,18 @@ Each level also records a memory snapshot, taken right after that level finishes
 ### A note on tok/s outliers
 
 Under heavy concurrent-slot contention, llama-server's own streamed timing data can occasionally misreport a request's decode time as implausibly tiny relative to its token count, which would otherwise show up as a wildly inflated (sometimes six-figure) tok/s reading for that one request. `LlamaCppEngine` sanity-checks every self-reported tok/s value against `config.MAX_PLAUSIBLE_TPS` and substitutes a wall-clock-measured rate whenever the server's number is physically implausible, so this shouldn't show up in results — see `LlamaCppEngine._sanitize_tps` in [Engines](engines.md#llamacppengine).
+
+## llama-bench
+
+Opt-in (`--tests llamabench`, not part of the default set) — runs llama.cpp's own `llama-bench` tool directly against every model in the same `--maxtier`/`--llm-models` scope as `llm`/`conv`/accuracy, instead of going through this project's HTTP/SSE pipeline. It overlaps substantially with the `llm` test's own prefill/decode measurements, and that overlap is intentional: `llama-bench` is the tool most community-published throughput numbers use, so a run here is directly comparable to other people's numbers for the same hardware/model/quantization, and — since it bypasses this project's own timing/HTTP code entirely — a divergence between its numbers and `llm`'s is a useful signal about where a difference comes from. It does not replace the conversation test: `llama-bench` always benchmarks an isolated prompt at a fixed size, never a KV-cache-reused, naturally growing multi-turn conversation.
+
+Unlike every other workload, this one is inherently llama.cpp-specific rather than engine-agnostic — `llama-bench` is llama.cpp's own tool with no cross-engine equivalent — so it's skipped with a warning under any future non-llama.cpp engine rather than attempting a translation that doesn't exist.
+
+For each model, one `llama-bench` subprocess call sweeps every combination of `config.LLAMABENCH_PP` (2048/8192/32768 prompt-processing sizes) and `config.LLAMABENCH_TG` (128/512 generation sizes) — a cross product, so each of the six combined checkpoints times both phases at that pairing — at `config.LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512), repeated `--runs` times each (`llama-bench -r`, default 3) and averaged with a reported standard deviation. GPU offload always passes an explicit `-ngl` (999 for full offload, or 0 under `--cpu-only`) rather than relying on `llama-bench`'s own default, since that default (`-1`) isn't documented as meaning "offload every layer." Before this test starts, the engine's own server is stopped entirely (not just unloaded) to free GPU memory for `llama-bench`'s own process. A single model's sweep failing (timeout, crash, out-of-memory) records that model's `error` and moves on to the next one; it does not stop the run.
+
+Each model's `llamabench` result is either `{"entries": [...]}` — the parsed `llama-bench -o json` output verbatim, one object per checkpoint with fields like `n_prompt`, `n_gen`, `avg_ts`, `stddev_ts`, and `n_gpu_layers` — or `{"error": "..."}`.
+
+Requires `llama-bench` to be installed — `setup.sh`/`setup.bat` install it alongside `llama-server` (see [Setup](setup.md)); if it's missing, the test prints where to get it and records nothing rather than failing the whole run.
 
 ---
 

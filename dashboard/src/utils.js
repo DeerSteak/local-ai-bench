@@ -214,6 +214,7 @@ export function getAllLLMModels(files) {
       for (const m of Object.keys(f.data[test] || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
+    for (const m of Object.keys(f.data.llamabench || {})) s.add(m);
   }
   const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
@@ -465,6 +466,39 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     }));
 }
 
+// pp/tg sizes are a config.py constant that can change, so order is derived from
+// each entry's own n_prompt/n_gen — unlike CTX_ORDER, not a hardcoded list.
+export function llamaBenchCheckpointKey(entry) {
+  const p = entry.n_prompt ?? 0, g = entry.n_gen ?? 0;
+  if (g === 0) return `pp${p}`;
+  if (p === 0) return `tg${g}`;
+  return `pp${p}+tg${g}`;
+}
+
+export function llamaBenchCheckpointSortValue(entry) {
+  return (entry.n_prompt ?? 0) * 1e7 + (entry.n_gen ?? 0);
+}
+
+// llama-bench: one chart per model. X = system, bars = each (pp,tg) checkpoint present.
+export function buildLlamaBenchBarData(files, model) {
+  return files.map(f => {
+    const row = { systemLabel: f.hostname };
+    for (const entry of f.data.llamabench?.[model]?.entries || [])
+      row[llamaBenchCheckpointKey(entry)] = entry.avg_ts;
+    return row;
+  });
+}
+
+export function buildLlamaBenchBarConfigs(files, model) {
+  const sortValueByKey = new Map();
+  for (const f of files)
+    for (const entry of f.data.llamabench?.[model]?.entries || [])
+      sortValueByKey.set(llamaBenchCheckpointKey(entry), llamaBenchCheckpointSortValue(entry));
+  return [...sortValueByKey.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .map(([key], i) => ({ dataKey: key, name: key, fill: FALLBACK_COLORS[i % FALLBACK_COLORS.length] }));
+}
+
 export function prepareOrderedBarGroupData(data, barConfigs) {
   return data.map(row => ({
     ...row,
@@ -710,6 +744,21 @@ export function flattenLLMData(files, section = "llm") {
           ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
           n_runs: s.n_runs,
         }));
+    })
+  );
+}
+
+export function flattenLlamaBenchData(files) {
+  return files.flatMap(f =>
+    Object.entries(f.data.llamabench || {}).flatMap(([model, modelData]) => {
+      if (modelData?.error) {
+        return [{ _fileId: f.id, model, ckpt: "—", skipped: true, skip_detail: modelData.error }];
+      }
+      return (modelData?.entries || []).map(entry => ({
+        _fileId: f.id, model, ckpt: llamaBenchCheckpointKey(entry),
+        avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts,
+        n_gpu_layers: entry.n_gpu_layers,
+      }));
     })
   );
 }

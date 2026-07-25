@@ -1,5 +1,5 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, concurrencySortValue, fmt, modelLabel } from "../utils";
+import { flattenLLMData, flattenEmbedData, flattenImageData, flattenAccuracyData, flattenConcurrencyData, flattenLlamaBenchData, concurrencySortValue, fmt, modelLabel } from "../utils";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
@@ -205,6 +205,50 @@ function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
   );
 }
 
+function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
+  const isMulti = files.length > 1;
+  const rows = flattenLlamaBenchData(files).sort((a, b) => {
+    const ak = a[sortConfig.key] ?? "";
+    const bk = b[sortConfig.key] ?? "";
+    return (ak < bk ? -1 : ak > bk ? 1 : 0) * sortConfig.dir;
+  });
+
+  return (
+    <table className={styles.table}>
+      <thead>
+        <tr>
+          {isMulti && <th className={styles.th}>Machine</th>}
+          <SortTh label="Model" sortKey="model" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Checkpoint" sortKey="ckpt" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Tokens/sec" sortKey="avg_ts" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <th className={styles.th}>± stdev</th>
+          <th className={styles.th}>GPU Layers</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => r.skipped ? (
+          <tr key={i} className={styles.trSkipped}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={styles.td} colSpan={4}>
+              Skipped — {r.skip_detail}
+            </td>
+          </tr>
+        ) : (
+          <tr key={i}>
+            {isMulti && <MachineTd fileId={r._fileId} files={files} />}
+            <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
+            <td className={`${styles.td} ${styles.tdCtx}`}>{r.ckpt}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.avg_ts, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.stddev_ts, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_gpu_layers ?? "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
   const isMulti = files.length > 1;
   const rows = flattenAccuracyData(files, testKey).sort((a, b) => {
@@ -276,6 +320,7 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
       {section === "accuracy"  && <AccuracyTable files={files} testKey={accuracyTest} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {section === "llamabench" && <LlamaBenchTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
     </div>
   );
 }

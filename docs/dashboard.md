@@ -41,14 +41,15 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 | Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
+| llama-bench | Opt-in — one bar chart per model, hosts on the axis, one bar per (pp, tg) checkpoint `llama-bench` actually swept. See [Workloads](workloads.md#llama-bench) |
 
-The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Concurrency, and Accuracy sections, so switching between them keeps the same models/files selected.
+The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Concurrency, Accuracy, and llama-bench sections, so switching between them keeps the same models/files selected.
 
 ## Chart Style and Group By
 
 **Chart Style** (Bar / Line) and **Group By** (Model / System) apply to the LLM, LLM Conversation, Embeddings, and Images sections — Bar vs. Line picks the chart type, and Group By flips which axis becomes the per-chart grouping (one chart per model with systems as series, vs. one chart per system with models as series). In by-model LLM bar charts, each system remains one chart category with native group spacing, while its context bars follow the numeric checkpoint order from `CTX_ORDER` rather than lexicographic label order. Group By → System omits models for which every loaded file contains only a `no_llm_data` placeholder, while retaining a model attempted by at least one system. It also reveals a **Model Sizes** toggle (Split by tier vs. Combined) for the LLM/LLM Conversation sections, since a single combined line chart with every model tier at once is unreadable.
 
-Both pills are hidden on the **Accuracy** and **Concurrency** sections. Accuracy charts are always bar charts grouped by model, since accuracy is a single scalar per model rather than a metric swept across context lengths or resolutions. Concurrency charts are always line charts grouped by model, with request count on the horizontal axis.
+Both pills are hidden on the **Accuracy**, **Concurrency**, and **llama-bench** sections. Accuracy charts are always bar charts grouped by model, since accuracy is a single scalar per model rather than a metric swept across context lengths or resolutions. Concurrency charts are always line charts grouped by model, with request count on the horizontal axis. llama-bench charts are always bar charts grouped by model, one bar per checkpoint actually present in the loaded file(s) — ordered by prompt size then generation size rather than a fixed list, since the pp/tg sweep is a `config.py` constant that can change across versions.
 
 A checkpoint past a slow-model cutoff (see [Concurrency](workloads.md#concurrency) and the LLM Conversation early-exit above) renders as a "Skipped (X Too Slow)" label instead of a bar, driven entirely by each checkpoint's position in `CTX_ORDER` — this is why the dashboard already handles the cutoff firing at any depth, not just the first one, with no special-casing per depth. Adding a new checkpoint to the suite's own checkpoint list only requires adding it to `CTX_ORDER` too; the rest follows automatically.
 
@@ -80,6 +81,8 @@ A model's sweep can stop before reaching the highest configured level — a note
 
 The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD and Intel hardware, and on NVIDIA hardware without a driver new enough for any of the prebuilt CUDA builds. The raw results retain that physical classification separately as `profile.hardware_backend`.
 
+**llama-bench → Tokens/sec.** `llama-bench`'s own `avg_ts` for each (pp, tg) checkpoint, measured entirely inside llama.cpp — no HTTP/SSE, no this project's own timing code. Higher is better. Substantially overlaps with LLM → Tokens/sec on the same model/hardware by design — see [Workloads](workloads.md#llama-bench) for why that's intentional rather than redundant.
+
 **Embeddings → Chunks/sec.** Throughput embedding one real document's chunks in a single call. Higher is better.
 
 **Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.
@@ -110,6 +113,7 @@ llama3.1-8b-q4_mcq-category.png    # Accuracy section, by-Category chart
 mcq-incidents.png                  # Accuracy section, incident diagnostics chart
 embeddings.png
 1024x1024_images.png
+llama3.1-8b-q4_llamabench.png      # llama-bench section
 ```
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.

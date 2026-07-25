@@ -82,7 +82,7 @@ The report is intentionally scoped to unit-testable code. Treat its missing-line
 
 ## Test Suite Breakdown
 
-The test suite consists of **39 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+The test suite consists of **41 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
 
 ### Benchmark Logic & CLI Orchestration
 
@@ -302,6 +302,14 @@ The test suite consists of **39 test modules** validating different components o
   - `chat_tools` reassembles a tool call whose `arguments` stream as partial JSON fragments across multiple SSE chunks (accumulated by index), returns an empty tool-call list when the model answers in prose instead, falls back to `{}` on malformed/truncated argument JSON rather than crashing, and orders multiple calls by their streamed index.
   - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
   - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
+
+- **[test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py)**
+  Tests `LlamaBenchBenchmark` (`scripts/llamabench_benchmark.py`), the opt-in `llamabench` test — see [Workloads](../docs/workloads.md#llama-bench). Unlike most workload `run()` methods, this one has no real subprocess/Popen seam of its own (`run_one`'s `subprocess.run` call is mocked), so `run()`'s per-model dispatch is tested directly rather than pragma'd out:
+  - `find_binary` resolution order (vendored `LLAMACPP_DIR`, `PATH`, macOS Homebrew prefixes), mirroring `LlamaCppEngine._binary_path`'s own tests.
+  - `build_command` assembles the exact `llama-bench` argv, including the explicit `-ngl` (full offload vs. `--cpu-only`).
+  - `run_one` parses `-o json` output on success, raises with the tail of stderr on a non-zero exit, raises on malformed JSON, and lets a `subprocess.TimeoutExpired` propagate to the caller.
+  - `format_entry` labels a pure prompt-processing entry, a pure generation entry, and a combined pp+tg entry.
+  - `run()` skips a non-`LlamaCppEngine` engine and a missing binary, skips an unpulled model, records an `error` entry for missing files/a timeout/a generic exception without stopping the rest of the models, records `entries` on success, calls `save_fn` after each model, and passes the right `-ngl` for `cpu_only` true/false.
 
 - **[test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py)**
   Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:

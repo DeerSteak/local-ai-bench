@@ -20,8 +20,9 @@ Selected tests run in a fixed stage order, independent of the order passed to `-
 ```
 single-shot LLM (all selected models, xsmall → large)
   → conversation LLM (all eligible selected models)
-  → accuracy (MCQ → math → reasoning → code → tool)
+  → llama-bench (opt-in)
   → embeddings
+  → accuracy (MCQ → math → reasoning → code → tool)
   → concurrency (tool → chat)
   → images
 ```
@@ -33,6 +34,8 @@ Within each stage, only one model is loaded at a time. `LlamaCppEngine` runs a m
 The single-shot test builds an independent padded prompt for every measured call. Conversation instead grows one chat from a blank slate and samples it once at each eligible checkpoint, growing toward 128K and sampling through 96K, capped by the GGUF's real context ceiling. Growth uses larger steps while far from a checkpoint and finer steps within 8K, stopping at 99.5% of the target to avoid expensive tiny turns.
 
 When single-shot and conversation are selected together, conversation excludes models with no usable single-shot result, a repeatable runner crash, a timeout at the first 512-token checkpoint, or a slow marker there. A deeper single-shot timeout alone does not exclude it. Conversation also stops after recording any sampled checkpoint below the slow-TPS cutoff. `--force-all` bypasses these speed gates, not actual failures. See [LLM workload](workloads.md#llm).
+
+If `llamabench` is selected, the active inference engine's server is stopped entirely first (not just unloaded) to free memory for `llama-bench`'s own subprocess, which it drives directly rather than through `LlamaCppEngine`'s HTTP interface — see [Workloads](workloads.md#llama-bench). One model's failure (missing binary, timeout, crash) records that model's error and moves on rather than stopping the run.
 
 Each accuracy test warms a model, makes one deterministic first pass per question, scores it, and unloads the model. A literal length stop uses the remaining 40% of `--acc-token-budget` for one concise final-answer request; only that replacement is graded. Both passes share one `--acc-timeout` deadline. Token exhaustion, timeout, and periodic loop detection preserve and score the graded pass's partial output, record separate diagnostics, and continue the bank. MCQ and reasoning use confidence-ordered choice parsing so explicit final answers and later self-corrections take precedence over incidental reasoning text; reasoning deliberately disables MCQ's last-resort unstructured-letter fallback. Math accepts only completed scalar conclusions or same-clause results stated after `=`, while a leading numeric line must be corroborated by the response's final number or final completed equality result. Code answers run visible and hidden cases in one isolated Python subprocess, streaming per-test diagnostics so completed results survive a later timeout. Tool answers use `chat_tools` and require either exactly one matching call or a correct decline; question metadata can opt free-text arguments into limited normalization while identifiers remain exact.
 
@@ -62,6 +65,7 @@ The benchmark implementation lives in `scripts/`, split by responsibility:
 | `scripts/reasoning_benchmark.py` | The knowledge-light reasoning accuracy test and validated bank loader |
 | `scripts/code_benchmark.py` | The code accuracy test |
 | `scripts/tool_benchmark.py` | The tool-calling accuracy test |
+| `scripts/llamabench_benchmark.py` | The opt-in `llamabench` test — llama.cpp's own `llama-bench` pp/tg throughput sweep, bypassing the HTTP engine |
 | `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
 | `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
 
@@ -114,6 +118,7 @@ The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and A
 | Tool-style concurrency | 1, 2, 4, 6, 8, 12, 16 requests; 4,096-token prompts; no slow-TPS soft exit |
 | Chat concurrency | 1, 2, 4, 8, 16, 24, 32 requests; 16,384-token prompts; soft exit after a measured level ≥8 falls below 15 tok/s unless `--force-all` |
 | Concurrency measurement | `--warmup` discarded batches then one measured batch per level; up to 512 output tokens per request; `--runs` is ignored |
+| llama-bench (opt-in) | `config.LLAMABENCH_PP` (2048/8192/32768) × `config.LLAMABENCH_TG` (128/512) swept in one `llama-bench` call per model, at `LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512), `-ngl` 999 (0 under `--cpu-only`), `--runs` repetitions (default 3), `LLAMABENCH_TIMEOUT` (1800s) per model. Same `--maxtier`/`--llm-models` scope as `llm`/`conv`. No warmup — repetitions cover it |
 
 ---
 

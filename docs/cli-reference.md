@@ -15,9 +15,9 @@ run_bench.bat [options]   # Windows
 --tests TESTS           Tests to run: any of llm conv, emb, img, mcq, math,
                         reasoning, code, tool, acc as shorthand for every accuracy-style
                         test (mcq, math, reasoning, code, and tool), or
-                        conc_tool/conc_chat (conc is shorthand for both)
+                        conc_tool/conc_chat (conc is shorthand for both), or llamabench
                         (default: all nine — llm conv emb img mcq math reasoning code
-                        tool; conc_tool/conc_chat are opt-in — see Workloads)
+                        tool; conc_tool/conc_chat/llamabench are opt-in — see Workloads)
 --engine ENGINE         Inference engine to benchmark against, or 'all' to run
                         the full --tests suite once per registered engine (default:
                         llamacpp). 'all' writes a separate results file per
@@ -29,11 +29,13 @@ run_bench.bat [options]   # Windows
 --cpu-only              Force CPU-only inference for every test that goes
                         through the active engine (llm, conv, mcq, math, reasoning, code,
                         tool, emb, conc_tool, conc_chat) by restarting it with
-                        GPU devices hidden, then restores normal GPU mode afterward
+                        GPU devices hidden, then restores normal GPU mode afterward.
+                        llamabench also honors this (passes -ngl 0 directly)
 --warmup N              Engine-backed warmups before measuring (default: 2).
                         Images always use one warmup and ignore this flag
 --runs N                Measured runs averaged for single-shot LLM, embeddings,
-                        and images (default: 3, range: 1-10). Conversation and
+                        and images (default: 3, range: 1-10), also used as
+                        llamabench's own repetitions. Conversation and
                         accuracy use one pass; concurrency uses one measured
                         batch per level. Warmup time is unaffected
 --timeout N             Seconds per generation/chat call and engine warmup
@@ -123,22 +125,22 @@ After the selection summary, `Start this benchmark? [Y/n]` defaults to yes; pres
 
 The interactive launcher clears the terminal before its initial display, between menu screens, and before subsequent redraws while preserving the welcome banner through the first single-engine test screen and the final model choices through confirmation. It uses the native `cls` command on Windows and ANSI terminal clearing elsewhere. Launcher prompts remain untimestamped. Once execution starts, benchmark status and progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
 
-`--runs` applies only to single-shot LLM, embeddings, and image generation. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
+`--runs` applies only to single-shot LLM, embeddings, image generation, and llamabench's own repetitions. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
 
 ## Flag details
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
-| `--tests` | any of `llm conv emb img mcq math reasoning code tool`, plus `acc`, `conc_tool`, `conc_chat`, and `conc` | all nine (`llm conv emb img mcq math reasoning code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (`mcq`, `math`, `reasoning`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `conc_tool` (agentic/tool-calling fan-out, 1–16-way) and `conc_chat` (many simultaneous chat users, 1–32-way) — see [Concurrency](workloads.md#concurrency) — are opt-in, not part of the default set |
+| `--tests` | any of `llm conv emb img mcq math reasoning code tool`, plus `acc`, `conc_tool`, `conc_chat`, `conc`, and `llamabench` | all nine (`llm conv emb img mcq math reasoning code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (`mcq`, `math`, `reasoning`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `conc_tool` (agentic/tool-calling fan-out, 1–16-way) and `conc_chat` (many simultaneous chat users, 1–32-way) — see [Concurrency](workloads.md#concurrency) — are opt-in, not part of the default set. `llamabench` is also opt-in — llama.cpp's own `llama-bench` pp/tg throughput sweep, scoped like `llm`/`conv` — see [llama-bench](workloads.md#llama-bench) |
 | `--engine` | any registered engine name, or `all` | `llamacpp` | Which inference engine to benchmark against. `all` runs the full `--tests` suite once per registered engine (sorted order) and writes a separate results file for each (engine name appended to the filename). Only llama.cpp is registered today, so `all` behaves identically to the default until a second engine (e.g. MLX) is added. See [Engines](engines.md) |
-| `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads |
-| `--warmup` | integer | `2` | Discarded warmups before measurement for every engine-backed workload: once per loaded model for LLM/conversation/accuracy, per model call for embeddings, and per concurrency level. Image generation always performs one warmup at the model's first resolution and does not use this flag |
-| `--runs` | integer, `1`–`10` | `3` | Measured runs averaged for single-shot LLM at each context, embeddings, and images at each resolution. Ignored by conversation, accuracy, and concurrency. Warmup count is unaffected |
+| `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads. `llamabench` also honors it (passes `-ngl 0` to `llama-bench` directly) without going through that engine restart |
+| `--warmup` | integer | `2` | Discarded warmups before measurement for every engine-backed workload: once per loaded model for LLM/conversation/accuracy, per model call for embeddings, and per concurrency level. Image generation always performs one warmup at the model's first resolution and does not use this flag. `llamabench` has no separate warmup — repetitions (`--runs`) cover that |
+| `--runs` | integer, `1`–`10` | `3` | Measured runs averaged for single-shot LLM at each context, embeddings, and images at each resolution; also `llama-bench -r` repetitions for `llamabench`. Ignored by conversation, accuracy, and concurrency. Warmup count is unaffected |
 | `--timeout` | integer (seconds) | `300` | Per generation/chat call for single-shot, conversation, concurrency, and their engine warmups. Images use twice this value (600s by default). Embedding calls retain the engine's fixed 120s timeout; accuracy questions use `--acc-timeout` |
 | `--acc-timeout` | integer (seconds) | `60` | Per question for `mcq`/`math`/`reasoning`/`code`/`tool`; the partial response is scored normally, the timeout is recorded, and the bank continues — see [Accuracy](workloads.md#accuracy) |
 | `--acc-token-budget` | positive integer (tokens) | `8192` | Total completion-token budget per accuracy question. The first pass receives 60%; only a literal length stop triggers a second pass with the remaining 40%. Both passes share `--acc-timeout` |
-| `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. `conc_tool`/`conc_chat` ignore this — they scope to every LLM model actually downloaded locally instead, since download presence is itself a decent proxy for "this machine can try it" (see [Concurrency](workloads.md#concurrency)) |
-| `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`conc_tool`/`conc_chat` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
+| `--maxtier` | `xsmall` / `small` / `medium` / `large` | `large` (no cap) | Cumulative — each tier includes every tier below it. Applies to `llamabench` the same way it applies to `llm`/`conv`. `conc_tool`/`conc_chat` ignore this — they scope to every LLM model actually downloaded locally instead, since download presence is itself a decent proxy for "this machine can try it" (see [Concurrency](workloads.md#concurrency)) |
+| `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`conc_tool`/`conc_chat`/`llamabench` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
 | `--embedding-models` | space-separated catalog tags and/or wildcards | none (every catalog embedding model) | Affects `emb` only. Matching is case-sensitive and exact-or-wildcard on the model's `tag` |
 | `--image-models` | space-separated catalog short IDs and/or wildcards (e.g. `sd*`) | none (every image model allowed by `--maxtier`) | Affects `img` only. Matching is case-sensitive and exact-or-wildcard on the stable `short` values in `models.py`; it narrows the image list after `--maxtier` |
 | `--list-models` | (flag) | off | Read-only inventory of installed catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints, then exit. It does not require or start an inference server. `--engine` selects the inventory (`all` lists each engine), and `--comfyui` selects the image checkpoint directory |
@@ -207,6 +209,9 @@ bash run_bench.sh --tests conc
 
 # Chat-server concurrency test only
 bash run_bench.sh --tests conc_chat
+
+# llama-bench pp/tg throughput sweep, opt-in — see Workloads
+bash run_bench.sh --tests llamabench
 ```
 
 A full run takes several hours, depending on your hardware and which options you select.

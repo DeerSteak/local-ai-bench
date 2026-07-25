@@ -67,6 +67,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `code_benchmark.py` | Isolated Python code-generation accuracy test |
 | `tool_benchmark.py` | Tool-calling accuracy test |
 | `regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
+| `llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own `llama-bench` pp/tg throughput sweep across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
 | `data/` | Question banks used by accuracy tests (see above) |
@@ -113,6 +114,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |
 | `concurrency_tool`, `concurrency_chat` | Per-model/per-level TTFT, per-request and aggregate throughput, token/batch timing, memory snapshots, and stop markers |
+| `llamabench` | Opt-in — per-model raw `llama-bench -o json` entries (or an `error` string), one entry per pp/tg checkpoint — see [Workloads](workloads.md#llama-bench) |
 
 Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. Concurrency snapshots include system RAM and add GPU VRAM when a trustworthy discrete-GPU reading is available; a failed load records `memory_at_failure`. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
 

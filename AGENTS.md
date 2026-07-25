@@ -6,7 +6,7 @@ Instructions for AI coding agents working in this repository. Read this before m
 
 `local-ai-bench` is a cross-platform benchmark suite for local LLM generation (llama.cpp, via a pluggable engine interface — see [Engines](docs/engines.md)), image generation (ComfyUI), and embeddings. It's designed to run unattended on real hardware (from 8GB GPUs up to unified-memory workstations) and produce comparable results across machines via a React/Vite dashboard.
 
-Full docs live in [`docs/`](docs/) — [Project Structure](docs/project-structure.md), [How It Works](docs/how-it-works.md), [Engines](docs/engines.md), [Testing](docs/testing.md), [Workloads](docs/workloads.md), [CLI Reference](docs/cli-reference.md), [Setup](docs/setup.md), [Dashboard](docs/dashboard.md). This file is the entry point and summary — when in doubt, the docs above are authoritative and more detailed.
+Full docs live in [`docs/`](docs/) — [Project Structure](docs/project-structure.md), [How It Works](docs/how-it-works.md), [Engines](docs/engines.md), [Testing](docs/testing.md), [Workloads](docs/workloads.md) (includes [llama-bench](docs/workloads.md#llama-bench)), [CLI Reference](docs/cli-reference.md), [Setup](docs/setup.md), [Dashboard](docs/dashboard.md). This file is the entry point and summary — when in doubt, the docs above are authoritative and more detailed.
 
 **`ComfyUI/` is a vendored third-party dependency, not part of this project.** Don't treat it as code to maintain, refactor, or write tests for.
 
@@ -45,6 +45,7 @@ tests.sh / .bat                Activates bench-env, runs pytest
 - `model_inventory.py` — installed-model classification and safe non-catalog folder cleanup helpers
 - `setup_selection.py` — pure selection rules extracted from the side-effectful setup picker
 - `setup_check.py` — hardware detection, interactive model picker, unattended install (called by `setup.sh`/`setup.bat`)
+- `llamabench_benchmark.py` — opt-in `llamabench` test: llama.cpp's own `llama-bench` pp/tg throughput sweep, bypassing the HTTP engine — see [Workloads](docs/workloads.md#llama-bench)
 
 ## Critical safety rules
 
@@ -66,7 +67,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing   # with coverage (needs p
 
 # Everything else below has real side effects — confirm with the user first
 bash setup.sh              # installs llama.cpp, models, ComfyUI checkpoints
-bash run_bench.sh           # runs the real benchmark suite
+bash run_bench.sh           # runs the real benchmark suite (--tests llamabench included, spawns real llama-bench subprocesses)
 bash launch_dashboard.sh    # builds + serves the results dashboard
 ```
 
@@ -79,6 +80,8 @@ The reasoning below isn't fully written down anywhere else — the docs describe
 **Two LLM test modes measure genuinely different things — don't compare their TTFT numbers at face value.**
 - **Single-shot** (`llm_prefill_benchmark.py`): a fresh, unique-content prompt padded to a target size (2K/8K/32K/64K), sent cold every run — the whole prompt is processed with nothing cached. TTFT is measured wall-clock, from request start until the first output reaches the client.
 - **Conversation** (`llm_conversation_benchmark.py`): one real multi-turn chat, grown from a blank slate toward 96K. TTFT here measures only the *new* turn's marginal cost, relying on the backend's slot/KV-cache reuse — that's why conversation TTFT at, say, 32K is a small fraction of single-shot TTFT at 32K. TPS (decode speed) *is* comparable between the two, since it depends on total context depth in both cases, not on what's cached.
+
+**`llamabench` (`llamabench_benchmark.py`) intentionally overlaps with `llm`'s own prefill/decode numbers.** It runs llama.cpp's own `llama-bench` binary directly (not through `LlamaCppEngine`'s HTTP server), so it's comparable to community-published `llama-bench` results and useful as a cross-check against this project's own TTFT/TPS pipeline — don't try to make it "different enough" to justify its existence, and don't route it through `InferenceEngine` (it's the one workload module that's inherently llama.cpp-specific — see `docs/engines.md`). It always passes an explicit `-ngl` (999 full offload / 0 under `--cpu-only`) rather than relying on `llama-bench`'s own default (`-1`), since that default isn't documented as meaning "every layer."
 
 **Model tiers are cumulative.** `xsmall` (<6B), `small` (≤20B), `medium` (26–35B), `large` (70B+) are defined in `models.py`. `--maxtier medium` runs xsmall+small+medium, not just medium — `select_tier()` in `benchmark.py` applies the identical cumulative cap to image models via each image model's own `tier` field. To add a model to a tier, add it to the right list in `models.py`; the cap logic itself shouldn't need to change.
 
@@ -171,4 +174,4 @@ This project's docs have accumulated real staleness before — broken relative l
 2. If you touched anything in `scripts/` or a pure function in `dashboard/src/utils.js`/`constants.js`, make sure new logic has real unit test coverage per the conventions above (extract-then-test on the Python side, a real Vitest test on the dashboard side — not left untested either way).
 3. Ask explicitly: does this change alter the results JSON shape, a CLI flag, a default, model/tier definitions, or documented behavior? If yes, update the dashboard and/or the relevant doc(s) per "Keeping docs and the dashboard in sync" above — don't wait to be asked.
 4. Check for now-broken relative links and stale references to renamed/removed files in anything you touched or that references what you touched.
-5. Don't run `setup.sh`, `setup.bat`, or a real `run_bench.sh` invocation to "verify" — see Critical safety rules.
+5. Don't run `setup.sh`, `setup.bat`, or a real `run_bench.sh` invocation (including `--tests llamabench`) to "verify" — see Critical safety rules.

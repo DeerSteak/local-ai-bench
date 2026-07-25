@@ -6,6 +6,7 @@ import ImagesPanel from "./panels/ImagesPanel";
 import EmbeddingsPanel from "./panels/EmbeddingsPanel";
 import AccuracyPanel from "./panels/AccuracyPanel";
 import ConcurrencyPanel from "./panels/ConcurrencyPanel";
+import LlamaBenchPanel from "./panels/LlamaBenchPanel";
 import { EmptyState } from "./panels/shared";
 
 // Picks the right panel for the current section / Group By / Chart Style
@@ -30,6 +31,15 @@ export default function ChartPanel({
     return (
       <AccuracyPanel
         containerRef={containerRef} files={files} accuracyTest={accuracyTest} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc}
+      />
+    );
+  }
+
+  if (section === "llamabench") {
+    return (
+      <LlamaBenchPanel
+        containerRef={containerRef} files={files} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc}
       />
     );

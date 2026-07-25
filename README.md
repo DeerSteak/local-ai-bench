@@ -1,6 +1,6 @@
 # Local AI Bench v4.0
 
-Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and opt-in concurrency/load testing. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
+Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and opt-in concurrency/load testing and llama-bench throughput comparisons. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
 
 ---
 
@@ -13,9 +13,9 @@ cd local-ai-bench
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp, ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build, ComfyUI |
-| Windows | `setup.bat` | Python, llama.cpp Vulkan build, ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench), ComfyUI |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench), ComfyUI |
+| Windows | `setup.bat` | Python, llama.cpp Vulkan build (includes llama-bench), ComfyUI portable |
 
 `setup.sh` / `setup.bat` first ensure Python, create `bench-env/`, and install the project's Python packages. The setup assistant then shows its llama.cpp/model plan for approval and opens an interactive model picker, so you choose every model download before the unattended installation phase begins.
 
@@ -50,7 +50,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | Doc | Covers |
 |---|---|
 | [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
-| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, and concurrency |
+| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |

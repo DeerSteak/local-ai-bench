@@ -212,7 +212,7 @@ def test_default_test_state_matches_documented_matrix():
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
-        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "llamabench",
     ))
 
 
@@ -335,10 +335,10 @@ def test_choose_engine_preserves_first_render_then_clears_each_redraw():
 
 def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     entries = build_test_entries(sample_inventory())
-    entries[2].available = False
-    entries[2].checked = False
+    entries[3].available = False  # emb
+    entries[3].checked = False
     messages, output = output_collector()
-    selected = choose_tests(entries, InputSequence(["5", "3", ""]), output)
+    selected = choose_tests(entries, InputSequence(["5", "4", ""]), output)
     assert "mcq" in selected
     assert "emb" not in selected
     assert any("cannot be selected" in message for message in messages)
@@ -347,7 +347,9 @@ def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
-    selected = choose_tests(entries, InputSequence(["1-4", "", "1", ""]), output)
+    # 1/2/4/12 are the default-checked entries (llm, conv, emb, img); toggling them
+    # off leaves nothing selected without disturbing llamabench's own default-off state.
+    selected = choose_tests(entries, InputSequence(["1 2 4 12", "", "1", ""]), output)
     assert selected == ["llm"]
     assert any("Select at least one" in message for message in messages)
 
@@ -521,6 +523,17 @@ def test_build_command_standalone_conversation_has_no_other_model_flags():
     entries = [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)]
     command = build_benchmark_command(
         "fake", Path("/comfy"), ["conv"], entries,
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+    )
+    assert "--llm-models" in command
+    assert "--embedding-models" not in command
+    assert "--image-models" not in command
+
+
+def test_build_command_treats_llamabench_as_llm_backed():
+    entries = [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)]
+    command = build_benchmark_command(
+        "fake", Path("/comfy"), ["llamabench"], entries,
         python_executable="python", benchmark_path=Path("/benchmark.py"),
     )
     assert "--llm-models" in command

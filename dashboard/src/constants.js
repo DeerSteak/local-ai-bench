@@ -189,7 +189,7 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images"];
+export const SECTIONS = ["llm", "llm_conversation", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
@@ -198,6 +198,7 @@ export const SECTION_LABELS = {
   accuracy: "Accuracy",
   embeddings: "Embeddings",
   images: "Images",
+  llamabench: "llama-bench",
 };
 
 // Ordered concurrency levels swept by concurrency_benchmark.py, one per

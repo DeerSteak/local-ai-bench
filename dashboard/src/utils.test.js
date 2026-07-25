@@ -19,6 +19,8 @@ import {
   getAccuracySettingsWarning,
   getAllConcurrencyModels, buildConcurrencyDataForModel,
   getConcurrencyStopInfo, flattenConcurrencyData, concurrencySortValue,
+  llamaBenchCheckpointKey, llamaBenchCheckpointSortValue,
+  buildLlamaBenchBarData, buildLlamaBenchBarConfigs, flattenLlamaBenchData,
 } from "./utils";
 
 describe("parseJSON", () => {
@@ -284,6 +286,10 @@ describe("getAllLLMModels", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, concurrency_chat: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
   });
+  it("includes a model present only in llamabench, leaving llm/llm_conversation empty", () => {
+    const files = [{ data: { llm: {}, llm_conversation: {}, llamabench: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toContain("phi4-mini");
+  });
 });
 
 describe("getLLMModelsWithSectionResults", () => {
@@ -471,6 +477,84 @@ describe("flattenLLMData", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ctx).toBe("2K");
     expect(rows[0].tps_mean).toBe(10);
+  });
+});
+
+describe("llamaBenchCheckpointKey", () => {
+  it("labels a pp+tg combo, the shape every real sweep actually produces", () => {
+    expect(llamaBenchCheckpointKey({ n_prompt: 2048, n_gen: 128 })).toBe("pp2048+tg128");
+  });
+  it("labels a pure prompt-processing entry (n_gen 0)", () => {
+    expect(llamaBenchCheckpointKey({ n_prompt: 512, n_gen: 0 })).toBe("pp512");
+  });
+  it("labels a pure generation entry (n_prompt 0)", () => {
+    expect(llamaBenchCheckpointKey({ n_prompt: 0, n_gen: 128 })).toBe("tg128");
+  });
+});
+
+describe("llamaBenchCheckpointSortValue", () => {
+  it("orders primarily by prompt size, then generation size", () => {
+    const a = llamaBenchCheckpointSortValue({ n_prompt: 2048, n_gen: 512 });
+    const b = llamaBenchCheckpointSortValue({ n_prompt: 8192, n_gen: 128 });
+    expect(a).toBeLessThan(b);
+  });
+});
+
+describe("buildLlamaBenchBarData", () => {
+  it("keys each row by hostname and each checkpoint's avg_ts", () => {
+    const files = [{
+      hostname: "TestHost",
+      data: { llamabench: { m: { entries: [
+        { n_prompt: 2048, n_gen: 128, avg_ts: 100.5 },
+        { n_prompt: 8192, n_gen: 128, avg_ts: 50.25 },
+      ] } } },
+    }];
+    const rows = buildLlamaBenchBarData(files, "m");
+    expect(rows).toEqual([{ systemLabel: "TestHost", "pp2048+tg128": 100.5, "pp8192+tg128": 50.25 }]);
+  });
+  it("produces an empty row (just the system label) for a model with an error instead of entries", () => {
+    const files = [{ hostname: "TestHost", data: { llamabench: { m: { error: "timed out after 1800s" } } } }];
+    expect(buildLlamaBenchBarData(files, "m")).toEqual([{ systemLabel: "TestHost" }]);
+  });
+});
+
+describe("buildLlamaBenchBarConfigs", () => {
+  it("orders checkpoints by prompt size then generation size, not insertion order", () => {
+    const files = [{ data: { llamabench: { m: { entries: [
+      { n_prompt: 8192, n_gen: 128 },
+      { n_prompt: 2048, n_gen: 512 },
+      { n_prompt: 2048, n_gen: 128 },
+    ] } } } }];
+    const configs = buildLlamaBenchBarConfigs(files, "m");
+    expect(configs.map(c => c.dataKey)).toEqual(["pp2048+tg128", "pp2048+tg512", "pp8192+tg128"]);
+  });
+  it("aggregates checkpoints across files, so one file stopping early still gets the other's columns", () => {
+    const files = [
+      { data: { llamabench: { m: { entries: [{ n_prompt: 2048, n_gen: 128 }] } } } },
+      { data: { llamabench: { m: { entries: [{ n_prompt: 2048, n_gen: 128 }, { n_prompt: 8192, n_gen: 128 }] } } } },
+    ];
+    const configs = buildLlamaBenchBarConfigs(files, "m");
+    expect(configs.map(c => c.dataKey)).toEqual(["pp2048+tg128", "pp8192+tg128"]);
+  });
+});
+
+describe("flattenLlamaBenchData", () => {
+  it("produces one row per checkpoint entry", () => {
+    const files = [{
+      id: "f1",
+      data: { llamabench: { m: { entries: [
+        { n_prompt: 2048, n_gen: 128, avg_ts: 100, stddev_ts: 2, n_gpu_layers: 999 },
+      ] } } },
+    }];
+    expect(flattenLlamaBenchData(files)).toEqual([
+      { _fileId: "f1", model: "m", ckpt: "pp2048+tg128", avg_ts: 100, stddev_ts: 2, n_gpu_layers: 999 },
+    ]);
+  });
+  it("produces a single skipped row for a model that errored instead of one row per checkpoint", () => {
+    const files = [{ id: "f1", data: { llamabench: { m: { error: "llama-bench not found" } } } }];
+    expect(flattenLlamaBenchData(files)).toEqual([
+      { _fileId: "f1", model: "m", ckpt: "—", skipped: true, skip_detail: "llama-bench not found" },
+    ]);
   });
 });
 

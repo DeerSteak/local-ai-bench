@@ -451,14 +451,15 @@ if memory_ceiling_gb is not None:
 else:
     warn(memory_ceiling_note)
 
-def find_llamacpp_binary():
-    """Mirrors LlamaCppEngine._binary_path — see docs/engines.md's "Binary resolution"."""
-    exe_name = "llama-server.exe" if os_name == "Windows" else "llama-server"
+def _find_llamacpp_exe(base_name):
+    """Locate a llama.cpp binary by base name — mirrors LlamaCppEngine._binary_path
+    (see docs/engines.md's "Binary resolution"), generalized to any binary llama.cpp ships."""
+    exe_name = f"{base_name}.exe" if os_name == "Windows" else base_name
     if LLAMACPP_DIR.exists():
         match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
         if match is not None:
             return str(match)
-    found = shutil.which("llama-server")
+    found = shutil.which(base_name)
     if found:
         return found
     if os_name == "Darwin":
@@ -467,6 +468,12 @@ def find_llamacpp_binary():
             if candidate.exists():
                 return str(candidate)
     return None
+
+def find_llamacpp_binary():
+    return _find_llamacpp_exe("llama-server")
+
+def find_llamacpp_bench_binary():
+    return _find_llamacpp_exe("llama-bench")
 
 def download_llamacpp_windows(max_cuda_version=None):
     """Download the latest llama.cpp Windows release into LLAMACPP_DIR,
@@ -532,6 +539,9 @@ def download_llamacpp_windows(max_cuda_version=None):
     if not any(LLAMACPP_DIR.rglob("llama-server.exe")):
         fail(f"Extracted llama.cpp {tag} ({label}) but llama-server.exe wasn't found inside it")
         return False
+    if not any(LLAMACPP_DIR.rglob("llama-bench.exe")):
+        warn(f"Extracted llama.cpp {tag} ({label}) but llama-bench.exe wasn't found inside it — "
+             "llama-bench-based tests won't be available")
     ok(f"llama.cpp {tag} ({label}) extracted to {LLAMACPP_DIR}")
     return True
 
@@ -593,9 +603,10 @@ def install_llamacpp():
             fail("cmake configure failed")
             return False
 
-        info("Building llama-server — this can take several minutes ...")
+        info("Building llama-server and llama-bench — this can take several minutes ...")
         build = subprocess.run([
-            "cmake", "--build", str(build_dir), "--target", "llama-server",
+            "cmake", "--build", str(build_dir),
+            "--target", "llama-server", "--target", "llama-bench",
             "--config", "Release", "-j",
         ])
         if build.returncode != 0:
@@ -605,6 +616,9 @@ def install_llamacpp():
         if not any(build_dir.rglob("llama-server")):
             fail(f"Build finished but llama-server wasn't found under {build_dir}")
             return False
+        if not any(build_dir.rglob("llama-bench")):
+            warn(f"Build finished but llama-bench wasn't found under {build_dir} — "
+                 "llama-bench-based tests won't be available")
         return True
 
     elif os_name == "Windows":
@@ -624,6 +638,17 @@ if llamacpp_found:
 else:
     warn("llama-server not found — will need to be installed")
 
+LLAMACPP_BENCH_BIN = find_llamacpp_bench_binary()
+llamacpp_bench_found = LLAMACPP_BENCH_BIN is not None
+if llamacpp_bench_found:
+    ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")
+elif needs_llamacpp_install:
+    info("llama-bench not found — will be installed alongside llama-server")
+else:
+    warn("llama-bench not found (llama-server is installed, but without llama-bench) — "
+         "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
+         "scripts/llamabench_benchmark.py")
+
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
 section("Setup Plan")
@@ -632,7 +657,7 @@ print("  This will:")
 print("    • Install Python dependencies from requirements.txt")
 if needs_llamacpp_install:
     build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
-    print(f"    • Install llama.cpp{build_note}")
+    print(f"    • Install llama.cpp{build_note}, including llama-bench")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -885,6 +910,11 @@ if needs_llamacpp_install:
         ok("llama.cpp installed successfully")
         llamacpp_found = True
         LLAMACPP_BIN = find_llamacpp_binary()
+        LLAMACPP_BENCH_BIN = find_llamacpp_bench_binary()
+        if LLAMACPP_BENCH_BIN:
+            ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")
+        else:
+            warn("llama-bench still not found after install — llama-bench-based tests won't be available")
     else:
         fail("llama.cpp installation failed")
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "

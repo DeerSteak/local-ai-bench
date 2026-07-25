@@ -21,8 +21,8 @@ from shared import Shared
 TEST_DEFINITIONS = [
     ("llm", "Single-shot LLM", "llm", True),
     ("conv", "Conversation", "llm", True),
+    ("llamabench", "llama-bench throughput", "llm", False),
     ("emb", "Embeddings", "embedding", True),
-    ("img", "Image generation", "image", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),
     ("reasoning", "Reasoning accuracy", "llm", False),
@@ -30,6 +30,7 @@ TEST_DEFINITIONS = [
     ("tool", "Tool accuracy", "llm", False),
     ("conc_tool", "Tool concurrency", "llm", False),
     ("conc_chat", "Chat concurrency", "llm", False),
+    ("img", "Image generation", "image", True),
 ]
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)

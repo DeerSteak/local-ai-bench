@@ -25,6 +25,7 @@ from reasoning_benchmark import ReasoningBenchmark
 from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
 from concurrency_benchmark import ConcurrencyBenchmark
+from llamabench_benchmark import LlamaBenchBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 
@@ -121,7 +122,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 
 ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
-LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS]
+LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench"]
 
 
 def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
@@ -302,11 +303,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "emb", "img", "mcq", "math", "reasoning", "code", "tool", "acc",
-                 "conc_tool", "conc_chat", "conc"],
-        default=["llm", "conv", "emb", "img", "mcq", "math", "reasoning", "code", "tool"],
+        choices=["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "acc",
+                 "conc_tool", "conc_chat", "conc", "img"],
+        default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
         help="Which benchmarks to run (default: all except the concurrency "
-             "tests). 'acc' is shorthand for every accuracy-style test "
+             "tests and 'llamabench'). 'acc' is shorthand for every accuracy-style test "
              "('mcq', 'math', 'reasoning', 'code', and 'tool'). 'conc_tool' and 'conc_chat' are "
              "the two concurrency tests (see workloads.md) — opt-in, not "
              "part of the default set, since each takes noticeably longer "
@@ -320,7 +321,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "level always run (no early exit). 'conc_chat' simulates a chat "
              "server under load: a 1-32 concurrent-request sweep at a long "
              "per-request context, with an early exit once tok/s craters "
-             "(disable via --force-all). 'conc' is shorthand for both.",
+             "(disable via --force-all). 'conc' is shorthand for both. "
+             "'llamabench' is also opt-in, not part of the default set: it runs "
+             "llama.cpp's own llama-bench tool directly (bypassing this project's "
+             "HTTP/SSE pipeline) for a pp/tg throughput sweep per model — see "
+             "workloads.md#llama-bench. It scopes to the same models as llm/conv "
+             "(--maxtier, --llm-models) and overlaps substantially with the llm test.",
     )
     parser.add_argument(
         "--warmup", type=int, default=config.WARMUP_RUNS,
@@ -330,7 +336,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         "--runs", type=int, default=config.N_RUNS, choices=range(1, 11),
         metavar="[1-10]",
         help=f"Measured runs per checkpoint for single-shot LLM, embeddings, and "
-             f"images, averaged (default: {config.N_RUNS}). Conversation, accuracy, "
+             f"images, averaged (default: {config.N_RUNS}). Also used as llama-bench's own "
+             "-r repetitions for the 'llamabench' test. Conversation, accuracy, "
              "and concurrency tests use one measured pass/batch. Total measured time scales roughly in "
              "proportion — e.g. going from 3 to 6 runs roughly doubles it "
              "(warmup time is unaffected; see --warmup).",
@@ -369,7 +376,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(even one this script didn't start) and restores normal GPU mode "
              "afterward. Useful on GPU backends unstable under one of those "
              "workloads (originally added for embedding batching, but the same "
-             "instability can hit LLM/MCQ inference on some backends too).",
+             "instability can hit LLM/MCQ inference on some backends too). "
+             "'llamabench' also honors this (passes -ngl 0 to llama-bench directly) "
+             "though it doesn't go through the engine restart above.",
     )
     parser.add_argument(
         "--maxtier", type=str, default=None,
@@ -488,7 +497,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             tests = [t for t in tests if t != "img"]
 
         engine_backed_tests = [
-            t for t in ("llm", "conv", "mcq", "math", "reasoning", "code", "tool", "emb",
+            t for t in ("llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat") if t in tests
         ]
         hardware_backend = hardware_profile["backend"]
@@ -575,6 +584,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "tool":            {},
             "concurrency_tool": {},
             "concurrency_chat": {},
+            "llamabench":      {},
         }
 
         def _checkpoint(label=""):
@@ -651,6 +661,39 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 results["llm_conversation"].update(llm_conv_skips)
                 _checkpoint("LLM conversation done")
 
+            # ── llama-bench: raw pp/tg throughput sweep (bypasses the HTTP engine) ──
+            if "llamabench" in tests:
+                if engine.available():
+                    Shared.log("Stopping the engine entirely to free memory for llama-bench ...")
+                    engine.stop()
+
+                def _llamabench_save(partial):
+                    results["llamabench"] = partial
+                    _checkpoint()
+
+                results["llamabench"] = LlamaBenchBenchmark().run(
+                    engine=engine,
+                    models=llm_models,
+                    reps=config.N_RUNS,
+                    cpu_only=args.cpu_only,
+                    save_fn=_llamabench_save,
+                )
+                _checkpoint("llama-bench done")
+
+            # ── Embeddings ─────────────────────────────────────────────────────────
+            if "emb" in tests:
+                def _emb_save(partial):
+                    results["embeddings"] = partial
+                    _checkpoint()
+
+                results["embeddings"] = EmbeddingBenchmark().run(
+                    engine=engine,
+                    models=embedding_models,
+                    warmup_runs=args.warmup,
+                    save_fn=_emb_save,
+                )
+                _checkpoint("embeddings done")
+
             # ── Accuracy tests (MCQ / Math / Code / Tool) — identical wiring, only test/class/label vary ──
             for test_name, Bench, done_label in (
                 ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"),
@@ -680,20 +723,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
                 _checkpoint(f"{done_label} done")
                 Shared.ok(f"Answers saved to: {answers_path}")
-
-            # ── Embeddings ─────────────────────────────────────────────────────────
-            if "emb" in tests:
-                def _emb_save(partial):
-                    results["embeddings"] = partial
-                    _checkpoint()
-
-                results["embeddings"] = EmbeddingBenchmark().run(
-                    engine=engine,
-                    models=embedding_models,
-                    warmup_runs=args.warmup,
-                    save_fn=_emb_save,
-                )
-                _checkpoint("embeddings done")
 
             # ── Concurrency: tool-style (agentic fan-out, no early exit) ───────────
             if "conc_tool" in tests:
