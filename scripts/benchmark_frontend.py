@@ -22,6 +22,7 @@ TEST_DEFINITIONS = [
     ("llm", "Single-shot LLM", "llm", True),
     ("conv", "Conversation", "llm", True),
     ("llamabench", "llama-bench throughput", "llm", False),
+    ("llamabenchconc", "llama-bench concurrency", "llm", False),
     ("emb", "Embeddings", "embedding", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),

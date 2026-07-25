@@ -475,6 +475,9 @@ def find_llamacpp_binary():
 def find_llamacpp_bench_binary():
     return _find_llamacpp_exe("llama-bench")
 
+def find_llamacpp_batched_bench_binary():
+    return _find_llamacpp_exe("llama-batched-bench")
+
 def download_llamacpp_windows(max_cuda_version=None):
     """Download the latest llama.cpp Windows release into LLAMACPP_DIR,
     preferring CUDA over Vulkan — see docs/setup.md's Windows (NVIDIA) note."""
@@ -542,6 +545,9 @@ def download_llamacpp_windows(max_cuda_version=None):
     if not any(LLAMACPP_DIR.rglob("llama-bench.exe")):
         warn(f"Extracted llama.cpp {tag} ({label}) but llama-bench.exe wasn't found inside it — "
              "llama-bench-based tests won't be available")
+    if not any(LLAMACPP_DIR.rglob("llama-batched-bench.exe")):
+        warn(f"Extracted llama.cpp {tag} ({label}) but llama-batched-bench.exe wasn't found inside it — "
+             "the llamabenchconc test won't be available")
     ok(f"llama.cpp {tag} ({label}) extracted to {LLAMACPP_DIR}")
     return True
 
@@ -603,10 +609,10 @@ def install_llamacpp():
             fail("cmake configure failed")
             return False
 
-        info("Building llama-server and llama-bench — this can take several minutes ...")
+        info("Building llama-server, llama-bench, and llama-batched-bench — this can take several minutes ...")
         build = subprocess.run([
             "cmake", "--build", str(build_dir),
-            "--target", "llama-server", "--target", "llama-bench",
+            "--target", "llama-server", "--target", "llama-bench", "--target", "llama-batched-bench",
             "--config", "Release", "-j",
         ])
         if build.returncode != 0:
@@ -619,6 +625,9 @@ def install_llamacpp():
         if not any(build_dir.rglob("llama-bench")):
             warn(f"Build finished but llama-bench wasn't found under {build_dir} — "
                  "llama-bench-based tests won't be available")
+        if not any(build_dir.rglob("llama-batched-bench")):
+            warn(f"Build finished but llama-batched-bench wasn't found under {build_dir} — "
+                 "the llamabenchconc test won't be available")
         return True
 
     elif os_name == "Windows":
@@ -649,6 +658,17 @@ else:
          "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
          "scripts/llamabench_benchmark.py")
 
+LLAMACPP_BATCHED_BENCH_BIN = find_llamacpp_batched_bench_binary()
+llamacpp_batched_bench_found = LLAMACPP_BATCHED_BENCH_BIN is not None
+if llamacpp_batched_bench_found:
+    ok(f"llama-batched-bench found: {LLAMACPP_BATCHED_BENCH_BIN}")
+elif needs_llamacpp_install:
+    info("llama-batched-bench not found — will be installed alongside llama-server")
+else:
+    warn("llama-batched-bench not found (llama-server is installed, but without llama-batched-bench) — "
+         "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
+         "scripts/llamabench_concurrency_benchmark.py")
+
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
 section("Setup Plan")
@@ -657,7 +677,7 @@ print("  This will:")
 print("    • Install Python dependencies from requirements.txt")
 if needs_llamacpp_install:
     build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
-    print(f"    • Install llama.cpp{build_note}, including llama-bench")
+    print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -915,6 +935,11 @@ if needs_llamacpp_install:
             ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")
         else:
             warn("llama-bench still not found after install — llama-bench-based tests won't be available")
+        LLAMACPP_BATCHED_BENCH_BIN = find_llamacpp_batched_bench_binary()
+        if LLAMACPP_BATCHED_BENCH_BIN:
+            ok(f"llama-batched-bench found: {LLAMACPP_BATCHED_BENCH_BIN}")
+        else:
+            warn("llama-batched-bench still not found after install — the llamabenchconc test won't be available")
     else:
         fail("llama.cpp installation failed")
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "

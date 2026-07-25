@@ -13,9 +13,9 @@ cd local-ai-bench
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench), ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench), ComfyUI |
-| Windows | `setup.bat` | Python, llama.cpp Vulkan build (includes llama-bench), ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench, llama-batched-bench), ComfyUI |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench, llama-batched-bench), ComfyUI |
+| Windows | `setup.bat` | Python, llama.cpp Vulkan build (includes llama-bench, llama-batched-bench), ComfyUI portable |
 
 `setup.sh` / `setup.bat` first ensure Python, create `bench-env/`, and install the project's Python packages. The setup assistant then shows its llama.cpp/model plan for approval and opens an interactive model picker, so you choose every model download before the unattended installation phase begins.
 
