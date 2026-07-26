@@ -2,7 +2,7 @@
 
 # Workloads
 
-Seven workload types are benchmarked: LLM generation (two test modes), image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), concurrency (opt-in — see below), llama-bench (opt-in — see below), and llama-bench concurrency (opt-in — see below). Every workload skips models automatically when they don't fit in available memory — no configuration needed on smaller hardware.
+Seven workload families are available: LLM generation (two test modes), image generation, embeddings, accuracy (MCQ, math, reasoning, code, and tool use), HTTP concurrency, llama-bench, and llama-bench concurrency. The last three are opt-in. Setup leaves models estimated not to fit unchecked by default; at runtime, missing models are skipped and a model-specific timeout or failure preserves completed measurements instead of aborting the entire results file.
 
 Every "Size" figure below is the model's actual on-disk download size, rounded **up** to the next 0.1 GB (not nearest) — the same convention `setup_check.py` uses for its own disk-space check, so an estimate never undersells how much room a model actually needs.
 

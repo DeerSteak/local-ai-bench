@@ -1,6 +1,6 @@
 # Local AI Bench v4.0
 
-Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math word problems, coding problems, and tool calling), and opt-in concurrency/load testing and llama-bench throughput comparisons. Designed to run on any hardware from an 8GB GPU up to high-memory unified-memory systems — models that don't fit are skipped automatically with no configuration needed.
+Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math, reasoning, code, and tool calling), and opt-in concurrency/load testing and llama.cpp-native throughput comparisons. Designed for hardware from 8GB GPUs to high-memory unified-memory systems; setup estimates model fit before download, while benchmark failures are isolated so completed measurements are preserved.
 
 ---
 
@@ -15,7 +15,7 @@ cd local-ai-bench
 |---|---|---|
 | macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench, llama-batched-bench), ComfyUI |
 | Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench, llama-batched-bench), ComfyUI |
-| Windows | `setup.bat` | Python, llama.cpp Vulkan build (includes llama-bench, llama-batched-bench), ComfyUI portable |
+| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 `setup.sh` / `setup.bat` first ensure Python, create `bench-env/`, and install the project's Python packages. The setup assistant then shows its llama.cpp/model plan for approval and opens an interactive model picker, so you choose every model download before the unattended installation phase begins.
 
@@ -53,10 +53,10 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
-| [How It Works](docs/how-it-works.md) | Execution order, code organization, full parameter table |
+| [How It Works](docs/how-it-works.md) | Execution order, orchestration, and code organization |
 | [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
-| [Testing](docs/testing.md) | How to run tests and detail on what each test file validates |
+| [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
 
 ---
 

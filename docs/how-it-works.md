@@ -5,7 +5,7 @@
 **Contents**
 - [Execution order](#execution-order)
 - [Code organization](#code-organization)
-- [Parameters](#parameters)
+- [Configuration sources](#configuration-sources)
 
 ## Execution order
 
@@ -21,6 +21,7 @@ Selected tests run in a fixed stage order, independent of the order passed to `-
 single-shot LLM (all selected models, xsmall → large)
   → conversation LLM (all eligible selected models)
   → llama-bench (opt-in)
+  → llama-bench concurrency (opt-in)
   → embeddings
   → accuracy (MCQ → math → reasoning → code → tool)
   → concurrency (tool → chat)
@@ -43,83 +44,26 @@ Before images, the active inference engine is stopped entirely to free memory. C
 
 ## Code organization
 
-The benchmark implementation lives in `scripts/`, split by responsibility:
+The implementation has four layers:
 
-| Module | Responsibility |
+| Layer | Responsibility |
 |---|---|
-| `scripts/benchmark.py` | CLI argument parsing and orchestration (`main()`) — calls each test class in order and writes results |
-| `scripts/benchmark_frontend.py` | Interactive installed-model/test picker that constructs and launches the public benchmark CLI |
-| `scripts/config.py` | Shared constants: URLs, paths (`SCRIPT_DIR`, `RESULTS_DIR`, `COMFYUI_DIR`), timeouts, run counts |
-| `scripts/model_inventory.py` | Read-only catalog/custom/embedding/image inventory classification shared by CLI listing and launch preflight |
-| `scripts/shared.py` | Cross-cutting helpers: logging, ComfyUI server lifecycle/HTTP client, machine profiling, engine-agnostic run/crash-cache orchestration |
-| `scripts/hardware.py` | GPU/system-memory detection and model-fit classification shared by setup and concurrency snapshots |
-| `scripts/engines/base.py` | `InferenceEngine` interface — start/stop, model lifecycle, generate/chat/embed, see [Engines](engines.md) |
-| `scripts/engines/llamacpp.py` | `LlamaCppEngine` — the low-level HTTP/process client for llama-server |
-| `scripts/llm_prefill_benchmark.py` | The single-shot LLM test |
-| `scripts/llm_conversation_benchmark.py` | The multi-turn conversation test |
-| `scripts/embedding_benchmark.py` | The embeddings test |
-| `scripts/image_benchmark.py` | The image generation test (ComfyUI workflow builders + submission) |
-| `scripts/concurrency_benchmark.py` | The tool-style and chat-server concurrency sweeps |
-| `scripts/mcq_benchmark.py` | The MCQ accuracy test |
-| `scripts/math_benchmark.py` | The math accuracy test |
-| `scripts/reasoning_benchmark.py` | The knowledge-light reasoning accuracy test and validated bank loader |
-| `scripts/code_benchmark.py` | The code accuracy test |
-| `scripts/tool_benchmark.py` | The tool-calling accuracy test |
-| `scripts/llamabench_benchmark.py` | The opt-in `llamabench` test — llama.cpp's own `llama-bench` pp/tg throughput sweep, bypassing the HTTP engine |
-| `scripts/llamabench_concurrency_benchmark.py` | The opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` throughput-vs-concurrency sweep, bypassing the HTTP engine |
-| `scripts/models.py` | Single source of truth for every model definition (tags, checkpoints, tiers, sizes) |
-| `scripts/setup_check.py` | Hardware detection, model picker, and unattended install — called by `setup.sh`/`setup.bat` |
+| Entry points | `benchmark_frontend.py` builds a public CLI command; `benchmark.py` validates it, selects engines/models, orders stages, checkpoints results, and handles cleanup |
+| Workloads | One module per workload or closely related workload family; each receives an engine and returns its section of the results schema |
+| Engine adapters | `engines/base.py` defines the interface and `engines/llamacpp.py` owns llama-server process/HTTP details; the two native llama.cpp benchmark modules intentionally bypass this interface |
+| Shared definitions | `config.py`, `models.py`, `model_inventory.py`, `hardware.py`, and `shared.py` own defaults, catalog data, discovery, fit estimates, logging, retries, statistics, and ComfyUI lifecycle |
+
+See [Project Structure](project-structure.md#scripts-in-detail) for the complete module-by-module map and [Engines](engines.md) for the adapter contract.
 
 Values that CLI flags can override at runtime (`RUN_TIMEOUT`, `ACC_TIMEOUT`, `ACC_TOKEN_BUDGET`, and `N_RUNS`) are read through dotted `config.*` lookups everywhere, rather than imported by name, so CLI assignments remain visible after import.
 
 The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and ANSI clearing elsewhere, keeping selection prompts compact and untimestamped. It preserves the welcome banner through the initial single-engine test menu and the final model choices through confirmation, while clearing between screens and before subsequent redraws. Restored menus say which local state file supplied their selections and how to reset it. Benchmark execution output goes through `Shared.output` and the existing severity helpers, which prefix each independently emitted status or progress message with local `[HH:MM:SS]` time. This display layer does not touch result JSON, captured model responses, answer sidecars, caches, or generated artifacts.
 
-## Parameters
+## Configuration sources
 
-| Parameter | Value |
-|---|---|
-| LLM single-shot context lengths | 512, 2K, 8K, 32K, 64K — capped per model at its real context ceiling |
-| LLM conversation checkpoints | 0, 2K, 4K, 8K, 16K, 32K, 48K, 64K, 80K, 96K — samples through 96K with up to a 128K growth target, capped by the GGUF's real context ceiling |
-| LLM test modes | Single-shot (cold prefill), Conversation (a single full conversation, `--runs` ignored) |
-| LLM warmup runs | `--warmup` at each context-specific server configuration (default: 2, discarded) |
-| LLM measured runs | `--runs` — repeated context lengths for single-shot (default: 3, range: 1–10); ignored by the conversation test, which always runs once |
-| Run timeout | `--timeout` is a total model-load-plus-generation/chat deadline and also bounds engine warmup (default: 300s); image generation uses 2× this value. Embeddings retain a fixed 120s request timeout |
-| Accuracy question timeout | `--acc-timeout` per question (default: 60s), for `mcq`/`math`/`reasoning`/`code`/`tool`; partial output is scored normally, the timeout is recorded, and the bank continues |
-| Accuracy token budget | `--acc-token-budget` per question (default: 8192), split 60/40 across the initial response and an optional final-answer pass; both share the timeout above |
-| LLM metrics | TTFT, tokens/sec (TPS) |
-| Conversation pre-flight | When single-shot also ran: excludes no/failed data, repeatable crashes, first-checkpoint timeouts, and first-checkpoint slow markers; deeper timeouts alone do not exclude conversation |
-| Embedding models | `nomic-embed-text`, `mxbai-embed-large` |
-| Embedding corpus | `sample_document.txt` chunked into ~150-word paragraph-sized pieces (~290 chunks), embedded in one call |
-| Embedding warmup runs | `--warmup` (default: 2, discarded) |
-| Embedding measured runs | `--runs`, averaged (default: 3, range: 1–10) |
-| Image models | SD1.5 (20 steps), SDXL (20 steps), SD3.5 Large (28 steps), Flux.1-dev (20 steps), Flux.2-dev (28 steps) |
-| Image resolutions | 1024×1024, 1536×1536 (SD1.5: 512×512, 768×768) |
-| Image seed | Warmup 41; measured runs 42, 43, ... so ComfyUI cannot reuse a cached graph |
-| Image warmup runs | Always 1 at the model's first resolution; `--warmup` is ignored |
-| Image metrics | Seconds per image, per model, per resolution |
-| Image measured runs | `--runs` per resolution, averaged (default: 3, range: 1–10) |
-| MCQ question bank | `scripts/data/mcq_questions.json` — 150 questions across 8 categories (science, history, geography, logic, literature, arithmetic, commonsense, language), with A–D answer positions balanced |
-| MCQ warmup runs | `--warmup` (default: 2, discarded) |
-| MCQ measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| MCQ metrics | Overall and per-category accuracy; nudge, exhausted-budget, timeout, and likely-loop counts/IDs when those separate diagnostics occur |
-| Math question bank | `scripts/data/math_questions.json` — 150 numeric-answer problems across 30 categories, including calculus, combinatorics, linear algebra, number theory, probability, and statistics |
-| Math warmup runs | `--warmup` (default: 2, discarded) |
-| Math measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| Math metrics | Overall and per-category accuracy; nudge, exhausted-budget, timeout, and likely-loop counts/IDs when those separate diagnostics occur |
-| Reasoning question bank | `scripts/data/reasoning_questions.json` — 60 original A–D questions across 10 knowledge-light categories, with a 20-question `very_hard` tail |
-| Reasoning warmup/measured runs | `--warmup` discarded warmups, then 1 pass through the bank; `--runs` is ignored |
-| Reasoning metrics | Overall, per-category, and per-difficulty accuracy; nudge, exhausted-budget, timeout, and likely-loop counts/IDs when those separate diagnostics occur |
-| Code question bank | `scripts/data/code_problems.json` — 60 problems across 13 categories, including dynamic programming, graph, interval, divide-and-conquer, and advanced stateful structures |
-| Code warmup runs | `--warmup` (default: 2, discarded) |
-| Code measured runs | Always 1 pass through the full question bank — `--runs` is ignored (temperature 0, so repeats wouldn't change the answers) |
-| Code metrics | Overall and per-category accuracy — all visible and hidden cases must pass; nudge, exhausted-budget, timeout, and likely-loop counts/IDs when those separate diagnostics occur |
-| Tool question bank | `scripts/data/tool_questions.json` — 100 tool-calling questions across 20 categories, from basic selection/extraction through close distractors, conversions, structured arguments, strict optional omission, adversarial content, corrections/negations, and nuanced decline cases |
-| Tool warmup/measured runs | `--warmup` discarded warmups, then 1 pass through the bank; `--runs` is ignored |
-| Tool metrics | Overall and per-category accuracy — exactly one matching call or a correct decline; nudge, exhausted-budget, timeout, and likely-loop counts/IDs when those separate diagnostics occur |
-| Tool-style concurrency | 1, 2, 4, 6, 8, 12, 16 requests; 4,096-token prompts; no slow-TPS soft exit |
-| Chat concurrency | 1, 2, 4, 8, 16, 24, 32 requests; 16,384-token prompts; soft exit after a measured level ≥8 falls below 15 tok/s unless `--force-all` |
-| Concurrency measurement | `--warmup` discarded batches then one measured batch per level; up to 512 output tokens per request; `--runs` is ignored |
-| llama-bench (opt-in) | Two calls per model: standalone prefill over `config.LLAMABENCH_PP` (512/2048/4096/8192/16384/32768/49152/65536/81920/98304, matching `CONTEXT_LENGTHS` + `CONV_CHECKPOINTS`), then decode over `LLAMABENCH_PP` as `-d` depth × `config.LLAMABENCH_TG` (128/512) as `-n`. Both use `LLAMABENCH_BATCH_SIZE`/`LLAMABENCH_UBATCH_SIZE` (2048/512), `-ngl` 999 (0 under `--cpu-only`), `--runs` repetitions (default 3), and `LLAMABENCH_TIMEOUT` (1800s idle timeout) per call. Same `--maxtier`/`--llm-models` scope as `llm`/`conv` |
+The detailed workload shapes, checkpoints, model lists, and metrics live in [Workloads](workloads.md). Public flags and their effective defaults live in the [CLI Reference](cli-reference.md). Keeping those facts in one place prevents this architecture guide from becoming a second, stale parameter reference.
+
+Runtime defaults are defined in `scripts/config.py`; model metadata is defined in `scripts/models.py`; the conversation checkpoint plan is defined by `LLMConversationBenchmark.CONV_CHECKPOINTS`; and dashboard context ordering is defined by `CTX_ORDER` in `dashboard/src/constants.js`. CLI-overridable values are read through `config.*` at use sites so an argument applied after import is still honored.
 
 ---
 

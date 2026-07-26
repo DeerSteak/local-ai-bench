@@ -13,9 +13,9 @@
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench), ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
-| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench), ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench and llama-batched-bench), ComfyUI |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
+| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 `setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
 
@@ -35,8 +35,6 @@
 The llama.cpp install also includes `llama-bench` and `llama-batched-bench`, llama.cpp's own throughput-benchmarking tools, needed only for the opt-in `llamabench` and `llamabenchconc` tests (`--tests llamabench llamabenchconc`) — see [Workloads](workloads.md#llama-bench) and [Workloads](workloads.md#llama-bench-concurrency).
 
 Non-catalog cleanup is permanent rather than a move to Trash or Recycle Bin. It is deliberately excluded from the default selection and the `a` shortcut; select its numbered row or type `clean` only after checking the displayed folder names for models you want to keep.
-
-The picker is deliberately a plain-`input()`, numbered-list interface rather than an arrow-key checkbox menu — an earlier arrow-key version was tried and dropped after repeated bugs (stray keystrokes leaking between prompts, a sub-installer's own confirmation prompt swallowing a keypress). Reading a full line via `input()` is immune to that class of bug, at the cost of typing `2 4 7-9` instead of arrowing and spacebar-toggling.
 
 When setup is complete, run the benchmark:
 
@@ -88,30 +86,21 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed via apt if missing (you'll be asked to confirm first); on non-Debian distros, install it manually. Verify GPU acceleration after setup: run the benchmark and confirm llama-server loads on GPU in `nvidia-smi`.
+**Linux (NVIDIA)** — Python 3.11 is installed with apt when missing on Debian-family systems, after confirmation; other distributions need a manual Python install. llama.cpp is built from source with CUDA when an NVIDIA GPU is detected.
 
-**Linux (AMD/ROCm)** — `setup_check.py` detects the GPU via `rocminfo` and builds llama.cpp from source with `-DGGML_HIP=ON`, so LLM tests are GPU-accelerated with no extra steps. Image generation needs a separate piece: ComfyUI's `requirements.txt` installs a plain (CUDA-only) torch build regardless of platform, which raises `RuntimeError: Found no NVIDIA driver` on an AMD box rather than falling back to CPU — so `setup_check.py` reinstalls `torch`/`torchvision`/`torchaudio` from [PyTorch's ROCm wheel index](https://download.pytorch.org/whl/rocm6.4) afterward whenever a ROCm GPU is detected and an image model is selected, the same pattern used for Intel Arc's XPU wheels below. This reinstall is unverified on newer APU architectures (e.g. Strix Halo/gfx1151) — if no wheel matches your GPU, check https://download.pytorch.org/whl/ for a newer ROCm index and install manually.
+**Linux (AMD/ROCm)** — `rocminfo` detection selects llama.cpp's HIP build. When image models are selected, setup replaces ComfyUI's default torch packages with the configured ROCm 6.4 wheels. This path is not verified on every newer APU architecture; if the wheel does not support the detected GPU, install a compatible PyTorch ROCm build manually.
 
-**Linux (Intel Arc) — experimental, untested on real hardware** — this project's maintainers don't have access to an Intel Arc machine, so everything below is implemented against Intel's published documentation, not verified against a real run. Package names and version numbers may be wrong or out of date. If you have Arc hardware and try this, please report back (open an issue) with what did or didn't work — that's how this graduates out of experimental.
+**Linux (Intel Arc) — experimental** — `lspci` detection records `hardware_backend: "xpu"`, but setup does not build llama.cpp's SYCL backend, so LLM inference remains CPU unless you supply a manual `-DGGML_SYCL=ON` build. For image generation, setup checks for Intel's compute runtime and prints installation commands when it is absent; when image models are selected, it installs PyTorch's XPU wheels. This path has not been verified on real Arc hardware by the project maintainer.
 
-`setup_check.py` detects the GPU (via `lspci`) and labels its hardware classification as `xpu`. LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which this script doesn't build — `setup_check.py` warns plainly that LLM tests will run on CPU unless you build llama.cpp yourself with `-DGGML_SYCL=ON`. Results report that effective inference backend as `cpu` while retaining `xpu` separately as `hardware_backend`.
+**DGX Spark** — Uses the normal Linux NVIDIA source-build path; its ARM64 architecture does not require a separate prebuilt package.
 
-For image generation, ComfyUI's own [Intel XPU support](https://github.com/comfyanonymous/ComfyUI/pull/409) is already merged into the main repo this project clones — the same clone used for AMD/NVIDIA on Linux, no fork or custom node needed. Two things have to be true for it to actually use the GPU:
+**macOS and Linux** — If setup reports a permissions error, fix ownership or permissions for the named path and rerun it as your normal user. Avoid running the whole setup under `sudo`, which can leave the project environment and downloaded files owned by root.
 
-- **The Intel GPU compute runtime** (Level Zero/OpenCL) — `setup_check.py` checks for it via `dpkg` and, if missing, prints the exact commands rather than installing it for you: it requires adding [Intel's graphics APT repository](https://dgpu-docs.intel.com/driver/installation.html) and a GPG key, which is a bigger, harder-to-reverse system change than the plain-package installs (Python) this script automates from your distro's own repos.
-- **An XPU-enabled PyTorch build** — `setup_check.py` *does* install this automatically (if an image model is selected): ComfyUI's `requirements.txt` normally pulls in a plain torch build, so after installing it, this script reinstalls `torch`/`torchvision`/`torchaudio` from [Intel's XPU wheel index](https://download.pytorch.org/whl/xpu). This is a plain `pip install` — no sudo, no new package source — so it's automated like every other pip install this script does. No IPEX involved: Intel is winding that down (EOL end of March 2026) in favor of PyTorch's native XPU support (mainline since PyTorch 2.5).
-
-**DGX Spark** — Treated the same as any other Linux+NVIDIA box: llama.cpp is built from source (`git`/`cmake` required), same as elsewhere on Linux, since a source build has no prebuilt-binary architecture to match (Spark is ARM64). If RAM looks full outside a benchmark run: `sudo sync && echo 3 | sudo tee /proc/sys/vm/drop_caches`
-
-**macOS and Linux** — If the script fails with a permissions error, run `sudo bash setup.sh` instead.
-
-**Windows (NVIDIA)** — The setup script detects the GPU and downloads the latest official ComfyUI NVIDIA portable build (bundled Python environment). No manual CUDA Toolkit install required. The `llama.cpp` install on Windows prefers a prebuilt CUDA build too: `setup_check.py` reads the installed driver's max supported CUDA version straight from plain `nvidia-smi`'s text header (no toolkit install needed to know this — the field is labeled `CUDA Version:` on older drivers and `CUDA UMD Version:` on newer ones, so the parser accepts either) and downloads the highest-versioned `win-cuda-X.Y-x64` binary plus its matching `cudart-llama-bin-win-cuda-X.Y-x64` runtime zip that the driver supports — both are just extracted into `llama.cpp\`, no compiler or MSVC build chain involved, so it stays as unattended-install-safe as the Vulkan path. If no NVIDIA driver is detected, or no compatible CUDA build exists in the latest release, it falls back to the cross-vendor Vulkan build — the same one used on AMD/Intel, and the only option prior to this — which runs on NVIDIA/AMD/Intel alike without having to match a specific CUDA version.
-
-ComfyUI's Windows portable build bundles a pinned torch wheel that doesn't recognize newer GPU architectures (e.g. Blackwell, compute capability 12.0) — every CUDA kernel launch then fails with "no kernel image is available for execution on the device." `setup_check.py` detects this by checking whether the GPU's compute capability appears in `torch.cuda.get_arch_list()`, and if not, reinstalls torch/torchvision/torchaudio from the cu128 wheel index with `--force-reinstall` rather than `--upgrade` — `--upgrade` would leave an already-installed torch+cu126 alone while swapping only torchvision/torchaudio to +cu128, a mismatched trio that torchaudio then refuses to import.
+**Windows (NVIDIA)** — Setup chooses the newest llama.cpp CUDA package supported by the installed driver and downloads ComfyUI's NVIDIA portable build; if no compatible CUDA package is available, llama.cpp falls back to Vulkan. It also checks whether portable PyTorch supports the GPU's compute capability and reinstalls the configured cu128 packages when required.
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc)** — The setup script detects the GPU as `xpu` and downloads the latest official ComfyUI Intel portable build with XPU support, so image generation is GPU-accelerated (this part is Intel's own official build, not something built for this project). The standard llama.cpp install is the cross-vendor Vulkan build, so engine-backed results report `backend: "vulkan"` and retain `hardware_backend: "xpu"`. A manual SYCL build instead reports `xpu`. **This path is experimental** — this project's maintainers don't have Arc hardware to verify it against a real run.
+**Windows (Intel Arc) — experimental** — Setup downloads ComfyUI's Intel portable build and uses llama.cpp's Vulkan package. Results therefore report `backend: "vulkan"` while retaining `hardware_backend: "xpu"`; a manual SYCL build reports `xpu`. This path has not been verified on real Arc hardware by the project maintainer.
 
 **Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 

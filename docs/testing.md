@@ -2,382 +2,122 @@
 
 # Testing
 
-This document provides a guide to the test suite of `local-ai-bench` — both the Python benchmark suite (`pytest`, in `tests/`) and the dashboard (`vitest`, in `dashboard/src/`) — explaining how to run each and describing what each test module validates.
+The repository has two independent automated suites: pytest for the Python benchmark and Vitest for the React dashboard. Neither suite starts a real inference server, downloads models, or runs the benchmark.
 
 **Contents**
-- [Running Tests](#running-tests)
-- [Prerequisites](#prerequisites)
-- [Test Infrastructure Configuration](#test-infrastructure-configuration)
-- [Coverage](#coverage)
-- [Test Suite Breakdown](#test-suite-breakdown)
-- [Dashboard Tests](#dashboard-tests)
+- [Python tests](#python-tests)
+- [Coverage and safety boundaries](#coverage-and-safety-boundaries)
+- [Suite map](#suite-map)
+- [Dashboard tests](#dashboard-tests)
+- [What to run before submitting](#what-to-run-before-submitting)
 
----
+## Python tests
 
-## Running Tests
+Use the platform wrapper so the tests run in the same `bench-env/` environment as the benchmark:
 
-This section and the next four cover the Python benchmark suite's tests (`tests/`, pytest). See [Dashboard Tests](#dashboard-tests) at the end for the separate `dashboard/` test suite (vitest).
-
-Python tests are written using [pytest](https://docs.pytest.org/) and can be run using the platform-specific wrapper scripts:
-
-**Linux / macOS**
 ```bash
+# Linux / macOS
 bash tests.sh
-```
 
-**Windows**
-```cmd
-tests.bat
-```
-
-Both wrapper scripts accept arbitrary arguments and forward them directly to `pytest`. For example, to run a specific test file or filter by test name:
-
-```bash
-# Run a specific test module
+# One file, one test-name pattern, or verbose output
 bash tests.sh tests/test_config.py
-
-# Run only tests matching a pattern
 bash tests.sh -k "select_tier"
-
-# Show verbose output
 bash tests.sh -v
 ```
 
----
+```cmd
+:: Windows
+tests.bat
+tests.bat tests/test_config.py
+tests.bat -k "select_tier"
+```
 
-## Prerequisites
+The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Do not import or execute `scripts/setup_check.py` as a test shortcut: importing it starts the real interactive installation flow.
 
-The test runner scripts require that the project's virtual environment (`bench-env/`) has been created first. Run the corresponding setup script if you haven't already:
+[tests/conftest.py](../tests/conftest.py) adds `scripts/` to `sys.path`, matching the benchmark's own top-level imports such as `import config`.
 
-- **Linux / macOS:** `bash setup.sh`
-- **Windows:** `setup.bat`
+## Coverage and safety boundaries
 
-The test wrappers automatically load this virtual environment and silently install/update test dependencies from [tests/requirements.txt](../tests/requirements.txt) before launching pytest.
-
----
-
-## Test Infrastructure Configuration
-
-- **[conftest.py](../tests/conftest.py)**
-  Sets up the import path for the test suite. It injects the `scripts/` directory into `sys.path` so that modules can be imported directly as top-level namespaces (e.g., `config`, `shared`, `models`, `benchmark`) matching how they import each other at runtime.
-
----
-
-## Coverage
-
-`pytest-cov` (not installed by default — `pip install pytest-cov` into `bench-env`) reports line coverage:
+Install `pytest-cov` into `bench-env/`, then run:
 
 ```bash
+bench-env/bin/pip install pytest-cov
 bash tests.sh --cov=scripts --cov-report=term-missing
 ```
 
-[`.coveragerc`](../.coveragerc) at the repo root shapes that report so it reflects the code this suite is actually meant to exercise, rather than being diluted by code that can't safely be unit tested:
+On Windows, use `bench-env\Scripts\pip.exe` and `tests.bat`.
 
-- `scripts/setup_check.py` is omitted entirely — it has no `__main__` guard, so importing it would run the whole interactive install flow (prompts, downloads).
-- Individual functions that spawn real subprocesses, poll a live llama.cpp/ComfyUI server, or orchestrate a full test run (`main()`, each workload class's `run()`, `LlamaCppEngine.start`, `Shared.ensure_comfyui`, etc.) are marked `# pragma: no cover` at their `def` line — coverage.py excludes the whole function body when the pragma sits on the line that opens it.
+[.coveragerc](../.coveragerc) omits `scripts/setup_check.py`, which is unsafe to import, and live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
 
-The report is intentionally scoped to unit-testable code. Treat its missing-line detail as the useful signal rather than relying on a fixed percentage, which changes as the suite evolves.
+HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
 
----
+## Suite map
 
-## Test Suite Breakdown
+The Python modules are grouped by responsibility below. The test files themselves are the authoritative, executable detail; this guide intentionally summarizes them instead of duplicating every assertion.
 
-The test suite consists of **41 test modules** validating different components of the application, from configuration structure and model definitions to low-level llama.cpp/ComfyUI HTTP client streaming.
+### CLI, selection, and inventory
 
-### Benchmark Logic & CLI Orchestration
+| Area | Test modules |
+|---|---|
+| Accuracy options and test-group expansion | [test_benchmark_accuracy_options.py](../tests/test_benchmark_accuracy_options.py), [test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py) |
+| Prompt/tg caps | [test_benchmark_max_prompt_tokens_cap.py](../tests/test_benchmark_max_prompt_tokens_cap.py), [test_benchmark_tg_tokens_override.py](../tests/test_benchmark_tg_tokens_override.py) |
+| Tier, model, and engine selection | [test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py), [test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py), [test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py), [test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py), [test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py), [test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py) |
+| Conversation eligibility and output paths | [test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py), [test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py) |
+| Interactive launcher and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
+| Inventory and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
+| Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
 
-- **[test_benchmark_accuracy_options.py](../tests/test_benchmark_accuracy_options.py)**
-  Verifies that the accuracy token-budget CLI parser accepts positive integers and rejects zero or negative values.
+These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
 
-- **[test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py)**
-  Validates logic in `benchmark.py` for deciding when to skip models during the LLM conversation test. It asserts that:
-  - Models with missing or empty LLM data are skipped.
-  - A repeatable crash or a timeout at the first single-shot checkpoint skips conversation and propagates the failure details; a timeout only at a deeper checkpoint does not.
-  - A first-checkpoint decode speed below `config.SLOW_MODEL_MIN_TPS` skips conversation.
-  - The `--force-all` flag bypasses the slow model cutoff, but does not override actual timeouts or crashes.
+### Workloads and graders
 
-- **[test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py)**
-  Tests the tier selection logic (`select_tier` in `benchmark.py`) for filtering model workloads. It verifies:
-  - Passing `None` or `large` runs all tiers.
-  - Smaller tier caps function cumulatively (e.g., `medium` includes `xsmall`, `small`, and `medium` workloads).
-  - Tiers correctly filter both LLM models and ComfyUI image models.
-  - Human-readable tier label descriptions are returned and distinct.
+| Area | Test modules |
+|---|---|
+| LLM throughput and conversation growth | [test_llm_prefill_benchmark.py](../tests/test_llm_prefill_benchmark.py), [test_llm_conversation_benchmark.py](../tests/test_llm_conversation_benchmark.py) |
+| Embeddings and images | [test_embedding_benchmark.py](../tests/test_embedding_benchmark.py), [test_image_benchmark.py](../tests/test_image_benchmark.py) |
+| HTTP concurrency | [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
+| llama.cpp native benchmarks | [test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py), [test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py) |
+| MCQ, math, and reasoning | [test_mcq_benchmark.py](../tests/test_mcq_benchmark.py), [test_math_benchmark.py](../tests/test_math_benchmark.py), [test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py), [test_reasoning_questions.py](../tests/test_reasoning_questions.py) |
+| Code and tool use | [test_code_benchmark.py](../tests/test_code_benchmark.py), [test_tool_benchmark.py](../tests/test_tool_benchmark.py) |
+| Offline regrading | [test_regrade.py](../tests/test_regrade.py) |
 
-- **[test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py)**
-  Tests the `--tests` shorthand-group expansion logic (`expand_tests` in `benchmark.py`). It verifies:
-  - `acc` expands to `ACCURACY_TESTS` (`mcq`, `math`, `reasoning`, `code`, and `tool`), while `conc` expands to both concurrency tests.
-  - Ordinary test names pass through unchanged.
-  - Order is preserved when `acc` is mixed with other test names.
-  - No duplicates result from combining `acc` with one of its own expanded members, or from repeating a plain test name.
+The workload tests emphasize the pure behavior behind orchestration: context planning, prompt construction, output parsing, scoring, timeout recovery, command construction, result-schema shaping, ComfyUI workflow graphs, and question-bank validation. The llama-bench suites mock `subprocess.Popen`, so they can verify exact command matrices and incremental output parsing without loading a model.
 
-- **[test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py)**
-  Tests the shared selector filtering logic (`filter_models_by_pattern` in `benchmark.py`). It verifies:
-  - No patterns (`None` or `[]`) returns the model list unchanged.
-  - An exact tag matches only that model.
-  - A wildcard (`llama*`) matches every tag sharing that prefix.
-  - Matching is case-sensitive — an uppercase pattern against lowercase tags matches nothing.
-  - Multiple overlapping patterns union their matches without duplicating a model that satisfies more than one.
-  - A pattern matching nothing returns an empty list rather than erroring.
-  - Filtering preserves the original model order.
+### Engines and shared helpers
 
-- **[test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py)**
-  Tests the public per-family selector contract and preflight scope resolution. It verifies:
-  - `--llm-models` and its backward-compatible `--models` alias share one destination.
-  - Embedding tags and image short IDs support exact, wildcard, and case-sensitive matching.
-  - Omitted selectors preserve full catalog scopes, while relevant empty selectors produce validation errors and irrelevant selectors do not.
-  - Normal LLM, standalone conversation, accuracy, and concurrency scopes validate independently.
-  - Catalog-only selection avoids an inventory read, custom selection reads it, and concurrency keeps its all-downloaded default.
-  - A wildcard that can also match custom tags reads inventory and unions those installed matches with catalog matches.
-  - A validation pre-pass caches every engine scope and aggregates a failure from any engine before orchestration.
-  - A catalog model outside `--maxtier` cannot reappear mislabeled as a custom model.
+| Area | Test modules |
+|---|---|
+| Engine registry and llama.cpp adapter | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
+| Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
+| Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
+| Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
+| ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
 
-- **[test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py)**
-  Tests the concurrency workload's downloaded-model scoping. It verifies that only installed catalog entries are retained, catalog order is preserved, custom installed tags are ignored at this stage, empty/all-installed inputs behave correctly, and each engine pass resolves against its own installed-model inventory.
+`LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Shared orchestration runs against fake `InferenceEngine` implementations, covering retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
 
-- **[test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py)**
-  Tests `--llm-models`/`--models` resolution across catalog entries and installed custom models. It verifies:
-  - A pattern that matches the catalog behaves exactly like `filter_models_by_pattern` and does not also pull in unrelated installed tags.
-  - A pattern matching nothing in the catalog falls back to matching installed tags, producing a `"(custom)"`-labeled entry.
-  - A pattern matching neither the catalog nor anything installed resolves to nothing (not an error).
-  - A wildcard can resolve to multiple installed tags at once.
-  - A wildcard matching catalog entries also includes distinct matching custom tags without pulling in unrelated installed models.
-  - Catalog and custom patterns can be mixed in the same `--models` invocation.
-  - `sanitize_tag_to_short` turns a raw tag's `:`/`/` characters into `-`, matching the style of curated `short` identifiers in `models.py`.
+## Dashboard tests
 
-- **[test_model_inventory.py](../tests/test_model_inventory.py)**
-  Tests the shared inventory and cleanup module. It verifies:
-  - Installed engine entries are classified into catalog LLM, embedding, and sorted custom groups while absent catalog entries are omitted.
-  - Custom folder names get safe short identifiers without invented tier metadata.
-  - Image checkpoint discovery honors an explicit ComfyUI path and handles a missing checkpoint directory.
-  - A complete inventory reads the engine once and combines it with image discovery.
-  - `--list-models` formatting includes every family, sizes, and accurate empty/non-empty counts.
-  - Non-catalog folder discovery is sorted, excludes catalog folders and loose files, and handles a missing model root.
-  - Cleanup rejects traversal and catalog targets, removes only explicitly named custom directories, and unlinks directory symlinks without touching their targets.
-
-- **[test_setup_selection.py](../tests/test_setup_selection.py)**
-  Tests the setup picker's extracted cleanup-selection rules: cleanup is included only when explicitly checked, and the broad `a` toggle changes installable models without enabling or disabling cleanup.
-
-- **[test_benchmark_frontend.py](../tests/test_benchmark_frontend.py)**
-  Tests the interactive launcher's pure menu and command-construction seams: installed-only inventory, the complete documented defaults, strict/atomic saved-state loading and writing, stale-entry fallback, exact engine/test/model restoration and visible reset guidance, cancellation and write-failure behavior, individual/tier/custom/embedding toggles, banner-preserving initial display, clean redraws with feedback preserved, untimestamped default output, invalid input, setup-managed ComfyUI discovery without a path prompt, shared LLM scope, exact emitted CLI arguments, and child exit-code propagation.
-
-- **[test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py)**
-  Exercises an isolated copy of the Unix wrapper with fake activation/Python executables to verify zero-argument frontend routing, argument-preserving CLI bypass, exit codes, and timestamped missing-venv output. It also checks the Windows batch file's label-based forwarding, saved exit code, and Explorer-only pause heuristic; cmd.exe behavior still receives a manual Windows matrix.
-
-- **[test_shared_console.py](../tests/test_shared_console.py)**
-  Patches the console clock to verify timestamp format, severity colors, neutral output, untimestamped frontend output and terminal clearing, multi-line sections, and custom line endings, and guards benchmark/workload modules against reintroducing direct runtime `print()` calls.
-
-- **[test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py)**
-  Tests that a named engine passes through, `all` expands to every registered engine (and is a no-op with one), and the caller's registry list is not mutated.
-
-- **[test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py)**
-  Tests `sidecar_path` in `benchmark.py`, which derives a results-directory auxiliary filename from the main output stem. It verifies:
-  - A `results_`-prefixed output path has that prefix swapped for the sidecar's own prefix.
-  - A custom `--out` filename that doesn't start with `results_` falls back to prepending the sidecar prefix instead.
-  - The MCQ, math, reasoning, code, tool, and image prefixes preserve the same hostname/timestamp suffix.
-
-- **[test_config.py](../tests/test_config.py)**
-  Performs structural sanity checks on the constants in `config.py`. It verifies that:
-  - Context lengths are strictly sorted in ascending order and unique.
-  - Important directories (`RESULTS_DIR`, `COMFYUI_DIR`) resolve correctly relative to the project root.
-  - Execution run count (`N_RUNS`) is positive.
-  - Endpoint URLs (llama.cpp and ComfyUI) have proper HTTP schemas.
-
-- **[test_models.py](../tests/test_models.py)**
-  Validates model configuration records in `models.py`. It checks:
-  - LLM models list matches the concatenated list of individual size tiers.
-  - The extra-small/small rosters preserve the Gemma speed floor, paired Granite/Qwen scaling ladders, and Phi reasoning ceiling.
-  - Within each tier, LLM models are ordered by parameter counts (`params_b`).
-  - Model tags and shortcodes are globally unique.
-  - Required fields (e.g., download size, model tags, parameters, samplers, schedulers) exist in model definitions.
-
-- **[test_reasoning_questions.py](../tests/test_reasoning_questions.py)**
-  Validates whole-bank composition independently of the runtime loader: exact versioned shape, unique IDs and choices, six questions and all difficulty levels per category, the 20-question `very_hard` tail, balanced answer positions, original provenance, and research-source metadata.
-
-- **[test_hardware.py](../tests/test_hardware.py)**
-  Tests memory-size parsing, integrated/discrete GPU classification (including processor-name false positives), extraction of GPU agents from CPU-first `rocminfo` output, platform-specific RAM/VRAM ceilings and reserves, the model-overhead allowance, and image-model fit estimates including separate encoder weights.
-
----
-
-### Workload Implementations
-
-- **[test_embedding_benchmark.py](../tests/test_embedding_benchmark.py)**
-  Tests the custom document chunking mechanism in `EmbeddingBenchmark`. It verifies:
-  - Clean paragraph-level division.
-  - Filtering out paragraphs shorter than the `min_words` boundary.
-  - Enforcement of the `max_words` limit by splitting large chunks on sentence boundaries.
-  - Implementation of hard word-boundary splits (without loss or reordering of words) when punctuation is absent (e.g., code snippets, raw data logs).
-  - Normalization of irregular whitespace.
-
-- **[test_image_benchmark.py](../tests/test_image_benchmark.py)**
-  Tests ComfyUI image generation workloads, API triggers, and state management. It covers:
-  - Proper routing of workflow builders for model classes (SDXL, SD3, Flux, and Flux2), including the unrecognized-type fallback to SDXL.
-  - Graph syntax validation for ComfyUI workflow JSON structures (e.g., verifying that the specified checkpoint files, seeds, prompts, and output dimensions are properly wired, and that all node references exist).
-  - Execution controls, verifying that `comfyui_free_models` and `comfyui_interrupt_and_clear` post correctly to the server API, handle connection failures gracefully, and poll status correctly until the queue drains.
-
-- **[test_llm_conversation_benchmark.py](../tests/test_llm_conversation_benchmark.py)**
-  Tests parameters and algorithms within `LLMConversationBenchmark` for multi-turn testing. It verifies:
-  - Follow-up prompts cycle sequentially through sections of the conversation prompt text, wrapping around cleanly.
-  - Growth checkpoints (`CONV_CHECKPOINTS`) are sorted and fit within the target ceiling.
-  - The step-size calculator (`compute_growth_step`) takes larger steps (`CONV_STEP_MAX_FAR`) when far from the target and smaller ones (`CONV_STEP_MAX`) once within 8K tokens of it, clamps to `CONV_STEP_MIN`, enforces context safety margins (`CONV_SAFETY_MARGIN`) for non-final checks, consumes the full context room on the final step, and signals when the context is full.
-  - `conv_ctx_plan` resolves the 128K-growth/96K-sampled plan, capped by a model's own native context ceiling and headroom.
-
-- **[test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py)**
-  Tests the chat sweep's slow-TPS floor and `--force-all` bypass, confirms that a `None` floor disables soft exits for the tool sweep, and verifies concurrent batch fan-out, unique nonce prompts, result collection, and error propagation with a fake engine.
-
-- **[test_mcq_benchmark.py](../tests/test_mcq_benchmark.py)**
-  Tests the pure logic in `MCQBenchmark`. It verifies:
-  - `build_prompt` includes the question text and every answer choice.
-  - `parse_answer` follows the confidence cascade for bare letters, boxed/explicit answers, leading markers, and unambiguous uppercase mentions; it accepts repeated mentions of one choice, honors later explicit, negated, rejected-then-affirmed, and resultative self-corrections, rejects competing unmarked choices, and directly covers all seven audited verdict flips, the original correct self-corrections, and the fresh `mcq_109` resultative correction.
-  - `score`'s own per-question logic (correct/unanswered) feeds `Shared.tally_accuracy_entry`/`finalize_accuracy_score` for the shared correct/total/category tallying (see `test_shared_tally_accuracy_entry.py` under Shared Helpers & APIs, below).
-  - `load_questions` returns a well-formed dataset from the real `scripts/data/mcq_questions.json` file — unique IDs, and every question's answer is one of its own choices.
-
-- **[test_math_benchmark.py](../tests/test_math_benchmark.py)**
-  Tests the pure logic in `MathBenchmark`. It verifies:
-  - `build_prompt` includes the question text and asks for a numeric-only answer.
-  - `parse_answer` handles bare integers, decimals, negative numbers, thousands separators, and trailing `%`, then applies the documented bare/boxed-or-explicit/stated-result/last-number cascade. It covers all five fresh corpus divergences, hard line boundaries and final-number/final-equality corroboration for leading answers, sentence-boundary conclusion cues, same-clause post-`=` results, expression-operand rejection, chronological self-corrections, the conservative unchanged `math_104`/`2/e` outcomes, defensive invalid-token conversion, and rejection of values that overflow to infinity.
-  - `score` treats an answer as correct when it falls within the question's own tolerance (defaulting to `0` — exact match — when absent); tallying itself is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
-  - `load_questions` returns a well-formed dataset from the real `scripts/data/math_questions.json` file — unique IDs, and every question has a numeric `answer` and non-negative numeric `tolerance`.
-
-- **[test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py)**
-  Tests the reasoning workload's prompt, strict answer parser, scorer, runtime call parameters, and validated loader. It covers bare, leading, boxed, tagged, Markdown, explicit, negated, and later-correction answers; rejects incidental or ambiguous option mentions that MCQ's compatibility fallback accepts; verifies per-category and per-difficulty scoring; and adversarially mutates every bank layer to exercise invalid field sets, metadata, categories, IDs, choices, answers, rationales, skills, provenance, malformed JSON, and missing files.
-
-- **[test_code_benchmark.py](../tests/test_code_benchmark.py)**
-  Tests the pure logic in `CodeBenchmark`, including real (not mocked) subprocess execution of generated code — no inference server needed. It verifies:
-  - `build_prompt` includes the question text and the target function/class name, renders `visible_tests` as worked examples (for both function and stateful problems, including constructor `init` args), omits the examples block entirely when there are no visible tests, and never leaks `hidden_tests` values into the prompt — proven not just by substring-scanning the rendered text but by deleting the `hidden_tests` key from every real question in the bank and confirming `build_prompt` doesn't raise (i.e. never even looks it up).
-  - `extract_code` pulls the body out of a fenced code block (`` ```python `` or bare `` ``` ``) when present, and falls back to the whole reply when a model ignores the fencing instruction.
-  - `execute_tests` runs all cases in one isolated subprocess under one deadline: correct/incorrect results score independently, runtime errors don't abort later cases, syntax errors fail every case, and completed function or stateful results survive when a later case loops and is killed. Protocol tests verify that candidate stdout noise and placeholder text cannot interfere with framing and that malformed, duplicate, out-of-range, or incomplete records fail safely; `evaluate_question` also retains the completed `tests_passed` count while the overall verdict remains wrong.
-  - `evaluate_question` requires every visible *and* hidden test case to pass for a problem to count as correct, and short-circuits to a `"no code found"` failure without spawning a subprocess when no code could be extracted.
-  - `score`'s tallying is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
-  - `load_questions` returns a well-formed dataset from the real `scripts/data/code_problems.json` file — unique IDs, and every problem has a function name and at least one visible and one hidden test case, each with `args` and `expected`.
-
-- **[test_tool_benchmark.py](../tests/test_tool_benchmark.py)**
-  Tests the pure logic in `ToolBenchmark`. It verifies:
-  - `evaluate_question` scores a call case correct only when exactly one tool call names the expected tool with matching arguments — flagging a wrong tool name, missing or wrong arguments, unintended additional calls, and extra arguments on questions marked for strict matching, while numeric strings (`"10"`) still match numeric expected values and baseline questions retain loose extra-argument compatibility.
-  - Recursive comparison handles nested strict objects, keeps booleans distinct from numbers, preserves positional arrays by default, treats configured `unordered_keys` arrays as multisets (including arrays of objects), and applies whitespace/case/terminal-punctuation normalization only to fields declared in `normalized_string_keys`. Exact real-bank regressions cover all seven accepted calls plus the audited string booleans, identifier/path mismatches, wrong numeric values, and JSON-encoded structures that must remain wrong.
-  - `evaluate_question` scores a decline case (`call: false`) correct only when nothing was called — an empty/`None` call list is a correct decline, and firing any tool is wrong; conversely a call case with an empty/`None` list is a wrong (incorrect) decline.
-  - `rescore_partial_fn` parses a tool-call list out of a timed-out question's partial text, falling back to a decline (`[]`) when the text won't parse or isn't a list.
-  - `_ask` never discards a model's prose: a pure tool call raw-responds as the tool-calls JSON, a decline (no tool calls) raw-responds as the prose itself, and a turn that emits *both* narration and a tool call keeps both, as a `{"tool_calls": ..., "text": ...}` object.
-  - `score`'s tallying is the shared `Shared.tally_accuracy_entry`/`finalize_accuracy_score` logic (see below).
-  - `load_questions` returns the complete, well-formed 100-question dataset from the real `scripts/data/tool_questions.json` file — unique IDs, exactly 20 five-question categories, every question offering a non-empty tools array, and each `expected` block consistent with its `call` flag (a call case names a tool actually offered; a decline case names none). It also validates `normalized_string_keys` metadata and the intended free-text fields; new free-text arguments such as titles, messages, notes, and bodies must be added to that list when normalized matching is desired.
-
-- **[test_regrade.py](../tests/test_regrade.py)**
-  Tests offline regrading of stored raw-answer sidecars. It covers exact bank-hash gating, sampled-bank ordering, input/model/question completeness checks, strict reasoning reparsing, every stored tool-call representation, preservation of unrelated result data and generation diagnostics, rebuilding populated grading blocks while skipping unrun empty blocks, compatibility with pre-reasoning result files, strict JSON output, contextual evaluation failures, non-overwriting output behavior, and score-change reporting.
-
----
-
-### Shared Helpers & APIs
-
-- **[test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py)**
-  Tests the question-bank-versioning helpers in `Shared` that back `--sample` and the accuracy tests' bank-aware crash cache. It verifies:
-  - `file_hash` is stable for identical file content, differs when content differs, and returns a short (12-character) hex digest.
-  - `stratified_sample` returns the bank unchanged once `n` meets or exceeds its size; otherwise it returns exactly `n` deterministic, duplicate-free questions in category round-robin order, covering every category when `n` reaches the category count.
-  - `check_crash_cache`'s `expected_bank_hash` parameter ignores a cached crash recorded against a different bank version (so a stale crash doesn't skip a model forever after the bank changes) while still honoring one that matches, and non-bank-aware callers that omit `expected_bank_hash` still honor a `bank_hash`-tagged entry as before.
-  - `record_crash`'s `extra` parameter is merged into the stored cache record (e.g. `bank_hash`), and is simply omitted when not passed.
-
-- **[test_shared_crash_cache.py](../tests/test_shared_crash_cache.py)**
-  Tests the model crash-tracking database (which prevents repeated attempts of deterministic crashes). It verifies:
-  - Reading from a missing or corrupted file falls back to an empty cache dict.
-  - Successful serialization roundtripping.
-  - Unwritable disk locations do not crash the runner (write failures are swallowed).
-  - The cache matches keys correctly to output skip markers.
-  - Exception analyzer (`is_connection_crash`) properly identifies connection errors and server crashes (e.g. BrokenPipe, ConnectionReset, and actively refused sockets) while letting normal runtime errors bubble up.
-
-- **[test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py)**
-  Tests the search hierarchy in `Shared.find_comfyui_python` for locating the correct python executable to start ComfyUI. It validates the priority order:
-  1. Windows portable embedded Python (`python_embeded/python.exe`).
-  2. The local `venv/bin/python` under ComfyUI.
-  3. The local `.venv/bin/python` under ComfyUI.
-  4. The current external active virtual environment (`VIRTUAL_ENV`).
-  5. The current system interpreter (`sys.executable`).
-
-- **[test_engines_registry.py](../tests/test_engines_registry.py)**
-  Tests that the engine registry lists the registered names, resolves `llamacpp` to a `LlamaCppEngine`, and rejects unknown names clearly.
-
-- **[test_llamacpp_engine.py](../tests/test_llamacpp_engine.py)**
-  Tests `LlamaCppEngine` (`scripts/engines/llamacpp.py`) — local GGUF-file resolution and the HTTP seams, with real subprocess spawns out of scope (`# pragma: no cover`):
-  - `_slug`/`_resolve_model_files`/`model_pulled`/`list_installed_models` resolve each catalog tag to its downloaded GGUF file(s) under `config.MODELS_DIR/llamacpp/<slug>/`, including a missing model directory, a missing GGUF file, a multi-part (`hf_file` as a list) model with one part missing, and a removed catalog entry remaining runnable as a custom folder.
-  - `max_context_length` reads the architecture-prefixed GGUF metadata key, falling back to the configured default when the model isn't downloaded or the file doesn't parse.
-  - `generate`/`chat` prefer llama-server's own reported timings, falling back to wall-clock TTFT when omitted; `chat` prefers content over a `reasoning` field but falls back to it when content is empty, reuses the loop-detection heuristic on repeated hedging, and raises `EngineTimeout` (not an engine-specific type) so `run_measured_calls` doesn't need to know which engine it's driving.
-  - Budgeted chat retries only a literal first-pass length stop, preserves caller history, passes one absolute deadline to both requests, grades only the replacement text/tool call, combines timing metrics, and preserves nudge metadata on successful and exceptional second passes.
-  - `chat_tools` reassembles a tool call whose `arguments` stream as partial JSON fragments across multiple SSE chunks (accumulated by index), returns an empty tool-call list when the model answers in prose instead, falls back to `{}` on malformed/truncated argument JSON rather than crashing, and orders multiple calls by their streamed index.
-  - `embed` returns embeddings in request order and raises with the server's own error detail on a rejected request.
-  - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
-
-- **[test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py)**
-  Tests `LlamaBenchBenchmark` (`scripts/llamabench_benchmark.py`), the opt-in `llamabench` test — see [Workloads](../docs/workloads.md#llama-bench). Unlike most workload `run()` methods, its `subprocess.Popen` seam is mocked, so `run()`'s per-model dispatch is tested directly rather than pragma'd out:
-  - `find_binary` resolution order (vendored `LLAMACPP_DIR`, `PATH`, macOS Homebrew prefixes), mirroring `LlamaCppEngine._binary_path`'s own tests.
-  - The prefill and decode command builders assemble exact `llama-bench` argv: standalone `-p` tests for true prefill throughput, and the `-d` depth × `-n` generation cross product for true decode throughput, including explicit `-ngl` (full offload vs. `--cpu-only`) and suppression of unwanted default tests.
-  - `run_one` parses `-o json` output on success, raises with the tail of stderr on a non-zero exit, raises on malformed JSON, and lets a `subprocess.TimeoutExpired` propagate to the caller.
-  - `format_entry` labels a pure prompt-processing entry, a pure generation entry, and a combined pp+tg entry.
-  - `run()` skips a non-`LlamaCppEngine` engine and a missing binary, skips an unpulled model, records an `error` entry for missing files/a timeout/a generic exception without stopping the rest of the models, records separate `prefill_entries`/`decode_entries` on success, calls `save_fn` after each model, and passes the right `-ngl` for `cpu_only` true/false.
-
-- **[test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py)**
-  Tests `LlamaBenchConcurrencyBenchmark` (`scripts/llamabench_concurrency_benchmark.py`), the opt-in `llamabenchconc` test — see [Workloads](../docs/workloads.md#llama-bench-concurrency). Same shape as the `llamabench` tests above, plus the context-fitting logic that test doesn't have:
-  - `find_binary` resolution order for `llama-batched-bench`, mirroring the `llamabench` cases.
-  - `fit_npl` with ample context, with high concurrency levels dropped for not fitting, with the prompt depth clamped to a small model context, with a single-sequence fallback when nothing fits, and with headroom taken from the largest `tg` value rather than the first.
-  - `build_command` assembles the exact `llama-batched-bench` argv (including `-c`/`-npp`/`-ntg`/`-npl` and no `--progress`/`-r`, which this tool doesn't have).
-  - `run_one` parses JSONL rows incrementally and reports each one through `on_progress`, succeeds on empty stderr, skips blank/malformed lines, raises with the tail of stderr on a non-zero exit, raises when nothing parseable arrived at all, and lets a `subprocess.TimeoutExpired` propagate.
-  - `run()`'s dispatch cases mirror `llamabench`'s, plus that `-c` and the swept concurrency levels are derived from the model's real context (mocked `max_context_length`) and recorded alongside `entries`.
-
-- **[test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py)**
-  Tests the execution loop for benchmark runs (`run_measured_calls`), driven against a fake `InferenceEngine` double rather than a real one. It checks:
-  - Correct execution count under normal operations.
-  - Instant stoppage and exit status marking on timeout.
-  - Exact token-budget splitting (including totals 1/2/3), a distinct budget-exhausted status, gradeable partial text, and nudge metadata.
-  - Skipping a single run's metrics if a standard execution error occurs, while proceeding to the next run.
-  - If a connection crash occurs, attempting recovery via the engine. If recovery succeeds, the loop retries the failed run. If recovery fails, the benchmark halts and records the model as crashed.
-  - `slow_tps_early_exit` early termination logic based on performance speeds.
-
-- **[test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py)**
-  Tests `Shared.run_accuracy_benchmark` against a fake engine. Covers normal, timed-out, loop-detected, budget-nudged, budget-exhausted, and crashed questions; verifies cutoffs continue the bank; and verifies sidecars retain only the response actually graded while regrade preserves independent diagnostics.
-
-- **[test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py)**
-  Tests the degenerate-generation-loop heuristic applied periodically to streaming accuracy responses (`Shared.looks_like_loop`):
-  - Detects a 12+ word run repeated verbatim 3+ times; false on normal prose, short text, and below-threshold repetition; respects custom `ngram_words`/`min_repeats`.
-  - Detects a paraphrased loop via repeated hedging/self-correction phrases (e.g. "let me reconsider", "there seems to have been") even with no verbatim repeated run; false when a hedge phrase appears only once.
-
-- **[test_shared_stats.py](../tests/test_shared_stats.py)**
-  Validates general helpers in `Shared`:
-  - `mean` and `stdev` mathematical routines (including handling empty lists or single-element inputs).
-  - Context prompt text builder, assuring that generated prompts meet the target length in characters, do not crash on tiny inputs, and use a varying nonce prefix to bypass model prompt cache hits.
-
-- **[test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py)**
-  Tests the two helpers shared by all five accuracy `score()` methods. `tally_accuracy_entry` is the per-question recording tail: a correct entry increments the category's `correct` count and lands only in `all` (with `correct: True`); an incorrect entry lands in both `all` and `incorrect` (without a `correct` key) without bumping the category count; the original `entry` dict is never mutated. `finalize_accuracy_score` is the post-loop tail: fills in each category's (and, via `extra`, reasoning's `by_difficulty`) `accuracy_pct` without dividing by zero, and assembles the final result dict.
-
----
-
-## Dashboard Tests
-
-The dashboard (`dashboard/`) has its own, separate test suite using [Vitest](https://vitest.dev/) — it doesn't share `bench-env` or pytest, since it's a JavaScript/React project with its own `node_modules`.
-
-**Running:**
+The dashboard uses Vitest and ESLint from its own `node_modules`:
 
 ```bash
 cd dashboard
-npm test              # runs the suite once
-npx vitest            # watch mode, reruns on file changes
-npx vitest -t "getBarStatusLabel"   # filter by test name
+npm test
+npx vitest -t "getBarStatusLabel"
+npm run lint
 ```
 
-`npm run lint` (ESLint) should also pass after any change to `dashboard/src`.
+The Vitest suite covers pure transformations in `dashboard/src/utils/*.js` and registry invariants in `dashboard/src/constants.js`: chart data, status labels, sorting, formatting, historical-schema compatibility, model ordering, and color contrast. It deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
 
-**Scope:** this suite covers `dashboard/src/utils/*.js` (chart data builders, status-label logic, formatting, model-registry lookups — split by section: `shared.js`, `llm.js`, `images.js`, `embeddings.js`, `llamabench.js`, `llamabenchconc.js`, `accuracy.js`, `concurrency.js`) and `dashboard/src/constants.js` (model-registry consistency). It deliberately does **not** cover React component rendering — no React Testing Library, no jsdom component mounting. The risk this suite guards against is bad data logic silently producing wrong or blank charts, not broken rendering; component-level testing would be a separate, heavier addition if ever needed.
+## What to run before submitting
 
-- **[utils/*.test.js](../dashboard/src/utils/)**
-  One test file per `utils/*.js` module, testing the pure data-transformation and formatting functions in each. Notably:
-  - `getBarStatusLabel` — the crashed/timed-out/slow-tps precedence and "which checkpoints get relabeled Skipped vs. show real data" logic (the slow checkpoint's own value is always shown, never hidden behind a status label; only checkpoints *after* it get relabeled).
-  - `getLLMModelsWithSectionResults` — that Group By → System keeps models attempted by any loaded system, excludes models represented only by `no_llm_data` placeholders, and retains meaningful whole-model skip outcomes.
-  - `getImageBarStatusLabel` — the equivalent for image generation timeouts.
-  - `buildLLMBarData`/`buildLLMBarConfigs`/`prepareOrderedBarGroupData` — that per-checkpoint values and status overlays are correctly assembled, that a file which stopped early still gets chart columns for depths another compared file reached, and that by-model LLM and conversation bars retain numeric `CTX_ORDER` while each system remains one native chart group.
-  - `sortBarData`/`findMostStrenuousKey` — ranking rows by the deepest metric with real data, in both directions (higher/lower is better), with missing values always sorted last regardless of direction.
-  - `getModelSizeTier` — the known-model lookup and the param-count-parsed fallback for unrecognized models, including its tier boundaries.
-  - `fmt` — unit-specific formatting (ms/sec/tps/sps thresholds, K-notation cutoffs, null handling).
-  - `sanitizeForFilename` — collapsing special characters for PNG export filenames.
-  - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
-  - llama-bench transforms — separate prefill and depth-aware decode line data, file/model/tg series configuration, numeric pp ordering, explicit-array and legacy-entry compatibility, and combined-only rows that must never be presented as separate metrics.
+```bash
+bash tests.sh
+cd dashboard
+npm test
+npm run lint
+```
 
-- **[constants.test.js](../dashboard/src/constants.test.js)**
-  Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), none of the order lists contain duplicates, and removed catalog models retain legacy labels, colors, tiers, and deterministic display order for historical results. It also calculates relative luminance for every foreground and data-series palette entry and requires WCAG AA contrast of at least 4.5:1 against white.
+Run the dashboard commands whenever `dashboard/src` changed. For a Python-only change, the pytest suite is sufficient unless the results schema or documented dashboard behavior also changed.
 
 ---
 
