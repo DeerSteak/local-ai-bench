@@ -115,7 +115,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |
 | `concurrency_tool`, `concurrency_chat` | Per-model/per-level TTFT, per-request and aggregate throughput, token/batch timing, memory snapshots, and stop markers |
-| `llamabench` | Opt-in — per-model raw `llama-bench -o json` entries (or an `error` string), one entry per pp/tg checkpoint — see [Workloads](workloads.md#llama-bench) |
+| `llamabench` | Opt-in — per-model raw `llama-bench -o json` `prefill_entries` and depth-aware `decode_entries` arrays (or an `error` string) — see [Workloads](workloads.md#llama-bench) |
 | `llamabenchconc` | Opt-in — per-model raw `llama-batched-bench` JSONL entries plus the effective `pp`/`ctx_size` used (or an `error` string), one entry per pp/tg/concurrency-level combination — see [Workloads](workloads.md#llama-bench-concurrency) |
 
 Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. Concurrency snapshots include system RAM and add GPU VRAM when a trustworthy discrete-GPU reading is available; a failed load records `memory_at_failure`. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.

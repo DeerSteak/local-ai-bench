@@ -1,156 +1,159 @@
-import { FALLBACK_COLORS } from "../constants";
-import { getModelColor, modelLabel } from "./shared";
+import { FILE_COLORS, MODEL_DASH_PATTERNS } from "../constants";
+import { buildFileLineConfigs, getModelColor, modelLabel } from "./shared";
 
-// pp/tg sizes are a config.py constant that can change, so order is derived from
-// each entry's own n_prompt/n_gen — unlike CTX_ORDER, not a hardcoded list.
-export function llamaBenchCheckpointKey(entry) {
-  const p = entry.n_prompt ?? 0, g = entry.n_gen ?? 0;
-  if (g === 0) return `pp${p}`;
-  if (p === 0) return `tg${g}`;
-  return `pp${p}+tg${g}`;
-}
-
-export function llamaBenchCheckpointSortValue(entry) {
-  return (entry.n_prompt ?? 0) * 1e7 + (entry.n_gen ?? 0);
-}
-
-// llama-bench pp sizes are always multiples of 1024 — they're drawn from CONTEXT_LENGTHS
-// and LLMConversationBenchmark.CONV_CHECKPOINTS, both binary-K depths — so a plain "2K"/"0.5K"
-// label (matching CTX_ORDER's own naming) is unambiguous without needing the tg suffix that
-// llamaBenchCheckpointKey uses for the flat Raw Numbers table.
-export function llamaBenchPromptLabel(nPrompt) {
-  const k = (nPrompt ?? 0) / 1024;
+export function llamaBenchPromptLabel(tokens) {
+  const k = (tokens ?? 0) / 1024;
   return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
 }
 
-// Distinct generation sizes (tg) present for `model` across files, sorted ascending — splitting
-// a chart per tg value keeps pp size as its only axis/bar dimension instead of a combined
-// "pp2048+tg128" label that stops fitting once there are more than a couple of pp sizes.
-export function llamaBenchTgValues(files, model) {
-  const set = new Set();
-  for (const f of files)
-    for (const entry of f.data.llamabench?.[model]?.entries || [])
-      set.add(entry.n_gen ?? 0);
-  return [...set].sort((a, b) => a - b);
+export function llamaBenchPrefillEntries(modelData) {
+  if (Array.isArray(modelData?.prefill_entries)) return modelData.prefill_entries;
+  return (modelData?.entries || []).filter(entry =>
+    (entry.n_prompt ?? 0) > 0 && (entry.n_gen ?? 0) === 0);
 }
 
-export function llamaBenchTgValuesByModel(file, models) {
-  const set = new Set();
-  for (const model of models)
-    for (const entry of file.data.llamabench?.[model]?.entries || [])
-      set.add(entry.n_gen ?? 0);
-  return [...set].sort((a, b) => a - b);
+export function llamaBenchDecodeEntries(modelData) {
+  if (Array.isArray(modelData?.decode_entries)) return modelData.decode_entries;
+  return (modelData?.entries || []).filter(entry =>
+    (entry.n_prompt ?? 0) === 0 && (entry.n_gen ?? 0) > 0 && (entry.n_depth ?? 0) > 0);
 }
 
-// llama-bench: one chart per (model, tg). X = system, bars = each pp size present at that tg.
-export function buildLlamaBenchBarData(files, model, tg) {
-  return files.map(f => {
-    const row = { systemLabel: f.hostname };
-    for (const entry of f.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      row[llamaBenchPromptLabel(entry.n_prompt)] = entry.avg_ts;
-    }
-    return row;
-  });
+export function llamaBenchHasCombinedOnly(modelData) {
+  return llamaBenchPrefillEntries(modelData).length === 0
+    && llamaBenchDecodeEntries(modelData).length === 0
+    && (modelData?.entries || []).some(entry =>
+      (entry.n_prompt ?? 0) > 0 && (entry.n_gen ?? 0) > 0);
 }
 
-export function buildLlamaBenchBarConfigs(files, model, tg) {
-  const sortValueByKey = new Map();
-  for (const f of files)
-    for (const entry of f.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      sortValueByKey.set(llamaBenchPromptLabel(entry.n_prompt), entry.n_prompt ?? 0);
-    }
-  return [...sortValueByKey.entries()]
-    .sort((a, b) => a[1] - b[1])
-    .map(([key], i) => ({ dataKey: key, name: key, fill: FALLBACK_COLORS[i % FALLBACK_COLORS.length] }));
+function orderedDepths(entryGroups, depthKey) {
+  const depths = new Set();
+  for (const entries of entryGroups)
+    for (const entry of entries)
+      if (entry[depthKey] != null) depths.add(entry[depthKey]);
+  return [...depths].sort((a, b) => a - b);
 }
 
-// llama-bench: one chart per (model, tg). X = pp size, lines = files — the same
-// pp keys/ordering as the bar chart, just transposed for the Line chart style.
-export function buildLlamaBenchLineData(files, model, tg) {
-  const sortValueByKey = new Map();
-  for (const f of files)
-    for (const entry of f.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      sortValueByKey.set(llamaBenchPromptLabel(entry.n_prompt), entry.n_prompt ?? 0);
-    }
-  const orderedKeys = [...sortValueByKey.entries()].sort((a, b) => a[1] - b[1]).map(([key]) => key);
-
-  return orderedKeys.map(key => {
-    const row = { promptLabel: key };
-    files.forEach((f, fi) => {
-      const entry = (f.data.llamabench?.[model]?.entries || [])
-        .find(e => (e.n_gen ?? 0) === tg && llamaBenchPromptLabel(e.n_prompt) === key);
-      if (entry) row[`f${fi}`] = entry.avg_ts;
+export function buildLlamaBenchPrefillLineData(files, model) {
+  const groups = files.map(file => llamaBenchPrefillEntries(file.data.llamabench?.[model]));
+  return orderedDepths(groups, "n_prompt").map(depth => {
+    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    groups.forEach((entries, fi) => {
+      const entry = entries.find(candidate => candidate.n_prompt === depth);
+      if (entry?.avg_ts != null) row[`f${fi}`] = entry.avg_ts;
     });
     return row;
   });
 }
 
-// llama-bench "by system" bar chart: rows = models, cols = pp sizes, for one file/tg —
-// mirrors llm.js's buildLLMBarDataByModel shape.
-export function buildLlamaBenchBarDataByModel(file, models, tg) {
-  return models.map(model => {
-    const row = { modelLabel: modelLabel(model) };
-    for (const entry of file.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      row[llamaBenchPromptLabel(entry.n_prompt)] = entry.avg_ts;
-    }
+export function buildLlamaBenchDecodeLineData(files, model) {
+  const groups = files.map(file => llamaBenchDecodeEntries(file.data.llamabench?.[model]));
+  return orderedDepths(groups, "n_depth").map(depth => {
+    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    groups.forEach((entries, fi) => {
+      for (const entry of entries) {
+        if (entry.n_depth === depth && entry.n_gen != null && entry.avg_ts != null)
+          row[`f${fi}_tg${entry.n_gen}`] = entry.avg_ts;
+      }
+    });
     return row;
   });
 }
 
-export function buildLlamaBenchBarConfigsByModel(file, models, tg) {
-  const sortValueByKey = new Map();
-  for (const model of models)
-    for (const entry of file.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      sortValueByKey.set(llamaBenchPromptLabel(entry.n_prompt), entry.n_prompt ?? 0);
-    }
-  return [...sortValueByKey.entries()]
-    .sort((a, b) => a[1] - b[1])
-    .map(([key], i) => ({ dataKey: key, name: key, fill: FALLBACK_COLORS[i % FALLBACK_COLORS.length] }));
+export function buildLlamaBenchDecodeLineConfigs(files, model, data) {
+  const configs = [];
+  files.forEach((file, fi) => {
+    const tgValues = [...new Set(
+      llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
+    )].filter(value => value != null).sort((a, b) => a - b);
+    tgValues.forEach((tg, ti) => {
+      const dataKey = `f${fi}_tg${tg}`;
+      if (!data.some(row => row[dataKey] != null)) return;
+      configs.push({
+        dataKey,
+        stroke: FILE_COLORS[fi % FILE_COLORS.length],
+        strokeDasharray: MODEL_DASH_PATTERNS[ti % MODEL_DASH_PATTERNS.length],
+        name: files.length > 1 ? `${file.hostname} — tg${tg}` : `tg${tg}`,
+      });
+    });
+  });
+  return configs;
 }
 
-// llama-bench "by system" line chart: rows = pp sizes, one line per model, for one file/tg —
-// mirrors llm.js's buildLLMLineDataByCtx shape.
-export function buildLlamaBenchLineDataByCheckpoint(file, models, tg) {
-  const sortValueByKey = new Map();
-  for (const model of models)
-    for (const entry of file.data.llamabench?.[model]?.entries || []) {
-      if ((entry.n_gen ?? 0) !== tg) continue;
-      sortValueByKey.set(llamaBenchPromptLabel(entry.n_prompt), entry.n_prompt ?? 0);
-    }
-  const orderedKeys = [...sortValueByKey.entries()].sort((a, b) => a[1] - b[1]).map(([key]) => key);
-
-  return orderedKeys.map(key => {
-    const row = { promptLabel: key };
-    for (const model of models) {
-      const entry = (file.data.llamabench?.[model]?.entries || [])
-        .find(e => (e.n_gen ?? 0) === tg && llamaBenchPromptLabel(e.n_prompt) === key);
-      if (entry) row[model] = entry.avg_ts;
-    }
+export function buildLlamaBenchPrefillLineDataByModel(file, models) {
+  const groups = models.map(model => llamaBenchPrefillEntries(file.data.llamabench?.[model]));
+  return orderedDepths(groups, "n_prompt").map(depth => {
+    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    groups.forEach((entries, mi) => {
+      const entry = entries.find(candidate => candidate.n_prompt === depth);
+      if (entry?.avg_ts != null) row[models[mi]] = entry.avg_ts;
+    });
     return row;
   });
 }
 
-export function buildLlamaBenchLineConfigsByCheckpoint(models, data) {
+export function buildLlamaBenchDecodeLineDataByModel(file, models) {
+  const groups = models.map(model => llamaBenchDecodeEntries(file.data.llamabench?.[model]));
+  return orderedDepths(groups, "n_depth").map(depth => {
+    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    groups.forEach((entries, mi) => {
+      for (const entry of entries) {
+        if (entry.n_depth === depth && entry.n_gen != null && entry.avg_ts != null)
+          row[`${models[mi]}_tg${entry.n_gen}`] = entry.avg_ts;
+      }
+    });
+    return row;
+  });
+}
+
+export function buildLlamaBenchPrefillLineConfigsByModel(models, data) {
   return models
-    .filter(m => data.some(row => row[m] != null))
-    .map(m => ({ dataKey: m, stroke: getModelColor(m), name: modelLabel(m) }));
+    .filter(model => data.some(row => row[model] != null))
+    .map(model => ({ dataKey: model, stroke: getModelColor(model), name: modelLabel(model) }));
+}
+
+export function buildLlamaBenchDecodeLineConfigsByModel(file, models, data) {
+  const configs = [];
+  for (const model of models) {
+    const tgValues = [...new Set(
+      llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
+    )].filter(value => value != null).sort((a, b) => a - b);
+    tgValues.forEach((tg, ti) => {
+      const dataKey = `${model}_tg${tg}`;
+      if (!data.some(row => row[dataKey] != null)) return;
+      configs.push({
+        dataKey,
+        stroke: getModelColor(model),
+        strokeDasharray: MODEL_DASH_PATTERNS[ti % MODEL_DASH_PATTERNS.length],
+        name: `${modelLabel(model)} — tg${tg}`,
+      });
+    });
+  }
+  return configs;
+}
+
+export function buildLlamaBenchPrefillLineConfigs(files, data) {
+  return buildFileLineConfigs(files).filter(config => data.some(row => row[config.dataKey] != null));
 }
 
 export function flattenLlamaBenchData(files) {
-  return files.flatMap(f =>
-    Object.entries(f.data.llamabench || {}).flatMap(([model, modelData]) => {
+  return files.flatMap(file =>
+    Object.entries(file.data.llamabench || {}).flatMap(([model, modelData]) => {
       if (modelData?.error) {
-        return [{ _fileId: f.id, model, ckpt: "—", skipped: true, skip_detail: modelData.error }];
+        return [{ _fileId: file.id, model, metric: "—", skipped: true, skip_detail: modelData.error }];
       }
+      const prefill = llamaBenchPrefillEntries(modelData).map(entry => ({
+        _fileId: file.id, model, metric: "Prefill", pp: entry.n_prompt ?? null, tg: null,
+        avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
+      }));
+      const decode = llamaBenchDecodeEntries(modelData).map(entry => ({
+        _fileId: file.id, model, metric: "Decode", pp: entry.n_depth ?? null, tg: entry.n_gen ?? null,
+        avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
+      }));
+      if (prefill.length || decode.length) return [...prefill, ...decode];
       return (modelData?.entries || []).map(entry => ({
-        _fileId: f.id, model, ckpt: llamaBenchCheckpointKey(entry),
-        avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts,
-        n_gpu_layers: entry.n_gpu_layers,
+        _fileId: file.id, model, metric: "Combined",
+        pp: entry.n_prompt ?? null, tg: entry.n_gen ?? null,
+        avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
       }));
     })
   );

@@ -1,40 +1,35 @@
 import { getAllLLMModels } from "../../utils/llm";
 import {
-  llamaBenchTgValues, buildLlamaBenchBarData, buildLlamaBenchBarConfigs, buildLlamaBenchLineData,
+  buildLlamaBenchDecodeLineConfigs,
+  buildLlamaBenchDecodeLineData,
+  buildLlamaBenchPrefillLineConfigs,
+  buildLlamaBenchPrefillLineData,
+  llamaBenchHasCombinedOnly,
 } from "../../utils/llamabench";
-import { buildFileLineConfigs, modelLabel, sortBarData } from "../../utils/shared";
-import { GroupedBarCard, ChartCard } from "../charts/ChartCards";
+import { modelLabel } from "../../utils/shared";
+import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import styles from "../ChartPanel.module.css";
 
-// Group By: Model, llama-bench section — one card per model, one chart per generation
-// size (tg) actually swept at that model, so pp size can be the chart's only axis/bar
-// dimension instead of a combined "pp2048+tg128" label. Bar: systems as bars, one bar
-// per pp size. Line: pp size on the X axis, one line per system. See
-// LlamaBenchBySystemPanel for Group By: System.
-export default function LlamaBenchPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isBar, isMultiFile }) {
+export default function LlamaBenchPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
-  const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m) && files.some(f => f.data.llamabench?.[m]));
-  const lineConfigs = buildFileLineConfigs(files);
+  const allModels = getAllLLMModels(files)
+    .filter(model => enabledModels.has(model) && files.some(file => file.data.llamabench?.[model]));
 
   const modelGroups = allModels.map(model => {
-    const tgValues = llamaBenchTgValues(files, model);
-    const charts = tgValues.map(tg => {
-      const barConfigs = buildLlamaBenchBarConfigs(files, model, tg);
-      const rawBarData = buildLlamaBenchBarData(files, model, tg);
-      const barData = sortBarData(rawBarData, barConfigs.map(bc => bc.dataKey), "desc");
-      const lineData = buildLlamaBenchLineData(files, model, tg);
-      const tgLineConfigs = lineConfigs.filter(lc => lineData.some(r => r[lc.dataKey] != null));
-      const hasData = isBar ? barConfigs.length > 0 : tgLineConfigs.length > 0;
-      if (!hasData) return null;
-      return { tg, barConfigs, barData, lineData, lineConfigs: tgLineConfigs };
-    }).filter(Boolean);
-
-    const errorEntries = files
-      .map(f => ({ hostname: f.hostname, error: f.data.llamabench?.[model]?.error }))
-      .filter(e => e.error);
-    if (!charts.length && !errorEntries.length) return null;
-    return { model, charts, errorEntries };
+    const prefillData = buildLlamaBenchPrefillLineData(files, model);
+    const prefillConfigs = buildLlamaBenchPrefillLineConfigs(files, prefillData);
+    const decodeData = buildLlamaBenchDecodeLineData(files, model);
+    const decodeConfigs = buildLlamaBenchDecodeLineConfigs(files, model, decodeData);
+    const notes = files.flatMap(file => {
+      const modelData = file.data.llamabench?.[model];
+      if (modelData?.error) return [`${file.hostname}: ${modelData.error}`];
+      if (llamaBenchHasCombinedOnly(modelData))
+        return [`${file.hostname}: combined-only legacy data; rerun llama-bench for separate prefill/decode charts`];
+      return [];
+    });
+    if (!prefillConfigs.length && !decodeConfigs.length && !notes.length) return null;
+    return { model, prefillData, prefillConfigs, decodeData, decodeConfigs, notes };
   }).filter(Boolean);
 
   if (!modelGroups.length) {
@@ -43,37 +38,36 @@ export default function LlamaBenchPanel({ containerRef, files, enabledModels, ch
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {modelGroups.map(({ model, charts, errorEntries }) => (
+      {modelGroups.map(({ model, prefillData, prefillConfigs, decodeData, decodeConfigs, notes }) => (
         <div key={model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
-          {errorEntries.length > 0 && (
+          {notes.length > 0 && (
             <div className={styles.skipNote}>
-              {errorEntries.map(e => <div key={e.hostname}>{e.hostname}: {e.error}</div>)}
+              {notes.map(note => <div key={note}>{note}</div>)}
             </div>
           )}
-          {charts.map(({ tg, barConfigs, barData, lineData, lineConfigs: tgLineConfigs }) => isBar ? (
-            <GroupedBarCard
-              key={tg}
-              title={`llama-bench Throughput — tg${tg}`}
-              modelName={modelLabel(model)}
-              data={barData}
-              barConfigs={barConfigs}
-              xKey="systemLabel" yLabel="Tokens/sec" unit="tps"
-              chartName={`llamabench_tg${tg}`} chartModel={model}
-              logoSrc={logoSrc} direction="higher" orderedSeries
-            />
-          ) : (
+          {decodeConfigs.length > 0 && (
             <ChartCard
-              key={tg}
-              title={`llama-bench Throughput — tg${tg}`}
+              title="Decode Throughput by Prompt Depth"
               modelName={modelLabel(model)}
-              data={lineData} lineConfigs={tgLineConfigs}
-              xKey="promptLabel" xLabel="Prompt Size" yLabel="Tokens/sec" unit="tps"
+              data={decodeData} lineConfigs={decodeConfigs}
+              xKey="promptLabel" xLabel="Prompt Depth" yLabel="Decode Tokens/sec" unit="tps"
               isMultiFile={isMultiFile}
-              chartName={`llamabench_tg${tg}`} chartModel={model}
+              chartName="llamabench_decode" chartModel={model}
               logoSrc={logoSrc} direction="higher"
             />
-          ))}
+          )}
+          {prefillConfigs.length > 0 && (
+            <ChartCard
+              title="Prompt Processing Throughput"
+              modelName={modelLabel(model)}
+              data={prefillData} lineConfigs={prefillConfigs}
+              xKey="promptLabel" xLabel="Prompt Size" yLabel="Prefill Tokens/sec" unit="tps"
+              isMultiFile={isMultiFile}
+              chartName="llamabench_prefill" chartModel={model}
+              logoSrc={logoSrc} direction="higher"
+            />
+          )}
         </div>
       ))}
     </ChartGrid>

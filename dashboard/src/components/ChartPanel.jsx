@@ -42,7 +42,7 @@ export default function ChartPanel({
     return (
       <LlamaBenchBySystemPanel
         containerRef={containerRef} files={files} enabledModels={enabledModels}
-        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar} isSplit={isSplit}
+        chartWidth={chartWidth} logoSrc={logoSrc} isSplit={isSplit}
       />
     );
   }
@@ -51,7 +51,7 @@ export default function ChartPanel({
     return (
       <LlamaBenchPanel
         containerRef={containerRef} files={files} enabledModels={enabledModels}
-        chartWidth={chartWidth} logoSrc={logoSrc} isBar={isBar} isMultiFile={isMultiFile}
+        chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
     );
   }

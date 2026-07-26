@@ -52,7 +52,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBench && !isLlamaBenchConc && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>

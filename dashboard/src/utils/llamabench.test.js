@@ -1,189 +1,170 @@
 import { describe, it, expect } from "vitest";
 import {
-  llamaBenchCheckpointKey, llamaBenchCheckpointSortValue, llamaBenchPromptLabel,
-  llamaBenchTgValues, llamaBenchTgValuesByModel,
-  buildLlamaBenchBarData, buildLlamaBenchBarConfigs, buildLlamaBenchLineData,
-  buildLlamaBenchBarDataByModel, buildLlamaBenchBarConfigsByModel,
-  buildLlamaBenchLineDataByCheckpoint, buildLlamaBenchLineConfigsByCheckpoint,
+  llamaBenchPromptLabel,
+  llamaBenchPrefillEntries,
+  llamaBenchDecodeEntries,
+  llamaBenchHasCombinedOnly,
+  buildLlamaBenchPrefillLineData,
+  buildLlamaBenchDecodeLineData,
+  buildLlamaBenchDecodeLineConfigs,
+  buildLlamaBenchPrefillLineDataByModel,
+  buildLlamaBenchDecodeLineDataByModel,
+  buildLlamaBenchPrefillLineConfigsByModel,
+  buildLlamaBenchDecodeLineConfigsByModel,
+  buildLlamaBenchPrefillLineConfigs,
   flattenLlamaBenchData,
 } from "./llamabench";
 
-describe("llamaBenchCheckpointKey", () => {
-  it("labels a pp+tg combo, the shape every real sweep actually produces", () => {
-    expect(llamaBenchCheckpointKey({ n_prompt: 2048, n_gen: 128 })).toBe("pp2048+tg128");
-  });
-  it("labels a pure prompt-processing entry (n_gen 0)", () => {
-    expect(llamaBenchCheckpointKey({ n_prompt: 512, n_gen: 0 })).toBe("pp512");
-  });
-  it("labels a pure generation entry (n_prompt 0)", () => {
-    expect(llamaBenchCheckpointKey({ n_prompt: 0, n_gen: 128 })).toBe("tg128");
-  });
+const prefill = (pp, speed) => ({
+  n_prompt: pp, n_gen: 0, n_depth: 0, avg_ts: speed, stddev_ts: 2, n_gpu_layers: 999,
+});
+const decode = (pp, tg, speed) => ({
+  n_prompt: 0, n_gen: tg, n_depth: pp, avg_ts: speed, stddev_ts: 1, n_gpu_layers: 999,
 });
 
-describe("llamaBenchCheckpointSortValue", () => {
-  it("orders primarily by prompt size, then generation size", () => {
-    const a = llamaBenchCheckpointSortValue({ n_prompt: 2048, n_gen: 512 });
-    const b = llamaBenchCheckpointSortValue({ n_prompt: 8192, n_gen: 128 });
-    expect(a).toBeLessThan(b);
-  });
-});
+const fileA = {
+  id: "a", hostname: "alpha",
+  data: { llamabench: {
+    m1: {
+      prefill_entries: [prefill(512, 1000), prefill(2048, 1800)],
+      decode_entries: [
+        decode(512, 128, 80), decode(512, 512, 75),
+        decode(2048, 128, 70), decode(2048, 512, 64),
+      ],
+    },
+    m2: {
+      prefill_entries: [prefill(512, 700)],
+      decode_entries: [decode(512, 128, 45)],
+    },
+  } },
+};
+
+const fileB = {
+  id: "b", hostname: "beta",
+  data: { llamabench: {
+    m1: {
+      prefill_entries: [prefill(512, 1200), prefill(8192, 2200)],
+      decode_entries: [decode(512, 128, 95), decode(8192, 128, 60)],
+    },
+    failed: { error: "idle timeout" },
+  } },
+};
 
 describe("llamaBenchPromptLabel", () => {
-  it("formats a binary-K prompt size as \"<K>K\"", () => {
+  it("formats binary-K prompt depths", () => {
+    expect(llamaBenchPromptLabel(512)).toBe("0.5K");
     expect(llamaBenchPromptLabel(2048)).toBe("2K");
     expect(llamaBenchPromptLabel(98304)).toBe("96K");
   });
-  it("keeps a fractional K for sizes under 1024", () => {
-    expect(llamaBenchPromptLabel(512)).toBe("0.5K");
+});
+
+describe("schema compatibility", () => {
+  it("reads the explicit prefill/decode arrays", () => {
+    expect(llamaBenchPrefillEntries(fileA.data.llamabench.m1)).toHaveLength(2);
+    expect(llamaBenchDecodeEntries(fileA.data.llamabench.m1)).toHaveLength(4);
+  });
+
+  it("recovers separate metrics from legacy entries when their fields are unambiguous", () => {
+    const modelData = { entries: [prefill(512, 100), decode(512, 128, 50)] };
+    expect(llamaBenchPrefillEntries(modelData)).toEqual([prefill(512, 100)]);
+    expect(llamaBenchDecodeEntries(modelData)).toEqual([decode(512, 128, 50)]);
+  });
+
+  it("identifies combined-only matrix results without pretending they contain separate metrics", () => {
+    const modelData = { entries: [{ n_prompt: 512, n_gen: 128, n_depth: 0, avg_ts: 90 }] };
+    expect(llamaBenchHasCombinedOnly(modelData)).toBe(true);
+    expect(llamaBenchPrefillEntries(modelData)).toEqual([]);
+    expect(llamaBenchDecodeEntries(modelData)).toEqual([]);
   });
 });
 
-describe("llamaBenchTgValues", () => {
-  it("returns distinct generation sizes across files, sorted ascending", () => {
-    const files = [
-      { data: { llamabench: { m: { entries: [{ n_prompt: 2048, n_gen: 512 }, { n_prompt: 2048, n_gen: 128 }] } } } },
-      { data: { llamabench: { m: { entries: [{ n_prompt: 8192, n_gen: 128 }] } } } },
-    ];
-    expect(llamaBenchTgValues(files, "m")).toEqual([128, 512]);
-  });
-});
-
-describe("llamaBenchTgValuesByModel", () => {
-  it("returns distinct generation sizes across every model in the group, sorted ascending", () => {
-    const file = { data: { llamabench: {
-      m1: { entries: [{ n_prompt: 2048, n_gen: 512 }] },
-      m2: { entries: [{ n_prompt: 2048, n_gen: 128 }] },
-    } } };
-    expect(llamaBenchTgValuesByModel(file, ["m1", "m2"])).toEqual([128, 512]);
-  });
-});
-
-describe("buildLlamaBenchBarData", () => {
-  it("keys each row by hostname and each pp size's avg_ts, filtered to the given tg", () => {
-    const files = [{
-      hostname: "TestHost",
-      data: { llamabench: { m: { entries: [
-        { n_prompt: 2048, n_gen: 128, avg_ts: 100.5 },
-        { n_prompt: 8192, n_gen: 128, avg_ts: 50.25 },
-        { n_prompt: 2048, n_gen: 512, avg_ts: 90 },
-      ] } } },
-    }];
-    const rows = buildLlamaBenchBarData(files, "m", 128);
-    expect(rows).toEqual([{ systemLabel: "TestHost", "2K": 100.5, "8K": 50.25 }]);
-  });
-  it("produces an empty row (just the system label) for a model with an error instead of entries", () => {
-    const files = [{ hostname: "TestHost", data: { llamabench: { m: { error: "timed out after 1800s" } } } }];
-    expect(buildLlamaBenchBarData(files, "m", 128)).toEqual([{ systemLabel: "TestHost" }]);
-  });
-});
-
-describe("buildLlamaBenchBarConfigs", () => {
-  it("orders pp sizes numerically, not insertion order, filtered to the given tg", () => {
-    const files = [{ data: { llamabench: { m: { entries: [
-      { n_prompt: 8192, n_gen: 128 },
-      { n_prompt: 2048, n_gen: 512 },
-      { n_prompt: 2048, n_gen: 128 },
-    ] } } } }];
-    const configs = buildLlamaBenchBarConfigs(files, "m", 128);
-    expect(configs.map(c => c.dataKey)).toEqual(["2K", "8K"]);
-  });
-  it("aggregates pp sizes across files, so one file stopping early still gets the other's columns", () => {
-    const files = [
-      { data: { llamabench: { m: { entries: [{ n_prompt: 2048, n_gen: 128 }] } } } },
-      { data: { llamabench: { m: { entries: [{ n_prompt: 2048, n_gen: 128 }, { n_prompt: 8192, n_gen: 128 }] } } } },
-    ];
-    const configs = buildLlamaBenchBarConfigs(files, "m", 128);
-    expect(configs.map(c => c.dataKey)).toEqual(["2K", "8K"]);
-  });
-});
-
-describe("buildLlamaBenchLineData", () => {
-  it("transposes the bar shape: one row per pp size, one column per file, filtered to the given tg", () => {
-    const files = [
-      { data: { llamabench: { m: { entries: [
-        { n_prompt: 2048, n_gen: 128, avg_ts: 100 },
-        { n_prompt: 8192, n_gen: 128, avg_ts: 50 },
-        { n_prompt: 2048, n_gen: 512, avg_ts: 80 },
-      ] } } } },
-      { data: { llamabench: { m: { entries: [
-        { n_prompt: 2048, n_gen: 128, avg_ts: 120 },
-      ] } } } },
-    ];
-    const rows = buildLlamaBenchLineData(files, "m", 128);
-    expect(rows).toEqual([
-      { promptLabel: "2K", f0: 100, f1: 120 },
-      { promptLabel: "8K", f0: 50 },
+describe("by-model line data", () => {
+  it("builds one prefill row per pp size and one series per system", () => {
+    expect(buildLlamaBenchPrefillLineData([fileA, fileB], "m1")).toEqual([
+      { promptLabel: "0.5K", f0: 1000, f1: 1200 },
+      { promptLabel: "2K", f0: 1800 },
+      { promptLabel: "8K", f1: 2200 },
     ]);
   });
-  it("returns no rows for a model with no entries anywhere", () => {
-    const files = [{ data: { llamabench: { m: { error: "timed out" } } } }];
-    expect(buildLlamaBenchLineData(files, "m", 128)).toEqual([]);
-  });
-});
 
-describe("buildLlamaBenchBarDataByModel", () => {
-  it("keys each row by model label and each pp size's avg_ts, for one file/tg", () => {
-    const file = { data: { llamabench: {
-      m1: { entries: [{ n_prompt: 2048, n_gen: 128, avg_ts: 100 }] },
-      m2: { entries: [{ n_prompt: 2048, n_gen: 128, avg_ts: 80 }, { n_prompt: 8192, n_gen: 128, avg_ts: 40 }] },
-    } } };
-    const rows = buildLlamaBenchBarDataByModel(file, ["m1", "m2"], 128);
-    expect(rows).toEqual([
-      { modelLabel: "m1", "2K": 100 },
-      { modelLabel: "m2", "2K": 80, "8K": 40 },
+  it("builds decode rows by pp depth with a series per system and tg size", () => {
+    expect(buildLlamaBenchDecodeLineData([fileA, fileB], "m1")).toEqual([
+      { promptLabel: "0.5K", f0_tg128: 80, f0_tg512: 75, f1_tg128: 95 },
+      { promptLabel: "2K", f0_tg128: 70, f0_tg512: 64 },
+      { promptLabel: "8K", f1_tg128: 60 },
     ]);
   });
-});
 
-describe("buildLlamaBenchBarConfigsByModel", () => {
-  it("orders pp sizes numerically across every model in the group, filtered to the given tg", () => {
-    const file = { data: { llamabench: {
-      m1: { entries: [{ n_prompt: 8192, n_gen: 128 }] },
-      m2: { entries: [{ n_prompt: 2048, n_gen: 128 }] },
-    } } };
-    const configs = buildLlamaBenchBarConfigsByModel(file, ["m1", "m2"], 128);
-    expect(configs.map(c => c.dataKey)).toEqual(["2K", "8K"]);
-  });
-});
-
-describe("buildLlamaBenchLineDataByCheckpoint", () => {
-  it("transposes the by-model bar shape: one row per pp size, one column per model, filtered to the given tg", () => {
-    const file = { data: { llamabench: {
-      m1: { entries: [{ n_prompt: 2048, n_gen: 128, avg_ts: 100 }, { n_prompt: 8192, n_gen: 128, avg_ts: 50 }] },
-      m2: { entries: [{ n_prompt: 2048, n_gen: 128, avg_ts: 120 }] },
-    } } };
-    const rows = buildLlamaBenchLineDataByCheckpoint(file, ["m1", "m2"], 128);
-    expect(rows).toEqual([
-      { promptLabel: "2K", m1: 100, m2: 120 },
-      { promptLabel: "8K", m1: 50 },
+  it("uses file color for system identity and dash patterns for tg identity", () => {
+    const data = buildLlamaBenchDecodeLineData([fileA, fileB], "m1");
+    const configs = buildLlamaBenchDecodeLineConfigs([fileA, fileB], "m1", data);
+    expect(configs.map(config => config.name)).toEqual([
+      "alpha — tg128", "alpha — tg512", "beta — tg128",
     ]);
+    expect(configs[0].stroke).toBe(configs[1].stroke);
+    expect(configs[0].strokeDasharray).not.toBe(configs[1].strokeDasharray);
+    expect(configs[0].stroke).not.toBe(configs[2].stroke);
+  });
+
+  it("filters prefill file configs that have no values", () => {
+    const data = buildLlamaBenchPrefillLineData([fileA, fileB], "m2");
+    expect(buildLlamaBenchPrefillLineConfigs([fileA, fileB], data).map(config => config.name))
+      .toEqual(["alpha"]);
   });
 });
 
-describe("buildLlamaBenchLineConfigsByCheckpoint", () => {
-  it("omits a model with no data in the given rows", () => {
-    const data = [{ promptLabel: "2K", m1: 100 }];
-    const configs = buildLlamaBenchLineConfigsByCheckpoint(["m1", "m2"], data);
-    expect(configs.map(c => c.dataKey)).toEqual(["m1"]);
+describe("by-system line data", () => {
+  it("builds prefill and decode series across models", () => {
+    expect(buildLlamaBenchPrefillLineDataByModel(fileA, ["m1", "m2"])).toEqual([
+      { promptLabel: "0.5K", m1: 1000, m2: 700 },
+      { promptLabel: "2K", m1: 1800 },
+    ]);
+    expect(buildLlamaBenchDecodeLineDataByModel(fileA, ["m1", "m2"])[0]).toEqual({
+      promptLabel: "0.5K", m1_tg128: 80, m1_tg512: 75, m2_tg128: 45,
+    });
+  });
+
+  it("builds only configs backed by data", () => {
+    const prefillData = buildLlamaBenchPrefillLineDataByModel(fileA, ["m1", "missing"]);
+    expect(buildLlamaBenchPrefillLineConfigsByModel(["m1", "missing"], prefillData)
+      .map(config => config.dataKey)).toEqual(["m1"]);
+
+    const decodeData = buildLlamaBenchDecodeLineDataByModel(fileA, ["m1", "missing"]);
+    expect(buildLlamaBenchDecodeLineConfigsByModel(fileA, ["m1", "missing"], decodeData)
+      .map(config => config.dataKey)).toEqual(["m1_tg128", "m1_tg512"]);
   });
 });
 
 describe("flattenLlamaBenchData", () => {
-  it("produces one row per checkpoint entry", () => {
-    const files = [{
-      id: "f1",
-      data: { llamabench: { m: { entries: [
-        { n_prompt: 2048, n_gen: 128, avg_ts: 100, stddev_ts: 2, n_gpu_layers: 999 },
-      ] } } },
-    }];
-    expect(flattenLlamaBenchData(files)).toEqual([
-      { _fileId: "f1", model: "m", ckpt: "pp2048+tg128", avg_ts: 100, stddev_ts: 2, n_gpu_layers: 999 },
-    ]);
+  it("emits explicit prefill and decode rows", () => {
+    const rows = flattenLlamaBenchData([fileA]).filter(row => row.model === "m1");
+    expect(rows).toHaveLength(6);
+    expect(rows[0]).toEqual({
+      _fileId: "a", model: "m1", metric: "Prefill", pp: 512, tg: null,
+      avg_ts: 1000, stddev_ts: 2, n_gpu_layers: 999,
+    });
+    expect(rows[2]).toEqual({
+      _fileId: "a", model: "m1", metric: "Decode", pp: 512, tg: 128,
+      avg_ts: 80, stddev_ts: 1, n_gpu_layers: 999,
+    });
   });
-  it("produces a single skipped row for a model that errored instead of one row per checkpoint", () => {
-    const files = [{ id: "f1", data: { llamabench: { m: { error: "llama-bench not found" } } } }];
-    expect(flattenLlamaBenchData(files)).toEqual([
-      { _fileId: "f1", model: "m", ckpt: "—", skipped: true, skip_detail: "llama-bench not found" },
+
+  it("preserves error and combined-only legacy rows", () => {
+    const legacy = {
+      id: "legacy", data: { llamabench: {
+        old: { entries: [{ n_prompt: 512, n_gen: 128, avg_ts: 90 }] },
+        failed: { error: "boom" },
+      } },
+    };
+    expect(flattenLlamaBenchData([legacy])).toEqual([
+      {
+        _fileId: "legacy", model: "old", metric: "Combined", pp: 512, tg: 128,
+        avg_ts: 90, stddev_ts: undefined, n_gpu_layers: undefined,
+      },
+      {
+        _fileId: "legacy", model: "failed", metric: "—", skipped: true,
+        skip_detail: "boom",
+      },
     ]);
   });
 });

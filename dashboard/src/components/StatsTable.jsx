@@ -206,7 +206,9 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
         <tr>
           {isMulti && <th className={styles.th}>Machine</th>}
           <SortTh label="Model" sortKey="model" sortConfig={sortConfig} onCycleSort={onCycleSort} />
-          <SortTh label="Checkpoint" sortKey="ckpt" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Metric" sortKey="metric" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="PP Depth" sortKey="pp" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="TG" sortKey="tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Tokens/sec" sortKey="avg_ts" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
           <th className={styles.th}>GPU Layers</th>
@@ -217,7 +219,7 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={4}>
+            <td className={styles.td} colSpan={6}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -225,7 +227,9 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
           <tr key={i}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={`${styles.td} ${styles.tdCtx}`}>{r.ckpt}</td>
+            <td className={`${styles.td} ${styles.tdCtx}`}>{r.metric}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.pp ?? "—"}</td>
+            <td className={`${styles.td} ${styles.tdRuns}`}>{r.tg ?? "—"}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.avg_ts, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.stddev_ts, "tps")}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_gpu_layers ?? "—"}</td>

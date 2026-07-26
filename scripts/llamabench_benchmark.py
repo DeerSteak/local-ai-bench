@@ -37,14 +37,11 @@ class LlamaBenchBenchmark:
         return None
 
     @staticmethod
-    def build_command(binary: str, model_path: Path, pp: list[int], tg: list[int],
-                      batch_size: int, ubatch_size: int, reps: int, ngl: int) -> list[str]:
-        """Builds the llama-bench argv — see docs/workloads.md#llama-bench for what each flag means."""
+    def _base_command(binary: str, model_path: Path, batch_size: int, ubatch_size: int,
+                      reps: int, ngl: int) -> list[str]:
         return [
             binary,
             "-m", str(model_path),
-            "-p", ",".join(str(v) for v in pp),
-            "-n", ",".join(str(v) for v in tg),
             "-b", str(batch_size),
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
@@ -54,14 +51,31 @@ class LlamaBenchBenchmark:
         ]
 
     @classmethod
-    def run_one(cls, binary: str, model_path: Path, pp: list[int], tg: list[int],
-               batch_size: int, ubatch_size: int, reps: int, ngl: int, timeout: int,
-               on_progress=None) -> list[dict]:
-        """Runs one llama-bench pass, streaming stderr progress lines to on_progress as they arrive
-        rather than buffering until exit, and returns the parsed stdout JSON entries.
-        `timeout` is an idle timeout — killed only if no stdout/stderr line arrives for that long,
-        not a ceiling on the whole sweep's wall-clock time (deep/wide sweeps can legitimately run for hours)."""
-        cmd = cls.build_command(binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl)
+    def build_prefill_command(cls, binary: str, model_path: Path, pp: list[int],
+                              batch_size: int, ubatch_size: int, reps: int, ngl: int) -> list[str]:
+        """Builds standalone prompt-processing tests so avg_ts is true prefill throughput."""
+        return [
+            *cls._base_command(binary, model_path, batch_size, ubatch_size, reps, ngl),
+            "-p", ",".join(str(v) for v in pp),
+            "-n", "0",
+            "-d", "0",
+        ]
+
+    @classmethod
+    def build_decode_command(cls, binary: str, model_path: Path, pp: list[int], tg: list[int],
+                             batch_size: int, ubatch_size: int, reps: int, ngl: int) -> list[str]:
+        """Builds generation tests at each prefilled depth so avg_ts is true decode throughput."""
+        return [
+            *cls._base_command(binary, model_path, batch_size, ubatch_size, reps, ngl),
+            "-p", "0",
+            "-n", ",".join(str(v) for v in tg),
+            "-d", ",".join(str(v) for v in pp),
+        ]
+
+    @classmethod
+    def run_one(cls, cmd: list[str], timeout: int, on_progress=None) -> list[dict]:
+        """Streams progress and parses one llama-bench JSON pass; timeout measures idle output,
+        not total wall-clock duration."""
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         stdout_chunks: list[str] = []
@@ -121,7 +135,10 @@ class LlamaBenchBenchmark:
     def format_entry(entry: dict) -> str:
         n_prompt = entry.get("n_prompt", 0)
         n_gen = entry.get("n_gen", 0)
-        label = f"pp{n_prompt}" if n_gen == 0 else f"tg{n_gen}" if n_prompt == 0 else f"pp{n_prompt}+tg{n_gen}"
+        n_depth = entry.get("n_depth", 0)
+        label = (f"pp{n_prompt}" if n_gen == 0 else
+                 f"tg{n_gen} @ pp{n_depth}" if n_prompt == 0 else
+                 f"pp{n_prompt}+tg{n_gen}")
         avg_ts = entry.get("avg_ts", 0.0)
         stddev_ts = entry.get("stddev_ts", 0.0)
         return f"{label} @ ngl={entry.get('n_gpu_layers')}: {avg_ts:.1f} ± {stddev_ts:.1f} tok/s"
@@ -157,11 +174,24 @@ class LlamaBenchBenchmark:
                     results[short] = {"error": "model files not found"}
                     continue
 
+                prefill_command = self.build_prefill_command(
+                    binary, paths[0], config.LLAMABENCH_PP,
+                    config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE, reps, ngl,
+                )
+                decode_command = self.build_decode_command(
+                    binary, paths[0], config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                    config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE, reps, ngl,
+                )
+
                 try:
-                    entries = self.run_one(
-                        binary, paths[0], config.LLAMABENCH_PP, config.LLAMABENCH_TG,
-                        config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
-                        reps, ngl, config.LLAMABENCH_TIMEOUT,
+                    Shared.log("Prefill sweep")
+                    prefill_entries = self.run_one(
+                        prefill_command, config.LLAMABENCH_TIMEOUT,
+                        on_progress=Shared.log,
+                    )
+                    Shared.log("Decode sweep")
+                    decode_entries = self.run_one(
+                        decode_command, config.LLAMABENCH_TIMEOUT,
                         on_progress=Shared.log,
                     )
                 except subprocess.TimeoutExpired:
@@ -173,8 +203,11 @@ class LlamaBenchBenchmark:
                     results[short] = {"error": str(e)}
                     continue
 
-                results[short] = {"entries": entries}
-                for entry in entries:
+                results[short] = {
+                    "prefill_entries": prefill_entries,
+                    "decode_entries": decode_entries,
+                }
+                for entry in [*prefill_entries, *decode_entries]:
                     Shared.ok(self.format_entry(entry))
             finally:
                 if save_fn:

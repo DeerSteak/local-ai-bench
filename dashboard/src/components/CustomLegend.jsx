@@ -2,6 +2,7 @@ import styles from "./CustomLegend.module.css";
 
 export default function CustomLegend({ payload, isMultiFile, sortOrder }) {
   if (!payload?.length) return null;
+  const useLineSwatches = isMultiFile || payload.some(p => p.payload?.strokeDasharray);
 
   const sorted = sortOrder
     ? [...payload].sort((a, b) => {
@@ -11,7 +12,7 @@ export default function CustomLegend({ payload, isMultiFile, sortOrder }) {
       })
     : payload;
 
-  if (isMultiFile) {
+  if (useLineSwatches) {
     return (
       <div className={styles.wrapper}>
         <div className={styles.items}>

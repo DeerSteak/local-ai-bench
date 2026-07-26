@@ -41,7 +41,9 @@ export function ChartCard({ title, modelName, data, lineConfigs, xKey, xLabel, y
             label={{ value: yLabel, angle: -90, position: "insideLeft", offset: 20, fill: "#8c959f", fontSize: 15, dy: 70 }}
           />
           <Tooltip content={<CustomTooltip unit={unit} xPrefix={xLabel} />} />
-          <Legend content={(props) => <CustomLegend {...props} isMultiFile={isMultiFile} />} />
+          <Legend content={(props) => (
+            <CustomLegend {...props} isMultiFile={isMultiFile} sortOrder={lineConfigs.map(config => config.name)} />
+          )} />
           {lineConfigs.map(lc => (
             <Line
               key={lc.dataKey}

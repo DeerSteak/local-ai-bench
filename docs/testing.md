@@ -304,12 +304,12 @@ The test suite consists of **41 test modules** validating different components o
   - `is_connection_crash`, `reachable_or_abort`, `unload`/`unload_all`/`wait_until_unloaded`.
 
 - **[test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py)**
-  Tests `LlamaBenchBenchmark` (`scripts/llamabench_benchmark.py`), the opt-in `llamabench` test — see [Workloads](../docs/workloads.md#llama-bench). Unlike most workload `run()` methods, this one has no real subprocess/Popen seam of its own (`run_one`'s `subprocess.run` call is mocked), so `run()`'s per-model dispatch is tested directly rather than pragma'd out:
+  Tests `LlamaBenchBenchmark` (`scripts/llamabench_benchmark.py`), the opt-in `llamabench` test — see [Workloads](../docs/workloads.md#llama-bench). Unlike most workload `run()` methods, its `subprocess.Popen` seam is mocked, so `run()`'s per-model dispatch is tested directly rather than pragma'd out:
   - `find_binary` resolution order (vendored `LLAMACPP_DIR`, `PATH`, macOS Homebrew prefixes), mirroring `LlamaCppEngine._binary_path`'s own tests.
-  - `build_command` assembles the exact `llama-bench` argv, including the explicit `-ngl` (full offload vs. `--cpu-only`).
+  - The prefill and decode command builders assemble exact `llama-bench` argv: standalone `-p` tests for true prefill throughput, and the `-d` depth × `-n` generation cross product for true decode throughput, including explicit `-ngl` (full offload vs. `--cpu-only`) and suppression of unwanted default tests.
   - `run_one` parses `-o json` output on success, raises with the tail of stderr on a non-zero exit, raises on malformed JSON, and lets a `subprocess.TimeoutExpired` propagate to the caller.
   - `format_entry` labels a pure prompt-processing entry, a pure generation entry, and a combined pp+tg entry.
-  - `run()` skips a non-`LlamaCppEngine` engine and a missing binary, skips an unpulled model, records an `error` entry for missing files/a timeout/a generic exception without stopping the rest of the models, records `entries` on success, calls `save_fn` after each model, and passes the right `-ngl` for `cpu_only` true/false.
+  - `run()` skips a non-`LlamaCppEngine` engine and a missing binary, skips an unpulled model, records an `error` entry for missing files/a timeout/a generic exception without stopping the rest of the models, records separate `prefill_entries`/`decode_entries` on success, calls `save_fn` after each model, and passes the right `-ngl` for `cpu_only` true/false.
 
 - **[test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py)**
   Tests `LlamaBenchConcurrencyBenchmark` (`scripts/llamabench_concurrency_benchmark.py`), the opt-in `llamabenchconc` test — see [Workloads](../docs/workloads.md#llama-bench-concurrency). Same shape as the `llamabench` tests above, plus the context-fitting logic that test doesn't have:
@@ -374,6 +374,7 @@ npx vitest -t "getBarStatusLabel"   # filter by test name
   - `fmt` — unit-specific formatting (ms/sec/tps/sps thresholds, K-notation cutoffs, null handling).
   - `sanitizeForFilename` — collapsing special characters for PNG export filenames.
   - `flattenLLMData` — the single-row whole-model-skip case vs. one row per real checkpoint.
+  - llama-bench transforms — separate prefill and depth-aware decode line data, file/model/tg series configuration, numeric pp ordering, explicit-array and legacy-entry compatibility, and combined-only rows that must never be presented as separate metrics.
 
 - **[constants.test.js](../dashboard/src/constants.test.js)**
   Checks the complete 12-model LLM catalog order, then cross-checks the model registries in `constants.js` — every model in `LLM_MODEL_ORDER`/`IMAGE_MODEL_ORDER`/`EMBED_MODEL_ORDER` has a corresponding label and color (and, for LLM models, a valid size tier), none of the order lists contain duplicates, and removed catalog models retain legacy labels, colors, tiers, and deterministic display order for historical results. It also calculates relative luminance for every foreground and data-series palette entry and requires WCAG AA contrast of at least 4.5:1 against white.

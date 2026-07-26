@@ -74,25 +74,62 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-#  build_command
+#  command construction
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_build_command_shape():
-    cmd = LlamaBenchBenchmark.build_command(
-        "llama-bench", Path("/models/x.gguf"), [512, 2048], [128], 2048, 512, 3, 999,
+def test_build_prefill_command_shape():
+    cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512, 2048], 2048, 512, 3, 999,
     )
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
-        "-p", "512,2048", "-n", "128",
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "-r", "3", "-o", "json",
         "--progress",
+        "-p", "512,2048", "-n", "0", "-d", "0",
     ]
 
 
-def test_build_command_cpu_only_ngl():
-    cmd = LlamaBenchBenchmark.build_command(
+def test_build_decode_command_shape():
+    cmd = LlamaBenchBenchmark.build_decode_command(
+        "llama-bench", Path("/models/x.gguf"), [512, 2048], [128, 512], 2048, 512, 3, 999,
+    )
+    assert cmd == [
+        "llama-bench", "-m", "/models/x.gguf",
+        "-b", "2048", "-ub", "512",
+        "-ngl", "999", "-r", "3", "-o", "json",
+        "--progress",
+        "-p", "0", "-n", "128,512", "-d", "512,2048",
+    ]
+
+
+def test_commands_suppress_llama_bench_unwanted_defaults():
+    prefill = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [2048], 2048, 512, 3, 999,
+    )
+    decode = LlamaBenchBenchmark.build_decode_command(
+        "llama-bench", Path("/models/x.gguf"), [2048], [512], 2048, 512, 3, 999,
+    )
+    assert prefill[prefill.index("-n") + 1] == "0"
+    assert prefill[prefill.index("-d") + 1] == "0"
+    assert decode[decode.index("-p") + 1] == "0"
+    assert decode[decode.index("-d") + 1] == "2048"
+    assert "-pg" not in prefill
+    assert "-pg" not in decode
+
+
+def test_build_decode_command_uses_depth_and_tg_cross_product():
+    cmd = LlamaBenchBenchmark.build_decode_command(
+        "llama-bench", Path("/models/x.gguf"), [512, 2048], [128, 512], 2048, 512, 3, 999,
+    )
+    assert cmd[cmd.index("-p") + 1] == "0"
+    assert cmd[cmd.index("-n") + 1] == "128,512"
+    assert cmd[cmd.index("-d") + 1] == "512,2048"
+
+
+def test_build_decode_command_cpu_only_ngl():
+    cmd = LlamaBenchBenchmark.build_decode_command(
         "llama-bench", Path("/models/x.gguf"), [512], [128], 2048, 512, 3, 0,
     )
     assert cmd[cmd.index("-ngl") + 1] == "0"
@@ -134,7 +171,7 @@ def test_run_one_parses_json_on_success(monkeypatch):
         "llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=[stdout_line]),
     )
-    entries = LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+    entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
     assert entries == fake_entries
 
 
@@ -148,9 +185,7 @@ def test_run_one_streams_stderr_progress_lines(monkeypatch):
         ),
     )
     seen = []
-    LlamaBenchBenchmark.run_one(
-        "llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60, on_progress=seen.append,
-    )
+    LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_progress=seen.append)
     assert seen == ["1/6: pp512", "2/6: pp512"]
 
 
@@ -160,7 +195,7 @@ def test_run_one_raises_on_nonzero_exit(monkeypatch):
         lambda cmd, stdout, stderr, text: _FakePopen(1, stderr_lines=["error: out of memory\n"]),
     )
     with pytest.raises(RuntimeError, match="out of memory"):
-        LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+        LlamaBenchBenchmark.run_one(["llama-bench"], 60)
 
 
 def test_run_one_raises_on_malformed_json(monkeypatch):
@@ -169,7 +204,7 @@ def test_run_one_raises_on_malformed_json(monkeypatch):
         lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=["not json"]),
     )
     with pytest.raises(RuntimeError, match="unparseable JSON"):
-        LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+        LlamaBenchBenchmark.run_one(["llama-bench"], 60)
 
 
 def test_run_one_propagates_timeout(monkeypatch):
@@ -177,7 +212,7 @@ def test_run_one_propagates_timeout(monkeypatch):
     monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
     monkeypatch.setattr(LlamaBenchBenchmark, "IDLE_POLL_INTERVAL", 0.001)
     with pytest.raises(subprocess.TimeoutExpired):
-        LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 0.01)
+        LlamaBenchBenchmark.run_one(["llama-bench"], 0.01)
     assert fake_proc.killed
 
 
@@ -187,7 +222,7 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.1, "n_gpu_layers": 999}]
     fake_proc = _FakePopen(0, stdout_lines=[json.dumps(fake_entries) + "\n"])
     monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
-    entries = LlamaBenchBenchmark.run_one("llama-bench", Path("/x.gguf"), [512], [0], 2048, 512, 3, 999, 60)
+    entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
     assert entries == fake_entries
     assert not fake_proc.killed
 
@@ -206,9 +241,10 @@ def test_format_entry_prompt_processing_only():
 
 def test_format_entry_generation_only():
     line = LlamaBenchBenchmark.format_entry(
-        {"n_prompt": 0, "n_gen": 128, "avg_ts": 50.0, "stddev_ts": 1.0, "n_gpu_layers": 0},
+        {"n_prompt": 0, "n_gen": 128, "n_depth": 2048,
+         "avg_ts": 50.0, "stddev_ts": 1.0, "n_gpu_layers": 0},
     )
-    assert line.startswith("tg128 @ ngl=0:")
+    assert line.startswith("tg128 @ pp2048 @ ngl=0:")
 
 
 def test_format_entry_combined():
@@ -267,29 +303,31 @@ def test_run_records_error_when_files_missing(fake_engine, monkeypatch):
 
 
 def test_run_records_entries_on_success(fake_engine, monkeypatch):
-    fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 100.0, "stddev_ts": 1.0, "n_gpu_layers": 999}]
-    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(lambda cls, *a, **kw: fake_entries))
+    prefill = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 100.0}]
+    decode = [{"n_prompt": 0, "n_gen": 128, "n_depth": 512, "avg_ts": 50.0}]
+    calls = iter([prefill, decode])
+    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(lambda cls, *a, **kw: next(calls)))
     result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)
-    assert result["m1"] == {"entries": fake_entries}
+    assert result["m1"] == {"prefill_entries": prefill, "decode_entries": decode}
 
 
 def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch):
-    captured = {}
+    captured = []
 
     def fake_run_one(cls, *a, on_progress=None, **kw):
-        captured["on_progress"] = on_progress
+        captured.append(on_progress)
         return []
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)
-    assert captured["on_progress"] is Shared.log
+    assert captured == [Shared.log, Shared.log]
 
 
 def test_run_calls_save_fn_after_each_model(fake_engine, monkeypatch):
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(lambda cls, *a, **kw: []))
     saved = []
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, save_fn=lambda partial: saved.append(dict(partial)))
-    assert saved == [{"m1": {"entries": []}}]
+    assert saved == [{"m1": {"prefill_entries": [], "decode_entries": []}}]
 
 
 def test_run_records_timeout_error(fake_engine, monkeypatch):
@@ -313,36 +351,38 @@ def test_run_records_generic_exception(fake_engine, monkeypatch):
 def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
     models = [{"tag": "bad", "label": "Bad", "short": "bad"}, {"tag": "good", "label": "Good", "short": "good"}]
 
-    def fake_run_one(cls, binary, model_path, *a, **kw):
-        if "bad" in str(model_path):
+    def fake_run_one(cls, command, *a, **kw):
+        if any("bad" in arg for arg in command):
             raise RuntimeError("boom")
         return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.0, "n_gpu_layers": 999}]
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     result = LlamaBenchBenchmark().run(fake_engine, models, reps=3)
     assert result["bad"] == {"error": "boom"}
-    assert "entries" in result["good"]
+    assert "prefill_entries" in result["good"]
+    assert "decode_entries" in result["good"]
 
 
 def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
     captured = {}
 
-    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout, on_progress=None):
-        captured["ngl"] = ngl
+    def fake_run_one(cls, command, timeout, on_progress=None):
+        captured.setdefault("commands", []).append(command)
         return []
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, cpu_only=False)
-    assert captured["ngl"] == config.LLAMABENCH_FULL_OFFLOAD_NGL
+    assert all(command[command.index("-ngl") + 1] == str(config.LLAMABENCH_FULL_OFFLOAD_NGL)
+               for command in captured["commands"])
 
 
 def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch):
     captured = {}
 
-    def fake_run_one(cls, binary, model_path, pp, tg, batch_size, ubatch_size, reps, ngl, timeout, on_progress=None):
-        captured["ngl"] = ngl
+    def fake_run_one(cls, command, timeout, on_progress=None):
+        captured.setdefault("commands", []).append(command)
         return []
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, cpu_only=True)
-    assert captured["ngl"] == 0
+    assert all(command[command.index("-ngl") + 1] == "0" for command in captured["commands"])
