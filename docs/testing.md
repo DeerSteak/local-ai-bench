@@ -69,7 +69,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | Conversation eligibility, output paths, and exact-plan fork provenance/overwrite guards | [test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py), [test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py), [test_benchmark_run_state.py](../tests/test_benchmark_run_state.py) |
 | Interactive launchers, portable presets, recovery presentation/commands, and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_benchmark_presets.py](../tests/test_benchmark_presets.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
 | GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
-| Cross-process pause state, validation, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
+| Cross-process pause state, validation, launch cleanup, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
 | Inventory and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
 | Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
 

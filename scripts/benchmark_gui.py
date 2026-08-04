@@ -80,6 +80,23 @@ def open_path_command(path: Path, system: str) -> list[str]:
     return ["xdg-open", str(path)]
 
 
+def launch_controlled_process(command: list[str], *, creationflags: int = 0,
+                              pause_path_factory=create_pause_control,
+                              popen=subprocess.Popen) -> tuple[subprocess.Popen, Path]:
+    control_path = pause_path_factory()
+    child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1",
+                 PAUSE_CONTROL_ENV: str(control_path)}
+    try:
+        process = popen(
+            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, creationflags=creationflags, env=child_env,
+        )
+    except BaseException:
+        control_path.unlink(missing_ok=True)
+        raise
+    return process, control_path
+
+
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
                            backend: str, tools: dict[str, str | None],
                            comfyui_dir: Path | None,
@@ -1370,11 +1387,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         command = recovery_executor_command(result_path)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = begin_process_control()
-        process = subprocess.Popen(
-            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags, env=child_env,
-        )
+        try:
+            process, control_path = launch_controlled_process(
+                command, creationflags=creationflags,
+            )
+        except OSError as exc:
+            messagebox.showerror("Recovery could not start", str(exc), parent=root)
+            return
+        begin_process_control(control_path)
         active_process_kind = "recovery"
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
@@ -1425,11 +1445,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         command = fork_executor_command(source_path, output_path)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = begin_process_control()
-        process = subprocess.Popen(
-            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags, env=child_env,
-        )
+        try:
+            process, control_path = launch_controlled_process(
+                command, creationflags=creationflags,
+            )
+        except OSError as exc:
+            messagebox.showerror("Fork could not start", str(exc), parent=root)
+            return
+        begin_process_control(control_path)
         active_process_kind = "fork"
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
@@ -1511,11 +1534,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             result_path, [candidate["case_id"] for candidate in selected],
         )
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = begin_process_control()
-        process = subprocess.Popen(
-            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags, env=child_env,
-        )
+        try:
+            process, control_path = launch_controlled_process(
+                command, creationflags=creationflags,
+            )
+        except OSError as exc:
+            messagebox.showerror("Selected retry could not start", str(exc), parent=root)
+            return
+        begin_process_control(control_path)
         active_process_kind = "retry"
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
@@ -1615,13 +1641,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     process_control_path = None
     process_paused = False
 
-    def begin_process_control():
+    def begin_process_control(control_path):
         nonlocal process_control_path, process_paused
-        process_control_path = create_pause_control()
+        process_control_path = control_path
         process_paused = False
         pause_button.configure(text="Pause", state="normal")
-        return {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1",
-                PAUSE_CONTROL_ENV: str(process_control_path)}
 
     def finish_process_control():
         nonlocal process_control_path, process_paused
@@ -1870,11 +1894,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if pending_fork_source is not None:
             command.extend(["--fork-plan", str(pending_fork_source)])
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = begin_process_control()
-        process = subprocess.Popen(
-            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags, env=child_env,
-        )
+        try:
+            process, control_path = launch_controlled_process(
+                command, creationflags=creationflags,
+            )
+        except OSError as exc:
+            pending_fork_source = None
+            messagebox.showerror("Benchmark could not start", str(exc), parent=root)
+            return
+        begin_process_control(control_path)
         pending_fork_source = None
         active_process_kind = "benchmark"
         log_text.configure(state="normal")

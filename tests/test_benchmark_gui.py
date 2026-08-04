@@ -16,7 +16,7 @@ from benchmark_gui import (
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
-    open_path_command, parse_progress_line,
+    launch_controlled_process, open_path_command, parse_progress_line,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
@@ -75,6 +75,40 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Darwin") == ["open", "/tmp/results"]
     assert open_path_command(path, "Linux") == ["xdg-open", "/tmp/results"]
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
+
+
+def test_launch_controlled_process_supplies_progress_environment(tmp_path):
+    control_path = tmp_path / "pause.json"
+    control_path.write_text("{}", encoding="utf-8")
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return object()
+
+    process, path = launch_controlled_process(
+        ["python", "benchmark.py"], creationflags=7,
+        pause_path_factory=lambda: control_path, popen=fake_popen,
+    )
+
+    assert process is not None and path == control_path
+    assert calls[0][1]["env"]["LOCAL_AI_BENCH_PROGRESS"] == "1"
+    assert calls[0][1]["env"]["LOCAL_AI_BENCH_PAUSE_CONTROL"] == str(control_path)
+    assert calls[0][1]["creationflags"] == 7
+
+
+def test_launch_controlled_process_removes_control_file_when_launch_fails(tmp_path):
+    control_path = tmp_path / "pause.json"
+    control_path.write_text("{}", encoding="utf-8")
+
+    def fail_popen(*_args, **_kwargs):
+        raise OSError("executable missing")
+
+    with pytest.raises(OSError, match="executable missing"):
+        launch_controlled_process(
+            ["missing"], pause_path_factory=lambda: control_path, popen=fail_popen,
+        )
+    assert not control_path.exists()
 
 
 def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
