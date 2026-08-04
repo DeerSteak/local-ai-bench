@@ -105,3 +105,54 @@ export function validitySummary(rows) {
     return summary;
   }, { total: 0, valid: 0, invalid: 0, legacy: 0 });
 }
+
+const timestampMs = value => {
+  const parsed = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+export function buildPauseSummaries(files) {
+  if (!Array.isArray(files)) return [];
+  return files.flatMap(file => {
+    const run = file?.data?.run;
+    const transitions = Array.isArray(run?.pause?.control_transitions)
+      ? run.pause.control_transitions : [];
+    let pausedAt = null;
+    let totalMs = 0;
+    let incomplete = false;
+    let count = 0;
+    for (const transition of transitions) {
+      const at = timestampMs(transition?.at);
+      if (transition?.state === "paused") {
+        count += 1;
+        if (at == null) incomplete = true;
+        else if (pausedAt == null) pausedAt = at;
+      } else if (transition?.state === "running" && pausedAt != null && at != null) {
+        if (at >= pausedAt) totalMs += at - pausedAt;
+        else incomplete = true;
+        pausedAt = null;
+      }
+    }
+    if (pausedAt != null) {
+      const finishedAt = timestampMs(run?.finished_at);
+      if (finishedAt != null && finishedAt >= pausedAt) totalMs += finishedAt - pausedAt;
+      else incomplete = true;
+    }
+    if (!count) return [];
+    return [{
+      fileId: file.id, system: file.hostname, count,
+      totalPausedSeconds: totalMs / 1000, incomplete,
+    }];
+  });
+}
+
+export function formatPausedDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "unknown duration";
+  const rounded = Math.round(seconds);
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const remaining = rounded % 60;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${remaining}s`;
+  return `${remaining}s`;
+}

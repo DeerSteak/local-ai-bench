@@ -100,7 +100,7 @@ The backend badge identifies the inference backend actually exposed by the selec
 
 Below the charts, every section also renders a sortable raw-numbers table (one row per model/context-length/category, depending on section) — click a column header to sort by it, click again to reverse direction. Useful for reading exact values or copying numbers out, where a chart is more about the overall shape.
 
-Performance sections with sample evidence also render a collapsible **Decision-grade sample review**. It lists every available sample, whether it contributed to the aggregate, and any exclusion reason such as `implausible_server_tps`; the filter isolates valid, excluded, or legacy evidence. Historical files that contain only means and run counts are labeled **legacy aggregate-only** rather than being presented as if their raw samples were recoverable. Native llama-bench internal repetitions appear when `ts_runs` or `samples_ts` is present.
+Performance sections with sample evidence also render a collapsible **Decision-grade sample review**. It lists every available sample, whether it contributed to the aggregate, and any exclusion reason such as `implausible_server_tps`; the filter isolates valid, excluded, or legacy evidence. Historical files that contain only means and run counts are labeled **legacy aggregate-only** rather than being presented as if their raw samples were recoverable. Native llama-bench internal repetitions appear when `ts_runs` or `samples_ts` is present. When schema-4 pause evidence exists, this review opens automatically and shows each affected system's pause count and total derived paused duration; an unfinished or malformed final interval is labeled unavailable rather than treated as zero time.
 
 ## Multi-file comparison
 

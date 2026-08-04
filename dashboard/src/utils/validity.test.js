@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildValidityRows, validitySummary } from "./validity";
+import {
+  buildPauseSummaries, buildValidityRows, formatPausedDuration, validitySummary,
+} from "./validity";
 
 const file = {
   id: "f1", hostname: "System A", data: { llm: { model: { "2K": {
@@ -38,5 +40,40 @@ describe("validity inspection", () => {
       .toEqual(["100 tok/s", "101 tok/s"]);
     expect(buildValidityRows([native], "accuracy")).toEqual([]);
     expect(buildValidityRows(null, "llm")).toEqual([]);
+  });
+
+  it("summarizes pause count and total duration from run transitions", () => {
+    const paused = { ...file, data: { ...file.data, run: {
+      pause: { control_transitions: [
+        { state: "running", at: "2026-08-04T10:00:00Z" },
+        { state: "paused", at: "2026-08-04T10:05:00Z" },
+        { state: "running", at: "2026-08-04T10:35:30Z" },
+        { state: "paused", at: "2026-08-04T11:00:00Z" },
+        { state: "running", at: "2026-08-04T12:30:00Z" },
+      ] },
+    } } };
+    expect(buildPauseSummaries([paused])).toEqual([{
+      fileId: "f1", system: "System A", count: 2,
+      totalPausedSeconds: 7230, incomplete: false,
+    }]);
+    expect(formatPausedDuration(7230)).toBe("2h 0m");
+  });
+
+  it("uses run completion for a final pause and flags an unknown open duration", () => {
+    const transitions = [{ state: "paused", at: "2026-08-04T10:00:00Z" }];
+    const finished = { ...file, data: { run: {
+      finished_at: "2026-08-04T10:10:00Z", pause: { control_transitions: transitions },
+    } } };
+    expect(buildPauseSummaries([finished])[0]).toMatchObject({
+      count: 1, totalPausedSeconds: 600, incomplete: false,
+    });
+    const open = { ...file, data: { run: { pause: { control_transitions: transitions } } } };
+    expect(buildPauseSummaries([open])[0]).toMatchObject({ incomplete: true });
+    expect(buildPauseSummaries([{ ...file, data: { run: { pause: {
+      control_transitions: [{ state: "paused", at: "invalid" }],
+    } } } }])).toEqual([expect.objectContaining({
+      count: 1, totalPausedSeconds: 0, incomplete: true,
+    })]);
+    expect(buildPauseSummaries(null)).toEqual([]);
   });
 });
