@@ -46,6 +46,28 @@ MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc"}
 MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS = [128, 512, 1024]
+FRONTEND_OPTION_INVENTORY = {
+    "--tests": ("exposed", "Test selection screen"),
+    "--engine": ("exposed", "Engine selection screen"),
+    "--llm-models": ("exposed", "LLM model selection screen"),
+    "--embedding-models": ("exposed", "Embedding model selection screen"),
+    "--image-models": ("exposed", "Image model selection screen"),
+    "--max-prompt-tokens": ("exposed", "Prompt-processing cap screen"),
+    "--tg-tokens": ("exposed", "Generation-size screen"),
+    "--maxtier": ("equivalent", "Tier shortcuts and explicit model selection are more precise"),
+    "--models": ("equivalent", "Backward-compatible alias for --llm-models"),
+    "--list-models": ("equivalent", "Installed models are shown in the selection screens"),
+    "--sample": ("excluded", "Developer-only non-comparable accuracy sampling"),
+    "--warmup": ("missing", "Add to advanced execution settings"),
+    "--runs": ("missing", "Add to advanced execution settings"),
+    "--timeout": ("missing", "Add to advanced execution settings"),
+    "--acc-timeout": ("missing", "Add when an accuracy workload is selected"),
+    "--acc-token-budget": ("missing", "Add when an accuracy workload is selected"),
+    "--cpu-only": ("missing", "Add to execution-mode settings"),
+    "--force-all": ("missing", "Add with a slow-run cost warning"),
+    "--out": ("missing", "Add to output settings"),
+    "--comfyui": ("missing", "Add before image inventory discovery"),
+}
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 2
 FRONTEND_MODEL_FAMILIES = {
@@ -57,6 +79,11 @@ FRONTEND_MODEL_FAMILIES = {
 
 class FrontendCancelled(Exception):
     pass
+
+
+def frontend_option_gaps() -> list[str]:
+    return sorted(flag for flag, (status, _) in FRONTEND_OPTION_INVENTORY.items()
+                  if status == "missing")
 
 
 @dataclass

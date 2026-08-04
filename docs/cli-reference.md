@@ -74,6 +74,12 @@ The interactive launcher clears the terminal before its initial display, between
 
 ## Flag details
 
+### Interactive frontend option coverage
+
+The launcher maintains an executable inventory of every public `benchmark.py` flag. Tests fail when a CLI option is added or removed without updating that inventory. Tests, engine, model families, maximum prompt size, and llama-bench generation sizes are directly configurable today. Tier selection and `--list-models` have more precise equivalents in the installed-model selection screens; `--models` is only an alias; and developer-only `--sample` is intentionally excluded from comparable interactive runs.
+
+The current commercial frontend work has identified nine user-relevant gaps: warmup count, measured runs, generation timeout, accuracy timeout, accuracy token budget, CPU-only mode, force-all mode, output path, and ComfyUI path. These remain functional CLI flags, but they are explicitly classified as missing rather than being mistaken for frontend-complete. The frontend configurability gate in `COMMERCIAL_PLAN.md` cannot pass until each is exposed with validation and contextual help.
+
 | Flag | Values | Default | Notes |
 |---|---|---|---|
 | `--tests` | any of `llm conv emb img mcq math reasoning code tool`, plus `acc`, `conc_tool`, `conc_chat`, `conc`, `llamabench`, and `llamabenchconc` | all nine (`llm conv emb img mcq math reasoning code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (`mcq`, `math`, `reasoning`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `conc_tool` (agentic/tool-calling fan-out, 1–16-way) and `conc_chat` (many simultaneous chat users, 1–32-way) — see [Concurrency](workloads.md#concurrency) — are opt-in, not part of the default set. `llamabench` is also opt-in and runs separate native prefill and depth-aware decode sweeps, scoped like `llm`/`conv` — see [llama-bench](workloads.md#llama-bench). `llamabenchconc` is opt-in too — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, scoped the same way — see [llama-bench Concurrency](workloads.md#llama-bench-concurrency) |

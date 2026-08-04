@@ -1,4 +1,5 @@
 import json
+import ast
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ import benchmark_frontend
 import config
 from benchmark_frontend import (
     FRONTEND_STATE_VERSION,
+    FRONTEND_OPTION_INVENTORY,
     FrontendCancelled,
     MenuEntry,
     apply_test_shortcut,
@@ -27,6 +29,7 @@ from benchmark_frontend import (
     parse_toggle_numbers,
     render_model_menu,
     render_summary,
+    frontend_option_gaps,
     run_frontend,
     save_frontend_state,
     toggle_group,
@@ -43,6 +46,32 @@ class InputSequence:
         if isinstance(value, BaseException):
             raise value
         return value
+
+
+def test_frontend_inventory_classifies_every_public_benchmark_option():
+    benchmark_path = Path(benchmark_frontend.__file__).with_name("benchmark.py")
+    tree = ast.parse(benchmark_path.read_text(encoding="utf-8"))
+    public_flags = {
+        argument.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_argument"
+        for argument in node.args
+        if isinstance(argument, ast.Constant)
+        and isinstance(argument.value, str)
+        and argument.value.startswith("--")
+    }
+    assert set(FRONTEND_OPTION_INVENTORY) == public_flags
+    assert all(status in {"exposed", "equivalent", "excluded", "missing"}
+               and explanation for status, explanation in FRONTEND_OPTION_INVENTORY.values())
+
+
+def test_frontend_inventory_exposes_the_remaining_configuration_work():
+    assert frontend_option_gaps() == [
+        "--acc-timeout", "--acc-token-budget", "--comfyui", "--cpu-only",
+        "--force-all", "--out", "--runs", "--timeout", "--warmup",
+    ]
 
 
 class FakeEngine:

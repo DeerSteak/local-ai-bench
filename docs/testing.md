@@ -71,6 +71,8 @@ The Python modules are grouped by responsibility below. The test files themselve
 
 These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
 
+The frontend suite parses `benchmark.py`'s public argparse declarations and requires every flag to appear in `FRONTEND_OPTION_INVENTORY` as exposed, represented by a more precise UI equivalent, intentionally developer-only, or an explicit gap. This prevents new CLI controls from disappearing silently while allowing the remaining commercial-frontend work to be tracked honestly.
+
 ### Workloads and graders
 
 | Area | Test modules |
