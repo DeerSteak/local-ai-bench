@@ -52,6 +52,8 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
 | [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
 | [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
+| [Product Requirements](docs/product-requirements.md) | Primary pre-launch hardware-validation workflow and quality gates |
+| [User Journey](docs/user-journey.md) | Complete discovery-to-report path, including cancellation, failure, resume, and review |
 | [Platform Tuning Profiles](docs/platform-tuning.md) | Neutral runtime settings, compatibility workarounds, and profile change rules |
 | [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
 | [Benchmark Projects](docs/projects.md) | Local decision workflows, portable configuration, baselines, and acceptance policies |

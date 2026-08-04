@@ -31,6 +31,8 @@
 | `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
+| `docs/product-requirements.md` | Primary pre-launch hardware-validation decision, scope, outcomes, and product qualities |
+| `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
