@@ -60,6 +60,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Decision: run-plan schema 2 declares `sha256-v1` and serializes a unique stable job ID. `plan_id` hashes semantic plan fields while excluding that execution identity, and checked stage/model/case/attempt/sample inputs yield job-scoped hierarchical SHA-256 IDs. No database row ID defines domain identity.
 - Compatibility: schema-1 plans retain their exact serialization and plan hash; schema-2 is additive within the existing result envelope.
 - Extension: run-plan schema 3 adds deterministic policy identities for workloads, runtime adapters, privacy handling, retries, timeouts, and output schemas; schema-1 and schema-2 reads remain unchanged.
+- Extension boundary: workload SDK v1 and engine adapter v1 are reviewed source contracts with finite JSON conformance vectors and fixed capabilities; they do not add dynamic plugin discovery or arbitrary executable loading.
 - Evidence: deterministic, adversarial, and schema-1 golden round-trip tests in `tests/test_run_plan.py`.
 
 ### AD-007 — Introduce the event journal inactive before workload migration

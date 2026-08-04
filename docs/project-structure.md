@@ -34,6 +34,7 @@
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
 | `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
+| `docs/extension-contracts.md` | Versioned workload SDK, conformance-vector format, and capability-negotiated engine adapter contract |
 | `docs/security-and-privacy.md` | Working threat model, data classifications, embargo policy, controls, and verification gaps |
 | `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
 | `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup_check.py`, gitignored |
