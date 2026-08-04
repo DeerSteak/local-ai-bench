@@ -2,7 +2,10 @@ import json
 
 import pytest
 
-from pause_control import create_pause_control, read_pause_state, wait_if_paused, write_pause_state
+from pause_control import (
+    apply_pause_evidence, create_pause_control, pause_evidence, read_pause_state,
+    wait_if_paused, write_pause_state,
+)
 from result_history import discover_results
 
 
@@ -13,6 +16,25 @@ def test_pause_control_round_trip_and_unique_paths(tmp_path):
     assert read_pause_state(first) == "running"
     write_pause_state(first, "paused")
     assert read_pause_state(first) == "paused"
+
+
+def test_pause_transitions_become_run_evidence(tmp_path):
+    path = create_pause_control(tmp_path)
+    initial = pause_evidence(path)
+    assert initial is None
+    write_pause_state(path, "paused", now=lambda: "2026-08-04T10:00:00.000+00:00")
+    write_pause_state(path, "running", now=lambda: "2026-08-04T10:05:00.000+00:00")
+    evidence = pause_evidence(path)
+    assert evidence["pause_requests"] == 1
+    assert evidence["control_transitions"][-2:] == [
+        {"state": "paused", "at": "2026-08-04T10:00:00.000+00:00"},
+        {"state": "running", "at": "2026-08-04T10:05:00.000+00:00"},
+    ]
+    run = {}
+    assert apply_pause_evidence(
+        run, environ={"LOCAL_AI_BENCH_PAUSE_CONTROL": str(path)},
+    ) is True
+    assert run["pause"] == evidence
 
 
 def test_default_pause_control_never_pollutes_result_history(tmp_path, monkeypatch):
@@ -41,8 +63,20 @@ def test_wait_blocks_until_cooperative_resume(tmp_path):
     assert wait_if_paused(environ={}) is False
 
 
+def test_wait_treats_lost_or_malformed_control_as_running(tmp_path):
+    missing = tmp_path / "missing.json"
+    assert wait_if_paused(
+        environ={"LOCAL_AI_BENCH_PAUSE_CONTROL": str(missing)}, sleep=lambda _: None,
+    ) is False
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("not json", encoding="utf-8")
+    assert wait_if_paused(
+        environ={"LOCAL_AI_BENCH_PAUSE_CONTROL": str(malformed)}, sleep=lambda _: None,
+    ) is False
+
+
 @pytest.mark.parametrize("value", [
-    {"schema_version": 2, "state": "running"},
+    {"schema_version": 3, "state": "running"},
     {"schema_version": 1, "state": "stopped"},
     [],
 ])

@@ -8,6 +8,7 @@ import requests
 import config
 from shared import Shared
 from progress_events import emit_model_finished, emit_progress
+from pause_control import wait_if_paused
 
 
 class ImageBenchmark:
@@ -403,6 +404,7 @@ class ImageBenchmark:
                     last_images: list[dict] = []
 
                     for run_i in range(config.N_RUNS):
+                        wait_if_paused()
                         try:
                             prefix = f"{short}_{res_label}_run{run_i + 1}"
                             run_seed = seed + run_i  # varied per run — see docs/workloads.md

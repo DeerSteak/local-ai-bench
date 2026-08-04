@@ -7,6 +7,7 @@ from pathlib import Path
 from benchmark import run_supervised_stage
 from event_store import EventStore
 from llm_event_stage import event_store_path
+from pause_control import apply_pause_evidence
 from recovery_inspector import (
     JOURNAL_STAGES, SELECTED_RETRY_STAGES, current_resume_identity, inspect_recovery,
 )
@@ -22,6 +23,11 @@ FAMILY_BY_STAGE = {
     "llm": "llm", "conv": "llm", "llamabench": "llm",
     "conc_tool": "concurrency", "conc_chat": "concurrency",
 }
+
+
+def _finish_result(store, data, status, reason=None):
+    apply_pause_evidence(data["run"])
+    store.finish(status, reason)
 
 
 def _run_stage(plan, journal_path, stage, save, identity, resume, selected_case_ids=None):
@@ -87,7 +93,7 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
             store.update_section(section, result, stage)
             store.complete_stage(stage, section)
         _finish_journal_job(journal_path, plan, "complete")
-        store.finish("complete")
+        _finish_result(store, data, "complete")
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
         active = next((
@@ -102,7 +108,7 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
         _finish_journal_job(
             journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
         )
-        store.finish(terminal_status, type(exc).__name__)
+        _finish_result(store, data, terminal_status, type(exc).__name__)
         raise
     return data
 
@@ -152,7 +158,7 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resu
         reason = None if status == "complete" else "selected_retry_has_remaining_cases"
         store.complete_stage(stage, section, status=status, reason=reason)
         _finish_journal_job(journal_path, plan, status, reason)
-        store.finish(status, reason)
+        _finish_result(store, data, status, reason)
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
         store.complete_stage(
@@ -161,7 +167,7 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resu
         _finish_journal_job(
             journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
         )
-        store.finish(terminal_status, type(exc).__name__)
+        _finish_result(store, data, terminal_status, type(exc).__name__)
         raise
     return data
 
@@ -197,6 +203,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
     for section in SECTION_BY_STAGE.values():
         data[section] = {}
     store = ResultStore(output_path, data)
+    apply_pause_evidence(data["run"])
     store.checkpoint()
     try:
         for stage in plan.stage_order:
@@ -212,7 +219,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
             store.update_section(section, result, stage)
             store.complete_stage(stage, section)
         _finish_journal_job(journal_path, plan, "complete")
-        store.finish("complete")
+        _finish_result(store, data, "complete")
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
         active = next((
@@ -227,7 +234,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
         _finish_journal_job(
             journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
         )
-        store.finish(terminal_status, type(exc).__name__)
+        _finish_result(store, data, terminal_status, type(exc).__name__)
         raise
     return data
 

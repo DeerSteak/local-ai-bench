@@ -29,6 +29,7 @@ from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
 from methodology_profile import resolve_methodology_profile
 from network_policy import apply_offline_mode
+from pause_control import apply_pause_evidence
 from reasoning_benchmark import ReasoningBenchmark
 from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
@@ -707,6 +708,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     except Exception as exc:
                         Shared.err(f"Failed to terminalize interrupted event journal: {exc}")
                     try:
+                        apply_pause_evidence(results["run"])
                         atomic_write_json(Path(out_path), results)
                     except Exception as exc:
                         Shared.err(f"Failed to checkpoint interrupted state: {exc}")
@@ -833,6 +835,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         store = ResultStore(Path(out_path), results)
 
         def _checkpoint(label=""):
+            apply_pause_evidence(results["run"])
             store.checkpoint()
             if label:
                 Shared.log(f"Partial results saved to {out_path} ({label})")
@@ -983,6 +986,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         # ── Save results ───────────────────────────────────────────────────────────
         Shared.section("Saving Results")
         finish_event_job(event_store_path(Path(out_path)), plan, "complete")
+        apply_pause_evidence(results["run"])
         store.finish("complete")
         Shared.ok(f"Results saved to: {out_path}")
 

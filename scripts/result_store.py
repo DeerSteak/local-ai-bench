@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 TERMINAL_STATUSES = {"complete", "partial", "interrupted", "failed"}
 NON_MEASUREMENT_KEYS = {
     "label", "skipped", "skip_reason", "skip_detail", "error", "crashed",

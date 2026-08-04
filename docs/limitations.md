@@ -10,6 +10,8 @@ The included prompts, question banks, image workflows, context checkpoints, and 
 
 ## Hardware and environment variance
 
+Pausing can let hardware cool, background activity change, or operating-system caches age while a model remains loaded. Pause transitions are recorded in schema-4 results, but they do not make samples before and after a long pause equivalent to an uninterrupted run. Review that metadata before using a paused run for sensitive thermal or stability comparisons.
+
 Thermal state, power mode, battery state, ambient temperature, background processes, memory pressure, storage activity, firmware, drivers, runtime build flags, and operating-system scheduling can change results. Unified-memory systems share capacity and bandwidth across CPU, GPU, and other clients. Discrete-GPU fit estimates require headroom beyond weight size for KV cache, runtime buffers, and concurrent slots. A model fitting once does not guarantee safe production capacity.
 
 Independent runs should begin from comparable power, thermal, and background-load conditions. A single run is evidence, not a variance study; vendor claims should use repeated independent runs on each physical system and disclose dispersion and anomalies.
