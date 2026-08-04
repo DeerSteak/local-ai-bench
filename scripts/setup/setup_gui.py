@@ -230,7 +230,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     nav.grid(row=2, column=0, sticky="ew", pady=(16, 0))
     back_button = ttk.Button(nav, text="Back")
     back_button.pack(side="left")
-    cancel_button = ttk.Button(nav, text="Cancel", command=root.destroy)
+    cancel_button = ttk.Button(nav, text="Cancel")
     cancel_button.pack(side="right")
     next_button = ttk.Button(nav, text="Next")
     next_button.pack(side="right", padx=(0, 8))
@@ -295,11 +295,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             messagebox.showerror("Cannot start setup", "\n".join(errors))
             return
         result = plan
-        root.destroy()
+        root.quit()
 
     back_button.configure(command=go_back)
+    cancel_button.configure(command=root.quit)
     next_button.configure(command=go_next)
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    root.protocol("WM_DELETE_WINDOW", root.quit)
     show_page(0)
     root.mainloop()
+    root.destroy()
     return result
