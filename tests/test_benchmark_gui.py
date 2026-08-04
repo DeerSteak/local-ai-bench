@@ -9,9 +9,9 @@ from benchmark_frontend import (
     validate_gui_options,
 )
 from benchmark_gui import (
-    advanced_controls_visible, build_discovery_report, custom_option_defaults,
+    BENCHMARK_PRESETS, advanced_controls_visible, build_discovery_report, custom_option_defaults,
     effective_gui_options, format_run_outcome,
-    open_path_command, parse_progress_line,
+    open_path_command, parse_progress_line, resolve_preset,
     workload_preflight_errors,
 )
 
@@ -150,3 +150,15 @@ def test_advanced_controls_require_custom_mode_and_explicit_request():
     assert advanced_controls_visible("custom", True)
     assert not advanced_controls_visible("custom", False)
     assert not advanced_controls_visible("default", True)
+
+
+def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests():
+    assert set(BENCHMARK_PRESETS) == {
+        "Consumer guidance", "Vendor validation", "Neutral comparison", "Platform optimized",
+        "Offline / private", "Quick run", "Full run",
+    }
+    quick = resolve_preset("Quick run", {"llm"})
+    assert quick == {"tests": ["llm"], "runs": 1, "max_prompt_tokens": 8192, "force_all": False}
+    full = resolve_preset("Full run", {"llm", "img"})
+    assert full["tests"] == ["llm", "img"]
+    assert full["force_all"]

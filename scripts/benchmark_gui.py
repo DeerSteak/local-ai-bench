@@ -138,6 +138,27 @@ def advanced_controls_visible(mode: str, requested: bool) -> bool:
     return mode == "custom" and requested
 
 
+BENCHMARK_PRESETS = {
+    "Consumer guidance": {"tests": ["llm", "conv"], "max_prompt_tokens": 32768},
+    "Vendor validation": {"tests": ["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
+    "Neutral comparison": {"tests": ["llm", "conv", "emb", "img"]},
+    "Platform optimized": {"tests": ["llm", "conv", "llamabench", "llamabenchconc"]},
+    "Offline / private": {"tests": ["llm", "conv", "emb"]},
+    "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
+    "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
+}
+
+
+def resolve_preset(name: str, available_tests: set[str]) -> dict:
+    preset = BENCHMARK_PRESETS[name]
+    return {
+        "tests": [test for test in preset["tests"] if test in available_tests],
+        "runs": preset.get("runs", config.N_RUNS),
+        "max_prompt_tokens": preset.get("max_prompt_tokens"),
+        "force_all": preset.get("force_all", False),
+    }
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -258,13 +279,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     custom_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
     custom_frame.columnconfigure(0, weight=1)
     custom_frame.columnconfigure(1, weight=1)
+    preset_row = ttk.Frame(custom_frame)
+    preset_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    preset_var = tk.StringVar(value="Consumer guidance")
+    ttk.Label(preset_row, text="Preset").pack(side="left")
+    ttk.Combobox(
+        preset_row, state="readonly", textvariable=preset_var,
+        values=list(BENCHMARK_PRESETS), width=24,
+    ).pack(side="left", padx=(8, 8))
     advanced_toggle = ttk.Checkbutton(
         custom_frame, text="Show advanced execution and path settings", variable=advanced_var,
     )
-    advanced_toggle.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    advanced_toggle.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
     tests_box = ttk.LabelFrame(custom_frame, text="Tests", padding=12)
-    tests_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    tests_box.grid(row=2, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     test_widgets = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
@@ -278,7 +307,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(custom_frame, text="Installed models", padding=12)
-    models_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    models_box.grid(row=2, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     previous = None
     model_widgets = {}
     row = 0
@@ -298,7 +327,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=row, column=0, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(custom_frame, text="Workload sizes", padding=12)
-    workload_box.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+    workload_box.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     ttk.Label(workload_box, text="Maximum prompt-processing size").grid(row=0, column=0, sticky="w")
     cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
                              values=["No cap", *[str(value) for value in MAX_PROMPT_TOKEN_OPTIONS]], width=18)
@@ -314,7 +343,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     execution_box = ttk.LabelFrame(custom_frame, text="Execution", padding=12)
-    execution_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    execution_box.grid(row=4, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     ttk.Label(execution_box, text="Inference engine").grid(row=0, column=0, sticky="w", pady=2)
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
                                 values=available_engines, width=16)
@@ -335,7 +364,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
-    paths_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    paths_box.grid(row=4, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     paths_box.columnconfigure(1, weight=1)
     ttk.Label(paths_box, text="Results JSON (blank = automatic)").grid(row=0, column=0, sticky="w")
     ttk.Entry(paths_box, textvariable=option_vars["out"]).grid(row=0, column=1, sticky="ew", padx=10)
@@ -385,6 +414,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         reset_workload()
         reset_execution()
         reset_paths()
+
+    def apply_preset():
+        available = {entry.value for entry in custom_tests if entry.available}
+        preset = resolve_preset(preset_var.get(), available)
+        for name, variable in test_vars.items():
+            variable.set(name in preset["tests"])
+        option_vars["runs"].set(str(preset["runs"]))
+        option_vars["force_all"].set(preset["force_all"])
+        cap_var.set(str(preset["max_prompt_tokens"]) if preset["max_prompt_tokens"] else "No cap")
+
+    ttk.Button(preset_row, text="Apply", command=apply_preset).pack(side="left")
 
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
