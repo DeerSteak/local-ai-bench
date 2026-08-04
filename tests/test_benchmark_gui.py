@@ -9,7 +9,8 @@ from benchmark_frontend import (
     validate_gui_options,
 )
 from benchmark_gui import (
-    BENCHMARK_PRESETS, advanced_controls_visible, build_discovery_report, custom_option_defaults,
+    BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
+    build_discovery_report, custom_option_defaults,
     effective_gui_options, format_run_outcome,
     open_path_command, parse_progress_line, resolve_preset,
     workload_preflight_errors,
@@ -162,3 +163,19 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     full = resolve_preset("Full run", {"llm", "img"})
     assert full["tests"] == ["llm", "img"]
     assert full["force_all"]
+
+
+def test_hardware_defaults_uncheck_models_that_exceed_usable_ram():
+    entries = [
+        MenuEntry("small", "Small", "llm", "LLM", True),
+        MenuEntry("huge", "Huge", "llm", "LLM", True),
+    ]
+    inventory = {
+        "llm": [{"tag": "small", "size": 4e9}, {"tag": "huge", "size": 30e9}],
+        "custom": [], "embedding": [], "image": [],
+    }
+    apply_hardware_model_defaults(entries, inventory, ram_gb=32)
+    assert [entry.checked for entry in entries] == [True, False]
+    entries[1].checked = True
+    apply_hardware_model_defaults(entries, inventory, ram_gb=64)
+    assert entries[1].checked

@@ -159,6 +159,18 @@ def resolve_preset(name: str, available_tests: set[str]) -> dict:
     }
 
 
+def apply_hardware_model_defaults(entries, inventory: dict[str, list[dict]], ram_gb: float) -> None:
+    usable_bytes = max(0.0, ram_gb - 8.0) * 1e9
+    sizes = {
+        (family, model.get("short") if family == "image" else model.get("tag")): model.get("size")
+        for family, models in inventory.items() for model in models
+    }
+    for entry in entries:
+        size = sizes.get((entry.kind, entry.value))
+        if isinstance(size, (int, float)) and size * 1.2 > usable_bytes:
+            entry.checked = False
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -175,9 +187,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     detected_tools = {name: find_llamacpp_tool(name) for name in (
         "llama-server", "llama-bench", "llama-batched-bench",
     )}
+    system_ram_gb = Shared.system_ram_gb()
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
-        ram_gb=Shared.system_ram_gb(), backend=Shared.detect_backend(),
+        ram_gb=system_ram_gb, backend=Shared.detect_backend(),
         tools=detected_tools,
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
@@ -186,10 +199,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     default_tests = build_test_entries(inventory)
     default_test_values = [entry.value for entry in default_tests if entry.checked]
     default_models = build_model_entries(inventory, default_test_values)
+    apply_hardware_model_defaults(default_models, inventory, system_ram_gb)
     custom_tests = build_test_entries(inventory)
     apply_saved_test_selection(custom_tests, saved)
     custom_test_values = [entry.value for entry in custom_tests if entry.checked]
     custom_models = build_model_entries(inventory, [entry.value for entry in custom_tests if entry.available])
+    apply_hardware_model_defaults(custom_models, inventory, system_ram_gb)
     custom_model_defaults = {entry.value: entry.checked for entry in custom_models}
     apply_saved_model_selection(custom_models, saved)
 
