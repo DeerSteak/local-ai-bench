@@ -46,6 +46,7 @@ from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from run_plan import load_run_plan
 from result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
+from support_bundle import export_support_bundle, preview_support_bundle
 from model_inventory import build_model_inventory
 from orchestration import STAGE_ORDER
 from progress_events import PROGRESS_PREFIX
@@ -768,11 +769,66 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, KeyError) as exc:
             messagebox.showerror("Bundle verification failed", str(exc), parent=root)
 
+    def confirm_support_preview(preview):
+        accepted = {"value": False}
+        dialog = tk.Toplevel(root)
+        dialog.title("Review redacted support bundle")
+        dialog.geometry("720x520")
+        dialog.transient(root)
+        dialog.grab_set()
+        ttk.Label(
+            dialog, text="Review every file and field before export. Raw results and logs are not included.",
+            wraplength=680,
+        ).pack(anchor="w", padx=16, pady=(16, 8))
+        text_widget = tk.Text(dialog, wrap="none", height=22)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        text_widget.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=(0, 16))
+        scrollbar.pack(side="left", fill="y", pady=(0, 16))
+        details = "Files:\n" + "\n".join(f"  {name}" for name in preview["files"])
+        details += "\n\nFields:\n" + "\n".join(f"  {field}" for field in preview["fields"])
+        text_widget.insert("1.0", details)
+        text_widget.configure(state="disabled")
+        actions = ttk.Frame(dialog, padding=(8, 16))
+        actions.pack(side="right", fill="y")
+
+        def accept():
+            accepted["value"] = True
+            dialog.destroy()
+
+        ttk.Button(actions, text="Export", command=accept).pack(fill="x", pady=(0, 8))
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(fill="x")
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        root.wait_window(dialog)
+        return accepted["value"]
+
+    def export_support():
+        result = filedialog.askopenfilename(
+            title="Choose result for support bundle", initialdir=config.RESULTS_DIR,
+            filetypes=[("Benchmark result", "*.json")],
+        )
+        if not result:
+            return
+        try:
+            preview = preview_support_bundle(Path(result))
+            if not confirm_support_preview(preview):
+                return
+            destination = filedialog.asksaveasfilename(
+                title="Export redacted support bundle", defaultextension=".labsupport",
+                filetypes=[("Local AI Bench support", "*.labsupport")],
+            )
+            if destination:
+                export_support_bundle(Path(result), Path(destination))
+                messagebox.showinfo("Support bundle exported", destination, parent=root)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Support bundle failed", str(exc), parent=root)
+
     ttk.Button(log_actions, text="Open Results Folder", command=open_results_folder).pack(
         side="left", padx=(10, 0),
     )
     ttk.Button(log_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(10, 0))
     ttk.Button(log_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(10, 0))
+    ttk.Button(log_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(10, 0))
 
     def walk_widgets(parent):
         for child in parent.winfo_children():

@@ -86,6 +86,8 @@ When the GUI supervises a run, the CLI emits opt-in structured stage, model, and
 
 Portable `.labresult` bundles contain canonical result JSON and optional content-addressed artifacts in a deterministic ZIP envelope. The manifest records SHA-256 and byte size for every payload. Verification rejects duplicate, undeclared, oversized, path-bearing, modified, non-finite, unsupported-plan, or locally unavailable methodology content and reproduces supported means and valid-run counts from raw samples before import. Imported artifacts retain their content-addressed bundle names, preventing archive paths or private source paths from controlling extraction.
 
+Support bundles use a separate allowlist rather than redacting a copy of the full result. They contain application/runtime identity, non-identifying system fields, run/stage coverage, and structured diagnostic markers; hostname, model names, measurements, prompts, responses, raw logs, tokens, credentials, and source paths are not selected. Diagnostic strings receive an additional secret/path scrub. The GUI shows a scrollable list of every output file and leaf field and requires confirmation before writing the deterministic `.labsupport` archive.
+
 ---
 
 [← Dashboard](dashboard.md) · [Back to README](../README.md) · [Engines →](engines.md)
