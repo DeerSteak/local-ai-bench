@@ -17,5 +17,5 @@ on run arguments
             end repeat
         end repeat
     end tell
-    error "The Terminal session could not be found." number 1
+    return
 end run

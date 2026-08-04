@@ -115,7 +115,8 @@ def test_double_click_benchmark_launchers_force_the_gui():
     assert "bash run_bench.sh --ui gui" in command
     assert "close_terminal_tab.applescript" in command
     assert '"$LAUNCHER_TTY"' in command
-    assert "launchctl submit" in command
+    assert "nohup /usr/bin/osascript" in command
+    assert "launchctl submit" not in command
     assert "run_bench.bat --ui gui" in (ROOT / "Run Local AI Bench.bat").read_text()
     desktop = (ROOT / "Run Local AI Bench.desktop").read_text()
     assert "bash run_bench.sh --ui gui" in desktop

@@ -20,8 +20,10 @@ def test_terminal_closer_targets_the_launching_tty():
     assert "delay 0.2" in script
     assert "close terminalWindow" in script
     assert 'keystroke "w" using command down' in script
+    assert "error " not in script
     launcher = (ROOT / "Setup Local AI Bench.command").read_text()
-    assert "launchctl submit" in launcher
+    assert "nohup /usr/bin/osascript" in launcher
+    assert "launchctl submit" not in launcher
 
 
 def test_setup_wrapper_only_offers_benchmark_after_setup_check_succeeds():

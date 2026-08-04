@@ -9,9 +9,9 @@ bash setup.sh --interface gui
 status=$?
 
 if [ "$status" -eq 10 ]; then
-    if [ -n "$LAUNCHER_TTY" ] && command -v launchctl >/dev/null 2>&1; then
-        launchctl submit -l "local-ai-bench.close-terminal.$$" -- \
-            /usr/bin/osascript "$SCRIPT_ROOT/scripts/close_terminal_tab.applescript" "$LAUNCHER_TTY"
+    if [ -n "$LAUNCHER_TTY" ]; then
+        nohup /usr/bin/osascript "$SCRIPT_ROOT/scripts/close_terminal_tab.applescript" \
+            "$LAUNCHER_TTY" >/dev/null 2>&1 &
     fi
     exit 0
 fi
