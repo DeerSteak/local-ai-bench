@@ -121,6 +121,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Journal-owned single-shot/conversation/concurrency projection, pending-level selection, recovery attempts, stage/model-family isolation, batch fields, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py), [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
 | Journal-owned native llama-bench streamed rows, grouped remaining sweeps, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
+| Read-only recovery eligibility, coverage, identity drift, and non-mutation | [test_recovery_inspector.py](../tests/test_recovery_inspector.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
 | Runner command confinement, event authentication, heartbeat, cleanup escalation, conversation preflight, and parent stage checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
