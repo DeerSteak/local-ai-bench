@@ -7,6 +7,7 @@ import config
 from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
 from progress_events import emit_model_finished, emit_progress
+from pause_control import wait_if_paused
 
 
 class LLMConversationBenchmark:
@@ -158,6 +159,7 @@ class LLMConversationBenchmark:
 
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens, pending_response_tokens
+                        wait_if_paused()
                         messages.append({"role": "user", "content": prompt_text})
                         measurement = Shared.retry_implausible_tps(
                             lambda: engine.chat(

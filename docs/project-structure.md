@@ -115,6 +115,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
 | `retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
+| `pause_control.py` | Short-lived cooperative pause state shared across GUI-launched parent and workload processes |
 | `content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
 | `workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |

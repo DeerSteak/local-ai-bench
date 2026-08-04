@@ -30,6 +30,7 @@ from comfyui_installation import (
 import hardware
 from log_redaction import redact_log_text
 from models import IMAGE_MODELS
+from pause_control import wait_if_paused
 from result_store import atomic_write_json
 from progress_events import emit_model_finished, emit_progress
 
@@ -631,6 +632,7 @@ class Shared:
         run_i = 0
         crash_retries = 0
         while run_i < n_runs:
+            wait_if_paused()
             try:
                 samples.append(call(run_i))
                 run_i += 1

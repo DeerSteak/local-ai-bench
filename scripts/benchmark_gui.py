@@ -59,6 +59,7 @@ from model_inventory import build_model_inventory
 from models import LLM_MODELS
 from orchestration import STAGE_ORDER
 from outbound_metadata import outbound_metadata_preview, prepare_outbound_result
+from pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from progress_events import PROGRESS_PREFIX
 from shared import Shared
 from setup_config import configured_comfyui_dir, load_setup_config
@@ -897,6 +898,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     log_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
     stop_button = ttk.Button(log_actions, text="Stop Benchmark", state="disabled")
     stop_button.pack(side="right")
+    pause_button = ttk.Button(log_actions, text="Pause", state="disabled")
+    pause_button.pack(side="right", padx=(0, 8))
     ttk.Button(log_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
     def open_results_folder():
         output = option_vars["out"].get().strip() if mode_var.get() == "custom" else ""
@@ -1345,7 +1348,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         command = recovery_executor_command(result_path)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        child_env = begin_process_control()
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
@@ -1395,7 +1398,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         command = fork_executor_command(source_path, output_path)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        child_env = begin_process_control()
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
@@ -1481,7 +1484,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             result_path, [candidate["case_id"] for candidate in selected],
         )
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        child_env = begin_process_control()
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
@@ -1581,6 +1584,27 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     process = None
     active_process_kind = None
+    process_control_path = None
+    process_paused = False
+
+    def begin_process_control():
+        nonlocal process_control_path, process_paused
+        process_control_path = create_pause_control(config.RESULTS_DIR)
+        process_paused = False
+        pause_button.configure(text="Pause", state="normal")
+        return {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1",
+                PAUSE_CONTROL_ENV: str(process_control_path)}
+
+    def finish_process_control():
+        nonlocal process_control_path, process_paused
+        if process_control_path is not None:
+            try:
+                process_control_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        process_control_path = None
+        process_paused = False
+        pause_button.configure(text="Pause", state="disabled")
     output_queue = queue.Queue()
     progress_window = None
     stage_progress_vars = {}
@@ -1700,6 +1724,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     update_progress(value)
                 else:
                     process = None
+                    finish_process_control()
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
                     if active_process_kind in {"recovery", "retry", "fork"}:
@@ -1814,7 +1839,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             gui_options=gui_options,
         )
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
-        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        child_env = begin_process_control()
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
@@ -1833,11 +1858,33 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def stop_run():
         if process is None or process.poll() is not None:
             return
+        if process_control_path is not None:
+            try:
+                write_pause_state(process_control_path, "running")
+            except OSError:
+                pass
         run_status.set("Stopping benchmark safely…")
         if platform.system() == "Windows":
             process.send_signal(signal.CTRL_BREAK_EVENT)
         else:
             process.send_signal(signal.SIGINT)
+
+    def toggle_pause():
+        nonlocal process_paused
+        if process is None or process.poll() is not None or process_control_path is None:
+            return
+        next_paused = not process_paused
+        try:
+            write_pause_state(process_control_path, "paused" if next_paused else "running")
+        except OSError as exc:
+            messagebox.showerror("Pause unavailable", str(exc), parent=root)
+            return
+        process_paused = next_paused
+        pause_button.configure(text="Resume" if process_paused else "Pause")
+        run_status.set(
+            "Pause requested; the benchmark will pause at the next safe case boundary."
+            if process_paused else "Benchmark resumed. Results remain checkpointed throughout the run."
+        )
 
     def close_window():
         if process is not None and process.poll() is None:
@@ -1848,6 +1895,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     start_button.configure(command=start_run)
     stop_button.configure(command=stop_run)
+    pause_button.configure(command=toggle_pause)
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_mode()
     update_advanced()

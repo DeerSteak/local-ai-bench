@@ -8,6 +8,7 @@ import config
 from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
 from progress_events import emit_model_finished, emit_progress
+from pause_control import wait_if_paused
 
 
 def pending_concurrency_levels(levels, next_attempt):
@@ -146,6 +147,7 @@ class ConcurrencyBenchmark:
                     if journal else (lambda _level: 1),
                 )
                 for level, attempt_number in pending_levels:
+                    wait_if_paused()
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 

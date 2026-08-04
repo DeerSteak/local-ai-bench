@@ -14,6 +14,7 @@ from llamacpp_tools import find_llamacpp_tool
 from engines.llamacpp import LlamaCppEngine
 from shared import Shared
 from progress_events import emit_model_finished, emit_progress
+from pause_control import wait_if_paused
 
 
 class LlamaBenchConcurrencyBenchmark:
@@ -199,6 +200,7 @@ class LlamaBenchConcurrencyBenchmark:
                         save_fn(results)
 
                 try:
+                    wait_if_paused()
                     returned_entries = self.run_one(
                         binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
                         config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,

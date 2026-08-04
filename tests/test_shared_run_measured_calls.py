@@ -1,5 +1,6 @@
 import requests
 import pytest
+import shared
 
 from shared import (
     EngineBudgetExceeded,
@@ -68,6 +69,15 @@ def test_run_measured_calls_all_succeed(tmp_path):
     assert partial_text == ""
     assert metadata == {"budget_nudged": False}
     assert calls == [0, 1, 2]
+
+
+def test_run_measured_calls_observes_pause_before_every_attempt(tmp_path, monkeypatch):
+    pauses = []
+    monkeypatch.setattr(shared, "wait_if_paused", lambda: pauses.append("boundary"))
+    Shared.run_measured_calls(
+        3, lambda run_i: run_i, "tag", {}, tmp_path / "crash.json", "testing", _FakeEngine(),
+    )
+    assert pauses == ["boundary", "boundary", "boundary"]
 
 
 def _measurement(implausible=False):

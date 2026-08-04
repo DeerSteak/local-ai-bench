@@ -14,6 +14,7 @@ from llamacpp_tools import find_llamacpp_tool
 from engines.llamacpp import LlamaCppEngine
 from shared import Shared
 from progress_events import emit_model_finished, emit_progress
+from pause_control import wait_if_paused
 
 
 class LlamaBenchBenchmark:
@@ -231,6 +232,7 @@ class LlamaBenchBenchmark:
                     ("decode", config.LLAMABENCH_PP, config.LLAMABENCH_TG),
                 ])
                 for sweep, pending_pp, pending_tg in sweeps:
+                    wait_if_paused()
                     command = (
                         self.build_prefill_command(
                             binary, paths[0], pending_pp,
