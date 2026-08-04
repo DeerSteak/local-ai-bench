@@ -31,11 +31,14 @@ from benchmark_frontend import (
     render_model_menu,
     render_summary,
     frontend_option_gaps,
+    frontend_state_availability_errors,
+    frontend_state_from_run_plan,
     run_frontend,
     save_frontend_state,
     toggle_group,
 )
 from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from run_plan import RunPlan
 
 
 class InputSequence:
@@ -223,6 +226,77 @@ def test_build_frontend_state_records_max_prompt_tokens_and_tg_tokens():
     assert build_frontend_state(
         "mlx", ["llamabench"], [], max_prompt_tokens=32768, tg_tokens=[128, 1024],
     )["tg_tokens"] == [128, 1024]
+
+
+def test_cli_run_plan_converts_to_complete_frontend_state_and_command():
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp",
+        tests=["llm", "emb", "img", "llamabench"],
+        stage_order=["llm", "emb", "img", "llamabench"],
+        models={
+            "llm": [{"tag": "model:4b"}], "concurrency": [{"tag": "model:4b"}],
+            "embeddings": [{"tag": "embed:latest"}], "images": [{"short": "sdxl"}],
+        },
+        effective_config={
+            "runs": 4, "warmup_runs": 1, "run_timeout_seconds": 240,
+            "accuracy_timeout_seconds": 45, "accuracy_token_budget": 1024,
+            "cpu_only": True, "force_all": True, "max_prompt_tokens": 32768,
+            "llamabench_tg": [128, 1024], "sample_size": None,
+        },
+    )
+    local_options = {**benchmark_frontend.GUI_OPTION_DEFAULTS, "out": "/local/results.json"}
+    state = frontend_state_from_run_plan(plan, local_options)
+    assert state["models"] == {
+        "llm": ["model:4b"], "embedding": ["embed:latest"], "image": ["sdxl"],
+    }
+    assert state["gui_options"]["out"] == "/local/results.json"
+    entries = [
+        MenuEntry("model:4b", "Model", "llm", "LLM", True),
+        MenuEntry("embed:latest", "Embed", "embedding", "Embeddings", True),
+        MenuEntry("sdxl", "Image", "image", "Images", True),
+    ]
+    command = build_benchmark_command(
+        state["engine"], Path("/comfy"), state["tests"], entries,
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        max_prompt_tokens=state["max_prompt_tokens"], tg_tokens=state["tg_tokens"],
+        gui_options=state["gui_options"],
+    )
+    for flag, value in (
+        ("--runs", "4"), ("--warmup", "1"), ("--timeout", "240"),
+        ("--acc-timeout", "45"), ("--acc-token-budget", "1024"),
+        ("--max-prompt-tokens", "32768"),
+    ):
+        assert command[command.index(flag) + 1] == value
+    assert "--cpu-only" in command and "--force-all" in command
+    assert command[command.index("--tg-tokens") + 1:command.index("--warmup")] == ["128", "1024"]
+
+
+def test_cli_sample_plan_is_rejected_instead_of_silently_losing_value():
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["mcq"],
+        stage_order=["mcq"], models={"llm": [], "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False,
+                          "sample_size": 5},
+    )
+    with pytest.raises(ValueError, match="cannot be represented"):
+        frontend_state_from_run_plan(plan)
+
+
+def test_imported_state_reports_every_unavailable_selection():
+    state = saved_state(
+        engine="missing-engine", tests=["llm", "img"],
+        models={"llm": ["missing-llm"], "embedding": [], "image": ["missing-image"]},
+    )
+    errors = frontend_state_availability_errors(
+        state, ["llamacpp"],
+        [MenuEntry("llm", "LLM", "llm", "Tests", True, available=True),
+         MenuEntry("img", "Images", "image", "Tests", False, available=False)],
+        [MenuEntry("installed", "Installed", "llm", "LLM", True)],
+    )
+    assert errors == [
+        "Engine is not installed: missing-engine", "Tests are unavailable: img",
+        "Models are not installed: missing-image, missing-llm",
+    ]
 
 
 def test_saved_test_selection_applies_only_available_remembered_tests():

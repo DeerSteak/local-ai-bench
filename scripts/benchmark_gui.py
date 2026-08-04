@@ -26,6 +26,8 @@ from benchmark_frontend import (
     apply_saved_test_selection,
     build_benchmark_command,
     build_frontend_state,
+    frontend_state_from_run_plan,
+    frontend_state_availability_errors,
     build_model_entries,
     build_test_entries,
     load_frontend_state,
@@ -40,6 +42,7 @@ from benchmark_presets import (
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
+from run_plan import load_run_plan
 from model_inventory import build_model_inventory
 from orchestration import STAGE_ORDER
 from progress_events import PROGRESS_PREFIX
@@ -544,27 +547,41 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if path:
             save_portable_preset(Path(path), portable)
 
-    def apply_portable_preset(portable):
-        configuration = portable["configuration"]
+    def apply_frontend_state(state):
+        errors = frontend_state_availability_errors(
+            state, available_engines, custom_tests, custom_models,
+        )
+        if errors:
+            raise ValueError("\n".join(errors))
         mode_var.set("custom")
-        if configuration["engine"] in available_engines:
-            engine_var.set(configuration["engine"])
-        selected_tests = set(configuration["tests"])
+        if state["engine"] in available_engines:
+            engine_var.set(state["engine"])
+        selected_tests = set(state["tests"])
         for entry in custom_tests:
             test_vars[entry.value].set(entry.available and entry.value in selected_tests)
         selected_models = {
-            *configuration["models"]["llm"], *configuration["models"]["embedding"],
-            *configuration["models"]["image"],
+            *state["models"]["llm"], *state["models"]["embedding"],
+            *state["models"]["image"],
         }
         for entry in custom_models:
             model_vars[entry.value].set(entry.value in selected_models)
-        cap = configuration["max_prompt_tokens"]
+        cap = state["max_prompt_tokens"]
         cap_var.set(str(cap) if cap else "No cap")
-        selected_tg = set(configuration["tg_tokens"] or config.LLAMABENCH_TG)
+        selected_tg = set(state["tg_tokens"] or config.LLAMABENCH_TG)
         for value, variable in tg_vars.items():
             variable.set(value in selected_tg)
-        for key, value in configuration["options"].items():
+        for key, value in state.get("gui_options", {}).items():
             option_vars[key].set(value if isinstance(value, bool) else str(value))
+
+    def apply_portable_preset(portable):
+        configuration = portable["configuration"]
+        apply_frontend_state({
+            "engine": configuration["engine"], "tests": configuration["tests"],
+            "models": configuration["models"],
+            "max_prompt_tokens": configuration["max_prompt_tokens"],
+            "tg_tokens": configuration["tg_tokens"],
+            "gui_options": configuration["options"],
+        })
 
     def import_preset():
         path = filedialog.askopenfilename(
@@ -606,11 +623,24 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Preset comparison failed", str(exc), parent=root)
 
+    def import_run_plan():
+        path = filedialog.askopenfilename(
+            title="Import CLI run plan or results", filetypes=[("Benchmark JSON", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            local_options = collect_options()
+            apply_frontend_state(frontend_state_from_run_plan(load_run_plan(Path(path)), local_options))
+        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Run-plan import failed", str(exc), parent=root)
+
     ttk.Button(preset_row, text="Apply", command=apply_preset).pack(side="left")
     ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Duplicate", command=duplicate_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Compare", command=compare_preset).pack(side="left", padx=(8, 0))
+    ttk.Button(preset_row, text="Import CLI Plan", command=import_run_plan).pack(side="left", padx=(8, 0))
 
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),

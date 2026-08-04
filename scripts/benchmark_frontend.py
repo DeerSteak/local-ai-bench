@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from result_store import atomic_write_json
+from run_plan import RunPlan
 
 import config
 from comfyui_installation import find_comfyui_installation
@@ -217,6 +218,69 @@ def build_frontend_state(engine_name: str, tests: list[str],
     if gui_options is not None:
         state["gui_options"] = dict(gui_options)
     return state
+
+
+def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None) -> dict:
+    effective = plan.effective_config
+    if effective.get("sample_size") is not None:
+        raise ValueError("Sampled developer runs cannot be represented in the benchmark GUI.")
+    options = dict(GUI_OPTION_DEFAULTS if gui_options is None else gui_options)
+    option_mapping = {
+        "runs": "runs", "warmup_runs": "warmup", "run_timeout_seconds": "timeout",
+        "accuracy_timeout_seconds": "acc_timeout",
+        "accuracy_token_budget": "acc_token_budget", "cpu_only": "cpu_only",
+        "force_all": "force_all",
+    }
+    for plan_key, option_key in option_mapping.items():
+        if plan_key in effective:
+            options[option_key] = effective[plan_key]
+    models = plan.models
+    llm_models = []
+    for family in ("llm", "concurrency"):
+        for model in models.get(family, []):
+            tag = model.get("tag")
+            if not tag:
+                raise ValueError(f"Run plan contains an unidentified {family} model.")
+            if tag not in llm_models:
+                llm_models.append(tag)
+    embedding_models = [model.get("tag") for model in models.get("embeddings", [])]
+    image_models = [model.get("short") or model.get("tag") for model in models.get("images", [])]
+    if any(model is None for model in embedding_models + image_models):
+        raise ValueError("Run plan contains an unidentified embedding or image model.")
+    state = {
+        "version": FRONTEND_STATE_VERSION,
+        "engine": plan.engine_name,
+        "tests": list(plan.tests),
+        "models": {
+            "llm": llm_models,
+            "embedding": embedding_models,
+            "image": image_models,
+        },
+        "max_prompt_tokens": effective.get("max_prompt_tokens"),
+        "tg_tokens": effective.get("llamabench_tg"),
+        "gui_options": options,
+    }
+    if validate_gui_options(options):
+        raise ValueError("Run plan contains execution settings unsupported by the benchmark GUI.")
+    return state
+
+
+def frontend_state_availability_errors(state: dict, engines: list[str],
+                                       test_entries: list[MenuEntry],
+                                       model_entries: list[MenuEntry]) -> list[str]:
+    errors = []
+    if state["engine"] not in engines:
+        errors.append(f"Engine is not installed: {state['engine']}")
+    available_tests = {entry.value for entry in test_entries if entry.available}
+    missing_tests = sorted(set(state["tests"]) - available_tests)
+    if missing_tests:
+        errors.append(f"Tests are unavailable: {', '.join(missing_tests)}")
+    available_models = {entry.value for entry in model_entries if entry.available}
+    selected_models = set().union(*map(set, state["models"].values()))
+    missing_models = sorted(selected_models - available_models)
+    if missing_models:
+        errors.append(f"Models are not installed: {', '.join(missing_models)}")
+    return errors
 
 
 def apply_saved_test_selection(entries: list[MenuEntry], state: dict | None) -> bool:

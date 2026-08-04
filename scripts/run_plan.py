@@ -3,6 +3,7 @@
 import hashlib
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -111,3 +112,13 @@ class RunPlan:
     @property
     def plan_id(self) -> str:
         return hashlib.sha256(_canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+
+
+def load_run_plan(path: Path) -> RunPlan:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(value, dict) and "run" in value:
+        run = value.get("run")
+        value = run.get("plan") if isinstance(run, dict) else None
+    if not isinstance(value, dict):
+        raise ValueError("File does not contain a benchmark run plan.")
+    return RunPlan.from_dict(value)

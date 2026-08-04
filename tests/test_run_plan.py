@@ -1,8 +1,9 @@
 from dataclasses import FrozenInstanceError
+import json
 
 import pytest
 
-from run_plan import PLAN_SCHEMA_VERSION, RunPlan
+from run_plan import PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
 
 
 def make_plan(**overrides):
@@ -103,3 +104,26 @@ def test_plan_rejects_unsupported_schema():
     encoded["schema_version"] = 999
     with pytest.raises(ValueError, match="unsupported"):
         RunPlan.from_dict(encoded)
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_load_run_plan_accepts_plan_or_cli_results(tmp_path, wrapped):
+    encoded = make_plan().to_dict()
+    document = {"run": {"plan": encoded}} if wrapped else encoded
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert load_run_plan(path) == make_plan()
+
+
+def test_load_run_plan_rejects_unrelated_json(tmp_path):
+    path = tmp_path / "other.json"
+    path.write_text("{}", encoding="utf-8")
+    with pytest.raises((KeyError, ValueError)):
+        load_run_plan(path)
+
+
+def test_load_run_plan_rejects_malformed_result_wrapper(tmp_path):
+    path = tmp_path / "result.json"
+    path.write_text('{"run": []}', encoding="utf-8")
+    with pytest.raises(ValueError, match="does not contain"):
+        load_run_plan(path)

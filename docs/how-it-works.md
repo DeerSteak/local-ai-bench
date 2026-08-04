@@ -78,6 +78,8 @@ Runtime defaults are defined in `scripts/config.py`; model metadata is defined i
 
 Before creating `RunContext`, the CLI canonicalizes the selected engine, tests, stage order, safe model identities, and effective measurement settings into an immutable `RunPlan`. Its SHA-256 `plan_id` is deterministic for equivalent plans and changes when a measurement-affecting input changes. Schema-3 results embed that plan and identity while retaining the existing manifest fields for compatibility. Output and ComfyUI paths live in a separate `RunPaths` object and cannot enter the shareable plan; unknown configuration or model-identity fields are rejected rather than risking a secret or user path in exported metadata.
 
+The graphical frontend can load either a standalone `RunPlan` JSON document or the plan embedded in CLI-created results. It maps the plan back to the same frontend state and public CLI command builder used for GUI-created runs, while retaining the current machine-local paths; unsupported developer-only values fail visibly instead of being dropped.
+
 ---
 
 [← Dashboard](dashboard.md) · [Back to README](../README.md) · [Engines →](engines.md)

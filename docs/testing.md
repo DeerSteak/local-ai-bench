@@ -74,6 +74,8 @@ These tests cover exact and wildcard matching, cumulative tier caps, custom-mode
 
 The frontend suite parses `benchmark.py`'s public argparse declarations and requires every flag to appear in `FRONTEND_OPTION_INVENTORY` as exposed, represented by a more precise UI equivalent, intentionally developer-only, or an explicit gap. This prevents new CLI controls from disappearing silently while allowing the remaining commercial-frontend work to be tracked honestly.
 
+Run-plan round-trip tests load both standalone plans and plans embedded in CLI results, convert supported values into frontend state, and assert that the shared command builder emits the same measurement-affecting controls. Developer-only sampled plans are tested as an explicit rejection so the GUI cannot silently hide or discard a CLI value.
+
 ### Workloads and graders
 
 | Area | Test modules |
