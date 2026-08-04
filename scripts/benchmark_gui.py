@@ -15,7 +15,7 @@ from pathlib import Path
 
 import config
 import psutil
-from acceptance_policy import load_policy
+from acceptance_policy import evaluate_policy, load_policy
 from benchmark_frontend import (
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
@@ -51,6 +51,7 @@ from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from run_plan import load_run_plan
 from result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
+from result_history import compare_results, discover_results, filter_results, load_result as load_history_result
 from support_bundle import export_support_bundle, preview_support_bundle
 from model_inventory import build_model_inventory
 from orchestration import STAGE_ORDER
@@ -340,8 +341,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook.grid(sticky="nsew")
     config_tab = ttk.Frame(notebook, padding=18)
     log_tab = ttk.Frame(notebook, padding=18)
+    history_tab = ttk.Frame(notebook, padding=18)
     notebook.add(config_tab, text="Configuration")
     notebook.add(log_tab, text="Run Log")
+    notebook.add(history_tab, text="Result History")
     config_tab.columnconfigure(0, weight=1)
     config_tab.rowconfigure(2, weight=1)
 
@@ -968,6 +971,167 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(log_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(10, 0))
     ttk.Button(log_actions, text="Create Report", command=create_report).pack(side="left", padx=(10, 0))
     ttk.Button(log_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(10, 0))
+
+    history_tab.columnconfigure(0, weight=1)
+    history_tab.rowconfigure(2, weight=1)
+    ttk.Label(history_tab, text="Local result history", style="Title.TLabel").grid(
+        row=0, column=0, sticky="w",
+    )
+    history_filters = ttk.Frame(history_tab)
+    history_filters.grid(row=1, column=0, sticky="ew", pady=(8, 10))
+    history_query = tk.StringVar()
+    history_status_filter = tk.StringVar(value="all")
+    history_engine_filter = tk.StringVar(value="all")
+    ttk.Label(history_filters, text="Search").pack(side="left")
+    ttk.Entry(history_filters, textvariable=history_query, width=26).pack(side="left", padx=(8, 14))
+    ttk.Label(history_filters, text="Status").pack(side="left")
+    ttk.Combobox(
+        history_filters, state="readonly", width=12, textvariable=history_status_filter,
+        values=("all", "complete", "partial", "interrupted", "failed", "running", "legacy"),
+    ).pack(side="left", padx=(8, 14))
+    ttk.Label(history_filters, text="Engine").pack(side="left")
+    history_engine_combo = ttk.Combobox(
+        history_filters, state="readonly", width=14, textvariable=history_engine_filter,
+        values=("all",),
+    )
+    history_engine_combo.pack(side="left", padx=(8, 14))
+    history_tree = ttk.Treeview(
+        history_tab, columns=("date", "system", "status", "engine", "profile", "models"),
+        show="headings", selectmode="browse",
+    )
+    for column, label, width in (
+        ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
+        ("engine", "Engine", 95), ("profile", "Profile", 110), ("models", "Models", 70),
+    ):
+        history_tree.heading(column, text=label)
+        history_tree.column(column, width=width, anchor="w")
+    history_scroll = ttk.Scrollbar(history_tab, orient="vertical", command=history_tree.yview)
+    history_tree.configure(yscrollcommand=history_scroll.set)
+    history_tree.grid(row=2, column=0, sticky="nsew")
+    history_scroll.grid(row=2, column=1, sticky="ns")
+    history_actions = ttk.Frame(history_tab)
+    history_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+    history_message = tk.StringVar(value="History has not been loaded.")
+    ttk.Label(history_tab, textvariable=history_message).grid(row=4, column=0, sticky="w", pady=(8, 0))
+    history_entries = {"all": [], "visible": []}
+    history_item_paths = {}
+    baseline_path = {"value": None}
+
+    def selected_history_path():
+        selected = history_tree.selection()
+        if not selected:
+            raise ValueError("Select one result first.")
+        return Path(history_item_paths[selected[0]])
+
+    def show_history_details(title, content):
+        dialog = tk.Toplevel(root)
+        dialog.title(title)
+        dialog.geometry("920x620")
+        dialog.transient(root)
+        text_widget = tk.Text(dialog, wrap="none", font=("TkFixedFont", 10))
+        y_scroll = ttk.Scrollbar(dialog, orient="vertical", command=text_widget.yview)
+        x_scroll = ttk.Scrollbar(dialog, orient="horizontal", command=text_widget.xview)
+        text_widget.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+        text_widget.insert("1.0", content)
+        text_widget.configure(state="disabled")
+        text_widget.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=(12, 0))
+        y_scroll.grid(row=0, column=1, sticky="ns", pady=(12, 0))
+        x_scroll.grid(row=1, column=0, sticky="ew", padx=(12, 0))
+        ttk.Button(dialog, text="Close", command=dialog.destroy).grid(
+            row=2, column=0, columnspan=2, pady=12,
+        )
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(0, weight=1)
+
+    def apply_history_filters(*_):
+        visible = filter_results(
+            history_entries["all"], query=history_query.get(),
+            status=history_status_filter.get(), engine=history_engine_filter.get(),
+        )
+        history_entries["visible"] = visible
+        history_tree.delete(*history_tree.get_children())
+        history_item_paths.clear()
+        for entry in visible:
+            item_id = history_tree.insert("", "end", values=(
+                entry["started_at"], entry["system"], entry["status"], entry["engine"],
+                entry["methodology_profile"], entry["models_with_results"],
+            ))
+            history_item_paths[item_id] = entry["path"]
+        history_message.set(f"Showing {len(visible)} of {len(history_entries['all'])} local results.")
+
+    def refresh_history():
+        entries, skipped = discover_results(config.RESULTS_DIR)
+        history_entries["all"] = entries
+        engines = sorted({entry["engine"] for entry in entries})
+        history_engine_combo.configure(values=("all", *engines))
+        if history_engine_filter.get() not in {"all", *engines}:
+            history_engine_filter.set("all")
+        apply_history_filters()
+        if skipped:
+            history_message.set(
+                f"Showing {len(history_entries['visible'])} results; ignored {len(skipped)} unreadable/non-result JSON files."
+            )
+
+    def set_history_baseline():
+        try:
+            baseline_path["value"] = selected_history_path()
+            history_message.set(f"Baseline: {baseline_path['value'].name}")
+        except ValueError as exc:
+            messagebox.showerror("Baseline selection", str(exc), parent=root)
+
+    def compare_history_selection():
+        try:
+            candidate_path = selected_history_path()
+            if baseline_path["value"] is None:
+                raise ValueError("Set a baseline result first.")
+            comparison = compare_results(
+                load_history_result(baseline_path["value"]), load_history_result(candidate_path),
+            )
+            lines = [
+                "Compatible comparison" if comparison["compatible"] else
+                "Blocked comparison: " + ", ".join(comparison["incompatible_fields"]), "",
+            ]
+            for row in comparison["rows"]:
+                before = "missing" if row["baseline"] is None else f"{row['baseline']:.4g}"
+                after = "missing" if row["candidate"] is None else f"{row['candidate']:.4g}"
+                delta = "—" if row["percent_change"] is None else f"{row['percent_change']:+.2f}%"
+                lines.append(f"{row['metric']}: {before} → {after} ({delta})")
+            show_history_details("Baseline comparison", "\n".join(lines))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Baseline comparison failed", str(exc), parent=root)
+
+    def evaluate_history_selection():
+        try:
+            result_path = selected_history_path()
+            policy_path = filedialog.askopenfilename(
+                title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
+            )
+            if not policy_path:
+                return
+            evaluation = evaluate_policy(
+                load_history_result(result_path), load_policy(Path(policy_path)),
+            )
+            lines = [f"Decision: {evaluation['decision'].upper()}", ""]
+            lines.extend(
+                f"{item['id']}: {item['status']} (actual={item['actual']}, threshold={item['threshold']}, evidence={item['evidence']})"
+                for item in evaluation["rules"]
+            )
+            show_history_details("Acceptance evaluation", "\n".join(lines))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Acceptance evaluation failed", str(exc), parent=root)
+
+    ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
+    ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
+    ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
+        side="left", padx=(8, 0),
+    )
+    ttk.Button(history_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
+        side="left", padx=(8, 0),
+    )
+    history_query.trace_add("write", apply_history_filters)
+    history_status_filter.trace_add("write", apply_history_filters)
+    history_engine_filter.trace_add("write", apply_history_filters)
+    refresh_history()
 
     def walk_widgets(parent):
         for child in parent.winfo_children():

@@ -34,6 +34,7 @@
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
+| `docs/result-history.md` | Filesystem-owned result discovery, filtering, comparison, and policy evaluation |
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
 | `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
@@ -73,6 +74,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
 | `benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
+| `result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
 | `result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
 | `decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |
