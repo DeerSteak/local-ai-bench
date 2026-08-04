@@ -1,12 +1,14 @@
 import pytest
 
 from scripts.setup.setup_gui import (
+    HF_LOGIN_URL,
     default_model_selection,
     hf_token_review_label,
     license_button_label,
     mousewheel_scroll_units,
     selected_gui_token,
     should_save_gui_token,
+    token_controls_enabled,
     validate_gui_plan,
 )
 
@@ -65,6 +67,18 @@ def test_selected_gui_token_requires_override_for_existing_credentials(
 def test_existing_gui_token_is_not_rewritten_when_save_control_is_disabled():
     assert should_save_gui_token("", True) is False
     assert should_save_gui_token("replacement", True) is True
+
+
+@pytest.mark.parametrize(
+    ("existing", "override", "expected"),
+    [(False, False, True), (False, True, True), (True, False, False), (True, True, True)],
+)
+def test_token_controls_require_override_only_when_credential_exists(existing, override, expected):
+    assert token_controls_enabled(existing, override) is expected
+
+
+def test_token_help_opens_the_hugging_face_login_page():
+    assert HF_LOGIN_URL == "https://huggingface.co/login"
 
 
 @pytest.mark.parametrize(

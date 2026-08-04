@@ -21,6 +21,7 @@ LLM_GROUPS = (
     ("Medium LLMs", LLM_MODELS_MEDIUM),
     ("Large LLMs", LLM_MODELS_LARGE),
 )
+HF_LOGIN_URL = "https://huggingface.co/login"
 
 
 def default_model_selection(memory_ceiling_gb: float | None) -> dict[str, bool]:
@@ -72,6 +73,10 @@ def selected_gui_token(existing_available: bool, override: bool, entered: str) -
 
 def should_save_gui_token(token: str, requested: bool) -> bool:
     return bool(token and requested)
+
+
+def token_controls_enabled(existing_available: bool, override: bool) -> bool:
+    return not existing_available or override
 
 
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
@@ -229,10 +234,31 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     )
     save_token_check.grid(sticky="w")
 
+    token_help = ttk.Frame(credentials)
+    ttk.Button(
+        token_help, text="Open Hugging Face login",
+        command=lambda: webbrowser.open(HF_LOGIN_URL),
+    ).grid(sticky="w", pady=(0, 8))
+    ttk.Label(
+        token_help,
+        text=("1. Login\n"
+              "2. Click your avatar in the upper right.\n"
+              "3. Choose Settings from the menu that appears.\n"
+              "4. Go to Access Tokens.\n"
+              "5. Create a new token.\n"
+              "6. Copy and paste it into the Access token field."),
+        justify="left",
+    ).grid(sticky="w")
+
     def update_token_controls() -> None:
-        state = "normal" if not existing_hf_token or override_token_var.get() else "disabled"
+        enabled = token_controls_enabled(existing_hf_token, override_token_var.get())
+        state = "normal" if enabled else "disabled"
         token_entry.configure(state=state)
         save_token_check.configure(state=state)
+        if enabled:
+            token_help.grid(sticky="w", pady=(14, 0))
+        else:
+            token_help.grid_remove()
 
     if existing_hf_token:
         override_token_check.configure(command=update_token_controls)
