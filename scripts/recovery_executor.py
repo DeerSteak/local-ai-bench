@@ -67,16 +67,17 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
             store.complete_stage(stage, section)
         store.finish("complete")
     except BaseException as exc:
+        terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
         active = next((
             key for key, value in data["run"]["stages"].items()
             if value.get("status") == "running"
         ), None)
         if active:
             store.complete_stage(
-                active, SECTION_BY_STAGE[active], status="failed",
+                active, SECTION_BY_STAGE[active], status=terminal_status,
                 reason=type(exc).__name__,
             )
-        store.finish("failed", type(exc).__name__)
+        store.finish(terminal_status, type(exc).__name__)
         raise
     return data
 

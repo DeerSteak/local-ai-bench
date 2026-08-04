@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from pathlib import Path
 
 import config
@@ -52,8 +53,10 @@ from llamacpp_tools import find_llamacpp_tool
 from run_plan import load_run_plan
 from result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
 from result_history import compare_results, discover_results, filter_results, load_result as load_history_result
+from recovery_inspector import inspect_recovery
 from support_bundle import export_support_bundle, preview_support_bundle
 from model_inventory import build_model_inventory
+from models import LLM_MODELS
 from orchestration import STAGE_ORDER
 from outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from progress_events import PROGRESS_PREFIX
@@ -185,6 +188,42 @@ def format_run_outcome(exit_code: int) -> str:
     return (f"Benchmark stopped with exit code {exit_code}. Checkpointed measurements from completed "
             "models remain usable; pending work was not fabricated. Automatic cleanup was requested. "
             "Review the final Run Log message, correct the reported cause, then start a new run.")
+
+
+def recovery_executor_command(result_path: Path, python_executable=sys.executable) -> list[str]:
+    return [python_executable, str(config.SCRIPT_DIR / "scripts" / "recovery_executor.py"),
+            str(Path(result_path).resolve())]
+
+
+def format_recovery_inspection(report: dict) -> str:
+    lines = [
+        f"Decision: {report['action'].upper()}",
+        f"Plan: {report['plan_id']}",
+        f"Interrupted attempts: {report['interrupted_attempts']}", "", "Stages:",
+    ]
+    lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
+    lines += ["", "Cases:"]
+    lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]
+    if report["reasons"]:
+        lines += ["", "Reasons:", *[f"  - {reason}" for reason in report["reasons"]]]
+    return "\n".join(lines)
+
+
+def recovery_progress_entries(plan) -> list:
+    entries = []
+    seen = set()
+    labels = {model["tag"]: model["label"] for model in LLM_MODELS}
+    for family, kind in (("llm", "llm"), ("concurrency", "llm")):
+        for model in plan.models[family]:
+            key = (kind, model.get("tag") or model.get("short"))
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(SimpleNamespace(
+                checked=True, kind=kind,
+                label=labels.get(model.get("tag"), model.get("tag") or model.get("short")),
+            ))
+    return entries
 
 
 def custom_option_defaults(comfyui_dir: Path) -> dict:
@@ -1216,6 +1255,82 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Vendor diagnostic failed", str(exc), parent=root)
 
+    def inspect_history_recovery(start_after=False):
+        try:
+            result_path = selected_history_path()
+        except ValueError as exc:
+            messagebox.showerror("Recovery selection", str(exc), parent=root)
+            return
+        history_message.set(f"Verifying recovery identity for {result_path.name}…")
+
+        def worker():
+            try:
+                report = inspect_recovery(result_path)
+                error = None
+            except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
+                report, error = None, str(exc)
+
+            def finish():
+                if error:
+                    history_message.set("Recovery inspection failed.")
+                    messagebox.showerror("Recovery inspection failed", error, parent=root)
+                    return
+                history_message.set(
+                    f"Recovery decision for {result_path.name}: {report['action']}"
+                )
+                if not start_after:
+                    show_history_details("Recovery inspection", format_recovery_inspection(report))
+                    return
+                if not report["can_resume"]:
+                    show_history_details("Fork required", format_recovery_inspection(report))
+                    return
+                start_history_recovery(result_path, report)
+
+            root.after(0, finish)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def start_history_recovery(result_path, report):
+        nonlocal process, active_process_kind
+        if process is not None and process.poll() is None:
+            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
+            return
+        plan = load_run_plan(result_path)
+        unsupported = [stage for stage in plan.stage_order if stage not in {
+            "llm", "conv", "llamabench", "conc_tool", "conc_chat",
+        }]
+        if unsupported:
+            messagebox.showerror(
+                "Recovery unavailable",
+                "This saved plan contains stages without durable recovery: "
+                + ", ".join(unsupported), parent=root,
+            )
+            return
+        detail = format_recovery_inspection(report)
+        if not messagebox.askyesno(
+            "Resume stopped benchmark",
+            f"{detail}\n\nResume the remaining journal-owned work in this result?",
+            parent=root,
+        ):
+            return
+        command = recovery_executor_command(result_path)
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        process = subprocess.Popen(
+            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, creationflags=creationflags, env=child_env,
+        )
+        active_process_kind = "recovery"
+        log_text.configure(state="normal")
+        log_text.delete("1.0", "end")
+        log_text.configure(state="disabled")
+        run_status.set("Recovery is running. Completed evidence is preserved.")
+        start_button.configure(state="disabled")
+        stop_button.configure(state="normal")
+        notebook.select(log_tab)
+        show_progress_window(plan.stage_order, recovery_progress_entries(plan))
+        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
     ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
     ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
@@ -1227,6 +1342,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(history_actions, text="Export Diagnostic", command=export_history_diagnostic).pack(
         side="left", padx=(8, 0),
     )
+    ttk.Button(
+        history_actions, text="Inspect Recovery",
+        command=lambda: inspect_history_recovery(False),
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        history_actions, text="Resume", command=lambda: inspect_history_recovery(True),
+    ).pack(side="left", padx=(8, 0))
     history_query.trace_add("write", apply_history_filters)
     history_status_filter.trace_add("write", apply_history_filters)
     history_engine_filter.trace_add("write", apply_history_filters)
@@ -1283,6 +1405,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     root.bind_all("<Button-5>", scroll_form)
 
     process = None
+    active_process_kind = None
     output_queue = queue.Queue()
     progress_window = None
     stage_progress_vars = {}
@@ -1392,7 +1515,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         log_text.configure(state="disabled")
 
     def poll_output():
-        nonlocal process
+        nonlocal process, active_process_kind
         try:
             while True:
                 kind, value = output_queue.get_nowait()
@@ -1404,7 +1527,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     process = None
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
-                    run_status.set(format_run_outcome(value))
+                    if active_process_kind == "recovery":
+                        run_status.set(
+                            "Recovery completed successfully. Results are ready to review."
+                            if value == 0 else
+                            f"Recovery stopped with exit code {value}. Preserved evidence remains available."
+                        )
+                    else:
+                        run_status.set(format_run_outcome(value))
+                    active_process_kind = None
+                    refresh_history()
                     for variable in stage_progress_vars.values():
                         if variable.get() in {"○ Queued", "▶ Running"}:
                             variable.set("— Not run" if value else "✓ Complete")
@@ -1446,7 +1578,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         return values
 
     def start_run():
-        nonlocal process
+        nonlocal process, active_process_kind
         custom = mode_var.get() == "custom"
         if custom:
             tests = [name for name, variable in test_vars.items() if variable.get()]
@@ -1508,6 +1640,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
         )
+        active_process_kind = "benchmark"
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")

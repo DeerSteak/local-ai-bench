@@ -14,9 +14,11 @@ from benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    open_path_command, parse_progress_line, resolve_preset,
+    format_recovery_inspection, open_path_command, parse_progress_line,
+    recovery_executor_command, recovery_progress_entries, resolve_preset,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
+from run_plan import RunPlan
 
 
 def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
@@ -71,6 +73,41 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Darwin") == ["open", "/tmp/results"]
     assert open_path_command(path, "Linux") == ["xdg-open", "/tmp/results"]
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
+
+
+def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
+    result = tmp_path / "result.json"
+    command = recovery_executor_command(result, python_executable="python")
+    assert command == [
+        "python", str(Path(__file__).parents[1] / "scripts" / "recovery_executor.py"),
+        str(result.resolve()),
+    ]
+    detail = format_recovery_inspection({
+        "action": "fork", "plan_id": "plan-1", "interrupted_attempts": 2,
+        "stage_states": {"llm": "interrupted"},
+        "case_counts": {"complete": 17, "timed_out": 1},
+        "reasons": ["runtime identity changed"],
+    })
+    assert "Decision: FORK" in detail
+    assert "llm: interrupted" in detail
+    assert "complete: 17" in detail
+    assert "runtime identity changed" in detail
+
+
+def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
+    tag = "gemma3:1b-it-q4_K_M"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp",
+        tests=["llm", "conc_chat"], stage_order=["llm", "conc_chat"],
+        models={
+            "llm": [{"tag": tag, "short": "gemma3-1b"}],
+            "concurrency": [{"tag": tag, "short": "gemma3-1b"}],
+            "embeddings": [], "images": [],
+        },
+        effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+    entries = recovery_progress_entries(plan)
+    assert [(entry.kind, entry.label) for entry in entries] == [("llm", "Gemma 3 1B")]
 
 
 def test_discovery_report_summarizes_readiness_without_mutation():

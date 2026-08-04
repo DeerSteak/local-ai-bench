@@ -93,3 +93,26 @@ def test_recovery_executor_requires_fork_before_mutation_on_identity_drift(tmp_p
     with pytest.raises(ValueError, match="fork required"):
         resume_journal_run(result, identity_builder=lambda _plan: changed)
     assert result.read_bytes() == before
+
+
+def test_recovery_executor_records_user_interrupt_truthfully(tmp_path):
+    result, plan = stopped_result(tmp_path)
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}, "environment": {}}
+    stage = LLMEventStage(
+        result.with_suffix(".events.sqlite3"), plan, lambda _: None,
+        resume_identity=identity,
+    )
+    stage.close()
+
+    def interrupt(*_args):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        resume_journal_run(
+            result, identity_builder=lambda _plan: identity, stage_runner=interrupt,
+        )
+    recovered = json.loads(result.read_text())
+    assert recovered["run"]["status"] == "interrupted"
+    assert recovered["run"]["stages"]["llm"]["status"] == "interrupted"
+    assert recovered["run"]["stages"]["llm"]["reason"] == "KeyboardInterrupt"
