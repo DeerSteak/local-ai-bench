@@ -54,6 +54,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
 | [Product Requirements](docs/product-requirements.md) | Primary pre-launch hardware-validation workflow and quality gates |
 | [User Journey](docs/user-journey.md) | Complete discovery-to-report path, including cancellation, failure, resume, and review |
+| [Consumer Recommendation Policy](docs/recommendation-policy.md) | Evidence, fit, uncertainty, ranking, conflicts, and GPU/Mac decision flows |
 | [Platform Tuning Profiles](docs/platform-tuning.md) | Neutral runtime settings, compatibility workarounds, and profile change rules |
 | [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
 | [Benchmark Projects](docs/projects.md) | Local decision workflows, portable configuration, baselines, and acceptance policies |
