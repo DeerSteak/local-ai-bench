@@ -20,6 +20,8 @@ Unsupported goals, missing required evidence, incompatible methodology, unknown 
 
 Supported recommendations require a verified result bundle or a locally retained source result whose methodology profile, application/result schema, runtime, model artifact, effective configuration, bank versions, and relevant cache state are known. Required cases need the policy's minimum valid samples; invalid and missing samples never count as zero. The recommendation cites the exact result, model, case, metric, valid/excluded counts, run status, and limitation that affected each conclusion.
 
+The [reference-evidence policy](reference-evidence.md) additionally requires an unexpired allowlisted record with exact methodology, hardware, model, runtime, and environment identities. Vendor and community submissions remain contextual evidence until independently promoted through that process.
+
 Evidence confidence is labeled:
 
 - **Verified** — supported methodology, complete required coverage, verified source/bundle identity, and required valid evidence.
