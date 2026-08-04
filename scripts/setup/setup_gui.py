@@ -59,6 +59,10 @@ def hf_token_review_label(plan: dict) -> str:
     return "not provided"
 
 
+def license_button_label(url: str) -> str:
+    return f"Accept license: {url}"
+
+
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
@@ -177,7 +181,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             license_url = model.get("license_url")
             if license_url:
                 ttk.Button(
-                    model_list, text=license_url,
+                    model_list, text=license_button_label(license_url),
                     command=lambda url=license_url: webbrowser.open(url),
                 ).grid(row=row, column=1, sticky="w", padx=(12, 0))
             row += 1

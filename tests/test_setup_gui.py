@@ -3,6 +3,7 @@ import pytest
 from scripts.setup.setup_gui import (
     default_model_selection,
     hf_token_review_label,
+    license_button_label,
     mousewheel_scroll_units,
     validate_gui_plan,
 )
@@ -38,6 +39,11 @@ def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
 )
 def test_hf_token_review_label_reports_existing_and_new_credentials(plan, expected):
     assert hf_token_review_label(plan) == expected
+
+
+def test_license_button_label_explains_the_link_action():
+    url = "https://huggingface.co/example/model"
+    assert license_button_label(url) == f"Accept license: {url}"
 
 
 @pytest.mark.parametrize(
