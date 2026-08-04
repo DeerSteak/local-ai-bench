@@ -9,7 +9,8 @@ from benchmark_frontend import (
     validate_gui_options,
 )
 from benchmark_gui import (
-    build_discovery_report, custom_option_defaults, effective_gui_options, format_run_outcome,
+    advanced_controls_visible, build_discovery_report, custom_option_defaults,
+    effective_gui_options, format_run_outcome,
     open_path_command, parse_progress_line,
     workload_preflight_errors,
 )
@@ -143,3 +144,9 @@ def test_custom_option_defaults_reset_paths_without_mutating_global_defaults():
     assert defaults["comfyui"] == "/chosen/ComfyUI"
     assert defaults["runs"] == GUI_OPTION_DEFAULTS["runs"]
     assert GUI_OPTION_DEFAULTS["comfyui"] == ""
+
+
+def test_advanced_controls_require_custom_mode_and_explicit_request():
+    assert advanced_controls_visible("custom", True)
+    assert not advanced_controls_visible("custom", False)
+    assert not advanced_controls_visible("default", True)

@@ -134,6 +134,10 @@ def custom_option_defaults(comfyui_dir: Path) -> dict:
     return {**GUI_OPTION_DEFAULTS, "comfyui": str(comfyui_dir)}
 
 
+def advanced_controls_visible(mode: str, requested: bool) -> bool:
+    return mode == "custom" and requested
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -182,6 +186,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     style.configure("Start.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 9))
 
     mode_var = tk.StringVar(value="default")
+    advanced_var = tk.BooleanVar(value=False)
     engine_var = tk.StringVar(value=selected_engine)
     test_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_tests}
     model_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_models}
@@ -253,9 +258,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     custom_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
     custom_frame.columnconfigure(0, weight=1)
     custom_frame.columnconfigure(1, weight=1)
+    advanced_toggle = ttk.Checkbutton(
+        custom_frame, text="Show advanced execution and path settings", variable=advanced_var,
+    )
+    advanced_toggle.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
     tests_box = ttk.LabelFrame(custom_frame, text="Tests", padding=12)
-    tests_box.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    tests_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     test_widgets = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
@@ -269,7 +278,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(custom_frame, text="Installed models", padding=12)
-    models_box.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    models_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     previous = None
     model_widgets = {}
     row = 0
@@ -289,7 +298,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=row, column=0, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(custom_frame, text="Workload sizes", padding=12)
-    workload_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    workload_box.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     ttk.Label(workload_box, text="Maximum prompt-processing size").grid(row=0, column=0, sticky="w")
     cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
                              values=["No cap", *[str(value) for value in MAX_PROMPT_TOKEN_OPTIONS]], width=18)
@@ -305,7 +314,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     execution_box = ttk.LabelFrame(custom_frame, text="Execution", padding=12)
-    execution_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    execution_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     ttk.Label(execution_box, text="Inference engine").grid(row=0, column=0, sticky="w", pady=2)
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
                                 values=available_engines, width=16)
@@ -326,7 +335,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
-    paths_box.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    paths_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     paths_box.columnconfigure(1, weight=1)
     ttk.Label(paths_box, text="Results JSON (blank = automatic)").grid(row=0, column=0, sticky="w")
     ttk.Entry(paths_box, textvariable=option_vars["out"]).grid(row=0, column=1, sticky="ew", padx=10)
@@ -448,7 +457,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 if not entry.available:
                     test_widgets[entry.value].configure(state="disabled")
 
-    mode_var.trace_add("write", lambda *_: update_mode())
+    def update_advanced() -> None:
+        visible = advanced_controls_visible(mode_var.get(), advanced_var.get())
+        for box in (execution_box, paths_box):
+            box.grid() if visible else box.grid_remove()
+
+    mode_var.trace_add("write", lambda *_: (update_mode(), update_advanced()))
+    advanced_var.trace_add("write", lambda *_: update_advanced())
 
     def scroll_form(event):
         widget = root.winfo_containing(root.winfo_pointerx(), root.winfo_pointery())
@@ -669,6 +684,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     stop_button.configure(command=stop_run)
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_mode()
+    update_advanced()
     root.after(100, poll_output)
     root.after(150, lambda: (root.lift(), root.attributes("-topmost", True), root.focus_force(),
                              root.after(400, lambda: root.attributes("-topmost", False))))
