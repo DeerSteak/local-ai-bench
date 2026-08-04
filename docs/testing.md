@@ -61,7 +61,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 
 | Area | Test modules |
 |---|---|
-| Accuracy options and test-group expansion | [test_benchmark_accuracy_options.py](../tests/test_benchmark_accuracy_options.py), [test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py) |
+| Public option schema, accuracy options, and test-group expansion | [test_benchmark_options.py](../tests/test_benchmark_options.py), [test_benchmark_accuracy_options.py](../tests/test_benchmark_accuracy_options.py), [test_benchmark_expand_tests.py](../tests/test_benchmark_expand_tests.py) |
 | Prompt/tg caps | [test_benchmark_max_prompt_tokens_cap.py](../tests/test_benchmark_max_prompt_tokens_cap.py), [test_benchmark_tg_tokens_override.py](../tests/test_benchmark_tg_tokens_override.py) |
 | Tier, model, and engine selection | [test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py), [test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py), [test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py), [test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py), [test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py), [test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py) |
 | Conversation eligibility and output paths | [test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py), [test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py) |
@@ -72,7 +72,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 
 These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
 
-The frontend suite parses `benchmark.py`'s public argparse declarations and requires every flag to appear in `FRONTEND_OPTION_INVENTORY` as exposed, represented by a more precise UI equivalent, intentionally developer-only, or an explicit gap. This prevents new CLI controls from disappearing silently while allowing the remaining commercial-frontend work to be tracked honestly.
+The typed public-option schema supplies the CLI's shared choices and numeric constraints and generates the GUI's defaults, validation metadata, classification, and coverage inventory. The frontend suite also parses `benchmark.py`'s public argparse declarations and requires every flag to appear in that schema as exposed, represented by a more precise UI equivalent, or intentionally excluded. This prevents new CLI controls or changed constraints from disappearing silently.
 
 Run-plan round-trip tests load both standalone plans and plans embedded in CLI results, convert supported values into frontend state, and assert that the shared command builder emits the same measurement-affecting controls. Developer-only sampled plans are tested as an explicit rejection so the GUI cannot silently hide or discard a CLI value.
 

@@ -99,6 +99,8 @@ The launcher maintains an executable inventory of every public `benchmark.py` fl
 
 The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only and force-all modes, output path, and ComfyUI path in Custom mode. Each is validated before launch and included in the resolved plan review; the executable option-inventory test prevents a future safe public setting from disappearing silently.
 
+CLI and graphical numeric constraints, choice lists, defaults, option classifications, and UI coverage policy share one typed option schema. Warmups must be zero or greater; measured runs remain 1–10; timeouts, token budgets, prompt caps, and developer sample sizes must be positive.
+
 Custom mode provides reset actions for each individual control, each configuration section, and the entire plan. Resets restore current documented defaults in memory only; saved Custom settings are not replaced until a benchmark is reviewed and confirmed.
 
 Custom configurations can be exported as versioned portable preset JSON, imported and applied, duplicated under a new name, or compared with the current screen. Portable presets contain engine, tests, model identifiers, prompt/generation sizes, and measurement-affecting execution settings; output and ComfyUI paths are deliberately excluded because they are machine-private. Presets never contain credentials, Hugging Face tokens, prompts, responses, or results.

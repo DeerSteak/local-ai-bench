@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+from benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
@@ -355,8 +356,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
         "--tests", nargs="+",
-        choices=["llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool", "acc",
-                 "conc_tool", "conc_chat", "conc", "img"],
+        choices=TEST_CHOICES,
         default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
         help="Which benchmarks to run (default: all except the concurrency "
              "tests and 'llamabench'). 'acc' is shorthand for every accuracy-style test "
@@ -422,7 +422,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(default: no cap, run every configured depth).",
     )
     parser.add_argument(
-        "--tg-tokens", type=int, nargs="+", default=None, choices=[128, 512, 1024], metavar="N",
+        "--tg-tokens", type=int, nargs="+", default=None, choices=TG_TOKEN_CHOICES, metavar="N",
         help="Which generation (tg) sizes 'llamabench' and 'llamabenchconc' sweep at each "
              f"prompt depth (default: {config.LLAMABENCH_TG}). Only affects whichever of "
              "those two tests are actually selected via --tests.",
@@ -456,7 +456,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     parser.add_argument(
         "--maxtier", type=str, default=None,
-        choices=["xsmall", "small", "medium", "large"],
+        choices=TIER_CHOICES,
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
              "and below (default: all tiers). xsmall: <6B params. small: adds ≤20B. "
              "medium: adds 26-35B. large: adds 70B+ (i.e. no cap).",
@@ -498,6 +498,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+
+    option_errors = option_value_errors({
+        "--warmup": args.warmup, "--runs": args.runs, "--timeout": args.timeout,
+        "--acc-timeout": args.acc_timeout, "--acc-token-budget": args.acc_token_budget,
+        "--max-prompt-tokens": args.max_prompt_tokens, "--sample": args.sample,
+    })
+    if option_errors:
+        parser.error(option_errors[0])
 
     args.tests = expand_tests(args.tests)
     setup_config = load_setup_config(config.SETUP_CONFIG_PATH)

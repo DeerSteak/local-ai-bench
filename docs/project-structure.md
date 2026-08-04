@@ -58,6 +58,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | Module | Purpose |
 |---|---|
 | `benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
+| `benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
 | `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
 | `benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
 | `benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |

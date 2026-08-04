@@ -10,6 +10,10 @@ from pathlib import Path
 
 from result_store import atomic_write_json
 from run_plan import RunPlan
+from benchmark_options import (
+    GUI_OPTION_FLAGS, PUBLIC_OPTION_SCHEMA, TG_TOKEN_CHOICES, gui_option_defaults,
+    option_value_errors,
+)
 
 import config
 from comfyui_installation import find_comfyui_installation
@@ -48,64 +52,16 @@ LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
 MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc"}
 MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
-TG_TOKEN_OPTIONS = [128, 512, 1024]
+TG_TOKEN_OPTIONS = list(TG_TOKEN_CHOICES)
 FRONTEND_OPTION_INVENTORY = {
-    "--tests": ("exposed", "Test selection screen"),
-    "--engine": ("exposed", "Engine selection screen"),
-    "--llm-models": ("exposed", "LLM model selection screen"),
-    "--embedding-models": ("exposed", "Embedding model selection screen"),
-    "--image-models": ("exposed", "Image model selection screen"),
-    "--max-prompt-tokens": ("exposed", "Prompt-processing cap screen"),
-    "--tg-tokens": ("exposed", "Generation-size screen"),
-    "--maxtier": ("equivalent", "Tier shortcuts and explicit model selection are more precise"),
-    "--models": ("equivalent", "Backward-compatible alias for --llm-models"),
-    "--list-models": ("equivalent", "Installed models are shown in the selection screens"),
-    "--sample": ("excluded", "Developer-only non-comparable accuracy sampling"),
-    "--warmup": ("exposed", "Graphical execution settings"),
-    "--runs": ("exposed", "Graphical execution settings"),
-    "--timeout": ("exposed", "Graphical execution settings"),
-    "--acc-timeout": ("exposed", "Graphical execution settings"),
-    "--acc-token-budget": ("exposed", "Graphical execution settings"),
-    "--cpu-only": ("exposed", "Graphical execution settings"),
-    "--force-all": ("exposed", "Graphical execution settings"),
-    "--out": ("exposed", "Graphical path settings"),
-    "--comfyui": ("exposed", "Graphical path settings"),
+    flag: (spec.ui_status, spec.ui_location) for flag, spec in PUBLIC_OPTION_SCHEMA.items()
 }
 FRONTEND_OPTION_CLASSIFICATION = {
-    "--tests": "guided",
-    "--engine": "guided",
-    "--llm-models": "guided",
-    "--embedding-models": "guided",
-    "--image-models": "guided",
-    "--max-prompt-tokens": "guided",
-    "--tg-tokens": "guided",
-    "--maxtier": "guided",
-    "--models": "guided",
-    "--list-models": "contextual",
-    "--sample": "developer-only",
-    "--warmup": "advanced",
-    "--runs": "advanced",
-    "--timeout": "advanced",
-    "--acc-timeout": "advanced",
-    "--acc-token-budget": "advanced",
-    "--cpu-only": "advanced",
-    "--force-all": "advanced",
-    "--out": "advanced",
-    "--comfyui": "advanced",
+    flag: spec.classification for flag, spec in PUBLIC_OPTION_SCHEMA.items()
 }
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 2
-GUI_OPTION_DEFAULTS = {
-    "warmup": config.WARMUP_RUNS,
-    "runs": config.N_RUNS,
-    "timeout": 300,
-    "acc_timeout": config.ACC_TIMEOUT,
-    "acc_token_budget": config.ACC_TOKEN_BUDGET,
-    "cpu_only": False,
-    "force_all": False,
-    "out": "",
-    "comfyui": "",
-}
+GUI_OPTION_DEFAULTS = gui_option_defaults()
 FRONTEND_MODEL_FAMILIES = {
     "llm": {"llm", "custom"},
     "embedding": {"embedding"},
@@ -174,13 +130,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
 def validate_gui_options(options: object) -> list[str]:
     if not isinstance(options, dict) or set(options) != set(GUI_OPTION_DEFAULTS):
         return ["GUI settings are incomplete."]
-    errors = []
-    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
-        value = options[key]
-        if not isinstance(value, int) or isinstance(value, bool) or value < (0 if key == "warmup" else 1):
-            errors.append(f"{key} must be a valid whole number.")
-    if isinstance(options.get("runs"), int) and not 1 <= options["runs"] <= 10:
-        errors.append("runs must be between 1 and 10.")
+    errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
     if not isinstance(options["cpu_only"], bool) or not isinstance(options["force_all"], bool):
         errors.append("Execution mode settings must be true or false.")
     if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
