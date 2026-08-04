@@ -45,6 +45,7 @@ from comfyui_installation import find_comfyui_installation, normalize_comfyui_di
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from run_plan import load_run_plan
+from result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
 from model_inventory import build_model_inventory
 from orchestration import STAGE_ORDER
 from progress_events import PROGRESS_PREFIX
@@ -726,9 +727,52 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
         subprocess.Popen(open_path_command(folder, platform.system()))
 
+    def export_bundle():
+        result = filedialog.askopenfilename(
+            title="Choose result JSON", initialdir=config.RESULTS_DIR,
+            filetypes=[("Benchmark result", "*.json")],
+        )
+        if not result:
+            return
+        bundle = filedialog.asksaveasfilename(
+            title="Export verified result bundle", defaultextension=".labresult",
+            filetypes=[("Local AI Bench result", "*.labresult")],
+        )
+        if not bundle:
+            return
+        try:
+            export_result_bundle(Path(result), Path(bundle))
+            messagebox.showinfo("Bundle exported", f"Verified bundle saved to:\n{bundle}", parent=root)
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("Bundle export failed", str(exc), parent=root)
+
+    def import_bundle():
+        bundle = filedialog.askopenfilename(
+            title="Import and verify result bundle",
+            filetypes=[("Local AI Bench result", "*.labresult")],
+        )
+        if not bundle:
+            return
+        destination = filedialog.asksaveasfilename(
+            title="Save verified result JSON", initialdir=config.RESULTS_DIR,
+            defaultextension=".json", filetypes=[("Benchmark result", "*.json")],
+        )
+        if not destination:
+            return
+        try:
+            verify_result_bundle(Path(bundle))
+            import_result_bundle(Path(bundle), Path(destination), Path(destination).with_suffix(""))
+            messagebox.showinfo(
+                "Bundle verified and imported", f"Verified result saved to:\n{destination}", parent=root,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("Bundle verification failed", str(exc), parent=root)
+
     ttk.Button(log_actions, text="Open Results Folder", command=open_results_folder).pack(
         side="left", padx=(10, 0),
     )
+    ttk.Button(log_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(10, 0))
+    ttk.Button(log_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(10, 0))
 
     def walk_widgets(parent):
         for child in parent.winfo_children():

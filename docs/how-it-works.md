@@ -84,6 +84,8 @@ The graphical frontend can load either a standalone `RunPlan` JSON document or t
 
 When the GUI supervises a run, the CLI emits opt-in structured stage, model, and measurement-quality events alongside the ordinary log. The always-on-top progress window shows queued/running/finished models, usable saved-result coverage, implausible-measurement retries and drops, combined benchmark-process CPU/RAM use, and an elapsed-rate remaining-time estimate that stays in a calibrating state until one model finishes. These events do not alter result files or terminal-only output.
 
+Portable `.labresult` bundles contain canonical result JSON and optional content-addressed artifacts in a deterministic ZIP envelope. The manifest records SHA-256 and byte size for every payload. Verification rejects duplicate, undeclared, oversized, path-bearing, modified, non-finite, unsupported-plan, or locally unavailable methodology content and reproduces supported means and valid-run counts from raw samples before import. Imported artifacts retain their content-addressed bundle names, preventing archive paths or private source paths from controlling extraction.
+
 ---
 
 [← Dashboard](dashboard.md) · [Back to README](../README.md) · [Engines →](engines.md)
