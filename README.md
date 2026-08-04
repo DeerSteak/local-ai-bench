@@ -80,6 +80,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
 | [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, report, and privacy-safe support guidance |
 | [Support Operations](docs/support.md) | Intake, severity, escalation, redaction, retention, and resolution runbooks |
+| [Telemetry Contract](docs/telemetry.md) | Current no-telemetry state and future opt-in event/field boundaries |
 
 ---
 

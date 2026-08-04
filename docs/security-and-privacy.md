@@ -47,6 +47,8 @@ An evaluation is embargoed when the user or project marks any hardware, model, c
 
 No embargoed artifact leaves the machine without an explicit review that names destination, files, fields, aliases, and intended audience. Result bundle and report creation now preview identity fields, support system/hardware aliases, and retain a source-identity digest; arbitrary attached artifacts still require separate inspection. Support bundles remain allowlisted but still require review. Telemetry, hosted sync, automatic crash upload, and metadata-bearing update checks default off for embargoed projects. [Offline Mode](offline-mode.md) enforces loopback-only application sockets and inherited offline controls; supported-platform packet-capture qualification remains open.
 
+Version 4.1 sends no product telemetry. The [Telemetry Contract](telemetry.md) defines the maximum initial opt-in event dictionary, forbidden fields, local inspection/deletion requirements, and separation from sync, support, entitlements, crashes, and updates before any collector may be implemented.
+
 ## Security ownership and response
 
 Before a stable paid release, the project must name a security owner, publish a private vulnerability-reporting channel and response targets, inventory and scan dependencies/artifacts/secrets, generate an SBOM and notices, sign releases and updates, exercise rollback, commission independent assessment, and close or explicitly accept every high-severity finding. Security claims require evidence from the shipped build and supported platform matrix, not only this design.
