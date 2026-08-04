@@ -43,6 +43,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
 def inspect_recovery(result_path, identity_builder=current_resume_identity):
     """Return a redacted recovery decision without changing the result or journal."""
     result_path = Path(result_path).resolve()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
     plan = load_run_plan(result_path)
     journal_path = event_store_path(result_path)
     if not journal_path.is_file():
@@ -64,9 +65,13 @@ def inspect_recovery(result_path, identity_builder=current_resume_identity):
     case_states = {}
     for case in projection["cases"].values():
         case_states[case["state"]] = case_states.get(case["state"], 0) + 1
+    reasons = list(decision.reasons)
+    if result.get("run", {}).get("status") == "complete":
+        reasons.append("result is already complete")
+    can_resume = not reasons
     return {
-        "schema_version": 1, "action": decision.action,
-        "can_resume": decision.can_resume, "reasons": list(decision.reasons),
+        "schema_version": 1, "action": "resume" if can_resume else "fork",
+        "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),
         "interrupted_attempts": len(decision.interrupted_attempts),

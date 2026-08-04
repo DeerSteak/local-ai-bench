@@ -59,3 +59,13 @@ def test_recovery_inspector_rejects_result_without_journal(tmp_path):
         assert "no durable event journal" in str(exc)
     else:
         raise AssertionError("missing journal was accepted")
+
+
+def test_recovery_inspector_never_reopens_a_complete_portable_result(tmp_path):
+    result, _, identity = make_result(tmp_path)
+    value = json.loads(result.read_text())
+    value["run"]["status"] = "complete"
+    result.write_text(json.dumps(value), encoding="utf-8")
+    report = inspect_recovery(result, lambda _plan: identity)
+    assert report["action"] == "fork" and report["can_resume"] is False
+    assert report["reasons"] == ["result is already complete"]
