@@ -56,6 +56,7 @@ IMAGE_MODELS = [
         "scheduler":  "beta",
         "short":      "sd35-large",
         "tier":       "medium",    # ~16.5 GB
+        "license_url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
     },
     {
         "label":      "Flux.1-dev",
@@ -67,6 +68,7 @@ IMAGE_MODELS = [
         "scheduler":  "simple",
         "short":      "flux-dev",
         "tier":       "large",     # ~23.9 GB
+        "license_url": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
     },
     {
         "label":      "Flux.2-dev",
@@ -78,6 +80,7 @@ IMAGE_MODELS = [
         "scheduler":  "simple",
         "short":      "flux2-dev",
         "tier":       "large",     # ~64.5 GB
+        "license_url": "https://huggingface.co/black-forest-labs/FLUX.2-dev",
     },
 ]
 

@@ -137,3 +137,14 @@ def test_image_models_have_required_keys():
     required = {"label", "checkpoint", "workflow", "steps", "cfg", "sampler", "scheduler", "short", "tier"}
     for m in IMAGE_MODELS:
         assert required <= m.keys()
+
+
+def test_gated_image_models_expose_their_hugging_face_license_pages():
+    urls = {model["short"]: model.get("license_url") for model in IMAGE_MODELS}
+    assert urls == {
+        "sd15": None,
+        "sdxl": None,
+        "sd35-large": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+        "flux-dev": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+        "flux2-dev": "https://huggingface.co/black-forest-labs/FLUX.2-dev",
+    }

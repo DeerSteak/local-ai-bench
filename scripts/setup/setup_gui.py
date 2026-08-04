@@ -64,6 +64,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      cleanup_names: list[str],
                      existing_hf_token: bool = False) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
+    import webbrowser
     from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
@@ -173,6 +174,12 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             ttk.Checkbutton(
                 model_list, text=f"{model['label']}  {size}", variable=model_vars[key],
             ).grid(row=row, column=0, sticky="w", padx=(16, 0))
+            license_url = model.get("license_url")
+            if license_url:
+                ttk.Button(
+                    model_list, text=license_url,
+                    command=lambda url=license_url: webbrowser.open(url),
+                ).grid(row=row, column=1, sticky="w", padx=(12, 0))
             row += 1
     if cleanup_names:
         ttk.Checkbutton(
