@@ -172,3 +172,18 @@ def test_ctx_plan_a_lower_model_max_cuts_off_target_and_checkpoints_early():
 def test_ctx_plan_num_ctx_never_exceeds_model_max():
     _, _, num_ctx = Conv.conv_ctx_plan(100000)
     assert num_ctx == 100000
+
+
+def test_ctx_plan_respects_max_prompt_tokens_cap():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072, 32768)
+    assert target_ctx == 32768
+    assert checkpoints[-1] == 32768
+    assert all(checkpoint <= 32768 for checkpoint in checkpoints)
+    assert num_ctx == 32768 + Conv.CONV_CTX_HEADROOM
+
+
+def test_ctx_plan_cap_below_first_nonzero_checkpoint_keeps_opening_checkpoint():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072, 512)
+    assert target_ctx == 512
+    assert checkpoints == [0]
+    assert num_ctx == 512 + Conv.CONV_CTX_HEADROOM

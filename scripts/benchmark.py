@@ -413,7 +413,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         help="Cap the deepest prompt-processing size swept by 'llm' (drops entries from "
              f"CONTEXT_LENGTHS {config.CONTEXT_LENGTHS}), 'llamabench' (drops entries from "
              f"LLAMABENCH_PP {config.LLAMABENCH_PP}), and 'llamabenchconc' (clamps its fixed "
-             f"prompt depth, default {config.LLAMABENCH_CONC_PP}) to at most N tokens — only "
+             f"prompt depth, default {config.LLAMABENCH_CONC_PP}); also caps 'conv' checkpoints "
+             "and growth target to at most N tokens — only "
              "affects whichever of those tests are actually selected via --tests "
              "(default: no cap, run every configured depth).",
     )
@@ -687,6 +688,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "accuracy_timeout_seconds": config.ACC_TIMEOUT,
                 "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
                 "cpu_only": args.cpu_only, "force_all": args.force_all,
+                "max_prompt_tokens": args.max_prompt_tokens,
                 "context_lengths": config.CONTEXT_LENGTHS,
                 "llamabench_pp": config.LLAMABENCH_PP,
                 "llamabench_tg": config.LLAMABENCH_TG,
@@ -753,6 +755,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 engine=engine, models=conv_models, warmup_runs=_context.spec.warmup_runs,
                 force_all=_context.spec.force_all,
                 save_fn=make_save("llm_conversation", "conv"),
+                max_prompt_tokens=args.max_prompt_tokens,
             )
             section.update(skips)
             return section

@@ -1009,6 +1009,27 @@ def test_run_frontend_prompts_for_max_prompt_tokens_when_llamabench_selected():
     assert commands[0][commands[0].index("--tg-tokens") + 1:commands[0].index("--llm-models")] == ["128", "512"]
 
 
+@pytest.mark.parametrize("test_toggles", ["2 4 13", "1 4 13"])
+def test_run_frontend_applies_max_prompt_tokens_to_llm_and_conversation(test_toggles):
+    commands = []
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence([test_toggles, "", "", "5", ""]),
+        output_fn=output,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+    assert result == 0
+    assert any("Cap the max prompt-processing size" in message for message in messages)
+    index = commands[0].index("--max-prompt-tokens")
+    assert commands[0][index + 1] == "16384"
+
+
 def test_run_frontend_cancel_does_not_create_state_file(tmp_path):
     state_path = tmp_path / "state.json"
     result = run_frontend(

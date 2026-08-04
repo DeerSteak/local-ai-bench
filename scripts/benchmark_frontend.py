@@ -42,7 +42,7 @@ TEST_SHORTCUT_GROUPS = {
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
-MAX_PROMPT_TOKEN_TESTS = {"llm", "llamabench", "llamabenchconc"}
+MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc"}
 MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS = [128, 512, 1024]
@@ -322,7 +322,7 @@ def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
         redraw = True
         output_fn(
             "Cap the max prompt-processing size tested (applies to Single-shot LLM, "
-            "llama-bench throughput, and llama-bench concurrency):"
+            "conversation, llama-bench throughput, and llama-bench concurrency):"
         )
         output_fn(f"   0  No cap (test every configured depth){' (restored)' if preferred is None else ''}")
         for index, value in enumerate(options, 1):

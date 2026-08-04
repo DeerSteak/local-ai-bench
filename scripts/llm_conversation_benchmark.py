@@ -60,10 +60,12 @@ class LLMConversationBenchmark:
         return min(step, room), False
 
     @staticmethod
-    def conv_ctx_plan(model_max: int) -> tuple[int, list[int], int]:
+    def conv_ctx_plan(model_max: int, max_prompt_tokens: int | None = None) -> tuple[int, list[int], int]:
         """Resolve (target_ctx, checkpoints, num_ctx) from a model's real max
         context — every model gets the same plan, capped only by its own ceiling."""
-        target_ctx = min(model_max, LLMConversationBenchmark.CONV_TARGET_CTX)
+        configured_target = min(LLMConversationBenchmark.CONV_TARGET_CTX,
+                                max_prompt_tokens or LLMConversationBenchmark.CONV_TARGET_CTX)
+        target_ctx = min(model_max, configured_target)
         checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
         num_ctx = Shared.ctx_with_headroom(target_ctx, LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
         return target_ctx, checkpoints, num_ctx
@@ -81,7 +83,8 @@ class LLMConversationBenchmark:
             "examples, counterarguments, and analysis."
         )
 
-    def run(self, engine, models, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
+    def run(self, engine, models, warmup_runs, force_all=False, save_fn=None,
+            max_prompt_tokens=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
@@ -112,7 +115,9 @@ class LLMConversationBenchmark:
                     continue
 
                 model_max = engine.max_context_length(tag)
-                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(model_max)
+                target_ctx, checkpoints, num_ctx = LLMConversationBenchmark.conv_ctx_plan(
+                    model_max, max_prompt_tokens,
+                )
                 top_checkpoint = checkpoints[-1] if checkpoints else 0
 
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
