@@ -35,7 +35,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: crash-safe resume ultimately needs transactions, but two indefinitely writable stores would create reconciliation failures.
-- Decision: `ResultStore` and atomic JSON remain the only live source of truth today. SQLite may become authoritative only for a bounded workload slice whose events can reproduce its export; that slice must stop mutating the same state through JSON.
+- Decision: `ResultStore` and atomic JSON remain authoritative for unmigrated workloads. SQLite is authoritative only for the bounded single-shot, conversation, native llama-bench, and HTTP concurrency slices whose events reproduce their JSON sections; those slices no longer mutate the same live measurement state through JSON.
 - Rejected alternative: a shadow SQLite journal beside mutable result JSON.
 - Deletion gate: after every supported workload uses the transactional store, remove live JSON mutation and retain JSON only as deterministic export.
 
@@ -65,7 +65,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 ### AD-007 — Introduce the event journal inactive before workload migration
 
-- Status: accepted
+- Status: superseded by AD-011, AD-013, and AD-014
 - Requirement: safe resume requires a transactional append-only record, while simultaneous JSON and SQLite mutation would create two authorities.
 - Decision: implement and adversarially verify the journal independently, but do not connect it to benchmark execution until one bounded workload stops owning that state in JSON. Events use stable plan-derived parentage, legal transitions, atomic batches, immutable rows, and a digest chain; projections and aggregates rebuild from events.
 - Rejected alternative: shadow-write every current JSON checkpoint into SQLite and reconcile later.
@@ -107,7 +107,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
-- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot and conversation are currently supported.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot, conversation, native llama-bench, and both HTTP concurrency stages are supported.
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
 - Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 
@@ -126,6 +126,22 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Decision: the supervised child resolves ladders and contexts from the immutable plan, executes the existing whole-batch retry policy unchanged, and atomically commits only the final batch's request samples plus batch-level metrics.
 - Compatibility: level keys, per-request aggregates, aggregate throughput, memory, validity, and stop markers retain their 4.1 shape.
 - Rejected alternative: retrying or checkpointing individual requests from a concurrent batch.
+
+### AD-015 — Separate resume, selected retry, and fork truthfully
+
+- Status: accepted
+- Requirement: stopped work must preserve valid evidence without implying that aggregate-only workloads can resume cases they never journaled.
+- Decision: exact-identity journal plans may resume remaining work; eligible measured context/level cases may be retried explicitly within one stage; a full-plan fork always creates a distinct run/job/output and retains source provenance. Plans containing JSON-owned legacy stages replay through normal orchestration under an exact source-plan guard rather than claiming in-place case resume.
+- Compatibility and data ownership: resume/retry update the original result only after the inspector gate and retain terminal/attempt history; fork never mutates source evidence. Native llama-bench resumes the remaining sweep because unstarted rows have no selectable case identity.
+- Evidence: inspector, executor, event-stage, GUI command/presentation, exact-plan, overwrite, source-preservation, and interruption tests.
+
+### AD-016 — Pause cooperatively at measurement boundaries
+
+- Status: accepted
+- Requirement: a user must be able to pause long local runs without corrupting an in-flight measurement, tripping runner liveness, or adding paused time to timing metrics.
+- Decision: GUI-launched parent and child processes share one short-lived validated control file. Pause waits before the next measured request, conversation turn, concurrency level, native sweep, or batched-native model command; the current operation checkpoints normally, runner heartbeats continue, and Stop releases pause before interruption.
+- Rejected alternative: suspending only the GUI-owned parent process, which would leave isolated runner/server processes active and could trigger supervisor timeouts.
+- Evidence and deletion gate: pause-control validation/blocking and measured-boundary tests; replace the file only if a future authenticated coordinator becomes the execution owner.
 
 ## Migration and deletion ledger
 
