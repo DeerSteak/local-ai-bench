@@ -33,6 +33,10 @@ from benchmark_frontend import (
     save_frontend_state,
     validate_gui_options,
 )
+from benchmark_presets import (
+    build_portable_preset, compare_portable_presets, duplicate_portable_preset,
+    load_portable_preset, save_portable_preset,
+)
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
@@ -217,7 +221,7 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox, simpledialog, ttk
 
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
@@ -513,7 +517,100 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         option_vars["force_all"].set(preset["force_all"])
         cap_var.set(str(preset["max_prompt_tokens"]) if preset["max_prompt_tokens"] else "No cap")
 
+    def current_custom_state():
+        tests = [name for name, variable in test_vars.items() if variable.get()]
+        for entry in custom_models:
+            entry.checked = model_vars[entry.value].get()
+        options = collect_options()
+        cap = None if cap_var.get() == "No cap" else int(cap_var.get())
+        tg = [value for value, variable in tg_vars.items() if variable.get()]
+        return build_frontend_state(
+            engine_var.get(), tests, custom_models, max_prompt_tokens=cap,
+            tg_tokens=tg, gui_options=options,
+        )
+
+    def export_preset(preset=None):
+        if preset is None:
+            name = simpledialog.askstring("Preset name", "Name this portable preset:", parent=root)
+            if not name:
+                return
+            portable = build_portable_preset(name, current_custom_state())
+        else:
+            portable = preset
+        path = filedialog.asksaveasfilename(
+            title="Export benchmark preset", defaultextension=".json",
+            filetypes=[("Benchmark preset", "*.json")],
+        )
+        if path:
+            save_portable_preset(Path(path), portable)
+
+    def apply_portable_preset(portable):
+        configuration = portable["configuration"]
+        mode_var.set("custom")
+        if configuration["engine"] in available_engines:
+            engine_var.set(configuration["engine"])
+        selected_tests = set(configuration["tests"])
+        for entry in custom_tests:
+            test_vars[entry.value].set(entry.available and entry.value in selected_tests)
+        selected_models = {
+            *configuration["models"]["llm"], *configuration["models"]["embedding"],
+            *configuration["models"]["image"],
+        }
+        for entry in custom_models:
+            model_vars[entry.value].set(entry.value in selected_models)
+        cap = configuration["max_prompt_tokens"]
+        cap_var.set(str(cap) if cap else "No cap")
+        selected_tg = set(configuration["tg_tokens"] or config.LLAMABENCH_TG)
+        for value, variable in tg_vars.items():
+            variable.set(value in selected_tg)
+        for key, value in configuration["options"].items():
+            option_vars[key].set(value if isinstance(value, bool) else str(value))
+
+    def import_preset():
+        path = filedialog.askopenfilename(
+            title="Import benchmark preset", filetypes=[("Benchmark preset", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            apply_portable_preset(load_portable_preset(Path(path)))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Preset import failed", str(exc), parent=root)
+
+    def duplicate_preset():
+        path = filedialog.askopenfilename(
+            title="Choose preset to duplicate", filetypes=[("Benchmark preset", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            source = load_portable_preset(Path(path))
+            name = simpledialog.askstring("Duplicate preset", "Name the duplicate:", parent=root)
+            if name:
+                export_preset(duplicate_portable_preset(source, name))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Preset duplication failed", str(exc), parent=root)
+
+    def compare_preset():
+        path = filedialog.askopenfilename(
+            title="Compare with preset", filetypes=[("Benchmark preset", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            saved_preset = load_portable_preset(Path(path))
+            current = build_portable_preset("Current screen", current_custom_state())
+            differences = compare_portable_presets(current, saved_preset)
+            detail = ", ".join(differences) if differences else "No configuration differences."
+            messagebox.showinfo("Preset comparison", detail, parent=root)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Preset comparison failed", str(exc), parent=root)
+
     ttk.Button(preset_row, text="Apply", command=apply_preset).pack(side="left")
+    ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
+    ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
+    ttk.Button(preset_row, text="Duplicate", command=duplicate_preset).pack(side="left", padx=(8, 0))
+    ttk.Button(preset_row, text="Compare", command=compare_preset).pack(side="left", padx=(8, 0))
 
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
