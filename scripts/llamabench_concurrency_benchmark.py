@@ -222,6 +222,6 @@ class LlamaBenchConcurrencyBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("llamabenchconc", label)
+                emit_model_finished("llamabenchconc", label, results.get(short))
 
         return results

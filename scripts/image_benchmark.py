@@ -466,6 +466,6 @@ class ImageBenchmark:
                     save_fn(results)
                 Shared.log(f"Unloading {label} from VRAM ...")
                 ImageBenchmark.comfyui_free_models()
-                emit_model_finished("img", label)
+                emit_model_finished("img", label, results.get(short))
 
         return results

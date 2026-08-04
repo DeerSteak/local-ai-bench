@@ -80,6 +80,8 @@ Before creating `RunContext`, the CLI canonicalizes the selected engine, tests, 
 
 The graphical frontend can load either a standalone `RunPlan` JSON document or the plan embedded in CLI-created results. It maps the plan back to the same frontend state and public CLI command builder used for GUI-created runs, while retaining the current machine-local paths; unsupported developer-only values fail visibly instead of being dropped.
 
+When the GUI supervises a run, the CLI emits opt-in structured stage, model, and measurement-quality events alongside the ordinary log. The always-on-top progress window shows queued/running/finished models, usable saved-result coverage, implausible-measurement retries and drops, combined benchmark-process CPU/RAM use, and an elapsed-rate remaining-time estimate that stays in a calibrating state until one model finishes. These events do not alter result files or terminal-only output.
+
 ---
 
 [← Dashboard](dashboard.md) · [Back to README](../README.md) · [Engines →](engines.md)

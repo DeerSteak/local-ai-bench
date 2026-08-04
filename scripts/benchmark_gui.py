@@ -10,9 +10,11 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import config
+import psutil
 from benchmark_frontend import (
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
@@ -103,15 +105,53 @@ def parse_progress_line(line: str) -> dict | None:
         event = json.loads(line.removeprefix(PROGRESS_PREFIX))
     except json.JSONDecodeError:
         return None
-    if not isinstance(event, dict) or event.get("kind") not in {"stage", "model"}:
+    if not isinstance(event, dict) or event.get("kind") not in {"stage", "model", "measurement"}:
         return None
-    if event.get("status") not in {"running", "complete", "failed", "interrupted"}:
+    statuses = ({"retrying", "valid", "invalid"} if event.get("kind") == "measurement"
+                else {"running", "complete", "failed", "interrupted"})
+    if event.get("status") not in statuses:
         return None
     if not isinstance(event.get("stage"), str):
         return None
-    if event["kind"] == "model" and not isinstance(event.get("model"), str):
+    if event["kind"] in {"model", "measurement"} and not isinstance(event.get("model"), str):
+        return None
+    if "usable" in event and not isinstance(event["usable"], bool):
         return None
     return event
+
+
+def update_progress_metrics(metrics: dict, event: dict) -> dict:
+    updated = dict(metrics)
+    if event["kind"] == "measurement":
+        key = {"retrying": "retries", "valid": "valid", "invalid": "invalid"}[event["status"]]
+        updated[key] += 1
+    elif event["kind"] == "model" and event["status"] in {"complete", "failed", "interrupted"}:
+        identity = (event["stage"], event["model"])
+        finished = set(updated["finished_models"])
+        finished.add(identity)
+        updated["finished_models"] = finished
+        if event.get("usable"):
+            usable = set(updated["usable_models"])
+            usable.add(identity)
+            updated["usable_models"] = usable
+    return updated
+
+
+def estimate_remaining_seconds(elapsed: float, completed: int, total: int) -> int | None:
+    if elapsed < 0 or completed <= 0 or total <= completed:
+        return 0 if total > 0 and completed >= total else None
+    return round((elapsed / completed) * (total - completed))
+
+
+def process_resource_usage(pid: int, psutil_module=psutil) -> tuple[float, float] | None:
+    try:
+        parent = psutil_module.Process(pid)
+        processes = [parent, *parent.children(recursive=True)]
+        cpu = sum(item.cpu_percent(interval=None) for item in processes)
+        memory_gb = sum(item.memory_info().rss for item in processes) / (1024 ** 3)
+        return cpu, memory_gb
+    except (psutil_module.Error, OSError):
+        return None
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
@@ -745,9 +785,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_window = None
     stage_progress_vars = {}
     model_progress_vars = {}
+    progress_summary_var = tk.StringVar(value="")
+    progress_resource_var = tk.StringVar(value="")
+    progress_metrics = {}
+    progress_started_at = None
 
     def show_progress_window(tests, entries):
         nonlocal progress_window, stage_progress_vars, model_progress_vars
+        nonlocal progress_metrics, progress_started_at
         if progress_window is not None and progress_window.winfo_exists():
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
@@ -760,13 +805,32 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         shell.pack(fill="both", expand=True)
         ttk.Label(shell, text="Benchmark progress", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
-            shell, text="Broad stage status. Detailed output remains in the Run Log.",
+            shell, text="Live workload/model status, measurement quality, resources, and estimated remaining time.",
             wraplength=390,
         ).pack(anchor="w", pady=(2, 12))
         stage_progress_vars = {}
         model_progress_vars = {}
         labels = {name: label for name, label, _, _ in TEST_DEFINITIONS}
         selected = [entry for entry in entries if entry.checked]
+        total_models = sum(
+            1 for stage in STAGE_ORDER if stage in tests for entry in selected
+            if ((stage == "emb" and entry.kind == "embedding")
+                or (stage == "img" and entry.kind == "image")
+                or (stage in LLM_BACKED_TESTS and entry.kind in {"llm", "custom"}))
+        )
+        progress_metrics = {
+            "total_models": total_models, "finished_models": set(), "usable_models": set(),
+            "retries": 0, "valid": 0, "invalid": 0,
+        }
+        progress_started_at = time.monotonic()
+        progress_summary_var.set(
+            f"Finished: 0/{total_models} models · Usable coverage: 0/{total_models} · Invalid: 0 · Retries: 0"
+        )
+        progress_resource_var.set("Resources: starting · Remaining time: calibrating")
+        ttk.Label(shell, textvariable=progress_summary_var, wraplength=390).pack(anchor="w")
+        ttk.Label(shell, textvariable=progress_resource_var, wraplength=390).pack(
+            anchor="w", pady=(2, 8),
+        )
         for stage in (key for key in STAGE_ORDER if key in tests):
             row = ttk.Frame(shell)
             row.pack(fill="x", pady=(6, 1))
@@ -793,6 +857,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         progress_window.lift()
 
     def update_progress(event):
+        nonlocal progress_metrics
+        progress_metrics = update_progress_metrics(progress_metrics, event)
+        completed = len(progress_metrics["finished_models"])
+        progress_summary_var.set(
+            f"Finished: {completed}/{progress_metrics['total_models']} models · "
+            f"Usable coverage: {len(progress_metrics['usable_models'])}/{progress_metrics['total_models']} · "
+            f"Invalid: {progress_metrics['invalid']} · "
+            f"Retries: {progress_metrics['retries']}"
+        )
+        if event["kind"] == "measurement":
+            return
         if event["kind"] == "model":
             variable = model_progress_vars.get((event["stage"], event["model"]))
         else:
@@ -836,6 +911,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                             variable.set("— Not run")
         except queue.Empty:
             pass
+        if process is not None and process.poll() is None and progress_started_at is not None:
+            elapsed = time.monotonic() - progress_started_at
+            completed = len(progress_metrics.get("finished_models", ()))
+            remaining = estimate_remaining_seconds(
+                elapsed, completed, progress_metrics.get("total_models", 0),
+            )
+            estimate = "calibrating" if remaining is None else f"about {remaining // 60}m {remaining % 60}s"
+            usage = process_resource_usage(process.pid)
+            resources = ("unavailable" if usage is None
+                         else f"{usage[0]:.0f}% CPU · {usage[1]:.1f} GB RAM")
+            progress_resource_var.set(f"Resources: {resources} · Remaining time: {estimate}")
         root.after(100, poll_output)
 
     def read_process(proc):

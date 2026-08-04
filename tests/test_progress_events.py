@@ -26,3 +26,9 @@ def test_model_terminal_status_reflects_unwinding_exception(monkeypatch, capsys,
     except BaseException:
         pass
     assert f'"status":"{status}"' in capsys.readouterr().out
+
+
+def test_model_progress_reports_usable_saved_results(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    emit_model_finished("llm", "Model", {"2K": {"tps_mean": 12.5}})
+    assert '"usable":true' in capsys.readouterr().out

@@ -76,6 +76,8 @@ The typed public-option schema supplies the CLI's shared choices and numeric con
 
 Run-plan round-trip tests load both standalone plans and plans embedded in CLI results, convert supported values into frontend state, and assert that the shared command builder emits the same measurement-affecting controls. Developer-only sampled plans are tested as an explicit rejection so the GUI cannot silently hide or discard a CLI value.
 
+Execution-progress tests verify the structured event parser, idempotent model coverage, retry/invalid counters, remaining-time estimates, and recursive child-process resource totals. Workload tests also assert that an implausible token-rate retry emits recovered or invalid measurement events without changing the one-retry policy.
+
 ### Workloads and graders
 
 | Area | Test modules |

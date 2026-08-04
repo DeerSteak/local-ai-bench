@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from benchmark_frontend import (
     GUI_OPTION_DEFAULTS,
     MenuEntry,
@@ -11,9 +13,9 @@ from benchmark_frontend import (
 from benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults,
-    effective_gui_options, format_run_outcome,
+    effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     open_path_command, parse_progress_line, resolve_preset,
-    workload_preflight_errors,
+    process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
 
 
@@ -116,6 +118,73 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
     ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
     assert parse_progress_line("ordinary benchmark output") is None
     assert parse_progress_line("::local-ai-bench-progress::{bad json") is None
+    assert parse_progress_line(
+        '::local-ai-bench-progress::{"kind":"measurement","stage":"llm",'
+        '"status":"retrying","model":"Qwen 2K run 1"}\n'
+    )["status"] == "retrying"
+
+
+def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
+    metrics = {
+        "total_models": 2, "finished_models": set(), "usable_models": set(),
+        "retries": 0, "valid": 0, "invalid": 0,
+    }
+    metrics = update_progress_metrics(
+        metrics, {"kind": "measurement", "stage": "llm", "status": "retrying", "model": "A"},
+    )
+    metrics = update_progress_metrics(
+        metrics, {"kind": "measurement", "stage": "llm", "status": "invalid", "model": "A"},
+    )
+    terminal = {
+        "kind": "model", "stage": "llm", "status": "complete", "model": "A", "usable": True,
+    }
+    metrics = update_progress_metrics(metrics, terminal)
+    metrics = update_progress_metrics(metrics, terminal)
+    assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 1)
+    assert metrics["usable_models"] == {("llm", "A")}
+
+
+@pytest.mark.parametrize(("elapsed", "completed", "total", "expected"), [
+    (60, 1, 4, 180), (60, 4, 4, 0), (60, 0, 4, None), (-1, 1, 4, None),
+])
+def test_remaining_time_estimate(elapsed, completed, total, expected):
+    assert estimate_remaining_seconds(elapsed, completed, total) == expected
+
+
+def test_process_resource_usage_includes_child_processes():
+    class Memory:
+        def __init__(self, rss):
+            self.rss = rss
+
+    class Process:
+        def __init__(self, cpu, rss, children=()):
+            self.cpu = cpu
+            self.rss = rss
+            self._children = children
+
+        def children(self, recursive):
+            assert recursive
+            return list(self._children)
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return self.cpu
+
+        def memory_info(self):
+            return Memory(self.rss)
+
+    child = Process(20, 1024 ** 3)
+    parent = Process(30, 2 * 1024 ** 3, [child])
+
+    class Psutil:
+        Error = RuntimeError
+
+        @staticmethod
+        def Process(pid):
+            assert pid == 42
+            return parent
+
+    assert process_resource_usage(42, Psutil) == (50, 3.0)
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():

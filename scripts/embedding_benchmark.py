@@ -170,6 +170,6 @@ class EmbeddingBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("emb", label)
+                emit_model_finished("emb", label, results.get(short))
 
         return results

@@ -69,7 +69,7 @@ class ConcurrencyBenchmark:
 
     @staticmethod
     def _fire_measured_batch(engine, tag: str, level: int, per_request_context: int,
-                             label: str) -> tuple[list, str, Exception | None, float]:
+                             label: str, progress_stage: str = "conc_chat") -> tuple[list, str, Exception | None, float]:
         def fire():
             return ConcurrencyBenchmark._fire_batch_with_crash_retries(
                 engine, tag, level, per_request_context,
@@ -80,10 +80,14 @@ class ConcurrencyBenchmark:
         if status != "ok" or not any(sample.server_tps_implausible for sample in samples):
             return outcome
         Shared.warn(f"{label}: retrying the {level}-way batch after an implausible server TPS report")
+        emit_progress("measurement", progress_stage, "retrying", label)
         outcome = fire()
         samples, status, _, _ = outcome
         if status == "ok" and any(sample.server_tps_implausible for sample in samples):
             Shared.warn(f"{label}: retry also reported implausible TPS; dropping affected requests")
+            emit_progress("measurement", progress_stage, "invalid", label)
+        elif status == "ok":
+            emit_progress("measurement", progress_stage, "valid", label)
         return outcome
 
     def run(self, engine, models, levels, per_request_context, warmup_runs,
@@ -172,7 +176,7 @@ class ConcurrencyBenchmark:
 
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
                     samples, status, error, batch_elapsed = self._fire_measured_batch(
-                        engine, tag, level, per_request_context, label,
+                        engine, tag, level, per_request_context, label, progress_stage,
                     )
                     if status != "ok":
                         if status == "crashed":
@@ -237,6 +241,6 @@ class ConcurrencyBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished(progress_stage, label)
+                emit_model_finished(progress_stage, label, results.get(short))
 
         return results

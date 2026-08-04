@@ -78,6 +78,7 @@ class LLMPrefillBenchmark:
                                 tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
                             ),
                             f"{tag} {label_ctx} run {run_i + 1}",
+                            "llm",
                         )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec
@@ -137,6 +138,6 @@ class LLMPrefillBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("llm", label)
+                emit_model_finished("llm", label, results.get(short))
 
         return results

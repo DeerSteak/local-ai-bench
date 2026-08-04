@@ -258,6 +258,6 @@ class LlamaBenchBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("llamabench", label)
+                emit_model_finished("llamabench", label, results.get(short))
 
         return results

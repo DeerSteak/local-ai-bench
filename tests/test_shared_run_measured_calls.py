@@ -78,22 +78,30 @@ def _measurement(implausible=False):
     )
 
 
-def test_retry_implausible_tps_retries_once_and_uses_valid_retry():
+def test_retry_implausible_tps_retries_once_and_uses_valid_retry(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
     outcomes = iter([_measurement(True), _measurement(False)])
-    result = Shared.retry_implausible_tps(lambda: next(outcomes), "model")
+    result = Shared.retry_implausible_tps(lambda: next(outcomes), "model", "llm")
     assert result.server_tps_implausible is False
+    output = capsys.readouterr().out
+    assert '"status":"retrying"' in output
+    assert '"status":"valid"' in output
 
 
-def test_retry_implausible_tps_returns_second_invalid_measurement_without_third_call():
+def test_retry_implausible_tps_returns_second_invalid_measurement_without_third_call(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
     calls = []
 
     def call():
         calls.append(True)
         return _measurement(True)
 
-    result = Shared.retry_implausible_tps(call, "model")
+    result = Shared.retry_implausible_tps(call, "model", "llm")
     assert result.server_tps_implausible is True
     assert len(calls) == 2
+    output = capsys.readouterr().out
+    assert '"status":"retrying"' in output
+    assert '"status":"invalid"' in output
 
 
 def test_run_measured_calls_timeout_stops_immediately(tmp_path):

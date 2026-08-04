@@ -159,6 +159,7 @@ class LLMConversationBenchmark:
                                 num_predict=num_predict,
                             ),
                             f"{tag} conversation turn",
+                            "conv",
                         )
                         messages.append({"role": "assistant", "content": measurement.response_text})
                         # prompt_eval_count is ground truth for what's in context; eval_count isn't —
@@ -304,6 +305,6 @@ class LLMConversationBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("conv", label)
+                emit_model_finished("conv", label, results.get(short))
 
         return results

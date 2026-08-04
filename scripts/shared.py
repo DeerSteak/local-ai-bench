@@ -665,14 +665,20 @@ class Shared:
         return samples, "ok", "", {"budget_nudged": False}
 
     @staticmethod
-    def retry_implausible_tps(call, tag: str):
+    def retry_implausible_tps(call, tag: str, progress_stage: str | None = None):
         measurement = call()
         if not measurement.server_tps_implausible:
             return measurement
         Shared.warn(f"{tag}: retrying once after an implausible server TPS report")
+        if progress_stage:
+            emit_progress("measurement", progress_stage, "retrying", tag)
         measurement = call()
         if measurement.server_tps_implausible:
             Shared.warn(f"{tag}: retry also reported implausible TPS; dropping that measurement")
+            if progress_stage:
+                emit_progress("measurement", progress_stage, "invalid", tag)
+        elif progress_stage:
+            emit_progress("measurement", progress_stage, "valid", tag)
         return measurement
 
     # Common CoT filler — needs a higher repeat count to be diagnostic of a real loop.
@@ -913,7 +919,7 @@ class Shared:
                 if answers_path:
                     Shared.write_answers_sidecar(answers_path, answers_out)
                 if progress_stage:
-                    emit_model_finished(progress_stage, label)
+                    emit_model_finished(progress_stage, label, results.get(short))
 
         return results
 
