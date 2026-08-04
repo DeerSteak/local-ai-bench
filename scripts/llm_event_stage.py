@@ -91,14 +91,23 @@ class LLMEventStage:
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
         case_id = self.plan.case_id(self.stage_name, model_id, {"model_state": state})
-        self.store.append(self.plan.job_id, [
-            JournalEvent("case", case_id, "running", {
+        projection = self.store.rebuild(self.plan.job_id)
+        events = []
+        if case_id not in projection["cases"]:
+            events.append(JournalEvent("case", case_id, "running", {
                 "model_short": model["short"], "model_label": model["label"],
                 "case_kind": "model_state",
-            }, parent_id=self.stage_id),
+            }, parent_id=self.stage_id))
+        elif projection["cases"][case_id]["state"] in {"complete", "skipped"}:
+            self.export_fn(self.export())
+            return
+        elif projection["cases"][case_id]["state"] != "running":
+            raise ValueError("model-state case was not prepared for recovery")
+        events.append(
             JournalEvent("case", case_id, state, {"model_result": result},
-                         parent_id=self.stage_id),
-        ])
+                         parent_id=self.stage_id)
+        )
+        self.store.append(self.plan.job_id, events)
         self.export_fn(self.export())
 
     def record_case(self, model: dict, context_tokens: int, context_label: str,

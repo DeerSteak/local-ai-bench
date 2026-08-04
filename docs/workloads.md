@@ -52,6 +52,8 @@ The single-shot slow-model check applies at its first checkpoint (512 tokens): b
 
 When an explicitly validated journal recovery is prepared, single-shot skips contexts already complete, records a new numbered attempt for an interrupted/failed/invalid/timed-out context, and retains every prior attempt as raw evidence. Compatible aggregates use only the latest attempt so a retry does not silently mix old and new samples. The normal benchmark launcher does not expose recovery yet; this behavior is an execution-kernel prerequisite rather than a claim that the current GUI can resume a run.
 
+Conversation recovery must rebuild a model's cache from a fresh conversation because server KV state is not durable evidence. Reached checkpoints already complete are used only to reconstruct that cache and are not recorded again; the first incomplete checkpoint receives the new attempt. A reconstructed checkpoint cannot newly trigger the slow-model cutoff and prevent recovery from reaching the pending work.
+
 Separately, *within* the conversation test itself: if the decode speed at any history depth drops below the slow-model cutoff, the conversation exits early and records results to that point. Pass `--force-all` to ignore this cutoff and always run every context length (see [CLI Reference](cli-reference.md)).
 
 ### Extra-small tier (<6B params)

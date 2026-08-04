@@ -86,7 +86,7 @@ class LLMConversationBenchmark:
 
     def run(self, engine, models, warmup_runs, force_all=False, save_fn=None,
             max_prompt_tokens=None, journal=None):  # pragma: no cover — orchestrates real engine runs
-        results = {}
+        results = journal.export() if journal else {}
 
         if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM conversation benchmarks")
@@ -188,6 +188,7 @@ class LLMConversationBenchmark:
                         out_of_room = False
                         for idx, target in enumerate(checkpoints):
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
+                            attempt_number = journal.next_context_attempt(model, target) if journal else 1
                             if target == 0:
                                 # Checkpoint 0 is just the opening turn — no growth to do first.
                                 measurement = _turn(_next_prompt(),
@@ -216,14 +217,18 @@ class LLMConversationBenchmark:
 
                             # ttft/tps here are from the turn that just crossed `target`
                             # (or the opening turn for target == 0).
-                            samples_by_label.setdefault(label_ctx, []).append(
-                                (measurement, cumulative_tokens))
-                            if journal:
+                            if attempt_number is not None:
+                                samples_by_label.setdefault(label_ctx, []).append(
+                                    (measurement, cumulative_tokens))
+                            if journal and attempt_number is not None:
                                 journal.record_case(
                                     model, target, label_ctx, [measurement], "ok",
                                     LLMConversationBenchmark.CONV_RUNS,
                                     depth_tokens=cumulative_tokens,
+                                    attempt_number=attempt_number,
                                 )
+                            elif journal:
+                                Shared.log(f"Checkpoint {label_ctx} already complete — rebuilt cache only")
                             Shared.output(
                                 f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: "
                                 f"{label_ctx}  TTFT={measurement.client_ttft_sec:.2f}s  "
@@ -232,7 +237,8 @@ class LLMConversationBenchmark:
                             )
 
                             # See docs/workloads.md's within-conversation slow-model early exit.
-                            if self.should_stop_for_slow_measurement(measurement, force_all):
+                            if attempt_number is not None \
+                                    and self.should_stop_for_slow_measurement(measurement, force_all):
                                 Shared.warn(f"{label}: run {run_i+1} — {measurement.tokens_per_sec:.1f} tok/s at {label_ctx} is below "
                                             f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
                                 slow_label = label_ctx

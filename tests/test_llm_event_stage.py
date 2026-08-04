@@ -176,6 +176,8 @@ def test_model_skip_is_journal_owned_and_exported(tmp_path):
         skipped = {"label": "Model 4B", "skipped": True, "skip_reason": "known_crash"}
         stage.record_model_state(MODEL, "skipped", skipped)
         assert stage.export() == {"model": skipped}
+        stage.record_model_state(MODEL, "skipped", {"skip_reason": "different"})
+        assert stage.export() == {"model": skipped}
     finally:
         stage.close()
 
@@ -248,6 +250,24 @@ def test_resume_preserves_prior_attempt_but_aggregates_latest_attempt_only(tmp_p
     assert sorted(attempt["number"] for attempt in projection["attempts"].values()) == [1, 2]
     assert len(projection["samples"]) == 2
     store.close()
+
+
+def test_recovered_model_state_can_be_replaced_without_duplicate_start_transition(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    first = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    first.record_model_state(MODEL, "timed_out", {"timed_out": "2K"})
+    first.close()
+    owner = LLMEventStage(path, plan, lambda _: None, resume_identity=identity, resume=True)
+    owner.close()
+    runner = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        runner.record_model_state(MODEL, "timed_out", {"timed_out": "8K"})
+        assert runner.export()["model"]["timed_out"] == "8K"
+    finally:
+        runner.close()
 
 
 def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):
