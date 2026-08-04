@@ -2,7 +2,9 @@ import json
 
 import pytest
 
-from benchmark import checkpoint_terminal_exception, finish_event_job, fork_provenance
+from benchmark import (
+    checkpoint_terminal_exception, finish_event_job, fork_provenance, interruption_exit_code,
+)
 from event_store import EventStore
 from orchestration import StageExecutionError
 from result_store import build_run_manifest
@@ -103,3 +105,8 @@ def test_finish_event_job_terminalizes_existing_journal_only(tmp_path):
     store = EventStore(path)
     assert store.rebuild(plan.job_id)["jobs"][plan.job_id]["state"] == "failed"
     store.close()
+
+
+def test_interruption_exit_code_uses_standard_signal_status():
+    assert interruption_exit_code(2) == 130
+    assert interruption_exit_code(15) == 143

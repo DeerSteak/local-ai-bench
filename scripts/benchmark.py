@@ -240,6 +240,10 @@ def finish_event_job(path: Path, plan: RunPlan, state: str, reason=None) -> bool
     return True
 
 
+def interruption_exit_code(sig) -> int:
+    return 128 + int(sig)
+
+
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          patterns: list[str] | None, concurrency_enabled: bool
                          ) -> tuple[list[dict], list[dict]]:
@@ -717,7 +721,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
                 Shared.shutdown_managed()
             if sig is not None:
-                sys.exit(0)
+                sys.exit(interruption_exit_code(sig))
 
         stage_order = ordered_stage_keys(tuple(tests))
         methodology = resolve_methodology_profile(
