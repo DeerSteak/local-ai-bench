@@ -62,6 +62,8 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
 | [4.1 Result Compatibility](docs/result-compatibility-v4.1.md) | Export, partial-result, measurement, and dashboard behavior protected during the commercial rewrite |
 | [Architecture Decisions](docs/architecture-decisions.md) | Simplicity gate, data ownership decisions, and migration deletion ledger |
+| [Coordinator API Contract](docs/coordinator-api.md) | Future authenticated localhost API, compatibility, validation, lifecycle, and artifact boundaries |
+| [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
 
 ---
 

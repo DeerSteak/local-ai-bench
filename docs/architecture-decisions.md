@@ -85,6 +85,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: BLOB storage in the event database or path references to mutable source files.
 - Activation gate: a migrated workload adopts objects and journal references together; the store does not shadow-copy legacy files.
 
+### AD-010 — Expose typed coordinator resources, never commands
+
+- Status: accepted
+- Requirement: persistent resume and concurrent local clients eventually require a process owner without turning localhost into remote shell access.
+- Decision: the future `/api/v1` accepts versioned plans, job lifecycle intents, stable IDs, filters, and bounded artifact operations. It binds loopback, requires bearer authentication and Host/Origin checks, and contains no command, executable, module, environment, SQL, expression, arbitrary URL, or argument-vector field.
+- Reconsideration gate: none; adding arbitrary command execution requires a new security review and is outside the product contract.
+- Evidence: `docs/coordinator-api.md`; implementation and adversarial API tests remain required before activation.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
