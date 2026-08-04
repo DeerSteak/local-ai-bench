@@ -3,7 +3,7 @@ Type=Application
 Version=1.0
 Name=Run Local AI Bench
 Comment=Configure and run Local AI Bench graphically
-Exec=sh -c 'p="$1"; case "$p" in file://*) p="${p#file://}";; esac; cd "$(dirname "$p")" && exec bash run_bench.sh --interface gui' sh %k
+Exec=sh -c 'p="$1"; case "$p" in file://*) p="${p#file://}";; esac; cd "$(dirname "$p")" && exec bash run_bench.sh --ui gui' sh %k
 Icon=utilities-system-monitor
 Terminal=true
 Categories=Development;Utility;

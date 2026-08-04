@@ -70,6 +70,28 @@ FRONTEND_OPTION_INVENTORY = {
     "--out": ("exposed", "Graphical path settings"),
     "--comfyui": ("exposed", "Graphical path settings"),
 }
+FRONTEND_OPTION_CLASSIFICATION = {
+    "--tests": "guided",
+    "--engine": "guided",
+    "--llm-models": "guided",
+    "--embedding-models": "guided",
+    "--image-models": "guided",
+    "--max-prompt-tokens": "guided",
+    "--tg-tokens": "guided",
+    "--maxtier": "guided",
+    "--models": "guided",
+    "--list-models": "contextual",
+    "--sample": "developer-only",
+    "--warmup": "advanced",
+    "--runs": "advanced",
+    "--timeout": "advanced",
+    "--acc-timeout": "advanced",
+    "--acc-token-budget": "advanced",
+    "--cpu-only": "advanced",
+    "--force-all": "advanced",
+    "--out": "advanced",
+    "--comfyui": "advanced",
+}
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 2
 GUI_OPTION_DEFAULTS = {

@@ -11,9 +11,9 @@ fi
 
 source "$VENV/bin/activate"
 if [ "$#" -eq 0 ]; then
-    exec python "$SCRIPT_DIR/scripts/benchmark_launcher.py" --interface auto
+    exec python "$SCRIPT_DIR/scripts/benchmark_launcher.py" --ui auto
 fi
-if [ "$1" = "--interface" ]; then
+if [ "$1" = "--ui" ] || [ "$1" = "--interface" ]; then
     exec python "$SCRIPT_DIR/scripts/benchmark_launcher.py" "$@"
 fi
 exec python "$SCRIPT_DIR/scripts/benchmark.py" "$@"

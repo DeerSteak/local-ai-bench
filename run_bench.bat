@@ -15,13 +15,14 @@ if not exist "%VENV%\Scripts\activate.bat" (
 
 call "%VENV%\Scripts\activate.bat"
 if "%~1"=="" goto frontend
+if /i "%~1"=="--ui" goto frontend_with_args
 if /i "%~1"=="--interface" goto frontend_with_args
 python "%SCRIPT_DIR%scripts\benchmark.py" %*
 set "BENCH_EXIT_CODE=%errorlevel%"
 goto finish
 
 :frontend
-python "%SCRIPT_DIR%scripts\benchmark_launcher.py" --interface auto
+python "%SCRIPT_DIR%scripts\benchmark_launcher.py" --ui auto
 set "BENCH_EXIT_CODE=%errorlevel%"
 goto finish
 

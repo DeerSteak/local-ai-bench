@@ -8,6 +8,7 @@ import benchmark_frontend
 import config
 from benchmark_frontend import (
     FRONTEND_STATE_VERSION,
+    FRONTEND_OPTION_CLASSIFICATION,
     FRONTEND_OPTION_INVENTORY,
     FrontendCancelled,
     MenuEntry,
@@ -69,6 +70,14 @@ def test_frontend_inventory_classifies_every_public_benchmark_option():
 
 def test_frontend_inventory_exposes_the_remaining_configuration_work():
     assert frontend_option_gaps() == []
+
+
+def test_frontend_classifies_every_option_for_ui_presentation():
+    assert set(FRONTEND_OPTION_CLASSIFICATION) == set(FRONTEND_OPTION_INVENTORY)
+    assert set(FRONTEND_OPTION_CLASSIFICATION.values()) <= {
+        "guided", "advanced", "contextual", "developer-only", "unsafe", "unsupported",
+    }
+    assert FRONTEND_OPTION_CLASSIFICATION["--sample"] == "developer-only"
 
 
 class FakeEngine:

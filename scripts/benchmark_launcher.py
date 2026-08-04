@@ -4,8 +4,10 @@
 import argparse
 import os
 import platform
+import subprocess
 import sys
 
+import config
 from interface_mode import desktop_available, select_interface_mode
 
 
@@ -17,14 +19,27 @@ def tkinter_available() -> bool:
     return True
 
 
-def main():  # pragma: no cover — frontend dispatch entrypoint
+def parse_launcher_request(argv: list[str]) -> tuple[str, list[str]]:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--interface", choices=("auto", "gui", "terminal"), default="auto")
-    args = parser.parse_args()
+    parser.add_argument("--ui", "--interface", dest="ui",
+                        choices=("auto", "gui", "terminal", "none"), default="auto")
+    args, benchmark_args = parser.parse_known_args(argv)
+    if args.ui != "none" and benchmark_args:
+        parser.error("benchmark options require '--ui none' or no --ui option")
+    if args.ui == "none" and not benchmark_args:
+        parser.error("--ui none requires benchmark options, such as '--tests llm'")
+    return args.ui, benchmark_args
+
+
+def main():  # pragma: no cover — frontend dispatch entrypoint
+    requested, benchmark_args = parse_launcher_request(sys.argv[1:])
+    if requested == "none":
+        command = [sys.executable, str(config.SCRIPT_DIR / "scripts" / "benchmark.py"), *benchmark_args]
+        raise SystemExit(subprocess.call(command))
     gui_available = tkinter_available()
     try:
         mode = select_interface_mode(
-            args.interface, platform_name=platform.system(), env=dict(os.environ),
+            requested, platform_name=platform.system(), env=dict(os.environ),
             stdin_is_tty=sys.stdin.isatty(), gui_available=gui_available,
         )
     except ValueError as exc:
