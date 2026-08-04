@@ -77,6 +77,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
 | [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
 | [Installation Maintenance](docs/maintenance.md) | Repair, upgrade, rollback, and safe project-owned uninstall boundaries |
+| [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
 
 ---
 
