@@ -53,6 +53,7 @@
 | `workload_packs.py` (in `scripts/`) | Immutable built-in/custom stage selections and compatibility validation |
 | `evidence_policy.py` (in `scripts/`) | Reference-result provenance tiers, eligibility, expiry, and correction rules |
 | `sbom.py` (in `scripts/`) | Deterministic Python/npm dependency inventory for release review |
+| `third_party_notices.py` (in `scripts/`) | Deterministic dependency notice worksheet with explicit unresolved-license blockers |
 | `release_readiness.py` (in `scripts/`) | Machine-readable local release blockers without waiving external qualification |
 | `maintenance.py` (in `scripts/`) | Read-only installation health and previewed project-owned uninstall boundaries |
 | `archive_safety.py` (in `scripts/`) | Pre-extraction path and ZIP-link validation for downloaded setup archives |
