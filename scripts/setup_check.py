@@ -15,9 +15,10 @@ from pathlib import Path
 
 import config
 import hardware
+from llamacpp_tools import find_llamacpp_tool
 from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
-from setup_selection import selected_cleanup_names, toggle_all_models
+from setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
 SCRIPT_DIR   = config.SCRIPT_DIR
@@ -452,22 +453,11 @@ else:
     warn(memory_ceiling_note)
 
 def _find_llamacpp_exe(base_name):
-    """Locate a llama.cpp binary by base name — mirrors LlamaCppEngine._binary_path
-    (see docs/engines.md's "Binary resolution"), generalized to any binary llama.cpp ships."""
-    exe_name = f"{base_name}.exe" if os_name == "Windows" else base_name
-    if LLAMACPP_DIR.exists():
-        match = next(iter(LLAMACPP_DIR.rglob(exe_name)), None)
-        if match is not None:
-            return str(match)
-    found = shutil.which(base_name)
-    if found:
-        return found
-    if os_name == "Darwin":
-        for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
-            candidate = Path(prefix) / exe_name
-            if candidate.exists():
-                return str(candidate)
-    return None
+    """Locate one llama.cpp tool using the runtime's system-first policy."""
+    return find_llamacpp_tool(
+        base_name, vendored_dir=LLAMACPP_DIR,
+        platform_name=os_name, which_fn=shutil.which,
+    )
 
 def find_llamacpp_binary():
     return _find_llamacpp_exe("llama-server")
@@ -872,7 +862,7 @@ def load_token():
             return token
     needs_gated = bool(GATED_IMAGE_SHORTS & selected_image_shorts)
     print()
-    print(f"  {YELLOW}All models are downloaded from HuggingFace and require a free HuggingFace account.{RESET}")
+    print(f"  {YELLOW}Models are downloaded from HuggingFace; an account is optional for public models.{RESET}")
     print(f"  1. Create an account at {link('https://huggingface.co')}")
     if needs_gated:
         print(f"  2. Accept the licenses at:")
@@ -892,10 +882,12 @@ def load_token():
         token = ""
     if token:
         try:
-            save = input("  Save token to hf.txt for future runs? [y/N]: ").strip().lower()
-            if save == "y":
-                (SCRIPT_DIR / "hf.txt").write_text(token)
-                ok("Token saved to hf.txt")
+            if confirm("Save token to hf.txt for future runs?", default=True):
+                try:
+                    save_hf_token(SCRIPT_DIR / "hf.txt", token)
+                    ok("Token saved to hf.txt")
+                except OSError as exc:
+                    warn(f"Could not save hf.txt: {exc}")
         except EOFError:
             pass
     _hf_token_cache[0] = token or ""
@@ -922,7 +914,7 @@ if result.returncode == 0:
 else:
     fail("pip install -r requirements.txt failed")
     info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
-    issues.append("pip install -r requirements.txt")
+    sys.exit(1)
 
 if needs_llamacpp_install:
     llamacpp_installed = install_llamacpp()
@@ -945,16 +937,6 @@ if needs_llamacpp_install:
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
-
-if cleanup_names:
-    section("Non-catalog Model Cleanup")
-    cleanup_root = config.MODELS_DIR / "llamacpp"
-    removed, cleanup_failures = delete_non_catalog_model_dirs(cleanup_root, cleanup_names)
-    for name in removed:
-        ok(f"{name!r} — deleted")
-    for name, reason in cleanup_failures.items():
-        fail(f"{name!r} — could not delete: {reason}")
-        issues.append(f"Delete non-catalog model folder {str(cleanup_root / name)!r}")
 
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 
@@ -1013,8 +995,7 @@ if flux2_selected:
         remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
 
 try:
-    check_path = "C:\\" if os_name == "Windows" else "/"
-    total, used, free = shutil.disk_usage(check_path)
+    total, used, free = shutil.disk_usage(SCRIPT_DIR)
     free_gb  = free  // (1024**3)
     total_gb = total // (1024**3)
     print(f"  Free:              {free_gb} GB / {total_gb} GB total")
@@ -1039,11 +1020,23 @@ try:
         if total_gb > 0:
             _warn_if_drive_fills_up()
     else:
-        needed_more = remaining_gb - free_gb
+        needed_more = additional_disk_space_needed(free_gb, remaining_gb)
         fail(f"Insufficient space — ~{remaining_gb:.0f} GB needed, only {free_gb} GB free")
-        issues.append(f"Free up ~{needed_more:.0f} GB more disk space before downloading models")
+        fail(f"Setup stopped to avoid a partial installation or filling this volume. "
+             f"Free at least ~{needed_more:.0f} GB and run setup again.")
+        sys.exit(1)
 except Exception as e:
     warn(f"Could not check disk space: {e}")
+
+if cleanup_names:
+    section("Non-catalog Model Cleanup")
+    cleanup_root = config.MODELS_DIR / "llamacpp"
+    removed, cleanup_failures = delete_non_catalog_model_dirs(cleanup_root, cleanup_names)
+    for name in removed:
+        ok(f"{name!r} — deleted")
+    for name, reason in cleanup_failures.items():
+        fail(f"{name!r} — could not delete: {reason}")
+        issues.append(f"Delete non-catalog model folder {str(cleanup_root / name)!r}")
 
 # ── 8b. LLM/embedding models — download selected GGUFs, skip the rest ─────────
 

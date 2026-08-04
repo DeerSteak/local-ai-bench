@@ -17,7 +17,7 @@
 | Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
-`setup.sh` / `setup.bat` locate Python 3.11+ and ask before installing Python or Homebrew when either is missing. They then create `bench-env/`, install `requirements.txt`, and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing llama.cpp or downloading models. The setup assistant then:
+`setup.sh` / `setup.bat` first switch to the repository directory, locate Python 3.11+, and ask before installing Python or Homebrew when either is missing. They then create or reuse a valid `bench-env/` and hand off to `scripts/setup_check.py`, which presents a separate approval prompt before installing Python packages, llama.cpp, or models. The setup assistant then:
 
 1. Detects your hardware (OS, GPU backend, RAM).
 2. Shows a numbered list of all 12 LLMs, two embedding models, and five image models — everything selected by default except LLM/image models estimated not to fit in detected RAM/VRAM, which start unchecked with a note on how much they'd need. If `models/llamacpp/` contains GGUF model folders that do not belong to the current LLM or embedding catalog, the list also includes one optional cleanup row naming those folders; cleanup is always unchecked by default. Folders without a GGUF and loose files are not cleanup candidates. The estimate includes model weights, required image encoders, a 20% runtime allowance, and a small OS/driver reserve; it is guidance rather than a hard block.
@@ -28,11 +28,13 @@
    - `clean` to toggle deletion of the listed non-catalog model folders
    - `a` to select/deselect all models; it deliberately does not enable cleanup
    - Enter to install everything shown
-   - `q` or Ctrl-C to cancel at any point with nothing installed yet
+   - `q` or Ctrl-C to cancel before the unattended installation phase; the bootstrap may already have installed Python or created `bench-env/`
 4. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
 5. Installs everything you approved — llama.cpp, any ComfyUI dependencies, LLM/embedding GGUFs, and image checkpoints — with no further prompts. If cleanup was selected, it first deletes only the non-catalog folders shown in the picker; catalog folders and loose files are never cleanup targets.
 
-The llama.cpp install also includes `llama-bench` and `llama-batched-bench`, llama.cpp's own throughput-benchmarking tools, needed only for the opt-in `llamabench` and `llamabenchconc` tests (`--tests llamabench llamabenchconc`) — see [Workloads](workloads.md#llama-bench) and [Workloads](workloads.md#llama-bench-concurrency).
+Setup checks the system installation before planning any llama.cpp install. When `llama-server` is available through `PATH` or a standard macOS Homebrew location, setup does not install or build another llama.cpp copy. It independently detects `llama-bench` and `llama-batched-bench`; when all three system tools are present, benchmark runs use those exact system tools. Models remain managed by Local AI Bench under `models/llamacpp/`, and the selected system binary receives the downloaded GGUF's explicit path, so system installation and project model storage do not need to share a directory. If `llama-server` exists but either optional native benchmark tool is absent, setup leaves the existing installation untouched and reports that the corresponding opt-in test is unavailable rather than installing a second distribution behind the user's back.
+
+When llama.cpp is genuinely absent, the installed copy also includes `llama-bench` and `llama-batched-bench`, llama.cpp's own throughput-benchmarking tools, needed only for the opt-in `llamabench` and `llamabenchconc` tests (`--tests llamabench llamabenchconc`) — see [Workloads](workloads.md#llama-bench) and [Workloads](workloads.md#llama-bench-concurrency).
 
 Non-catalog cleanup is permanent rather than a move to Trash or Recycle Bin. It is deliberately excluded from the default selection and the `a` shortcut; select its numbered row or type `clean` only after checking the displayed folder names for models you want to keep.
 
@@ -56,11 +58,11 @@ Discrete-vs-integrated GPU classification is a naming-convention heuristic (AMD:
 
 ## Disk space check
 
-Before downloading anything, `setup_check.py` estimates how much space your selection still needs (skipping whatever's already downloaded) and compares it against free space on your system drive:
+Before downloading anything, `setup_check.py` estimates how much space your selection still needs (skipping whatever's already downloaded) and compares it against free space on the volume containing the repository and its managed models:
 
 - **Enough free space, plus a 10 GB buffer** — proceeds normally.
 - **Enough for the downloads, but less than a 10 GB buffer left over** — prints a warning and continues.
-- **Not enough free space at all** — prints a failure and adds it to the action-items list at the end (does not stop setup or block your model selection).
+- **Not enough free space at all** — stops before model downloads, explains that continuing could create a partial installation or fill the volume, and reports approximately how much additional space must be freed before rerunning setup.
 
 Independently of that, if completing the downloads would leave less than 10% of your drive's total capacity free, it also prints a warning and pauses 5 seconds before continuing — just enough to notice, without stopping.
 
@@ -76,9 +78,9 @@ If you select any LLM, embedding, or image model in the picker, `setup_check.py`
 
 1. `HF_TOKEN` environment variable
 2. `hf.txt` in the repo root (token on a single line)
-3. Interactive prompt — offers to save to `hf.txt` for future runs
+3. Interactive prompt — saves to `hf.txt` by default for future runs, with an explicit opt-out
 
-A token isn't required for non-gated models, but authenticated downloads generally receive better rate limits. `setup_check.py` therefore offers token authentication whenever any model is selected; pressing Enter skips it when no gated image model was selected.
+A token isn't required for non-gated models, but authenticated downloads generally receive better rate limits. `setup_check.py` therefore offers token authentication whenever any model is selected; pressing Enter skips it when no gated image model was selected. A saved token is written as a single line with user-only permissions on platforms that support POSIX file modes, and `hf.txt` remains excluded from Git.
 
 ## Platform notes
 

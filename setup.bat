@@ -3,6 +3,7 @@
 :: Usage: double-click or run from a terminal in the repo directory
 
 setlocal EnableDelayedExpansion
+cd /d "%~dp0"
 set VENV_DIR=bench-env
 
 echo.
@@ -68,7 +69,19 @@ echo.
 echo [Virtual Environment]
 
 if exist "%VENV_DIR%\Scripts\python.exe" (
+    "%VENV_DIR%\Scripts\python.exe" -c "import sys; v=sys.version_info[:2]; raise SystemExit(v != max(v, (3,11)))"
+    if !errorlevel! neq 0 (
+        echo   X  %VENV_DIR% uses Python older than 3.11.
+        echo      Move or remove it, then re-run setup.
+        pause
+        exit /b 1
+    )
     echo   OK  Venv already exists at %VENV_DIR%
+) else if exist "%VENV_DIR%" (
+    echo   X  %VENV_DIR% exists but is not a usable virtual environment.
+    echo      Move or remove it, then re-run setup.
+    pause
+    exit /b 1
 ) else (
     echo   -^>  Creating venv at %VENV_DIR%...
     %PYTHON% -m venv %VENV_DIR%
@@ -81,20 +94,8 @@ if exist "%VENV_DIR%\Scripts\python.exe" (
 )
 
 set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
-set VENV_PIP=%VENV_DIR%\Scripts\pip.exe
 
 :: ── 3. Base Python dependencies ───────────────────────────────────────────────
-echo.
-echo [Python Packages]
-echo   -^>  Installing from requirements.txt ...
-%VENV_PIP% install -r requirements.txt
-if %errorlevel% neq 0 (
-    echo   X  pip install -r requirements.txt failed. Check your internet connection.
-    pause
-    exit /b 1
-)
-echo   OK  Base dependencies installed
-
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
 :: (llama.cpp detection/install happens inside setup_check.py, gated behind its
 :: own approval prompt, so it isn't installed here without asking.)

@@ -53,8 +53,10 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
 | `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
 | `result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
+| `llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |

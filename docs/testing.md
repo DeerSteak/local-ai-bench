@@ -66,6 +66,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | Tier, model, and engine selection | [test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py), [test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py), [test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py), [test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py), [test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py), [test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py) |
 | Conversation eligibility and output paths | [test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py), [test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py) |
 | Interactive launcher and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
+| GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
 | Inventory and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
 | Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
 
@@ -91,7 +92,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 | Area | Test modules |
 |---|---|
-| Engine registry and llama.cpp adapter | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
+| Engine registry, shared llama.cpp tool discovery, and adapter | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |

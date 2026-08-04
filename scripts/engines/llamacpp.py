@@ -18,6 +18,7 @@ import gguf
 import requests
 
 import config
+from llamacpp_tools import find_llamacpp_tool
 from engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from models import EMBED_MODELS, LLM_MODELS
 from shared import (
@@ -55,20 +56,10 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _binary_path() -> str | None:
         """Locate llama-server — see docs/engines.md's "Binary resolution"."""
-        exe_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
-        if config.LLAMACPP_DIR.exists():
-            match = next((p for p in config.LLAMACPP_DIR.rglob(exe_name) if p.is_file()), None)
-            if match is not None:
-                return str(match)
-        found = shutil.which("llama-server")
-        if found is not None:
-            return found
-        if platform.system() == "Darwin":
-            for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
-                candidate = Path(prefix) / exe_name
-                if candidate.exists():
-                    return str(candidate)
-        return None
+        return find_llamacpp_tool(
+            "llama-server", vendored_dir=config.LLAMACPP_DIR,
+            platform_name=platform.system(), which_fn=shutil.which,
+        )
 
     # ── local model-file resolution ──
 

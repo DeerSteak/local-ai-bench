@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import config
+from llamacpp_tools import find_llamacpp_tool
 from engines.llamacpp import LlamaCppEngine
 from shared import Shared
 
@@ -19,22 +20,11 @@ class LlamaBenchConcurrencyBenchmark:
 
     @staticmethod
     def find_binary() -> str | None:
-        """Mirrors LlamaCppEngine._binary_path but for llama-batched-bench instead of
-        llama-server — see docs/engines.md's "Binary resolution"."""
-        exe_name = "llama-batched-bench.exe" if platform.system() == "Windows" else "llama-batched-bench"
-        if config.LLAMACPP_DIR.exists():
-            match = next((p for p in config.LLAMACPP_DIR.rglob(exe_name) if p.is_file()), None)
-            if match is not None:
-                return str(match)
-        found = shutil.which("llama-batched-bench")
-        if found is not None:
-            return found
-        if platform.system() == "Darwin":
-            for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
-                candidate = Path(prefix) / exe_name
-                if candidate.exists():
-                    return str(candidate)
-        return None
+        """Locate llama-batched-bench with the same policy as llama-server."""
+        return find_llamacpp_tool(
+            "llama-batched-bench", vendored_dir=config.LLAMACPP_DIR,
+            platform_name=platform.system(), which_fn=shutil.which,
+        )
 
     @staticmethod
     def fit_npl(pp: int, tg_values: list[int], npl_values: list[int],
