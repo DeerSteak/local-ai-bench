@@ -42,6 +42,9 @@ from benchmark_presets import (
     build_portable_preset, compare_portable_presets, duplicate_portable_preset,
     load_portable_preset, save_portable_preset,
 )
+from benchmark_project import (
+    PROJECT_WORKFLOWS, build_project, load_project, project_frontend_state, save_project,
+)
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from decision_report import load_result, report_output_paths, write_html_report, write_pdf_report
 from engines import engine_names, get_engine
@@ -398,13 +401,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         preset_row, state="readonly", textvariable=preset_var,
         values=list(BENCHMARK_PRESETS), width=24,
     ).pack(side="left", padx=(8, 8))
+    project_row = ttk.Frame(custom_frame)
+    project_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    active_project = {"value": None}
+    project_status = tk.StringVar(value="No project loaded")
+    ttk.Label(project_row, textvariable=project_status).pack(side="left", padx=(0, 12))
     advanced_toggle = ttk.Checkbutton(
         custom_frame, text="Show advanced execution and path settings", variable=advanced_var,
     )
-    advanced_toggle.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    advanced_toggle.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
     tests_box = ttk.LabelFrame(custom_frame, text="Tests", padding=12)
-    tests_box.grid(row=2, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     test_widgets = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
@@ -422,7 +430,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(custom_frame, text="Installed models", padding=12)
-    models_box.grid(row=2, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     previous = None
     model_widgets = {}
     row = 0
@@ -446,7 +454,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=row, column=0, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(custom_frame, text="Workload sizes", padding=12)
-    workload_box.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+    workload_box.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     ttk.Label(workload_box, text="Maximum prompt-processing size").grid(row=0, column=0, sticky="w")
     cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
                              values=["No cap", *[str(value) for value in MAX_PROMPT_TOKEN_OPTIONS]], width=18)
@@ -468,7 +476,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     execution_box = ttk.LabelFrame(custom_frame, text="Execution", padding=12)
-    execution_box.grid(row=4, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     ttk.Label(execution_box, text="Inference engine").grid(row=0, column=0, sticky="w", pady=2)
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
                                 values=available_engines, width=16)
@@ -499,7 +507,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
-    paths_box.grid(row=4, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    paths_box.grid(row=5, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     paths_box.columnconfigure(1, weight=1)
     ttk.Label(paths_box, text="Results JSON (blank = automatic)").grid(row=0, column=0, sticky="w")
     ttk.Entry(paths_box, textvariable=option_vars["out"]).grid(row=0, column=1, sticky="ew", padx=10)
@@ -679,12 +687,105 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Run-plan import failed", str(exc), parent=root)
 
+    def choose_project_workflow():
+        selected = {"value": None}
+        dialog = tk.Toplevel(root)
+        dialog.title("Project workflow")
+        dialog.transient(root)
+        dialog.grab_set()
+        workflow_var = tk.StringVar(value=next(iter(PROJECT_WORKFLOWS)))
+        ttk.Label(dialog, text="What decision will this project support?").pack(
+            anchor="w", padx=18, pady=(18, 8),
+        )
+        combo = ttk.Combobox(
+            dialog, state="readonly", width=30,
+            values=list(PROJECT_WORKFLOWS.values()),
+        )
+        combo.current(0)
+        combo.pack(fill="x", padx=18)
+
+        def accept():
+            workflow_var.set(next(
+                key for key, label in PROJECT_WORKFLOWS.items() if label == combo.get()
+            ))
+            selected["value"] = workflow_var.get()
+            dialog.destroy()
+
+        actions = ttk.Frame(dialog)
+        actions.pack(fill="x", padx=18, pady=18)
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Continue", command=accept).pack(side="right", padx=(0, 8))
+        root.wait_window(dialog)
+        return selected["value"]
+
+    def save_current_project():
+        name = simpledialog.askstring("New project", "Project name:", parent=root)
+        if not name:
+            return
+        workflow = choose_project_workflow()
+        if not workflow:
+            return
+        baseline = None
+        if messagebox.askyesno("Baseline", "Attach an existing baseline result?", parent=root):
+            baseline = filedialog.askopenfilename(
+                title="Choose baseline result", initialdir=config.RESULTS_DIR,
+                filetypes=[("Benchmark result", "*.json")],
+            )
+            if not baseline:
+                return
+        acceptance = None
+        if messagebox.askyesno("Acceptance policy", "Attach an acceptance policy?", parent=root):
+            policy_path = filedialog.askopenfilename(
+                title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
+            )
+            if not policy_path:
+                return
+            try:
+                acceptance = load_policy(Path(policy_path))
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                messagebox.showerror("Acceptance policy failed", str(exc), parent=root)
+                return
+        destination = filedialog.asksaveasfilename(
+            title="Save benchmark project", defaultextension=".labproject",
+            filetypes=[("Local AI Bench project", "*.labproject")],
+        )
+        if not destination:
+            return
+        try:
+            project = build_project(
+                name, workflow, current_custom_state(), baseline_result=baseline,
+                acceptance_policy=acceptance,
+            )
+            save_project(Path(destination), project)
+            active_project["value"] = project
+            project_status.set(f"Project: {project['name']} ({PROJECT_WORKFLOWS[workflow]})")
+        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Project creation failed", str(exc), parent=root)
+
+    def open_project():
+        path = filedialog.askopenfilename(
+            title="Open benchmark project", filetypes=[("Local AI Bench project", "*.labproject")],
+        )
+        if not path:
+            return
+        try:
+            project = load_project(Path(path))
+            apply_frontend_state(project_frontend_state(project, collect_options()))
+            active_project["value"] = project
+            project_status.set(
+                f"Project: {project['name']} ({PROJECT_WORKFLOWS[project['workflow']]})"
+            )
+        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Project open failed", str(exc), parent=root)
+
     ttk.Button(preset_row, text="Apply", command=apply_preset).pack(side="left")
     ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Duplicate", command=duplicate_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Compare", command=compare_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import CLI Plan", command=import_run_plan).pack(side="left", padx=(8, 0))
+    ttk.Button(project_row, text="New Project", command=save_current_project).pack(side="left")
+    ttk.Button(project_row, text="Open Project", command=open_project).pack(side="left", padx=(8, 0))
 
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
@@ -787,8 +888,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         try:
             html_path, pdf_path = report_output_paths(Path(destination))
             result = load_result(Path(result_path))
-            policy = None
-            if messagebox.askyesno(
+            project_policy = (active_project["value"] or {}).get("acceptance_policy")
+            policy = project_policy
+            if project_policy is None and messagebox.askyesno(
                     "Acceptance policy", "Apply an acceptance policy to this report?", parent=root):
                 policy_path = filedialog.askopenfilename(
                     title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
