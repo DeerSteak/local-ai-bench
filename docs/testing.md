@@ -113,6 +113,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Journal-owned single-shot LLM projection and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
+| Runner command confinement, event authentication, heartbeat, and cleanup escalation | [test_runner_supervisor.py](../tests/test_runner_supervisor.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |

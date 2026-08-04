@@ -101,6 +101,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Compatibility: schema-3 golden LLM fields are asserted value-for-value; current additive validity diagnostics remain allowed.
 - Deletion gate: after all workloads migrate, remove runtime JSON ownership and export the whole result from journal projections.
 
+### AD-012 — Activate process isolation only after fixed-protocol proof
+
+- Status: accepted
+- Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The entrypoint remains deliberately inactive until it can reconstruct and execute the single-shot job solely from journal state.
+- Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
+- Activation gate: fake-runner hang/crash/cancel/disk tests and schema-3 single-shot export parity must pass with the child path enabled.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
