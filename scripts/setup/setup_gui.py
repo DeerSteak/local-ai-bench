@@ -372,7 +372,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             messagebox.showerror("Cannot start setup", "\n".join(errors))
             return
         result = plan
-        root.quit()
+        root.withdraw()
+        root.after(150, root.quit)
 
     back_button.configure(command=go_back)
     cancel_button.configure(command=root.quit)
