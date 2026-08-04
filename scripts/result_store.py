@@ -193,6 +193,37 @@ class ResultStore:
         validate_json_data(self.data)
         self._writer(self.path, self.data)
 
+    def begin_recovery(self) -> None:
+        run = self.data["run"]
+        if run["status"] not in TERMINAL_STATUSES:
+            raise ValueError("only a terminal run can begin recovery")
+        history = run.setdefault("recovery_history", [])
+        history.append({
+            "status": run["status"], "finished_at": run.get("finished_at"),
+            "reason": run.get("reason"),
+        })
+        run.update(status="running", finished_at=None)
+        run.pop("reason", None)
+        self.checkpoint()
+
+    def resume_stage(self, key: str, selected_models: int) -> None:
+        if self.data["run"]["status"] != "running":
+            raise ValueError("cannot resume a stage outside a running recovery")
+        record = self.data["run"]["stages"].get(key)
+        if record is None:
+            self.start_stage(key, selected_models)
+            return
+        if record["status"] not in TERMINAL_STATUSES:
+            raise ValueError(f"stage is not terminal: {key}")
+        history = record.setdefault("recovery_history", [])
+        history.append({
+            "status": record["status"], "finished_at": record.get("finished_at"),
+            "reason": record.get("reason"),
+        })
+        record.update(status="running", finished_at=None, selected_models=selected_models)
+        record.pop("reason", None)
+        self.checkpoint()
+
     def start_stage(self, key: str, selected_models: int) -> None:
         if self.data["run"]["status"] != "running":
             raise ValueError("cannot start a stage after the run ended")

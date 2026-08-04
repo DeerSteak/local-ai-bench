@@ -157,3 +157,30 @@ def test_result_store_rejects_duplicate_running_stage_and_second_finish(tmp_path
     store.finish("failed")
     with pytest.raises(ValueError, match="already terminal"):
         store.finish("failed")
+
+
+def test_result_store_recovery_retains_prior_terminal_run_and_stage_state(tmp_path):
+    data = {"run": {"status": "running", "stages": {}}, "llm": {}}
+    store = result_store.ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
+    store.start_stage("llm", 1)
+    store.complete_stage("llm", status="interrupted", reason="signal")
+    store.finish("interrupted", "signal")
+    store.begin_recovery()
+    store.resume_stage("llm", 1)
+    assert data["run"]["status"] == "running"
+    assert data["run"]["recovery_history"] == [{
+        "status": "interrupted", "finished_at": data["run"]["recovery_history"][0]["finished_at"],
+        "reason": "signal",
+    }]
+    assert data["run"]["stages"]["llm"]["status"] == "running"
+    assert data["run"]["stages"]["llm"]["recovery_history"][0]["status"] == "interrupted"
+
+
+def test_result_store_recovery_rejects_running_or_complete_stage_reopen(tmp_path):
+    data = {"run": {"status": "running", "stages": {}}, "llm": {}}
+    store = result_store.ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
+    with pytest.raises(ValueError, match="terminal run"):
+        store.begin_recovery()
+    store.start_stage("llm", 1)
+    with pytest.raises(ValueError, match="not terminal"):
+        store.resume_stage("llm", 1)
