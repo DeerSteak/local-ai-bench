@@ -119,6 +119,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Compatibility: row payloads, internal repetition samples, case/repetition counts, and timeout/error markers retain their 4.1 shape.
 - Rejected alternative: one llama-bench process per case solely to create checkpoint boundaries.
 
+### AD-014 — Preserve concurrency at the batch boundary
+
+- Status: accepted
+- Requirement: durable request samples must not change the contention represented by an HTTP concurrency level or mix an invalid batch with its retry.
+- Decision: the supervised child resolves ladders and contexts from the immutable plan, executes the existing whole-batch retry policy unchanged, and atomically commits only the final batch's request samples plus batch-level metrics.
+- Compatibility: level keys, per-request aggregates, aggregate throughput, memory, validity, and stop markers retain their 4.1 shape.
+- Rejected alternative: retrying or checkpointing individual requests from a concurrent batch.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

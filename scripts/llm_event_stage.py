@@ -34,13 +34,14 @@ def measurement_from_payload(payload: dict) -> GenerationMeasurement:
 
 class LLMEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, stage_name: str = "llm",
-                 initialize: bool = True):
+                 model_family: str = "llm", initialize: bool = True):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
         self.stage_name = stage_name
+        self.model_family = model_family
         self.stage_id = plan.stage_id(stage_name)
-        self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
+        self.model_identities = {model.get("tag"): model for model in plan.models[model_family]}
         if initialize:
             self.store.start_stage(plan, stage_name)
         elif self.store.load_plan(plan.job_id) != plan:
@@ -53,7 +54,7 @@ class LLMEventStage:
         identity = self.model_identities.get(model["tag"])
         if identity is None:
             raise ValueError(f"model is absent from run plan: {model['tag']}")
-        return self.plan.model_id("llm", identity)
+        return self.plan.model_id(self.model_family, identity)
 
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
@@ -71,7 +72,8 @@ class LLMEventStage:
     def record_case(self, model: dict, context_tokens: int, context_label: str,
                     samples: list[GenerationMeasurement], status: str,
                     requested_runs: int, model_markers: dict | None = None,
-                    depth_tokens: int | None = None) -> None:
+                    depth_tokens: int | None = None,
+                    result_fields: dict | None = None) -> None:
         model_id = self._model_id(model)
         case_id = self.plan.case_id(
             self.stage_name, model_id, {"context_tokens": context_tokens},
@@ -103,6 +105,7 @@ class LLMEventStage:
             JournalEvent("attempt", attempt_id, attempt_state, {}, parent_id=case_id),
             JournalEvent("case", case_id, case_state, {
                 "run_status": status, "model_markers": model_markers or {},
+                "result_fields": result_fields or {},
             }, parent_id=self.stage_id),
         ])
         self.store.append(self.plan.job_id, events)
@@ -160,19 +163,22 @@ class LLMEventStage:
                     })
                 if case.get("depth_tokens") is not None:
                     context_result["depth_tokens"] = case["depth_tokens"]
+                context_result.update(case.get("result_fields", {}))
                 results.setdefault(short, {})[case["context_label"]] = context_result
             results.setdefault(short, {}).update(case.get("model_markers", {}))
         return results
 
 
-def export_llm_section(path: Path, job_id: str, stage_name: str = "llm") -> dict:
+def export_llm_section(path: Path, job_id: str, stage_name: str = "llm",
+                       model_family: str = "llm") -> dict:
     store = EventStore(path)
     try:
         plan = store.load_plan(job_id)
     finally:
         store.close()
     stage = LLMEventStage(
-        path, plan, lambda _: None, stage_name=stage_name, initialize=False,
+        path, plan, lambda _: None, stage_name=stage_name,
+        model_family=model_family, initialize=False,
     )
     try:
         return stage.export()

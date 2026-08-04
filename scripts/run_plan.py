@@ -14,6 +14,9 @@ SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
     "accuracy_token_budget", "cpu_only", "force_all", "max_prompt_tokens",
     "context_lengths", "llamabench_pp", "llamabench_tg", "sample_size",
+    "concurrency_tool_levels", "concurrency_chat_levels",
+    "concurrency_tool_context", "concurrency_chat_context",
+    "concurrency_chat_soft_exit_floor",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
@@ -188,12 +191,18 @@ class RunPlan:
         for key in ("cpu_only", "force_all"):
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
-        for key in ("max_prompt_tokens", "sample_size"):
+        for key in (
+            "max_prompt_tokens", "sample_size", "concurrency_tool_context",
+            "concurrency_chat_context", "concurrency_chat_soft_exit_floor",
+        ):
             value = settings[key]
             if value is not None and (isinstance(value, bool) or not isinstance(value, int)
                                       or value < 1):
                 raise ValueError(f"invalid execution setting: {key}")
-        for key in ("context_lengths", "llamabench_pp", "llamabench_tg"):
+        for key in (
+            "context_lengths", "llamabench_pp", "llamabench_tg",
+            "concurrency_tool_levels", "concurrency_chat_levels",
+        ):
             values = settings[key]
             invalid_values = not isinstance(values, list) or not values or any(
                 isinstance(value, bool) or not isinstance(value, int) or value < 1

@@ -92,8 +92,9 @@ class ConcurrencyBenchmark:
 
     def run(self, engine, models, levels, per_request_context, warmup_runs,
             crash_cache_path: Path, section_label: str,
+            stage_name: str,
             soft_exit_floor: int | None = None, force_all=False,
-            save_fn=None):  # pragma: no cover — orchestrates real engine runs
+            save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
@@ -112,19 +113,23 @@ class ConcurrencyBenchmark:
             if not engine.reachable_or_abort():
                 break
 
-            progress_stage = {"concurrency_tool": "conc_tool", "concurrency_chat": "conc_chat"}.get(
-                section, section,
-            )
+            progress_stage = stage_name
             emit_progress("model", progress_stage, "running", label)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "not_installed",
+                        })
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path)
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
                 results[short] = {}
@@ -199,6 +204,10 @@ class ConcurrencyBenchmark:
                         results[short][str(level)] = {
                             **aggregate,
                         }
+                        if journal:
+                            journal.record_case(
+                                model, level, str(level), samples, "ok", level,
+                            )
                         stopped_at = "invalid"
                         break
                     ttfts = [sample.client_ttft_sec for sample in valid_samples]
@@ -219,6 +228,16 @@ class ConcurrencyBenchmark:
                         "memory":            memory,
                         **aggregate,
                     }
+                    if journal:
+                        journal.record_case(
+                            model, level, str(level), samples, "ok", level,
+                            result_fields={
+                                "aggregate_tps": round(aggregate_tps, 2),
+                                "total_tokens": total_tokens,
+                                "batch_elapsed_sec": round(batch_elapsed, 3),
+                                "memory": memory,
+                            },
+                        )
                     Shared.ok(
                         f"{level}-way done: per-request TTFT={Shared.mean(ttfts):.2f}s "
                         f"decode-only TPS={mean_tps:.1f} — serving throughput "
@@ -234,13 +253,22 @@ class ConcurrencyBenchmark:
 
                 if stopped_at:
                     results[short]["stopped_at"] = stopped_at
+                    if journal:
+                        state = ("complete" if stopped_at == "slow" else
+                                 "invalid" if stopped_at == "invalid" else "failed")
+                        markers = {key: value for key, value in results[short].items()
+                                   if key in {"stopped_at", "crashed_at", "memory_at_failure"}}
+                        journal.record_model_state(model, state, markers)
 
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
-                    save_fn(results)
+                    save_fn(journal.export() if journal else results)
                 emit_model_finished(progress_stage, label, results.get(short))
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

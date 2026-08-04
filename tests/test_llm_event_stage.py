@@ -88,6 +88,41 @@ def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):
     assert projected["0K"]["client_ttft_mean_sec"] == 0.1
 
 
+def test_concurrency_stage_projects_batch_metrics_and_invalid_samples(tmp_path):
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["conc_chat"],
+        stage_order=["conc_chat"], models={
+            "llm": [],
+            "concurrency": [{"tag": MODEL["tag"], "short": MODEL["short"]}],
+            "embeddings": [], "images": [],
+        }, effective_config=make_plan().effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+    stage = LLMEventStage(
+        path, plan, lambda _: None, stage_name="conc_chat", model_family="concurrency",
+    )
+    try:
+        stage.record_case(
+            MODEL, 2, "2", [measurement(0.2, 100, 50), measurement(0.1, 10, 20, implausible=True)],
+            "ok", 2, result_fields={
+                "aggregate_tps": 55.0, "total_tokens": 110,
+                "batch_elapsed_sec": 2.0, "memory": {"system_ram_used_gb": 8.0},
+            },
+        )
+        stage.record_model_state(MODEL, "complete", {"stopped_at": "slow"})
+        stage.finish()
+    finally:
+        stage.close()
+    result = export_llm_section(
+        path, plan.job_id, "conc_chat", "concurrency",
+    )["model"]
+    assert result["2"]["valid_runs"] == 1
+    assert result["2"]["invalid_runs"][0]["errors"] == ["implausible_server_tps"]
+    assert result["2"]["aggregate_tps"] == 55
+    assert result["2"]["memory"]["system_ram_used_gb"] == 8
+    assert result["stopped_at"] == "slow"
+
+
 def test_llm_journal_rebuilds_compatible_aggregate_and_checkpoints_projection(tmp_path):
     snapshots = []
     plan = make_plan()

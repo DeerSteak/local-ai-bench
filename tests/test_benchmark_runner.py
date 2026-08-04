@@ -226,3 +226,42 @@ def test_generic_supervisor_projects_native_stage(tmp_path):
 
     result = run_supervised_stage(plan, path, "llamabench", lambda _: None, Supervisor)
     assert result["fake"]["completed_cases"] == 1
+
+
+def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
+    base = make_plan()
+    models = base.models
+    models["llm"] = []
+    models["concurrency"] = [{"tag": "fake:model", "short": "fake"}]
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["conc_tool"],
+        stage_order=["conc_tool"], models=models, effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.stage == "conc_tool"
+
+        def run(self, callback):
+            stage = LLMEventStage(
+                path.resolve(), plan, lambda _: None, stage_name="conc_tool",
+                model_family="concurrency", initialize=False,
+            )
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                1, "1", [GenerationMeasurement(0.1, 50, 50, 1.1, 1.0)], "ok", 1,
+                result_fields={"aggregate_tps": 45.0},
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    result = run_supervised_stage(plan, path, "conc_tool", lambda _: None, Supervisor)
+    assert result["fake"]["1"]["aggregate_tps"] == 45

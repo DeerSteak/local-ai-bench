@@ -27,7 +27,6 @@ from math_benchmark import MathBenchmark
 from reasoning_benchmark import ReasoningBenchmark
 from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
-from concurrency_benchmark import ConcurrencyBenchmark
 from llamabench_benchmark import LlamaBenchBenchmark
 from llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
@@ -67,10 +66,14 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         journal = NativeBenchEventStage(event_path, plan, lambda _: None)
         project = lambda: export_native_bench_section(event_path, plan.job_id)
     else:
+        model_family = "concurrency" if stage_name in {"conc_tool", "conc_chat"} else "llm"
         journal = LLMEventStage(
             event_path, plan, lambda _: None, stage_name=stage_name,
+            model_family=model_family,
         )
-        project = lambda: export_llm_section(event_path, plan.job_id, stage_name)
+        project = lambda: export_llm_section(
+            event_path, plan.job_id, stage_name, model_family,
+        )
     journal.close()
     supervisor = supervisor_factory(RunnerSpec(plan.job_id, stage_name, event_path))
     terminal = []
@@ -671,6 +674,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "context_lengths": config.CONTEXT_LENGTHS,
             "llamabench_pp": config.LLAMABENCH_PP,
             "llamabench_tg": config.LLAMABENCH_TG,
+            "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
+            "concurrency_chat_levels": config.CONCURRENCY_CHAT_LEVELS,
+            "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
+            "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
+            "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
             "sample_size": args.sample,
         }
         plan_models = {
@@ -798,17 +806,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 test_name, test_name, len(llm_models), runner, requires_engine=True,
             )
 
-        def concurrency_stage(key, section, levels, per_context, cache, label, floor):
+        def concurrency_stage(key, section):
             def runner(_context):
                 if not conc_models:
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
-                return ConcurrencyBenchmark().run(
-                    engine=engine, models=conc_models, levels=levels,
-                    per_request_context=per_context, warmup_runs=_context.plan.warmup_runs,
-                    crash_cache_path=cache, section_label=label, soft_exit_floor=floor,
-                    force_all=_context.plan.force_all, save_fn=make_save(section, key),
+                return run_supervised_stage(
+                    _context.plan, event_store_path(Path(out_path)), key,
+                    make_save(section, key),
                 )
-            return StageDefinition(key, section, len(conc_models), runner, requires_engine=True)
+            return StageDefinition(key, section, len(conc_models), runner)
 
         def prepare_images(_context):
             lifecycle.restore_gpu()
@@ -842,14 +848,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             accuracy_stage("reasoning", ReasoningBenchmark),
             accuracy_stage("code", CodeBenchmark), accuracy_stage("tool", ToolBenchmark),
             concurrency_stage(
-                "conc_tool", "concurrency_tool", config.CONCURRENCY_TOOL_LEVELS,
-                config.CONCURRENCY_TOOL_CONTEXT, ConcurrencyBenchmark.TOOL_CRASH_CACHE,
-                "Concurrency (Tool)", None,
+                "conc_tool", "concurrency_tool",
             ),
             concurrency_stage(
-                "conc_chat", "concurrency_chat", config.CONCURRENCY_CHAT_LEVELS,
-                config.CONCURRENCY_CHAT_CONTEXT, ConcurrencyBenchmark.CHAT_CRASH_CACHE,
-                "Concurrency (Chat)", config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+                "conc_chat", "concurrency_chat",
             ),
             StageDefinition("img", "images", len(image_models), run_images,
                             prepare=prepare_images, cleanup=lambda _: Shared.shutdown_managed()),

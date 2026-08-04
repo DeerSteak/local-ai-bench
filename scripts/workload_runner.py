@@ -9,6 +9,7 @@ import threading
 import time
 
 import config
+from concurrency_benchmark import ConcurrencyBenchmark
 from engines import get_engine
 from event_store import EventStore
 from conversation_selection import conv_skip_entry
@@ -185,6 +186,61 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         Shared.shutdown_managed()
 
 
+def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engine,
+                            benchmark_factory=ConcurrencyBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if stage_name not in {"conc_tool", "conc_chat"} or stage_name not in plan.tests:
+        raise ValueError("runner job does not include the requested concurrency stage")
+    settings = plan.effective_config
+    config.RUN_TIMEOUT = settings["run_timeout_seconds"]
+    is_tool = stage_name == "conc_tool"
+    levels = settings["concurrency_tool_levels" if is_tool else "concurrency_chat_levels"]
+    per_request_context = settings[
+        "concurrency_tool_context" if is_tool else "concurrency_chat_context"
+    ]
+    floor = None if is_tool else settings["concurrency_chat_soft_exit_floor"]
+    cache = (ConcurrencyBenchmark.TOOL_CRASH_CACHE if is_tool
+             else ConcurrencyBenchmark.CHAT_CRASH_CACHE)
+    label = "Concurrency (Tool)" if is_tool else "Concurrency (Chat)"
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        for identity in plan.models["concurrency"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    Shared._active_engine = engine
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
+
+    journal = None
+    try:
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = LLMEventStage(
+            path, plan, notify, stage_name=stage_name,
+            model_family="concurrency", initialize=False,
+        )
+        benchmark_factory().run(
+            engine=engine, models=models, levels=levels,
+            per_request_context=per_request_context, warmup_runs=plan.warmup_runs,
+            crash_cache_path=cache, section_label=label, stage_name=stage_name,
+            soft_exit_floor=floor, force_all=plan.force_all, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
 def heartbeat(stop_event: threading.Event) -> None:
     while not stop_event.wait(5):
         emit("heartbeat")
@@ -203,8 +259,10 @@ def main(argv=None) -> int:
             execute_llm_job(args.event_store, args.job_id)
         elif args.stage == "conv":
             execute_conversation_job(args.event_store, args.job_id)
-        else:
+        elif args.stage == "llamabench":
             execute_llamabench_job(args.event_store, args.job_id)
+        else:
+            execute_concurrency_job(args.event_store, args.job_id, args.stage)
     except BaseException as exc:
         sys.stderr.write(f"Runner failed: {type(exc).__name__}: {exc}\n")
         emit("terminal", status="failed", job_id=args.job_id, stage=args.stage)

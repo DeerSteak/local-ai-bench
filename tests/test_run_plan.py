@@ -220,6 +220,9 @@ def complete_plan():
         "run_timeout_seconds": 1800, "accuracy_timeout_seconds": 60,
         "accuracy_token_budget": 4096, "llamabench_pp": [512, 2048],
         "llamabench_tg": [128, 256], "sample_size": None,
+        "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2, 4],
+        "concurrency_tool_context": 4096, "concurrency_chat_context": 16384,
+        "concurrency_chat_soft_exit_floor": 8,
     })
     return make_plan(effective_config=config)
 
@@ -232,6 +235,7 @@ def test_complete_plan_validation_accepts_resolved_execution_inputs():
     ("runs", 0), ("warmup_runs", -1), ("cpu_only", 1),
     ("context_lengths", [512, 512]), ("llamabench_pp", []),
     ("llamabench_tg", [True]), ("sample_size", 0),
+    ("concurrency_tool_levels", [1, 1]), ("concurrency_chat_context", 0),
 ])
 def test_complete_plan_validation_rejects_invalid_resolved_settings(key, value):
     plan = complete_plan()

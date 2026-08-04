@@ -173,6 +173,9 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
             "cpu_only": True, "force_all": False, "max_prompt_tokens": None,
             "context_lengths": [512], "llamabench_pp": [512],
             "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
+            "concurrency_chat_soft_exit_floor": 2,
         },
     )
     stage = LLMEventStage(path, plan, lambda _: None)
@@ -229,6 +232,9 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
             "cpu_only": False, "force_all": False, "max_prompt_tokens": 2048,
             "context_lengths": [512], "llamabench_pp": [512],
             "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
+            "concurrency_chat_soft_exit_floor": 2,
         },
     )
     model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
@@ -287,6 +293,9 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
             "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
             "context_lengths": [512], "llamabench_pp": [512],
             "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
+            "concurrency_chat_soft_exit_floor": 2,
         },
     )
     owner = NativeBenchEventStage(path, plan, lambda _: None)
@@ -316,3 +325,63 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
     result = export_native_bench_section(path, plan.job_id)["fake"]
     assert result["completed_cases"] == 1
     assert result["prefill_entries"][0]["avg_ts"] == 100
+
+
+def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["conc_chat"],
+        stage_order=["conc_chat"], models={
+            "llm": [], "concurrency": [{"tag": "fake:model", "short": "fake"}],
+            "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512],
+            "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 4],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 2048,
+            "concurrency_chat_soft_exit_floor": 4,
+        },
+    )
+    owner = LLMEventStage(
+        path, plan, lambda _: None, stage_name="conc_chat", model_family="concurrency",
+    )
+    owner.close()
+
+    class Engine:
+        name = "fake"
+
+        @staticmethod
+        def start(*, gpu_visible):
+            return gpu_visible
+
+        @staticmethod
+        def available():
+            return False
+
+    class Benchmark:
+        def run(self, **kwargs):
+            assert kwargs["levels"] == [1, 4]
+            assert kwargs["per_request_context"] == 2048
+            assert kwargs["soft_exit_floor"] == 4
+            assert kwargs["stage_name"] == "conc_chat"
+            sample = GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)
+            kwargs["journal"].record_case(
+                kwargs["models"][0], 4, "4", [sample], "ok", 4,
+                result_fields={"aggregate_tps": 50.0, "total_tokens": 100,
+                               "batch_elapsed_sec": 2.0, "memory": {}},
+            )
+            kwargs["journal"].finish()
+
+    old_timeout = config.RUN_TIMEOUT
+    try:
+        workload_runner.execute_concurrency_job(
+            path, plan.job_id, "conc_chat", engine_factory=lambda _: Engine(),
+            benchmark_factory=Benchmark,
+        )
+    finally:
+        config.RUN_TIMEOUT = old_timeout
+    result = export_llm_section(path, plan.job_id, "conc_chat", "concurrency")
+    assert result["fake"]["4"]["aggregate_tps"] == 50

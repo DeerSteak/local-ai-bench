@@ -16,6 +16,8 @@ Workload methodology has its own identity. In particular, `run.llamabench_repeti
 
 The journal-owned native projection retains `prefill_entries`, `decode_entries`, requested/completed case counts, requested/completed repetition counts, every row's `samples_ts`/`ts_runs`, and timeout/error markers. Each streamed row is durable before the next row, but checkpointing does not split the existing two sweeps into per-case processes or change model-load behavior.
 
+The journal-owned HTTP concurrency projections retain numeric level keys, per-request TTFT/TPS aggregates, raw valid samples and invalid diagnostics, aggregate throughput, total generated tokens, measured batch duration, memory snapshots, and stop/crash markers. Retry remains whole-batch: the rejected first batch contributes no samples when an implausible-TPS retry occurs.
+
 ## Required result envelope
 
 A current result contains `version`, `engine`, `profile`, `accuracy_settings`, `bank_versions`, `sample_ids`, `run`, and every workload section, even when a section is empty. The workload sections are `llm`, `llm_conversation`, `embeddings`, `images`, `mcq`, `math`, `reasoning`, `code`, `tool`, `concurrency_tool`, `concurrency_chat`, `llamabench`, and `llamabenchconc`.
