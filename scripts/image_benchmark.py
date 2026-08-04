@@ -345,7 +345,7 @@ class ImageBenchmark:
         results = {}
         Shared.section("Image Generation via ComfyUI")
 
-        checkpoints_dir = comfyui_dir / "models" / "checkpoints"
+        checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
 
         for model in image_models:
             label      = model["label"]

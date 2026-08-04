@@ -4,6 +4,7 @@ import re
 import shutil
 from pathlib import Path
 
+import config
 from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
@@ -101,10 +102,10 @@ def classify_engine_models(installed: list[dict], llm_catalog: list[dict] | None
     }
 
 
-def installed_image_models(comfyui_dir: Path, image_catalog: list[dict] | None = None) -> list[dict]:
-    """Return catalog image entries whose primary checkpoint exists locally."""
+def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = None) -> list[dict]:
+    """Return catalog image entries in benchmark-managed model storage."""
     image_catalog = IMAGE_MODELS if image_catalog is None else image_catalog
-    checkpoints_dir = Path(comfyui_dir) / "models" / "checkpoints"
+    checkpoints_dir = Path(models_dir) / "checkpoints"
     installed = []
     for model in image_catalog:
         path = checkpoints_dir / model["checkpoint"]
@@ -113,10 +114,10 @@ def installed_image_models(comfyui_dir: Path, image_catalog: list[dict] | None =
     return installed
 
 
-def build_model_inventory(engine, comfyui_dir: Path) -> dict[str, list[dict]]:
-    """Build the complete read-only inventory for one engine and ComfyUI path."""
+def build_model_inventory(engine, image_models_dir: Path) -> dict[str, list[dict]]:
+    """Build the complete read-only inventory with benchmark-managed images."""
     inventory = classify_engine_models(engine.list_installed_models())
-    inventory["image"] = installed_image_models(comfyui_dir)
+    inventory["image"] = installed_image_models(image_models_dir)
     return inventory
 
 

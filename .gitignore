@@ -184,6 +184,7 @@ bench-env/
 /models/
 .DS_Store
 hf.txt
+local_ai_bench_config.json
 **/node_modules
 7zr.exe
 /.omc

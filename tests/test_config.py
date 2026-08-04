@@ -14,6 +14,11 @@ def test_comfyui_dir_under_script_dir():
     assert config.COMFYUI_DIR == config.SCRIPT_DIR / "ComfyUI"
 
 
+def test_comfyui_models_are_managed_separately_from_program():
+    assert config.COMFYUI_MODELS_DIR == config.MODELS_DIR / "comfyui"
+    assert config.COMFYUI_MODELS_DIR != config.COMFYUI_DIR / "models"
+
+
 def test_n_runs_positive():
     assert config.N_RUNS >= 1
 

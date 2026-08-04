@@ -98,6 +98,8 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
 | Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
+| ComfyUI installation and managed-model path resolution | [test_comfyui_installation.py](../tests/test_comfyui_installation.py) |
+| Versioned setup configuration and path handoff | [test_setup_config.py](../tests/test_setup_config.py) |
 | Atomic results, run state, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |

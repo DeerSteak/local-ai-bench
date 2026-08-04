@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import config
+from setup_config import configured_llamacpp_tool, load_setup_config
 
 
 def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
@@ -21,6 +22,9 @@ def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
             candidate = Path(prefix) / exe_name
             if candidate.is_file():
                 return str(candidate)
+    configured = configured_llamacpp_tool(load_setup_config(config.SETUP_CONFIG_PATH), base_name)
+    if configured and Path(configured).is_file():
+        return configured
     if vendored_dir.exists():
         match = next((path for path in vendored_dir.rglob(exe_name) if path.is_file()), None)
         if match is not None:

@@ -43,3 +43,20 @@ def test_windows_vendored_fallback_uses_exe_suffix(tmp_path):
         "llama-server", vendored_dir=tmp_path, platform_name="Windows",
         which_fn=lambda _: None,
     ) == str(binary)
+
+
+def test_valid_configured_tool_wins_over_vendored_copy(tmp_path, monkeypatch):
+    configured = tmp_path / "configured" / "llama-server"
+    configured.parent.mkdir()
+    configured.touch()
+    vendored = tmp_path / "vendored" / "llama-server"
+    vendored.parent.mkdir()
+    vendored.touch()
+    monkeypatch.setattr(
+        "llamacpp_tools.load_setup_config",
+        lambda path: {"schema_version": 1, "llama_cpp": {"llama-server": str(configured)}},
+    )
+    assert find_llamacpp_tool(
+        "llama-server", vendored_dir=vendored.parent,
+        platform_name="Linux", which_fn=lambda _: None,
+    ) == str(configured)

@@ -20,6 +20,7 @@ LLAMACPP_KV_CACHE_TYPE = "q8_0"
 # Repo root — this file lives in scripts/, one level below it.
 SCRIPT_DIR   = Path(__file__).resolve().parent.parent
 COMFYUI_DIR  = SCRIPT_DIR / "ComfyUI"
+SETUP_CONFIG_PATH = SCRIPT_DIR / "local_ai_bench_config.json"
 
 # Vendored llama.cpp location (Linux source build / Windows prebuilt zip); macOS's brew
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
@@ -27,6 +28,8 @@ LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 
 # Model downloads land here (setup_check.py), namespaced one subdirectory per engine — see docs/engines.md.
 MODELS_DIR = SCRIPT_DIR / "models"
+COMFYUI_MODELS_DIR = MODELS_DIR / "comfyui"
+COMFYUI_EXTRA_MODEL_PATHS = COMFYUI_MODELS_DIR / "extra_model_paths.yaml"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
 

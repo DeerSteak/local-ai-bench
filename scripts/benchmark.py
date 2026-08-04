@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import config
+from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
@@ -36,6 +37,7 @@ from orchestration import (
 from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
 from run_plan import RunPlan
+from setup_config import configured_comfyui_dir, load_setup_config
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -436,7 +438,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     parser.add_argument(
         "--comfyui", type=str, default=None,
-        help=f"Path to ComfyUI directory (default: {config.COMFYUI_DIR})",
+        help="Path to an existing ComfyUI program or Windows portable root "
+             "(default: saved/system installation, then repository-managed ComfyUI)",
     )
     parser.add_argument(
         "--cpu-only", action="store_true",
@@ -497,13 +500,20 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     args = parser.parse_args()
 
     args.tests = expand_tests(args.tests)
-    comfyui_dir = Path(args.comfyui) if args.comfyui else config.COMFYUI_DIR
+    setup_config = load_setup_config(config.SETUP_CONFIG_PATH)
+    if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
+        parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
+    comfyui_dir = find_comfyui_installation(
+        explicit=args.comfyui,
+        saved_path=configured_comfyui_dir(setup_config),
+        managed_dir=config.COMFYUI_DIR,
+    ) or config.COMFYUI_DIR
     run_engine_names = resolve_engine_names(args.engine, _engines)
 
     if args.list_models:
         any_installed = False
         for engine_name in run_engine_names:
-            inventory = build_model_inventory(get_engine(engine_name), comfyui_dir)
+            inventory = build_model_inventory(get_engine(engine_name), config.COMFYUI_MODELS_DIR)
             any_installed = any_installed or any(inventory.values())
             for line_i, line in enumerate(format_model_inventory(inventory, engine_name)):
                 Shared.output(line, leading_blank=line_i == 0)

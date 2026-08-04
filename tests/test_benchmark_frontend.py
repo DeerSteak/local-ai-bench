@@ -1110,7 +1110,7 @@ def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
         benchmark_path=Path("/benchmark.py"),
     )
     assert result == 0
-    assert seen == [("mlx", config.COMFYUI_DIR)]
+    assert seen == [("mlx", config.COMFYUI_MODELS_DIR)]
     assert commands[0][commands[0].index("--engine") + 1] == "mlx"
     assert commands[0][commands[0].index("--comfyui") + 1] == str(config.COMFYUI_DIR)
 

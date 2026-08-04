@@ -82,7 +82,7 @@ def test_custom_models_are_sorted_by_folder_name():
 
 
 def test_installed_images_use_explicit_comfyui_path(tmp_path):
-    checkpoints = tmp_path / "models" / "checkpoints"
+    checkpoints = tmp_path / "checkpoints"
     checkpoints.mkdir(parents=True)
     checkpoint = checkpoints / "two.safetensors"
     checkpoint.write_bytes(b"12345")
@@ -103,7 +103,7 @@ def test_build_inventory_reads_engine_once_and_adds_images(monkeypatch, tmp_path
     monkeypatch.setattr("model_inventory.LLM_MODELS", LLM_CATALOG)
     monkeypatch.setattr("model_inventory.EMBED_MODELS", EMBED_CATALOG)
     monkeypatch.setattr("model_inventory.IMAGE_MODELS", IMAGE_CATALOG)
-    checkpoints = tmp_path / "models" / "checkpoints"
+    checkpoints = tmp_path / "checkpoints"
     checkpoints.mkdir(parents=True)
     (checkpoints / "one.safetensors").write_bytes(b"1")
 

@@ -31,6 +31,7 @@
 | `scripts/data/` | Active accuracy banks—`mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `reasoning_questions.json` (60 questions), `code_problems.json` (60 problems), and `tool_questions.json` (100 tool-calling questions) |
 | `scripts/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
+| `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths |
 | `.benchmark_frontend_state.json` | Gitignored last-confirmed interactive engine/test/model/max-prompt-tokens/tg-tokens selection; stale or invalid values fall back to current defaults |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
@@ -77,7 +78,9 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `llamabench_concurrency_benchmark.py` | Opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench-concurrency)) |
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
+| `comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
 | `data/` | Question banks used by accuracy tests (see above) |
 
 ## `results/` in detail

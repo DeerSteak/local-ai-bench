@@ -21,6 +21,12 @@ import psutil
 import requests
 
 import config
+from comfyui_installation import (
+    checkpoint_names_from_object_info,
+    find_comfyui_python,
+    managed_checkpoints_visible,
+    write_extra_model_paths,
+)
 import hardware
 from models import IMAGE_MODELS
 from result_store import atomic_write_json
@@ -223,33 +229,27 @@ class Shared:
 
     @staticmethod
     def find_comfyui_python(comfyui_dir: Path) -> str:
-        """Python executable for ComfyUI: a venv inside comfyui_dir, else this
-        script's venv, else whatever 'python' resolves to."""
-        # Official AMD portable build: python_embeded sits next to ComfyUI/, not inside it
-        for candidate in [
-            comfyui_dir.parent / "python_embeded" / "python.exe",
-            comfyui_dir / "python_env" / "python.exe",
-            comfyui_dir / "venv" / "bin" / "python",
-            comfyui_dir / ".venv" / "bin" / "python",
-            comfyui_dir / "venv" / "Scripts" / "python.exe",
-        ]:
-            if candidate.exists():
-                return str(candidate)
-
-        # The venv currently running this script (most likely on Mac/Linux)
-        current_venv = os.environ.get("VIRTUAL_ENV")
-        if current_venv:
-            for rel in ["bin/python", "Scripts/python.exe"]:
-                p = Path(current_venv) / rel
-                if p.exists():
-                    return str(p)
-
-        return sys.executable
+        """Return the selected installation's Python environment."""
+        return find_comfyui_python(comfyui_dir)
 
     @staticmethod
     def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
         """Start ComfyUI if not already running. Returns whether it's now available."""
         if Shared.comfyui_available():
+            try:
+                response = requests.get(f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=5)
+                available = checkpoint_names_from_object_info(response.json())
+                managed = {
+                    model["checkpoint"] for model in IMAGE_MODELS
+                    if (config.COMFYUI_MODELS_DIR / "checkpoints" / model["checkpoint"]).is_file()
+                }
+                if not managed_checkpoints_visible(available, managed):
+                    Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
+                    Shared.warn("Stop ComfyUI and retry so Local AI Bench can launch it with the correct configuration")
+                    return False
+            except Exception as exc:
+                Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
+                return False
             Shared.ok("ComfyUI already running")
             return True
 
@@ -264,7 +264,7 @@ class Shared:
             return False
 
         # Check at least one image model checkpoint is present
-        checkpoints_dir = comfyui_dir / "models" / "checkpoints"
+        checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
         known = [m["checkpoint"] for m in IMAGE_MODELS]
         found = [c for c in known if (checkpoints_dir / c).exists()]
         if not found:
@@ -284,6 +284,9 @@ class Shared:
         else:
             cmd = [python_exe, str(main_py), "--listen"]
             launch_cwd = str(comfyui_dir)
+
+        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR)
+        cmd.extend(["--extra-model-paths-config", str(config.COMFYUI_EXTRA_MODEL_PATHS)])
 
         # Dynamic VRAM has an unresolved upstream bug streaming combined checkpoint
         # files like SDXL's (Comfy-Org/ComfyUI#14239, #14281) — disabled globally.

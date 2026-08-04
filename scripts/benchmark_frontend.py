@@ -11,11 +11,13 @@ from pathlib import Path
 from result_store import atomic_write_json
 
 import config
+from comfyui_installation import find_comfyui_installation
 from benchmark import CONCURRENCY_TESTS, LLM_TESTS
 from engines import engine_names, get_engine
 from model_inventory import build_model_inventory
 from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from shared import Shared
+from setup_config import configured_comfyui_dir, load_setup_config
 
 
 TEST_DEFINITIONS = [
@@ -617,8 +619,12 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             available_engines, input_fn, output_fn, clear_fn,
             preferred=saved_state["engine"] if saved_state else None,
         )
-        comfyui_dir = config.COMFYUI_DIR
-        inventory = inventory_builder(engine_factory(selected_engine), comfyui_dir)
+        setup_config = load_setup_config(config.SETUP_CONFIG_PATH)
+        comfyui_dir = find_comfyui_installation(
+            saved_path=configured_comfyui_dir(setup_config),
+            managed_dir=config.COMFYUI_DIR,
+        ) or config.COMFYUI_DIR
+        inventory = inventory_builder(engine_factory(selected_engine), config.COMFYUI_MODELS_DIR)
         test_entries = build_test_entries(inventory)
         apply_saved_test_selection(test_entries, saved_state)
         if not any(entry.available for entry in test_entries):

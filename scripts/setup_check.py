@@ -11,22 +11,44 @@ import subprocess
 import json
 import shutil
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import config
 import hardware
+from comfyui_installation import (
+    add_managed_models_to_comfyui,
+    checkpoint_names_from_object_info,
+    find_comfyui_installation,
+    find_comfyui_python,
+    managed_checkpoints_visible,
+    normalize_comfyui_dir,
+    resolve_comfyui_setup_choice,
+    write_extra_model_paths,
+)
 from llamacpp_tools import find_llamacpp_tool
 from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
+from setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
 SCRIPT_DIR   = config.SCRIPT_DIR
-COMFYUI_DIR  = config.COMFYUI_DIR
 LLAMACPP_DIR = config.LLAMACPP_DIR
 
 _arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
+_arg_parser.add_argument("--comfyui", help="Path to an existing ComfyUI or portable root")
 args = _arg_parser.parse_args()
+_saved_setup = load_setup_config(config.SETUP_CONFIG_PATH)
+if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
+    _arg_parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
+_detected_comfyui = find_comfyui_installation(
+    explicit=args.comfyui,
+    saved_path=configured_comfyui_dir(_saved_setup),
+    managed_dir=config.COMFYUI_DIR,
+)
+COMFYUI_DIR = _detected_comfyui or config.COMFYUI_DIR
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -668,6 +690,8 @@ print("    • Install Python dependencies from requirements.txt")
 if needs_llamacpp_install:
     build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
     print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
+if _detected_comfyui:
+    print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -897,6 +921,34 @@ if selected_llm or selected_embed or selected_images:
     section("HuggingFace Token")
     load_token()
 
+if selected_images and not _detected_comfyui:
+    section("ComfyUI Installation")
+    print("  No usable ComfyUI installation was detected.")
+    print("  1. Download and manage a compatible ComfyUI copy here (default)")
+    print("  2. Enter the path to an existing ComfyUI installation")
+    try:
+        comfyui_choice = input(f"  {CYAN}Choose [1/2]:{RESET} ")
+    except EOFError:
+        comfyui_choice = ""
+    entered_path = ""
+    if comfyui_choice.strip().lower() in {"2", "p", "path"}:
+        try:
+            entered_path = input(
+                f"  {CYAN}ComfyUI directory, main.py, or portable launcher path:{RESET} "
+            ).strip()
+        except EOFError:
+            entered_path = ""
+    choice_status, chosen_comfyui = resolve_comfyui_setup_choice(comfyui_choice, entered_path)
+    if choice_status == "existing":
+        COMFYUI_DIR = chosen_comfyui
+        _detected_comfyui = chosen_comfyui
+        ok(f"Using existing ComfyUI at {COMFYUI_DIR}")
+    elif choice_status == "invalid":
+        warn(f"No usable ComfyUI installation was found at {entered_path!r}")
+        info(f"Downloading a managed copy to {config.COMFYUI_DIR}")
+    else:
+        info(f"Downloading a managed copy to {config.COMFYUI_DIR}")
+
 # ── 8. Installing — everything below runs unattended, no more prompts ─────────
 
 INSTALL_STARTED = True
@@ -942,9 +994,9 @@ if needs_llamacpp_install:
 
 section("Disk Space")
 
-CHECKPOINTS = COMFYUI_DIR / "models" / "checkpoints"
-CLIP_DIR    = COMFYUI_DIR / "models" / "clip"
-VAE_DIR     = COMFYUI_DIR / "models" / "vae"
+CHECKPOINTS = config.COMFYUI_MODELS_DIR / "checkpoints"
+CLIP_DIR    = config.COMFYUI_MODELS_DIR / "clip"
+VAE_DIR     = config.COMFYUI_MODELS_DIR / "vae"
 
 remaining_gb = 0.0
 
@@ -988,7 +1040,7 @@ if sd35_selected and not (CLIP_DIR / "clip_g.safetensors").exists():
 if flux1_selected and not (VAE_DIR / "ae.safetensors").exists():
     remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
 if flux2_selected:
-    text_encoder_dir = COMFYUI_DIR / "models" / "text_encoders"
+    text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
     if not (text_encoder_dir / "mistral_3_small_flux2_fp8.safetensors").exists():
         remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
     if not (VAE_DIR / "flux2-vae.safetensors").exists():
@@ -1071,7 +1123,7 @@ if not selected_images:
 else:
     section("ComfyUI")
 
-    PORTABLE_PYTHON = SCRIPT_DIR / "python_embeded" / "python.exe"
+    PORTABLE_PYTHON = COMFYUI_DIR.parent / "python_embeded" / "python.exe"
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
     def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
@@ -1287,8 +1339,9 @@ else:
         if PORTABLE_PYTHON.exists():
             ok("Windows portable build detected — skipping requirements install (uses bundled python_embeded)")
         elif comfy_req_file.exists():
+            comfyui_python = find_comfyui_python(COMFYUI_DIR)
             already_installed = subprocess.run(
-                [sys.executable, "-m", "pip", "show", "aiohttp"],
+                [comfyui_python, "-m", "pip", "show", "aiohttp"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             ).returncode == 0
 
@@ -1297,7 +1350,7 @@ else:
             else:
                 info("Installing ComfyUI requirements ...")
                 result = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "-r", str(comfy_req_file)]
+                    [comfyui_python, "-m", "pip", "install", "-r", str(comfy_req_file)]
                 )
                 if result.returncode == 0:
                     ok("ComfyUI requirements installed")
@@ -1306,6 +1359,14 @@ else:
                     issues.append(f"pip install -r {comfy_req_file}")
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
+
+        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR)
+        try:
+            model_config = add_managed_models_to_comfyui(COMFYUI_DIR, config.COMFYUI_MODELS_DIR)
+            ok(f"ComfyUI model path configured in {model_config}")
+        except OSError as exc:
+            warn(f"Could not update ComfyUI's extra model paths: {exc}")
+            issues.append(f"Add {config.COMFYUI_MODELS_DIR} to ComfyUI's extra model paths")
 
         # ComfyUI's requirements.txt pulls in plain (non-XPU) torch on Intel Arc — overwrite after. PyTorch >= 2.5, no IPEX.
         if intel_linux and not PORTABLE_PYTHON.exists():
@@ -1497,7 +1558,7 @@ else:
         # Flux.2-dev needs its own (public, no token) text encoder + VAE —
         # a different architecture from Flux.1/SD3.5, not interchangeable.
         if flux2_present:
-            text_encoder_dir = COMFYUI_DIR / "models" / "text_encoders"
+            text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
             mistral_file = "mistral_3_small_flux2_fp8.safetensors"
             if not (text_encoder_dir / mistral_file).exists():
                 info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
@@ -1525,11 +1586,33 @@ else:
         if found_ckpts:
             ok(f"{len(found_ckpts)}/{n_expected} image checkpoints ready: "
                f"{', '.join(found_ckpts)}")
+            try:
+                with urllib.request.urlopen(
+                    f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=3,
+                ) as response:
+                    available = checkpoint_names_from_object_info(json.load(response))
+                if managed_checkpoints_visible(available, set(found_ckpts)):
+                    ok("Running ComfyUI already sees Local AI Bench's managed models")
+                else:
+                    warn("ComfyUI is running but has not loaded the managed model path yet")
+                    warn("Restart ComfyUI once before running image benchmarks")
+            except (OSError, urllib.error.URLError, json.JSONDecodeError):
+                pass
         else:
             fail("No image checkpoints available — image benchmarks will be skipped")
-            issues.append("Download at least one image checkpoint into ComfyUI/models/checkpoints/")
+            issues.append("Download at least one image checkpoint into models/comfyui/checkpoints/")
 
 # ── 9. Summary ────────────────────────────────────────────────────────────────
+
+write_setup_config(
+    config.SETUP_CONFIG_PATH,
+    comfyui_dir=COMFYUI_DIR if (COMFYUI_DIR / "main.py").is_file() else None,
+    llamacpp_tools={
+        "llama-server": LLAMACPP_BIN,
+        "llama-bench": LLAMACPP_BENCH_BIN,
+        "llama-batched-bench": LLAMACPP_BATCHED_BENCH_BIN,
+    },
+)
 
 section("Summary")
 
