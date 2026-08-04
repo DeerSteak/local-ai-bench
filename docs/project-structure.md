@@ -71,6 +71,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `event_store.py` | Inactive migration boundary for transactional append-only SQLite job events, digest verification, and rebuildable projections |
 | `interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
 | `result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |

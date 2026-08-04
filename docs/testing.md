@@ -109,6 +109,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
 | Atomic results, run state, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
+| Transactional event journal, transition safety, and projections | [test_event_store.py](../tests/test_event_store.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |

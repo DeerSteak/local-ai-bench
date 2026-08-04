@@ -61,6 +61,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Compatibility: schema-1 plans retain their exact serialization and plan hash; schema-2 is additive within the existing result envelope.
 - Evidence: deterministic, adversarial, and schema-1 golden round-trip tests in `tests/test_run_plan.py`.
 
+### AD-007 — Introduce the event journal inactive before workload migration
+
+- Status: accepted
+- Requirement: safe resume requires a transactional append-only record, while simultaneous JSON and SQLite mutation would create two authorities.
+- Decision: implement and adversarially verify the journal independently, but do not connect it to benchmark execution until one bounded workload stops owning that state in JSON. Events use stable plan-derived parentage, legal transitions, atomic batches, immutable rows, and a digest chain; projections and aggregates rebuild from events.
+- Rejected alternative: shadow-write every current JSON checkpoint into SQLite and reconcile later.
+- Deletion gate: when all workloads export from the journal, remove runtime JSON mutation according to the migration ledger.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
