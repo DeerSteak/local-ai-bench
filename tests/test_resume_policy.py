@@ -64,11 +64,13 @@ def test_engine_resume_identity_covers_selected_models_runtime_and_methodology(t
 
     identity = build_engine_resume_identity(
         plan, Engine(), model_families=["llm"], extra_runtimes={"llama-bench": extra},
+        environment={"os": "ExampleOS", "backend": "metal"},
     )
     assert identity["artifacts"]["model:model:4b:part1"] == file_identity(model)
     assert identity["runtimes"]["llama-server"] == file_identity(runtime)
     assert identity["runtimes"]["llama-bench"] == file_identity(extra)
     assert len(identity["methodology"]["execution"]) == 64
+    assert len(identity["environment"]["profile_sha256"]) == 64
 
 
 def test_native_only_identity_does_not_require_server_runtime(tmp_path):
@@ -152,6 +154,7 @@ def test_exact_identity_resumes_only_remaining_cases_and_advances_attempt_number
     ("artifacts", "model artifacts identity changed"),
     ("runtimes", "runtime binaries identity changed"),
     ("methodology", "methodology identity changed"),
+    ("environment", "execution environment identity changed"),
 ])
 def test_identity_change_requires_fork(key, reason):
     saved = {"plan_id": "p", "artifacts": {}, "runtimes": {}, "methodology": {}}

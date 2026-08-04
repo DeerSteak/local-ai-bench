@@ -740,6 +740,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 include_engine_runtime=bool(journal_stages - {"llamabench"}),
                 extra_runtimes=extra_resume_runtimes,
                 digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
+                environment=profile,
             )
 
         results = {

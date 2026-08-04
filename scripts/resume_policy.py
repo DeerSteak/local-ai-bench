@@ -25,7 +25,7 @@ def file_identity(path: Path) -> dict:
 
 def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
                           runtimes: dict[str, Path], methodology: dict[str, str],
-                          digest_cache: dict | None = None) -> dict:
+                          digest_cache: dict | None = None, environment: dict | None = None) -> dict:
     names = [*artifacts, *runtimes, *methodology]
     if any(not isinstance(name, str) or not IDENTITY_NAME.fullmatch(name) for name in names):
         raise ValueError("resume identity names must be stable logical identifiers")
@@ -36,12 +36,13 @@ def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
         "runtimes": {name: cached_file_identity(path, digest_cache)
                      for name, path in sorted(runtimes.items())},
         "methodology": dict(sorted(methodology.items())),
+        "environment": environment or {},
     }
 
 
 def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
                                  include_engine_runtime=True, extra_runtimes=None,
-                                 digest_cache_path=None) -> dict:
+                                 digest_cache_path=None, environment=None) -> dict:
     """Resolve byte identities for every journal-backed model and runtime in a plan."""
     artifacts = {}
     tags = {
@@ -59,10 +60,15 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
             plan.execution_identity, separators=(",", ":"), sort_keys=True,
         ).encode("utf-8")).hexdigest(),
     }
+    environment_identity = {
+        "profile_sha256": hashlib.sha256(json.dumps(
+            environment or {}, separators=(",", ":"), sort_keys=True,
+        ).encode("utf-8")).hexdigest(),
+    }
     cache = load_digest_cache(digest_cache_path) if digest_cache_path else None
     identity = build_resume_identity(
         plan, artifacts=artifacts, runtimes=runtimes, methodology=methodology,
-        digest_cache=cache,
+        digest_cache=cache, environment=environment_identity,
     )
     if digest_cache_path:
         atomic_write_json(Path(digest_cache_path), {"schema_version": 1, "files": cache})
@@ -113,6 +119,7 @@ def assess_resume(saved_identity: dict, current_identity: dict, projection: dict
     for key, label in (
         ("plan_id", "plan"), ("artifacts", "model artifacts"),
         ("runtimes", "runtime binaries"), ("methodology", "methodology"),
+        ("environment", "execution environment"),
     ):
         if saved_identity.get(key) != current_identity.get(key):
             reasons.append(f"{label} identity changed")
