@@ -250,6 +250,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         widget = ttk.Checkbutton(tests_box, text=text, variable=test_vars[name])
         widget.grid(row=row, column=0, sticky="w")
         test_widgets[name] = widget
+    ttk.Label(
+        tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
+        wraplength=430,
+    ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(custom_frame, text="Installed models", padding=12)
     models_box.grid(row=0, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
@@ -265,6 +269,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
         model_widgets[entry.value] = widget
         row += 1
+    ttk.Label(
+        models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
+        wraplength=430,
+    ).grid(row=row, column=0, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(custom_frame, text="Workload sizes", padding=12)
     workload_box.grid(row=1, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
@@ -277,6 +285,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     tg_frame.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
     for column, value in enumerate(TG_TOKEN_OPTIONS):
         ttk.Checkbutton(tg_frame, text=str(value), variable=tg_vars[value]).grid(row=0, column=column, padx=(0, 8))
+    ttk.Label(
+        workload_box, text="Prompt and generation values are tokens. No cap tests every configured depth; larger values increase time and memory.",
+        wraplength=430,
+    ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     execution_box = ttk.LabelFrame(custom_frame, text="Execution", padding=12)
     execution_box.grid(row=1, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
@@ -284,14 +296,20 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
                                 values=available_engines, width=16)
     engine_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=2)
-    labels = (("warmup", "Warmup runs"), ("runs", "Measured runs (1–10)"),
-              ("timeout", "Run timeout, seconds"), ("acc_timeout", "Accuracy timeout, seconds"),
-              ("acc_token_budget", "Accuracy token budget"))
+    labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
+              ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
+              ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
+              ("acc_timeout", f"Accuracy timeout, seconds (default {config.ACC_TIMEOUT})"),
+              ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"))
     for row, (key, label) in enumerate(labels, 1):
         ttk.Label(execution_box, text=label).grid(row=row, column=0, sticky="w", pady=2)
         ttk.Entry(execution_box, textvariable=option_vars[key], width=12).grid(row=row, column=1, sticky="w", padx=(10, 0), pady=2)
     ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=8, column=0, columnspan=2, sticky="w")
+    ttk.Label(
+        execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
+        wraplength=430,
+    ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
     paths_box.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
@@ -306,6 +324,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(paths_box, text="Browse…", command=lambda: option_vars["comfyui"].set(
         filedialog.askdirectory() or option_vars["comfyui"].get()
     )).grid(row=1, column=2, pady=(8, 0))
+    ttk.Label(
+        paths_box, text="Blank output uses results/results_<host>_<time>.json. ComfyUI must identify a usable program installation, not its model folder.",
+        wraplength=900,
+    ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
     footer = ttk.Frame(config_tab)
     footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
