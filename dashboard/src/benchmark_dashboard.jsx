@@ -10,6 +10,7 @@ import Header from "./components/Header";
 import Controls from "./components/Controls";
 import ChartPanel from "./components/ChartPanel";
 import StatsTable from "./components/StatsTable";
+import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 
@@ -286,6 +287,8 @@ export default function Dashboard() {
         sortConfig={sortConfig}
         onCycleSort={cycleSort}
       />
+
+      <ValidityInspector key={section} files={effectiveFiles} section={section} />
     </div>
   );
 }
