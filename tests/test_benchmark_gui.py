@@ -9,7 +9,8 @@ from benchmark_frontend import (
     validate_gui_options,
 )
 from benchmark_gui import (
-    build_discovery_report, effective_gui_options, format_run_outcome, open_path_command, parse_progress_line,
+    build_discovery_report, custom_option_defaults, effective_gui_options, format_run_outcome,
+    open_path_command, parse_progress_line,
     workload_preflight_errors,
 )
 
@@ -135,3 +136,10 @@ def test_run_outcome_explains_preserved_data_cleanup_and_next_step():
     assert "remain usable" in failure
     assert "Automatic cleanup" in failure
     assert "Review the final Run Log" in failure
+
+
+def test_custom_option_defaults_reset_paths_without_mutating_global_defaults():
+    defaults = custom_option_defaults(Path("/chosen/ComfyUI"))
+    assert defaults["comfyui"] == "/chosen/ComfyUI"
+    assert defaults["runs"] == GUI_OPTION_DEFAULTS["runs"]
+    assert GUI_OPTION_DEFAULTS["comfyui"] == ""

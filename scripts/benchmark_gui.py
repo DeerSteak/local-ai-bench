@@ -130,6 +130,10 @@ def format_run_outcome(exit_code: int) -> str:
             "Review the final Run Log message, correct the reported cause, then start a new run.")
 
 
+def custom_option_defaults(comfyui_dir: Path) -> dict:
+    return {**GUI_OPTION_DEFAULTS, "comfyui": str(comfyui_dir)}
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -161,6 +165,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     apply_saved_test_selection(custom_tests, saved)
     custom_test_values = [entry.value for entry in custom_tests if entry.checked]
     custom_models = build_model_entries(inventory, [entry.value for entry in custom_tests if entry.available])
+    custom_model_defaults = {entry.value: entry.checked for entry in custom_models}
     apply_saved_model_selection(custom_models, saved)
 
     root = tk.Tk()
@@ -277,6 +282,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
         model_widgets[entry.value] = widget
         row += 1
+    model_end_row = row
     ttk.Label(
         models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
         wraplength=430,
@@ -337,12 +343,63 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=900,
     ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
+    def reset_tests():
+        defaults = {entry.value: entry.checked for entry in build_test_entries(inventory)}
+        for name, variable in test_vars.items():
+            variable.set(defaults[name])
+
+    def reset_models():
+        for name, variable in model_vars.items():
+            variable.set(custom_model_defaults[name])
+
+    def reset_workload():
+        cap_var.set("No cap")
+        for value, variable in tg_vars.items():
+            variable.set(value in config.LLAMABENCH_TG)
+
+    def reset_execution():
+        engine_var.set(available_engines[0])
+        defaults = custom_option_defaults(detected_comfyui)
+        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                    "cpu_only", "force_all"):
+            variable = option_vars[key]
+            variable.set(defaults[key])
+
+    def reset_paths():
+        defaults = custom_option_defaults(detected_comfyui)
+        option_vars["out"].set(defaults["out"])
+        option_vars["comfyui"].set(defaults["comfyui"])
+
+    def reset_all():
+        reset_tests()
+        reset_models()
+        reset_workload()
+        reset_execution()
+        reset_paths()
+
+    ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
+        row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
+    )
+    ttk.Button(models_box, text="Reset Models", command=reset_models).grid(
+        row=model_end_row + 1, column=0, sticky="w", pady=(8, 0),
+    )
+    ttk.Button(workload_box, text="Reset Workload Sizes", command=reset_workload).grid(
+        row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
+    )
+    ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
+        row=10, column=0, columnspan=2, sticky="w", pady=(8, 0),
+    )
+    ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
+        row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
+    )
+
     footer = ttk.Frame(config_tab)
     footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
     status_var = tk.StringVar(value="Ready to benchmark.")
     ttk.Label(footer, textvariable=status_var).pack(side="left")
     start_button = ttk.Button(footer, text="Start Benchmark", style="Start.TButton")
     start_button.pack(side="right")
+    ttk.Button(footer, text="Reset All Custom Options", command=reset_all).pack(side="right", padx=(0, 10))
 
     log_tab.columnconfigure(0, weight=1)
     log_tab.rowconfigure(2, weight=1)
