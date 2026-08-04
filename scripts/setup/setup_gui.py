@@ -1,7 +1,6 @@
 """Tkinter wizard that collects a complete setup plan before installation."""
 
 from pathlib import Path
-import re
 
 from scripts.runtime import hardware
 from scripts.workloads.models import (
@@ -295,33 +294,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         if errors:
             messagebox.showerror("Cannot start setup", "\n".join(errors))
             return
-        for child in shell.winfo_children():
-            child.destroy()
-        ttk.Label(shell, text="Installing", font=("TkDefaultFont", 18, "bold")).pack(anchor="w")
-        ttk.Label(shell, text="You can leave this window open while setup completes.").pack(
-            anchor="w", pady=(4, 10),
-        )
-        log = tk.Text(shell, wrap="word", state="disabled", background="#111827", foreground="#e5e7eb")
-        log.pack(fill="both", expand=True)
-
-        class Progress:
-            def write(self, message: str) -> None:
-                clean = re.sub(r"\x1b\[[0-9;]*m", "", message)
-                log.configure(state="normal")
-                log.insert("end", clean)
-                log.see("end")
-                log.configure(state="disabled")
-                root.update()
-
-            def finish(self, success: bool) -> None:
-                status = "Setup completed successfully." if success else "Setup finished with action items."
-                ttk.Label(shell, text=status, font=("TkDefaultFont", 11, "bold")).pack(anchor="w", pady=(10, 4))
-                ttk.Button(shell, text="Close", command=root.destroy).pack(anchor="e")
-                root.mainloop()
-
-        plan["_gui_progress"] = Progress()
         result = plan
-        root.quit()
+        root.destroy()
 
     back_button.configure(command=go_back)
     next_button.configure(command=go_next)

@@ -715,7 +715,6 @@ except ValueError as exc:
     _arg_parser.error(str(exc))
 
 _gui_plan = None
-_gui_progress = None
 if _interface == "gui":
     from scripts.setup.setup_gui import run_setup_wizard
     _cleanup_candidates = find_non_catalog_model_dirs(config.MODELS_DIR / "llamacpp")
@@ -730,7 +729,6 @@ if _interface == "gui":
     if _gui_plan is None:
         print("\n  Setup cancelled — nothing was installed.\n")
         sys.exit(GUI_CANCEL_EXIT)
-    _gui_progress = _gui_plan.pop("_gui_progress")
 elif not confirm("Continue?", default=True):
     print(f"\n  Setup cancelled — nothing was installed.\n")
     sys.exit(0)
@@ -1021,18 +1019,6 @@ elif selected_images and not _detected_comfyui:
 # ── 8. Installing — everything below runs unattended, no more prompts ─────────
 
 INSTALL_STARTED = True
-
-if _gui_progress is not None:
-    class _GuiStream:
-        def write(self, message):
-            _gui_progress.write(message)
-            return len(message)
-
-        def flush(self):
-            return None
-
-    sys.stdout = _GuiStream()
-    sys.stderr = sys.stdout
 
 section("Installing")
 
@@ -1713,6 +1699,3 @@ else:
     for i, issue in enumerate(issues, 1):
         print(f"  {i}. {issue}")
     print()
-
-if _gui_progress is not None:
-    _gui_progress.finish(not issues)
