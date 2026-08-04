@@ -10,7 +10,7 @@ from benchmark_frontend import (
 )
 from benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
-    build_discovery_report, custom_option_defaults,
+    build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, format_run_outcome,
     open_path_command, parse_progress_line, resolve_preset,
     workload_preflight_errors,
@@ -179,3 +179,17 @@ def test_hardware_defaults_uncheck_models_that_exceed_usable_ram():
     entries[1].checked = True
     apply_hardware_model_defaults(entries, inventory, ram_gb=64)
     assert entries[1].checked
+
+
+def test_plan_preview_shows_resolved_measurement_values_and_destinations():
+    options = {**GUI_OPTION_DEFAULTS, "runs": 5, "cpu_only": True, "out": "chosen.json"}
+    preview = build_plan_preview(
+        engine="llamacpp", tests=["llm"],
+        entries=[MenuEntry("m", "Model", "llm", "LLM", True)], options=options,
+        max_prompt_tokens=32768, tg_tokens=[128, 512], comfyui_dir=Path("/ComfyUI"),
+    )
+    for expected in (
+        "Engine: llamacpp", "Tests: llm", "Models: Model", "Measured runs: 5",
+        "Prompt cap: 32768", "CPU only: Yes", "Results: chosen.json", "ComfyUI: /ComfyUI",
+    ):
+        assert expected in preview

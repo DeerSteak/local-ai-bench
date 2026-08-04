@@ -171,6 +171,27 @@ def apply_hardware_model_defaults(entries, inventory: dict[str, list[dict]], ram
             entry.checked = False
 
 
+def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
+                       max_prompt_tokens: int | None, tg_tokens: list[int] | None,
+                       comfyui_dir: Path) -> str:
+    models = [entry.label for entry in entries if entry.checked]
+    output = options.get("out") or "Automatic results/results_<host>_<time>.json"
+    lines = [
+        f"Engine: {engine}", f"Tests: {', '.join(tests)}", f"Models: {', '.join(models)}",
+        f"Warmups: {options['warmup']}", f"Measured runs: {options['runs']}",
+        f"Run timeout: {options['timeout']} seconds",
+        f"Accuracy timeout: {options['acc_timeout']} seconds",
+        f"Accuracy token budget: {options['acc_token_budget']} tokens",
+        f"Prompt cap: {max_prompt_tokens or 'No cap'}",
+        f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
+        f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
+        f"Force slow models: {'Yes' if options['force_all'] else 'No'}",
+        f"Results: {output}", f"ComfyUI: {comfyui_dir}",
+        "Network during benchmark: none expected; all selected models must already be local.",
+    ]
+    return "\n".join(lines)
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -687,6 +708,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
         if errors:
             messagebox.showerror("Check benchmark options", "\n".join(errors), parent=root)
+            return
+        effective_options = gui_options or custom_option_defaults(detected_comfyui)
+        preview = build_plan_preview(
+            engine=engine_var.get(), tests=tests, entries=entries, options=effective_options,
+            max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
+            comfyui_dir=custom_comfyui or detected_comfyui,
+        )
+        if not messagebox.askyesno(
+            "Review benchmark plan", f"{preview}\n\nStart this benchmark?", parent=root,
+        ):
             return
         state = build_frontend_state(
             engine_var.get(), tests, entries, max_prompt_tokens=max_prompt,
