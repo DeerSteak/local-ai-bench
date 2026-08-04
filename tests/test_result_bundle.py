@@ -11,6 +11,7 @@ from result_bundle import (
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "results_v4_1_complete.json"
+SAMPLE_BUNDLE = Path(__file__).parents[1] / "samples" / "representative_v4_1.labresult"
 
 
 def test_bundle_export_is_deterministic_and_imports_content_addressed_artifacts(tmp_path):
@@ -32,6 +33,15 @@ def test_bundle_export_is_deterministic_and_imports_content_addressed_artifacts(
     assert len(extracted) == 1
     assert extracted[0].name.startswith(manifest["artifacts"][0]["sha256"])
     assert extracted[0].read_bytes() == artifact.read_bytes()
+
+
+def test_representative_onboarding_bundle_is_current_and_clearly_synthetic():
+    verified = verify_result_bundle(SAMPLE_BUNDLE)
+    assert verified["manifest"]["application_version"] == "4.1"
+    assert verified["manifest"]["result_schema_version"] == 3
+    profile = verified["result"]["profile"]
+    assert profile["hostname"] == "Synthetic Sample System"
+    assert profile["gpu"] == "Synthetic Sample Hardware"
 
 
 def test_bundle_export_applies_private_aliases_and_retains_source_identity(tmp_path):

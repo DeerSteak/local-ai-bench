@@ -78,6 +78,8 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
 | [Installation Maintenance](docs/maintenance.md) | Repair, upgrade, rollback, and safe project-owned uninstall boundaries |
 | [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
+| [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, report, and privacy-safe support guidance |
+| [Support Operations](docs/support.md) | Intake, severity, escalation, redaction, retention, and resolution runbooks |
 
 ---
 
