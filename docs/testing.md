@@ -118,6 +118,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
 | Runner command confinement, event authentication, heartbeat, cleanup escalation, conversation preflight, and parent stage checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
+| Decision-report evidence, escaping, deterministic HTML/PDF, and CLI | [test_decision_report.py](../tests/test_decision_report.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |
 

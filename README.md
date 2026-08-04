@@ -56,6 +56,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Local Data Lifecycle](docs/data-lifecycle.md) | Local storage, retention, deletion, portability, and support-bundle handling |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
+| [Decision Reports](docs/reports.md) | Deterministic self-contained HTML/PDF evidence summaries |
 | [How It Works](docs/how-it-works.md) | Execution order, orchestration, and code organization |
 | [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |

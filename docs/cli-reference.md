@@ -111,6 +111,8 @@ During a GUI-launched benchmark, the separate progress window reports the curren
 
 Portable result bundles are available through the GUI's **Export Bundle** and **Import / Verify** actions or `python scripts/result_bundle_cli.py export RESULT BUNDLE`, `verify BUNDLE`, and `import BUNDLE RESULT`. Export is deterministic; import always verifies file digests, supported embedded plan schema, locally available question-bank versions, and reproducible sample aggregates first. Optional CLI `--artifact PATH` values are stored by content digest, while `--artifact-dir DIR` extracts verified artifacts under those safe digest names.
 
+Deterministic decision reports are generated with `python scripts/decision_report_cli.py RESULT --html REPORT.html --pdf REPORT.pdf`; either output may be omitted, but at least one is required. Reports are self-contained, local-only evidence summaries and do not calculate a hidden composite score. See [Decision Reports](reports.md).
+
 The GUI's **Support Bundle** action creates a separate redacted `.labsupport` archive. Before choosing the destination, a scrollable review lists every included file and field. The allowlist excludes raw results, logs, hostname, model identity, measurements, prompts, responses, tokens, credentials, and private paths; the archive contains only runtime/system compatibility facts, stage coverage, and scrubbed structured diagnostics.
 
 | Flag | Values | Default | Notes |

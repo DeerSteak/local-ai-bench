@@ -36,7 +36,7 @@
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
 | `docs/extension-contracts.md` | Versioned workload SDK, conformance-vector format, and capability-negotiated engine adapter contract |
 | `docs/security-and-privacy.md` | Working threat model, data classifications, embargo policy, controls, and verification gaps |
-| `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
+| `samples/` | Sample `results_*.json` files for trying the dashboard plus reviewed HTML/PDF decision-report examples |
 | `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup_check.py`, gitignored |
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
@@ -71,6 +71,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
+| `decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |
+| `decision_report_cli.py` | Command-line decision-report generator for validated result JSON |
 | `support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
