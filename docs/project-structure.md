@@ -141,7 +141,6 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/setup_check.py` | Hardware detection, model picker, unattended install |
 | `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
-| `close_terminal_tab.applescript` | Closes only the macOS Terminal tab that launched a cancelled graphical setup |
 | `setup/setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
 | `workloads/data/` | Question banks used by accuracy tests (see above) |
 

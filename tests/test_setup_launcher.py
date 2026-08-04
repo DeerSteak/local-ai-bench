@@ -10,20 +10,7 @@ def test_macos_launcher_treats_gui_cancel_as_clean_exit():
     error_check = 'if [ "$status" -ne 0 ]'
     assert cancel_check in launcher
     assert launcher.index(cancel_check) < launcher.index(error_check)
-    assert "close_terminal_tab.applescript" in launcher
-    assert '"$LAUNCHER_TTY"' in launcher
-
-
-def test_terminal_closer_targets_the_launching_tty():
-    script = (ROOT / "scripts" / "close_terminal_tab.applescript").read_text()
-    assert "tty of terminalTab is targetTTY" in script
-    assert "delay 0.2" in script
-    assert "close terminalWindow" in script
-    assert 'keystroke "w" using command down' in script
-    assert "error " not in script
-    launcher = (ROOT / "Setup Local AI Bench.command").read_text()
-    assert "nohup /usr/bin/osascript" in launcher
-    assert "launchctl submit" not in launcher
+    assert "osascript" not in launcher
 
 
 def test_setup_wrapper_only_offers_benchmark_after_setup_check_succeeds():
