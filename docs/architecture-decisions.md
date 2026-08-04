@@ -53,6 +53,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Decision: retry the request once, or the entire HTTP-concurrency batch once; mark a second implausible result invalid and continue. The GUI reports retry, recovery, and invalid-drop events.
 - Evidence: engine, workload, progress-event, and dashboard validation tests.
 
+### AD-006 — Derive execution identities from the immutable plan
+
+- Status: accepted
+- Requirement: transactional events and safe resume need stable identities across processes and restarts.
+- Decision: run-plan schema 2 declares `sha256-v1`; the canonical plan yields the job ID and checked stage/model/case/attempt/sample inputs yield hierarchical SHA-256 IDs. No mutable counter or database row ID defines domain identity.
+- Compatibility: schema-1 plans retain their exact serialization and plan hash; schema-2 is additive within the existing result envelope.
+- Evidence: deterministic, adversarial, and schema-1 golden round-trip tests in `tests/test_run_plan.py`.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

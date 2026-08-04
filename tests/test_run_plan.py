@@ -1,9 +1,10 @@
 from dataclasses import FrozenInstanceError
 import json
+from pathlib import Path
 
 import pytest
 
-from run_plan import PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
 
 
 def make_plan(**overrides):
@@ -42,6 +43,34 @@ def test_plan_identity_is_deterministic_across_mapping_order():
     equivalent = make_plan(models=reordered_models, effective_config=reordered_config)
     assert equivalent.plan_id == plan.plan_id
     assert len(plan.plan_id) == 64
+
+
+def test_schema_two_derives_stable_hierarchical_execution_ids():
+    plan = make_plan()
+    identity = plan.models["llm"][0]
+    model_id = plan.model_id("llm", identity)
+    case_id = plan.case_id("llm", model_id, {"context_tokens": 2048})
+    attempt_id = plan.attempt_id(case_id, 1)
+    assert plan.to_dict()["identity_scheme"] == IDENTITY_SCHEME
+    assert plan.job_id == f"job_{plan.plan_id}"
+    assert plan.stage_id("llm") == make_plan().stage_id("llm")
+    assert model_id == make_plan().model_id("llm", identity)
+    assert case_id == make_plan().case_id("llm", model_id, {"context_tokens": 2048})
+    assert plan.sample_id(attempt_id, 1) == make_plan().sample_id(attempt_id, 1)
+    assert len({plan.job_id, plan.stage_id("llm"), model_id, case_id, attempt_id,
+                plan.sample_id(attempt_id, 1)}) == 6
+
+
+def test_execution_ids_reject_entities_outside_plan_and_invalid_ordinals():
+    plan = make_plan()
+    with pytest.raises(ValueError, match="stage is not present"):
+        plan.stage_id("img")
+    with pytest.raises(ValueError, match="model identity is not present"):
+        plan.model_id("llm", {"tag": "missing"})
+    with pytest.raises(ValueError, match="positive integer"):
+        plan.attempt_id("case", 0)
+    with pytest.raises(ValueError, match="positive integer"):
+        plan.sample_id("attempt", True)
 
 
 @pytest.mark.parametrize("change", ["engine", "tests", "models", "config"])
@@ -103,6 +132,22 @@ def test_plan_rejects_unsupported_schema():
     encoded = make_plan().to_dict()
     encoded["schema_version"] = 999
     with pytest.raises(ValueError, match="unsupported"):
+        RunPlan.from_dict(encoded)
+
+
+def test_schema_one_plan_preserves_legacy_identity_and_round_trip():
+    fixture = Path(__file__).parent / "fixtures" / "results_v4_1_schema3_plan.json"
+    result = json.loads(fixture.read_text(encoding="utf-8"))
+    legacy = RunPlan.from_dict(result["run"]["plan"])
+    assert legacy.schema_version == 1
+    assert legacy.to_dict() == result["run"]["plan"]
+    assert legacy.plan_id == result["run"]["plan_id"]
+
+
+def test_schema_two_requires_known_identity_scheme():
+    encoded = make_plan().to_dict()
+    encoded["identity_scheme"] = "other"
+    with pytest.raises(ValueError, match="identity scheme"):
         RunPlan.from_dict(encoded)
 
 
