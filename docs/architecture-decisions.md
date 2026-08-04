@@ -111,6 +111,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
 - Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 
+### AD-013 — Persist native rows without changing model lifecycle
+
+- Status: accepted
+- Requirement: successful llama-bench cases must survive a later timeout without restoring the per-case subprocess reload that made the workload impractically slow.
+- Decision: retain one prefill and one decode command per model and commit each streamed JSONL row transactionally from the output callback. The child runner owns the native process group; JSON is rebuilt from the native stage projection.
+- Compatibility: row payloads, internal repetition samples, case/repetition counts, and timeout/error markers retain their 4.1 shape.
+- Rejected alternative: one llama-bench process per case solely to create checkpoint boundaries.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

@@ -182,6 +182,20 @@ class EventStore:
             "SELECT 1 FROM jobs WHERE job_id = ?", (job_id,),
         ).fetchone() is not None
 
+    def start_stage(self, plan: RunPlan, stage: str) -> None:
+        events = []
+        if self.has_job(plan.job_id):
+            if self.load_plan(plan.job_id) != plan:
+                raise ValueError("stage plan does not match the journal job")
+        else:
+            self.create_job(plan)
+            events.append(JournalEvent("job", plan.job_id, "running", {}))
+        events.append(JournalEvent(
+            "stage", plan.stage_id(stage), "running", {"stage": stage},
+            parent_id=plan.job_id,
+        ))
+        self.append(plan.job_id, events)
+
     def resume_identity(self, job_id: str) -> dict:
         row = self.connection.execute(
             "SELECT resume_identity_json FROM jobs WHERE job_id = ?", (job_id,),

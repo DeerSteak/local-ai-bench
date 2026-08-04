@@ -42,17 +42,7 @@ class LLMEventStage:
         self.stage_id = plan.stage_id(stage_name)
         self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
         if initialize:
-            events = []
-            if self.store.has_job(plan.job_id):
-                if self.store.load_plan(plan.job_id) != plan:
-                    raise ValueError("stage plan does not match the journal job")
-            else:
-                self.store.create_job(plan)
-                events.append(JournalEvent("job", plan.job_id, "running", {}))
-            events.append(JournalEvent(
-                "stage", self.stage_id, "running", {"stage": stage_name}, parent_id=plan.job_id,
-            ))
-            self.store.append(plan.job_id, events)
+            self.store.start_stage(plan, stage_name)
         elif self.store.load_plan(plan.job_id) != plan:
             raise ValueError("runner plan does not match the journal job")
 

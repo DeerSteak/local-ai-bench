@@ -92,6 +92,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `llm_prefill_benchmark.py` | Single-shot LLM test |
 | `llm_event_stage.py` | Journal-owned single-shot/conversation cases, samples, stage isolation, and compatible JSON projections |
 | `conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
+| `native_bench_event_stage.py` | Journal-owned streamed llama-bench rows, partial markers, repetition counts, and compatible projection |
 | `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
 | `embedding_benchmark.py` | Embeddings test |
 | `image_benchmark.py` | Image generation test (ComfyUI workflow builders + submission) |

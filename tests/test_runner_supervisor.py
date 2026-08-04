@@ -7,6 +7,7 @@ import pytest
 import config
 from engines.base import GenerationMeasurement
 from llm_event_stage import LLMEventStage, export_llm_section
+from native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from run_plan import RunPlan
 import runner_supervisor
 import workload_runner
@@ -271,3 +272,47 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
         config.RUN_TIMEOUT = old_timeout
     result = export_llm_section(path, plan.job_id, "conv")
     assert result["fake"]["0K"]["depth_tokens"] == 400
+
+
+def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["llamabench"],
+        stage_order=["llamabench"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 2, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512],
+            "llamabench_tg": [128], "sample_size": None,
+        },
+    )
+    owner = NativeBenchEventStage(path, plan, lambda _: None)
+    owner.close()
+
+    class Benchmark:
+        def run(self, **kwargs):
+            assert kwargs["reps"] == 2
+            assert config.LLAMABENCH_PP == [512]
+            model = kwargs["models"][0]
+            kwargs["journal"].record_model_plan(model, 1, 2)
+            kwargs["journal"].record_entry(model, {
+                "n_prompt": 512, "n_gen": 0, "n_depth": 0, "avg_ts": 100.0,
+                "samples_ts": [99.0, 101.0], "ts_runs": [99.0, 101.0],
+                "requested_reps": 2, "completed_reps": 2,
+            })
+            kwargs["journal"].finish()
+
+    old_pp, old_tg = config.LLAMABENCH_PP, config.LLAMABENCH_TG
+    try:
+        workload_runner.execute_llamabench_job(
+            path, plan.job_id, engine_factory=lambda _: object(),
+            benchmark_factory=Benchmark,
+        )
+    finally:
+        config.LLAMABENCH_PP, config.LLAMABENCH_TG = old_pp, old_tg
+    result = export_native_bench_section(path, plan.job_id)["fake"]
+    assert result["completed_cases"] == 1
+    assert result["prefill_entries"][0]["avg_ts"] == 100

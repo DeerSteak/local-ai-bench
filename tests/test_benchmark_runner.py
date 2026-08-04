@@ -1,6 +1,7 @@
 from benchmark import run_supervised_llm, run_supervised_stage
 from engines.base import GenerationMeasurement
 from llm_event_stage import LLMEventStage
+from native_bench_event_stage import NativeBenchEventStage
 from run_plan import RunPlan
 
 
@@ -189,3 +190,39 @@ def test_generic_supervisor_projects_conversation_stage(tmp_path):
 
     result = run_supervised_stage(plan, path, "conv", lambda _: None, Supervisor)
     assert result["fake"]["0K"]["depth_tokens"] == 400
+
+
+def test_generic_supervisor_projects_native_stage(tmp_path):
+    base = make_plan()
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["llamabench"],
+        stage_order=["llamabench"], models=base.models,
+        effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.stage == "llamabench"
+
+        def run(self, callback):
+            stage = NativeBenchEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
+            stage.record_model_plan(model, 1, 2)
+            stage.record_entry(model, {
+                "n_prompt": 512, "n_gen": 0, "n_depth": 0, "avg_ts": 100.0,
+                "samples_ts": [99.0, 101.0], "ts_runs": [99.0, 101.0],
+                "requested_reps": 2, "completed_reps": 2,
+            })
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    result = run_supervised_stage(plan, path, "llamabench", lambda _: None, Supervisor)
+    assert result["fake"]["completed_cases"] == 1

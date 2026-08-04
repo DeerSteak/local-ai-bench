@@ -19,6 +19,7 @@ from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from llm_event_stage import LLMEventStage, event_store_path, export_llm_section
+from native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
@@ -62,16 +63,21 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
                          supervisor_factory=RunnerSupervisor) -> dict:
     event_path = Path(event_path).resolve()
-    journal = LLMEventStage(
-        event_path, plan, lambda _: None, stage_name=stage_name,
-    )
+    if stage_name == "llamabench":
+        journal = NativeBenchEventStage(event_path, plan, lambda _: None)
+        project = lambda: export_native_bench_section(event_path, plan.job_id)
+    else:
+        journal = LLMEventStage(
+            event_path, plan, lambda _: None, stage_name=stage_name,
+        )
+        project = lambda: export_llm_section(event_path, plan.job_id, stage_name)
     journal.close()
     supervisor = supervisor_factory(RunnerSpec(plan.job_id, stage_name, event_path))
     terminal = []
 
     def on_runner_event(event):
         if event["kind"] == "event":
-            save_fn(export_llm_section(event_path, plan.job_id, stage_name))
+            save_fn(project())
         elif event["kind"] == "terminal":
             terminal.append(event["status"])
         elif event["kind"] == "log":
@@ -81,7 +87,7 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         return_code = supervisor.run(on_runner_event)
     finally:
         supervisor.cancel()
-    section = export_llm_section(event_path, plan.job_id, stage_name)
+    section = project()
     save_fn(section)
     if return_code or terminal != ["complete"]:
         raise RuntimeError(f"{stage_name} runner failed with exit code {return_code}")
@@ -757,9 +763,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 engine.stop()
 
         def run_llamabench(_context):
-            return LlamaBenchBenchmark().run(
-                engine=engine, models=llm_models, reps=config.N_RUNS,
-                cpu_only=_context.plan.cpu_only, save_fn=make_save("llamabench"),
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "llamabench",
+                make_save("llamabench"),
             )
 
         def run_llamabench_concurrency(_context):
@@ -827,8 +833,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             StageDefinition("llm", "llm", len(llm_models), run_llm),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
                             requires_engine=False),
-            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,
-                            prepare=stop_for_native),
+            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench),
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
                             run_llamabench_concurrency, prepare=stop_for_native),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,

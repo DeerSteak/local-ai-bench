@@ -17,7 +17,7 @@ import config
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
-SUPPORTED_RUNNER_STAGES = {"conv", "llm"}
+SUPPORTED_RUNNER_STAGES = {"conv", "llamabench", "llm"}
 
 
 class RunnerHeartbeatTimeout(TimeoutError):

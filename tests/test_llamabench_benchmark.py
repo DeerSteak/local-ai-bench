@@ -419,6 +419,47 @@ def test_run_preserves_rows_streamed_before_same_sweep_times_out(
     assert result["timed_out"] is True
 
 
+def test_run_journal_commits_each_row_before_same_sweep_timeout(
+        fake_engine, monkeypatch, small_matrix):
+    class Journal:
+        def __init__(self):
+            self.entries = []
+            self.states = []
+            self.finished = False
+
+        def record_model_plan(self, model, requested_cases, reps):
+            assert (requested_cases, reps) == (2, 3)
+
+        def record_entry(self, model, entry):
+            self.entries.append(entry)
+
+        def record_model_state(self, model, state, result):
+            self.states.append((state, result))
+
+        def finish(self):
+            self.finished = True
+
+        @staticmethod
+        def export():
+            return {"projected": True}
+
+    def fake_run_one(cls, command, *args, **kwargs):
+        kwargs["on_result"]({
+            "n_prompt": 512, "n_gen": 0, "avg_ts": 123.0,
+            "samples_ts": [122.0, 123.0, 124.0],
+        })
+        raise subprocess.TimeoutExpired(cmd=command, timeout=1)
+
+    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
+    journal = Journal()
+    result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, journal=journal)
+    assert result == {"projected": True}
+    assert len(journal.entries) == 1
+    assert journal.entries[0]["completed_reps"] == 3
+    assert journal.states[0][0] == "timed_out"
+    assert journal.finished is True
+
+
 def test_run_records_generic_exception(fake_engine, monkeypatch, small_matrix):
     def fake_run_one(cls, *a, **kw):
         raise RuntimeError("boom")

@@ -113,6 +113,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
 | Transactional event journal, transition safety, and projections | [test_event_store.py](../tests/test_event_store.py) |
 | Journal-owned single-shot/conversation projection, stage isolation, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
+| Journal-owned native llama-bench streamed rows, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
 | Runner command confinement, event authentication, heartbeat, cleanup escalation, conversation preflight, and parent stage checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |

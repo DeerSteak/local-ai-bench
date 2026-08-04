@@ -170,17 +170,21 @@ class LlamaBenchBenchmark:
             "completed_reps": len(speeds),
         }
 
-    def run(self, engine, models, reps, cpu_only=False, save_fn=None):
+    def run(self, engine, models, reps, cpu_only=False, save_fn=None, journal=None):
         results = {}
 
         if not isinstance(engine, LlamaCppEngine):
             Shared.warn(f"llama-bench only supports the llamacpp engine — skipping for {engine.name}")
+            if journal:
+                journal.finish()
             return results
 
         binary = self.find_binary()
         if binary is None:
             Shared.err("llama-bench not found — run setup.sh/setup.bat to install it, or build it "
                        "yourself: https://github.com/ggml-org/llama.cpp")
+            if journal:
+                journal.finish()
             return results
 
         ngl = 0 if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL
@@ -194,12 +198,18 @@ class LlamaBenchBenchmark:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "not_installed",
+                        })
                     continue
 
                 paths = LlamaCppEngine._resolve_model_files(tag)
                 if paths is None:
                     Shared.err(f"{tag}: model files went missing between listing and run — skipping")
                     results[short] = {"error": "model files not found"}
+                    if journal:
+                        journal.record_model_state(model, "failed", results[short])
                     continue
 
                 prefill_entries, decode_entries = [], []
@@ -210,6 +220,8 @@ class LlamaBenchBenchmark:
                 model_result["completed_cases"] = 0
                 model_result["requested_repetitions"] = requested_cases * reps
                 model_result["completed_repetitions"] = 0
+                if journal:
+                    journal.record_model_plan(model, requested_cases, reps)
                 stopped = False
 
                 for sweep in ("prefill", "decode"):
@@ -233,7 +245,9 @@ class LlamaBenchBenchmark:
                         if entry["completed_reps"] == reps:
                             model_result["completed_cases"] += 1
                         Shared.ok(self.format_entry(entry))
-                        if save_fn:
+                        if journal:
+                            journal.record_entry(model, entry)
+                        elif save_fn:
                             save_fn(results)
 
                     try:
@@ -247,17 +261,29 @@ class LlamaBenchBenchmark:
                             timed_out_at=sweep,
                             error=f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)",
                         )
+                        if journal:
+                            journal.record_model_state(model, "timed_out", {
+                                "timed_out": True, "timed_out_at": sweep,
+                                "error": model_result["error"],
+                            })
                         stopped = True
                         break
                     except Exception as e:
                         model_result["error"] = str(e)
+                        if journal:
+                            journal.record_model_state(
+                                model, "failed", {"error": model_result["error"]},
+                            )
                         stopped = True
                         break
                 if stopped:
                     Shared.err(f"{label}: native benchmark stopped with partial results")
             finally:
                 if save_fn:
-                    save_fn(results)
+                    save_fn(journal.export() if journal else results)
                 emit_model_finished("llamabench", label, results.get(short))
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

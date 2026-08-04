@@ -14,6 +14,8 @@ The embedded plan has its own compatibility axis. Existing golden results retain
 
 Workload methodology has its own identity. In particular, `run.llamabench_repetition_mode` identifies the streamed internal-repetition behavior. A compatible export retains this identity, and a consumer warns rather than treating results produced by different methodologies as strictly equivalent.
 
+The journal-owned native projection retains `prefill_entries`, `decode_entries`, requested/completed case counts, requested/completed repetition counts, every row's `samples_ts`/`ts_runs`, and timeout/error markers. Each streamed row is durable before the next row, but checkpointing does not split the existing two sweeps into per-case processes or change model-load behavior.
+
 ## Required result envelope
 
 A current result contains `version`, `engine`, `profile`, `accuracy_settings`, `bank_versions`, `sample_ids`, `run`, and every workload section, even when a section is empty. The workload sections are `llm`, `llm_conversation`, `embeddings`, `images`, `mcq`, `math`, `reasoning`, `code`, `tool`, `concurrency_tool`, `concurrency_chat`, `llamabench`, and `llamabenchconc`.
