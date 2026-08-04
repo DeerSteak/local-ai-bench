@@ -24,6 +24,7 @@ class ReportModel:
     performance: tuple[tuple[str, str, str, str, str], ...]
     accuracy: tuple[tuple[str, str, str, str], ...]
     evidence: tuple[tuple[str, str, str, str], ...]
+    optimizations: tuple[str, ...]
 
 
 def _text(value, fallback="Not recorded") -> str:
@@ -45,12 +46,15 @@ def build_report_model(result: dict) -> ReportModel:
     profile = result.get("profile") if isinstance(result.get("profile"), dict) else {}
     hostname = _text(profile.get("hostname"), "Unnamed system")
     status = _text(run.get("status"), "legacy")
+    plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
+    settings = plan.get("effective_config") if isinstance(plan.get("effective_config"), dict) else {}
     metadata = (
         ("System", hostname), ("Application", _text(result.get("version"))),
         ("Engine", _text(result.get("engine") or run.get("engine"))),
         ("OS", _text(profile.get("os"))), ("Backend", _text(profile.get("backend"))),
         ("Memory", f"{profile['ram_gb']} GB" if profile.get("ram_gb") is not None else "Not recorded"),
         ("Run status", status), ("Plan ID", _text(run.get("plan_id"))),
+        ("Methodology profile", _text(settings.get("methodology_profile"), "Legacy / not recorded")),
     )
     coverage = []
     stages = run.get("stages") if isinstance(run.get("stages"), dict) else {}
@@ -126,7 +130,7 @@ def build_report_model(result: dict) -> ReportModel:
         title=f"Local AI Bench Decision Report - {hostname}", metadata=metadata,
         readiness=readiness, readiness_detail=readiness_detail,
         coverage=tuple(coverage), performance=tuple(performance), accuracy=tuple(accuracy),
-        evidence=tuple(evidence),
+        evidence=tuple(evidence), optimizations=tuple(settings.get("effective_optimizations") or ()),
     )
 
 
@@ -162,6 +166,7 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 <h2>Performance evidence</h2>{_html_table(("Workload", "Model", "Case", "Tokens/sec", "TTFT sec"), model.performance)}
 <h2>Accuracy evidence</h2>{_html_table(("Workload", "Model", "Accuracy", "Correct"), model.accuracy)}
 <h2>Sample validity</h2>{_html_table(("Workload", "Case", "Valid", "Excluded"), model.evidence)}
+<h2>Effective optimizations</h2>{_html_table(("Recorded setting",), ((value,) for value in model.optimizations))}
 <h2>Interpretation limits</h2><div class="limitations">This report presents measured evidence, not a hidden composite score or a universal recommendation. Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. Missing or invalid data is not zero. Review raw samples, exclusion reasons, and the verified result bundle before making a purchase, launch, or capacity decision.</div>
 <footer>Generated deterministically from a Local AI Bench result. No external assets, scripts, telemetry, or network resources are embedded.</footer>
 </body></html>"""
@@ -231,6 +236,7 @@ def write_pdf_report(result: dict, path: Path) -> Path:
     add_table("Performance evidence", ("Workload", "Model", "Case", "Tokens/sec", "TTFT sec"), model.performance)
     add_table("Accuracy evidence", ("Workload", "Model", "Accuracy", "Correct"), model.accuracy)
     add_table("Sample validity", ("Workload", "Case", "Valid", "Excluded"), model.evidence)
+    add_table("Effective optimizations", ("Recorded setting",), tuple((value,) for value in model.optimizations))
     story.extend([Spacer(1, 12), Paragraph("Interpretation limits", styles["Heading2"]), Paragraph(
         "This report presents measured evidence, not a hidden composite score or a universal recommendation. "
         "Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. "

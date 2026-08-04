@@ -17,11 +17,12 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_levels", "concurrency_chat_levels",
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
+    "methodology_profile", "effective_optimizations",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
-EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS)
+EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {"methodology_profile", "effective_optimizations"}
 
 
 def _canonical_json(value) -> str:
@@ -122,7 +123,7 @@ class RunPlan:
     @property
     def execution_identity(self) -> dict:
         settings = self.effective_config
-        return {
+        identity = {
             "workloads": {stage: self.application_version for stage in self.stage_order},
             "runtime": {"engine": self.engine_name, "adapter_contract": 1},
             "privacy": {
@@ -139,6 +140,16 @@ class RunPlan:
             },
             "output": {"result_schema": 3, "event_schema": 1},
         }
+        has_profile = "methodology_profile" in settings
+        has_optimizations = "effective_optimizations" in settings
+        if has_profile != has_optimizations:
+            raise ValueError("methodology profile and effective optimizations must be recorded together")
+        if has_profile:
+            identity["methodology"] = {
+                "profile": settings["methodology_profile"],
+                "effective_optimizations": settings.get("effective_optimizations", []),
+            }
+        return identity
 
     @property
     def warmup_runs(self) -> int:
@@ -191,6 +202,14 @@ class RunPlan:
         for key in ("cpu_only", "force_all"):
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
+        if "methodology_profile" in settings:
+            if settings["methodology_profile"] != "neutral-v1":
+                raise ValueError("invalid execution setting: methodology_profile")
+            optimizations = settings.get("effective_optimizations")
+            if (not isinstance(optimizations, list)
+                    or any(not isinstance(value, str) or not value for value in optimizations)
+                    or len(optimizations) != len(set(optimizations))):
+                raise ValueError("invalid execution setting: effective_optimizations")
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",
             "concurrency_chat_context", "concurrency_chat_soft_exit_floor",

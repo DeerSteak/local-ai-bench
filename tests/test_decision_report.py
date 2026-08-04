@@ -18,6 +18,10 @@ def load(name):
 def test_report_model_uses_explicit_evidence_without_composite_score():
     result = load("results_v4_1_complete.json")
     result["mcq"]["golden"] = {"accuracy_pct": 75.0, "correct": 3, "total": 4}
+    result["run"]["plan"] = {"effective_config": {
+        "methodology_profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    }}
     model = build_report_model(result)
     assert model.title == "Local AI Bench Decision Report - commercial-golden-system"
     assert model.readiness == "COMPLETE EVIDENCE"
@@ -26,6 +30,8 @@ def test_report_model_uses_explicit_evidence_without_composite_score():
         ("Conversation", "golden", "0K", "48.00", "0.100"),
     )
     assert model.accuracy == (("MCQ", "golden", "75.0%", "3 / 4"),)
+    assert ("Methodology profile", "neutral-v1") in model.metadata
+    assert model.optimizations == ("llamacpp:flash_attention=on",)
     assert model.evidence == (
         ("Single-shot LLM", "golden / 2K", "2", "0"),
         ("Conversation", "golden / 0K", "1", "0"),

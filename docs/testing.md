@@ -111,6 +111,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
 | Atomic results, run state, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
+| Neutral methodology profile and effective optimization inventory | [test_methodology_profile.py](../tests/test_methodology_profile.py) |
 | Transactional event journal, transition safety, and projections | [test_event_store.py](../tests/test_event_store.py) |
 | Journal-owned single-shot/conversation/concurrency projection, stage/model-family isolation, batch fields, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
 | Journal-owned native llama-bench streamed rows, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |

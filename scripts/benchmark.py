@@ -24,6 +24,7 @@ from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
+from methodology_profile import resolve_methodology_profile
 from reasoning_benchmark import ReasoningBenchmark
 from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
@@ -664,6 +665,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 sys.exit(0)
 
         stage_order = ordered_stage_keys(tuple(tests))
+        methodology = resolve_methodology_profile(
+            engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
+        )
         effective_config = {
             "runs": config.N_RUNS, "warmup_runs": args.warmup,
             "run_timeout_seconds": config.RUN_TIMEOUT,
@@ -680,6 +684,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
             "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
             "sample_size": args.sample,
+            "methodology_profile": methodology["profile"],
+            "effective_optimizations": methodology["effective_optimizations"],
         }
         plan_models = {
             "llm": model_identity(llm_models),

@@ -31,6 +31,7 @@
 | `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
+| `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
 | `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
@@ -76,6 +77,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
 | `resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
 | `content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |

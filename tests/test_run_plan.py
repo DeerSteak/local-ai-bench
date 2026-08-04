@@ -94,6 +94,25 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
     assert changed.plan_id != base.plan_id
 
 
+def test_methodology_profile_is_identity_bearing_and_validated():
+    config = complete_plan().effective_config
+    config.update({
+        "methodology_profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    })
+    plan = make_plan(effective_config=config)
+    methodology = plan.execution_identity["methodology"]
+    assert methodology == {
+        "profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    }
+    changed = dict(config, effective_optimizations=["llamacpp:flash_attention=off"])
+    assert make_plan(effective_config=changed).plan_id != plan.plan_id
+    invalid = dict(config, methodology_profile="vendor-fast")
+    with pytest.raises(ValueError, match="methodology_profile"):
+        make_plan(effective_config=invalid).validate_for_execution()
+
+
 def test_returned_models_and_config_cannot_mutate_the_plan():
     plan = make_plan()
     plan.models["llm"].append({"tag": "injected"})
