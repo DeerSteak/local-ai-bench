@@ -50,6 +50,7 @@
 | `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup_check.py`, gitignored |
 | `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
 | `catalogs.py` (in `scripts/`) | Versioned stable hardware/model identities and recommendation-eligibility metadata |
+| `workload_packs.py` (in `scripts/`) | Immutable built-in/custom stage selections and compatibility validation |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
 | `scripts/data/` | Active accuracy banks—`mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `reasoning_questions.json` (60 questions), `code_problems.json` (60 problems), and `tool_questions.json` (100 tool-calling questions) |

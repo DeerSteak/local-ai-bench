@@ -66,6 +66,8 @@ The implementation has four layers:
 
 See [Project Structure](project-structure.md#scripts-in-detail) for the complete module-by-module map and [Engines](engines.md) for the adapter contract.
 
+Versioned [workload packs](workload-packs.md) can name an ordered subset of these registered stages. The initial custom format is data-only; it cannot execute user-supplied code or redefine methodology.
+
 Values that CLI flags can override at runtime (`RUN_TIMEOUT`, `ACC_TIMEOUT`, `ACC_TOKEN_BUDGET`, and `N_RUNS`) are read through dotted `config.*` lookups everywhere, rather than imported by name, so CLI assignments remain visible after import.
 
 The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and ANSI clearing elsewhere, keeping selection prompts compact and untimestamped. It preserves the welcome banner through the initial single-engine test menu and the final model choices through confirmation, while clearing between screens and before subsequent redraws. The test menu keeps its number/range and group-shortcut legend on screen during every redraw; restored menus say which local state file supplied their selections and how to reset it. Benchmark execution output goes through `Shared.output` and the existing severity helpers, which prefix each independently emitted status or progress message with local `[HH:MM:SS]` time. This display layer does not touch result JSON, captured model responses, answer sidecars, caches, or generated artifacts.
