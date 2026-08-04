@@ -37,6 +37,10 @@ Private paths are local metadata even when the referenced content is public. Con
 | Denial of service | Body/member/cardinality limits, timeouts, quotas, disk preflight, bounded artifact reads | Partial; coordinator enforcement pending |
 | Embargo disclosure | Private aliases, no telemetry/sync/update metadata, reviewed export/report/support, offline qualification | Alias and export/report/support review implemented; offline verification pending |
 
+Model weights and runtime files are untrusted input: malicious files, parser flaws, excessive resource use, dependency compromise, and unexpected native-process networking remain in scope even when their source is well known. Benchmark success never establishes that a checkpoint, generated response, or third-party runtime is safe. Current generated-code workloads score text and do not execute it; any future execution requires a separately reviewed sandbox with adversarial time, memory, filesystem, process, and network limits.
+
+The future hosted service is outside the current shipped boundary. It requires proven demand, an exact sync-field policy, tenant isolation, authorization tests, encrypted transfer/storage, retention/deletion/export, backup/restore drills, and independent review before launch. Update and installer delivery likewise require signed packages and provenance, downgrade resistance, staged rollout, and tested rollback before stable-release claims.
+
 ## Embargoed evaluation policy
 
 An evaluation is embargoed when the user or project marks any hardware, model, configuration, result, or relationship pre-release. The classification propagates to inventory, logs, screenshots, progress windows, result filenames/content, reports, bundles, support material, telemetry, sync, update requests, crash reports, and derived recommendations. A stable private alias is shown outside the restricted project while the internal identity remains available only to authorized local verification.
@@ -46,3 +50,7 @@ No embargoed artifact leaves the machine without an explicit review that names d
 ## Security ownership and response
 
 Before a stable paid release, the project must name a security owner, publish a private vulnerability-reporting channel and response targets, inventory and scan dependencies/artifacts/secrets, generate an SBOM and notices, sign releases and updates, exercise rollback, commission independent assessment, and close or explicitly accept every high-severity finding. Security claims require evidence from the shipped build and supported platform matrix, not only this design.
+
+A report receives an identifier, acknowledgement, severity and affected-version triage, an owner, a response target, and secure minimized reproduction instructions. Severity considers confidentiality, integrity, availability, exploitability, affected installs, crossed privilege boundaries, data class, and whether an offline guarantee failed. A credible active compromise suspends affected releases or updates, preserves evidence, revokes keys or artifacts where applicable, publishes containment guidance, and triggers assessment of notification duties.
+
+Fixes require focused regression tests, security review, signed artifacts, affected/fixed version disclosure, and a rollback plan. Customer notices state observed versus possible impact, containment, remediation, verification, and the next update time; absence of telemetry is never presented as proof of no impact. Closure records root cause, detection gaps, response timing, corrective actions, owners, and deadlines. High-severity exceptions require a named owner, rationale, containment, expiry, and explicit product-owner acceptance; an independent assessment remains mandatory before enterprise claims or broad hosted deployment.
