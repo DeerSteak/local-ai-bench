@@ -32,6 +32,7 @@ from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_mode
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
+from interface_mode import select_interface_mode
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
 SCRIPT_DIR   = config.SCRIPT_DIR
@@ -39,6 +40,7 @@ LLAMACPP_DIR = config.LLAMACPP_DIR
 
 _arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
 _arg_parser.add_argument("--comfyui", help="Path to an existing ComfyUI or portable root")
+_arg_parser.add_argument("--interface", choices=("auto", "gui", "terminal"), default="auto")
 args = _arg_parser.parse_args()
 _saved_setup = load_setup_config(config.SETUP_CONFIG_PATH)
 if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
@@ -68,6 +70,7 @@ def link(url, text=None):
     return f"\033]8;;{url}\033\\{text or url}\033]8;;\033\\"
 
 INSTALL_STARTED = False  # flipped True once the unattended install phase begins
+GUI_CANCEL_EXIT = 10
 
 def cancel_setup(*_args):
     """SIGINT handler so Ctrl+C works mid-subprocess/download, not just at input()."""
@@ -697,7 +700,37 @@ print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
 print()
 
-if not confirm("Continue?", default=True):
+try:
+    import tkinter  # noqa: F401
+    _tkinter_available = True
+except ImportError:
+    _tkinter_available = False
+try:
+    _interface = select_interface_mode(
+        args.interface, platform_name=os_name, env=dict(os.environ),
+        stdin_is_tty=sys.stdin.isatty(), gui_available=_tkinter_available,
+    )
+except ValueError as exc:
+    _arg_parser.error(str(exc))
+
+_gui_plan = None
+_gui_progress = None
+if _interface == "gui":
+    from setup_gui import run_setup_wizard
+    _cleanup_candidates = find_non_catalog_model_dirs(config.MODELS_DIR / "llamacpp")
+    _gui_plan = run_setup_wizard(
+        memory_ceiling_gb=memory_ceiling_gb,
+        detected_comfyui=_detected_comfyui,
+        cleanup_names=[path.name for path in _cleanup_candidates],
+        existing_hf_token=bool(os.environ.get("HF_TOKEN", "").strip() or (
+            (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
+        )),
+    )
+    if _gui_plan is None:
+        print("\n  Setup cancelled — nothing was installed.\n")
+        sys.exit(GUI_CANCEL_EXIT)
+    _gui_progress = _gui_plan.pop("_gui_progress")
+elif not confirm("Continue?", default=True):
     print(f"\n  Setup cancelled — nothing was installed.\n")
     sys.exit(0)
 
@@ -853,7 +886,19 @@ def select_models(memory_ceiling_gb=None):
     cleanup_names = selected_cleanup_names(entries)
     return selected_llm, selected_images, selected_embed, cleanup_names
 
-selected_llm, selected_images, selected_embed, cleanup_names = select_models(memory_ceiling_gb)
+if _gui_plan is None:
+    selected_llm, selected_images, selected_embed, cleanup_names = select_models(memory_ceiling_gb)
+else:
+    _llm_tags = set(_gui_plan["llm_tags"])
+    _image_shorts = set(_gui_plan["image_shorts"])
+    _embed_tags = set(_gui_plan["embedding_tags"])
+    selected_llm = [
+        model for tier in (LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
+        for model in tier if model["tag"] in _llm_tags
+    ]
+    selected_images = [model for model in IMAGE_MODELS if model["short"] in _image_shorts]
+    selected_embed = [model for model in EMBED_MODELS if model["tag"] in _embed_tags]
+    cleanup_names = list(_gui_plan["cleanup_names"])
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
@@ -917,11 +962,34 @@ def load_token():
     _hf_token_cache[0] = token or ""
     return token
 
-if selected_llm or selected_embed or selected_images:
+if _gui_plan is not None:
+    _gui_token = _gui_plan["hf_token"]
+    if not _gui_token and _gui_plan["use_existing_hf_token"]:
+        _gui_token = os.environ.get("HF_TOKEN", "").strip()
+        if not _gui_token and (SCRIPT_DIR / "hf.txt").is_file():
+            _gui_token = (SCRIPT_DIR / "hf.txt").read_text().strip()
+    _hf_token_cache[0] = _gui_token
+    if _gui_token and _gui_plan["save_hf_token"]:
+        try:
+            save_hf_token(SCRIPT_DIR / "hf.txt", _gui_token)
+            ok("Hugging Face token saved to hf.txt")
+        except OSError as exc:
+            warn(f"Could not save hf.txt: {exc}")
+elif selected_llm or selected_embed or selected_images:
     section("HuggingFace Token")
     load_token()
 
-if selected_images and not _detected_comfyui:
+if _gui_plan is not None and selected_images:
+    _gui_comfy_mode = _gui_plan["comfyui_mode"]
+    if _gui_comfy_mode == "existing":
+        COMFYUI_DIR = normalize_comfyui_dir(Path(_gui_plan["comfyui_path"]))
+        _detected_comfyui = COMFYUI_DIR
+    elif _gui_comfy_mode == "detected" and _detected_comfyui:
+        COMFYUI_DIR = _detected_comfyui
+    else:
+        COMFYUI_DIR = config.COMFYUI_DIR
+        _detected_comfyui = None
+elif selected_images and not _detected_comfyui:
     section("ComfyUI Installation")
     print("  No usable ComfyUI installation was detected.")
     print("  1. Download and manage a compatible ComfyUI copy here (default)")
@@ -952,6 +1020,18 @@ if selected_images and not _detected_comfyui:
 # ── 8. Installing — everything below runs unattended, no more prompts ─────────
 
 INSTALL_STARTED = True
+
+if _gui_progress is not None:
+    class _GuiStream:
+        def write(self, message):
+            _gui_progress.write(message)
+            return len(message)
+
+        def flush(self):
+            return None
+
+    sys.stdout = _GuiStream()
+    sys.stderr = sys.stdout
 
 section("Installing")
 
@@ -1625,3 +1705,6 @@ else:
     for i, issue in enumerate(issues, 1):
         print(f"  {i}. {issue}")
     print()
+
+if _gui_progress is not None:
+    _gui_progress.finish(not issues)

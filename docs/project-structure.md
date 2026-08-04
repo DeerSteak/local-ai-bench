@@ -10,6 +10,9 @@
 | File / Folder | Purpose |
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
+| `Setup Local AI Bench.command` | Double-clickable macOS launcher for the graphical setup wizard |
+| `Setup Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical setup wizard |
+| `Setup Local AI Bench.bat` | Double-clickable Windows launcher for the graphical setup wizard |
 | `setup.bat` | One-shot setup for Windows |
 | `run_bench.sh` | Activates the venv; opens the interactive frontend with no arguments or forwards arguments directly to `scripts/benchmark.py` on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
@@ -80,6 +83,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
+| `close_terminal_tab.applescript` | Closes only the macOS Terminal tab that launched a cancelled graphical setup |
 | `setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
 | `data/` | Question banks used by accuracy tests (see above) |
 

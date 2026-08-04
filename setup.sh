@@ -98,6 +98,37 @@ else
     ok "Installed $($PYTHON --version)"
 fi
 
+GUI_SESSION=0
+if [ -z "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]; then
+    if [ "$OS" = "Darwin" ] || [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        GUI_SESSION=1
+    fi
+fi
+if [ "$GUI_SESSION" = "1" ] && ! "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
+    warn "Tkinter is not available, so the graphical setup wizard cannot start."
+    read -r -p "  Install Tkinter support? [Y/n] " _tk_reply || _tk_reply="y"
+    if [[ -z "$_tk_reply" || "$_tk_reply" =~ ^[Yy] ]]; then
+        if [ "$OS" = "Darwin" ] && command -v brew &>/dev/null; then
+            PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+            brew install "python-tk@$PYTHON_SERIES"
+        elif command -v apt-get &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y python3-tk
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y python3-tkinter
+        else
+            warn "Install Tkinter with your package manager to use the GUI; continuing with terminal setup."
+        fi
+        if "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
+            ok "Tkinter support available"
+        else
+            warn "Tkinter is still unavailable; continuing with terminal setup."
+        fi
+    else
+        info "Continuing with terminal setup"
+    fi
+fi
+
 # ── 2. Create venv ─────────────────────────────────────────────────────────────
 section "Virtual Environment"
 

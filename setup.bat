@@ -104,6 +104,7 @@ echo [Running setup_check.py]
 echo.
 
 %VENV_PYTHON% scripts\setup_check.py %*
+if %errorlevel% equ 10 exit /b 10
 if %errorlevel% neq 0 (
     echo.
     echo   X  setup_check.py exited with errors. See above.
