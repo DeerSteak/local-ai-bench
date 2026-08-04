@@ -10,6 +10,7 @@ from benchmark_frontend import (
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
+    FRONTEND_CONTROL_BINDINGS,
     FRONTEND_OPTION_INVENTORY,
     FrontendCancelled,
     MenuEntry,
@@ -74,6 +75,27 @@ def test_frontend_inventory_classifies_every_public_benchmark_option():
 
 def test_frontend_inventory_exposes_the_remaining_configuration_work():
     assert frontend_option_gaps() == []
+
+
+def test_every_exposed_option_is_bound_to_a_concrete_control():
+    exposed = {
+        flag for flag, (status, _) in FRONTEND_OPTION_INVENTORY.items()
+        if status == "exposed"
+    }
+    assert set(FRONTEND_CONTROL_BINDINGS) == exposed
+    assert len(set(FRONTEND_CONTROL_BINDINGS.values())) == len(FRONTEND_CONTROL_BINDINGS)
+
+
+def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
+    inventory = {
+        "--ready": ("exposed", "Ready control"),
+        "--unbound": ("exposed", "Missing control"),
+        "--future": ("missing", "Not implemented"),
+        "--internal": ("excluded", "Internal only"),
+    }
+    assert frontend_option_gaps(inventory, {"--ready": "ready_control"}) == [
+        "--future", "--unbound",
+    ]
 
 
 def test_build_command_includes_offline_mode_when_selected():

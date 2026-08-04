@@ -30,5 +30,5 @@ def test_schema_has_complete_frontend_policy_for_each_option():
     assert all(spec.classification in {
         "guided", "advanced", "contextual", "developer-only", "unsafe", "unsupported",
     } for spec in PUBLIC_OPTION_SCHEMA.values())
-    assert all(spec.ui_status in {"exposed", "equivalent", "excluded"}
+    assert all(spec.ui_status in {"exposed", "equivalent", "excluded", "missing"}
                for spec in PUBLIC_OPTION_SCHEMA.values())

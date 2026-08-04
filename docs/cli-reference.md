@@ -89,15 +89,15 @@ No current public option is classified as unsafe, unsupported, or missing from t
 
 The interactive launcher clears the terminal before its initial display, between menu screens, and before subsequent redraws while preserving the welcome banner through the first single-engine test screen and the final model choices through confirmation. It uses the native `cls` command on Windows and ANSI terminal clearing elsewhere. Launcher prompts remain untimestamped. Once execution starts, benchmark status and progress messages are prefixed with local time as `[HH:MM:SS]`. Model responses, results data, answer sidecars, and generated artifacts are unchanged.
 
-`--runs` applies only to single-shot LLM, embeddings, image generation, and llama-bench repetitions. Each llama-bench repetition runs as an isolated `-r 1` process so completed measurements can be checkpointed independently. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
+`--runs` applies only to single-shot LLM, embeddings, image generation, and llama-bench repetitions. Native llama-bench receives the configured repetition count inside its per-model streamed prefill and decode sweeps so the model remains loaded; every completed case row is checkpointed as it arrives. Conversation and each accuracy test make one measured pass, while concurrency records one measured batch per level.
 
 ## Flag details
 
 ### Interactive frontend option coverage
 
-The launcher maintains an executable inventory of every public `benchmark.py` flag. Tests fail when a CLI option is added or removed without updating that inventory. Tests, engine, model families, maximum prompt size, and llama-bench generation sizes are directly configurable today. Tier selection and `--list-models` have more precise equivalents in the installed-model selection screens; `--models` is only an alias; and developer-only `--sample` is intentionally excluded from comparable interactive runs.
+The launcher maintains an executable inventory of every public `benchmark.py` flag. Tests fail when a CLI option is added or removed without updating that inventory. Every option classified as `exposed` must also map to a unique concrete control identifier, including the bespoke test, engine, model-family, prompt-cap, and generation-size selectors; a declared `missing` option or an exposed option without that binding blocks release readiness. Tier selection and `--list-models` have more precise equivalents in the installed-model selection screens; `--models` is only an alias; and developer-only `--sample` and the internal fork guard are intentionally excluded.
 
-The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only and force-all modes, output path, and ComfyUI path in Custom mode. Each is validated before launch and included in the resolved plan review; the executable option-inventory test prevents a future safe public setting from disappearing silently.
+The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only, force-all, and offline modes, output path, and ComfyUI path in Custom mode. Each is validated before launch and included in the resolved plan review; the executable inventory and control-binding tests prevent a future safe public setting from disappearing silently.
 
 CLI and graphical numeric constraints, choice lists, defaults, option classifications, and UI coverage policy share one typed option schema. Warmups must be zero or greater; measured runs remain 1–10; timeouts, token budgets, prompt caps, and developer sample sizes must be positive.
 

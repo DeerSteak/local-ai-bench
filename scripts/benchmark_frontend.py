@@ -59,6 +59,15 @@ FRONTEND_OPTION_INVENTORY = {
 FRONTEND_OPTION_CLASSIFICATION = {
     flag: spec.classification for flag, spec in PUBLIC_OPTION_SCHEMA.items()
 }
+FRONTEND_CONTROL_BINDINGS = {
+    **{flag: f"execution_setting:{key}" for key, flag in GUI_OPTION_FLAGS.items()},
+    "--tests": "test_selector", "--engine": "engine_selector",
+    "--llm-models": "llm_model_selector",
+    "--embedding-models": "embedding_model_selector",
+    "--image-models": "image_model_selector",
+    "--max-prompt-tokens": "prompt_cap_selector",
+    "--tg-tokens": "generation_size_selector",
+}
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 2
 GUI_OPTION_DEFAULTS = gui_option_defaults()
@@ -73,9 +82,15 @@ class FrontendCancelled(Exception):
     pass
 
 
-def frontend_option_gaps() -> list[str]:
-    return sorted(flag for flag, (status, _) in FRONTEND_OPTION_INVENTORY.items()
-                  if status == "missing")
+def frontend_option_gaps(inventory=None, bindings=None) -> list[str]:
+    inventory = FRONTEND_OPTION_INVENTORY if inventory is None else inventory
+    bindings = FRONTEND_CONTROL_BINDINGS if bindings is None else bindings
+    missing = {flag for flag, (status, _) in inventory.items() if status == "missing"}
+    missing.update(
+        flag for flag, (status, _) in inventory.items()
+        if status == "exposed" and flag not in bindings
+    )
+    return sorted(missing)
 
 
 @dataclass
