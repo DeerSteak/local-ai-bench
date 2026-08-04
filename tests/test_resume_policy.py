@@ -131,6 +131,42 @@ def test_engine_identity_persists_private_digest_cache_but_not_paths_in_identity
     assert str(model.resolve()) in load_digest_cache(cache_path)
 
 
+def test_recovery_identity_can_bypass_same_metadata_digest_cache(tmp_path):
+    import os
+
+    plan = make_plan()
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"first")
+    original_stat = model.stat()
+    cache_path = tmp_path / "cache.json"
+
+    class Engine:
+        @staticmethod
+        def resume_artifact_paths(_tag):
+            return (model,)
+
+        @staticmethod
+        def resume_runtime_paths():
+            return {}
+
+    original = build_engine_resume_identity(
+        plan, Engine(), model_families=["llm"], digest_cache_path=cache_path,
+    )
+    model.write_bytes(b"other")
+    os.utime(model, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    cached = build_engine_resume_identity(
+        plan, Engine(), model_families=["llm"], digest_cache_path=cache_path,
+    )
+    fresh = build_engine_resume_identity(
+        plan, Engine(), model_families=["llm"], digest_cache_path=cache_path,
+        use_digest_cache=False,
+    )
+    key = "model:model:4b:part1"
+    assert cached["artifacts"][key] == original["artifacts"][key]
+    assert fresh["artifacts"][key] == file_identity(model)
+    assert fresh["artifacts"][key] != original["artifacts"][key]
+
+
 def test_exact_identity_resumes_only_remaining_cases_and_advances_attempt_number():
     identity = {"plan_id": "p", "artifacts": {}, "runtimes": {}, "methodology": {}}
     projection = {

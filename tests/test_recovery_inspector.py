@@ -1,7 +1,8 @@
 import json
 
+import recovery_inspector
 from event_store import EventStore, JournalEvent
-from recovery_inspector import inspect_recovery, retryable_case_records
+from recovery_inspector import current_resume_identity, inspect_recovery, retryable_case_records
 from run_plan import RunPlan
 
 
@@ -57,6 +58,22 @@ def test_recovery_inspector_requires_fork_when_current_identity_changes(tmp_path
     report = inspect_recovery(result, lambda _plan: changed)
     assert report["action"] == "fork" and report["can_resume"] is False
     assert report["reasons"] == ["execution environment identity changed"]
+
+
+def test_current_recovery_identity_bypasses_persistent_digest_cache(monkeypatch, tmp_path):
+    _, plan, _ = make_result(tmp_path)
+    seen = {}
+
+    def build(*args, **kwargs):
+        seen.update(kwargs)
+        return {"identity": "fresh"}
+
+    monkeypatch.setattr(recovery_inspector, "build_engine_resume_identity", build)
+    identity = current_resume_identity(
+        plan, profile={"os": "test"}, engine=object(), digest_cache_path=tmp_path / "cache",
+    )
+    assert identity == {"identity": "fresh"}
+    assert seen["use_digest_cache"] is False
 
 
 def test_recovery_inspector_rejects_result_without_journal(tmp_path):

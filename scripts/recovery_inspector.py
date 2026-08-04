@@ -63,6 +63,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages - {"llamabench"}), extra_runtimes=extra,
         digest_cache_path=digest_cache_path, environment=profile or Shared.build_profile(),
+        use_digest_cache=False,
     )
 
 

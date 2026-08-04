@@ -42,7 +42,8 @@ def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
 
 def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
                                  include_engine_runtime=True, extra_runtimes=None,
-                                 digest_cache_path=None, environment=None) -> dict:
+                                 digest_cache_path=None, environment=None,
+                                 use_digest_cache=True) -> dict:
     """Resolve byte identities for every journal-backed model and runtime in a plan."""
     artifacts = {}
     tags = {
@@ -65,12 +66,13 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
             environment or {}, separators=(",", ":"), sort_keys=True,
         ).encode("utf-8")).hexdigest(),
     }
-    cache = load_digest_cache(digest_cache_path) if digest_cache_path else None
+    cache = load_digest_cache(digest_cache_path) \
+        if digest_cache_path and use_digest_cache else None
     identity = build_resume_identity(
         plan, artifacts=artifacts, runtimes=runtimes, methodology=methodology,
         digest_cache=cache, environment=environment_identity,
     )
-    if digest_cache_path:
+    if digest_cache_path and use_digest_cache:
         atomic_write_json(Path(digest_cache_path), {"schema_version": 1, "files": cache})
     return identity
 
