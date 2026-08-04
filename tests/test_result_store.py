@@ -97,3 +97,39 @@ def test_finish_active_stage_terminalizes_only_running_stage(monkeypatch):
     assert run["stages"]["emb"] == {
         "status": "failed", "finished_at": "done", "reason": "RuntimeError",
     }
+
+
+def test_result_store_owns_section_updates_and_stage_transitions(tmp_path):
+    writes = []
+    data = {"run": {"status": "running", "stages": {}}, "llm": {}}
+    store = result_store.ResultStore(
+        tmp_path / "result.json", data, writer=lambda path, value: writes.append(path),
+    )
+    store.start_stage("llm", 1)
+    store.update_section("llm", {"m": {"2K": {"tps_mean": 10}}})
+    store.complete_stage("llm")
+    store.finish("complete")
+    assert len(writes) == 4
+    assert data["run"]["status"] == "complete"
+    assert data["run"]["stages"]["llm"]["models_with_results"] == 1
+
+
+def test_result_store_rejects_illegal_transitions(tmp_path):
+    data = {"run": {"status": "running", "stages": {}}, "llm": {}}
+    store = result_store.ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
+    with pytest.raises(ValueError, match="not running"):
+        store.complete_stage("llm")
+    store.finish("failed")
+    with pytest.raises(ValueError, match="after the run ended"):
+        store.start_stage("llm", 1)
+
+
+def test_result_store_rejects_duplicate_running_stage_and_second_finish(tmp_path):
+    data = {"run": {"status": "running", "stages": {}}, "llm": {}}
+    store = result_store.ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
+    store.start_stage("llm", 1)
+    with pytest.raises(ValueError, match="already running"):
+        store.start_stage("llm", 1)
+    store.finish("failed")
+    with pytest.raises(ValueError, match="already terminal"):
+        store.finish("failed")

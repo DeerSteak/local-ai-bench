@@ -28,16 +28,23 @@ from llamabench_benchmark import LlamaBenchBenchmark
 from llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
-from result_store import (atomic_write_json, build_run_manifest, finish_run,
-                          finish_active_stage, finish_stage, model_counts, model_identity, start_stage,
-                          validate_json_data)
+from orchestration import (
+    LifecycleCoordinator, RunContext, RunSpec, StageDefinition,
+    StageExecutionError, execute_stages, execute_with_final_cleanup,
+    ordered_stage_keys, select_stages,
+)
+from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
+                          finish_active_stage, model_identity)
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
     run = results["run"]
     if run["status"] == "running":
         reason = "invalid_numeric_value" if isinstance(exc, ValueError) \
-            and "non-finite numeric value" in str(exc) else type(exc).__name__
+            and "non-finite numeric value" in str(exc) else (
+                f"stage_{exc.phase}_failed" if isinstance(exc, StageExecutionError)
+                else type(exc).__name__
+            )
         finish_active_stage(run, "failed", reason)
         finish_run(run, "failed", reason)
         checkpoint("run failed")
@@ -665,11 +672,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamabenchconc":  {},
         }
 
-        stage_order = [
-            stage for stage in ("llm", "conv", "llamabench", "llamabenchconc", "emb",
-                                "mcq", "math", "reasoning", "code", "tool",
-                                "conc_tool", "conc_chat", "img") if stage in tests
-        ]
+        stage_order = ordered_stage_keys(tuple(tests))
         results["run"] = build_run_manifest(
             tests=tests, stage_order=stage_order, engine=engine_name,
             models={
@@ -691,260 +694,185 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             repo_root=config.SCRIPT_DIR,
         )
 
+        store = ResultStore(Path(out_path), results)
+
         def _checkpoint(label=""):
-            atomic_write_json(Path(out_path), results)
+            store.checkpoint()
             if label:
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
         def make_save(key, stage_key=None):
             def _save(partial):
-                validate_json_data(partial)
-                results[key] = partial
-                stage = results["run"]["stages"].get(stage_key or key)
-                if stage:
-                    stage.update(model_counts(partial))
-                _checkpoint()
+                store.update_section(key, partial, stage_key or key)
             return _save
-
-        def _start(key, selected_models):
-            start_stage(results["run"], key, len(selected_models))
-            _checkpoint()
-
-        def _done(key, section_key=None):
-            finish_stage(results["run"], key, results[section_key or key])
-            _checkpoint(f"{key} done")
 
         _checkpoint("run started")
         signal.signal(signal.SIGINT,  _cleanup)
         signal.signal(signal.SIGTERM, _cleanup)
 
-        try:
-            # ── LLM-backed tests share one server lifecycle
-            llm_tests = engine_backed_tests
-            if llm_tests:
-                Shared.section("Starting Servers")
-                for other_name in _engines:
-                    if other_name == engine_name:
-                        continue
-                    other_engine = get_engine(other_name)
-                    if other_engine.available():
-                        Shared.log(f"Stopping {other_name} so only one inference "
-                                   f"engine runs at a time ...")
-                        other_engine.stop()
-                if args.cpu_only:
-                    Shared.warn("Stopping the engine to relaunch in CPU-only mode "
-                                f"(applies to: {', '.join(llm_tests)}) ...")
-                    engine.stop()
-                    if not engine.start(gpu_visible=False):
-                        Shared.err("Failed to start the engine in CPU-only mode — "
-                                   f"{', '.join(llm_tests)} tests will be skipped")
-                else:
-                    engine.ensure_running()
+        lifecycle = LifecycleCoordinator(
+            engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
+            Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
+        )
+        spec = RunSpec(
+            tests=tuple(tests), stage_order=tuple(stage_order), engine_name=engine_name,
+            output_path=Path(out_path), warmup_runs=args.warmup,
+            cpu_only=args.cpu_only, force_all=args.force_all,
+            llm_models=tuple(model["tag"] for model in llm_models),
+            concurrency_models=tuple(model["tag"] for model in conc_models),
+            embedding_models=tuple(model["tag"] for model in embedding_models),
+            image_models=tuple(model["short"] for model in image_models),
+            comfyui_dir=comfyui_dir,
+        )
+        context = RunContext(spec, engine, store, lifecycle, profile)
 
-            # ── LLM ───────────────────────────────────────────────────────────────
-            if "llm" in tests:
-                _start("llm", llm_models)
-                results["llm"] = LLMPrefillBenchmark().run(
-                    engine=engine,
-                    models=llm_models,
-                    context_lengths=config.CONTEXT_LENGTHS,
-                    warmup_runs=args.warmup,
-                    force_all=args.force_all,
-                    save_fn=make_save("llm"),
-                )
-                _done("llm")
+        def run_llm(_context):
+            return LLMPrefillBenchmark().run(
+                engine=engine, models=llm_models, context_lengths=config.CONTEXT_LENGTHS,
+                warmup_runs=_context.spec.warmup_runs,
+                force_all=_context.spec.force_all, save_fn=make_save("llm"),
+            )
 
-            if "conv" in tests:
-                _start("conv", llm_models)
-                conv_models = llm_models
-                llm_conv_skips = {}
-                if "llm" in tests:
-                    conv_models = []
-                    first_ctx_label = Shared.context_label(config.CONTEXT_LENGTHS[0])
-                    for model in llm_models:
-                        short = model["short"]
-                        llm_data = results["llm"].get(short)
-                        skip_entry = conv_skip_entry(model, llm_data, first_ctx_label, args.force_all)
-                        if skip_entry is not None:
-                            Shared.warn(f"{model['label']}: skipping conversation test — {skip_entry['skip_detail']}")
-                            llm_conv_skips[short] = skip_entry
-                            continue
+        def run_conversation(_context):
+            conv_models = llm_models
+            skips = {}
+            if "llm" in _context.spec.tests:
+                conv_models = []
+                first_ctx = Shared.context_label(config.CONTEXT_LENGTHS[0])
+                for model in llm_models:
+                    skip = conv_skip_entry(
+                        model, results["llm"].get(model["short"]), first_ctx,
+                        _context.spec.force_all,
+                    )
+                    if skip is None:
                         conv_models.append(model)
+                    else:
+                        Shared.warn(f"{model['label']}: skipping conversation test — {skip['skip_detail']}")
+                        skips[model["short"]] = skip
+            section = LLMConversationBenchmark().run(
+                engine=engine, models=conv_models, warmup_runs=_context.spec.warmup_runs,
+                force_all=_context.spec.force_all,
+                save_fn=make_save("llm_conversation", "conv"),
+            )
+            section.update(skips)
+            return section
 
-                results["llm_conversation"] = LLMConversationBenchmark().run(
-                    engine=engine,
-                    models=conv_models,
-                    warmup_runs=args.warmup,
-                    force_all=args.force_all,
-                    save_fn=make_save("llm_conversation", "conv"),
-                )
-                results["llm_conversation"].update(llm_conv_skips)
-                _done("conv", "llm_conversation")
+        def stop_for_native(_context):
+            if engine.available():
+                engine.stop()
 
-            # ── llama-bench: raw pp/tg throughput sweep (bypasses the HTTP engine) ──
-            if "llamabench" in tests:
-                _start("llamabench", llm_models)
-                if engine.available():
-                    Shared.log("Stopping the engine entirely to free memory for llama-bench ...")
-                    engine.stop()
+        def run_llamabench(_context):
+            return LlamaBenchBenchmark().run(
+                engine=engine, models=llm_models, reps=config.N_RUNS,
+                cpu_only=_context.spec.cpu_only, save_fn=make_save("llamabench"),
+            )
 
-                results["llamabench"] = LlamaBenchBenchmark().run(
-                    engine=engine,
-                    models=llm_models,
-                    reps=config.N_RUNS,
-                    cpu_only=args.cpu_only,
-                    save_fn=make_save("llamabench"),
-                )
-                _done("llamabench")
+        def run_llamabench_concurrency(_context):
+            return LlamaBenchConcurrencyBenchmark().run(
+                engine=engine, models=llm_models, cpu_only=_context.spec.cpu_only,
+                save_fn=make_save("llamabenchconc"),
+            )
 
-            # ── llama-batched-bench: aggregate throughput vs. concurrency (bypasses the HTTP engine) ──
-            if "llamabenchconc" in tests:
-                _start("llamabenchconc", llm_models)
-                if engine.available():
-                    Shared.log("Stopping the engine entirely to free memory for llama-batched-bench ...")
-                    engine.stop()
+        def run_embeddings(_context):
+            return EmbeddingBenchmark().run(
+                engine=engine, models=embedding_models, warmup_runs=_context.spec.warmup_runs,
+                save_fn=make_save("embeddings", "emb"),
+            )
 
-                results["llamabenchconc"] = LlamaBenchConcurrencyBenchmark().run(
-                    engine=engine,
-                    models=llm_models,
-                    cpu_only=args.cpu_only,
-                    save_fn=make_save("llamabenchconc"),
-                )
-                _done("llamabenchconc")
-
-            # ── Embeddings ─────────────────────────────────────────────────────────
-            if "emb" in tests:
-                _start("emb", embedding_models)
-                results["embeddings"] = EmbeddingBenchmark().run(
-                    engine=engine,
-                    models=embedding_models,
-                    warmup_runs=args.warmup,
-                    save_fn=make_save("embeddings", "emb"),
-                )
-                _done("emb", "embeddings")
-
-            # ── Accuracy tests (MCQ / Math / Code / Tool) — identical wiring, only test/class/label vary ──
-            for test_name, Bench, done_label in (
-                ("mcq", MCQBenchmark, "MCQ"), ("math", MathBenchmark, "Math"),
-                ("reasoning", ReasoningBenchmark, "Reasoning"),
-                ("code", CodeBenchmark, "Code"), ("tool", ToolBenchmark, "Tool"),
-            ):
-                if test_name not in tests:
-                    continue
-
-                _start(test_name, llm_models)
-
+        def accuracy_stage(test_name, Bench):
+            def runner(_context):
                 questions = Bench.load_questions()
                 if args.sample is not None:
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
-
-                answers_path = sidecar_path(out_path, f"answers_{test_name}_")
-                results[test_name] = Bench().run(
-                    engine=engine,
-                    models=llm_models,
-                    questions=questions,
-                    warmup_runs=args.warmup,
-                    save_fn=make_save(test_name),
+                answers_path = sidecar_path(_context.spec.output_path, f"answers_{test_name}_")
+                section = Bench().run(
+                    engine=engine, models=llm_models, questions=questions,
+                    warmup_runs=_context.spec.warmup_runs, save_fn=make_save(test_name),
                     answers_path=answers_path,
                 )
-                _done(test_name)
                 Shared.ok(f"Answers saved to: {answers_path}")
+                return section
+            return StageDefinition(
+                test_name, test_name, len(llm_models), runner, requires_engine=True,
+            )
 
-            # ── Concurrency: tool-style (agentic fan-out, no early exit) ───────────
-            if "conc_tool" in tests:
-                _start("conc_tool", conc_models)
+        def concurrency_stage(key, section, levels, per_context, cache, label, floor):
+            def runner(_context):
                 if not conc_models:
-                    Shared.warn("No downloaded models to test — "
-                                "conc_tool test will have nothing to run")
-
-                results["concurrency_tool"] = ConcurrencyBenchmark().run(
-                    engine=engine,
-                    models=conc_models,
-                    levels=config.CONCURRENCY_TOOL_LEVELS,
-                    per_request_context=config.CONCURRENCY_TOOL_CONTEXT,
-                    warmup_runs=args.warmup,
-                    crash_cache_path=ConcurrencyBenchmark.TOOL_CRASH_CACHE,
-                    section_label="Concurrency (Tool)",
-                    soft_exit_floor=None,
-                    force_all=args.force_all,
-                    save_fn=make_save("concurrency_tool", "conc_tool"),
+                    Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
+                return ConcurrencyBenchmark().run(
+                    engine=engine, models=conc_models, levels=levels,
+                    per_request_context=per_context, warmup_runs=_context.spec.warmup_runs,
+                    crash_cache_path=cache, section_label=label, soft_exit_floor=floor,
+                    force_all=_context.spec.force_all, save_fn=make_save(section, key),
                 )
-                _done("conc_tool", "concurrency_tool")
+            return StageDefinition(key, section, len(conc_models), runner, requires_engine=True)
 
-            # ── Concurrency: chat-server (many simultaneous users, soft exit) ──────
-            if "conc_chat" in tests:
-                _start("conc_chat", conc_models)
-                if not conc_models:
-                    Shared.warn("No downloaded models to test — "
-                                "conc_chat test will have nothing to run")
+        def prepare_images(_context):
+            lifecycle.restore_gpu()
+            lifecycle.stop_engine()
 
-                results["concurrency_chat"] = ConcurrencyBenchmark().run(
-                    engine=engine,
-                    models=conc_models,
-                    levels=config.CONCURRENCY_CHAT_LEVELS,
-                    per_request_context=config.CONCURRENCY_CHAT_CONTEXT,
-                    warmup_runs=args.warmup,
-                    crash_cache_path=ConcurrencyBenchmark.CHAT_CRASH_CACHE,
-                    section_label="Concurrency (Chat)",
-                    soft_exit_floor=config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
-                    force_all=args.force_all,
-                    save_fn=make_save("concurrency_chat", "conc_chat"),
-                )
-                _done("conc_chat", "concurrency_chat")
+        def run_images(_context):
+            if not Shared.ensure_comfyui(_context.spec.comfyui_dir):
+                Shared.warn("Image benchmarks will be skipped")
+                return {}
+            out_stem = _context.spec.output_path.stem
+            images_name = ("images_" + out_stem[len("results_"):]
+                           if out_stem.startswith("results_") else f"images_{out_stem}")
+            return ImageBenchmark().run(
+                image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
+                seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
+                comfyui_dir=_context.spec.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
+                save_fn=make_save("images", "img"),
+                images_dir=config.RESULTS_DIR / images_name,
+            )
 
-            # Restore normal GPU-enabled mode — see docs/workloads.md's --cpu-only note.
-            if llm_tests and args.cpu_only and engine._cpu_only_active:
-                Shared.log("Restoring normal (GPU-enabled) engine ...")
-                engine.stop()
-                engine.start()
+        registry = [
+            StageDefinition("llm", "llm", len(llm_models), run_llm, requires_engine=True),
+            StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
+                            requires_engine=True),
+            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,
+                            prepare=stop_for_native),
+            StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
+                            run_llamabench_concurrency, prepare=stop_for_native),
+            StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
+                            requires_engine=True),
+            accuracy_stage("mcq", MCQBenchmark), accuracy_stage("math", MathBenchmark),
+            accuracy_stage("reasoning", ReasoningBenchmark),
+            accuracy_stage("code", CodeBenchmark), accuracy_stage("tool", ToolBenchmark),
+            concurrency_stage(
+                "conc_tool", "concurrency_tool", config.CONCURRENCY_TOOL_LEVELS,
+                config.CONCURRENCY_TOOL_CONTEXT, ConcurrencyBenchmark.TOOL_CRASH_CACHE,
+                "Concurrency (Tool)", None,
+            ),
+            concurrency_stage(
+                "conc_chat", "concurrency_chat", config.CONCURRENCY_CHAT_LEVELS,
+                config.CONCURRENCY_CHAT_CONTEXT, ConcurrencyBenchmark.CHAT_CRASH_CACHE,
+                "Concurrency (Chat)", config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+            ),
+            StageDefinition("img", "images", len(image_models), run_images,
+                            prepare=prepare_images, cleanup=lambda _: Shared.shutdown_managed()),
+        ]
+        selected_stages = select_stages(registry, context.spec.stage_order)
 
-            # ── Image generation ───────────────────────────────────────────────────
-            if "img" in tests:
-                _start("img", image_models)
+        def run_selected_stages():
+            if engine_backed_tests:
                 Shared.section("Starting Servers")
-                # Kill the whole server, not just unload its models, to free memory the idle process itself still holds.
-                if engine.available():
-                    Shared.log("Stopping the engine entirely to free memory for ComfyUI ...")
-                    engine.stop()
-                comfyui_started = Shared.ensure_comfyui(comfyui_dir)
-                if not comfyui_started:
-                    Shared.warn("Image benchmarks will be skipped")
-                else:
-                    # See docs/project-structure.md's auxiliary-filename convention.
-                    _out_stem = Path(out_path).stem
-                    _images_dirname = (
-                        "images_" + _out_stem[len("results_"):]
-                        if _out_stem.startswith("results_") else f"images_{_out_stem}"
-                    )
+                if not lifecycle.prepare_engine(args.cpu_only):
+                    Shared.err("Failed to start the selected inference engine")
+            execute_stages(context, selected_stages)
+            lifecycle.restore_gpu()
 
-                    results["images"] = ImageBenchmark().run(
-                        image_models=image_models,
-                        resolutions=config.IMAGE_RESOLUTIONS,
-                        seed=config.IMAGE_SEED,
-                        prompt=config.IMAGE_PROMPT,
-                        comfyui_dir=comfyui_dir,
-                        timeout=config.RUN_TIMEOUT * 2,
-                        save_fn=make_save("images", "img"),
-                        images_dir=config.RESULTS_DIR / _images_dirname,
-                    )
-                    # Shut down ComfyUI as soon as image tests are done
-                    # to free GPU memory before saving results
-                    Shared.shutdown_managed()
-
-                _done("img", "images")
-
+        try:
+            execute_with_final_cleanup(run_selected_stages, lifecycle)
         except BaseException as exc:
             checkpoint_terminal_exception(results, exc, _checkpoint)
             raise
-        finally:
-            # Always shut down anything still running, even on error
-            Shared.shutdown_managed()
 
         # ── Save results ───────────────────────────────────────────────────────────
         Shared.section("Saving Results")
-        finish_run(results["run"], "complete")
-        atomic_write_json(Path(out_path), results)
+        store.finish("complete")
         Shared.ok(f"Results saved to: {out_path}")
 
     Shared.output("  Compare it against other machines in the dashboard:", leading_blank=True)

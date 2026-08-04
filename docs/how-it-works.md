@@ -32,7 +32,11 @@ See [Engines](engines.md) for `--engine <name>|all`. Each engine gets one pass t
 
 Within each stage, only one model is loaded at a time. `LlamaCppEngine` runs a model-specific llama-server process and restarts it whenever the requested model, context allocation, GPU mode, or concurrency shape changes. Each workload unloads or stops that model before advancing.
 
-The main JSON is atomically checkpointed when a run or stage changes state and after every model reaches a terminal outcome. Ctrl+C first records `interrupted`, then checkpoints again after workload `finally` callbacks flush their latest in-memory model data; the interrupted run is never relabeled complete. Its `run` manifest records overall and per-stage completion state plus coverage counts, and incomplete files remain visible to the dashboard.
+The selected keys are resolved through the fixed `STAGE_ORDER` registry in `orchestration.py`; a registered or selected key missing from that order is an error rather than a silently skipped stage. Each `StageDefinition` names its result section, selected-model count, runner, and only the preparation or cleanup hooks it actually needs. Native llama.cpp stages explicitly stop the HTTP engine, images restore normal engine mode before stopping it for ComfyUI, and ordinary stages have no special hooks.
+
+The main JSON is owned by `ResultStore`, which atomically checkpoints when a run or stage changes state and after every model reaches a terminal outcome. Ctrl+C first records `interrupted`, then checkpoints again after workload `finally` callbacks flush their latest in-memory model data; the interrupted run is never relabeled complete. Unhandled stage-hook failures use the documented reasons `stage_preparation_failed`, `stage_execution_failed`, and `stage_cleanup_failed`; a cleanup failure secondary to a preparation or execution failure is retained in that stage's `cleanup_failure` metadata without replacing the primary reason. Final lifecycle teardown runs before terminal exception persistence, so a failed checkpoint cannot prevent server cleanup.
+
+Stages currently end as `complete`, `failed`, or `interrupted`. The schema reserves `partial` for a future intentionally handled early-stop outcome; usable measurements retained before an unhandled failure remain visible through the failed stage's section and coverage counts rather than relabeling that stage partial.
 
 The single-shot test builds an independent padded prompt for every measured call. Conversation instead grows one chat from a blank slate and samples it once at each eligible checkpoint, growing toward 128K and sampling through 96K, capped by the GGUF's real context ceiling. Growth uses larger steps while far from a checkpoint and finer steps within 8K, stopping at 99.5% of the target to avoid expensive tiny turns.
 
@@ -50,7 +54,8 @@ The implementation has four layers:
 
 | Layer | Responsibility |
 |---|---|
-| Entry points | `benchmark_frontend.py` builds a public CLI command; `benchmark.py` validates it, selects engines/models, orders stages, checkpoints results, and handles cleanup |
+| Entry points | `benchmark_frontend.py` builds a public CLI command; `benchmark.py` parses and validates it, resolves engines/models, and creates each run specification |
+| Orchestration | `orchestration.py` owns fixed stage order/execution and lifecycle policy; `result_store.py` owns schema mutation, legal state transitions, and durable checkpoints |
 | Workloads | One module per workload or closely related workload family; each receives an engine and returns its section of the results schema |
 | Engine adapters | `engines/base.py` defines the interface and `engines/llamacpp.py` owns llama-server process/HTTP details; the two native llama.cpp benchmark modules intentionally bypass this interface |
 | Shared definitions | `config.py`, `models.py`, `model_inventory.py`, `hardware.py`, and `shared.py` own defaults, catalog data, discovery, fit estimates, logging, retries, statistics, and ComfyUI lifecycle |

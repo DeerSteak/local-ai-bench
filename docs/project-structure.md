@@ -48,8 +48,10 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 
 | Module | Purpose |
 |---|---|
-| `benchmark.py` | CLI entry point — argument parsing and test orchestration |
+| `benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
 | `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
+| `orchestration.py` | Immutable run specification, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
+| `result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
 | `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |

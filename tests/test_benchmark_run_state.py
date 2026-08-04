@@ -1,4 +1,5 @@
 from benchmark import checkpoint_terminal_exception
+from orchestration import StageExecutionError
 
 
 def test_interrupted_exception_checkpoints_pending_data_without_relabeling():
@@ -34,3 +35,12 @@ def test_nonfinite_exception_uses_specific_failure_reason():
     )
     assert results["run"]["reason"] == "invalid_numeric_value"
     assert results["run"]["stages"]["llm"]["reason"] == "invalid_numeric_value"
+
+
+def test_stage_failure_records_phase_specific_reason():
+    results = {"run": {"status": "running", "stages": {
+        "llm": {"status": "running", "finished_at": None},
+    }}}
+    exc = StageExecutionError("llm", "cleanup", RuntimeError("boom"))
+    checkpoint_terminal_exception(results, exc, lambda _: None)
+    assert results["run"]["reason"] == "stage_cleanup_failed"

@@ -176,3 +176,55 @@ def finish_run(run: dict, status: str, reason=None) -> None:
     run.update(status=status, finished_at=utc_now())
     if reason:
         run["reason"] = reason
+
+
+class ResultStore:
+    """Owns result mutation, state transitions, validation, and checkpoints."""
+
+    def __init__(self, path: Path, data: dict, writer=atomic_write_json):
+        self.path = Path(path)
+        self.data = data
+        self._writer = writer
+
+    def checkpoint(self) -> None:
+        validate_json_data(self.data)
+        self._writer(self.path, self.data)
+
+    def start_stage(self, key: str, selected_models: int) -> None:
+        if self.data["run"]["status"] != "running":
+            raise ValueError("cannot start a stage after the run ended")
+        existing = self.data["run"]["stages"].get(key)
+        if existing and existing["status"] == "running":
+            raise ValueError(f"stage already running: {key}")
+        start_stage(self.data["run"], key, selected_models)
+        self.checkpoint()
+
+    def update_section(self, section: str, value: dict, stage: str | None = None) -> None:
+        validate_json_data(value)
+        self.data[section] = value
+        record = self.data["run"]["stages"].get(stage or section)
+        if record:
+            record.update(model_counts(value))
+        self.checkpoint()
+
+    def complete_stage(self, key: str, section: str | None = None,
+                       status="complete", reason=None) -> None:
+        record = self.data["run"]["stages"].get(key)
+        if not record or record["status"] != "running":
+            raise ValueError(f"stage is not running: {key}")
+        finish_stage(self.data["run"], key, self.data[section or key], status, reason)
+        self.checkpoint()
+
+    def record_cleanup_failure(self, key: str, exc: BaseException) -> None:
+        record = self.data["run"]["stages"].get(key)
+        if not record or record["status"] != "running":
+            raise ValueError(f"stage is not running: {key}")
+        record["cleanup_failure"] = {
+            "reason": "stage_cleanup_failed", "error_type": type(exc).__name__,
+        }
+
+    def finish(self, status: str, reason=None) -> None:
+        if self.data["run"]["status"] != "running":
+            raise ValueError("run is already terminal")
+        finish_run(self.data["run"], status, reason)
+        self.checkpoint()
