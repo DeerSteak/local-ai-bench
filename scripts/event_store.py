@@ -101,7 +101,12 @@ def apply_event(projection: dict, event: JournalEvent) -> None:
             f"illegal {event.entity_type} transition for {event.entity_id}: "
             f"{previous} -> {event.state}"
         )
-    entities[event.entity_id] = {"state": event.state, "parent_id": event.parent_id, **event.payload}
+    if current and current["parent_id"] != event.parent_id:
+        raise ValueError(f"parent identity changed for {event.entity_id}")
+    retained = {key: value for key, value in (current or {}).items() if key != "state"}
+    entities[event.entity_id] = {
+        **retained, "state": event.state, "parent_id": event.parent_id, **event.payload,
+    }
 
 
 class EventStore:
@@ -121,7 +126,8 @@ class EventStore:
                 job_id TEXT PRIMARY KEY,
                 plan_json TEXT NOT NULL,
                 plan_id TEXT NOT NULL,
-                schema_version INTEGER NOT NULL
+                schema_version INTEGER NOT NULL,
+                resume_identity_json TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS events (
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,19 +151,39 @@ class EventStore:
             CREATE TRIGGER IF NOT EXISTS jobs_no_delete
             BEFORE DELETE ON jobs BEGIN SELECT RAISE(ABORT, 'jobs are immutable'); END;
         """)
+        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(jobs)")}
+        if "resume_identity_json" not in columns:
+            self.connection.execute(
+                "ALTER TABLE jobs ADD COLUMN resume_identity_json TEXT NOT NULL DEFAULT '{}'",
+            )
         self.connection.commit()
 
     def close(self):
         self.connection.close()
 
-    def create_job(self, plan: RunPlan) -> str:
+    def create_job(self, plan: RunPlan, resume_identity: dict | None = None) -> str:
         plan_json = _canonical_json(plan.to_dict())
+        resume_identity = resume_identity or {
+            "plan_id": plan.plan_id, "artifacts": {}, "runtimes": {}, "methodology": {},
+        }
+        validate_json_data(resume_identity)
+        resume_identity_json = _canonical_json(resume_identity)
         with self.connection:
             self.connection.execute(
-                "INSERT INTO jobs(job_id, plan_json, plan_id, schema_version) VALUES (?, ?, ?, ?)",
-                (plan.job_id, plan_json, plan.plan_id, EVENT_SCHEMA_VERSION),
+                """INSERT INTO jobs(
+                    job_id, plan_json, plan_id, schema_version, resume_identity_json
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (plan.job_id, plan_json, plan.plan_id, EVENT_SCHEMA_VERSION, resume_identity_json),
             )
         return plan.job_id
+
+    def resume_identity(self, job_id: str) -> dict:
+        row = self.connection.execute(
+            "SELECT resume_identity_json FROM jobs WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"unknown job: {job_id}")
+        return json.loads(row["resume_identity_json"])
 
     def append(self, job_id: str, events: list[JournalEvent]) -> None:
         normalized = [event.normalized() for event in events]

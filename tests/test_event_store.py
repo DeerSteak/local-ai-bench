@@ -32,7 +32,12 @@ def test_event_store_uses_wal_and_rebuilds_complete_projection(tmp_path):
     store = EventStore(tmp_path / "events.sqlite3")
     try:
         assert store.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert store.create_job(plan) == plan.job_id
+        identity = {
+            "plan_id": plan.plan_id, "artifacts": {"model": {"sha256": "abc", "size": 3}},
+            "runtimes": {}, "methodology": {"llm": "4.1"},
+        }
+        assert store.create_job(plan, identity) == plan.job_id
+        assert store.resume_identity(plan.job_id) == identity
         store.append(plan.job_id, [
             JournalEvent("job", plan.job_id, "running", {}),
             JournalEvent("stage", stage_id, "running", {"stage": "llm"}, parent_id=plan.job_id),
@@ -53,7 +58,11 @@ def test_event_store_uses_wal_and_rebuilds_complete_projection(tmp_path):
         projection = store.rebuild(plan.job_id)
         assert projection["jobs"][plan.job_id]["state"] == "complete"
         assert projection["cases"][case_id] == {
-            "state": "complete", "parent_id": stage_id, "valid_samples": 1,
+            "state": "complete", "parent_id": stage_id,
+            "context_tokens": 2048, "valid_samples": 1,
+        }
+        assert projection["attempts"][attempt_id] == {
+            "state": "complete", "parent_id": case_id, "number": 1,
         }
         assert projection["samples"][sample_id] == {
             "parent_id": attempt_id, "valid": True,
@@ -112,6 +121,23 @@ def test_database_triggers_prohibit_event_and_job_mutation(tmp_path):
             store.connection.execute("UPDATE events SET state = 'failed'")
         with pytest.raises(sqlite3.IntegrityError, match="immutable"):
             store.connection.execute("DELETE FROM jobs")
+    finally:
+        store.close()
+
+
+def test_event_store_migrates_pre_identity_job_table(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.execute("""CREATE TABLE jobs (
+        job_id TEXT PRIMARY KEY, plan_json TEXT NOT NULL,
+        plan_id TEXT NOT NULL, schema_version INTEGER NOT NULL
+    )""")
+    connection.commit()
+    connection.close()
+    store = EventStore(path)
+    try:
+        columns = {row["name"] for row in store.connection.execute("PRAGMA table_info(jobs)")}
+        assert "resume_identity_json" in columns
     finally:
         store.close()
 

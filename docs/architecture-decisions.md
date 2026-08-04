@@ -69,6 +69,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: shadow-write every current JSON checkpoint into SQLite and reconcile later.
 - Deletion gate: when all workloads export from the journal, remove runtime JSON mutation according to the migration ledger.
 
+### AD-008 — Resume only from exact content identity at case boundaries
+
+- Status: accepted
+- Requirement: a resumed result must not combine measurements from changed models, runtimes, methodology, or configuration.
+- Decision: persist a path-free snapshot of plan ID, artifact/runtime SHA-256 and size, and methodology versions. Exact matches retain completed cases, terminalize abandoned running attempts, and allocate a new attempt ordinal for remaining cases; any mismatch or unknown case requires a fork.
+- Rejected alternative: compare filenames/timestamps or resume directly inside a partially completed request.
+- Evidence: content-change, privacy, completed-case, interrupted-attempt, next-attempt, unknown-case, and database-migration tests.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
