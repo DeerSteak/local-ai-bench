@@ -49,5 +49,18 @@ def apply_offline_mode() -> None:
                 raise OfflineNetworkError(f"offline mode blocked outbound connection: {address}")
             return super().connect_ex(address)
 
+        def sendto(self, data, *args):
+            address = args[-1] if args else None
+            if not is_loopback_address(address):
+                raise OfflineNetworkError(f"offline mode blocked outbound datagram: {address}")
+            return super().sendto(data, *args)
+
+        def sendmsg(self, buffers, ancdata=(), flags=0, address=None):
+            if address is not None and not is_loopback_address(address):
+                raise OfflineNetworkError(f"offline mode blocked outbound message: {address}")
+            if address is None:
+                return super().sendmsg(buffers, ancdata, flags)
+            return super().sendmsg(buffers, ancdata, flags, address)
+
     socket.socket = LoopbackSocket
     socket._local_ai_bench_offline = True

@@ -10,6 +10,10 @@ SECRET_PATTERNS = (
     re.compile(r"(?i)\bBearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"(?i)(?<=access_token=)[^&\s]+"),
     re.compile(r"(?i)(?<=token=)[^&\s]+"),
+    re.compile(r"(?i)\b(?:api[_-]?key|password)\s*[=:]\s*[^\s&]+"),
+    re.compile(r"(?i)--api-key(?:=|\s+)\S+"),
+    re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
 GENERIC_HOME = re.compile(r"(?i)(?:[A-Z]:[\\/]Users[\\/][^\\/\s]+|/(?:Users|home)/[^/\s]+)")
 

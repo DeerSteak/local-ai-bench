@@ -7,6 +7,9 @@ from shared import Shared
 @pytest.mark.parametrize("secret", [
     "hf_abcdefghijklmnopqrstuvwxyz", "Bearer abcdefghijklmnopqrstuvwxyz",
     "https://example.test/?token=sensitive-value", "https://example.test/?access_token=secret&x=1",
+    "api_key=abcdefghijklmnopqrstuvwxyz", "password=abcdefghijklmnopqrstuvwxyz",
+    "--api-key abcdefghijklmnopqrstuvwxyz", "ghp_abcdefghijklmnopqrstuvwxyz1234",
+    "sk-abcdefghijklmnopqrstuvwxyz1234",
 ])
 def test_log_redaction_removes_secret_but_retains_context(secret):
     output = redact_log_text(f"request failed: {secret}", home="/private/home")

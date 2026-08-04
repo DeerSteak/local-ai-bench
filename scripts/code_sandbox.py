@@ -61,8 +61,11 @@ def run_restricted_python(harness, payload, timeout):
             timed_out, limit_reason = _wait_bounded(
                 proc, payload, timeout, stdout_path, stderr_path,
             )
+        stderr_text = _read_bounded(stderr_path)
+        if limit_reason is None and proc.returncode != 0 and "MemoryError" in stderr_text:
+            limit_reason = "memory limit"
         return SandboxResult(
-            _read_bounded(stdout_path), _read_bounded(stderr_path), proc.returncode,
+            _read_bounded(stdout_path), stderr_text, proc.returncode,
             timed_out, limit_reason,
         )
 
@@ -71,6 +74,11 @@ def sandbox_prelude(candidate_code):
     """Return the trusted in-child policy and restricted candidate namespace."""
     return (
         "import builtins, json, sys\n"
+        "try:\n"
+        "    import resource\n"
+        f"    resource.setrlimit(resource.RLIMIT_DATA, ({MEMORY_LIMIT_BYTES}, {MEMORY_LIMIT_BYTES}))\n"
+        "except (ImportError, AttributeError, OSError, ValueError):\n"
+        "    pass\n"
         "def _deny(event, args):\n"
         "    blocked = ('open', 'socket.', 'subprocess.', 'ctypes.', 'os.')\n"
         "    if event == 'import' or event.startswith(blocked):\n"

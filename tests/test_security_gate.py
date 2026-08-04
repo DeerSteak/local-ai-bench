@@ -14,6 +14,10 @@ def test_clean_release_tree_passes_without_echoing_content(tmp_path):
     ("cloud.txt", "AKIAABCDEFGHIJKLMNOP", "AWS access key"),
     ("key.pem", "-----BEGIN PRIVATE KEY-----", "private key"),
     ("request.txt", "Bearer abcdefghijklmnopqrstuvwxyz", "bearer credential"),
+    ("github.txt", "ghp_abcdefghijklmnopqrstuvwxyz1234", "GitHub token"),
+    ("openai.txt", "sk-abcdefghijklmnopqrstuvwxyz1234", "OpenAI-style API key"),
+    ("gcp.json", '{"type":"service_account"}', "GCP service account"),
+    ("settings.txt", "api_key=abcdefghijklmnopqrstuvwxyz", "credential assignment"),
 ])
 def test_secret_patterns_are_reported_without_secret_values(tmp_path, name, content, kind):
     (tmp_path / name).write_text(content, encoding="utf-8")
@@ -33,12 +37,19 @@ def test_prohibited_credentials_and_symlinks_are_blocking(tmp_path):
     )
 
 
-def test_oversized_file_fails_closed(tmp_path, monkeypatch):
-    monkeypatch.setattr(security_gate, "MAX_SCANNED_FILE_BYTES", 3)
-    (tmp_path / "large.bin").write_bytes(b"four")
+def test_large_installer_is_streamed_and_secret_matches_cross_chunks(tmp_path, monkeypatch):
+    monkeypatch.setattr(security_gate, "SCAN_CHUNK_BYTES", 16)
+    monkeypatch.setattr(security_gate, "SCAN_OVERLAP_BYTES", 64)
+    (tmp_path / "large.bin").write_bytes(b"x" * 15 + b" hf_abcdefghijklmnopqrstuvwxyz123456")
     assert scan_release_tree(tmp_path) == (
-        {"file": "large.bin", "kind": "file exceeds offline scan limit", "blocking": True},
+        {"file": "large.bin", "kind": "Hugging Face token", "blocking": True},
     )
+
+
+@pytest.mark.parametrize("name", [".npmrc", ".pypirc", ".git-credentials", "signing.p12"])
+def test_credential_container_names_are_blocking(tmp_path, name):
+    (tmp_path / name).write_text("placeholder", encoding="utf-8")
+    assert scan_release_tree(tmp_path)[0]["kind"] == "prohibited credential file"
 
 
 def test_scan_rejects_non_directory(tmp_path):

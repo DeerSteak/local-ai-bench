@@ -1,6 +1,6 @@
 # Release security gates
 
-`scripts/security_gate.py` performs the deterministic offline portion of release scanning against a prepared staging directory. It rejects symbolic links, prohibited credential filenames such as `hf.txt` and `.env`, files too large to inspect under the declared limit, unreadable files, and common Hugging Face, AWS, private-key, and bearer-credential patterns. Findings contain only a relative filename and category, never the matched value.
+`scripts/security_gate.py` performs the deterministic offline portion of release scanning against a prepared staging directory. It rejects symbolic links, unreadable files, credential containers such as `hf.txt`, `.env`, `.npmrc`, `.pypirc`, `.git-credentials`, PKCS #12/PFX files, and common Hugging Face, AWS, GitHub, OpenAI-style, GCP service-account, private-key, bearer, API-key, and password patterns. Files are scanned in bounded overlapping chunks, so large installers are inspected instead of being rejected merely for their size and secrets split across chunk boundaries remain detectable. Findings contain only a relative filename and category, never the matched value.
 
 This gate scans final staged bytes rather than assuming Git ignore rules or source review kept secrets out of a package. A clean result means only that its narrow offline rules found no listed condition. It does not detect every secret, malicious binary, vulnerable dependency, unsafe model, or compromised build environment.
 

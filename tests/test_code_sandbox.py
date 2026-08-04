@@ -29,6 +29,12 @@ def test_memory_exhaustion_is_stopped_by_parent_monitor():
     assert result == [{"passed": False, "got": None, "error": "memory limit"}]
 
 
+def test_single_huge_allocation_is_kernel_bounded():
+    code = "def f():\n    return b'x' * 10_000_000_000"
+    result = CodeBenchmark.execute_tests(code, "f", [{"args": [], "expected": b""}], timeout=3)
+    assert result == [{"passed": False, "got": None, "error": "memory limit"}]
+
+
 def test_candidate_output_is_bounded_and_cannot_fill_parent_memory():
     code = f"def f():\n    print('x' * {MAX_OUTPUT_BYTES * 2})\n    return 1"
     result = CodeBenchmark.execute_tests(code, "f", [{"args": [], "expected": 1}], timeout=3)

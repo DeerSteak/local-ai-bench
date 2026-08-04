@@ -34,3 +34,18 @@ def test_offline_mode_sets_environment_and_blocks_external_socket(monkeypatch):
     with pytest.raises(OfflineNetworkError):
         blocked.connect(("8.8.8.8", 53))
     blocked.close()
+
+
+def test_offline_mode_blocks_udp_and_sendmsg_egress(monkeypatch):
+    import network_policy
+
+    monkeypatch.delattr(socket, "_local_ai_bench_offline", raising=False)
+    monkeypatch.setattr(network_policy.socket, "socket", socket.socket)
+    network_policy.apply_offline_mode()
+    blocked = network_policy.socket.socket(type=socket.SOCK_DGRAM)
+    with pytest.raises(OfflineNetworkError):
+        blocked.sendto(b"query", ("8.8.8.8", 53))
+    if hasattr(blocked, "sendmsg"):
+        with pytest.raises(OfflineNetworkError):
+            blocked.sendmsg([b"query"], [], 0, ("8.8.8.8", 53))
+    blocked.close()
