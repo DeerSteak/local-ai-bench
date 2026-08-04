@@ -50,6 +50,15 @@ def validate_gui_plan(plan: dict) -> list[str]:
     return errors
 
 
+def hf_token_review_label(plan: dict) -> str:
+    """Describe the credential source without exposing the token."""
+    if plan.get("hf_token"):
+        return "provided and saved" if plan.get("save_hf_token") else "provided for this run only"
+    if plan.get("use_existing_hf_token"):
+        return "using existing token from HF_TOKEN or hf.txt"
+    return "not provided"
+
+
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
@@ -255,7 +264,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Embedding models: {len(plan['embedding_tags'])}",
             f"Image models: {len(plan['image_shorts'])}",
             f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
-            f"Hugging Face token: {'provided and saved' if plan['hf_token'] and plan['save_hf_token'] else 'provided for this run only' if plan['hf_token'] else 'not provided'}",
+            f"Hugging Face token: {hf_token_review_label(plan)}",
             f"ComfyUI: {plan['comfyui_mode']}",
         ]
         if plan["comfyui_path"]:

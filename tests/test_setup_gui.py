@@ -1,6 +1,11 @@
 import pytest
 
-from scripts.setup.setup_gui import default_model_selection, mousewheel_scroll_units, validate_gui_plan
+from scripts.setup.setup_gui import (
+    default_model_selection,
+    hf_token_review_label,
+    mousewheel_scroll_units,
+    validate_gui_plan,
+)
 
 
 def test_default_selection_keeps_embeddings_and_respects_memory_limit():
@@ -20,6 +25,19 @@ def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
     assert validate_gui_plan({
         "comfyui_mode": "existing", "comfyui_path": str(comfyui),
     }) == []
+
+
+@pytest.mark.parametrize(
+    ("plan", "expected"),
+    [
+        ({"hf_token": "new", "save_hf_token": True}, "provided and saved"),
+        ({"hf_token": "new", "save_hf_token": False}, "provided for this run only"),
+        ({"hf_token": "", "use_existing_hf_token": True}, "using existing token from HF_TOKEN or hf.txt"),
+        ({"hf_token": "", "use_existing_hf_token": False}, "not provided"),
+    ],
+)
+def test_hf_token_review_label_reports_existing_and_new_credentials(plan, expected):
+    assert hf_token_review_label(plan) == expected
 
 
 @pytest.mark.parametrize(
