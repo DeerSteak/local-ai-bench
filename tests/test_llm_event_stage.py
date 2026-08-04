@@ -226,9 +226,11 @@ def test_resume_preserves_prior_attempt_but_aggregates_latest_attempt_only(tmp_p
     )
     first.close()
 
-    resumed = LLMEventStage(
+    owner = LLMEventStage(
         path, plan, lambda _: None, resume_identity=identity, resume=True,
     )
+    owner.close()
+    resumed = LLMEventStage(path, plan, lambda _: None, initialize=False)
     try:
         assert resumed.next_context_attempt(MODEL, 2048) == 2
         resumed.record_case(

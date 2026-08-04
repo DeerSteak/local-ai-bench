@@ -77,9 +77,16 @@ class LLMEventStage:
             return 1
         if case["state"] in {"complete", "skipped"}:
             return None
-        if case_id not in self.recovery_attempts:
+        if case_id in self.recovery_attempts:
+            return self.recovery_attempts[case_id]
+        if case.get("recovery") == "retry":
+            numbers = [
+                attempt.get("number", 0) for attempt in projection["attempts"].values()
+                if attempt["parent_id"] == case_id
+            ]
+            return max(numbers, default=0) + 1
+        else:
             raise ValueError("incomplete case was not prepared for recovery")
-        return self.recovery_attempts[case_id]
 
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
