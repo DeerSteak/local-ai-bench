@@ -4,7 +4,8 @@ from pathlib import Path
 from engines.base import GenerationMeasurement
 from event_store import EventStore
 from llm_event_stage import (
-    LLMEventStage, event_store_path, measurement_from_payload, measurement_payload,
+    LLMEventStage, event_store_path, export_llm_section, measurement_from_payload,
+    measurement_payload,
 )
 from run_plan import RunPlan
 
@@ -43,6 +44,19 @@ def test_measurement_event_payload_excludes_response_content_and_round_trips():
 
 def test_event_store_path_is_predictable_beside_result(tmp_path):
     assert event_store_path(tmp_path / "results.json") == tmp_path / "results.events.sqlite3"
+
+
+def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    owner = LLMEventStage(path, plan, lambda _: None)
+    owner.close()
+    runner = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        runner.record_case(MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "ok", 1)
+    finally:
+        runner.close()
+    assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
 def test_llm_journal_rebuilds_compatible_aggregate_and_checkpoints_projection(tmp_path):

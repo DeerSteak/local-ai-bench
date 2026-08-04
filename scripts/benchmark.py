@@ -17,7 +17,7 @@ from comfyui_installation import find_comfyui_installation, normalize_comfyui_di
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
-from llm_event_stage import LLMEventStage, event_store_path
+from llm_event_stage import LLMEventStage, event_store_path, export_llm_section
 from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
@@ -39,6 +39,7 @@ from orchestration import (
 from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
 from run_plan import RunPlan
+from runner_supervisor import RunnerSpec, RunnerSupervisor
 from setup_config import configured_comfyui_dir, load_setup_config
 
 
@@ -56,6 +57,33 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
     elif run["status"] == "interrupted":
         finish_active_stage(run, "interrupted", run.get("reason", "signal"))
         checkpoint("run interrupted")
+
+
+def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
+                       supervisor_factory=RunnerSupervisor) -> dict:
+    event_path = Path(event_path).resolve()
+    journal = LLMEventStage(event_path, plan, lambda _: None)
+    journal.close()
+    supervisor = supervisor_factory(RunnerSpec(plan.job_id, "llm", event_path))
+    terminal = []
+
+    def on_runner_event(event):
+        if event["kind"] == "event":
+            save_fn(export_llm_section(event_path, plan.job_id))
+        elif event["kind"] == "terminal":
+            terminal.append(event["status"])
+        elif event["kind"] == "log":
+            Shared.output(event["text"].rstrip())
+
+    try:
+        return_code = supervisor.run(on_runner_event)
+    finally:
+        supervisor.cancel()
+    section = export_llm_section(event_path, plan.job_id)
+    save_fn(section)
+    if return_code or terminal != ["complete"]:
+        raise RuntimeError(f"LLM runner failed with exit code {return_code}")
+    return section
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -747,16 +775,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         )
 
         def run_llm(_context):
-            event_path = event_store_path(Path(out_path))
-            journal = LLMEventStage(event_path, _context.plan, make_save("llm"))
-            try:
-                return LLMPrefillBenchmark().run(
-                    engine=engine, models=llm_models, context_lengths=config.CONTEXT_LENGTHS,
-                    warmup_runs=_context.plan.warmup_runs,
-                    force_all=_context.plan.force_all, journal=journal,
-                )
-            finally:
-                journal.close()
+            return run_supervised_llm(
+                _context.plan, event_store_path(Path(out_path)), make_save("llm"),
+            )
 
         def run_conversation(_context):
             conv_models = llm_models
@@ -855,7 +876,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         registry = [
-            StageDefinition("llm", "llm", len(llm_models), run_llm, requires_engine=True),
+            StageDefinition("llm", "llm", len(llm_models), run_llm),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
                             requires_engine=True),
             StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,

@@ -73,11 +73,11 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
-| `event_store.py` | Inactive migration boundary for transactional append-only SQLite job events, digest verification, and rebuildable projections |
+| `event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
 | `resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
 | `content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
-| `workload_runner.py` | Inactive internal runner entrypoint; rejects unowned starts and exposes no general command surface |
+| `workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |
 | `interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
 | `result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |

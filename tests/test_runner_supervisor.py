@@ -4,6 +4,10 @@ from pathlib import Path
 
 import pytest
 
+import config
+from engines.base import GenerationMeasurement
+from llm_event_stage import LLMEventStage, export_llm_section
+from run_plan import RunPlan
 import runner_supervisor
 import workload_runner
 from runner_supervisor import (
@@ -154,12 +158,55 @@ def test_internal_runner_requires_ownership_token(monkeypatch, capsys):
     assert "ownership token is required" in capsys.readouterr().err.lower()
 
 
-def test_internal_runner_emits_owned_terminal_until_activation(monkeypatch, capsys):
+def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["llm"], stage_order=["llm"],
+        models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        },
+        effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "cpu_only": True, "force_all": False, "context_lengths": [512],
+        },
+    )
+    stage = LLMEventStage(path, plan, lambda _: None)
+    stage.close()
+
+    class Engine:
+        def start(self, *, gpu_visible):
+            assert gpu_visible is False
+            return True
+
+        @staticmethod
+        def available():
+            return False
+
+    class Benchmark:
+        def run(self, **kwargs):
+            assert kwargs["context_lengths"] == [512]
+            assert kwargs["models"][0]["label"] == "fake:model"
+            sample = GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)
+            kwargs["journal"].record_case(kwargs["models"][0], 512, "512", [sample], "ok", 1)
+            kwargs["journal"].finish()
+
     monkeypatch.setenv("LOCAL_AI_BENCH_RUNNER_TOKEN", "token")
-    assert workload_runner.main([
-        "--job-id", "job_x", "--stage", "llm", "--event-store", "/tmp/events",
-    ]) == 3
+    execute_llm_job = workload_runner.execute_llm_job
+    monkeypatch.setattr(workload_runner, "execute_llm_job", lambda path, job_id:
+                        execute_llm_job(
+                            path, job_id, engine_factory=lambda _: Engine(),
+                            benchmark_factory=Benchmark,
+                        ))
+    old_runs, old_timeout = config.N_RUNS, config.RUN_TIMEOUT
+    try:
+        assert workload_runner.main([
+            "--job-id", plan.job_id, "--stage", "llm", "--event-store", str(path),
+        ]) == 0
+    finally:
+        config.N_RUNS, config.RUN_TIMEOUT = old_runs, old_timeout
     output = capsys.readouterr().out
-    assert output.startswith(RUNNER_EVENT_PREFIX)
     assert '"ownership_token":"token"' in output
-    assert '"status":"not_activated"' in output
+    assert '"kind":"event"' in output
+    assert '"status":"complete"' in output
+    assert export_llm_section(path, plan.job_id)["fake"]["512"]["tps_mean"] == 50

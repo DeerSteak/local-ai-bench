@@ -33,18 +33,21 @@ def measurement_from_payload(payload: dict) -> GenerationMeasurement:
 
 
 class LLMEventStage:
-    def __init__(self, path: Path, plan: RunPlan, export_fn):
+    def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
         self.stage_id = plan.stage_id("llm")
         self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
-        self.store.create_job(plan)
-        self.store.append(plan.job_id, [
-            JournalEvent("job", plan.job_id, "running", {}),
-            JournalEvent("stage", self.stage_id, "running", {"stage": "llm"},
-                         parent_id=plan.job_id),
-        ])
+        if initialize:
+            self.store.create_job(plan)
+            self.store.append(plan.job_id, [
+                JournalEvent("job", plan.job_id, "running", {}),
+                JournalEvent("stage", self.stage_id, "running", {"stage": "llm"},
+                             parent_id=plan.job_id),
+            ])
+        elif self.store.load_plan(plan.job_id) != plan:
+            raise ValueError("runner plan does not match the journal job")
 
     def close(self):
         self.store.close()
@@ -155,3 +158,16 @@ class LLMEventStage:
                 results.setdefault(short, {})[case["context_label"]] = context_result
             results.setdefault(short, {}).update(case.get("model_markers", {}))
         return results
+
+
+def export_llm_section(path: Path, job_id: str) -> dict:
+    store = EventStore(path)
+    try:
+        plan = store.load_plan(job_id)
+    finally:
+        store.close()
+    stage = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        return stage.export()
+    finally:
+        stage.close()

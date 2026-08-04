@@ -185,6 +185,20 @@ class EventStore:
             raise ValueError(f"unknown job: {job_id}")
         return json.loads(row["resume_identity_json"])
 
+    def load_plan(self, job_id: str) -> RunPlan:
+        row = self.connection.execute(
+            "SELECT plan_json FROM jobs WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"unknown job: {job_id}")
+        return RunPlan.from_dict(json.loads(row["plan_json"]))
+
+    def last_sequence(self, job_id: str) -> int:
+        row = self.connection.execute(
+            "SELECT MAX(sequence) AS sequence FROM events WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        return int(row["sequence"] or 0)
+
     def append(self, job_id: str, events: list[JournalEvent]) -> None:
         normalized = [event.normalized() for event in events]
         projection = self.rebuild(job_id)
