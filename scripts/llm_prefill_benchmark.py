@@ -17,7 +17,8 @@ class LLMPrefillBenchmark:
         for the n_predict generation on top, clamped to the model's real max."""
         return Shared.ctx_with_headroom(ctx_len, config.GENERATE_MAX_TOKENS, model_max)
 
-    def run(self, engine, models, context_lengths, warmup_runs, force_all=False, save_fn=None):  # pragma: no cover — orchestrates real engine runs
+    def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
+            save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
@@ -46,6 +47,8 @@ class LLMPrefillBenchmark:
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE)
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
                 model_max = engine.max_context_length(tag)
@@ -67,6 +70,11 @@ class LLMPrefillBenchmark:
                         results[short]["crashed_at"] = crash_cache.get(tag, {}).get(
                             "crashed_at", "during warmup",
                         )
+                        if journal:
+                            journal.record_case(
+                                model, ctx_len, label_ctx, [], "crashed", config.N_RUNS,
+                                {"crashed": label_ctx, "crashed_at": results[short]["crashed_at"]},
+                            )
                         engine.unload(tag)
                         break
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
@@ -118,16 +126,35 @@ class LLMPrefillBenchmark:
                         Shared.err(f"Skipping remaining runs and context lengths for {label}")
                         model_timed_out = True
                         results[short]["timed_out"] = label_ctx
+                        if journal:
+                            journal.record_case(
+                                model, ctx_len, label_ctx, samples, status, config.N_RUNS,
+                                {"timed_out": label_ctx},
+                            )
                         break
 
                     if status == "crashed":
                         crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
                         results[short]["crashed"] = label_ctx
                         results[short]["crashed_at"] = crashed_at
+                        if journal:
+                            journal.record_case(
+                                model, ctx_len, label_ctx, samples, status, config.N_RUNS,
+                                {"crashed": label_ctx, "crashed_at": crashed_at},
+                            )
                         break
 
                     is_first_ctx = ctx_len == model_ctx_lengths[0]
-                    if Shared.slow_tps_early_exit(results, short, label, label_ctx, is_first_ctx, tps_list, force_all):
+                    stopped_slow = Shared.slow_tps_early_exit(
+                        results, short, label, label_ctx, is_first_ctx, tps_list, force_all,
+                    )
+                    if journal:
+                        markers = ({"slow_tps": results[short]["slow_tps"]}
+                                   if "slow_tps" in results[short] else {})
+                        journal.record_case(
+                            model, ctx_len, label_ctx, samples, status, config.N_RUNS, markers,
+                        )
+                    if stopped_slow:
                         break
 
                 if model_timed_out:
@@ -137,7 +164,10 @@ class LLMPrefillBenchmark:
                 engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
-                    save_fn(results)
+                    save_fn(journal.export() if journal else results)
                 emit_model_finished("llm", label, results.get(short))
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

@@ -93,6 +93,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Reconsideration gate: none; adding arbitrary command execution requires a new security review and is outside the product contract.
 - Evidence: `docs/coordinator-api.md`; implementation and adversarial API tests remain required before activation.
 
+### AD-011 — Migrate single-shot LLM without shadow writes
+
+- Status: accepted
+- Requirement: prove the event path on a real workload while retaining 4.1 result compatibility and per-model durability.
+- Decision: single-shot cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints and the stage return value rebuild from events. Ephemeral in-memory values may guide the active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
+- Compatibility: schema-3 golden LLM fields are asserted value-for-value; current additive validity diagnostics remain allowed.
+- Deletion gate: after all workloads migrate, remove runtime JSON ownership and export the whole result from journal projections.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

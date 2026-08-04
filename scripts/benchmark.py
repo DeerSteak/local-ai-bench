@@ -17,6 +17,7 @@ from comfyui_installation import find_comfyui_installation, normalize_comfyui_di
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
+from llm_event_stage import LLMEventStage, event_store_path
 from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
@@ -746,11 +747,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         )
 
         def run_llm(_context):
-            return LLMPrefillBenchmark().run(
-                engine=engine, models=llm_models, context_lengths=config.CONTEXT_LENGTHS,
-                warmup_runs=_context.plan.warmup_runs,
-                force_all=_context.plan.force_all, save_fn=make_save("llm"),
-            )
+            event_path = event_store_path(Path(out_path))
+            journal = LLMEventStage(event_path, _context.plan, make_save("llm"))
+            try:
+                return LLMPrefillBenchmark().run(
+                    engine=engine, models=llm_models, context_lengths=config.CONTEXT_LENGTHS,
+                    warmup_runs=_context.plan.warmup_runs,
+                    force_all=_context.plan.force_all, journal=journal,
+                )
+            finally:
+                journal.close()
 
         def run_conversation(_context):
             conv_models = llm_models

@@ -87,6 +87,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
 | `engines/base.py`, `engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
 | `llm_prefill_benchmark.py` | Single-shot LLM test |
+| `llm_event_stage.py` | Journal-owned single-shot LLM cases/samples and compatible JSON projection |
 | `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
 | `embedding_benchmark.py` | Embeddings test |
 | `image_benchmark.py` | Image generation test (ComfyUI workflow builders + submission) |

@@ -9,6 +9,7 @@ Local AI Bench stores benchmark state locally by default and does not upload res
 | Setup configuration | `.local_ai_bench_setup.json` | Retained until replaced or deleted by the user | Machine-local; not included in portable presets |
 | Benchmark frontend state | `.benchmark_frontend_state.json` | Retained until replaced or deleted by the user | Machine-local; paths excluded from portable presets |
 | Results | `results/results_*.json` or `--out` | Retained until the user deletes it; interruption keeps the same checkpointed file | Export/import through verified `.labresult` bundles |
+| Single-shot event journal | Beside the result as `*.events.sqlite3` | Retained with the result while single-shot is journal-owned; deleting it removes recovery history but not an already exported JSON checkpoint | Local transactional source; portable JSON/bundle remains the interchange format |
 | Accuracy answer sidecars | Beside the selected result | Retained and deleted independently with the result set | Optional content-addressed bundle artifacts |
 | Generated images | Result-specific image directory | Retained and deleted independently with the result set | Optional content-addressed bundle artifacts |
 | Crash caches | Gitignored repository files | Retained to avoid repeat crashes; safe for the user to delete to force a retry | Not exported by default |

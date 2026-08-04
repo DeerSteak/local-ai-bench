@@ -34,6 +34,8 @@ Context keys are public display/schema identities rather than arbitrary formatti
 
 The maximum-prompt cap changes which checkpoints are planned; it does not rename retained checkpoints or synthesize missing ones. Missing, skipped, timed-out, and invalid work is never emitted as a numeric zero.
 
+The journal-owned single-shot implementation is required to reproduce every LLM field in the schema-3 golden fixture from recorded samples. It may add current validity/client-timing diagnostics, but preserves the legacy TTFT/TPS means, counts, sample payload, timeout/crash/slow markers, context labels, and missing-data semantics. JSON is now an export projection for this section; the sibling SQLite journal is its live recovery source.
+
 ## LLM measurement contract
 
 Each checkpoint keeps compatibility aggregates such as `ttft_mean_sec` or explicit `client_ttft_mean_sec`, `tps_mean`, standard deviations where available, and run counts. `n_runs` and `completed_runs` are completed sample counts. `requested_runs` is the requested count. `valid_runs` is the number eligible for aggregates. `invalid_runs` identifies rejected attempts and their reasons. Invalid measurements do not enter means or `valid_samples`.
