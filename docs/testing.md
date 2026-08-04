@@ -128,6 +128,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Acceptance-policy schema, evidence resolution, methodology compatibility, and CLI | [test_acceptance_policy.py](../tests/test_acceptance_policy.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Restricted planning-file privacy and ignore policy | [test_private_plan_privacy.py](../tests/test_private_plan_privacy.py) |
+| Fixed release scan commands, evidence, findings, and missing-tool failures | [test_release_scans.py](../tests/test_release_scans.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |
 
 `LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Stage tests use fake runners and engines to cover fixed ordering, selection, preparation/execution/cleanup classification, state transitions, engine exclusivity, CPU-mode restoration, and cleanup after failure. Shared workload orchestration covers retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.

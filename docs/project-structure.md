@@ -59,6 +59,7 @@
 | `archive_safety.py` (in `scripts/`) | Pre-extraction path and ZIP-link validation for downloaded setup archives |
 | `resumable_download.py` (in `scripts/`) | Atomic resumable HTTPS setup downloads with range and size validation |
 | `security_gate.py` (in `scripts/`) | Offline release-staging secret, credential-file, symlink, and inspectability gate |
+| `release_scans.py` (in `scripts/`) | Fixed fail-closed release scan runner and evidence aggregator |
 | `log_redaction.py` (in `scripts/`) | Ordinary benchmark-log token and private-home identity sanitizer |
 | `release_manifest.py` (in `scripts/`) | Deterministic artifact checksums and provenance prepared for external signing |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
