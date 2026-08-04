@@ -6,6 +6,7 @@ import json
 import platform
 import queue
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -59,7 +60,7 @@ def open_path_command(path: Path, system: str) -> list[str]:
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
                            backend: str, tools: dict[str, str | None],
                            comfyui_dir: Path | None,
-                           inventory: dict[str, list[dict]]) -> dict:
+                           inventory: dict[str, list[dict]], free_storage_gb: float | None = None) -> dict:
     counts = {key: len(inventory.get(key, [])) for key in ("llm", "custom", "embedding", "image")}
     issues = []
     if not tools.get("llama-server"):
@@ -68,6 +69,11 @@ def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: flo
         issues.append("No benchmark models were found; run Setup to add models.")
     if counts["image"] and comfyui_dir is None:
         issues.append("Image models are installed, but ComfyUI was not found.")
+    installed_sizes = [model.get("size") for models in inventory.values() for model in models]
+    installed_gb = sum(size for size in installed_sizes if isinstance(size, (int, float))) / 1e9
+    largest_gb = max((size for size in installed_sizes if isinstance(size, (int, float))), default=0) / 1e9
+    memory_risk = (f"Largest installed model is {largest_gb:.1f} GB before runtime overhead; "
+                   f"{ram_gb:.1f} GB system RAM detected.")
     return {
         "system": f"{platform_name} {architecture} · {ram_gb:.1f} GB RAM · {backend}",
         "models": (f"{counts['llm']} LLM, {counts['custom']} custom LLM, "
@@ -76,6 +82,9 @@ def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: flo
             f"{name}: {'found' if path else 'missing'}" for name, path in tools.items()
         ),
         "comfyui": str(comfyui_dir) if comfyui_dir else "Not found",
+        "storage": (f"{installed_gb:.1f} GB installed models · {free_storage_gb:.1f} GB free"
+                    if free_storage_gb is not None else f"{installed_gb:.1f} GB installed models"),
+        "memory_risk": memory_risk,
         "issues": issues,
     }
 
@@ -118,6 +127,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             "llama-server", "llama-bench", "llama-batched-bench",
         )},
         comfyui_dir=found_comfyui, inventory=inventory,
+        free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
 
     default_tests = build_test_entries(inventory)
@@ -193,27 +203,25 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     mode_note = ttk.Label(mode_box, text="Uses the recommended installed-model selection and standard execution settings.")
     mode_note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
-    next_form_row = 1
-    if saved is None:
-        discovery_box = ttk.LabelFrame(form, text="First-run readiness — discovery only", padding=12)
-        discovery_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
-        for row, (label, value) in enumerate((
-            ("System", discovery["system"]), ("Installed models", discovery["models"]),
-            ("llama.cpp tools", discovery["runtime"]), ("ComfyUI", discovery["comfyui"]),
-        )):
-            ttk.Label(discovery_box, text=f"{label}:", font=("TkDefaultFont", 10, "bold")).grid(
-                row=row, column=0, sticky="nw", padx=(0, 10), pady=2,
-            )
-            ttk.Label(discovery_box, text=value, wraplength=780).grid(row=row, column=1, sticky="w", pady=2)
-        issue_text = ("Ready to configure a benchmark." if not discovery["issues"] else
-                      "\n".join(f"• {issue}" for issue in discovery["issues"]))
-        ttk.Label(discovery_box, text=issue_text, wraplength=900).grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0),
+    discovery_box = ttk.LabelFrame(form, text="System inventory and preflight", padding=12)
+    discovery_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    for row, (label, value) in enumerate((
+        ("System", discovery["system"]), ("Installed models", discovery["models"]),
+        ("Storage", discovery["storage"]), ("Memory-fit context", discovery["memory_risk"]),
+        ("llama.cpp tools", discovery["runtime"]), ("ComfyUI", discovery["comfyui"]),
+    )):
+        ttk.Label(discovery_box, text=f"{label}:", font=("TkDefaultFont", 10, "bold")).grid(
+            row=row, column=0, sticky="nw", padx=(0, 10), pady=2,
         )
-        next_form_row = 2
+        ttk.Label(discovery_box, text=value, wraplength=780).grid(row=row, column=1, sticky="w", pady=2)
+    issue_text = ("Ready to configure a benchmark." if not discovery["issues"] else
+                  "\n".join(f"• {issue}" for issue in discovery["issues"]))
+    ttk.Label(discovery_box, text=issue_text, wraplength=900).grid(
+        row=6, column=0, columnspan=2, sticky="w", pady=(8, 0),
+    )
 
     custom_frame = ttk.Frame(form)
-    custom_frame.grid(row=next_form_row, column=0, columnspan=2, sticky="nsew")
+    custom_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
     custom_frame.columnconfigure(0, weight=1)
     custom_frame.columnconfigure(1, weight=1)
 

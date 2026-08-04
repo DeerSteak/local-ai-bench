@@ -75,11 +75,12 @@ def test_discovery_report_summarizes_readiness_without_mutation():
     report = build_discovery_report(
         platform_name="Darwin", architecture="arm64", ram_gb=64.0, backend="metal",
         tools={"llama-server": "/bin/server", "llama-bench": None},
-        comfyui_dir=None, inventory=inventory,
+        comfyui_dir=None, inventory=inventory, free_storage_gb=120.5,
     )
     assert report["system"] == "Darwin arm64 · 64.0 GB RAM · metal"
     assert report["models"] == "1 LLM, 1 custom LLM, 1 embedding, 0 image"
     assert report["runtime"] == "llama-server: found, llama-bench: missing"
+    assert report["storage"].endswith("120.5 GB free")
     assert report["issues"] == []
 
 
