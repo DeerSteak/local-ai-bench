@@ -9,7 +9,7 @@ from benchmark_frontend import (
     validate_gui_options,
 )
 from benchmark_gui import (
-    build_discovery_report, effective_gui_options, open_path_command, parse_progress_line,
+    build_discovery_report, effective_gui_options, format_run_outcome, open_path_command, parse_progress_line,
     workload_preflight_errors,
 )
 
@@ -125,3 +125,13 @@ def test_workload_preflight_reports_specific_runtime_resolutions():
     assert workload_preflight_errors(
         ["llm", "img"], {"llama-server": "/bin/server"}, True,
     ) == []
+
+
+def test_run_outcome_explains_preserved_data_cleanup_and_next_step():
+    assert format_run_outcome(0) == "Benchmark completed successfully. Results are ready to review."
+    failure = format_run_outcome(2)
+    assert "exit code 2" in failure
+    assert "Checkpointed measurements" in failure
+    assert "remain usable" in failure
+    assert "Automatic cleanup" in failure
+    assert "Review the final Run Log" in failure

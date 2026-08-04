@@ -122,6 +122,14 @@ def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
     return errors
 
 
+def format_run_outcome(exit_code: int) -> str:
+    if exit_code == 0:
+        return "Benchmark completed successfully. Results are ready to review."
+    return (f"Benchmark stopped with exit code {exit_code}. Checkpointed measurements from completed "
+            "models remain usable; pending work was not fabricated. Automatic cleanup was requested. "
+            "Review the final Run Log message, correct the reported cause, then start a new run.")
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -491,7 +499,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     process = None
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
-                    run_status.set("Benchmark completed successfully." if value == 0 else f"Benchmark stopped with exit code {value}.")
+                    run_status.set(format_run_outcome(value))
                     for variable in stage_progress_vars.values():
                         if variable.get() in {"○ Queued", "▶ Running"}:
                             variable.set("— Not run" if value else "✓ Complete")
