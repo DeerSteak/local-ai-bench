@@ -8,7 +8,7 @@ This contract freezes the commercially important result behavior at the boundary
 
 ## Version identities
 
-Top-level `version` is the application release and remains `4.1` for work performed under this development version. `run.schema_version` is the result-schema compatibility axis and is `2` in these fixtures. A future schema change increments the schema version and adds new fixtures; it never edits the 4.1 fixtures in place to make a new producer appear backward compatible.
+Top-level `version` is the application release and remains `4.1` for work performed under this development version. `run.schema_version` is the result-schema compatibility axis. The original complete and interrupted fixtures use schema 2. Schema 3 adds the immutable `run.plan` and deterministic `run.plan_id` in `results_v4_1_schema3_plan.json` without editing the schema-2 fixtures. A future schema change likewise adds fixtures rather than rewriting an older producer contract to make it appear backward compatible.
 
 Workload methodology has its own identity. In particular, `run.llamabench_repetition_mode` identifies the streamed internal-repetition behavior. A compatible export retains this identity, and a consumer warns rather than treating results produced by different methodologies as strictly equivalent.
 
@@ -68,6 +68,7 @@ The rewrite may use SQLite or another transactional internal store, but portable
 | Named measurements | Exact raw valid-sample field set | Explicit TTFT preferred with legacy fallback |
 | Native llama-bench | Separate prefill/decode entries and methodology identity | Correct prompt-depth and tg series |
 | Legacy result | Missing newer fields tolerated | Missing run metadata and sections do not block loading |
+| Schema-3 plan result | Embedded plan reproduces `plan_id` and compatibility manifest fields | Existing charts render unchanged while plan metadata remains available |
 
 ## Rewrite acceptance
 

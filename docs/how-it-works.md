@@ -55,7 +55,7 @@ The implementation has four layers:
 | Layer | Responsibility |
 |---|---|
 | Entry points | `benchmark_frontend.py` builds a public CLI command; `benchmark.py` parses and validates it, resolves engines/models, and creates each run specification |
-| Orchestration | `orchestration.py` owns fixed stage order/execution and lifecycle policy; `result_store.py` owns schema mutation, legal state transitions, and durable checkpoints |
+| Orchestration | `run_plan.py` owns the immutable serializable execution identity; `orchestration.py` owns fixed stage order/execution, local paths, and lifecycle policy; `result_store.py` owns schema mutation, legal state transitions, and durable checkpoints |
 | Workloads | One module per workload or closely related workload family; each receives an engine and returns its section of the results schema |
 | Engine adapters | `engines/base.py` defines the interface and `engines/llamacpp.py` owns llama-server process/HTTP details; the two native llama.cpp benchmark modules intentionally bypass this interface |
 | Shared definitions | `config.py`, `models.py`, `model_inventory.py`, `hardware.py`, and `shared.py` own defaults, catalog data, discovery, fit estimates, logging, retries, statistics, and ComfyUI lifecycle |
@@ -71,6 +71,8 @@ The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and A
 The detailed workload shapes, checkpoints, model lists, and metrics live in [Workloads](workloads.md). Public flags and their effective defaults live in the [CLI Reference](cli-reference.md). Keeping those facts in one place prevents this architecture guide from becoming a second, stale parameter reference.
 
 Runtime defaults are defined in `scripts/config.py`; model metadata is defined in `scripts/models.py`; the conversation checkpoint plan is defined by `LLMConversationBenchmark.CONV_CHECKPOINTS`; and dashboard context ordering is defined by `CTX_ORDER` in `dashboard/src/constants.js`. CLI-overridable values are read through `config.*` at use sites so an argument applied after import is still honored.
+
+Before creating `RunContext`, the CLI canonicalizes the selected engine, tests, stage order, safe model identities, and effective measurement settings into an immutable `RunPlan`. Its SHA-256 `plan_id` is deterministic for equivalent plans and changes when a measurement-affecting input changes. Schema-3 results embed that plan and identity while retaining the existing manifest fields for compatibility. Output and ComfyUI paths live in a separate `RunPaths` object and cannot enter the shareable plan; unknown configuration or model-identity fields are rejected rather than risking a secret or user path in exported metadata.
 
 ---
 

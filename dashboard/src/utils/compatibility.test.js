@@ -44,4 +44,15 @@ describe("4.1 golden result compatibility", () => {
     expect(buildLLMDataForModel(files, "golden", "tps"))
       .toEqual([{ ctxLabel: "0.5K", f0: 50 }]);
   });
+
+  it("renders schema 3 plan-backed results without changing chart behavior", () => {
+    const data = loadGolden("results_v4_1_schema3_plan.json");
+    const files = [{ id: "schema3", hostname: "Golden", data }];
+
+    expect(data.run.plan.schema_version).toBe(1);
+    expect(data.run.plan_id).toHaveLength(64);
+    expect(getRunReliabilityWarning(data)).toBe("");
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+  });
 });

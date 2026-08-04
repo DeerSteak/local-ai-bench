@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from result_store import SCHEMA_VERSION, model_counts, validate_json_data
+from result_store import model_counts, validate_json_data
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -26,8 +26,20 @@ def test_v4_1_golden_results_remain_valid_finite_json(name):
     result = load_fixture(name)
     validate_json_data(result)
     assert result["version"] == "4.1"
-    assert result["run"]["schema_version"] == SCHEMA_VERSION
+    assert result["run"]["schema_version"] == 2
     assert REQUIRED_SECTIONS <= result.keys()
+
+
+def test_schema_3_fixture_carries_a_reproducible_plan_identity():
+    from run_plan import RunPlan
+
+    result = load_fixture("results_v4_1_schema3_plan.json")
+    validate_json_data(result)
+    assert result["run"]["schema_version"] == 3
+    plan = RunPlan.from_dict(result["run"]["plan"])
+    assert plan.plan_id == result["run"]["plan_id"]
+    assert plan.models == result["run"]["models"]
+    assert plan.effective_config == result["run"]["effective_config"]
 
 
 def test_v4_1_complete_fixture_freezes_coverage_and_measurement_contract():

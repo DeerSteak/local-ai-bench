@@ -131,7 +131,7 @@ The CLI translates arguments into an immutable run specification, a stage runner
 
 ### 3.1 Run specification and context
 
-Create an immutable `RunSpec` containing validated engines, selected workloads and models, effective configuration, paths, and flags. Create a `RunContext` containing the current engine, hardware profile, result store, artifact paths, and lifecycle services needed during execution. CLI parsing and model resolution build the specification before any server starts. In this increment the specification establishes the immutable boundary and supplies lifecycle policy; existing workload calls may continue to receive explicit resolved inputs from their local runner closures rather than forcing a second dependency-injection layer.
+Create an immutable run specification containing validated engines, selected workloads and models, effective configuration, paths, and flags. This initially landed as `RunSpec`; commercial-kernel work subsequently split it into a serializable, path-free `RunPlan` and local-only `RunPaths`. `RunContext` contains those objects with the current engine, hardware profile, result store, and lifecycle services. CLI parsing and model resolution build the plan before any server starts. Existing workload calls may continue to receive explicit resolved inputs from their local runner closures rather than forcing a second dependency-injection layer.
 
 Neither object becomes a general dependency container. It includes only data currently threaded through `main()` or captured by nested checkpoint functions, and workload classes continue to accept explicit inputs where that keeps them independently testable.
 
@@ -166,7 +166,7 @@ Update `how-it-works.md`, `project-structure.md`, `engines.md`, and `testing.md`
 | Concern | Increment 1 | Increment 2 | Increment 3 |
 |---|---|---|---|
 | Corrupt output after interrupted write | Atomic writer tests | No regression | ResultStore integration tests |
-| Reproduce effective run configuration | Run manifest | Measurement-source metadata | Immutable RunSpec |
+| Reproduce effective run configuration | Run manifest | Measurement-source metadata | Immutable `RunPlan` plus local-only `RunPaths` |
 | Explain incomplete data | Run/stage state | Sample counts and validity | Tested failure transitions |
 | Compare old result files | Additive fields and warning fallback | Legacy metric fallback | Stable section names |
 | Avoid live side effects in tests | Mocked persistence/orchestration seams | Mocked clocks and streams | Fake stages, engines, and lifecycle |

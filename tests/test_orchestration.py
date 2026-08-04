@@ -4,10 +4,11 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from orchestration import (
-    LifecycleCoordinator, RunContext, RunSpec, StageDefinition, StageExecutionError,
+    LifecycleCoordinator, RunContext, RunPaths, StageDefinition, StageExecutionError,
     execute_stages, execute_with_final_cleanup, ordered_stage_keys, select_stages,
 )
 from result_store import ResultStore
+from run_plan import RunPlan
 
 
 def _store(tmp_path):
@@ -15,19 +16,27 @@ def _store(tmp_path):
     return ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
 
 
-def test_run_spec_is_immutable():
-    spec = RunSpec(("llm",), ("llm",), "fake", Path("out"), 1, False, False,
-                   llm_models=("model",))
+def _plan(tests=("a",), cpu_only=False):
+    return RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=tests,
+        stage_order=tests, models={"llm": [], "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": cpu_only, "force_all": False},
+    )
+
+
+def test_run_plan_is_immutable():
+    spec = _plan(("llm",))
     with pytest.raises(FrozenInstanceError):
         spec.engine_name = "other"
-    assert spec.llm_models == ("model",)
+    assert spec.tests == ("llm",)
 
 
 def test_execute_stages_preserves_registry_order_and_transitions(tmp_path):
     events = []
     store = _store(tmp_path)
-    spec = RunSpec(("a", "b"), ("a", "b"), "fake", Path("out"), 1, False, False)
-    context = RunContext(spec, object(), store, object())
+    context = RunContext(
+        _plan(("a", "b")), RunPaths(Path("out")), object(), store, object(),
+    )
     stages = [
         StageDefinition("a", "a", 1, lambda _: events.append("run-a") or {"m": {"x": 1}},
                         prepare=lambda _: events.append("prepare-a"),
@@ -47,7 +56,7 @@ def test_execute_stages_prepares_only_engine_required_stages(tmp_path):
 
     lifecycle = Lifecycle()
     context = RunContext(
-        RunSpec(("llm", "img"), ("llm", "img"), "fake", Path("out"), 1, True, False),
+        _plan(("llm", "img"), cpu_only=True), RunPaths(Path("out")),
         object(), _store(tmp_path), lifecycle,
     )
     stages = [
@@ -96,8 +105,7 @@ def test_ordered_stage_keys_rejects_unknown_and_duplicate_selections():
 def test_execute_stages_always_cleans_up_and_leaves_failed_stage_running(tmp_path):
     events = []
     context = RunContext(
-        RunSpec(("a",), ("a",), "fake", Path("out"), 1, False, False),
-        object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
     )
     stage = StageDefinition(
         "a", "a", 1, lambda _: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -114,8 +122,7 @@ def test_execute_stages_records_secondary_cleanup_failure(tmp_path, phase):
     def fail(_): raise RuntimeError("primary")
     def cleanup(_): raise OSError("cleanup")
     context = RunContext(
-        RunSpec(("a",), ("a",), "fake", Path("out"), 1, False, False),
-        object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
     )
     stage = StageDefinition(
         "a", "a", 0, fail if phase == "execution" else lambda _: {},
@@ -132,8 +139,7 @@ def test_execute_stages_records_secondary_cleanup_failure(tmp_path, phase):
 def test_execute_stages_preserves_system_exit_and_still_cleans_up(tmp_path):
     events = []
     context = RunContext(
-        RunSpec(("a",), ("a",), "fake", Path("out"), 1, False, False),
-        object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
     )
     stage = StageDefinition(
         "a", "a", 0, lambda _: (_ for _ in ()).throw(SystemExit(0)),
@@ -172,8 +178,7 @@ def test_execute_with_final_cleanup_classifies_cleanup_only_failure():
 def test_execute_stages_classifies_hook_failures(tmp_path, phase):
     def fail(_): raise RuntimeError("hook")
     context = RunContext(
-        RunSpec(("a",), ("a",), "fake", Path("out"), 1, False, False),
-        object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
     )
     stage = StageDefinition(
         "a", "a", 0, lambda _: {},

@@ -29,12 +29,13 @@ from llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from orchestration import (
-    LifecycleCoordinator, RunContext, RunSpec, StageDefinition,
+    LifecycleCoordinator, RunContext, RunPaths, StageDefinition,
     StageExecutionError, execute_stages, execute_with_final_cleanup,
     ordered_stage_keys, select_stages,
 )
 from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
+from run_plan import RunPlan
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -640,6 +641,31 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if sig is not None:
                 sys.exit(0)
 
+        stage_order = ordered_stage_keys(tuple(tests))
+        effective_config = {
+            "runs": config.N_RUNS, "warmup_runs": args.warmup,
+            "run_timeout_seconds": config.RUN_TIMEOUT,
+            "accuracy_timeout_seconds": config.ACC_TIMEOUT,
+            "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
+            "cpu_only": args.cpu_only, "force_all": args.force_all,
+            "max_prompt_tokens": args.max_prompt_tokens,
+            "context_lengths": config.CONTEXT_LENGTHS,
+            "llamabench_pp": config.LLAMABENCH_PP,
+            "llamabench_tg": config.LLAMABENCH_TG,
+            "sample_size": args.sample,
+        }
+        plan_models = {
+            "llm": model_identity(llm_models),
+            "concurrency": model_identity(conc_models),
+            "embeddings": model_identity(embedding_models),
+            "images": model_identity(image_models),
+        }
+        plan = RunPlan.create(
+            application_version=config.VERSION, engine_name=engine_name,
+            tests=tests, stage_order=stage_order, models=plan_models,
+            effective_config=effective_config,
+        )
+
         results = {
             "version":         config.VERSION,
             "engine":          engine_name,
@@ -673,27 +699,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamabenchconc":  {},
         }
 
-        stage_order = ordered_stage_keys(tuple(tests))
         results["run"] = build_run_manifest(
-            tests=tests, stage_order=stage_order, engine=engine_name,
-            models={
-                "llm": model_identity(llm_models),
-                "concurrency": model_identity(conc_models),
-                "embeddings": model_identity(embedding_models),
-                "images": model_identity(image_models),
-            },
-            effective_config={
-                "runs": config.N_RUNS, "warmup_runs": args.warmup,
-                "run_timeout_seconds": config.RUN_TIMEOUT,
-                "accuracy_timeout_seconds": config.ACC_TIMEOUT,
-                "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
-                "cpu_only": args.cpu_only, "force_all": args.force_all,
-                "max_prompt_tokens": args.max_prompt_tokens,
-                "context_lengths": config.CONTEXT_LENGTHS,
-                "llamabench_pp": config.LLAMABENCH_PP,
-                "llamabench_tg": config.LLAMABENCH_TG,
-            },
-            repo_root=config.SCRIPT_DIR,
+            plan=plan, repo_root=config.SCRIPT_DIR,
         )
 
         store = ResultStore(Path(out_path), results)
@@ -716,35 +723,27 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
             Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
         )
-        spec = RunSpec(
-            tests=tuple(tests), stage_order=tuple(stage_order), engine_name=engine_name,
-            output_path=Path(out_path), warmup_runs=args.warmup,
-            cpu_only=args.cpu_only, force_all=args.force_all,
-            llm_models=tuple(model["tag"] for model in llm_models),
-            concurrency_models=tuple(model["tag"] for model in conc_models),
-            embedding_models=tuple(model["tag"] for model in embedding_models),
-            image_models=tuple(model["short"] for model in image_models),
-            comfyui_dir=comfyui_dir,
+        context = RunContext(
+            plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle, profile,
         )
-        context = RunContext(spec, engine, store, lifecycle, profile)
 
         def run_llm(_context):
             return LLMPrefillBenchmark().run(
                 engine=engine, models=llm_models, context_lengths=config.CONTEXT_LENGTHS,
-                warmup_runs=_context.spec.warmup_runs,
-                force_all=_context.spec.force_all, save_fn=make_save("llm"),
+                warmup_runs=_context.plan.warmup_runs,
+                force_all=_context.plan.force_all, save_fn=make_save("llm"),
             )
 
         def run_conversation(_context):
             conv_models = llm_models
             skips = {}
-            if "llm" in _context.spec.tests:
+            if "llm" in _context.plan.tests:
                 conv_models = []
                 first_ctx = Shared.context_label(config.CONTEXT_LENGTHS[0])
                 for model in llm_models:
                     skip = conv_skip_entry(
                         model, results["llm"].get(model["short"]), first_ctx,
-                        _context.spec.force_all,
+                        _context.plan.force_all,
                     )
                     if skip is None:
                         conv_models.append(model)
@@ -752,8 +751,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                         Shared.warn(f"{model['label']}: skipping conversation test — {skip['skip_detail']}")
                         skips[model["short"]] = skip
             section = LLMConversationBenchmark().run(
-                engine=engine, models=conv_models, warmup_runs=_context.spec.warmup_runs,
-                force_all=_context.spec.force_all,
+                engine=engine, models=conv_models, warmup_runs=_context.plan.warmup_runs,
+                force_all=_context.plan.force_all,
                 save_fn=make_save("llm_conversation", "conv"),
                 max_prompt_tokens=args.max_prompt_tokens,
             )
@@ -767,18 +766,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def run_llamabench(_context):
             return LlamaBenchBenchmark().run(
                 engine=engine, models=llm_models, reps=config.N_RUNS,
-                cpu_only=_context.spec.cpu_only, save_fn=make_save("llamabench"),
+                cpu_only=_context.plan.cpu_only, save_fn=make_save("llamabench"),
             )
 
         def run_llamabench_concurrency(_context):
             return LlamaBenchConcurrencyBenchmark().run(
-                engine=engine, models=llm_models, cpu_only=_context.spec.cpu_only,
+                engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
                 save_fn=make_save("llamabenchconc"),
             )
 
         def run_embeddings(_context):
             return EmbeddingBenchmark().run(
-                engine=engine, models=embedding_models, warmup_runs=_context.spec.warmup_runs,
+                engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
                 save_fn=make_save("embeddings", "emb"),
             )
 
@@ -788,10 +787,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if args.sample is not None:
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
-                answers_path = sidecar_path(_context.spec.output_path, f"answers_{test_name}_")
+                answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
                 section = Bench().run(
                     engine=engine, models=llm_models, questions=questions,
-                    warmup_runs=_context.spec.warmup_runs, save_fn=make_save(test_name),
+                    warmup_runs=_context.plan.warmup_runs, save_fn=make_save(test_name),
                     answers_path=answers_path,
                 )
                 Shared.ok(f"Answers saved to: {answers_path}")
@@ -806,9 +805,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
                 return ConcurrencyBenchmark().run(
                     engine=engine, models=conc_models, levels=levels,
-                    per_request_context=per_context, warmup_runs=_context.spec.warmup_runs,
+                    per_request_context=per_context, warmup_runs=_context.plan.warmup_runs,
                     crash_cache_path=cache, section_label=label, soft_exit_floor=floor,
-                    force_all=_context.spec.force_all, save_fn=make_save(section, key),
+                    force_all=_context.plan.force_all, save_fn=make_save(section, key),
                 )
             return StageDefinition(key, section, len(conc_models), runner, requires_engine=True)
 
@@ -817,16 +816,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             lifecycle.stop_engine()
 
         def run_images(_context):
-            if not Shared.ensure_comfyui(_context.spec.comfyui_dir):
+            if not Shared.ensure_comfyui(_context.paths.comfyui_dir):
                 Shared.warn("Image benchmarks will be skipped")
                 return {}
-            out_stem = _context.spec.output_path.stem
+            out_stem = _context.paths.output_path.stem
             images_name = ("images_" + out_stem[len("results_"):]
                            if out_stem.startswith("results_") else f"images_{out_stem}")
             return ImageBenchmark().run(
                 image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
                 seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
-                comfyui_dir=_context.spec.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
+                comfyui_dir=_context.paths.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
                 save_fn=make_save("images", "img"),
                 images_dir=config.RESULTS_DIR / images_name,
             )
@@ -857,7 +856,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             StageDefinition("img", "images", len(image_models), run_images,
                             prepare=prepare_images, cleanup=lambda _: Shared.shutdown_managed()),
         ]
-        selected_stages = select_stages(registry, context.spec.stage_order)
+        selected_stages = select_stages(registry, context.plan.stage_order)
 
         def run_selected_stages():
             if engine_backed_tests:

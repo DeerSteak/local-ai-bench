@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from result_store import ResultStore
+from run_plan import RunPlan
 from shared import Shared
 
 
@@ -15,24 +16,15 @@ STAGE_ORDER = (
 
 
 @dataclass(frozen=True)
-class RunSpec:
-    tests: tuple[str, ...]
-    stage_order: tuple[str, ...]
-    engine_name: str
+class RunPaths:
     output_path: Path
-    warmup_runs: int
-    cpu_only: bool
-    force_all: bool
-    llm_models: tuple[str, ...] = ()
-    concurrency_models: tuple[str, ...] = ()
-    embedding_models: tuple[str, ...] = ()
-    image_models: tuple[str, ...] = ()
     comfyui_dir: Path | None = None
 
 
 @dataclass
 class RunContext:
-    spec: RunSpec
+    plan: RunPlan
+    paths: RunPaths
     engine: object
     store: ResultStore
     lifecycle: "LifecycleCoordinator"
@@ -89,7 +81,7 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
         context.store.start_stage(stage.key, stage.selected_models)
         try:
             if stage.requires_engine:
-                context.lifecycle.ensure_engine(context.spec.cpu_only)
+                context.lifecycle.ensure_engine(context.plan.cpu_only)
             stage.prepare(context)
         except BaseException as exc:
             try:

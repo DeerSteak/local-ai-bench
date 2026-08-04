@@ -3,6 +3,16 @@ import json
 import pytest
 
 import result_store
+from run_plan import RunPlan
+
+
+def _plan():
+    return RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["llamabench"],
+        stage_order=["llamabench"],
+        models={"llm": [], "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False},
+    )
 
 
 def test_atomic_write_json_replaces_existing_file(tmp_path):
@@ -83,11 +93,12 @@ def test_run_manifest_identifies_streamed_internal_llamabench_methodology(
         monkeypatch, tmp_path):
     monkeypatch.setattr(result_store, "source_identity", lambda _: {})
     run = result_store.build_run_manifest(
-        tests=["llamabench"], stage_order=["llamabench"], engine="llamacpp",
-        models={}, effective_config={}, repo_root=tmp_path,
+        plan=_plan(), repo_root=tmp_path,
     )
-    assert run["schema_version"] == 2
+    assert run["schema_version"] == 3
     assert run["llamabench_repetition_mode"] == "streamed_internal_repetitions"
+    assert run["plan_id"] == _plan().plan_id
+    assert run["plan"] == _plan().to_dict()
 
 
 def test_finish_stage_counts_models_missing_from_section_as_failed():

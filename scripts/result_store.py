@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TERMINAL_STATUSES = {"complete", "partial", "interrupted", "failed"}
 NON_MEASUREMENT_KEYS = {
     "label", "skipped", "skip_reason", "skip_detail", "error", "crashed",
@@ -96,19 +96,21 @@ def model_identity(models: list[dict]) -> list[dict]:
     return [{key: model[key] for key in keys if key in model} for model in models]
 
 
-def build_run_manifest(*, tests, stage_order, engine, models, effective_config,
-                       repo_root: Path, repetition_mode="streamed_internal_repetitions") -> dict:
+def build_run_manifest(*, plan, repo_root: Path,
+                       repetition_mode="streamed_internal_repetitions") -> dict:
     return {
         "run_id": str(uuid.uuid4()),
         "schema_version": SCHEMA_VERSION,
         "started_at": utc_now(),
         "finished_at": None,
         "status": "running",
-        "requested_tests": list(tests),
-        "stage_order": list(stage_order),
-        "engine": engine,
-        "models": models,
-        "effective_config": effective_config,
+        "requested_tests": list(plan.tests),
+        "stage_order": list(plan.stage_order),
+        "engine": plan.engine_name,
+        "models": plan.models,
+        "effective_config": plan.effective_config,
+        "plan_id": plan.plan_id,
+        "plan": plan.to_dict(),
         "source": source_identity(repo_root),
         "llamabench_repetition_mode": repetition_mode,
         "stages": {},
