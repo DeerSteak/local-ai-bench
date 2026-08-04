@@ -4,11 +4,10 @@ import json
 import math
 import re
 import secrets
-import subprocess
-import sys
 from pathlib import Path
 
 import config
+from code_sandbox import run_restricted_python, sandbox_prelude, validate_candidate_code
 from shared import Shared
 
 
@@ -105,27 +104,16 @@ class CodeBenchmark:
         prefix = f"__LOCAL_AI_BENCH_RESULT_{secrets.token_hex(16)}__"
         harness_head, _, harness_tail = harness.rpartition("__RESULT_PREFIX__")
         harness = harness_head + repr(prefix) + harness_tail
-        proc = subprocess.Popen(
-            [sys.executable, "-c", harness],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True,
-        )
-        timed_out = False
-        try:
-            stdout, stderr = proc.communicate(payload, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            proc.kill()
-            stdout, stderr = proc.communicate()
+        result = run_restricted_python(harness, payload, timeout)
 
-        if timed_out:
-            missing_error = "timeout"
-        elif proc.returncode != 0:
-            stderr_lines = (stderr or "").strip().splitlines()
+        if result.limit_reason:
+            missing_error = result.limit_reason
+        elif result.returncode != 0:
+            stderr_lines = (result.stderr or "").strip().splitlines()
             missing_error = stderr_lines[-1] if stderr_lines else "process failed"
         else:
             missing_error = "malformed output"
-        return CodeBenchmark._parse_harness_output(stdout, prefix, tests, missing_error)
+        return CodeBenchmark._parse_harness_output(result.stdout, prefix, tests, missing_error)
 
     @staticmethod
     def _parse_harness_output(stdout: str, prefix: str, tests: list[dict],
@@ -171,13 +159,18 @@ class CodeBenchmark:
                        timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
         """Run every {"args", "expected"} test in `tests` against `function_name`
         — see docs/workloads.md#code for the isolation/failure-handling contract."""
-        harness = (
-            "import json, sys\n\n"
-            + code + "\n\n"
+        violation = validate_candidate_code(code)
+        if violation:
+            return CodeBenchmark._failed_test_results(tests, f"unsafe generated code: {violation}")
+        harness = sandbox_prelude(code) + (
             "_args_list = json.loads(sys.stdin.read())\n"
             "for _index, _args in enumerate(_args_list):\n"
             "    try:\n"
-            "        _result = {'index': _index, 'ok': True, 'got': " + function_name + "(*_args)}\n"
+            "        try:\n"
+            "            _target = _scope[" + repr(function_name) + "]\n"
+            "        except KeyError:\n"
+            "            raise NameError(" + repr(f"name '{function_name}' is not defined") + ")\n"
+            "        _result = {'index': _index, 'ok': True, 'got': _target(*_args)}\n"
             "        _encoded = json.dumps(_result)\n"
             "    except Exception as _e:\n"
             "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': str(_e)})\n"
@@ -191,13 +184,18 @@ class CodeBenchmark:
                                 timeout: int = CODE_EXEC_TIMEOUT) -> list[dict]:
         """Run every {"init", "ops", "expected"} test against a fresh `class_name`
         instance — see docs/workloads.md#code for the isolation contract."""
-        harness = (
-            "import json, sys\n\n"
-            + code + "\n\n"
+        violation = validate_candidate_code(code)
+        if violation:
+            return CodeBenchmark._failed_test_results(tests, f"unsafe generated code: {violation}")
+        harness = sandbox_prelude(code) + (
             "_scenarios = json.loads(sys.stdin.read())\n"
             "for _index, _scenario in enumerate(_scenarios):\n"
             "    try:\n"
-            "        _obj = " + class_name + "(*_scenario.get('init', []))\n"
+            "        try:\n"
+            "            _target = _scope[" + repr(class_name) + "]\n"
+            "        except KeyError:\n"
+            "            raise NameError(" + repr(f"name '{class_name}' is not defined") + ")\n"
+            "        _obj = _target(*_scenario.get('init', []))\n"
             "        _outputs = [getattr(_obj, _m)(*_a) for _m, _a in _scenario['ops']]\n"
             "        _result = {'index': _index, 'ok': True, 'got': _outputs}\n"
             "        _encoded = json.dumps(_result)\n"

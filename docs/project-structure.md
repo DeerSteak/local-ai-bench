@@ -130,7 +130,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `mcq_benchmark.py` | MCQ accuracy test |
 | `math_benchmark.py` | Numeric-answer math accuracy test |
 | `reasoning_benchmark.py` | Knowledge-light A–D reasoning accuracy test and validated bank loader |
-| `code_benchmark.py` | Isolated Python code-generation accuracy test |
+| `code_benchmark.py` | Restricted Python code-generation accuracy test |
+| `code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
 | `tool_benchmark.py` | Tool-calling accuracy test |
 | `regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
