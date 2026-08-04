@@ -15,14 +15,19 @@ from shared import Shared
 
 
 JOURNAL_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+SELECTED_RETRY_STAGES = {"llm", "conv", "conc_tool", "conc_chat"}
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
 
 
 def retryable_case_records(plan, projection):
-    stages = {plan.stage_id(stage): stage for stage in plan.stage_order if stage in JOURNAL_STAGES}
+    stages = {
+        plan.stage_id(stage): stage for stage in plan.stage_order
+        if stage in SELECTED_RETRY_STAGES
+    }
     records = []
     for case_id, case in projection["cases"].items():
-        if case.get("state") not in RETRYABLE_CASE_STATES or case.get("parent_id") not in stages:
+        if (case.get("state") not in RETRYABLE_CASE_STATES
+                or case.get("parent_id") not in stages or case.get("case_kind") != "context"):
             continue
         details = []
         if case.get("context_label"):

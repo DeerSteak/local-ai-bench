@@ -24,7 +24,9 @@ def make_result(tmp_path):
     case_id = plan.case_id("llm", model_id, {"context_tokens": 512})
     attempt_id = plan.attempt_id(case_id, 1)
     store.append(plan.job_id, [
-        JournalEvent("case", case_id, "running", {}, parent_id=plan.stage_id("llm")),
+        JournalEvent("case", case_id, "running", {
+            "case_kind": "context", "model_short": "model", "context_label": "512",
+        }, parent_id=plan.stage_id("llm")),
         JournalEvent("attempt", attempt_id, "running", {"number": 1}, parent_id=case_id),
     ])
     store.close()
@@ -43,7 +45,7 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
         "case_id": plan.case_id(
             "llm", plan.model_id("llm", plan.models["llm"][0]), {"context_tokens": 512},
         ),
-        "stage": "llm", "state": "running", "model": "unknown", "label": "unknown",
+        "stage": "llm", "state": "running", "model": "model", "label": "model · 512",
     }
     assert report["interrupted_attempts"] == 1
     assert result.with_suffix(".events.sqlite3").read_bytes() == before
@@ -89,15 +91,19 @@ def test_retryable_case_records_are_ordered_and_exclude_completed_cases(tmp_path
     projection = {"cases": {
         "case_complete": {
             "state": "complete", "parent_id": plan.stage_id("conv"),
-            "model_short": "model", "context_label": "2K",
+            "model_short": "model", "context_label": "2K", "case_kind": "context",
         },
         "case_llm": {
             "state": "invalid", "parent_id": plan.stage_id("llm"),
-            "model_short": "model", "context_label": "8K",
+            "model_short": "model", "context_label": "8K", "case_kind": "context",
         },
         "case_conv": {
             "state": "timed_out", "parent_id": plan.stage_id("conv"),
-            "model_short": "model", "context_label": "4K",
+            "model_short": "model", "context_label": "4K", "case_kind": "context",
+        },
+        "case_model_state": {
+            "state": "failed", "parent_id": plan.stage_id("llm"),
+            "model_short": "model", "case_kind": "model_state",
         },
     }}
     assert retryable_case_records(plan, projection) == [

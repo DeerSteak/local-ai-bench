@@ -5,8 +5,11 @@ import sys
 from pathlib import Path
 
 from benchmark import run_supervised_stage
+from event_store import EventStore
 from llm_event_stage import event_store_path
-from recovery_inspector import JOURNAL_STAGES, current_resume_identity, inspect_recovery
+from recovery_inspector import (
+    JOURNAL_STAGES, SELECTED_RETRY_STAGES, current_resume_identity, inspect_recovery,
+)
 from result_store import ResultStore, build_run_manifest
 from run_plan import RunPlan, load_run_plan
 
@@ -21,9 +24,10 @@ FAMILY_BY_STAGE = {
 }
 
 
-def _run_stage(plan, journal_path, stage, save, identity, resume):
+def _run_stage(plan, journal_path, stage, save, identity, resume, selected_case_ids=None):
     return run_supervised_stage(
         plan, journal_path, stage, save, resume_identity=identity, resume=resume,
+        selected_case_ids=selected_case_ids,
     )
 
 
@@ -77,6 +81,61 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
                 active, SECTION_BY_STAGE[active], status=terminal_status,
                 reason=type(exc).__name__,
             )
+        store.finish(terminal_status, type(exc).__name__)
+        raise
+    return data
+
+
+def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resume_identity,
+                         stage_runner=_run_stage):
+    """Retry an explicit eligible subset from one stopped journal stage."""
+    result_path = Path(result_path).resolve()
+    requested = tuple(dict.fromkeys(case_ids))
+    if not requested:
+        raise ValueError("select at least one retry-eligible case")
+    plan = load_run_plan(result_path)
+    identity = identity_builder(plan)
+    inspection = inspect_recovery(result_path, lambda _plan: identity)
+    if not inspection["can_resume"]:
+        raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
+    candidates = {case["case_id"]: case for case in inspection["retryable_cases"]}
+    unknown = set(requested) - set(candidates)
+    if unknown:
+        raise ValueError("cases are not retry-eligible: " + ", ".join(sorted(unknown)))
+    stages = {candidates[case_id]["stage"] for case_id in requested}
+    if len(stages) != 1:
+        raise ValueError("selected retry cases must belong to one stage")
+    stage = stages.pop()
+    if stage not in SELECTED_RETRY_STAGES:
+        raise ValueError(f"stage does not support selected retry: {stage}")
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    store = ResultStore(result_path, data)
+    store.begin_recovery()
+    selected_models = len(plan.models[FAMILY_BY_STAGE[stage]])
+    store.resume_stage(stage, selected_models)
+    section = SECTION_BY_STAGE[stage]
+    journal_path = event_store_path(result_path)
+    try:
+        result = stage_runner(
+            plan, journal_path, stage,
+            lambda value: store.update_section(section, value, stage),
+            identity, True, list(requested),
+        )
+        store.update_section(section, result, stage)
+        journal = EventStore(journal_path)
+        try:
+            journal_state = journal.rebuild(plan.job_id)["stages"][plan.stage_id(stage)]["state"]
+        finally:
+            journal.close()
+        status = "complete" if journal_state == "complete" else "failed"
+        reason = None if status == "complete" else "selected_retry_has_remaining_cases"
+        store.complete_stage(stage, section, status=status, reason=reason)
+        store.finish(status, reason)
+    except BaseException as exc:
+        terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+        store.complete_stage(
+            stage, section, status=terminal_status, reason=type(exc).__name__,
+        )
         store.finish(terminal_status, type(exc).__name__)
         raise
     return data

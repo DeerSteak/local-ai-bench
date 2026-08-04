@@ -35,7 +35,8 @@ def measurement_from_payload(payload: dict) -> GenerationMeasurement:
 class LLMEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, stage_name: str = "llm",
                  model_family: str = "llm", initialize: bool = True,
-                 resume_identity: dict | None = None, resume: bool = False):
+                 resume_identity: dict | None = None, resume: bool = False,
+                 selected_case_ids: list[str] | None = None):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
@@ -51,7 +52,9 @@ class LLMEventStage:
                 raise ValueError("resume plan does not match the journal job")
             if resume_identity is None or self.store.resume_identity(plan.job_id) != resume_identity:
                 raise ValueError("resume identity changed; create a fork")
-            self.recovery_attempts = self.store.prepare_recovery(plan.job_id, stage_name)
+            self.recovery_attempts = self.store.prepare_recovery(
+                plan.job_id, stage_name, selected_case_ids,
+            )
         elif initialize:
             self.store.start_stage(plan, stage_name, resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
@@ -85,8 +88,10 @@ class LLMEventStage:
                 if attempt["parent_id"] == case_id
             ]
             return max(numbers, default=0) + 1
-        else:
-            raise ValueError("incomplete case was not prepared for recovery")
+        stage = projection["stages"].get(self.stage_id, {})
+        if stage.get("recovery_scope") == "selected":
+            return None
+        raise ValueError("incomplete case was not prepared for recovery")
 
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
@@ -160,8 +165,16 @@ class LLMEventStage:
         models = self.export()
         with_results = sum(any(isinstance(value, dict) for value in model.values())
                            for model in models.values())
+        projection = self.store.rebuild(self.plan.job_id)
+        stage = projection["stages"].get(self.stage_id, {})
+        unresolved = any(
+            case["parent_id"] == self.stage_id
+            and case["state"] not in {"complete", "skipped"}
+            for case in projection["cases"].values()
+        )
+        state = "failed" if stage.get("recovery_scope") == "selected" and unresolved else "complete"
         self.store.append(self.plan.job_id, [
-            JournalEvent("stage", self.stage_id, "complete", {
+            JournalEvent("stage", self.stage_id, state, {
                 "models_with_results": with_results,
             }, parent_id=self.plan.job_id),
         ])

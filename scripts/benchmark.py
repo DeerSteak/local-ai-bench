@@ -65,7 +65,7 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
 
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
                          supervisor_factory=RunnerSupervisor, resume_identity=None,
-                         resume=False) -> dict:
+                         resume=False, selected_case_ids=None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
         journal = NativeBenchEventStage(
@@ -77,6 +77,7 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         journal = LLMEventStage(
             event_path, plan, lambda _: None, stage_name=stage_name,
             model_family=model_family, resume_identity=resume_identity, resume=resume,
+            selected_case_ids=selected_case_ids,
         )
         project = lambda: export_llm_section(
             event_path, plan.job_id, stage_name, model_family,

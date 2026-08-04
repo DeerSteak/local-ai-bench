@@ -5,7 +5,7 @@ import pytest
 from engines.base import GenerationMeasurement
 from event_store import EventStore
 from llm_event_stage import LLMEventStage
-from recovery_executor import fork_journal_run, resume_journal_run
+from recovery_executor import fork_journal_run, resume_journal_run, retry_selected_cases
 from result_store import build_run_manifest, finish_run, finish_stage, start_stage
 from run_plan import RunPlan
 
@@ -163,3 +163,47 @@ def test_recovery_executor_fork_refuses_existing_output_before_identity_work(tmp
             identity_builder=lambda _plan: pytest.fail("identity should not be built"),
         )
     assert output.read_text(encoding="utf-8") == "keep"
+
+
+def test_recovery_executor_retries_only_selected_case_and_keeps_run_incomplete(tmp_path):
+    result, plan = stopped_result(tmp_path)
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}, "environment": {}}
+    path = result.with_suffix(".events.sqlite3")
+    first = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    for context in (512, 2048):
+        first.record_case(MODEL, context, str(context), [], "timed_out", 1)
+    first.close()
+    model_id = plan.model_id("llm", plan.models["llm"][0])
+    selected = plan.case_id("llm", model_id, {"context_tokens": 512})
+    untouched = plan.case_id("llm", model_id, {"context_tokens": 2048})
+
+    def runner(saved_plan, journal, stage, save, saved_identity, resume, selected_ids):
+        owner = LLMEventStage(
+            journal, saved_plan, lambda _: None, resume_identity=saved_identity,
+            resume=resume, selected_case_ids=selected_ids,
+        )
+        owner.close()
+        child = LLMEventStage(journal, saved_plan, lambda _: None, initialize=False)
+        assert child.next_context_attempt(MODEL, 2048) is None
+        child.record_case(
+            MODEL, 512, "512", [GenerationMeasurement(0.1, 100, 50, 2.1, 2.0)],
+            "ok", 1, attempt_number=2,
+        )
+        child.finish()
+        section = child.export()
+        child.close()
+        save(section)
+        return section
+
+    retried = retry_selected_cases(
+        result, [selected], identity_builder=lambda _plan: identity, stage_runner=runner,
+    )
+    assert retried["run"]["status"] == "failed"
+    assert retried["run"]["reason"] == "selected_retry_has_remaining_cases"
+    journal = EventStore(path)
+    projection = journal.rebuild(plan.job_id)
+    journal.close()
+    assert projection["cases"][selected]["state"] == "complete"
+    assert projection["cases"][untouched]["state"] == "timed_out"
+    assert retried["llm"]["model"]["512"]["tps_mean"] == 50

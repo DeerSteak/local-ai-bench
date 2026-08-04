@@ -258,6 +258,29 @@ def test_recovery_rejects_completed_stage(tmp_path):
     store.close()
 
 
+def test_selected_recovery_marks_scope_and_reopens_only_requested_case(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    model_id = plan.model_id("llm", plan.models["llm"][0])
+    cases = [plan.case_id("llm", model_id, {"context_tokens": value}) for value in (512, 2048)]
+    stage_id = plan.stage_id("llm")
+    store.append(plan.job_id, [
+        JournalEvent("case", case_id, "running", {}, parent_id=stage_id)
+        for case_id in cases
+    ] + [
+        JournalEvent("case", case_id, "timed_out", {}, parent_id=stage_id)
+        for case_id in cases
+    ] + [JournalEvent("stage", stage_id, "interrupted", {}, parent_id=plan.job_id)])
+    attempts = store.prepare_recovery(plan.job_id, "llm", [cases[1]])
+    projection = store.rebuild(plan.job_id)
+    assert attempts == {cases[1]: 1}
+    assert projection["cases"][cases[0]]["state"] == "timed_out"
+    assert projection["cases"][cases[1]]["state"] == "running"
+    assert projection["stages"][stage_id]["recovery_scope"] == "selected"
+    store.close()
+
+
 def test_terminal_transition_requires_explicit_recovery_payload(tmp_path):
     plan = make_plan()
     store = EventStore(tmp_path / "events.sqlite3")

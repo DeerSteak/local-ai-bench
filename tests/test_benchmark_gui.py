@@ -15,7 +15,7 @@ from benchmark_gui import (
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, format_recovery_inspection, open_path_command, parse_progress_line,
-    recovery_executor_command, recovery_progress_entries, resolve_preset,
+    recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
 from run_plan import RunPlan
@@ -102,6 +102,10 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
         "python", str(Path(__file__).parents[1] / "scripts" / "fork_executor.py"),
         str(result.resolve()), str((tmp_path / "fork.json").resolve()),
     ]
+    assert retry_executor_command(result, ["case_a"], python_executable="python") == [
+        "python", str(Path(__file__).parents[1] / "scripts" / "retry_executor.py"),
+        str(result.resolve()), "case_a",
+    ]
 
 
 def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
@@ -118,6 +122,7 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
     )
     entries = recovery_progress_entries(plan)
     assert [(entry.kind, entry.label) for entry in entries] == [("llm", "Gemma 3 1B")]
+    assert recovery_progress_entries(plan, {"other"}) == []
 
 
 def test_discovery_report_summarizes_readiness_without_mutation():

@@ -349,9 +349,18 @@ class EventStore:
             events.append(JournalEvent(
                 "case", case_id, "running", {"recovery": "retry"}, parent_id=stage_id,
             ))
-        if stage_state in RECOVERABLE_STATES:
+        if stage_state == "running" and selected_case_ids is not None:
             events.append(JournalEvent(
-                "stage", stage_id, "running", {"recovery": "resume"}, parent_id=job_id,
+                "stage", stage_id, "interrupted", {"reason": "selected_recovery"},
+                parent_id=job_id,
+            ))
+        if stage_state in RECOVERABLE_STATES or (
+                stage_state == "running" and selected_case_ids is not None):
+            events.append(JournalEvent(
+                "stage", stage_id, "running", {
+                    "recovery": "resume",
+                    "recovery_scope": "all" if selected_case_ids is None else "selected",
+                }, parent_id=job_id,
             ))
         if job_state in RECOVERABLE_STATES:
             events.append(JournalEvent("job", job_id, "running", {"recovery": "resume"}))

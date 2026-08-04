@@ -203,6 +203,14 @@ def fork_executor_command(source_path: Path, output_path: Path,
     ]
 
 
+def retry_executor_command(result_path: Path, case_ids: list[str],
+                           python_executable=sys.executable) -> list[str]:
+    return [
+        python_executable, str(config.SCRIPT_DIR / "scripts" / "retry_executor.py"),
+        str(Path(result_path).resolve()), *case_ids,
+    ]
+
+
 def format_recovery_inspection(report: dict) -> str:
     lines = [
         f"Decision: {report['action'].upper()}",
@@ -224,12 +232,14 @@ def format_recovery_inspection(report: dict) -> str:
     return "\n".join(lines)
 
 
-def recovery_progress_entries(plan) -> list:
+def recovery_progress_entries(plan, model_shorts=None) -> list:
     entries = []
     seen = set()
     labels = {model["tag"]: model["label"] for model in LLM_MODELS}
     for family, kind in (("llm", "llm"), ("concurrency", "llm")):
         for model in plan.models[family]:
+            if model_shorts is not None and model.get("short") not in model_shorts:
+                continue
             key = (kind, model.get("tag") or model.get("short"))
             if key in seen:
                 continue
@@ -1296,11 +1306,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 if action == "inspect":
                     show_history_details("Recovery inspection", format_recovery_inspection(report))
                     return
-                if action == "resume" and not report["can_resume"]:
+                if action in {"resume", "retry"} and not report["can_resume"]:
                     show_history_details("Fork required", format_recovery_inspection(report))
                     return
                 if action == "resume":
                     start_history_recovery(result_path, report)
+                elif action == "retry":
+                    start_history_retry(result_path, report)
                 else:
                     start_history_fork(result_path, report)
 
@@ -1399,6 +1411,95 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(plan.stage_order, recovery_progress_entries(plan))
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
+    def choose_retry_cases(candidates):
+        by_stage = {}
+        for candidate in candidates:
+            by_stage.setdefault(candidate["stage"], []).append(candidate)
+        if not by_stage:
+            messagebox.showinfo("Selected retry", "No cases are retry-eligible.", parent=root)
+            return []
+        dialog = tk.Toplevel(root)
+        dialog.title("Select cases to retry")
+        dialog.transient(root)
+        dialog.grab_set()
+        shell = ttk.Frame(dialog, padding=16)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(
+            shell, text="Retry only the chosen cases. Other incomplete evidence remains unchanged.",
+            wraplength=520,
+        ).pack(anchor="w", pady=(0, 8))
+        stage_var = tk.StringVar(value=next(iter(by_stage)))
+        stage_picker = ttk.Combobox(
+            shell, textvariable=stage_var, values=list(by_stage), state="readonly",
+        )
+        stage_picker.pack(fill="x", pady=(0, 8))
+        case_list = tk.Listbox(shell, selectmode="extended", width=72, height=12)
+        case_list.pack(fill="both", expand=True)
+
+        def refresh_cases(_event=None):
+            case_list.delete(0, "end")
+            for candidate in by_stage[stage_var.get()]:
+                case_list.insert("end", f"{candidate['label']} — {candidate['state']}")
+
+        selected = []
+
+        def accept():
+            selected.extend(
+                by_stage[stage_var.get()][index] for index in case_list.curselection()
+            )
+            if not selected:
+                messagebox.showerror("Selected retry", "Select at least one case.", parent=dialog)
+                return
+            dialog.destroy()
+
+        stage_picker.bind("<<ComboboxSelected>>", refresh_cases)
+        refresh_cases()
+        buttons = ttk.Frame(shell)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="Retry Selected", command=accept).pack(side="right", padx=(0, 8))
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        root.wait_window(dialog)
+        return selected
+
+    def start_history_retry(result_path, report):
+        nonlocal process, active_process_kind
+        if process is not None and process.poll() is None:
+            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
+            return
+        selected = choose_retry_cases(report.get("retryable_cases", []))
+        if not selected:
+            return
+        if not messagebox.askyesno(
+            "Retry selected cases",
+            f"Retry {len(selected)} selected case(s)? Completed and unselected evidence will not rerun.",
+            parent=root,
+        ):
+            return
+        plan = load_run_plan(result_path)
+        command = retry_executor_command(
+            result_path, [candidate["case_id"] for candidate in selected],
+        )
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        process = subprocess.Popen(
+            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, creationflags=creationflags, env=child_env,
+        )
+        active_process_kind = "retry"
+        log_text.configure(state="normal")
+        log_text.delete("1.0", "end")
+        log_text.configure(state="disabled")
+        run_status.set("Selected retry is running. Unselected evidence remains unchanged.")
+        start_button.configure(state="disabled")
+        stop_button.configure(state="normal")
+        notebook.select(log_tab)
+        show_progress_window(
+            [selected[0]["stage"]],
+            recovery_progress_entries(plan, {candidate["model"] for candidate in selected}),
+        )
+        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
     ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
     ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
@@ -1416,6 +1517,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).pack(side="left", padx=(8, 0))
     ttk.Button(
         history_actions, text="Resume", command=lambda: inspect_history_recovery("resume"),
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        history_actions, text="Retry Cases", command=lambda: inspect_history_recovery("retry"),
     ).pack(side="left", padx=(8, 0))
     ttk.Button(
         history_actions, text="Fork", command=lambda: inspect_history_recovery("fork"),
@@ -1598,8 +1702,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     process = None
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
-                    if active_process_kind in {"recovery", "fork"}:
-                        label = "Recovery" if active_process_kind == "recovery" else "Forked run"
+                    if active_process_kind in {"recovery", "retry", "fork"}:
+                        label = {
+                            "recovery": "Recovery", "retry": "Selected retry",
+                            "fork": "Forked run",
+                        }[active_process_kind]
                         run_status.set(
                             f"{label} completed successfully. Results are ready to review."
                             if value == 0 else

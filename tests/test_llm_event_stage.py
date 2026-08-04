@@ -252,6 +252,40 @@ def test_resume_preserves_prior_attempt_but_aggregates_latest_attempt_only(tmp_p
     store.close()
 
 
+def test_selected_retry_runs_only_chosen_case_and_retains_incomplete_stage(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    first = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    first.record_case(MODEL, 512, "512", [], "timed_out", 1)
+    first.record_case(MODEL, 2048, "2K", [], "timed_out", 1)
+    first.close()
+    model_id = plan.model_id("llm", plan.models["llm"][0])
+    selected = plan.case_id("llm", model_id, {"context_tokens": 512})
+    owner = LLMEventStage(
+        path, plan, lambda _: None, resume_identity=identity, resume=True,
+        selected_case_ids=[selected],
+    )
+    owner.close()
+    runner = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        assert runner.next_context_attempt(MODEL, 512) == 2
+        assert runner.next_context_attempt(MODEL, 2048) is None
+        runner.record_case(
+            MODEL, 512, "512", [measurement(0.1, 100, 50)], "ok", 1,
+            attempt_number=2,
+        )
+        runner.finish()
+    finally:
+        runner.close()
+    store = EventStore(path)
+    projection = store.rebuild(plan.job_id)
+    assert projection["cases"][selected]["state"] == "complete"
+    assert projection["stages"][plan.stage_id("llm")]["state"] == "failed"
+    store.close()
+
+
 def test_recovered_model_state_can_be_replaced_without_duplicate_start_transition(tmp_path):
     path = tmp_path / "events.sqlite3"
     plan = make_plan()
