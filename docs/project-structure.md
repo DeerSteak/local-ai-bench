@@ -119,6 +119,8 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `llamabench` | Opt-in — per-model raw `llama-bench -o json` `prefill_entries` and depth-aware `decode_entries` arrays (or an `error` string) — see [Workloads](workloads.md#llama-bench) |
 | `llamabenchconc` | Opt-in — per-model raw `llama-batched-bench` JSONL entries plus the effective `pp`/`ctx_size` used (or an `error` string), one entry per pp/tg/concurrency-level combination — see [Workloads](workloads.md#llama-bench-concurrency) |
 
+Generation, conversation, concurrency, and embedding aggregates add explicit `requested_runs`, `completed_runs`, and `valid_runs` counts. Generation-family entries retain legacy aggregate fields while adding client-TTFT, server-prompt, wall/decode, token, finish-reason, valid-sample, and invalid-diagnostic fields; `n_runs` remains the completed-call count for compatibility.
+
 Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. New files use `run.schema_version` for results-schema compatibility; the top-level `version` remains the application release, while older files without `run` remain supported. Main results, answer sidecars, crash caches, and regraded outputs use same-directory temporary files plus atomic replacement so a failed checkpoint leaves the prior valid file intact. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
 
 `results/` is gitignored — nothing under it is tracked. Load its contents into the [dashboard](dashboard.md) to compare across machines.

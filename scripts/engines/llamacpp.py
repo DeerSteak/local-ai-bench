@@ -18,7 +18,7 @@ import gguf
 import requests
 
 import config
-from engines.base import InferenceEngine
+from engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from models import EMBED_MODELS, LLM_MODELS
 from shared import (
     EngineBudgetExceeded,
@@ -471,12 +471,12 @@ class LlamaCppEngine(InferenceEngine):
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> tuple[float, int, float]:
-        """Generate via /completion. Returns (ttft_sec, tokens_generated,
-        tokens_per_sec). n_parallel must match the last prepare_concurrency call."""
-        t_start = time.perf_counter()
-        deadline = t_start + timeout
+                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+        """Generate via /completion; n_parallel must match prepare_concurrency."""
+        operation_start = time.perf_counter()
+        deadline = operation_start + timeout
         self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
+        model_load_sec = time.perf_counter() - operation_start
 
         payload = json.dumps({
             "prompt": prompt,
@@ -489,20 +489,24 @@ class LlamaCppEngine(InferenceEngine):
             f"{config.LLAMACPP_URL}/completion",
             data=payload, headers={"Content-Type": "application/json"}, method="POST",
         )
+        request_start = time.perf_counter()
 
         ttft   = None
         tokens = 0
         tps    = 0
         server_predicted_n = 0
         predicted_ms       = 0
+        prompt_ms = None
+        prompt_tokens = None
         response_parts = []
+        finish_reason = None
 
         remaining = max(deadline - time.perf_counter(), 0.001)
         with self._urlopen(req, remaining) as resp:
             for chunk in self._iter_sse(resp):
                 content = chunk.get("content")
                 if ttft is None and content:
-                    ttft = time.perf_counter() - t_start
+                    ttft = time.perf_counter() - request_start
                 if content:
                     response_parts.append(content)
                 tokens += len(chunk.get("tokens") or [])
@@ -515,8 +519,12 @@ class LlamaCppEngine(InferenceEngine):
                 if timings:
                     server_predicted_n = timings.get("predicted_n", tokens)
                     predicted_ms = timings.get("predicted_ms") or 0
+                    prompt_ms = timings.get("prompt_ms")
+                    prompt_tokens = timings.get("prompt_n")
+                if chunk.get("stop"):
+                    finish_reason = chunk.get("stop_type") or "stop"
 
-        total = time.perf_counter() - t_start
+        total = time.perf_counter() - request_start
         if not tokens:
             tokens = server_predicted_n
         if ttft is None:
@@ -528,10 +536,24 @@ class LlamaCppEngine(InferenceEngine):
         sanitized = self._sanitize_tps(tps, tokens, ttft, total)
         if sanitized != tps:
             self._warn_tps_sanitized(tag, tps, sanitized, tokens, server_predicted_n, predicted_ms)
-        return ttft, tokens, sanitized
+        decode_seconds = (total - ttft) if sanitized != tps else (
+            predicted_ms / 1000 if predicted_ms else max(total - ttft, 0)
+        )
+        return GenerationMeasurement(
+            client_ttft_sec=ttft,
+            generated_tokens=tokens,
+            tokens_per_sec=sanitized,
+            client_wall_sec=total,
+            decode_sec=decode_seconds,
+            server_prompt_sec=prompt_ms / 1000 if prompt_ms is not None else None,
+            prompt_tokens=prompt_tokens,
+            response_text="".join(response_parts),
+            finish_reason=finish_reason,
+            model_load_sec=model_load_sec,
+        )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
-                      deadline: float, request_start: float, num_predict: int,
+                      deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
             "messages": messages,
@@ -554,13 +576,14 @@ class LlamaCppEngine(InferenceEngine):
         server_predicted_n = 0
         predicted_ms = 0
         prompt_eval_count = 0
+        server_prompt_sec = None
         response_parts = []
         reasoning_parts = []
         tool_fragments: dict[int, dict] = {}
         finish_reason = None
+        request_start = time.perf_counter()
         last_loop_check = request_start
-
-        remaining = deadline - time.perf_counter()
+        remaining = deadline - request_start
         if remaining <= 0:
             raise EngineTimeout(
                 "llamacpp_chat exceeded its wall-clock deadline",
@@ -626,8 +649,8 @@ class LlamaCppEngine(InferenceEngine):
                     prompt_n = timings.get("prompt_n")
                     if not tokens:
                         tokens = server_predicted_n
-                    if prompt_ms is not None and prompt_ms > 0:
-                        ttft = prompt_ms / 1000
+                    if prompt_ms is not None and prompt_ms >= 0:
+                        server_prompt_sec = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
                 usage = chunk.get("usage")
@@ -649,6 +672,8 @@ class LlamaCppEngine(InferenceEngine):
             decode_seconds = tokens / tps if tps else 0
         return {
             "ttft": ttft,
+            "server_prompt_sec": server_prompt_sec,
+            "wall_seconds": total,
             "tokens": tokens,
             "tps": tps,
             "decode_seconds": decode_seconds,
@@ -670,24 +695,25 @@ class LlamaCppEngine(InferenceEngine):
             token_budget: int | None):
         if token_budget is not None and num_predict != -1:
             raise ValueError("token_budget cannot be combined with finite num_predict")
-        t_start = time.perf_counter()
-        deadline = t_start + timeout
+        operation_start = time.perf_counter()
+        deadline = operation_start + timeout
         self._ensure_model(tag, num_ctx, deadline=deadline)
+        model_load_sec = time.perf_counter() - operation_start
 
         if token_budget is None:
             result = self._chat_request(
-                tag, messages, tools, deadline, t_start, num_predict, check_loop, False,
+                tag, messages, tools, deadline, num_predict, check_loop, False,
             )
-            return result, None, False
+            return result, None, False, model_load_sec
 
         first_budget, second_budget = split_token_budget(
             token_budget, config.ACC_FINALIZE_FRACTION,
         )
         first = self._chat_request(
-            tag, messages, tools, deadline, t_start, first_budget, check_loop, False,
+            tag, messages, tools, deadline, first_budget, check_loop, False,
         )
         if first["finish_reason"] != "length":
-            return first, None, False
+            return first, None, False, model_load_sec
         if second_budget == 0:
             raise EngineBudgetExceeded(
                 "llamacpp_chat exhausted its completion-token budget",
@@ -706,56 +732,62 @@ class LlamaCppEngine(InferenceEngine):
             {"role": "assistant", "content": first_response},
             {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
         ])
-        second_start = time.perf_counter()
         second = self._chat_request(
-            tag, followup, tools, deadline, second_start, second_budget, check_loop, True,
+            tag, followup, tools, deadline, second_budget, check_loop, True,
         )
         if second["finish_reason"] == "length":
             raise EngineBudgetExceeded(
                 "llamacpp_chat exhausted its completion-token budget",
                 partial_text=self._graded_response(second, tools),
             )
-        return first, second, True
+        return first, second, True, model_load_sec
 
     @staticmethod
-    def _combined_metrics(first: dict, second: dict | None) -> tuple[float, int, float, int]:
+    def _chat_measurement(first: dict, second: dict | None,
+                          graded: dict, budget_nudged: bool,
+                          model_load_sec: float) -> ChatMeasurement:
         if second is None:
-            return (
-                first["ttft"], first["tokens"], first["tps"],
-                first["prompt_eval_count"],
-            )
-        tokens = first["tokens"] + second["tokens"]
-        decode_seconds = first["decode_seconds"] + second["decode_seconds"]
-        return (
-            first["ttft"],
-            tokens,
-            tokens / decode_seconds if decode_seconds else 0,
-            second["prompt_eval_count"],
+            tokens = first["tokens"]
+            decode_seconds = first["decode_seconds"]
+            wall_seconds = first["wall_seconds"]
+        else:
+            tokens = first["tokens"] + second["tokens"]
+            decode_seconds = first["decode_seconds"] + second["decode_seconds"]
+            wall_seconds = first["wall_seconds"] + second["wall_seconds"]
+        return ChatMeasurement(
+            client_ttft_sec=first["ttft"],
+            generated_tokens=tokens,
+            tokens_per_sec=tokens / decode_seconds if decode_seconds else 0,
+            client_wall_sec=wall_seconds,
+            decode_sec=decode_seconds,
+            server_prompt_sec=first["server_prompt_sec"],
+            prompt_tokens=(second or first)["prompt_eval_count"],
+            response_text=graded["response_text"],
+            finish_reason=graded["finish_reason"],
+            tool_calls=graded["tool_calls"],
+            budget_nudged=budget_nudged,
+            model_load_sec=model_load_sec,
         )
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None):
+             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
         """Chat once, or use a bounded final-answer pass after a length stop."""
-        first, second, budget_nudged = self._chat_with_optional_finalize(
+        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
         graded = second or first
-        metrics = self._combined_metrics(first, second)
-        result = (*metrics, graded["response_text"])
-        return (*result, budget_nudged) if token_budget is not None else result
+        return self._chat_measurement(first, second, graded, budget_nudged, model_load_sec)
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
-                   check_loop: bool = False, token_budget: int | None = None):
+                   check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
         """Tool chat once, or request one complete replacement after a length stop."""
-        first, second, budget_nudged = self._chat_with_optional_finalize(
+        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
         graded = second or first
-        metrics = self._combined_metrics(first, second)
-        result = (*metrics, graded["response_text"], graded["tool_calls"])
-        return (*result, budget_nudged) if token_budget is not None else result
+        return self._chat_measurement(first, second, graded, budget_nudged, model_load_sec)
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:
@@ -770,10 +802,11 @@ class LlamaCppEngine(InferenceEngine):
             tool_calls_out.append(call)
         return tool_calls_out
 
-    def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> tuple[list, float]:
-        """Embed every string in `inputs` in one /v1/embeddings call, loading
-        the model in embedding mode. Returns (embeddings_list, elapsed_seconds)."""
+    def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:
+        """Embed every input in one request, loading in embedding mode."""
+        load_start = time.perf_counter()
         self._ensure_model(tag, num_ctx=None, embedding=True)
+        model_load_sec = time.perf_counter() - load_start
 
         t0 = time.perf_counter()
         resp = requests.post(
@@ -793,4 +826,6 @@ class LlamaCppEngine(InferenceEngine):
         elapsed = time.perf_counter() - t0
         data = resp.json().get("data", [])
         embeddings = [d["embedding"] for d in sorted(data, key=lambda d: d.get("index", 0))]
-        return embeddings, elapsed
+        return EmbeddingMeasurement(
+            embeddings=embeddings, client_wall_sec=elapsed, model_load_sec=model_load_sec,
+        )

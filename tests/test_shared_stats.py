@@ -19,6 +19,13 @@ def test_stdev_basic():
     assert Shared.stdev([1, 2, 3]) > 0
 
 
+def test_median_and_coefficient_of_variation_require_real_samples():
+    assert Shared.median([1, 3, 2]) == 2
+    assert Shared.coefficient_of_variation([10]) == 0
+    assert Shared.coefficient_of_variation([10, 10]) == 0
+    assert Shared.coefficient_of_variation([10, 20]) > 0
+
+
 def test_context_label_preserves_fractional_kilobyte_checkpoint():
     assert Shared.context_label(512) == "0.5K"
     assert Shared.context_label(2048) == "2K"

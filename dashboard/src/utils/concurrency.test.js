@@ -42,6 +42,11 @@ describe("buildConcurrencyDataForModel", () => {
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "ttft")[0].f0).toBe(31.35);
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "aggregate")[0].f0).toBe(7.79);
   });
+  it("prefers explicit client TTFT over the legacy field", () => {
+    const explicit = structuredClone(files);
+    explicit[0].data.concurrency_chat.m["1"].client_ttft_mean_sec = 12.5;
+    expect(buildConcurrencyDataForModel(explicit, "concurrency_chat", "m", "ttft")[0].f0).toBe(12.5);
+  });
   it("excludes non-level keys like stopped_at from the level rows", () => {
     const rows = buildConcurrencyDataForModel(files, "concurrency_chat", "m", "tps");
     expect(rows).toHaveLength(3);
@@ -75,6 +80,11 @@ describe("getConcurrencyStopInfo", () => {
     const info = getConcurrencyStopInfo(file, "concurrency_chat", "m");
     expect(info.lastLevel).toBeNull();
     expect(info.nextLevel).toBe("1");
+  });
+  it("renders a human-readable label when every completed measurement was invalid", () => {
+    const file = { data: { concurrency_chat: { m: { "1": {}, stopped_at: "invalid" } } } };
+    const info = getConcurrencyStopInfo(file, "concurrency_chat", "m");
+    expect(info.label).toContain("no valid measurements");
   });
 });
 

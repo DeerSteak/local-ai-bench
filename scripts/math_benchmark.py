@@ -153,14 +153,15 @@ class MathBenchmark:
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[float | None, str, bool]:
         prompt = MathBenchmark.build_prompt(question)
-        _, _, _, _, response_text, budget_nudged = engine.chat(
+        measurement = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=MathBenchmark.MATH_NUM_PREDICT,
             check_loop=True,
             token_budget=config.ACC_TOKEN_BUDGET,
         )
-        return MathBenchmark.parse_answer(response_text), response_text, budget_nudged
+        return (MathBenchmark.parse_answer(measurement.response_text),
+                measurement.response_text, measurement.budget_nudged)
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

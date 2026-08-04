@@ -128,6 +128,8 @@ The **Chart Width** field (default 708 px) controls the capture width — increa
 
 A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.js` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 
+When explicit measurement fields are present, TTFT charts and tables prefer client-observed TTFT and run tables prefer `valid_runs`; older files fall back to `ttft_mean_sec` and `n_runs`. Server-reported prompt duration remains available for auditing but is not silently substituted into the TTFT charts. Comparing legacy server-prompt conversation TTFT with explicit client-observed conversation TTFT produces a methodology warning.
+
 ## Development
 
 ```bash

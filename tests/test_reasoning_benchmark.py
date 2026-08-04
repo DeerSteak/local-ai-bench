@@ -211,7 +211,8 @@ class FakeEngine:
 
     def chat(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        return 0.0, 0.0, 0.0, 0.0, self.response, False
+        from engines.base import ChatMeasurement
+        return ChatMeasurement(0, 0, 0, 0, 0, response_text=self.response)
 
 
 def test_ask_uses_accuracy_limits_loop_detection_and_strict_parser(monkeypatch):

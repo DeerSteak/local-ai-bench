@@ -88,13 +88,14 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Area | Test modules |
 |---|---|
 | Engine registry and llama.cpp adapter | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
+| Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
 | Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
 | Atomic results and run state | [test_result_store.py](../tests/test_result_store.py) |
 
-`LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Shared orchestration runs against fake `InferenceEngine` implementations, covering retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
+`LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Shared orchestration runs against fake `InferenceEngine` implementations, covering retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
 
 ## Dashboard tests
 

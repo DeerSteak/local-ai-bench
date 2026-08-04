@@ -75,7 +75,7 @@ export function flattenEmbedData(files) {
         cps_stdev: s.chunks_per_sec_stdev,
         n_chunks: s.n_chunks,
         device: s.device,
-        n_runs: s.n_runs,
+        n_runs: s.valid_runs ?? s.n_runs,
       };
     })
   );

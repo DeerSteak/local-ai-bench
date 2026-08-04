@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import config
+from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
 
 
@@ -32,7 +33,7 @@ class ConcurrencyBenchmark:
     @staticmethod
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
         """Fire `level` concurrent generate() requests — see docs/workloads.md#concurrency.
-        Returns raw (ttft, tokens, tps) samples."""
+        Returns named measurement samples."""
         prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
         slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
         with ThreadPoolExecutor(max_workers=level) as pool:
@@ -161,9 +162,20 @@ class ConcurrencyBenchmark:
                             Shared.err(f"{label}: {level}-way concurrency batch failed: {error}")
                             stopped_at = "failed"
                         break
-                    ttfts  = [s[0] for s in samples]
-                    tokens = [s[1] for s in samples]
-                    tpss   = [s[2] for s in samples]
+                    valid_samples = [sample for sample in samples
+                                     if not measurement_validation_errors(sample)]
+                    aggregate = aggregate_generation_measurements(samples, level)
+                    invalid_samples = aggregate["invalid_runs"]
+                    if not valid_samples:
+                        Shared.err(f"{label}: {level}-way batch had no valid measurements")
+                        results[short][str(level)] = {
+                            **aggregate,
+                        }
+                        stopped_at = "invalid"
+                        break
+                    ttfts = [sample.client_ttft_sec for sample in valid_samples]
+                    tokens = [sample.generated_tokens for sample in valid_samples]
+                    tpss = [sample.tokens_per_sec for sample in valid_samples]
                     total_tokens  = sum(tokens)
                     aggregate_tps = total_tokens / batch_elapsed if batch_elapsed > 0 else 0
                     mean_tps      = Shared.mean(tpss)
@@ -177,6 +189,7 @@ class ConcurrencyBenchmark:
                         "total_tokens":      total_tokens,
                         "batch_elapsed_sec": round(batch_elapsed, 3),
                         "memory":            memory,
+                        **aggregate,
                     }
                     Shared.ok(
                         f"{level}-way done: per-request TTFT={Shared.mean(ttfts):.2f}s "

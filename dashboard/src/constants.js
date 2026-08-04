@@ -217,6 +217,7 @@ export const CONCURRENCY_STOP_LABELS = {
   load_failed: "couldn't load at this level — the model's real ceiling on this hardware",
   crashed:     "the engine crashed during this batch",
   failed:      "the batch failed (e.g. timed out)",
+  invalid:     "the completed batch contained no valid measurements",
   slow:        "per-request tokens/sec dropped below the slow-model cutoff",
 };
 

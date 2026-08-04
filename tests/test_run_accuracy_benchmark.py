@@ -6,7 +6,7 @@ import json
 import pytest
 
 import config
-from engines.base import InferenceEngine
+from engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from mcq_benchmark import MCQBenchmark
 from tool_benchmark import ToolBenchmark
 from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
@@ -57,7 +57,7 @@ class FakeEngine(InferenceEngine):
 
     # inference
     def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
-        return 0.1, 1, 1.0
+        return GenerationMeasurement(0.1, 1, 1.0, 1.1, 1.0)
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024,
              check_loop=False, token_budget=None):
@@ -66,9 +66,12 @@ class FakeEngine(InferenceEngine):
         for marker, (kind, text) in self._behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, len(text.split()), 5.0, 10, text, False
+                    return ChatMeasurement(0.1, len(text.split()), 5.0, 1.1, 1.0,
+                                           prompt_tokens=10, response_text=text)
                 if kind == "nudged":
-                    return 0.1, len(text.split()), 5.0, 10, text, True
+                    return ChatMeasurement(0.1, len(text.split()), 5.0, 1.1, 1.0,
+                                           prompt_tokens=10, response_text=text,
+                                           budget_nudged=True)
                 if kind == "budget":
                     raise EngineBudgetExceeded("budget exhausted", partial_text=text)
                 if kind == "nudged_timeout":
@@ -88,7 +91,9 @@ class FakeEngine(InferenceEngine):
         for marker, (kind, payload) in self._tool_behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, 1, 5.0, 10, json.dumps(payload), payload, False
+                    return ChatMeasurement(0.1, 1, 5.0, 0.3, 0.2,
+                                           prompt_tokens=10, response_text=json.dumps(payload),
+                                           tool_calls=payload)
                 if kind == "timeout":
                     raise EngineTimeout("timed out", partial_text=payload)
                 if kind == "loop":
@@ -98,7 +103,7 @@ class FakeEngine(InferenceEngine):
         raise AssertionError(f"no canned tool behavior matched prompt: {content!r}")
 
     def embed(self, tag, inputs, timeout=120):
-        return [], 0.0
+        return EmbeddingMeasurement([], 0.1)
 
 
 def _question(qid: str, answer: str) -> dict:

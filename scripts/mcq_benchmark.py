@@ -163,7 +163,7 @@ class MCQBenchmark:
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[str | None, str, bool]:
         prompt = MCQBenchmark.build_prompt(question)
-        _, _, _, _, response_text, budget_nudged = engine.chat(
+        measurement = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=MCQBenchmark.MCQ_NUM_PREDICT,
@@ -171,9 +171,9 @@ class MCQBenchmark:
             token_budget=config.ACC_TOKEN_BUDGET,
         )
         return (
-            MCQBenchmark.parse_answer(response_text, question["choices"].keys()),
-            response_text,
-            budget_nudged,
+            MCQBenchmark.parse_answer(measurement.response_text, question["choices"].keys()),
+            measurement.response_text,
+            measurement.budget_nudged,
         )
 
     @staticmethod

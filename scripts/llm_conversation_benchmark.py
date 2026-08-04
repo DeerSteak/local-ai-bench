@@ -4,6 +4,7 @@ context ceiling. See docs/workloads.md's conversation-test section."""
 from pathlib import Path
 
 import config
+from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
 
 
@@ -140,17 +141,17 @@ class LLMConversationBenchmark:
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens, pending_response_tokens
                         messages.append({"role": "user", "content": prompt_text})
-                        ttft, eval_count, tps, prompt_eval_count, response_text = engine.chat(
+                        measurement = engine.chat(
                             tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
                             num_predict=num_predict,
                         )
-                        messages.append({"role": "assistant", "content": response_text})
+                        messages.append({"role": "assistant", "content": measurement.response_text})
                         # prompt_eval_count is ground truth for what's in context; eval_count isn't —
                         # a reasoning model's thinking content can get silently dropped from history next turn.
-                        cumulative_tokens = prompt_eval_count
+                        cumulative_tokens = measurement.prompt_tokens or 0
                         # Not yet in cumulative_tokens until next turn's prompt_eval_count — see docs/workloads.md.
-                        pending_response_tokens = eval_count
-                        return ttft, tps
+                        pending_response_tokens = measurement.generated_tokens
+                        return measurement
 
                     def _next_prompt():
                         nonlocal section_n, first_turn_done
@@ -167,8 +168,8 @@ class LLMConversationBenchmark:
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
                             if target == 0:
                                 # Checkpoint 0 is just the opening turn — no growth to do first.
-                                ttft, tps = _turn(_next_prompt(),
-                                                   LLMConversationBenchmark.CONV_OPENING_PREDICT)
+                                measurement = _turn(_next_prompt(),
+                                                    LLMConversationBenchmark.CONV_OPENING_PREDICT)
                             else:
                                 is_last_checkpoint = idx == len(checkpoints) - 1
                                 Shared.log(f"{label}: run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS} — growing toward "
@@ -184,7 +185,7 @@ class LLMConversationBenchmark:
                                         out_of_room = True
                                         break
 
-                                    ttft, tps = _turn(_next_prompt(), step)
+                                    measurement = _turn(_next_prompt(), step)
 
                                 if out_of_room:
                                     Shared.warn(f"{label}: run {run_i+1} ran out of context room "
@@ -194,16 +195,17 @@ class LLMConversationBenchmark:
                             # ttft/tps here are from the turn that just crossed `target`
                             # (or the opening turn for target == 0).
                             samples_by_label.setdefault(label_ctx, []).append(
-                                (ttft, tps, cumulative_tokens))
+                                (measurement, cumulative_tokens))
                             Shared.output(
                                 f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: "
-                                f"{label_ctx}  TTFT={ttft:.2f}s  TPS={tps:.1f}  "
+                                f"{label_ctx}  TTFT={measurement.client_ttft_sec:.2f}s  "
+                                f"TPS={measurement.tokens_per_sec:.1f}  "
                                 f"(depth~{cumulative_tokens})"
                             )
 
                             # See docs/workloads.md's within-conversation slow-model early exit.
-                            if not force_all and tps < config.SLOW_MODEL_MIN_TPS:
-                                Shared.warn(f"{label}: run {run_i+1} — {tps:.1f} tok/s at {label_ctx} is below "
+                            if not force_all and measurement.tokens_per_sec < config.SLOW_MODEL_MIN_TPS:
+                                Shared.warn(f"{label}: run {run_i+1} — {measurement.tokens_per_sec:.1f} tok/s at {label_ctx} is below "
                                             f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
                                 slow_label = label_ctx
                                 break
@@ -243,18 +245,26 @@ class LLMConversationBenchmark:
                     samples = samples_by_label.get(label_ctx)
                     if not samples:
                         continue
-                    ttfts  = [s[0] for s in samples]
-                    tpss   = [s[1] for s in samples]
-                    depths = [s[2] for s in samples]
+                    aggregate = aggregate_generation_measurements(
+                        [sample[0] for sample in samples], LLMConversationBenchmark.CONV_RUNS,
+                    )
+                    valid_samples = [s for s in samples
+                                     if not measurement_validation_errors(s[0])]
+                    measurements = [s[0] for s in valid_samples]
+                    ttfts = [m.client_ttft_sec for m in measurements]
+                    tpss = [m.tokens_per_sec for m in measurements]
+                    depths = [s[1] for s in valid_samples]
+                    if not valid_samples:
+                        continue
                     results[short][label_ctx] = {
                         "ttft_mean_sec":  round(Shared.mean(ttfts), 3),
                         "ttft_stdev_sec": round(Shared.stdev(ttfts), 3),
                         "tps_mean":       round(Shared.mean(tpss), 2),
                         "tps_stdev":      round(Shared.stdev(tpss), 2),
-                        "n_runs":         len(samples),
                         "ttft_runs":      [round(t, 3) for t in ttfts],
                         "tps_runs":       [round(t, 2) for t in tpss],
                         "depth_tokens":   round(Shared.mean(depths)),
+                        **aggregate,
                     }
                     Shared.ok(
                         f"{label_ctx} done ({len(samples)} run(s)): "

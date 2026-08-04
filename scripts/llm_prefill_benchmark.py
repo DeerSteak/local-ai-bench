@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import config
+from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
 
 
@@ -70,21 +71,26 @@ class LLMPrefillBenchmark:
 
                     def _prefill_once(run_i):
                         prompt = Shared.build_prompt_for_context(ctx_len)
-                        ttft, tokens, tps = engine.generate(
+                        measurement = engine.generate(
                             tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx
                         )
+                        ttft = measurement.client_ttft_sec
+                        tps = measurement.tokens_per_sec
                         Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "
                             f"TTFT={ttft:.2f}s  "
                             f"TPS={tps:.1f}"
                         )
-                        return ttft, tps
+                        return measurement
 
                     samples, status, _, _metadata = Shared.run_measured_calls(
                         config.N_RUNS, _prefill_once, tag, crash_cache,
                         LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}", engine)
-                    ttfts    = [s[0] for s in samples]
-                    tps_list = [s[1] for s in samples]
+                    aggregate = aggregate_generation_measurements(samples, config.N_RUNS)
+                    valid_samples = [sample for sample in samples
+                                     if not measurement_validation_errors(sample)]
+                    ttfts = [sample.client_ttft_sec for sample in valid_samples]
+                    tps_list = [sample.tokens_per_sec for sample in valid_samples]
 
                     if ttfts:
                         results[short][label_ctx] = {
@@ -92,9 +98,9 @@ class LLMPrefillBenchmark:
                             "ttft_stdev_sec": round(Shared.stdev(ttfts),   3),
                             "tps_mean":       round(Shared.mean(tps_list), 2),
                             "tps_stdev":      round(Shared.stdev(tps_list),2),
-                            "n_runs":         len(tps_list),
                             "ttft_runs":      [round(t, 3) for t in ttfts],
                             "tps_runs":       [round(t, 2) for t in tps_list],
+                            **aggregate,
                         }
                         Shared.ok(
                             f"Context {label_ctx} done: "

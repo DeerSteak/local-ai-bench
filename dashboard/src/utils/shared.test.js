@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, sanitizeForFilename, applyEngineLabels, fmt,
+  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
+  getConversationTTFTMethodologyWarning, sanitizeForFilename, applyEngineLabels, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -73,6 +74,24 @@ describe("getLlamaBenchMethodologyWarning", () => {
       llamabench_repetition_mode: "separate_process_r1",
     } } };
     expect(getLlamaBenchMethodologyWarning([current, current])).toBe("");
+  });
+});
+
+describe("getConversationTTFTMethodologyWarning", () => {
+  const legacy = { data: { llm_conversation: { m: { "2K": { ttft_mean_sec: 0.2 } } } } };
+  const current = { data: { llm_conversation: { m: {
+    "2K": { ttft_mean_sec: 0.4, client_ttft_mean_sec: 0.4 },
+  } } } };
+
+  it("warns when client-observed and legacy server-prompt TTFT files are compared", () => {
+    expect(getConversationTTFTMethodologyWarning([legacy, current])).toContain("different TTFT");
+  });
+
+  it("does not warn for one file, matching modes, or files without conversation measurements", () => {
+    expect(getConversationTTFTMethodologyWarning([legacy])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([legacy, legacy])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([current, current])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([{ data: {} }, current])).toBe("");
   });
 });
 

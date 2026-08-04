@@ -119,6 +119,11 @@ class Shared:
     def mean(vals):   return statistics.mean(vals) if vals else 0
     @staticmethod
     def stdev(vals):  return statistics.stdev(vals) if len(vals) >= 2 else 0
+    @staticmethod
+    def median(vals): return statistics.median(vals) if vals else 0
+    @staticmethod
+    def coefficient_of_variation(vals):
+        return Shared.stdev(vals) / Shared.mean(vals) if len(vals) >= 2 and Shared.mean(vals) else 0
 
     @staticmethod
     def context_label(tokens: int) -> str:

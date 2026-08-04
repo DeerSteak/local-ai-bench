@@ -1,6 +1,7 @@
 import pytest
 
 import config
+from engines.base import ChatMeasurement
 from code_benchmark import CodeBenchmark
 
 
@@ -17,7 +18,8 @@ def test_ask_passes_shared_accuracy_budget(monkeypatch):
     class Engine:
         def chat(self, *args, **kwargs):
             self.kwargs = kwargs
-            return 0, 0, 0, 0, "def sum_two(a, b): return a + b", False
+            return ChatMeasurement(0, 0, 0, 0, 0,
+                                   response_text="def sum_two(a, b): return a + b")
 
     monkeypatch.setattr(
         CodeBenchmark, "evaluate_question",

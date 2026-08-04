@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -100,6 +100,9 @@ export default function Dashboard() {
   );
   const llamaBenchMethodologyWarning = useMemo(
     () => getLlamaBenchMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
+  const conversationTTFTMethodologyWarning = useMemo(
+    () => getConversationTTFTMethodologyWarning(effectiveFiles), [effectiveFiles],
   );
 
   const updateHostnameOverride = useCallback((fileId, value) => {
@@ -235,7 +238,10 @@ export default function Dashboard() {
         onDragLeave={handleDragLeave}
         onRemoveFile={removeFile}
         onFileInput={handleFileInput}
-        fileError={[fileError, accuracySettingsWarning, llamaBenchMethodologyWarning].filter(Boolean).join(" ")}
+        fileError={[
+          fileError, accuracySettingsWarning, llamaBenchMethodologyWarning,
+          conversationTTFTMethodologyWarning,
+        ].filter(Boolean).join(" ")}
       />
 
       <Controls

@@ -136,7 +136,7 @@ class ToolBenchmark:
 
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[dict, str, bool]:
-        _, _, _, _, response_text, tool_calls, budget_nudged = engine.chat_tools(
+        measurement = engine.chat_tools(
             tag, [{"role": "user", "content": question["prompt"]}],
             tools=question["tools"], timeout=config.ACC_TIMEOUT,
             num_ctx=config.ACCURACY_CONTEXT,
@@ -144,13 +144,15 @@ class ToolBenchmark:
             token_budget=config.ACC_TOKEN_BUDGET,
         )
         # Keep prose alongside tool calls — a decline is prose with no calls at all.
-        if tool_calls and response_text:
-            raw = json.dumps({"tool_calls": tool_calls, "text": response_text})
-        elif tool_calls:
-            raw = json.dumps(tool_calls)
+        if measurement.tool_calls and measurement.response_text:
+            raw = json.dumps({"tool_calls": measurement.tool_calls,
+                              "text": measurement.response_text})
+        elif measurement.tool_calls:
+            raw = json.dumps(measurement.tool_calls)
         else:
-            raw = response_text
-        return ToolBenchmark.evaluate_question(question, tool_calls), raw, budget_nudged
+            raw = measurement.response_text
+        return (ToolBenchmark.evaluate_question(question, measurement.tool_calls),
+                raw, measurement.budget_nudged)
 
     @staticmethod
     def rescore_partial_fn(question: dict, partial_text: str) -> dict:

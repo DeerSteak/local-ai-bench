@@ -232,15 +232,16 @@ class CodeBenchmark:
     @staticmethod
     def _ask(engine, tag: str, question: dict) -> tuple[dict, str, bool]:
         prompt = CodeBenchmark.build_prompt(question)
-        _, _, _, _, response_text, budget_nudged = engine.chat(
+        measurement = engine.chat(
             tag, [{"role": "user", "content": prompt}],
             timeout=config.ACC_TIMEOUT, num_ctx=config.ACCURACY_CONTEXT,
             num_predict=CodeBenchmark.CODE_NUM_PREDICT,
             check_loop=True,
             token_budget=config.ACC_TOKEN_BUDGET,
         )
-        code = CodeBenchmark.extract_code(response_text)
-        return CodeBenchmark.evaluate_question(question, code), response_text, budget_nudged
+        code = CodeBenchmark.extract_code(measurement.response_text)
+        return (CodeBenchmark.evaluate_question(question, code),
+                measurement.response_text, measurement.budget_nudged)
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:

@@ -44,6 +44,20 @@ export function getLlamaBenchMethodologyWarning(files) {
     : "";
 }
 
+export function getConversationTTFTMethodologyWarning(files) {
+  const modes = new Set();
+  for (const file of files) {
+    const samples = Object.values(file.data?.llm_conversation || {})
+      .flatMap(model => Object.values(model || {}))
+      .filter(sample => sample && typeof sample === "object");
+    if (samples.some(sample => sample.client_ttft_mean_sec != null)) modes.add("client");
+    else if (samples.some(sample => sample.ttft_mean_sec != null)) modes.add("legacy_server");
+  }
+  return modes.size > 1
+    ? "Loaded conversation files use different TTFT methodologies (client-observed versus legacy server prompt time)."
+    : "";
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-

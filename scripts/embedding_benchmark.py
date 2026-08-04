@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import config
+from engines.base import embedding_validation_errors
 from shared import Shared
 
 
@@ -102,15 +103,19 @@ class EmbeddingBenchmark:
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
 
                 def _embed_once(run_i):
-                    _, elapsed = engine.embed(tag, chunks)
-                    rate = len(chunks) / elapsed
-                    Shared.output(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
-                    return rate
+                    measurement = engine.embed(tag, chunks)
+                    if not embedding_validation_errors(measurement):
+                        rate = len(chunks) / measurement.client_wall_sec
+                        Shared.output(f"    run {run_i+1}/{config.N_RUNS}: {rate:.0f} chunks/sec")
+                    return measurement
 
-                rates, status, _, _metadata = Shared.run_measured_calls(
+                samples, status, _, _metadata = Shared.run_measured_calls(
                     config.N_RUNS, _embed_once, tag, crash_cache,
                     EmbeddingBenchmark.EMBED_CRASH_CACHE, "embedding this document", engine)
 
+                valid_samples = [sample for sample in samples
+                                 if not embedding_validation_errors(sample)]
+                rates = [len(chunks) / sample.client_wall_sec for sample in valid_samples]
                 if rates:
                     results[short] = {
                         "label": label,
@@ -118,9 +123,25 @@ class EmbeddingBenchmark:
                         "chunks_per_sec_stdev": round(Shared.stdev(rates), 1),
                         "device":               "gpu",
                         "n_chunks":             len(chunks),
-                        "n_runs":               len(rates),
+                        "n_runs":               len(samples),
+                        "requested_runs":       config.N_RUNS,
+                        "completed_runs":       len(samples),
+                        "valid_runs":           len(valid_samples),
+                        "invalid_runs": [
+                            {"run": index + 1, "errors": embedding_validation_errors(sample)}
+                            for index, sample in enumerate(samples)
+                            if embedding_validation_errors(sample)
+                        ],
+                        "client_wall_runs_sec": [
+                            round(sample.client_wall_sec, 3) for sample in valid_samples
+                        ],
                         "runs":                [round(r, 1) for r in rates],
                     }
+                    if len(valid_samples) >= 2:
+                        results[short].update({
+                            "chunks_per_sec_median": round(Shared.median(rates), 1),
+                            "chunks_per_sec_cv": round(Shared.coefficient_of_variation(rates), 4),
+                        })
                     Shared.ok(f"{label}: {results[short]['chunks_per_sec_mean']:.0f} chunks/sec")
                 elif status == "crashed":
                     crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
