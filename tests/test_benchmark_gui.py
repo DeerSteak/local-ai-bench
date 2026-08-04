@@ -10,6 +10,7 @@ from benchmark_frontend import (
 )
 from benchmark_gui import (
     build_discovery_report, effective_gui_options, open_path_command, parse_progress_line,
+    workload_preflight_errors,
 )
 
 
@@ -112,3 +113,15 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
     ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
     assert parse_progress_line("ordinary benchmark output") is None
     assert parse_progress_line("::local-ai-bench-progress::{bad json") is None
+
+
+def test_workload_preflight_reports_specific_runtime_resolutions():
+    errors = workload_preflight_errors(
+        ["llm", "llamabench", "llamabenchconc", "img"],
+        {"llama-server": None, "llama-bench": None, "llama-batched-bench": None}, False,
+    )
+    assert len(errors) == 4
+    assert all("Run Setup" in error for error in errors)
+    assert workload_preflight_errors(
+        ["llm", "img"], {"llama-server": "/bin/server"}, True,
+    ) == []

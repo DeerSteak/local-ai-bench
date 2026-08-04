@@ -33,7 +33,7 @@ from benchmark_frontend import (
     save_frontend_state,
     validate_gui_options,
 )
-from comfyui_installation import find_comfyui_installation
+from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from model_inventory import build_model_inventory
@@ -107,6 +107,21 @@ def parse_progress_line(line: str) -> dict | None:
     return event
 
 
+def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
+                              comfyui_available: bool) -> list[str]:
+    errors = []
+    server_tests = set(tests) - {"llamabench", "llamabenchconc", "img"}
+    if server_tests and not tools.get("llama-server"):
+        errors.append("llama-server is required for the selected tests. Run Setup or install it on PATH.")
+    if "llamabench" in tests and not tools.get("llama-bench"):
+        errors.append("llama-bench is required for llama-bench throughput. Run Setup or install it on PATH.")
+    if "llamabenchconc" in tests and not tools.get("llama-batched-bench"):
+        errors.append("llama-batched-bench is required for llama-bench concurrency. Run Setup or install it on PATH.")
+    if "img" in tests and not comfyui_available:
+        errors.append("ComfyUI is required for image generation. Run Setup or choose a valid ComfyUI path.")
+    return errors
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
@@ -120,12 +135,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     available_engines = engine_names()
     selected_engine = saved["engine"] if saved and saved["engine"] in available_engines else available_engines[0]
     inventory = build_model_inventory(get_engine(selected_engine), config.COMFYUI_MODELS_DIR)
+    detected_tools = {name: find_llamacpp_tool(name) for name in (
+        "llama-server", "llama-bench", "llama-batched-bench",
+    )}
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
         ram_gb=Shared.system_ram_gb(), backend=Shared.detect_backend(),
-        tools={name: find_llamacpp_tool(name) for name in (
-            "llama-server", "llama-bench", "llama-batched-bench",
-        )},
+        tools=detected_tools,
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
@@ -509,6 +525,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             errors.append(selection_error)
         if custom and TG_TOKEN_TESTS & set(tests) and not tg_tokens:
             errors.append("Select at least one llama-bench generation size.")
+        custom_comfyui = (normalize_comfyui_dir(Path(gui_options["comfyui"]))
+                          if custom and gui_options["comfyui"] else found_comfyui)
+        errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
         if errors:
             messagebox.showerror("Check benchmark options", "\n".join(errors), parent=root)
             return
