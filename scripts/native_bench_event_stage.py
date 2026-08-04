@@ -6,15 +6,38 @@ from event_store import EventStore, JournalEvent
 from run_plan import RunPlan
 
 
+def group_remaining_sweeps(pp, tg, completed):
+    """Group pending native cases while preserving the two-sweep fresh-run shape."""
+    sweeps = []
+    pending_prefill = [depth for depth in pp if (depth, 0, 0) not in completed]
+    if pending_prefill:
+        sweeps.append(("prefill", pending_prefill, []))
+    grouped = {}
+    for depth in pp:
+        pending_tg = tuple(tokens for tokens in tg if (0, tokens, depth) not in completed)
+        if pending_tg:
+            grouped.setdefault(pending_tg, []).append(depth)
+    sweeps += [("decode", depths, list(tokens)) for tokens, depths in grouped.items()]
+    return sweeps
+
+
 class NativeBenchEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True,
-                 resume_identity: dict | None = None):
+                 resume_identity: dict | None = None, resume: bool = False):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
         self.stage_id = plan.stage_id("llamabench")
         self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
-        if initialize:
+        if resume:
+            if not initialize:
+                raise ValueError("resume requires an initializing stage owner")
+            if self.store.load_plan(plan.job_id) != plan:
+                raise ValueError("resume plan does not match the journal job")
+            if resume_identity is None or self.store.resume_identity(plan.job_id) != resume_identity:
+                raise ValueError("resume identity changed; create a fork")
+            self.store.prepare_recovery(plan.job_id, "llamabench")
+        elif initialize:
             self.store.start_stage(plan, "llamabench", resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
             raise ValueError("runner plan does not match the journal job")
@@ -31,6 +54,8 @@ class NativeBenchEventStage:
     def record_model_plan(self, model: dict, requested_cases: int, reps: int) -> None:
         model_id = self._model_id(model)
         case_id = self.plan.case_id("llamabench", model_id, {"model_plan": True})
+        if case_id in self.store.rebuild(self.plan.job_id)["cases"]:
+            return
         self.store.append(self.plan.job_id, [
             JournalEvent("case", case_id, "running", {
                 "case_kind": "model_plan", "model_short": model["short"],
@@ -62,14 +87,37 @@ class NativeBenchEventStage:
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
         case_id = self.plan.case_id("llamabench", model_id, {"model_state": state})
-        self.store.append(self.plan.job_id, [
-            JournalEvent("case", case_id, "running", {
+        projection = self.store.rebuild(self.plan.job_id)
+        events = []
+        if case_id not in projection["cases"]:
+            events.append(JournalEvent("case", case_id, "running", {
                 "case_kind": "model_state", "model_short": model["short"],
-            }, parent_id=self.stage_id),
+            }, parent_id=self.stage_id))
+        elif projection["cases"][case_id]["state"] in {"complete", "skipped"}:
+            return
+        elif projection["cases"][case_id]["state"] != "running":
+            raise ValueError("model-state case was not prepared for recovery")
+        events.append(
             JournalEvent("case", case_id, state, {"model_result": result},
-                         parent_id=self.stage_id),
-        ])
+                         parent_id=self.stage_id)
+        )
+        self.store.append(self.plan.job_id, events)
         self.export_fn(self.export())
+
+    def pending_sweeps(self, model: dict, pp: list[int], tg: list[int]):
+        model_id = self._model_id(model)
+        projection = self.store.rebuild(self.plan.job_id)
+        completed = set()
+        for depth in pp:
+            keys = [(depth, 0, 0), *((0, tokens, depth) for tokens in tg)]
+            for n_prompt, n_gen, n_depth in keys:
+                case_id = self.plan.case_id(
+                    "llamabench", model_id,
+                    {"n_prompt": n_prompt, "n_gen": n_gen, "n_depth": n_depth},
+                )
+                if projection["cases"].get(case_id, {}).get("state") == "complete":
+                    completed.add((n_prompt, n_gen, n_depth))
+        return group_remaining_sweeps(pp, tg, completed)
 
     def finish(self) -> None:
         self.store.append(self.plan.job_id, [

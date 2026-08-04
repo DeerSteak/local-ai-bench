@@ -171,7 +171,7 @@ class LlamaBenchBenchmark:
         }
 
     def run(self, engine, models, reps, cpu_only=False, save_fn=None, journal=None):
-        results = {}
+        results = journal.export() if journal else {}
 
         if not isinstance(engine, LlamaCppEngine):
             Shared.warn(f"llama-bench only supports the llamacpp engine — skipping for {engine.name}")
@@ -224,14 +224,20 @@ class LlamaBenchBenchmark:
                     journal.record_model_plan(model, requested_cases, reps)
                 stopped = False
 
-                for sweep in ("prefill", "decode"):
+                sweeps = (journal.pending_sweeps(
+                    model, config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                ) if journal else [
+                    ("prefill", config.LLAMABENCH_PP, []),
+                    ("decode", config.LLAMABENCH_PP, config.LLAMABENCH_TG),
+                ])
+                for sweep, pending_pp, pending_tg in sweeps:
                     command = (
                         self.build_prefill_command(
-                            binary, paths[0], config.LLAMABENCH_PP,
+                            binary, paths[0], pending_pp,
                             config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
                             reps, ngl,
                         ) if sweep == "prefill" else self.build_decode_command(
-                            binary, paths[0], config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                            binary, paths[0], pending_pp, pending_tg,
                             config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
                             reps, ngl,
                         )

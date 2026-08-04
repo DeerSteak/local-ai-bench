@@ -119,7 +119,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Vendor diagnostic first divergence, raw invalidity, determinism, review, and source verification | [test_vendor_diagnostic.py](../tests/test_vendor_diagnostic.py) |
 | Transactional event journal, transition/recovery safety, attempt abandonment, and projections | [test_event_store.py](../tests/test_event_store.py) |
 | Journal-owned single-shot/conversation/concurrency projection, pending-level selection, recovery attempts, stage/model-family isolation, batch fields, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py), [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
-| Journal-owned native llama-bench streamed rows, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |
+| Journal-owned native llama-bench streamed rows, grouped remaining sweeps, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
 | Runner command confinement, event authentication, heartbeat, cleanup escalation, conversation preflight, and parent stage checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |

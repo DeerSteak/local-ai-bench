@@ -430,6 +430,10 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
         def record_model_plan(self, model, requested_cases, reps):
             assert (requested_cases, reps) == (2, 3)
 
+        @staticmethod
+        def pending_sweeps(model, pp, tg):
+            return [("prefill", pp, []), ("decode", pp, tg)]
+
         def record_entry(self, model, entry):
             self.entries.append(entry)
 

@@ -1,4 +1,6 @@
-from native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from native_bench_event_stage import (
+    NativeBenchEventStage, export_native_bench_section, group_remaining_sweeps,
+)
 from run_plan import RunPlan
 
 
@@ -23,6 +25,17 @@ def entry(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_remaining_native_sweeps_keep_fresh_run_compact_and_group_partial_recovery():
+    assert group_remaining_sweeps([512, 2048], [128, 512], set()) == [
+        ("prefill", [512, 2048], []),
+        ("decode", [512, 2048], [128, 512]),
+    ]
+    completed = {(512, 0, 0), (0, 128, 512), (0, 128, 2048), (0, 512, 2048)}
+    assert group_remaining_sweeps([512, 2048], [128, 512], completed) == [
+        ("prefill", [2048], []), ("decode", [512], [512]),
+    ]
 
 
 def test_native_journal_projects_streamed_rows_and_partial_timeout(tmp_path):
@@ -73,3 +86,27 @@ def test_native_commit_survives_export_callback_failure(tmp_path):
     finally:
         stage.close()
     assert export_native_bench_section(path, plan.job_id)["model"]["completed_cases"] == 1
+
+
+def test_native_recovery_omits_completed_rows_and_reuses_model_plan(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    first = NativeBenchEventStage(path, plan, lambda _: None, resume_identity=identity)
+    first.record_model_plan(MODEL, requested_cases=3, reps=2)
+    first.record_entry(MODEL, entry())
+    first.record_model_state(MODEL, "timed_out", {"timed_out": True})
+    first.close()
+    owner = NativeBenchEventStage(
+        path, plan, lambda _: None, resume_identity=identity, resume=True,
+    )
+    owner.close()
+    runner = NativeBenchEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        runner.record_model_plan(MODEL, requested_cases=3, reps=2)
+        sweeps = runner.pending_sweeps(MODEL, [512, 2048], [128])
+        assert sweeps == [("prefill", [2048], []), ("decode", [512, 2048], [128])]
+        assert export_native_bench_section(path, plan.job_id)["model"]["requested_cases"] == 3
+    finally:
+        runner.close()
