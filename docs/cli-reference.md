@@ -97,7 +97,7 @@ The interactive launcher clears the terminal before its initial display, between
 
 The launcher maintains an executable inventory of every public `benchmark.py` flag. Tests fail when a CLI option is added or removed without updating that inventory. Tests, engine, model families, maximum prompt size, and llama-bench generation sizes are directly configurable today. Tier selection and `--list-models` have more precise equivalents in the installed-model selection screens; `--models` is only an alias; and developer-only `--sample` is intentionally excluded from comparable interactive runs.
 
-The current commercial frontend work has identified nine user-relevant gaps: warmup count, measured runs, generation timeout, accuracy timeout, accuracy token budget, CPU-only mode, force-all mode, output path, and ComfyUI path. These remain functional CLI flags, but they are explicitly classified as missing rather than being mistaken for frontend-complete. The frontend configurability gate in `COMMERCIAL_PLAN.md` cannot pass until each is exposed with validation and contextual help.
+The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only and force-all modes, output path, and ComfyUI path in Custom mode. Each is validated before launch and included in the resolved plan review; the executable option-inventory test prevents a future safe public setting from disappearing silently.
 
 | Flag | Values | Default | Notes |
 |---|---|---|---|
