@@ -8,7 +8,7 @@ from benchmark_frontend import (
     load_frontend_state,
     validate_gui_options,
 )
-from benchmark_gui import effective_gui_options, open_path_command
+from benchmark_gui import build_discovery_report, effective_gui_options, open_path_command
 
 
 def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
@@ -63,3 +63,38 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Darwin") == ["open", "/tmp/results"]
     assert open_path_command(path, "Linux") == ["xdg-open", "/tmp/results"]
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
+
+
+def test_discovery_report_summarizes_readiness_without_mutation():
+    inventory = {
+        "llm": [{"tag": "one"}], "custom": [{"tag": "custom"}],
+        "embedding": [{"tag": "embed"}], "image": [],
+    }
+    report = build_discovery_report(
+        platform_name="Darwin", architecture="arm64", ram_gb=64.0, backend="metal",
+        tools={"llama-server": "/bin/server", "llama-bench": None},
+        comfyui_dir=None, inventory=inventory,
+    )
+    assert report["system"] == "Darwin arm64 · 64.0 GB RAM · metal"
+    assert report["models"] == "1 LLM, 1 custom LLM, 1 embedding, 0 image"
+    assert report["runtime"] == "llama-server: found, llama-bench: missing"
+    assert report["issues"] == []
+
+
+def test_discovery_report_identifies_blockers_and_image_runtime_gap():
+    empty = {"llm": [], "custom": [], "embedding": [], "image": []}
+    report = build_discovery_report(
+        platform_name="Linux", architecture="x86_64", ram_gb=32.0, backend="cpu",
+        tools={"llama-server": None}, comfyui_dir=None, inventory=empty,
+    )
+    assert report["issues"] == [
+        "llama-server was not found; LLM-backed tests cannot start.",
+        "No benchmark models were found; run Setup to add models.",
+    ]
+
+    empty["image"] = [{"short": "sdxl"}]
+    report = build_discovery_report(
+        platform_name="Linux", architecture="x86_64", ram_gb=32.0, backend="cpu",
+        tools={"llama-server": "/bin/server"}, comfyui_dir=None, inventory=empty,
+    )
+    assert report["issues"] == ["Image models are installed, but ComfyUI was not found."]

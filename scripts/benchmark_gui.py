@@ -31,7 +31,9 @@ from benchmark_frontend import (
 )
 from comfyui_installation import find_comfyui_installation
 from engines import engine_names, get_engine
+from llamacpp_tools import find_llamacpp_tool
 from model_inventory import build_model_inventory
+from shared import Shared
 from setup_config import configured_comfyui_dir, load_setup_config
 from tk_utils import mousewheel_scroll_units
 
@@ -49,18 +51,51 @@ def open_path_command(path: Path, system: str) -> list[str]:
     return ["xdg-open", str(path)]
 
 
+def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
+                           backend: str, tools: dict[str, str | None],
+                           comfyui_dir: Path | None,
+                           inventory: dict[str, list[dict]]) -> dict:
+    counts = {key: len(inventory.get(key, [])) for key in ("llm", "custom", "embedding", "image")}
+    issues = []
+    if not tools.get("llama-server"):
+        issues.append("llama-server was not found; LLM-backed tests cannot start.")
+    if not any(counts.values()):
+        issues.append("No benchmark models were found; run Setup to add models.")
+    if counts["image"] and comfyui_dir is None:
+        issues.append("Image models are installed, but ComfyUI was not found.")
+    return {
+        "system": f"{platform_name} {architecture} · {ram_gb:.1f} GB RAM · {backend}",
+        "models": (f"{counts['llm']} LLM, {counts['custom']} custom LLM, "
+                   f"{counts['embedding']} embedding, {counts['image']} image"),
+        "runtime": ", ".join(
+            f"{name}: {'found' if path else 'missing'}" for name, path in tools.items()
+        ),
+        "comfyui": str(comfyui_dir) if comfyui_dir else "Not found",
+        "issues": issues,
+    }
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
-    detected_comfyui = find_comfyui_installation(
+    found_comfyui = find_comfyui_installation(
         saved_path=configured_comfyui_dir(setup), managed_dir=config.COMFYUI_DIR,
-    ) or config.COMFYUI_DIR
+    )
+    detected_comfyui = found_comfyui or config.COMFYUI_DIR
     available_engines = engine_names()
     selected_engine = saved["engine"] if saved and saved["engine"] in available_engines else available_engines[0]
     inventory = build_model_inventory(get_engine(selected_engine), config.COMFYUI_MODELS_DIR)
+    discovery = build_discovery_report(
+        platform_name=platform.system(), architecture=platform.machine(),
+        ram_gb=Shared.system_ram_gb(), backend=Shared.detect_backend(),
+        tools={name: find_llamacpp_tool(name) for name in (
+            "llama-server", "llama-bench", "llama-batched-bench",
+        )},
+        comfyui_dir=found_comfyui, inventory=inventory,
+    )
 
     default_tests = build_test_entries(inventory)
     default_test_values = [entry.value for entry in default_tests if entry.checked]
@@ -135,8 +170,27 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     mode_note = ttk.Label(mode_box, text="Uses the recommended installed-model selection and standard execution settings.")
     mode_note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
+    next_form_row = 1
+    if saved is None:
+        discovery_box = ttk.LabelFrame(form, text="First-run readiness — discovery only", padding=12)
+        discovery_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        for row, (label, value) in enumerate((
+            ("System", discovery["system"]), ("Installed models", discovery["models"]),
+            ("llama.cpp tools", discovery["runtime"]), ("ComfyUI", discovery["comfyui"]),
+        )):
+            ttk.Label(discovery_box, text=f"{label}:", font=("TkDefaultFont", 10, "bold")).grid(
+                row=row, column=0, sticky="nw", padx=(0, 10), pady=2,
+            )
+            ttk.Label(discovery_box, text=value, wraplength=780).grid(row=row, column=1, sticky="w", pady=2)
+        issue_text = ("Ready to configure a benchmark." if not discovery["issues"] else
+                      "\n".join(f"• {issue}" for issue in discovery["issues"]))
+        ttk.Label(discovery_box, text=issue_text, wraplength=900).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        )
+        next_form_row = 2
+
     custom_frame = ttk.Frame(form)
-    custom_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+    custom_frame.grid(row=next_form_row, column=0, columnspan=2, sticky="nsew")
     custom_frame.columnconfigure(0, weight=1)
     custom_frame.columnconfigure(1, weight=1)
 
@@ -360,7 +414,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
             gui_options=gui_options,
         )
-        if custom and not save_frontend_state(state, FRONTEND_STATE_PATH):
+        should_save = custom or saved is None
+        if should_save and not save_frontend_state(state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
         command = build_benchmark_command(
