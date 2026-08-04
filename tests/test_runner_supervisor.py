@@ -168,7 +168,10 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
         },
         effective_config={
             "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
-            "cpu_only": True, "force_all": False, "context_lengths": [512],
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": True, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512],
+            "llamabench_tg": [128], "sample_size": None,
         },
     )
     stage = LLMEventStage(path, plan, lambda _: None)

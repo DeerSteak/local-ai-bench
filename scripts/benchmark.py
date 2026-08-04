@@ -712,6 +712,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             tests=tests, stage_order=stage_order, models=plan_models,
             effective_config=effective_config,
         )
+        plan.validate_for_execution()
 
         results = {
             "version":         config.VERSION,

@@ -183,3 +183,42 @@ def test_load_run_plan_rejects_malformed_result_wrapper(tmp_path):
     path.write_text('{"run": []}', encoding="utf-8")
     with pytest.raises(ValueError, match="does not contain"):
         load_run_plan(path)
+
+
+def complete_plan():
+    config = make_plan().effective_config
+    config.update({
+        "run_timeout_seconds": 1800, "accuracy_timeout_seconds": 60,
+        "accuracy_token_budget": 4096, "llamabench_pp": [512, 2048],
+        "llamabench_tg": [128, 256], "sample_size": None,
+    })
+    return make_plan(effective_config=config)
+
+
+def test_complete_plan_validation_accepts_resolved_execution_inputs():
+    complete_plan().validate_for_execution()
+
+
+@pytest.mark.parametrize(("key", "value"), [
+    ("runs", 0), ("warmup_runs", -1), ("cpu_only", 1),
+    ("context_lengths", [512, 512]), ("llamabench_pp", []),
+    ("llamabench_tg", [True]), ("sample_size", 0),
+])
+def test_complete_plan_validation_rejects_invalid_resolved_settings(key, value):
+    plan = complete_plan()
+    config = plan.effective_config
+    config[key] = value
+    invalid = make_plan(effective_config=config)
+    with pytest.raises(ValueError, match="invalid execution setting"):
+        invalid.validate_for_execution()
+
+
+def test_complete_plan_validation_rejects_missing_settings_and_model_identity():
+    with pytest.raises(ValueError, match="incomplete run plan"):
+        make_plan().validate_for_execution()
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = [{"tag": "model:4b", "short": ""}]
+    invalid = make_plan(models=models, effective_config=plan.effective_config)
+    with pytest.raises(ValueError, match="invalid model identity"):
+        invalid.validate_for_execution()

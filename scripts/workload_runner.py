@@ -50,6 +50,7 @@ def load_runner_plan(path, job_id):
 def execute_llm_job(path, job_id, *, engine_factory=get_engine,
                     benchmark_factory=LLMPrefillBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
     if "llm" not in plan.tests:
         raise ValueError("runner job does not include the LLM stage")
     settings = plan.effective_config

@@ -18,6 +18,7 @@ SAFE_CONFIG_KEYS = {
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
+EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS)
 
 
 def _canonical_json(value) -> str:
@@ -138,6 +139,47 @@ class RunPlan:
             value["identity_scheme"] = IDENTITY_SCHEME
             value["job_id"] = self.job_id
         return value
+
+    def validate_for_execution(self) -> None:
+        missing_families = MODEL_FAMILIES - set(self.models)
+        missing_config = EXECUTION_CONFIG_KEYS - set(self.effective_config)
+        if not self.tests or missing_families or missing_config:
+            raise ValueError(
+                f"incomplete run plan: model families={sorted(missing_families)}, "
+                f"settings={sorted(missing_config)}"
+            )
+        settings = self.effective_config
+        integer_ranges = {
+            "runs": (1, 10), "warmup_runs": (0, None),
+            "run_timeout_seconds": (1, None), "accuracy_timeout_seconds": (1, None),
+            "accuracy_token_budget": (1, None),
+        }
+        for key, (minimum, maximum) in integer_ranges.items():
+            value = settings[key]
+            if (isinstance(value, bool) or not isinstance(value, int) or value < minimum
+                    or (maximum is not None and value > maximum)):
+                raise ValueError(f"invalid execution setting: {key}")
+        for key in ("cpu_only", "force_all"):
+            if not isinstance(settings[key], bool):
+                raise ValueError(f"invalid execution setting: {key}")
+        for key in ("max_prompt_tokens", "sample_size"):
+            value = settings[key]
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int)
+                                      or value < 1):
+                raise ValueError(f"invalid execution setting: {key}")
+        for key in ("context_lengths", "llamabench_pp", "llamabench_tg"):
+            values = settings[key]
+            invalid_values = not isinstance(values, list) or not values or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 1
+                for value in values
+            )
+            if invalid_values or len(values) != len(set(values)):
+                raise ValueError(f"invalid execution setting: {key}")
+        for family, models in self.models.items():
+            for model in models:
+                if not all(isinstance(model.get(key), str) and model[key]
+                           for key in ("tag", "short")):
+                    raise ValueError(f"invalid model identity in family: {family}")
 
     @property
     def plan_id(self) -> str:
