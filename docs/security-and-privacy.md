@@ -30,7 +30,7 @@ Private paths are local metadata even when the referenced content is public. Con
 | Localhost cross-origin attack | Loopback bind, bearer auth, Host/Origin validation, no permissive CORS, rate limits | Coordinator contract defined; implementation pending |
 | Arbitrary code/command execution | No shell API, typed registry IDs, bounded generated-code sandbox, no untrusted interpolation | API contract defined; generated-code isolation pending |
 | Malicious archive/path traversal | Exact manifests, duplicate rejection, size limits, digest verification, content-addressed extraction | Result bundles covered by tests |
-| Result tampering | Atomic checkpoints, explicit validity, bundle digests, event digest chain, reproducible aggregates | Implemented for current JSON/bundles and inactive event journal |
+| Result tampering | Atomic checkpoints, explicit validity, bundle digests, event digest chain, reproducible aggregates | Implemented for current JSON/bundles and the journal-owned single-shot workload |
 | Runner escape or orphan process | Per-job ownership, process groups/job objects, heartbeats, graceful cancellation and bounded escalation | Current cleanup exists; isolated runner implementation pending |
 | Dependency/update compromise | Locked dependencies, checksums, signatures, provenance, SBOM, staged rollback | Pending release work |
 | Model/prompt exfiltration | Offline mode, denied network for generated code, opt-in reviewed exports, no content telemetry | Pending complete offline/isolation verification |
