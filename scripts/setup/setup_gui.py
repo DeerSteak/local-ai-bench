@@ -259,6 +259,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             token_help.grid(sticky="w", pady=(14, 0))
         else:
             token_help.grid_remove()
+        credentials.update_idletasks()
 
     if existing_hf_token:
         override_token_check.configure(command=update_token_controls)
