@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from scripts.setup.setup_gui import (
@@ -6,6 +9,7 @@ from scripts.setup.setup_gui import (
     hf_token_review_label,
     license_button_label,
     mousewheel_scroll_units,
+    run_setup_wizard_process,
     selected_gui_token,
     should_save_gui_token,
     token_controls_enabled,
@@ -79,6 +83,43 @@ def test_token_controls_require_override_only_when_credential_exists(existing, o
 
 def test_token_help_opens_the_hugging_face_login_page():
     assert HF_LOGIN_URL == "https://huggingface.co/login"
+
+
+def test_setup_wizard_process_returns_plan_and_removes_handoff_files(monkeypatch, tmp_path):
+    created = [tmp_path / "request.json", tmp_path / "response.json"]
+    handles = iter([(10, str(created[0])), (11, str(created[1]))])
+    monkeypatch.setattr("scripts.setup.setup_gui.tempfile.mkstemp", lambda **_: next(handles))
+    monkeypatch.setattr("scripts.setup.setup_gui.os.close", lambda _handle: None)
+
+    def fake_run(command):
+        response_path = Path(command[command.index("--response") + 1])
+        response_path.write_text(json.dumps({"plan": {"llm_tags": ["model"]}}))
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("scripts.setup.setup_gui.subprocess.run", fake_run)
+    plan = run_setup_wizard_process(
+        memory_ceiling_gb=32.0, detected_comfyui=None,
+        cleanup_names=["old-model"], existing_hf_token=True,
+    )
+    assert plan == {"llm_tags": ["model"]}
+    assert all(not path.exists() for path in created)
+
+
+def test_setup_wizard_process_cleans_handoff_files_when_child_fails(monkeypatch, tmp_path):
+    created = [tmp_path / "request.json", tmp_path / "response.json"]
+    handles = iter([(10, str(created[0])), (11, str(created[1]))])
+    monkeypatch.setattr("scripts.setup.setup_gui.tempfile.mkstemp", lambda **_: next(handles))
+    monkeypatch.setattr("scripts.setup.setup_gui.os.close", lambda _handle: None)
+    monkeypatch.setattr(
+        "scripts.setup.setup_gui.subprocess.run",
+        lambda _command: type("Result", (), {"returncode": 1})(),
+    )
+    with pytest.raises(RuntimeError, match="wizard stopped unexpectedly"):
+        run_setup_wizard_process(
+            memory_ceiling_gb=None, detected_comfyui=None,
+            cleanup_names=[], existing_hf_token=False,
+        )
+    assert all(not path.exists() for path in created)
 
 
 @pytest.mark.parametrize(

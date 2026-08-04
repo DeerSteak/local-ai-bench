@@ -1,6 +1,12 @@
 """Tkinter wizard that collects a complete setup plan before installation."""
 
+import argparse
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 
 from scripts.runtime import hardware
 from scripts.workloads.models import (
@@ -77,6 +83,35 @@ def should_save_gui_token(token: str, requested: bool) -> bool:
 
 def token_controls_enabled(existing_available: bool, override: bool) -> bool:
     return not existing_available or override
+
+
+def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
+                             detected_comfyui: Path | None,
+                             cleanup_names: list[str],
+                             existing_hf_token: bool = False) -> dict | None:
+    request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
+    response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
+    os.close(request_handle)
+    os.close(response_handle)
+    request_path, response_path = Path(request_name), Path(response_name)
+    try:
+        request_path.write_text(json.dumps({
+            "memory_ceiling_gb": memory_ceiling_gb,
+            "detected_comfyui": str(detected_comfyui) if detected_comfyui else None,
+            "cleanup_names": cleanup_names,
+            "existing_hf_token": existing_hf_token,
+        }))
+        result = subprocess.run([
+            sys.executable, "-m", "scripts.setup.setup_gui",
+            "--request", str(request_path), "--response", str(response_path),
+        ])
+        if result.returncode != 0:
+            raise RuntimeError("The graphical setup wizard stopped unexpectedly.")
+        response = json.loads(response_path.read_text())
+        return response.get("plan")
+    finally:
+        request_path.unlink(missing_ok=True)
+        response_path.unlink(missing_ok=True)
 
 
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
@@ -383,3 +418,22 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.mainloop()
     root.destroy()
     return result
+
+
+def main() -> None:  # pragma: no cover
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--request", type=Path, required=True)
+    parser.add_argument("--response", type=Path, required=True)
+    args = parser.parse_args()
+    request = json.loads(args.request.read_text())
+    plan = run_setup_wizard(
+        memory_ceiling_gb=request["memory_ceiling_gb"],
+        detected_comfyui=Path(request["detected_comfyui"]) if request["detected_comfyui"] else None,
+        cleanup_names=request["cleanup_names"],
+        existing_hf_token=request["existing_hf_token"],
+    )
+    args.response.write_text(json.dumps({"plan": plan}))
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

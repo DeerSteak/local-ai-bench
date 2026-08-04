@@ -718,9 +718,9 @@ except ValueError as exc:
 
 _gui_plan = None
 if _interface == "gui":
-    from scripts.setup.setup_gui import run_setup_wizard
+    from scripts.setup.setup_gui import run_setup_wizard_process
     _cleanup_candidates = find_non_catalog_model_dirs(config.MODELS_DIR / "llamacpp")
-    _gui_plan = run_setup_wizard(
+    _gui_plan = run_setup_wizard_process(
         memory_ceiling_gb=memory_ceiling_gb,
         detected_comfyui=_detected_comfyui,
         cleanup_names=[path.name for path in _cleanup_candidates],
