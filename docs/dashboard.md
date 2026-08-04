@@ -24,6 +24,8 @@ launch_dashboard.bat
 launch_dashboard.bat --port 8080       # use a different port
 ```
 
+Desktop users can instead double-click **Launch Local AI Bench Dashboard** with the platform suffix `.command` on macOS, `.desktop` on Linux, or `.bat` on Windows. The launcher keeps the terminal open while the local dashboard server is running; closing or interrupting that server ends the dashboard session.
+
 Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuilds the app, then starts a local server on port 3000 and opens the browser automatically.
 
 ## Loading results

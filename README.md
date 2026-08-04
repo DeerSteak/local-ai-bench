@@ -41,6 +41,8 @@ bash launch_dashboard.sh
 launch_dashboard.bat
 ```
 
+Desktop users can double-click **Launch Local AI Bench Dashboard** (`.command`, `.desktop`, or `.bat`) instead.
+
 For platform-specific notes, the HuggingFace token flow, and what setup actually installs, see [Setup](docs/setup.md).
 
 ---

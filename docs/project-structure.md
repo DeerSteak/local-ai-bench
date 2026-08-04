@@ -17,6 +17,9 @@
 | `Run Local AI Bench.command` | Double-clickable macOS launcher for the graphical benchmark screen |
 | `Run Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical benchmark screen |
 | `Run Local AI Bench.bat` | Double-clickable Windows launcher for the graphical benchmark screen |
+| `Launch Local AI Bench Dashboard.command` | Double-clickable macOS launcher that builds, serves, and opens the dashboard |
+| `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
+| `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |

@@ -127,3 +127,12 @@ def test_double_click_benchmark_launchers_force_the_gui():
     assert "bash run_bench.sh --ui gui" in desktop
     assert os.access(ROOT / "Run Local AI Bench.command", os.X_OK)
     assert os.access(ROOT / "Run Local AI Bench.desktop", os.X_OK)
+
+
+def test_dashboard_desktop_launchers_call_supported_wrappers():
+    command = (ROOT / "Launch Local AI Bench Dashboard.command").read_text()
+    desktop = (ROOT / "Launch Local AI Bench Dashboard.desktop").read_text()
+    batch = (ROOT / "Launch Local AI Bench Dashboard.bat").read_text()
+    assert "bash launch_dashboard.sh" in command
+    assert "bash launch_dashboard.sh" in desktop
+    assert "call launch_dashboard.bat" in batch
