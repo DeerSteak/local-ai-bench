@@ -33,6 +33,13 @@ TEST_DEFINITIONS = [
     ("llamabenchconc", "llama-bench concurrency", "llm", False),
     ("img", "Image generation", "image", True),
 ]
+TEST_SHORTCUT_GROUPS = {
+    "l": {"llm", "conv", "llamabench"},
+    "x": {"mcq", "math", "reasoning", "code", "tool"},
+    "c": {"conc_tool", "conc_chat", "llamabenchconc"},
+    "e": {"emb"},
+    "i": {"img"},
+}
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
 MAX_PROMPT_TOKEN_TESTS = {"llm", "llamabench", "llamabenchconc"}
@@ -184,6 +191,22 @@ def toggle_group(entries: list[MenuEntry], predicate) -> bool:
     return True
 
 
+def apply_test_shortcut(entries: list[MenuEntry], shortcut: str) -> bool:
+    if shortcut == "a":
+        available = [entry for entry in entries if entry.available]
+        if not available:
+            return False
+        for entry in available:
+            entry.checked = True
+        return True
+    values = TEST_SHORTCUT_GROUPS.get(shortcut)
+    if values is None:
+        return False
+    return toggle_group(
+        entries, lambda entry: entry.available and entry.value in values,
+    )
+
+
 def choose_engine(available: list[str], input_fn, output_fn, clear_fn=lambda: None,
                   preferred: str | None = None) -> str:
     if len(available) == 1:
@@ -242,6 +265,8 @@ def render_test_menu(entries: list[MenuEntry], output_fn,
         box = "[x]" if entry.checked else "[ ]"
         unavailable = "  (no installed model available)" if not entry.available else ""
         output_fn(f"  {box} {index:>2}  {entry.label}{unavailable}")
+    output_fn("Shortcuts: a all | l LLM | x accuracy | c concurrency | e embeddings | i images")
+    output_fn("Numbers and ranges toggle individual tests; group shortcuts toggle their available tests.")
 
 
 def choose_tests(entries: list[MenuEntry], input_fn, output_fn,
@@ -268,10 +293,14 @@ def choose_tests(entries: list[MenuEntry], input_fn, output_fn,
                 return selected
             feedback = "Select at least one available test."
             continue
+        if raw in {"a", *TEST_SHORTCUT_GROUPS}:
+            if not apply_test_shortcut(entries, raw):
+                feedback = "No tests in that group are available for the installed models."
+            continue
         try:
             numbers = parse_toggle_numbers(raw, len(entries))
         except ValueError:
-            feedback = "Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`."
+            feedback = "Couldn't parse that selection; use numbers/ranges or a shortcut from the legend."
             continue
         unavailable = [number for number in numbers if not entries[number - 1].available]
         if unavailable:

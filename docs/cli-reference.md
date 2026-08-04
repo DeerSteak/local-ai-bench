@@ -37,7 +37,7 @@ See [Flag details](#flag-details) below for what each flag actually does.
 
 ## Launch modes
 
-Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactive launcher. It reads the selected engine and the setup-managed `./ComfyUI` installation, then immediately shows the test checklist. Only installed models are shown. The confirmed selection is translated into the public flags below and launches the non-interactive `scripts/benchmark.py` CLI. The launcher selects one engine at a time; `--engine all` remains available through the direct CLI because inventories can differ between engines.
+Running `run_bench.sh` or `run_bench.bat` with no arguments opens the interactive launcher. It reads the selected engine and the setup-managed `./ComfyUI` installation, then immediately shows the test checklist. Only installed models are shown. The test screen accepts numbers and ranges plus visible group shortcuts: `a` selects every available test, while `l`, `x`, `c`, `e`, and `i` toggle the LLM, accuracy, concurrency, embedding, and image test groups. The confirmed selection is translated into the public flags below and launches the non-interactive `scripts/benchmark.py` CLI. The launcher selects one engine at a time; `--engine all` remains available through the direct CLI because inventories can differ between engines.
 
 Passing even one argument bypasses the launcher and forwards every argument directly to `benchmark.py`, preserving existing automation and direct CLI defaults. This includes `--help` and `--list-models`. Calling `python scripts/benchmark.py ...` directly is also always non-interactive.
 

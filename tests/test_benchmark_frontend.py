@@ -9,6 +9,7 @@ from benchmark_frontend import (
     FRONTEND_STATE_VERSION,
     FrontendCancelled,
     MenuEntry,
+    apply_test_shortcut,
     apply_saved_model_selection,
     apply_saved_test_selection,
     build_benchmark_command,
@@ -308,6 +309,40 @@ def test_group_toggle_reports_when_no_entries_match():
     assert not toggle_group([], lambda entry: True)
 
 
+def test_test_shortcut_all_selects_every_available_test_only():
+    entries = build_test_entries(sample_inventory())
+    entries[3].available = False
+    entries[3].checked = False
+    assert apply_test_shortcut(entries, "a")
+    assert all(entry.checked for entry in entries if entry.available)
+    assert not entries[3].checked
+
+
+@pytest.mark.parametrize(
+    ("shortcut", "expected"),
+    [
+        ("l", {"llm", "conv", "llamabench"}),
+        ("x", {"mcq", "math", "reasoning", "code", "tool"}),
+        ("c", {"conc_tool", "conc_chat", "llamabenchconc"}),
+        ("e", {"emb"}),
+        ("i", {"img"}),
+    ],
+)
+def test_test_shortcuts_toggle_workload_groups(shortcut, expected):
+    entries = build_test_entries(sample_inventory())
+    for entry in entries:
+        entry.checked = False
+    assert apply_test_shortcut(entries, shortcut)
+    assert {entry.value for entry in entries if entry.checked} == expected
+    assert apply_test_shortcut(entries, shortcut)
+    assert not any(entry.checked for entry in entries)
+
+
+def test_test_shortcut_rejects_unknown_or_unavailable_group():
+    assert not apply_test_shortcut([], "x")
+    assert not apply_test_shortcut(build_test_entries(sample_inventory()), "unknown")
+
+
 def test_custom_and_embedding_bulk_toggles_are_independent():
     entries = [
         MenuEntry("c1", "C1", "custom", "Custom", False),
@@ -366,6 +401,19 @@ def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     assert any("cannot be selected" in message for message in messages)
 
 
+def test_choose_tests_accepts_shortcuts_and_renders_legend():
+    entries = build_test_entries(sample_inventory())
+    for entry in entries:
+        entry.checked = False
+    messages, output = output_collector()
+    selected = choose_tests(entries, InputSequence(["x", "c", ""]), output)
+    assert selected == [
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
+        "llamabenchconc",
+    ]
+    assert any("a all" in message and "x accuracy" in message for message in messages)
+
+
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
@@ -400,7 +448,7 @@ def test_choose_tests_clears_each_redraw_and_keeps_feedback_visible():
     assert selected == ["llm", "conv", "emb", "img"]
     assert len(clears) == 1
     second_menu = messages[clears[0]:]
-    assert "Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`." in second_menu
+    assert "Couldn't parse that selection; use numbers/ranges or a shortcut from the legend." in second_menu
 
 
 def test_choose_models_tier_partial_to_all_then_all_to_none():
