@@ -75,6 +75,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Architecture Decisions](docs/architecture-decisions.md) | Simplicity gate, data ownership decisions, and migration deletion ledger |
 | [Coordinator API Contract](docs/coordinator-api.md) | Future authenticated localhost API, compatibility, validation, lifecycle, and artifact boundaries |
 | [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
+| [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
 
 ---
 
