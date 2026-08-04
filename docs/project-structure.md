@@ -55,6 +55,7 @@
 | `sbom.py` (in `scripts/`) | Deterministic Python/npm dependency inventory for release review |
 | `release_readiness.py` (in `scripts/`) | Machine-readable local release blockers without waiving external qualification |
 | `maintenance.py` (in `scripts/`) | Read-only installation health and previewed project-owned uninstall boundaries |
+| `archive_safety.py` (in `scripts/`) | Pre-extraction path and ZIP-link validation for downloaded setup archives |
 | `release_manifest.py` (in `scripts/`) | Deterministic artifact checksums and provenance prepared for external signing |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |

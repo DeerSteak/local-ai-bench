@@ -17,6 +17,7 @@ from pathlib import Path
 
 import config
 import hardware
+from archive_safety import safe_extract_zip, validate_7z_archive
 from comfyui_installation import (
     add_managed_models_to_comfyui,
     checkpoint_names_from_object_info,
@@ -545,8 +546,7 @@ def download_llamacpp_windows(max_cuda_version=None):
     try:
         LLAMACPP_DIR.mkdir(parents=True, exist_ok=True)
         for tmp in tmp_paths:
-            with zipfile.ZipFile(tmp) as z:
-                z.extractall(LLAMACPP_DIR)
+            safe_extract_zip(tmp, LLAMACPP_DIR)
             tmp.unlink()
     except Exception as e:
         fail(f"Extraction failed: {e}")
@@ -1342,6 +1342,13 @@ else:
                     shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
                 shutil.move(str(child), str(dest))
             wrapper.rmdir()
+
+        try:
+            validate_7z_archive(tmp)
+        except Exception as e:
+            fail(f"Archive validation failed: {e}")
+            tmp.unlink(missing_ok=True)
+            return False
 
         if seven_zip:
             try:
