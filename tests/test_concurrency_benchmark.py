@@ -1,5 +1,10 @@
 import config
-from concurrency_benchmark import ConcurrencyBenchmark
+from concurrency_benchmark import ConcurrencyBenchmark, pending_concurrency_levels
+
+
+def test_pending_concurrency_levels_preserve_order_and_skip_completed_levels():
+    attempts = {1: None, 2: 2, 4: 1}
+    assert pending_concurrency_levels([1, 2, 4], attempts.get) == [(2, 2), (4, 1)]
 from engines.base import GenerationMeasurement
 from shared import Shared
 

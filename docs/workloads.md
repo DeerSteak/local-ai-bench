@@ -279,6 +279,8 @@ Each level also records a memory snapshot, taken right after that level finishes
 
 Under heavy concurrent-slot contention, llama-server's streamed timing data can occasionally report a decode duration implausibly small for its token count. Single-shot and conversation retry such a request once; concurrency discards and retries the whole batch once so the retry still measures the requested contention level. The wall-clock correction is diagnostic only and never contributes to aggregates. If the retry is also implausible, that request remains in `invalid_runs` with reason `implausible_server_tps`; other valid concurrent requests can still score the level, while a batch with no valid requests stops that model's escalation as invalid. See `LlamaCppEngine._sanitize_tps` in [Engines](engines.md#llamacppengine).
 
+Prepared concurrency recovery skips levels already complete and runs pending levels in their original escalation order with a new attempt number. Each retried level still starts a fresh server configuration and measures one whole concurrent batch, so recovery never combines requests from different contention attempts into one aggregate.
+
 Both HTTP concurrency stages run in supervised children and commit only after the final whole-batch outcome is known. The immutable plan carries each ladder, per-request context size, and chat soft-exit floor. A first implausible batch is never mixed with its retry: only the second batch's individual samples, batch elapsed time, aggregate throughput, memory snapshot, and validity diagnostics enter the durable case.
 
 ## llama-bench

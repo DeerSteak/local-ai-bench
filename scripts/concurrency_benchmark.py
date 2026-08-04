@@ -10,6 +10,11 @@ from shared import Shared
 from progress_events import emit_model_finished, emit_progress
 
 
+def pending_concurrency_levels(levels, next_attempt):
+    """Return uncompleted levels with their durable attempt allocation."""
+    return [(level, attempt) for level in levels if (attempt := next_attempt(level)) is not None]
+
+
 class ConcurrencyBenchmark:
     # Separate per test — see docs/workloads.md#concurrency's hard-stop bullet.
     TOOL_CRASH_CACHE = Path(".concurrency_tool_crash_cache.json")
@@ -95,7 +100,7 @@ class ConcurrencyBenchmark:
             stage_name: str,
             soft_exit_floor: int | None = None, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
-        results = {}
+        results = journal.export() if journal else {}
 
         if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {section_label} benchmark")
@@ -135,7 +140,12 @@ class ConcurrencyBenchmark:
                 results[short] = {}
                 stopped_at = None
 
-                for level in levels:
+                pending_levels = pending_concurrency_levels(
+                    levels,
+                    (lambda level: journal.next_context_attempt(model, level))
+                    if journal else (lambda _level: 1),
+                )
+                for level, attempt_number in pending_levels:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
@@ -207,6 +217,7 @@ class ConcurrencyBenchmark:
                         if journal:
                             journal.record_case(
                                 model, level, str(level), samples, "ok", level,
+                                attempt_number=attempt_number,
                             )
                         stopped_at = "invalid"
                         break
@@ -237,6 +248,7 @@ class ConcurrencyBenchmark:
                                 "batch_elapsed_sec": round(batch_elapsed, 3),
                                 "memory": memory,
                             },
+                            attempt_number=attempt_number,
                         )
                     Shared.ok(
                         f"{level}-way done: per-request TTFT={Shared.mean(ttfts):.2f}s "
