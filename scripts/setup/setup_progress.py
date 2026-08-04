@@ -64,6 +64,7 @@ def run_progress_window(status_file: Path, parent_pid: int) -> None:  # pragma: 
     from tkinter import ttk
 
     root = tk.Tk()
+    root.withdraw()
     root.title("Local AI Bench Setup")
     root.geometry("560x210")
     root.resizable(False, False)
@@ -82,9 +83,12 @@ def run_progress_window(status_file: Path, parent_pid: int) -> None:  # pragma: 
     close_button = ttk.Button(frame, text="Close", command=close_window, state="disabled")
     close_button.pack(anchor="e", pady=(18, 0))
 
-    root.lift()
-    root.attributes("-topmost", True)
-    root.after(400, lambda: root.attributes("-topmost", False))
+    def bring_to_front() -> None:
+        root.deiconify()
+        root.lift()
+        root.attributes("-topmost", True)
+        root.focus_force()
+        root.after(600, lambda: root.attributes("-topmost", False))
 
     def poll() -> None:
         status = read_progress_status(status_file)
@@ -100,6 +104,7 @@ def run_progress_window(status_file: Path, parent_pid: int) -> None:  # pragma: 
             return
         root.after(400, poll)
 
+    root.after(100, bring_to_front)
     root.after(400, poll)
     root.protocol("WM_DELETE_WINDOW", close_window)
     root.mainloop()
