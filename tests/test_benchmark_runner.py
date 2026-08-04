@@ -83,6 +83,47 @@ def test_runner_failure_preserves_committed_case_for_parent_recovery(tmp_path):
     assert saved[-1]["fake"]["512"]["tps_mean"] == 50
 
 
+def test_supervised_resume_prepares_durable_attempt_for_child_runner(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}, "environment": {}}
+    first = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
+    first.record_case(
+        model, 512, "512", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)],
+        "timed_out", 1,
+    )
+    first.close()
+
+    class Supervisor:
+        def __init__(self, _spec):
+            pass
+
+        def run(self, callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            assert stage.next_context_attempt(model, 512) == 2
+            stage.record_case(
+                model, 512, "512", [GenerationMeasurement(0.1, 120, 60, 2.1, 2.0)],
+                "ok", 1, attempt_number=2,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    result = run_supervised_stage(
+        plan, path, "llm", lambda _: None, Supervisor,
+        resume_identity=identity, resume=True,
+    )
+    assert result["fake"]["512"]["tps_mean"] == 60
+
+
 def test_parent_export_failure_keeps_child_commit(tmp_path):
     plan = make_plan()
     path = tmp_path / "events.sqlite3"
