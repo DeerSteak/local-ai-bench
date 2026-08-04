@@ -69,6 +69,11 @@ class LLMConversationBenchmark:
         return target_ctx, checkpoints, num_ctx
 
     @staticmethod
+    def should_stop_for_slow_measurement(measurement, force_all: bool) -> bool:
+        return (not force_all and not measurement_validation_errors(measurement)
+                and measurement.tokens_per_sec < config.SLOW_MODEL_MIN_TPS)
+
+    @staticmethod
     def _conv_followup_prompt(section_n: int) -> str:
         section = ((section_n - 1) % LLMConversationBenchmark.CONV_NUM_SECTIONS) + 1
         return (
@@ -141,9 +146,12 @@ class LLMConversationBenchmark:
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens, pending_response_tokens
                         messages.append({"role": "user", "content": prompt_text})
-                        measurement = engine.chat(
-                            tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
-                            num_predict=num_predict,
+                        measurement = Shared.retry_implausible_tps(
+                            lambda: engine.chat(
+                                tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
+                                num_predict=num_predict,
+                            ),
+                            f"{tag} conversation turn",
                         )
                         messages.append({"role": "assistant", "content": measurement.response_text})
                         # prompt_eval_count is ground truth for what's in context; eval_count isn't —
@@ -204,7 +212,7 @@ class LLMConversationBenchmark:
                             )
 
                             # See docs/workloads.md's within-conversation slow-model early exit.
-                            if not force_all and measurement.tokens_per_sec < config.SLOW_MODEL_MIN_TPS:
+                            if self.should_stop_for_slow_measurement(measurement, force_all):
                                 Shared.warn(f"{label}: run {run_i+1} — {measurement.tokens_per_sec:.1f} tok/s at {label_ctx} is below "
                                             f"{config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff — ending this run here")
                                 slow_label = label_ctx
@@ -255,6 +263,8 @@ class LLMConversationBenchmark:
                     tpss = [m.tokens_per_sec for m in measurements]
                     depths = [s[1] for s in valid_samples]
                     if not valid_samples:
+                        results[short][label_ctx] = aggregate
+                        Shared.warn(f"{label}: {label_ctx} had no valid measurement")
                         continue
                     results[short][label_ctx] = {
                         "ttft_mean_sec":  round(Shared.mean(ttfts), 3),

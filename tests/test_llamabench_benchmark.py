@@ -12,11 +12,6 @@ from llamabench_benchmark import LlamaBenchBenchmark
 from shared import Shared
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  Binary resolution
-# ══════════════════════════════════════════════════════════════════════════
-
-
 def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
     monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
@@ -73,11 +68,6 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
     assert LlamaBenchBenchmark.find_binary() is None
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  command construction
-# ══════════════════════════════════════════════════════════════════════════
-
-
 def test_build_prefill_command_shape():
     cmd = LlamaBenchBenchmark.build_prefill_command(
         "llama-bench", Path("/models/x.gguf"), [512, 2048], 2048, 512, 3, 999,
@@ -85,7 +75,7 @@ def test_build_prefill_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "-r", "3", "-o", "json",
+        "-ngl", "999", "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "512,2048", "-n", "0", "-d", "0",
     ]
@@ -98,7 +88,7 @@ def test_build_decode_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "-r", "3", "-o", "json",
+        "-ngl", "999", "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
     ]
@@ -135,15 +125,9 @@ def test_build_decode_command_cpu_only_ngl():
     assert cmd[cmd.index("-ngl") + 1] == "0"
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  run_one
-# ══════════════════════════════════════════════════════════════════════════
-
-
 class _FakePopen:
-    """Mimics the slice of subprocess.Popen's interface run_one drains: line-iterable
-    stdout/stderr pipes, poll(), wait(), and kill(). `hang=True` simulates a process that
-    never finishes on its own, so run_one's idle watchdog is what has to kill it."""
+    """Mimics the process interface run_one drains.
+    `hang=True` requires the idle watchdog to kill it."""
 
     def __init__(self, returncode=0, stdout_lines=(), stderr_lines=(), hang=False):
         self.returncode = returncode
@@ -164,9 +148,9 @@ class _FakePopen:
         self.killed = True
 
 
-def test_run_one_parses_json_on_success(monkeypatch):
+def test_run_one_parses_jsonl_on_success(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
-    stdout_line = json.dumps(fake_entries) + "\n"
+    stdout_line = json.dumps(fake_entries[0]) + "\n"
     monkeypatch.setattr(
         "llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=[stdout_line]),
@@ -175,9 +159,40 @@ def test_run_one_parses_json_on_success(monkeypatch):
     assert entries == fake_entries
 
 
+def test_run_one_streams_each_jsonl_result(monkeypatch):
+    rows = [
+        {"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
+        {"n_prompt": 2048, "n_gen": 0, "avg_ts": 2.0},
+    ]
+    monkeypatch.setattr(
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
+        ),
+    )
+    seen = []
+    assert LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_result=seen.append) == rows
+    assert seen == rows
+
+
+def test_run_one_propagates_stream_callback_failure(monkeypatch):
+    row = {"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}
+    monkeypatch.setattr(
+        "llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n"],
+        ),
+    )
+    with pytest.raises(OSError, match="checkpoint"):
+        LlamaBenchBenchmark.run_one(
+            ["llama-bench"], 60,
+            on_result=lambda _: (_ for _ in ()).throw(OSError("checkpoint")),
+        )
+
+
 def test_run_one_streams_stderr_progress_lines(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
-    stdout_line = json.dumps(fake_entries) + "\n"
+    stdout_line = json.dumps(fake_entries[0]) + "\n"
     monkeypatch.setattr(
         "llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(
@@ -220,16 +235,11 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     """A process that never idles for longer than the timeout should complete normally,
     not get killed just because the whole sweep runs long."""
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.1, "n_gpu_layers": 999}]
-    fake_proc = _FakePopen(0, stdout_lines=[json.dumps(fake_entries) + "\n"])
+    fake_proc = _FakePopen(0, stdout_lines=[json.dumps(fake_entries[0]) + "\n"])
     monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
     entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
     assert entries == fake_entries
     assert not fake_proc.killed
-
-
-# ══════════════════════════════════════════════════════════════════════════
-#  format_entry
-# ══════════════════════════════════════════════════════════════════════════
 
 
 def test_format_entry_prompt_processing_only():
@@ -254,9 +264,13 @@ def test_format_entry_combined():
     assert line.startswith("pp512+tg128 @ ngl=999:")
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#  run() dispatch
-# ══════════════════════════════════════════════════════════════════════════
+def test_normalize_streamed_entry_preserves_internal_repetition_samples():
+    entry = LlamaBenchBenchmark.normalize_streamed_entry(
+        {"avg_ts": 11.0, "stddev_ts": 1.0, "samples_ts": [10.0, 11.0, 12.0]}, 3,
+    )
+    assert entry["ts_runs"] == [10.0, 11.0, 12.0]
+    assert entry["requested_reps"] == 3
+    assert entry["completed_reps"] == 3
 
 
 class _NotLlamaCppEngine:
@@ -311,11 +325,17 @@ def test_run_records_error_when_files_missing(fake_engine, monkeypatch):
 def test_run_records_entries_on_success(fake_engine, monkeypatch, small_matrix):
     def run_one(cls, command, *args, **kwargs):
         if command[command.index("-n") + 1] == "0":
-            return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 100.0}]
-        return [{"n_prompt": 0, "n_gen": 128, "n_depth": 512, "avg_ts": 50.0}]
+            rows = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 100.0,
+                     "samples_ts": [99.0, 101.0]}]
+        else:
+            rows = [{"n_prompt": 0, "n_gen": 128, "n_depth": 512, "avg_ts": 50.0,
+                     "samples_ts": [49.0, 51.0]}]
+        for row in rows:
+            kwargs["on_result"](row)
+        return rows
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(run_one))
     result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=2)["m1"]
-    assert result["prefill_entries"][0]["ts_runs"] == [100.0, 100.0]
+    assert result["prefill_entries"][0]["ts_runs"] == [99.0, 101.0]
     assert result["decode_entries"][0]["completed_reps"] == 2
     assert result["completed_cases"] == 2
 
@@ -332,12 +352,18 @@ def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch, small_matri
     assert captured == [Shared.log, Shared.log]
 
 
-def test_run_calls_save_fn_after_each_repetition(fake_engine, monkeypatch, small_matrix):
-    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(
-        lambda cls, *a, **kw: [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}]))
+def test_run_calls_save_fn_after_each_streamed_case(fake_engine, monkeypatch, small_matrix):
+    def run_one(cls, command, *args, **kwargs):
+        row = ({"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "samples_ts": [1.0, 1.0]}
+               if command[command.index("-n") + 1] == "0" else
+               {"n_prompt": 0, "n_depth": 512, "n_gen": 128, "avg_ts": 1.0,
+                "samples_ts": [1.0, 1.0]})
+        kwargs["on_result"](row)
+        return [row]
+    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(run_one))
     saved = []
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=2, save_fn=lambda partial: saved.append(dict(partial)))
-    assert len(saved) >= 4
+    assert len(saved) == 3
 
 
 def test_run_records_timeout_error(fake_engine, monkeypatch, small_matrix):
@@ -349,7 +375,8 @@ def test_run_records_timeout_error(fake_engine, monkeypatch, small_matrix):
     assert "no output" in result["m1"]["error"]
 
 
-def test_run_preserves_successful_repetition_before_timeout(fake_engine, monkeypatch, small_matrix):
+def test_run_preserves_successful_prefill_sweep_before_decode_timeout(
+        fake_engine, monkeypatch, small_matrix):
     calls = 0
 
     def fake_run_one(cls, *args, **kwargs):
@@ -357,12 +384,38 @@ def test_run_preserves_successful_repetition_before_timeout(fake_engine, monkeyp
         calls += 1
         if calls == 2:
             raise subprocess.TimeoutExpired(cmd=["llama-bench"], timeout=1)
-        return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.0}]
+        row = {"n_prompt": 512, "n_gen": 0, "avg_ts": 123.0,
+               "samples_ts": [122.0, 123.0, 124.0]}
+        kwargs["on_result"](row)
+        return [row]
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)["m1"]
-    assert result["prefill_entries"][0]["ts_runs"] == [123.0]
-    assert result["prefill_entries"][0]["completed_reps"] == 1
+    assert result["prefill_entries"][0]["ts_runs"] == [122.0, 123.0, 124.0]
+    assert result["prefill_entries"][0]["completed_reps"] == 3
+    assert result["timed_out"] is True
+
+
+def test_run_preserves_rows_streamed_before_same_sweep_times_out(
+        fake_engine, monkeypatch):
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512, 2048, 4096])
+    monkeypatch.setattr(config, "LLAMABENCH_TG", [128])
+
+    def fake_run_one(cls, command, *args, **kwargs):
+        for prompt in (512, 2048):
+            kwargs["on_result"]({
+                "n_prompt": prompt, "n_gen": 0, "avg_ts": 123.0,
+                "samples_ts": [122.0, 123.0, 124.0],
+            })
+        raise subprocess.TimeoutExpired(cmd=command, timeout=1)
+
+    monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
+    result = LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3)["m1"]
+    assert [entry["n_prompt"] for entry in result["prefill_entries"]] == [512, 2048]
+    assert all(entry["ts_runs"] == [122.0, 123.0, 124.0]
+               for entry in result["prefill_entries"])
+    assert result["completed_repetitions"] == 6
+    assert result["completed_cases"] == 2
     assert result["timed_out"] is True
 
 
@@ -381,7 +434,9 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch, 
     def fake_run_one(cls, command, *a, **kw):
         if any("bad" in arg for arg in command):
             raise RuntimeError("boom")
-        return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.0, "n_gpu_layers": 999}]
+        row = {"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.0, "n_gpu_layers": 999}
+        kw["on_result"](row)
+        return [row]
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     result = LlamaBenchBenchmark().run(fake_engine, models, reps=3)
@@ -393,23 +448,26 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch, 
 def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch, small_matrix):
     captured = {}
 
-    def fake_run_one(cls, command, timeout, on_progress=None):
+    def fake_run_one(cls, command, timeout, on_progress=None, on_result=None):
         captured.setdefault("commands", []).append(command)
-        return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}]
+        return []
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, cpu_only=False)
+    assert len(captured["commands"]) == 2
     assert all(command[command.index("-ngl") + 1] == str(config.LLAMABENCH_FULL_OFFLOAD_NGL)
                for command in captured["commands"])
+    assert all(command[command.index("-r") + 1] == "3" for command in captured["commands"])
 
 
 def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch, small_matrix):
     captured = {}
 
-    def fake_run_one(cls, command, timeout, on_progress=None):
+    def fake_run_one(cls, command, timeout, on_progress=None, on_result=None):
         captured.setdefault("commands", []).append(command)
-        return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}]
+        return []
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=3, cpu_only=True)
+    assert len(captured["commands"]) == 2
     assert all(command[command.index("-ngl") + 1] == "0" for command in captured["commands"])

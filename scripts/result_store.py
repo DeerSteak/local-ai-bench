@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 TERMINAL_STATUSES = {"complete", "partial", "interrupted", "failed"}
 NON_MEASUREMENT_KEYS = {
     "label", "skipped", "skip_reason", "skip_detail", "error", "crashed",
@@ -97,7 +97,7 @@ def model_identity(models: list[dict]) -> list[dict]:
 
 
 def build_run_manifest(*, tests, stage_order, engine, models, effective_config,
-                       repo_root: Path, repetition_mode="separate_process_r1") -> dict:
+                       repo_root: Path, repetition_mode="streamed_internal_repetitions") -> dict:
     return {
         "run_id": str(uuid.uuid4()),
         "schema_version": SCHEMA_VERSION,

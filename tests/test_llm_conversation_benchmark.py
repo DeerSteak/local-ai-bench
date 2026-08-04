@@ -1,4 +1,5 @@
 from llm_conversation_benchmark import LLMConversationBenchmark as Conv
+from engines.base import GenerationMeasurement
 
 
 def test_followup_prompt_cycles_through_sections():
@@ -18,6 +19,15 @@ def test_followup_prompt_wraps_around_after_last_section():
 def test_checkpoints_ascending_and_within_target_ctx():
     assert Conv.CONV_CHECKPOINTS == sorted(Conv.CONV_CHECKPOINTS)
     assert Conv.CONV_CHECKPOINTS[-1] < Conv.CONV_TARGET_CTX
+
+
+def test_implausible_measurement_never_triggers_slow_exit():
+    measurement = GenerationMeasurement(
+        client_ttft_sec=0.1, generated_tokens=1, tokens_per_sec=0.1,
+        client_wall_sec=10.1, decode_sec=10,
+        server_tps_implausible=True,
+    )
+    assert not Conv.should_stop_for_slow_measurement(measurement, force_all=False)
 
 
 # ── compute_growth_step ──

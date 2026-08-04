@@ -79,6 +79,17 @@ def test_model_identity_excludes_paths_and_unknown_fields():
     }]) == [{"tag": "a", "short": "b", "size_gb": 4}]
 
 
+def test_run_manifest_identifies_streamed_internal_llamabench_methodology(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(result_store, "source_identity", lambda _: {})
+    run = result_store.build_run_manifest(
+        tests=["llamabench"], stage_order=["llamabench"], engine="llamacpp",
+        models={}, effective_config={}, repo_root=tmp_path,
+    )
+    assert run["schema_version"] == 2
+    assert run["llamabench_repetition_mode"] == "streamed_internal_repetitions"
+
+
 def test_finish_stage_counts_models_missing_from_section_as_failed():
     run = {"stages": {}}
     result_store.start_stage(run, "emb", 2)

@@ -71,9 +71,19 @@ describe("getLlamaBenchMethodologyWarning", () => {
     expect(getLlamaBenchMethodologyWarning([legacy])).toBe("");
     expect(getLlamaBenchMethodologyWarning([legacy, legacy])).toBe("");
     const current = { data: { llamabench: { m: {} }, run: {
-      llamabench_repetition_mode: "separate_process_r1",
+      llamabench_repetition_mode: "streamed_internal_repetitions",
     } } };
     expect(getLlamaBenchMethodologyWarning([current, current])).toBe("");
+  });
+
+  it("warns when per-case and streamed internal-repetition v4.1 files are compared", () => {
+    const perCase = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "separate_process_r1",
+    } } };
+    const streamed = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "streamed_internal_repetitions",
+    } } };
+    expect(getLlamaBenchMethodologyWarning([perCase, streamed])).toContain("different repetition");
   });
 });
 

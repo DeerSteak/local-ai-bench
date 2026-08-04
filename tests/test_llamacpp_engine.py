@@ -387,7 +387,7 @@ def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch
     assert result.tokens_per_sec == pytest.approx(2.0)
 
 
-def test_generate_sanitizes_implausible_server_reported_tps(monkeypatch):
+def test_generate_marks_corrected_implausible_server_tps_invalid(monkeypatch):
     # Reproduces the real observed failure: predicted_n=1, predicted_ms=0.001 -> raw tps of 1000000.0.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
@@ -402,8 +402,9 @@ def test_generate_sanitizes_implausible_server_reported_tps(monkeypatch):
     assert result.client_ttft_sec == pytest.approx(0.5)
     assert result.tokens_per_sec == pytest.approx(0.1)
     assert result.decode_sec == pytest.approx(10.0)
-    assert is_valid_measurement(result)
-    assert aggregate_generation_measurements([result], 1)["valid_runs"] == 1
+    assert result.server_tps_implausible is True
+    assert not is_valid_measurement(result)
+    assert aggregate_generation_measurements([result], 1)["valid_runs"] == 0
 
 
 def test_generate_counts_native_token_ids_not_sse_fragments(monkeypatch):
@@ -515,7 +516,7 @@ def test_chat_returns_content_and_server_timings(monkeypatch):
     assert result.tokens_per_sec == pytest.approx(4.0)
 
 
-def test_chat_sanitizes_implausible_server_reported_tps(monkeypatch):
+def test_chat_marks_corrected_implausible_server_tps_invalid(monkeypatch):
     # Same real bug as generate()'s equivalent test, via the chat() code path.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
@@ -530,6 +531,7 @@ def test_chat_sanitizes_implausible_server_reported_tps(monkeypatch):
     result = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
     assert result.client_ttft_sec == pytest.approx(0.5)
     assert result.tokens_per_sec == pytest.approx(0.1)
+    assert result.server_tps_implausible is True
 
 
 def test_chat_prefers_usage_prompt_tokens_over_timings_prompt_n(monkeypatch):

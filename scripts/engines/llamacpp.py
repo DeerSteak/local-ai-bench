@@ -378,7 +378,7 @@ class LlamaCppEngine(InferenceEngine):
         see docs/engines.md's "_warn_tps_sanitized"."""
         Shared.warn(f"{tag}: implausible tps from server (server predicted_n={server_predicted_n}, "
                     f"response tokens={tokens}, predicted_ms={predicted_ms!r}, raw tps={raw_tps:.1f}) — "
-                    f"using wall-clock estimate ({sanitized_tps:.1f} tok/s) instead")
+                    f"wall-clock diagnostic is {sanitized_tps:.1f} tok/s; marking measurement invalid")
 
     # ── model process spawn ──
 
@@ -550,6 +550,7 @@ class LlamaCppEngine(InferenceEngine):
             response_text="".join(response_parts),
             finish_reason=finish_reason,
             model_load_sec=model_load_sec,
+            server_tps_implausible=sanitized != tps,
         )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
@@ -681,6 +682,7 @@ class LlamaCppEngine(InferenceEngine):
             "response_text": "".join(response_parts) or "".join(reasoning_parts),
             "tool_calls": self._tool_calls_from_fragments(tool_fragments),
             "finish_reason": finish_reason,
+            "server_tps_implausible": tps != raw_tps,
         }
 
     @staticmethod
@@ -767,6 +769,8 @@ class LlamaCppEngine(InferenceEngine):
             tool_calls=graded["tool_calls"],
             budget_nudged=budget_nudged,
             model_load_sec=model_load_sec,
+            server_tps_implausible=(first.get("server_tps_implausible", False)
+                                    or bool(second and second.get("server_tps_implausible", False))),
         )
 
     def chat(self, tag: str, messages: list, timeout: int = 600,

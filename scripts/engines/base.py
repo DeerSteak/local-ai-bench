@@ -21,6 +21,7 @@ class GenerationMeasurement:
     response_text: str = ""
     finish_reason: str | None = None
     model_load_sec: float = 0
+    server_tps_implausible: bool = False
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,8 @@ class EmbeddingMeasurement:
 
 def measurement_validation_errors(measurement: GenerationMeasurement) -> list[str]:
     errors = []
+    if measurement.server_tps_implausible:
+        errors.append("implausible_server_tps")
     durations = {
         "client_ttft_sec": measurement.client_ttft_sec,
         "client_wall_sec": measurement.client_wall_sec,

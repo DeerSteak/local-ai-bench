@@ -71,8 +71,11 @@ class LLMPrefillBenchmark:
 
                     def _prefill_once(run_i):
                         prompt = Shared.build_prompt_for_context(ctx_len)
-                        measurement = engine.generate(
-                            tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx
+                        measurement = Shared.retry_implausible_tps(
+                            lambda: engine.generate(
+                                tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
+                            ),
+                            f"{tag} {label_ctx} run {run_i + 1}",
                         )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec

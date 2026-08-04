@@ -660,6 +660,17 @@ class Shared:
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
 
+    @staticmethod
+    def retry_implausible_tps(call, tag: str):
+        measurement = call()
+        if not measurement.server_tps_implausible:
+            return measurement
+        Shared.warn(f"{tag}: retrying once after an implausible server TPS report")
+        measurement = call()
+        if measurement.server_tps_implausible:
+            Shared.warn(f"{tag}: retry also reported implausible TPS; dropping that measurement")
+        return measurement
+
     # Common CoT filler — needs a higher repeat count to be diagnostic of a real loop.
     _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
         "wait,", "wait -", "actually,", "hold on,",

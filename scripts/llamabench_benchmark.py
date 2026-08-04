@@ -46,7 +46,7 @@ class LlamaBenchBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             "-r", str(reps),
-            "-o", "json",
+            "-o", "jsonl",
             "--progress",
         ]
 
@@ -73,13 +73,15 @@ class LlamaBenchBenchmark:
         ]
 
     @classmethod
-    def run_one(cls, cmd: list[str], timeout: int, on_progress=None) -> list[dict]:
-        """Streams progress and parses one llama-bench JSON pass; timeout measures idle output,
+    def run_one(cls, cmd: list[str], timeout: int, on_progress=None, on_result=None) -> list[dict]:
+        """Streams progress and parses one llama-bench JSONL pass; timeout measures idle output,
         not total wall-clock duration."""
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         Shared._managed_procs.append(proc)
 
-        stdout_chunks: list[str] = []
+        rows: list[dict] = []
+        stdout_errors: list[str] = []
+        callback_errors: list[BaseException] = []
         stderr_chunks: list[str] = []
         activity_lock = threading.Lock()
         last_activity = [time.monotonic()]
@@ -91,8 +93,25 @@ class LlamaBenchBenchmark:
         def _drain_stdout():
             assert proc.stdout is not None
             for line in proc.stdout:
-                stdout_chunks.append(line)
                 _touch()
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    row = json.loads(stripped)
+                except json.JSONDecodeError:
+                    stdout_errors.append(stripped)
+                    continue
+                if not isinstance(row, dict):
+                    stdout_errors.append(stripped)
+                    continue
+                rows.append(row)
+                if on_result:
+                    try:
+                        on_result(row)
+                    except BaseException as exc:
+                        callback_errors.append(exc)
+                        return
 
         def _drain_stderr():
             assert proc.stderr is not None
@@ -110,6 +129,9 @@ class LlamaBenchBenchmark:
 
         idle_timed_out = False
         while proc.poll() is None:
+            if callback_errors:
+                proc.kill()
+                break
             with activity_lock:
                 idle = time.monotonic() - last_activity[0]
             if idle > timeout:
@@ -126,13 +148,14 @@ class LlamaBenchBenchmark:
 
         if idle_timed_out:
             raise subprocess.TimeoutExpired(cmd, timeout)
+        if callback_errors:
+            raise callback_errors[0]
 
         if proc.returncode != 0:
             raise RuntimeError(f"llama-bench exited {proc.returncode}: {''.join(stderr_chunks).strip()[-2000:]}")
-        try:
-            return json.loads("".join(stdout_chunks))
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"llama-bench produced unparseable JSON: {e}") from None
+        if stdout_errors:
+            raise RuntimeError(f"llama-bench produced unparseable JSONL: {stdout_errors[-1][-1000:]}")
+        return rows
 
     @staticmethod
     def format_entry(entry: dict) -> str:
@@ -147,12 +170,10 @@ class LlamaBenchBenchmark:
         return f"{label} @ ngl={entry.get('n_gpu_layers')}: {avg_ts:.1f} ± {stddev_ts:.1f} tok/s"
 
     @staticmethod
-    def aggregate_repetitions(entries: list[dict], requested_reps: int) -> dict:
-        speeds = [entry["avg_ts"] for entry in entries]
+    def normalize_streamed_entry(entry: dict, requested_reps: int) -> dict:
+        speeds = entry.get("samples_ts") or [entry["avg_ts"]]
         return {
-            **entries[-1],
-            "avg_ts": Shared.mean(speeds),
-            "stddev_ts": Shared.stdev(speeds),
+            **entry,
             "ts_runs": speeds,
             "requested_reps": requested_reps,
             "completed_reps": len(speeds),
@@ -192,66 +213,55 @@ class LlamaBenchBenchmark:
                 prefill_entries, decode_entries = [], []
                 model_result = {"prefill_entries": prefill_entries, "decode_entries": decode_entries}
                 results[short] = model_result
-                timed_out = False
-
-                cases = [
-                    ("prefill", pp, None) for pp in config.LLAMABENCH_PP
-                ] + [
-                    ("decode", pp, tg) for pp in config.LLAMABENCH_PP for tg in config.LLAMABENCH_TG
-                ]
-                model_result["requested_cases"] = len(cases)
+                requested_cases = len(config.LLAMABENCH_PP) * (1 + len(config.LLAMABENCH_TG))
+                model_result["requested_cases"] = requested_cases
                 model_result["completed_cases"] = 0
-                model_result["requested_repetitions"] = len(cases) * reps
+                model_result["requested_repetitions"] = requested_cases * reps
                 model_result["completed_repetitions"] = 0
-                for case_kind, pp, tg in cases:
-                    repetitions = []
-                    for _rep in range(reps):
-                        command = (
-                            self.build_prefill_command(
-                                binary, paths[0], [pp], config.LLAMABENCH_BATCH_SIZE,
-                                config.LLAMABENCH_UBATCH_SIZE, 1, ngl,
-                            ) if case_kind == "prefill" else
-                            self.build_decode_command(
-                                binary, paths[0], [pp], [tg], config.LLAMABENCH_BATCH_SIZE,
-                                config.LLAMABENCH_UBATCH_SIZE, 1, ngl,
-                            )
+                stopped = False
+
+                for sweep in ("prefill", "decode"):
+                    command = (
+                        self.build_prefill_command(
+                            binary, paths[0], config.LLAMABENCH_PP,
+                            config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
+                            reps, ngl,
+                        ) if sweep == "prefill" else self.build_decode_command(
+                            binary, paths[0], config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                            config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
+                            reps, ngl,
                         )
-                        try:
-                            rows = self.run_one(command, config.LLAMABENCH_TIMEOUT, on_progress=Shared.log)
-                        except subprocess.TimeoutExpired:
-                            timed_out = True
-                            model_result.update(
-                                timed_out=True,
-                                timed_out_at=(f"{case_kind}:pp{pp}" + (f":tg{tg}" if tg else "")
-                                              + f":rep{len(repetitions) + 1}"),
-                                error=f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)",
-                            )
-                            break
-                        except Exception as e:
-                            model_result["error"] = str(e)
-                            timed_out = True
-                            break
-                        if not rows:
-                            model_result["error"] = "llama-bench produced no result rows"
-                            timed_out = True
-                            break
-                        repetitions.append(rows[0])
-                        model_result["completed_repetitions"] += 1
-                        aggregate = self.aggregate_repetitions(repetitions, reps)
-                        target = prefill_entries if case_kind == "prefill" else decode_entries
-                        if target and target[-1].get("n_prompt") == aggregate.get("n_prompt") \
-                                and target[-1].get("n_depth") == aggregate.get("n_depth") \
-                                and target[-1].get("n_gen") == aggregate.get("n_gen"):
-                            target[-1] = aggregate
-                        else:
-                            target.append(aggregate)
+                    )
+
+                    def record_row(row):
+                        entry = self.normalize_streamed_entry(row, reps)
+                        target = prefill_entries if row.get("n_gen", 0) == 0 else decode_entries
+                        target.append(entry)
+                        model_result["completed_repetitions"] += entry["completed_reps"]
+                        if entry["completed_reps"] == reps:
+                            model_result["completed_cases"] += 1
+                        Shared.ok(self.format_entry(entry))
                         if save_fn:
                             save_fn(results)
-                    if timed_out:
+
+                    try:
+                        self.run_one(
+                            command, config.LLAMABENCH_TIMEOUT,
+                            on_progress=Shared.log, on_result=record_row,
+                        )
+                    except subprocess.TimeoutExpired:
+                        model_result.update(
+                            timed_out=True,
+                            timed_out_at=sweep,
+                            error=f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)",
+                        )
+                        stopped = True
                         break
-                    model_result["completed_cases"] += 1
-                    Shared.ok(self.format_entry(aggregate))
-                if timed_out:
+                    except Exception as e:
+                        model_result["error"] = str(e)
+                        stopped = True
+                        break
+                if stopped:
                     Shared.err(f"{label}: native benchmark stopped with partial results")
             finally:
                 if save_fn:

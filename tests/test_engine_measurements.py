@@ -35,6 +35,16 @@ def test_measurement_validation_rejects_ttft_after_request_completion():
     assert errors == ["client_ttft_after_wall"]
 
 
+def test_measurement_validation_rejects_implausible_server_timing_marker():
+    measurement = replace(valid_measurement(), server_tps_implausible=True)
+    assert measurement_validation_errors(measurement) == ["implausible_server_tps"]
+    result = aggregate_generation_measurements([measurement], 1)
+    assert result["valid_runs"] == 0
+    assert result["invalid_runs"] == [
+        {"run": 1, "errors": ["implausible_server_tps"]},
+    ]
+
+
 def test_embedding_validation_rejects_zero_wall_time_and_bad_payload():
     assert embedding_validation_errors(EmbeddingMeasurement(None, 0)) == [
         "client_wall_sec", "embeddings",

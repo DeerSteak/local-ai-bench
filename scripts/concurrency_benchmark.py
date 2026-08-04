@@ -66,6 +66,25 @@ class ConcurrencyBenchmark:
                 )
         return [], "crashed", None, 0
 
+    @staticmethod
+    def _fire_measured_batch(engine, tag: str, level: int, per_request_context: int,
+                             label: str) -> tuple[list, str, Exception | None, float]:
+        def fire():
+            return ConcurrencyBenchmark._fire_batch_with_crash_retries(
+                engine, tag, level, per_request_context,
+            )
+
+        outcome = fire()
+        samples, status, _, _ = outcome
+        if status != "ok" or not any(sample.server_tps_implausible for sample in samples):
+            return outcome
+        Shared.warn(f"{label}: retrying the {level}-way batch after an implausible server TPS report")
+        outcome = fire()
+        samples, status, _, _ = outcome
+        if status == "ok" and any(sample.server_tps_implausible for sample in samples):
+            Shared.warn(f"{label}: retry also reported implausible TPS; dropping affected requests")
+        return outcome
+
     def run(self, engine, models, levels, per_request_context, warmup_runs,
             crash_cache_path: Path, section_label: str,
             soft_exit_floor: int | None = None, force_all=False,
@@ -147,8 +166,8 @@ class ConcurrencyBenchmark:
                         break
 
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
-                    samples, status, error, batch_elapsed = self._fire_batch_with_crash_retries(
-                        engine, tag, level, per_request_context,
+                    samples, status, error, batch_elapsed = self._fire_measured_batch(
+                        engine, tag, level, per_request_context, label,
                     )
                     if status != "ok":
                         if status == "crashed":
