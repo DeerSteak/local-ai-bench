@@ -19,7 +19,7 @@ class LLMPrefillBenchmark:
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
-        results = {}
+        results = journal.export() if journal else {}
 
         if not engine.ensure_running():
             Shared.err("Inference engine not reachable — skipping LLM benchmarks")
@@ -60,6 +60,10 @@ class LLMPrefillBenchmark:
                 model_timed_out = False
                 for ctx_len in model_ctx_lengths:
                     label_ctx = Shared.context_label(ctx_len)
+                    attempt_number = journal.next_context_attempt(model, ctx_len) if journal else 1
+                    if attempt_number is None:
+                        Shared.log(f"Context {label_ctx} already complete — preserving it")
+                        continue
                     server_ctx = LLMPrefillBenchmark.prefill_server_ctx(ctx_len, model_max)
                     if server_ctx <= ctx_len:
                         Shared.warn(f"{label}: no headroom left for generation at {label_ctx} "
@@ -74,6 +78,7 @@ class LLMPrefillBenchmark:
                             journal.record_case(
                                 model, ctx_len, label_ctx, [], "crashed", config.N_RUNS,
                                 {"crashed": label_ctx, "crashed_at": results[short]["crashed_at"]},
+                                attempt_number=attempt_number,
                             )
                         engine.unload(tag)
                         break
@@ -130,6 +135,7 @@ class LLMPrefillBenchmark:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
                                 {"timed_out": label_ctx},
+                                attempt_number=attempt_number,
                             )
                         break
 
@@ -141,6 +147,7 @@ class LLMPrefillBenchmark:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
                                 {"crashed": label_ctx, "crashed_at": crashed_at},
+                                attempt_number=attempt_number,
                             )
                         break
 
@@ -153,6 +160,7 @@ class LLMPrefillBenchmark:
                                    if "slow_tps" in results[short] else {})
                         journal.record_case(
                             model, ctx_len, label_ctx, samples, status, config.N_RUNS, markers,
+                            attempt_number=attempt_number,
                         )
                     if stopped_slow:
                         break

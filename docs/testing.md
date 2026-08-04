@@ -118,7 +118,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Offline loopback classification, socket blocking, environment controls, option parity, and plan identity | [test_network_policy.py](../tests/test_network_policy.py), [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_run_plan.py](../tests/test_run_plan.py) |
 | Vendor diagnostic first divergence, raw invalidity, determinism, review, and source verification | [test_vendor_diagnostic.py](../tests/test_vendor_diagnostic.py) |
 | Transactional event journal, transition/recovery safety, attempt abandonment, and projections | [test_event_store.py](../tests/test_event_store.py) |
-| Journal-owned single-shot/conversation/concurrency projection, stage/model-family isolation, batch fields, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
+| Journal-owned single-shot/conversation/concurrency projection, recovery attempts, stage/model-family isolation, batch fields, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
 | Journal-owned native llama-bench streamed rows, partial timeouts, and export-failure retention | [test_native_bench_event_stage.py](../tests/test_native_bench_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |

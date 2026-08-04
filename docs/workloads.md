@@ -50,6 +50,8 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 
 The single-shot slow-model check applies at its first checkpoint (512 tokens): below 15 tok/s, deeper single-shot contexts are skipped unless `--force-all` is set. When single-shot and conversation run together, the conversation pre-flight also excludes a model with no usable single-shot data, a repeatable runner crash, a first-checkpoint timeout, or that first-checkpoint slow marker. A timeout only at a deeper single-shot context does not by itself exclude conversation. Running `--tests conv` alone has no single-shot pre-flight data, so it attempts every selected model.
 
+When an explicitly validated journal recovery is prepared, single-shot skips contexts already complete, records a new numbered attempt for an interrupted/failed/invalid/timed-out context, and retains every prior attempt as raw evidence. Compatible aggregates use only the latest attempt so a retry does not silently mix old and new samples. The normal benchmark launcher does not expose recovery yet; this behavior is an execution-kernel prerequisite rather than a claim that the current GUI can resume a run.
+
 Separately, *within* the conversation test itself: if the decode speed at any history depth drops below the slow-model cutoff, the conversation exits early and records results to that point. Pass `--force-all` to ignore this cutoff and always run every context length (see [CLI Reference](cli-reference.md)).
 
 ### Extra-small tier (<6B params)

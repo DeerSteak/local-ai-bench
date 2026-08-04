@@ -214,6 +214,40 @@ def test_failed_json_export_does_not_undo_committed_measurement(tmp_path):
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
+def test_resume_preserves_prior_attempt_but_aggregates_latest_attempt_only(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {"execution": "same"}}
+    first = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    first.record_case(
+        MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "timed_out", 2,
+        {"timed_out": "2K"},
+    )
+    first.close()
+
+    resumed = LLMEventStage(
+        path, plan, lambda _: None, resume_identity=identity, resume=True,
+    )
+    try:
+        assert resumed.next_context_attempt(MODEL, 2048) == 2
+        resumed.record_case(
+            MODEL, 2048, "2K", [measurement(0.1, 120, 60)], "ok", 2,
+            attempt_number=2,
+        )
+        assert resumed.next_context_attempt(MODEL, 2048) is None
+        result = resumed.export()["model"]["2K"]
+        assert result["completed_runs"] == result["valid_runs"] == 1
+        assert result["tps_mean"] == 60
+    finally:
+        resumed.close()
+    store = EventStore(path)
+    projection = store.rebuild(plan.job_id)
+    assert sorted(attempt["number"] for attempt in projection["attempts"].values()) == [1, 2]
+    assert len(projection["samples"]) == 2
+    store.close()
+
+
 def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):
     fixture_path = Path(__file__).parent / "fixtures" / "results_v4_1_schema3_plan.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

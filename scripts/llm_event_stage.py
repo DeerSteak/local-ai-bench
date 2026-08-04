@@ -35,7 +35,7 @@ def measurement_from_payload(payload: dict) -> GenerationMeasurement:
 class LLMEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, stage_name: str = "llm",
                  model_family: str = "llm", initialize: bool = True,
-                 resume_identity: dict | None = None):
+                 resume_identity: dict | None = None, resume: bool = False):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
@@ -43,7 +43,16 @@ class LLMEventStage:
         self.model_family = model_family
         self.stage_id = plan.stage_id(stage_name)
         self.model_identities = {model.get("tag"): model for model in plan.models[model_family]}
-        if initialize:
+        self.recovery_attempts = {}
+        if resume:
+            if not initialize:
+                raise ValueError("resume requires an initializing stage owner")
+            if self.store.load_plan(plan.job_id) != plan:
+                raise ValueError("resume plan does not match the journal job")
+            if resume_identity is None or self.store.resume_identity(plan.job_id) != resume_identity:
+                raise ValueError("resume identity changed; create a fork")
+            self.recovery_attempts = self.store.prepare_recovery(plan.job_id, stage_name)
+        elif initialize:
             self.store.start_stage(plan, stage_name, resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
             raise ValueError("runner plan does not match the journal job")
@@ -56,6 +65,21 @@ class LLMEventStage:
         if identity is None:
             raise ValueError(f"model is absent from run plan: {model['tag']}")
         return self.plan.model_id(self.model_family, identity)
+
+    def next_context_attempt(self, model: dict, context_tokens: int) -> int | None:
+        model_id = self._model_id(model)
+        case_id = self.plan.case_id(
+            self.stage_name, model_id, {"context_tokens": context_tokens},
+        )
+        projection = self.store.rebuild(self.plan.job_id)
+        case = projection["cases"].get(case_id)
+        if case is None:
+            return 1
+        if case["state"] in {"complete", "skipped"}:
+            return None
+        if case_id not in self.recovery_attempts:
+            raise ValueError("incomplete case was not prepared for recovery")
+        return self.recovery_attempts[case_id]
 
     def record_model_state(self, model: dict, state: str, result: dict) -> None:
         model_id = self._model_id(model)
@@ -74,20 +98,24 @@ class LLMEventStage:
                     samples: list[GenerationMeasurement], status: str,
                     requested_runs: int, model_markers: dict | None = None,
                     depth_tokens: int | None = None,
-                    result_fields: dict | None = None) -> None:
+                    result_fields: dict | None = None, attempt_number: int = 1) -> None:
         model_id = self._model_id(model)
         case_id = self.plan.case_id(
             self.stage_name, model_id, {"context_tokens": context_tokens},
         )
-        attempt_id = self.plan.attempt_id(case_id, 1)
-        events = [
-            JournalEvent("case", case_id, "running", {
+        attempt_id = self.plan.attempt_id(case_id, attempt_number)
+        projection = self.store.rebuild(self.plan.job_id)
+        events = []
+        if case_id not in projection["cases"]:
+            events.append(JournalEvent("case", case_id, "running", {
                 "model_short": model["short"], "model_label": model["label"],
                 "case_kind": "context", "context_tokens": context_tokens,
                 "context_label": context_label, "requested_runs": requested_runs,
                 "depth_tokens": depth_tokens,
-            }, parent_id=self.stage_id),
-            JournalEvent("attempt", attempt_id, "running", {"number": 1}, parent_id=case_id),
+            }, parent_id=self.stage_id))
+        events += [
+            JournalEvent("attempt", attempt_id, "running", {"number": attempt_number},
+                         parent_id=case_id),
         ]
         for number, sample in enumerate(samples, 1):
             errors = measurement_validation_errors(sample)
@@ -135,9 +163,15 @@ class LLMEventStage:
             if case["case_kind"] == "model_state":
                 results.setdefault(short, {}).update(case.get("model_result", {}))
                 continue
-            attempts = {
-                identity for identity, attempt in projection["attempts"].items()
+            attempt_values = [
+                (identity, attempt) for identity, attempt in projection["attempts"].items()
                 if attempt["parent_id"] == case_id
+            ]
+            latest_number = max((attempt.get("number", 0) for _, attempt in attempt_values),
+                                default=0)
+            attempts = {
+                identity for identity, attempt in attempt_values
+                if attempt.get("number") == latest_number
             }
             sample_values = [
                 sample for sample in projection["samples"].values()
