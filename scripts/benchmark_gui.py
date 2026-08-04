@@ -233,6 +233,22 @@ def format_recovery_inspection(report: dict) -> str:
     return "\n".join(lines)
 
 
+def fork_review_report(result_path: Path) -> dict:
+    data = json.loads(Path(result_path).read_text(encoding="utf-8"))
+    plan = load_run_plan(result_path)
+    run = data.get("run", {})
+    return {
+        "action": "fork", "can_resume": False, "plan_id": plan.plan_id,
+        "interrupted_attempts": 0,
+        "stage_states": {
+            stage: run.get("stages", {}).get(stage, {}).get("status", "pending")
+            for stage in plan.stage_order
+        },
+        "case_counts": {}, "retryable_cases": [],
+        "reasons": ["fork creates a new run and leaves the source unchanged"],
+    }
+
+
 def recovery_progress_entries(plan, model_shorts=None) -> list:
     entries = []
     seen = set()
@@ -1296,7 +1312,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 report = inspect_recovery(result_path)
                 error = None
             except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-                report, error = None, str(exc)
+                if action == "fork":
+                    try:
+                        report, error = fork_review_report(result_path), None
+                    except (OSError, KeyError, ValueError, json.JSONDecodeError) as fork_exc:
+                        report, error = None, str(fork_exc)
+                else:
+                    report, error = None, str(exc)
 
             def finish():
                 if error:
@@ -1365,7 +1387,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def start_history_fork(source_path, report):
-        nonlocal process, active_process_kind
+        nonlocal process, active_process_kind, pending_fork_source
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
@@ -1373,13 +1395,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         unsupported = [stage for stage in plan.stage_order if stage not in {
             "llm", "conv", "llamabench", "conc_tool", "conc_chat",
         }]
-        if unsupported:
-            messagebox.showerror(
-                "Fork unavailable",
-                "This saved plan contains stages without durable fork execution: "
-                + ", ".join(unsupported), parent=root,
-            )
-            return
         destination = filedialog.asksaveasfilename(
             title="Save forked benchmark", defaultextension=".json",
             initialdir=str(config.RESULTS_DIR),
@@ -1395,6 +1410,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             f"{detail}\n\nRun this saved plan from the beginning as a new result? "
             "The source result will not be changed.", parent=root,
         ):
+            return
+        if unsupported:
+            try:
+                state = frontend_state_from_run_plan(plan, collect_options())
+                state["gui_options"]["out"] = str(output_path)
+                apply_frontend_state(state)
+            except (KeyError, ValueError) as exc:
+                messagebox.showerror("Fork unavailable", str(exc), parent=root)
+                return
+            pending_fork_source = source_path
+            notebook.select(config_tab)
+            root.after(0, start_run)
             return
         command = fork_executor_command(source_path, output_path)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
@@ -1584,6 +1611,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     process = None
     active_process_kind = None
+    pending_fork_source = None
     process_control_path = None
     process_paused = False
 
@@ -1782,7 +1810,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         return values
 
     def start_run():
-        nonlocal process, active_process_kind
+        nonlocal process, active_process_kind, pending_fork_source
         custom = mode_var.get() == "custom"
         if custom:
             tests = [name for name, variable in test_vars.items() if variable.get()]
@@ -1822,6 +1850,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if not messagebox.askyesno(
             "Review benchmark plan", f"{preview}\n\nStart this benchmark?", parent=root,
         ):
+            pending_fork_source = None
             return
         state = build_frontend_state(
             engine_var.get(), tests, entries, max_prompt_tokens=max_prompt,
@@ -1838,12 +1867,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             tg_tokens=tg_tokens if custom and TG_TOKEN_TESTS & set(tests) else None,
             gui_options=gui_options,
         )
+        if pending_fork_source is not None:
+            command.extend(["--fork-plan", str(pending_fork_source)])
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
         child_env = begin_process_control()
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1, creationflags=creationflags, env=child_env,
         )
+        pending_fork_source = None
         active_process_kind = "benchmark"
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")

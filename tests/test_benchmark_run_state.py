@@ -1,5 +1,21 @@
-from benchmark import checkpoint_terminal_exception
+import json
+
+import pytest
+
+from benchmark import checkpoint_terminal_exception, fork_provenance
 from orchestration import StageExecutionError
+from result_store import build_run_manifest
+from run_plan import RunPlan
+
+
+def make_plan():
+    return RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed", "short": "embed"}], "images": [],
+        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
 
 
 def test_interrupted_exception_checkpoints_pending_data_without_relabeling():
@@ -44,3 +60,32 @@ def test_stage_failure_records_phase_specific_reason():
     exc = StageExecutionError("llm", "cleanup", RuntimeError("boom"))
     checkpoint_terminal_exception(results, exc, lambda _: None)
     assert results["run"]["reason"] == "stage_cleanup_failed"
+
+
+def test_fork_provenance_requires_exact_plan_and_new_output(tmp_path):
+    plan = make_plan()
+    source = tmp_path / "source.json"
+    manifest = build_run_manifest(plan=plan, repo_root=tmp_path)
+    source.write_text(json.dumps({"run": manifest}), encoding="utf-8")
+    output = tmp_path / "fork.json"
+    assert fork_provenance(source, plan, output) == {
+        "run_id": manifest["run_id"], "job_id": plan.job_id, "plan_id": plan.plan_id,
+    }
+    with pytest.raises(ValueError, match="must differ"):
+        fork_provenance(source, plan, source)
+    output.write_text("keep", encoding="utf-8")
+    with pytest.raises(ValueError, match="already exists"):
+        fork_provenance(source, plan, output)
+
+
+def test_fork_provenance_rejects_configuration_drift(tmp_path):
+    plan = make_plan()
+    changed = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["emb"],
+        stage_order=["emb"], models=plan.models,
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False},
+    )
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps({"run": {"plan": plan.to_dict()}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="no longer matches"):
+        fork_provenance(source, changed, tmp_path / "fork.json")

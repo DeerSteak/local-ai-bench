@@ -4,6 +4,7 @@ See docs/workloads.md for what each test measures, docs/cli-reference.md for fla
 
 import argparse
 import fnmatch
+import json
 import platform
 import re
 import signal
@@ -41,7 +42,7 @@ from orchestration import (
 )
 from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
-from run_plan import RunPlan
+from run_plan import RunPlan, load_run_plan
 from resume_policy import build_engine_resume_identity
 from runner_supervisor import RunnerSpec, RunnerSupervisor
 from setup_config import configured_comfyui_dir, load_setup_config
@@ -207,6 +208,23 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
     order — see docs/workloads.md#concurrency."""
     installed = set(installed_tags)
     return [m for m in catalog if m["tag"] in installed]
+
+
+def fork_provenance(source_path: Path, plan: RunPlan, output_path: Path) -> dict:
+    source_path = Path(source_path).resolve()
+    output_path = Path(output_path).resolve()
+    if output_path == source_path:
+        raise ValueError("fork output must differ from its source result")
+    if output_path.exists() or output_path.with_suffix(".events.sqlite3").exists():
+        raise ValueError("fork output or event journal already exists")
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source_plan = load_run_plan(source_path)
+    if source_plan.plan_id != plan.plan_id:
+        raise ValueError("fork configuration no longer matches the saved plan")
+    return {
+        "run_id": source.get("run", {}).get("run_id"),
+        "job_id": source_plan.job_id, "plan_id": source_plan.plan_id,
+    }
 
 
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
@@ -450,6 +468,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         "--out", type=str, default=None,
         help="Output JSON file (default: results/results_<hostname>_<timestamp>.json)",
     )
+    parser.add_argument("--fork-plan", type=str, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--comfyui", type=str, default=None,
         help="Path to an existing ComfyUI program or Windows portable root "
@@ -717,6 +736,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             effective_config=effective_config,
         )
         plan.validate_for_execution()
+        forked_from = (
+            fork_provenance(Path(args.fork_plan), plan, Path(out_path))
+            if args.fork_plan else None
+        )
         journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
         resume_identity = None
         if journal_stages:
@@ -781,6 +804,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         results["run"] = build_run_manifest(
             plan=plan, repo_root=config.SCRIPT_DIR,
         )
+        if forked_from:
+            results["run"]["forked_from"] = forked_from
 
         store = ResultStore(Path(out_path), results)
 

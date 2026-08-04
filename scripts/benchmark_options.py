@@ -41,6 +41,7 @@ PUBLIC_OPTION_SCHEMA = {
     "--maxtier": _spec("choice", "guided", "equivalent", "Explicit model selection is more precise", choices=TIER_CHOICES),
     "--list-models": _spec("boolean", "contextual", "equivalent", "Installed models appear in selection screens", default=False),
     "--sample": _spec("integer", "developer-only", "excluded", "Developer-only non-comparable accuracy sampling", minimum=1),
+    "--fork-plan": _spec("path", "developer-only", "excluded", "Internal reviewed-fork provenance guard"),
     "--warmup": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=config.WARMUP_RUNS, minimum=0),
     "--runs": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=config.N_RUNS, minimum=1, maximum=10),
     "--timeout": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=300, minimum=1),

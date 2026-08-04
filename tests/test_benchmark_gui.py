@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,8 @@ from benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    fork_executor_command, format_recovery_inspection, open_path_command, parse_progress_line,
+    fork_executor_command, fork_review_report, format_recovery_inspection,
+    open_path_command, parse_progress_line,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
@@ -106,6 +108,24 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
         "python", str(Path(__file__).parents[1] / "scripts" / "retry_executor.py"),
         str(result.resolve()), "case_a",
     ]
+
+
+def test_fork_review_does_not_require_an_event_journal(tmp_path):
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed", "short": "embed"}], "images": [],
+        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
+    result = tmp_path / "legacy.json"
+    result.write_text(json.dumps({
+        "run": {"plan": plan.to_dict(), "stages": {"emb": {"status": "failed"}}},
+    }), encoding="utf-8")
+    report = fork_review_report(result)
+    assert report["action"] == "fork" and report["can_resume"] is False
+    assert report["stage_states"] == {"emb": "failed"}
+    assert report["case_counts"] == {}
 
 
 def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
