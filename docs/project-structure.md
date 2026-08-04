@@ -54,6 +54,7 @@
 | `evidence_policy.py` (in `scripts/`) | Reference-result provenance tiers, eligibility, expiry, and correction rules |
 | `sbom.py` (in `scripts/`) | Deterministic Python/npm dependency inventory for release review |
 | `release_readiness.py` (in `scripts/`) | Machine-readable local release blockers without waiving external qualification |
+| `maintenance.py` (in `scripts/`) | Read-only installation health and previewed project-owned uninstall boundaries |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
 | `scripts/data/` | Active accuracy banks—`mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `reasoning_questions.json` (60 questions), `code_problems.json` (60 problems), and `tool_questions.json` (100 tool-calling questions) |
