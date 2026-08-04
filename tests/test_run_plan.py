@@ -46,7 +46,7 @@ def test_plan_identity_is_deterministic_across_mapping_order():
     assert len(plan.plan_id) == 64
 
 
-def test_schema_two_derives_stable_hierarchical_execution_ids():
+def test_current_schema_derives_stable_hierarchical_execution_ids():
     plan = make_plan()
     restored = RunPlan.from_dict(plan.to_dict())
     identity = plan.models["llm"][0]
@@ -147,18 +147,47 @@ def test_schema_one_plan_preserves_legacy_identity_and_round_trip():
     assert legacy.plan_id == result["run"]["plan_id"]
 
 
-def test_schema_two_requires_known_identity_scheme():
+def test_current_schema_requires_known_identity_scheme():
     encoded = make_plan().to_dict()
     encoded["identity_scheme"] = "other"
     with pytest.raises(ValueError, match="identity scheme"):
         RunPlan.from_dict(encoded)
 
 
-def test_schema_two_requires_serialized_job_identity():
+def test_current_schema_requires_serialized_job_identity():
     encoded = make_plan().to_dict()
     encoded.pop("job_id")
     with pytest.raises(ValueError, match="job identity"):
         RunPlan.from_dict(encoded)
+
+
+def test_current_schema_covers_execution_policy_identities_without_paths():
+    plan = complete_plan()
+    identity = plan.to_dict()["execution_identity"]
+    assert identity["workloads"] == {"llm": "4.1", "conv": "4.1"}
+    assert identity["runtime"] == {"engine": "llamacpp", "adapter_contract": 1}
+    assert identity["retry"]["implausible_tps_retries"] == 1
+    assert identity["timeouts"] == {"run_seconds": 1800, "accuracy_seconds": 60}
+    assert identity["output"] == {"result_schema": 3, "event_schema": 1}
+    assert "/" not in json.dumps(identity)
+
+
+def test_current_schema_rejects_changed_or_missing_execution_identity():
+    encoded = complete_plan().to_dict()
+    encoded["execution_identity"]["retry"]["implausible_tps_retries"] = 2
+    with pytest.raises(ValueError, match="execution identity"):
+        RunPlan.from_dict(encoded)
+    encoded = complete_plan().to_dict()
+    encoded.pop("execution_identity")
+    with pytest.raises(ValueError, match="execution identity"):
+        RunPlan.from_dict(encoded)
+
+
+def test_schema_two_remains_readable_without_execution_identity():
+    plan = make_plan(schema_version=2)
+    encoded = plan.to_dict()
+    assert "execution_identity" not in encoded
+    assert RunPlan.from_dict(encoded) == plan
 
 
 @pytest.mark.parametrize("wrapped", [False, True])

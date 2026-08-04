@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-PLAN_SCHEMA_VERSION = 2
-SUPPORTED_PLAN_SCHEMAS = {1, PLAN_SCHEMA_VERSION}
+PLAN_SCHEMA_VERSION = 3
+SUPPORTED_PLAN_SCHEMAS = {1, 2, PLAN_SCHEMA_VERSION}
 IDENTITY_SCHEME = "sha256-v1"
 SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
@@ -93,17 +93,20 @@ class RunPlan:
         schema_version = value.get("schema_version")
         if schema_version not in SUPPORTED_PLAN_SCHEMAS:
             raise ValueError(f"unsupported run-plan schema: {schema_version}")
-        if schema_version == PLAN_SCHEMA_VERSION and value.get("identity_scheme") != IDENTITY_SCHEME:
+        if schema_version >= 2 and value.get("identity_scheme") != IDENTITY_SCHEME:
             raise ValueError("unsupported or missing run-plan identity scheme")
         if schema_version >= 2 and not value.get("job_id"):
             raise ValueError("run-plan schema 2 requires a job identity")
-        return cls.create(
+        plan = cls.create(
             application_version=value["application_version"], engine_name=value["engine"],
             tests=value["requested_tests"], stage_order=value["stage_order"],
             models=value["models"], effective_config=value["effective_config"],
             schema_version=schema_version,
             job_id=value.get("job_id"),
         )
+        if schema_version >= 3 and value.get("execution_identity") != plan.execution_identity:
+            raise ValueError("run-plan execution identity is missing or inconsistent")
+        return plan
 
     @property
     def models(self) -> dict:
@@ -112,6 +115,27 @@ class RunPlan:
     @property
     def effective_config(self) -> dict:
         return json.loads(self._config_json)
+
+    @property
+    def execution_identity(self) -> dict:
+        settings = self.effective_config
+        return {
+            "workloads": {stage: self.application_version for stage in self.stage_order},
+            "runtime": {"engine": self.engine_name, "adapter_contract": 1},
+            "privacy": {
+                "prompts": "not_in_result",
+                "responses": "workload_dependent_sidecar",
+            },
+            "retry": {
+                "implausible_tps_retries": 1,
+                "engine_recovery": "bounded_same_sample",
+            },
+            "timeouts": {
+                "run_seconds": settings.get("run_timeout_seconds"),
+                "accuracy_seconds": settings.get("accuracy_timeout_seconds"),
+            },
+            "output": {"result_schema": 3, "event_schema": 1},
+        }
 
     @property
     def warmup_runs(self) -> int:
@@ -138,6 +162,8 @@ class RunPlan:
         if self.schema_version >= 2:
             value["identity_scheme"] = IDENTITY_SCHEME
             value["job_id"] = self.job_id
+        if self.schema_version >= 3:
+            value["execution_identity"] = self.execution_identity
         return value
 
     def validate_for_execution(self) -> None:
