@@ -25,6 +25,8 @@ class ReportModel:
     accuracy: tuple[tuple[str, str, str, str], ...]
     evidence: tuple[tuple[str, str, str, str], ...]
     optimizations: tuple[str, ...]
+    acceptance_decision: str
+    acceptance: tuple[tuple[str, str, str, str, str], ...]
 
 
 def _text(value, fallback="Not recorded") -> str:
@@ -38,7 +40,7 @@ def _sample_counts(result: dict) -> tuple[int, int, int]:
     return int(completed or 0), int(valid or 0), invalid
 
 
-def build_report_model(result: dict) -> ReportModel:
+def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
     if not isinstance(result, dict):
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
@@ -126,11 +128,23 @@ def build_report_model(result: dict) -> ReportModel:
         readiness_detail = (
             f"All {valid_total} recorded performance samples represented here were aggregate-eligible."
         )
+    acceptance_decision = "Not evaluated"
+    acceptance = ()
+    if policy is not None:
+        from acceptance_policy import evaluate_policy
+
+        evaluation = evaluate_policy(result, policy)
+        acceptance_decision = evaluation["decision"].upper()
+        acceptance = tuple((
+            item["id"], item["status"], _text(item["actual"]),
+            _text(item["threshold"]), str(item["evidence"]),
+        ) for item in evaluation["rules"])
     return ReportModel(
         title=f"Local AI Bench Decision Report - {hostname}", metadata=metadata,
         readiness=readiness, readiness_detail=readiness_detail,
         coverage=tuple(coverage), performance=tuple(performance), accuracy=tuple(accuracy),
         evidence=tuple(evidence), optimizations=tuple(settings.get("effective_optimizations") or ()),
+        acceptance_decision=acceptance_decision, acceptance=acceptance,
     )
 
 
@@ -167,15 +181,16 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 <h2>Accuracy evidence</h2>{_html_table(("Workload", "Model", "Accuracy", "Correct"), model.accuracy)}
 <h2>Sample validity</h2>{_html_table(("Workload", "Case", "Valid", "Excluded"), model.evidence)}
 <h2>Effective optimizations</h2>{_html_table(("Recorded setting",), ((value,) for value in model.optimizations))}
+<h2>Acceptance decision: {html.escape(model.acceptance_decision)}</h2>{_html_table(("Rule", "Status", "Actual", "Threshold", "Evidence"), model.acceptance)}
 <h2>Interpretation limits</h2><div class="limitations">This report presents measured evidence, not a hidden composite score or a universal recommendation. Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. Missing or invalid data is not zero. Review raw samples, exclusion reasons, and the verified result bundle before making a purchase, launch, or capacity decision.</div>
 <footer>Generated deterministically from a Local AI Bench result. No external assets, scripts, telemetry, or network resources are embedded.</footer>
 </body></html>"""
 
 
-def write_html_report(result: dict, path: Path) -> Path:
+def write_html_report(result: dict, path: Path, policy: dict | None = None) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_html(build_report_model(result)), encoding="utf-8", newline="\n")
+    path.write_text(render_html(build_report_model(result, policy)), encoding="utf-8", newline="\n")
     return path
 
 
@@ -184,14 +199,14 @@ def report_output_paths(html_path: Path) -> tuple[Path, Path]:
     return html_path, html_path.with_suffix(".pdf")
 
 
-def write_pdf_report(result: dict, path: Path) -> Path:
+def write_pdf_report(result: dict, path: Path, policy: dict | None = None) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    model = build_report_model(result)
+    model = build_report_model(result, policy)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
@@ -237,6 +252,10 @@ def write_pdf_report(result: dict, path: Path) -> Path:
     add_table("Accuracy evidence", ("Workload", "Model", "Accuracy", "Correct"), model.accuracy)
     add_table("Sample validity", ("Workload", "Case", "Valid", "Excluded"), model.evidence)
     add_table("Effective optimizations", ("Recorded setting",), tuple((value,) for value in model.optimizations))
+    add_table(
+        f"Acceptance decision: {model.acceptance_decision}",
+        ("Rule", "Status", "Actual", "Threshold", "Evidence"), model.acceptance,
+    )
     story.extend([Spacer(1, 12), Paragraph("Interpretation limits", styles["Heading2"]), Paragraph(
         "This report presents measured evidence, not a hidden composite score or a universal recommendation. "
         "Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. "

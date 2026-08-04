@@ -14,6 +14,8 @@ bench-env/bin/python scripts/acceptance_policy_cli.py \
 
 Exit code `0` means every rule passed, `2` means the result was evaluated and rejected, and `1` means the policy or result could not be evaluated. The command writes deterministic JSON containing the overall decision and every rule's status, actual value, threshold, and evidence count.
 
+Policies can also be applied when creating a decision report through the benchmark GUI or with `python scripts/decision_report_cli.py RESULT --html REPORT.html --pdf REPORT.pdf --policy POLICY.json`. The report keeps evidence completeness and policy acceptance separate.
+
 ## Rule behavior
 
 Supported operators are `at_least` and `at_most`. Performance evidence counts `valid_runs` when present and otherwise the workload's completed `n_runs`; accuracy evidence counts scored questions. Missing metrics, missing cases, non-finite values, and evidence below `minimum_evidence` reject rather than becoming zero or passing silently.

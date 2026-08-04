@@ -15,6 +15,7 @@ from pathlib import Path
 
 import config
 import psutil
+from acceptance_policy import load_policy
 from benchmark_frontend import (
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
@@ -786,8 +787,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         try:
             html_path, pdf_path = report_output_paths(Path(destination))
             result = load_result(Path(result_path))
-            write_html_report(result, html_path)
-            write_pdf_report(result, pdf_path)
+            policy = None
+            if messagebox.askyesno(
+                    "Acceptance policy", "Apply an acceptance policy to this report?", parent=root):
+                policy_path = filedialog.askopenfilename(
+                    title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
+                )
+                if not policy_path:
+                    return
+                policy = load_policy(Path(policy_path))
+            write_html_report(result, html_path, policy)
+            write_pdf_report(result, pdf_path, policy)
             messagebox.showinfo(
                 "Decision report created",
                 f"HTML and PDF reports saved to:\n{html_path.parent}", parent=root,

@@ -18,6 +18,8 @@ At least one output flag is required. Both formats are generated locally with no
 
 The graphical benchmark launcher also provides **Create Report** on the Run Log screen. Choose a result JSON and an HTML destination; the matching PDF is written beside it with the same filename stem.
 
+The GUI then offers an optional acceptance-policy selection. On the CLI, pass `--policy POLICY.json`. When supplied, both report formats show the overall accepted/rejected decision and every named rule's status, actual value, threshold, and evidence count; evidence readiness remains a separate statement so a complete run cannot be mistaken for a passing policy.
+
 Example outputs are available as [HTML](../samples/decision_report_example.html) and [PDF](../samples/decision_report_example.pdf).
 
 ## Readiness and evidence

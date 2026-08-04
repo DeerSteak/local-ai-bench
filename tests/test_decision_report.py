@@ -92,7 +92,45 @@ def test_report_cli_writes_both_formats_and_rejects_nonfinite_result(tmp_path):
     assert main([str(invalid), "--html", str(tmp_path / "bad.html")]) == 1
 
 
+def test_report_cli_applies_acceptance_policy(tmp_path):
+    result = load("results_v4_1_complete.json")
+    result["run"]["plan"] = {"effective_config": {"methodology_profile": "neutral-v1"}}
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    policy = {
+        "schema_version": 1, "name": "Gate", "methodology_profile": "neutral-v1",
+        "rules": [{
+            "id": "throughput", "section": "llm", "model": "golden", "case": "2K",
+            "metric": "tps_mean", "operator": "at_least", "threshold": 55.0,
+            "minimum_evidence": 2,
+        }],
+    }
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    report_path = tmp_path / "report.html"
+    assert main([str(result_path), "--html", str(report_path), "--policy", str(policy_path)]) == 0
+    assert "Acceptance decision: REJECTED" in report_path.read_text(encoding="utf-8")
+
+
 def test_report_output_paths_create_adjacent_html_and_pdf():
     assert report_output_paths(Path("results/vendor.report")) == (
         Path("results/vendor.html"), Path("results/vendor.pdf"),
     )
+
+
+def test_report_renders_explicit_acceptance_without_changing_evidence_readiness():
+    result = load("results_v4_1_complete.json")
+    result["run"]["plan"] = {"effective_config": {"methodology_profile": "neutral-v1"}}
+    policy = {
+        "schema_version": 1, "name": "Gate", "methodology_profile": "neutral-v1",
+        "rules": [{
+            "id": "throughput", "section": "llm", "model": "golden", "case": "2K",
+            "metric": "tps_mean", "operator": "at_least", "threshold": 55.0,
+            "minimum_evidence": 2,
+        }],
+    }
+    model = build_report_model(result, policy)
+    assert model.readiness == "COMPLETE EVIDENCE"
+    assert model.acceptance_decision == "REJECTED"
+    assert model.acceptance == (("throughput", "fail", "50.0", "55.0", "2"),)
+    assert "Acceptance decision: REJECTED" in render_html(model)
