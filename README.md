@@ -53,6 +53,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
 | [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
 | [Platform Tuning Profiles](docs/platform-tuning.md) | Neutral runtime settings, compatibility workarounds, and profile change rules |
+| [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
 | [Limitations](docs/limitations.md) | Representativeness, environmental variance, compatibility, and recommendation constraints |
 | [Local Data Lifecycle](docs/data-lifecycle.md) | Local storage, retention, deletion, portability, and support-bundle handling |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |

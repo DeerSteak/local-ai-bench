@@ -32,6 +32,7 @@
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
+| `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
 | `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
@@ -74,6 +75,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
 | `decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |
 | `decision_report_cli.py` | Command-line decision-report generator for validated result JSON |
+| `acceptance_policy.py` | Validates and evaluates versioned per-case evidence-threshold policies |
+| `acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |

@@ -113,6 +113,8 @@ Portable result bundles are available through the GUI's **Export Bundle** and **
 
 Deterministic decision reports are generated through the GUI's **Create Report** action or with `python scripts/decision_report_cli.py RESULT --html REPORT.html --pdf REPORT.pdf`; either CLI output may be omitted, but at least one is required. Reports are self-contained, local-only evidence summaries and do not calculate a hidden composite score. See [Decision Reports](reports.md).
 
+Explicit evidence thresholds can be evaluated with `python scripts/acceptance_policy_cli.py RESULT POLICY`. Exit code `0` means every named rule passed, `2` means evaluation completed with a rejection, and `1` means the input was invalid or unreadable. See [Acceptance Policies](acceptance-policies.md).
+
 The GUI's **Support Bundle** action creates a separate redacted `.labsupport` archive. Before choosing the destination, a scrollable review lists every included file and field. The allowlist excludes raw results, logs, hostname, model identity, measurements, prompts, responses, tokens, credentials, and private paths; the archive contains only runtime/system compatibility facts, stage coverage, and scrubbed structured diagnostics.
 
 | Flag | Values | Default | Notes |
