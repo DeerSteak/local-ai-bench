@@ -111,6 +111,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
 | Transactional event journal, transition safety, and projections | [test_event_store.py](../tests/test_event_store.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
+| Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |

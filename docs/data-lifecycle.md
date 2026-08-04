@@ -17,4 +17,6 @@ Local AI Bench stores benchmark state locally by default and does not upload res
 
 Deleting a result does not automatically delete separately selected bundles, reports, sidecars, images, or crash caches. The current product performs no hidden cloud retention and has no remote-delete promise because it has no hosted sync. Secure deletion characteristics depend on the filesystem and storage device; ordinary deletion should not be described as forensic erasure.
 
+The transactional migration includes a local content-addressed object store for future large logs, responses, images, and exports. Object references disclose only digest, size, and media type; source names and paths are not retained. It remains inactive for current workloads until each workload moves from JSON ownership, so current files are neither duplicated nor silently retained there.
+
 Results can contain hardware identity, model names, scores, generated content, and paths chosen by the user and may be confidential or embargoed. Review ordinary JSON and result bundles before transfer. Use the separately allowlisted support-bundle workflow for diagnostics; it excludes raw measurements and content by design.

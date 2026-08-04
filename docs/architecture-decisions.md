@@ -77,6 +77,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: compare filenames/timestamps or resume directly inside a partially completed request.
 - Evidence: content-change, privacy, completed-case, interrupted-attempt, next-attempt, unknown-case, and database-migration tests.
 
+### AD-009 — Store large event artifacts by verified content digest
+
+- Status: accepted
+- Requirement: large logs, responses, images, and exports must not bloat SQLite or depend on private source paths.
+- Decision: stream artifacts atomically into a local SHA-256 object tree and place only validated digest/size/media-type references in events. Reuse and reads reverify content; source filenames are excluded.
+- Rejected alternative: BLOB storage in the event database or path references to mutable source files.
+- Activation gate: a migrated workload adopts objects and journal references together; the store does not shadow-copy legacy files.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
