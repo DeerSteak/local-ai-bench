@@ -37,6 +37,7 @@
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
 | `docs/result-history.md` | Filesystem-owned result discovery, filtering, comparison, and policy evaluation |
+| `docs/vendor-diagnostics.md` | First-divergence diagnostic content, verification, and engineer workflow |
 | `docs/outbound-review.md` | Embargo-safe identity preview, private aliases, and source verification |
 | `docs/offline-mode.md` | Loopback-only execution policy, inherited controls, and qualification boundary |
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
@@ -81,6 +82,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
 | `outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
 | `network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
+| `vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |
+| `vendor_diagnostic_cli.py` | Reviewed diagnostic creation and source-pair verification commands |
 | `result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
 | `decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |

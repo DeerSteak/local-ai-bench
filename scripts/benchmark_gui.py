@@ -60,6 +60,7 @@ from progress_events import PROGRESS_PREFIX
 from shared import Shared
 from setup_config import configured_comfyui_dir, load_setup_config
 from tk_utils import mousewheel_scroll_units
+from vendor_diagnostic import write_vendor_diagnostic
 
 
 def effective_gui_options(state: dict | None) -> dict:
@@ -838,7 +839,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
         subprocess.Popen(open_path_command(folder, platform.system()))
 
-    def review_outbound_metadata(result, purpose):
+    def review_outbound_metadata(result, purpose, *, allow_aliases=True):
         decision = {"value": None}
         dialog = tk.Toplevel(root)
         dialog.title(f"Review metadata for {purpose}")
@@ -862,7 +863,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         text_widget.pack(side="left", fill="both", expand=True)
         scroll.pack(side="left", fill="y")
         aliases = ttk.LabelFrame(dialog, text="Optional private aliases", padding=10)
-        aliases.pack(fill="x", padx=16, pady=(10, 0))
+        if allow_aliases:
+            aliases.pack(fill="x", padx=16, pady=(10, 0))
         system_alias = tk.StringVar()
         hardware_alias = tk.StringVar()
         ttk.Label(aliases, text="System name").grid(row=0, column=0, sticky="w")
@@ -1190,12 +1192,39 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Acceptance evaluation failed", str(exc), parent=root)
 
+    def export_history_diagnostic():
+        try:
+            candidate_path = selected_history_path()
+            if baseline_path["value"] is None:
+                raise ValueError("Set a baseline result first.")
+            baseline = load_history_result(baseline_path["value"])
+            candidate = load_history_result(candidate_path)
+            if review_outbound_metadata(
+                    baseline, "diagnostic baseline", allow_aliases=False) is None:
+                return
+            if review_outbound_metadata(
+                    candidate, "diagnostic candidate", allow_aliases=False) is None:
+                return
+            destination = filedialog.asksaveasfilename(
+                title="Export vendor diagnostic", defaultextension=".labdiag",
+                filetypes=[("Local AI Bench diagnostic", "*.labdiag")],
+            )
+            if not destination:
+                return
+            write_vendor_diagnostic(baseline_path["value"], candidate_path, Path(destination))
+            messagebox.showinfo("Vendor diagnostic created", destination, parent=root)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("Vendor diagnostic failed", str(exc), parent=root)
+
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
     ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
     ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
         side="left", padx=(8, 0),
     )
     ttk.Button(history_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
+        side="left", padx=(8, 0),
+    )
+    ttk.Button(history_actions, text="Export Diagnostic", command=export_history_diagnostic).pack(
         side="left", padx=(8, 0),
     )
     history_query.trace_add("write", apply_history_filters)

@@ -58,6 +58,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
 | [Benchmark Projects](docs/projects.md) | Local decision workflows, portable configuration, baselines, and acceptance policies |
 | [Local Result History](docs/result-history.md) | Filesystem-owned filtering, baseline comparison, and policy evaluation |
+| [Vendor Diagnostics](docs/vendor-diagnostics.md) | First-divergence evidence and source-verified engineer reproduction package |
 | [Outbound Metadata Review](docs/outbound-review.md) | Embargo review, private aliases, and source-identity verification |
 | [Offline Mode](docs/offline-mode.md) | Loopback-only execution controls and qualification boundary |
 | [Limitations](docs/limitations.md) | Representativeness, environmental variance, compatibility, and recommendation constraints |
