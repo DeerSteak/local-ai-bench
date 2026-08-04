@@ -1,0 +1,7 @@
+# Release artifact identity
+
+`scripts/release_manifest.py` creates deterministic checksums and provenance for an explicit set of packaged files. Each manifest records application version, preview/stable channel, source commit, relative artifact name, byte size, SHA-256 digest, and signature state. It rejects empty sets, duplicate artifacts, symlinks, non-files, and paths outside the selected release root.
+
+The canonical JSON is the payload a future release signer will authenticate. Preview manifests may remain explicitly `unsigned`; a stable manifest fails verification unless its signature state is verified. The current implementation does not generate or trust signatures because signing requires platform-specific protected credentials, certificate/key lifecycle, revocation, timestamping, and CI/release controls that do not exist yet. Changing the JSON field to `verified` is not signing and is not evidence of authenticity.
+
+A release pipeline must package artifacts in a clean environment, generate the SBOM and reviewed notices, hash the final immutable bytes, attach build provenance, sign the manifest and platform packages with protected release identities, verify them independently, publish both checksums and verification instructions, and archive the source commit and qualification record. Rollback selects a previously signed allowed release rather than accepting an arbitrary older file.

@@ -30,6 +30,8 @@ A stable release requires all automated Python/dashboard tests; current golden c
 
 `bench-env/bin/python scripts/release_readiness.py` emits a machine-readable local preflight and exits nonzero while front-end option coverage, model licenses, dependency licenses, or target-hardware qualification remain unresolved. It intentionally does not mark external security, installer, usability, legal, or customer gates complete; those require separately linked evidence in the release decision.
 
+The [release artifact manifest](release-artifacts.md) records deterministic SHA-256 checksums and source provenance for explicit packaged files. Stable verification still requires real protected signing credentials and independent pipeline evidence.
+
 Release approval records the product, methodology, engineering, security, licensing, design, and release-operations decisions separately. A failed gate blocks stable status; it may produce a clearly labeled preview build but cannot be silently waived.
 
 ## Release channels and notes
