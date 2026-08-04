@@ -28,6 +28,7 @@ from comfyui_installation import (
     write_extra_model_paths,
 )
 import hardware
+from log_redaction import redact_log_text
 from models import IMAGE_MODELS
 from result_store import atomic_write_json
 from progress_events import emit_model_finished, emit_progress
@@ -91,7 +92,7 @@ class Shared:
     # ── logging ──
     @staticmethod
     def plain_output(msg="", *, end="\n"):
-        print(msg, end=end)
+        print(redact_log_text(msg), end=end)
 
     @staticmethod
     def clear_terminal():
@@ -105,7 +106,8 @@ class Shared:
         if leading_blank:
             print()
         separator = "\n" if timestamp_newline else " "
-        print(f"[{_console_now().strftime('%H:%M:%S')}]{separator}{msg}", end=end)
+        safe_message = redact_log_text(msg)
+        print(f"[{_console_now().strftime('%H:%M:%S')}]{separator}{safe_message}", end=end)
 
     @staticmethod
     def log(msg):   Shared.output(f"  {config.CYAN}→{config.RESET}  {msg}")
