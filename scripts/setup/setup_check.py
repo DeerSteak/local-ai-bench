@@ -2,6 +2,7 @@
 """Pre-flight setup/install assistant — see docs/setup.md."""
 
 import argparse
+import atexit
 import sys
 import os
 import platform
@@ -34,6 +35,7 @@ from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MO
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
+from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.app.interface_mode import select_interface_mode
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
@@ -1020,6 +1022,17 @@ elif selected_images and not _detected_comfyui:
 
 INSTALL_STARTED = True
 
+_gui_progress_path = None
+_gui_progress_status = ["stopped"]
+if _gui_plan is not None:
+    try:
+        _gui_progress_process, _gui_progress_path = start_setup_progress()
+        atexit.register(
+            lambda: finish_setup_progress(_gui_progress_path, _gui_progress_status[0]),
+        )
+    except OSError as exc:
+        warn(f"Could not open the graphical progress window: {exc}")
+
 section("Installing")
 
 req_file = SCRIPT_DIR / "requirements.txt"
@@ -1699,3 +1712,7 @@ else:
     for i, issue in enumerate(issues, 1):
         print(f"  {i}. {issue}")
     print()
+
+if _gui_progress_path is not None:
+    _gui_progress_status[0] = "complete" if not issues else "action_items"
+    finish_setup_progress(_gui_progress_path, _gui_progress_status[0])
