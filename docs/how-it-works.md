@@ -62,7 +62,7 @@ The implementation has four layers:
 | Orchestration | `run_plan.py` owns the immutable serializable execution identity; `orchestration.py` owns fixed stage order/execution, local paths, and lifecycle policy; `result_store.py` owns schema mutation, legal state transitions, and durable checkpoints |
 | Workloads | One module per workload or closely related workload family; each receives an engine and returns its section of the results schema |
 | Engine adapters | `engines/base.py` defines the interface and `engines/llamacpp.py` owns llama-server process/HTTP details; the two native llama.cpp benchmark modules intentionally bypass this interface |
-| Shared definitions | `config.py`, `models.py`, `model_inventory.py`, `hardware.py`, and `shared.py` own defaults, catalog data, discovery, fit estimates, logging, retries, statistics, and ComfyUI lifecycle |
+| Shared definitions | `config.py`, `models.py`, `catalogs.py`, `model_inventory.py`, `hardware.py`, and `shared.py` own defaults, catalog data, discovery, fit estimates, logging, retries, statistics, and ComfyUI lifecycle |
 
 See [Project Structure](project-structure.md#scripts-in-detail) for the complete module-by-module map and [Engines](engines.md) for the adapter contract.
 
