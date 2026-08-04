@@ -5,6 +5,8 @@ from scripts.setup.setup_gui import (
     hf_token_review_label,
     license_button_label,
     mousewheel_scroll_units,
+    selected_gui_token,
+    should_save_gui_token,
     validate_gui_plan,
 )
 
@@ -44,6 +46,25 @@ def test_hf_token_review_label_reports_existing_and_new_credentials(plan, expect
 def test_license_button_label_explains_the_link_action():
     url = "https://huggingface.co/example/model"
     assert license_button_label(url) == f"Accept license: {url}"
+
+
+@pytest.mark.parametrize(
+    ("existing", "override", "entered", "expected"),
+    [
+        (True, False, "replacement", ""),
+        (True, True, " replacement ", "replacement"),
+        (False, False, " new ", "new"),
+    ],
+)
+def test_selected_gui_token_requires_override_for_existing_credentials(
+    existing, override, entered, expected,
+):
+    assert selected_gui_token(existing, override, entered) == expected
+
+
+def test_existing_gui_token_is_not_rewritten_when_save_control_is_disabled():
+    assert should_save_gui_token("", True) is False
+    assert should_save_gui_token("replacement", True) is True
 
 
 @pytest.mark.parametrize(

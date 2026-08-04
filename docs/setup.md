@@ -99,7 +99,7 @@ If you select any LLM, embedding, or image model in the picker, `setup_check.py`
 2. `hf.txt` in the repo root (token on a single line)
 3. Interactive prompt — saves to `hf.txt` by default for future runs, with an explicit opt-out
 
-A token isn't required for non-gated models, but authenticated downloads generally receive better rate limits. `setup_check.py` therefore offers token authentication whenever any model is selected; pressing Enter skips it when no gated image model was selected. The graphical review identifies when an existing `HF_TOKEN` or `hf.txt` credential will be used without displaying its value. A saved token is written as a single line with user-only permissions on platforms that support POSIX file modes, and `hf.txt` remains excluded from Git.
+A token isn't required for non-gated models, but authenticated downloads generally receive better rate limits. `setup_check.py` therefore offers token authentication whenever any model is selected; pressing Enter skips it when no gated image model was selected. When the graphical setup detects an existing `HF_TOKEN` or `hf.txt` credential, it disables the token-entry and save controls by default; select **Override token** to enable them and supply a replacement. The graphical review identifies which credential source will be used without displaying its value. A saved token is written as a single line with user-only permissions on platforms that support POSIX file modes, and `hf.txt` remains excluded from Git.
 
 ## Platform notes
 

@@ -63,6 +63,17 @@ def license_button_label(url: str) -> str:
     return f"Accept license: {url}"
 
 
+def selected_gui_token(existing_available: bool, override: bool, entered: str) -> str:
+    """Use entered credentials only when replacement is available and enabled."""
+    if existing_available and not override:
+        return ""
+    return entered.strip()
+
+
+def should_save_gui_token(token: str, requested: bool) -> bool:
+    return bool(token and requested)
+
+
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
@@ -90,6 +101,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
     token_var = tk.StringVar()
     save_token_var = tk.BooleanVar(value=True)
+    override_token_var = tk.BooleanVar(value=False)
     cleanup_var = tk.BooleanVar(value=False)
     comfy_mode_var = tk.StringVar(value="detected" if detected_comfyui else "download")
     comfy_path_var = tk.StringVar(value=str(detected_comfyui or ""))
@@ -204,12 +216,27 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         ttk.Label(
             credentials, text="A token is already available from HF_TOKEN or hf.txt.",
         ).grid(sticky="w", pady=(0, 10))
+        override_token_check = ttk.Checkbutton(
+            credentials, text="Override token", variable=override_token_var,
+        )
+        override_token_check.grid(sticky="w", pady=(0, 10))
     ttk.Label(credentials, text="Access token").grid(sticky="w")
-    ttk.Entry(credentials, textvariable=token_var, show="•", width=72).grid(sticky="ew", pady=(3, 10))
-    ttk.Checkbutton(
+    token_entry = ttk.Entry(credentials, textvariable=token_var, show="•", width=72)
+    token_entry.grid(sticky="ew", pady=(3, 10))
+    save_token_check = ttk.Checkbutton(
         credentials, text="Save token to gitignored hf.txt for future runs",
         variable=save_token_var,
-    ).grid(sticky="w")
+    )
+    save_token_check.grid(sticky="w")
+
+    def update_token_controls() -> None:
+        state = "normal" if not existing_hf_token or override_token_var.get() else "disabled"
+        token_entry.configure(state=state)
+        save_token_check.configure(state=state)
+
+    if existing_hf_token:
+        override_token_check.configure(command=update_token_controls)
+    update_token_controls()
 
     comfy = new_page()
     ttk.Label(comfy, text="ComfyUI", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -256,14 +283,17 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     next_button.pack(side="right", padx=(0, 8))
 
     def build_plan() -> dict:
+        hf_token = selected_gui_token(
+            existing_hf_token, override_token_var.get(), token_var.get(),
+        )
         return {
             "llm_tags": [m["tag"] for _, group in LLM_GROUPS for m in group if model_vars[m["tag"]].get()],
             "embedding_tags": [m["tag"] for m in EMBED_MODELS if model_vars[m["tag"]].get()],
             "image_shorts": [m["short"] for m in IMAGE_MODELS if model_vars[m["short"]].get()],
             "cleanup_names": cleanup_names if cleanup_var.get() else [],
-            "hf_token": token_var.get().strip(),
-            "save_hf_token": save_token_var.get(),
-            "use_existing_hf_token": existing_hf_token and not token_var.get().strip(),
+            "hf_token": hf_token,
+            "save_hf_token": should_save_gui_token(hf_token, save_token_var.get()),
+            "use_existing_hf_token": existing_hf_token and not hf_token,
             "comfyui_mode": comfy_mode_var.get(),
             "comfyui_path": comfy_path_var.get().strip(),
         }
