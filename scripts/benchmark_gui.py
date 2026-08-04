@@ -1617,7 +1617,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def begin_process_control():
         nonlocal process_control_path, process_paused
-        process_control_path = create_pause_control(config.RESULTS_DIR)
+        process_control_path = create_pause_control()
         process_paused = False
         pause_button.configure(text="Pause", state="normal")
         return {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1",

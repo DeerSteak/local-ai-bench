@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -13,8 +14,9 @@ PAUSE_CONTROL_ENV = "LOCAL_AI_BENCH_PAUSE_CONTROL"
 PAUSE_STATES = {"running", "paused"}
 
 
-def create_pause_control(directory: Path) -> Path:
-    path = Path(directory).resolve() / f".benchmark-control-{uuid.uuid4().hex}.json"
+def create_pause_control(directory: Path | None = None) -> Path:
+    root = Path(directory or Path(tempfile.gettempdir()) / "local-ai-bench").resolve()
+    path = root / f"benchmark-control-{uuid.uuid4().hex}.json"
     write_pause_state(path, "running")
     return path
 

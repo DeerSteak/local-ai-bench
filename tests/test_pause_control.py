@@ -3,6 +3,7 @@ import json
 import pytest
 
 from pause_control import create_pause_control, read_pause_state, wait_if_paused, write_pause_state
+from result_history import discover_results
 
 
 def test_pause_control_round_trip_and_unique_paths(tmp_path):
@@ -12,6 +13,16 @@ def test_pause_control_round_trip_and_unique_paths(tmp_path):
     assert read_pause_state(first) == "running"
     write_pause_state(first, "paused")
     assert read_pause_state(first) == "paused"
+
+
+def test_default_pause_control_never_pollutes_result_history(tmp_path, monkeypatch):
+    monkeypatch.setattr("pause_control.tempfile.gettempdir", lambda: str(tmp_path / "temp"))
+    results = tmp_path / "results"
+    results.mkdir()
+    path = create_pause_control()
+    assert results not in path.parents
+    assert discover_results(results) == ([], [])
+    path.unlink()
 
 
 def test_wait_blocks_until_cooperative_resume(tmp_path):
