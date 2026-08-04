@@ -1,5 +1,15 @@
-from llm_conversation_benchmark import LLMConversationBenchmark as Conv
+from llm_conversation_benchmark import (
+    LLMConversationBenchmark as Conv, conversation_failure_status,
+)
 from engines.base import GenerationMeasurement
+
+
+def test_conversation_failure_status_classifies_retryable_attempts():
+    is_crash = lambda error: isinstance(error, ConnectionError)
+    assert conversation_failure_status(TimeoutError(), is_crash) == "timed_out"
+    assert conversation_failure_status(RuntimeError("request timed out"), is_crash) == "timed_out"
+    assert conversation_failure_status(ConnectionError(), is_crash) == "crashed"
+    assert conversation_failure_status(RuntimeError(), is_crash) == "failed"
 
 
 def test_followup_prompt_cycles_through_sections():

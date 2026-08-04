@@ -10,6 +10,12 @@ from progress_events import emit_model_finished, emit_progress
 from pause_control import wait_if_paused
 
 
+def conversation_failure_status(error, is_connection_crash) -> str:
+    if isinstance(error, TimeoutError) or "timed out" in str(error).lower():
+        return "timed_out"
+    return "crashed" if is_connection_crash(error) else "failed"
+
+
 class LLMConversationBenchmark:
     CONV_CRASH_CACHE = Path(".conv_crash_cache.json")
 
@@ -156,6 +162,7 @@ class LLMConversationBenchmark:
                     run_timed_out           = False
                     run_failed              = False
                     run_crashed             = False
+                    active_case             = None
 
                     def _turn(prompt_text, num_predict):
                         nonlocal cumulative_tokens, pending_response_tokens
@@ -191,6 +198,7 @@ class LLMConversationBenchmark:
                         for idx, target in enumerate(checkpoints):
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
                             attempt_number = journal.next_context_attempt(model, target) if journal else 1
+                            active_case = (target, label_ctx, attempt_number)
                             if target == 0:
                                 # Checkpoint 0 is just the opening turn — no growth to do first.
                                 measurement = _turn(_next_prompt(),
@@ -229,6 +237,7 @@ class LLMConversationBenchmark:
                                     depth_tokens=cumulative_tokens,
                                     attempt_number=attempt_number,
                                 )
+                                active_case = None
                             elif journal:
                                 Shared.log(f"Checkpoint {label_ctx} already complete — rebuilt cache only")
                             Shared.output(
@@ -248,6 +257,13 @@ class LLMConversationBenchmark:
 
                     except Exception as e:
                         is_timeout = isinstance(e, TimeoutError) or "timed out" in str(e).lower()
+                        if journal and active_case and active_case[2] is not None:
+                            journal.record_case(
+                                model, active_case[0], active_case[1], [],
+                                conversation_failure_status(e, engine.is_connection_crash),
+                                LLMConversationBenchmark.CONV_RUNS,
+                                attempt_number=active_case[2],
+                            )
                         if is_timeout:
                             Shared.err(f"{label}: run {run_i+1} timed out — stopping this run here")
                             partial_text = getattr(e, "partial_text", "")

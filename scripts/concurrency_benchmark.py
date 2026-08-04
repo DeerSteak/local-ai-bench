@@ -196,6 +196,11 @@ class ConcurrencyBenchmark:
                         engine, tag, level, per_request_context, label, progress_stage,
                     )
                     if status != "ok":
+                        if journal:
+                            journal.record_case(
+                                model, level, str(level), samples, status, level,
+                                attempt_number=attempt_number,
+                            )
                         if status == "crashed":
                             Shared.err(f"{label}: engine crashed repeatedly during the {level}-way batch — "
                                        f"last server output:\n{engine.tail_log()}")
