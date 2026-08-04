@@ -11,12 +11,13 @@ Use the report CLI after a benchmark has written its result JSON:
 ```bash
 bench-env/bin/python scripts/decision_report_cli.py results/results_system_20260804.json \
   --html results/decision_report_system.html \
-  --pdf results/decision_report_system.pdf
+  --pdf results/decision_report_system.pdf \
+  --reviewed-metadata
 ```
 
 At least one output flag is required. Both formats are generated locally with no external assets, scripts, telemetry, or network requests. The HTML is a single portable file, and identical validated input produces identical bytes in each format.
 
-The graphical benchmark launcher also provides **Create Report** on the Run Log screen. Choose a result JSON and an HTML destination; the matching PDF is written beside it with the same filename stem.
+The graphical benchmark launcher also provides **Create Report** on the Run Log screen. Choose a result JSON, review every outbound identity field, optionally assign private system/hardware aliases, and choose an HTML destination; the matching PDF is written beside it with the same filename stem. CLI generation prints the same metadata and writes nothing until `--reviewed-metadata` is supplied.
 
 The GUI then offers an optional acceptance-policy selection. On the CLI, pass `--policy POLICY.json`. When supplied, both report formats show the overall accepted/rejected decision and every named rule's status, actual value, threshold, and evidence count; evidence readiness remains a separate statement so a complete run cannot be mistaken for a passing policy.
 

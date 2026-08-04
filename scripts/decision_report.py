@@ -50,6 +50,7 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
     status = _text(run.get("status"), "legacy")
     plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
     settings = plan.get("effective_config") if isinstance(plan.get("effective_config"), dict) else {}
+    export_identity = run.get("export_identity") if isinstance(run.get("export_identity"), dict) else {}
     metadata = (
         ("System", hostname), ("Application", _text(result.get("version"))),
         ("Engine", _text(result.get("engine") or run.get("engine"))),
@@ -57,6 +58,7 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
         ("Memory", f"{profile['ram_gb']} GB" if profile.get("ram_gb") is not None else "Not recorded"),
         ("Run status", status), ("Plan ID", _text(run.get("plan_id"))),
         ("Methodology profile", _text(settings.get("methodology_profile"), "Legacy / not recorded")),
+        ("Source identity", _text(export_identity.get("source_sha256"))),
     )
     coverage = []
     stages = run.get("stages") if isinstance(run.get("stages"), dict) else {}

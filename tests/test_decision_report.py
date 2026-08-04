@@ -85,7 +85,12 @@ def test_pdf_bytes_are_deterministic_and_contain_no_external_asset(tmp_path):
 def test_report_cli_writes_both_formats_and_rejects_nonfinite_result(tmp_path):
     result_path = FIXTURES / "results_v4_1_complete.json"
     html_path, pdf_path = tmp_path / "report.html", tmp_path / "report.pdf"
-    assert main([str(result_path), "--html", str(html_path), "--pdf", str(pdf_path)]) == 0
+    assert main([str(result_path), "--html", str(html_path)]) == 1
+    assert not html_path.exists()
+    assert main([
+        str(result_path), "--html", str(html_path), "--pdf", str(pdf_path),
+        "--reviewed-metadata",
+    ]) == 0
     assert html_path.exists() and pdf_path.exists()
     invalid = tmp_path / "invalid.json"
     invalid.write_text('{"metric": NaN}', encoding="utf-8")
@@ -108,7 +113,10 @@ def test_report_cli_applies_acceptance_policy(tmp_path):
     policy_path = tmp_path / "policy.json"
     policy_path.write_text(json.dumps(policy), encoding="utf-8")
     report_path = tmp_path / "report.html"
-    assert main([str(result_path), "--html", str(report_path), "--policy", str(policy_path)]) == 0
+    assert main([
+        str(result_path), "--html", str(report_path), "--policy", str(policy_path),
+        "--reviewed-metadata",
+    ]) == 0
     assert "Acceptance decision: REJECTED" in report_path.read_text(encoding="utf-8")
 
 

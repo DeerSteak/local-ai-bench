@@ -8,6 +8,7 @@ from pathlib import Path
 
 from result_store import atomic_write_json, validate_json_data
 from run_plan import RunPlan
+from outbound_metadata import prepare_outbound_result
 
 
 BUNDLE_SCHEMA_VERSION = 1
@@ -40,9 +41,14 @@ def _zip_entry(name: str, data: bytes) -> tuple[zipfile.ZipInfo, bytes]:
 
 
 def export_result_bundle(result_path: Path, bundle_path: Path,
-                         artifacts: list[Path] | None = None) -> dict:
+                         artifacts: list[Path] | None = None, *,
+                         system_alias: str | None = None,
+                         hardware_alias: str | None = None) -> dict:
     result = json.loads(Path(result_path).read_text(encoding="utf-8"))
     validate_json_data(result)
+    result = prepare_outbound_result(
+        result, system_alias=system_alias, hardware_alias=hardware_alias,
+    )
     files = {"result.json": _canonical_bytes(result)}
     artifact_records = []
     for artifact in artifacts or []:

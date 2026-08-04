@@ -35,13 +35,13 @@ Private paths are local metadata even when the referenced content is public. Con
 | Dependency/update compromise | Locked dependencies, checksums, signatures, provenance, SBOM, staged rollback | Pending release work |
 | Model/prompt exfiltration | Offline mode, denied network for generated code, opt-in reviewed exports, no content telemetry | Pending complete offline/isolation verification |
 | Denial of service | Body/member/cardinality limits, timeouts, quotas, disk preflight, bounded artifact reads | Partial; coordinator enforcement pending |
-| Embargo disclosure | Private aliases, no telemetry/sync/update metadata, reviewed export/report/support, offline qualification | Classification defined; alias/export/offline controls pending |
+| Embargo disclosure | Private aliases, no telemetry/sync/update metadata, reviewed export/report/support, offline qualification | Alias and export/report/support review implemented; offline verification pending |
 
 ## Embargoed evaluation policy
 
 An evaluation is embargoed when the user or project marks any hardware, model, configuration, result, or relationship pre-release. The classification propagates to inventory, logs, screenshots, progress windows, result filenames/content, reports, bundles, support material, telemetry, sync, update requests, crash reports, and derived recommendations. A stable private alias is shown outside the restricted project while the internal identity remains available only to authorized local verification.
 
-No embargoed artifact leaves the machine without an explicit review that names destination, files, fields, aliases, and intended audience. Support bundles remain allowlisted but still require review. Telemetry, hosted sync, automatic crash upload, and metadata-bearing update checks default off for embargoed projects. Offline qualification must prove no unexpected network connection while setup dependencies and model artifacts are already present.
+No embargoed artifact leaves the machine without an explicit review that names destination, files, fields, aliases, and intended audience. Result bundle and report creation now preview identity fields, support system/hardware aliases, and retain a source-identity digest; arbitrary attached artifacts still require separate inspection. Support bundles remain allowlisted but still require review. Telemetry, hosted sync, automatic crash upload, and metadata-bearing update checks default off for embargoed projects. Offline qualification must prove no unexpected network connection while setup dependencies and model artifacts are already present.
 
 ## Security ownership and response
 

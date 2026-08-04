@@ -55,6 +55,7 @@ from result_history import compare_results, discover_results, filter_results, lo
 from support_bundle import export_support_bundle, preview_support_bundle
 from model_inventory import build_model_inventory
 from orchestration import STAGE_ORDER
+from outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from progress_events import PROGRESS_PREFIX
 from shared import Shared
 from setup_config import configured_comfyui_dir, load_setup_config
@@ -834,12 +835,70 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
         subprocess.Popen(open_path_command(folder, platform.system()))
 
+    def review_outbound_metadata(result, purpose):
+        decision = {"value": None}
+        dialog = tk.Toplevel(root)
+        dialog.title(f"Review metadata for {purpose}")
+        dialog.geometry("760x600")
+        dialog.transient(root)
+        dialog.grab_set()
+        ttk.Label(
+            dialog,
+            text="Review every identity field before it leaves this machine. Optional aliases replace exported names only; the source result is unchanged.",
+            wraplength=710,
+        ).pack(anchor="w", padx=16, pady=(16, 8))
+        preview_frame = ttk.Frame(dialog)
+        preview_frame.pack(fill="both", expand=True, padx=16)
+        text_widget = tk.Text(preview_frame, wrap="none", height=20)
+        scroll = ttk.Scrollbar(preview_frame, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scroll.set)
+        text_widget.insert("1.0", "\n".join(
+            f"{label}: {value}" for label, value in outbound_metadata_preview(result)
+        ))
+        text_widget.configure(state="disabled")
+        text_widget.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="left", fill="y")
+        aliases = ttk.LabelFrame(dialog, text="Optional private aliases", padding=10)
+        aliases.pack(fill="x", padx=16, pady=(10, 0))
+        system_alias = tk.StringVar()
+        hardware_alias = tk.StringVar()
+        ttk.Label(aliases, text="System name").grid(row=0, column=0, sticky="w")
+        ttk.Entry(aliases, textvariable=system_alias).grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        ttk.Label(aliases, text="Hardware name").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(aliases, textvariable=hardware_alias).grid(
+            row=1, column=1, sticky="ew", padx=(10, 0), pady=(8, 0),
+        )
+        aliases.columnconfigure(1, weight=1)
+        actions = ttk.Frame(dialog)
+        actions.pack(fill="x", padx=16, pady=16)
+
+        def approve():
+            decision["value"] = {
+                "system_alias": system_alias.get().strip() or None,
+                "hardware_alias": hardware_alias.get().strip() or None,
+            }
+            dialog.destroy()
+
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Approve Export", command=approve).pack(side="right", padx=(0, 8))
+        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        root.wait_window(dialog)
+        return decision["value"]
+
     def export_bundle():
         result = filedialog.askopenfilename(
             title="Choose result JSON", initialdir=config.RESULTS_DIR,
             filetypes=[("Benchmark result", "*.json")],
         )
         if not result:
+            return
+        try:
+            source = load_result(Path(result))
+            aliases = review_outbound_metadata(source, "result bundle")
+            if aliases is None:
+                return
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("Bundle export failed", str(exc), parent=root)
             return
         bundle = filedialog.asksaveasfilename(
             title="Export verified result bundle", defaultextension=".labresult",
@@ -848,7 +907,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if not bundle:
             return
         try:
-            export_result_bundle(Path(result), Path(bundle))
+            export_result_bundle(Path(result), Path(bundle), **aliases)
             messagebox.showinfo("Bundle exported", f"Verified bundle saved to:\n{bundle}", parent=root)
         except (OSError, ValueError, KeyError) as exc:
             messagebox.showerror("Bundle export failed", str(exc), parent=root)
@@ -882,6 +941,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if not result_path:
             return
+        try:
+            source_result = load_result(Path(result_path))
+            aliases = review_outbound_metadata(source_result, "decision report")
+            if aliases is None:
+                return
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("Report creation failed", str(exc), parent=root)
+            return
         destination = filedialog.asksaveasfilename(
             title="Save decision report", initialdir=config.RESULTS_DIR,
             defaultextension=".html", filetypes=[("Decision report", "*.html")],
@@ -890,7 +957,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         try:
             html_path, pdf_path = report_output_paths(Path(destination))
-            result = load_result(Path(result_path))
+            result = prepare_outbound_result(source_result, **aliases)
             project_policy = (active_project["value"] or {}).get("acceptance_policy")
             policy = project_policy
             if project_policy is None and messagebox.askyesno(

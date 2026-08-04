@@ -34,6 +34,20 @@ def test_bundle_export_is_deterministic_and_imports_content_addressed_artifacts(
     assert extracted[0].read_bytes() == artifact.read_bytes()
 
 
+def test_bundle_export_applies_private_aliases_and_retains_source_identity(tmp_path):
+    bundle = tmp_path / "aliased.labresult"
+    export_result_bundle(
+        FIXTURE, bundle, system_alias="System A", hardware_alias="Hardware A",
+    )
+    exported = verify_result_bundle(bundle)["result"]
+    assert exported["profile"]["hostname"] == "System A"
+    assert exported["profile"]["gpu"] == "Hardware A"
+    identity = exported["run"]["export_identity"]
+    assert identity["aliases_applied"] == ["system", "hardware"]
+    assert len(identity["source_sha256"]) == 64
+    assert json.loads(FIXTURE.read_text())["profile"]["hostname"] == "commercial-golden-system"
+
+
 def test_bundle_verifier_rejects_tampered_payload(tmp_path):
     bundle = tmp_path / "result.labresult"
     export_result_bundle(FIXTURE, bundle)
