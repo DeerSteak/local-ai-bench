@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from result_store import model_counts, validate_json_data
+from scripts.results.result_store import model_counts, validate_json_data
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -31,7 +31,7 @@ def test_v4_1_golden_results_remain_valid_finite_json(name):
 
 
 def test_schema_3_fixture_carries_a_reproducible_plan_identity():
-    from run_plan import RunPlan
+    from scripts.results.run_plan import RunPlan
 
     result = load_fixture("results_v4_1_schema3_plan.json")
     validate_json_data(result)

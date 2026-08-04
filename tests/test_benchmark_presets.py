@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from benchmark_frontend import GUI_OPTION_DEFAULTS, MenuEntry, build_frontend_state
-from benchmark_presets import (
+from scripts.app.benchmark_frontend import GUI_OPTION_DEFAULTS, MenuEntry, build_frontend_state
+from scripts.app.benchmark_presets import (
     PORTABLE_GUI_KEYS, build_portable_preset, compare_portable_presets,
     duplicate_portable_preset, load_portable_preset, save_portable_preset,
     validate_portable_preset,

@@ -26,7 +26,7 @@ def test_terminal_closer_targets_the_launching_tty():
 
 def test_setup_wrapper_only_offers_benchmark_after_setup_check_succeeds():
     wrapper = (ROOT / "setup.sh").read_text()
-    setup_call = '"$VENV_PYTHON" scripts/setup_check.py "$@"'
+    setup_call = '"$VENV_PYTHON" -m scripts.setup.setup_check "$@"'
     benchmark_prompt = 'Run the benchmark now? [y/N]'
     assert wrapper.index(setup_call) < wrapper.index(benchmark_prompt)
     assert "set -euo pipefail" in wrapper

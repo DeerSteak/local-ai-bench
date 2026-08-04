@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from acceptance_policy import evaluate_policy, load_policy, validate_policy
-from acceptance_policy_cli import main
+from scripts.results.acceptance_policy import evaluate_policy, load_policy, validate_policy
+from scripts.results.acceptance_policy_cli import main
 
 
 def policy(**rule_changes):

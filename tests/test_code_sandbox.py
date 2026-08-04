@@ -1,7 +1,7 @@
 import pytest
 
-from code_benchmark import CodeBenchmark
-from code_sandbox import MAX_OUTPUT_BYTES, validate_candidate_code
+from scripts.workloads.code_benchmark import CodeBenchmark
+from scripts.workloads.code_sandbox import MAX_OUTPUT_BYTES, validate_candidate_code
 
 
 @pytest.mark.parametrize(("code", "reason"), [

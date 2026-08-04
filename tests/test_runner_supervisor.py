@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-import config
-from engines.base import GenerationMeasurement
-from llm_event_stage import LLMEventStage, export_llm_section
-from native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
-from run_plan import RunPlan
-import runner_supervisor
-import workload_runner
-from runner_supervisor import (
+from scripts.runtime import config
+from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
+from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.run_plan import RunPlan
+from scripts.runtime import runner_supervisor
+from scripts.runtime import workload_runner
+from scripts.runtime.runner_supervisor import (
     RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor,
     build_runner_command, parse_runner_event,
 )
@@ -24,7 +24,7 @@ def spec(tmp_path):
 def test_runner_command_is_fixed_and_contains_no_caller_command_surface(tmp_path):
     command = build_runner_command(spec(tmp_path), "/venv/python")
     assert command == [
-        "/venv/python", str(runner_supervisor.config.SCRIPT_DIR / "scripts" / "workload_runner.py"),
+        "/venv/python", "-m", "scripts.runtime.workload_runner",
         "--job-id", "job_abc", "--stage", "llm", "--event-store",
         str((tmp_path / "events.sqlite3").resolve()),
     ]

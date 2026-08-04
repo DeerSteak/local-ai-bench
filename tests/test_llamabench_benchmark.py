@@ -6,51 +6,51 @@ from pathlib import Path
 
 import pytest
 
-import config
-from engines.llamacpp import LlamaCppEngine
-from llamabench_benchmark import LlamaBenchBenchmark
-from shared import Shared
+from scripts.runtime import config
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
+from scripts.runtime.shared import Shared
 
 
 def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
     nested = tmp_path / "build" / "bin"
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
-    monkeypatch.setattr("llamabench_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
 
 def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
     """A CMake source tree has tools/llama-bench/ (source) alongside build/bin/llama-bench
     (compiled) — rglob must not return the directory just because it sorts first."""
-    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
     (tmp_path / "tools" / "llama-bench").mkdir(parents=True)
     nested = tmp_path / "build" / "bin"
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
-    monkeypatch.setattr("llamabench_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
 
 def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
-        "llamabench_benchmark.shutil.which",
+        "scripts.workloads.llamabench_benchmark.shutil.which",
         lambda name: "/usr/local/bin/llama-bench" if name == "llama-bench" else None,
     )
     assert LlamaBenchBenchmark.find_binary() == "/usr/local/bin/llama-bench"
 
 
 def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
-    monkeypatch.setattr("llamabench_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
 
     real_exists = Path.exists
 
@@ -62,9 +62,9 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
 
 
 def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
-    monkeypatch.setattr("llamabench_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() is None
 
 
@@ -152,7 +152,7 @@ def test_run_one_parses_jsonl_on_success(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
     stdout_line = json.dumps(fake_entries[0]) + "\n"
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=[stdout_line]),
     )
     entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
@@ -165,7 +165,7 @@ def test_run_one_streams_each_jsonl_result(monkeypatch):
         {"n_prompt": 2048, "n_gen": 0, "avg_ts": 2.0},
     ]
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(
             0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
         ),
@@ -178,7 +178,7 @@ def test_run_one_streams_each_jsonl_result(monkeypatch):
 def test_run_one_propagates_stream_callback_failure(monkeypatch):
     row = {"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(
             0, stdout_lines=[json.dumps(row) + "\n"],
         ),
@@ -194,7 +194,7 @@ def test_run_one_streams_stderr_progress_lines(monkeypatch):
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 123.4, "stddev_ts": 1.2, "n_gpu_layers": 999}]
     stdout_line = json.dumps(fake_entries[0]) + "\n"
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(
             0, stdout_lines=[stdout_line], stderr_lines=["1/6: pp512\n", "2/6: pp512\n"],
         ),
@@ -206,7 +206,7 @@ def test_run_one_streams_stderr_progress_lines(monkeypatch):
 
 def test_run_one_raises_on_nonzero_exit(monkeypatch):
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(1, stderr_lines=["error: out of memory\n"]),
     )
     with pytest.raises(RuntimeError, match="out of memory"):
@@ -215,7 +215,7 @@ def test_run_one_raises_on_nonzero_exit(monkeypatch):
 
 def test_run_one_raises_on_malformed_json(monkeypatch):
     monkeypatch.setattr(
-        "llamabench_benchmark.subprocess.Popen",
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
         lambda cmd, stdout, stderr, text: _FakePopen(0, stdout_lines=["not json"]),
     )
     with pytest.raises(RuntimeError, match="unparseable JSON"):
@@ -224,7 +224,7 @@ def test_run_one_raises_on_malformed_json(monkeypatch):
 
 def test_run_one_propagates_timeout(monkeypatch):
     fake_proc = _FakePopen(hang=True)
-    monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
     monkeypatch.setattr(LlamaBenchBenchmark, "IDLE_POLL_INTERVAL", 0.001)
     with pytest.raises(subprocess.TimeoutExpired):
         LlamaBenchBenchmark.run_one(["llama-bench"], 0.01)
@@ -236,7 +236,7 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     not get killed just because the whole sweep runs long."""
     fake_entries = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0, "stddev_ts": 0.1, "n_gpu_layers": 999}]
     fake_proc = _FakePopen(0, stdout_lines=[json.dumps(fake_entries[0]) + "\n"])
-    monkeypatch.setattr("llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
+    monkeypatch.setattr("scripts.workloads.llamabench_benchmark.subprocess.Popen", lambda cmd, stdout, stderr, text: fake_proc)
     entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
     assert entries == fake_entries
     assert not fake_proc.killed

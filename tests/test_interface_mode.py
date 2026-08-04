@@ -1,6 +1,6 @@
 import pytest
 
-from interface_mode import desktop_available, is_ssh_session, select_interface_mode
+from scripts.app.interface_mode import desktop_available, is_ssh_session, select_interface_mode
 
 
 def test_ssh_detection_accepts_common_environment_markers():

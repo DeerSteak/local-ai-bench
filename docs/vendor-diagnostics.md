@@ -13,11 +13,11 @@ Identity incompatibility takes precedence over a numerical difference. When iden
 In **Result History**, set a baseline, select the candidate, and choose **Export Diagnostic**. Both systems' outbound metadata must be reviewed before the destination is selected.
 
 ```bash
-python scripts/vendor_diagnostic_cli.py create BASELINE CANDIDATE OUTPUT.labdiag
+python -m scripts.results.vendor_diagnostic_cli create BASELINE CANDIDATE OUTPUT.labdiag
 # Review the printed metadata, then:
-python scripts/vendor_diagnostic_cli.py create BASELINE CANDIDATE OUTPUT.labdiag --reviewed-metadata
+python -m scripts.results.vendor_diagnostic_cli create BASELINE CANDIDATE OUTPUT.labdiag --reviewed-metadata
 
-python scripts/vendor_diagnostic_cli.py verify OUTPUT.labdiag BASELINE CANDIDATE
+python -m scripts.results.vendor_diagnostic_cli verify OUTPUT.labdiag BASELINE CANDIDATE
 ```
 
 Verification recomputes both complete source-result digests. Any source mutation, substitution, or accidental pairing fails verification. A correction or rerun produces a new diagnostic rather than changing an already delivered artifact.

@@ -1,8 +1,8 @@
 import pytest
 
-import config
-from engines.base import ChatMeasurement
-from mcq_benchmark import MCQBenchmark
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement
+from scripts.workloads.mcq_benchmark import MCQBenchmark
 
 
 # ── build_prompt ──

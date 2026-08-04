@@ -32,7 +32,7 @@ tests.bat tests/test_config.py
 tests.bat -k "select_tier"
 ```
 
-The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Do not import or execute `scripts/setup_check.py` as a test shortcut: importing it starts the real interactive installation flow.
+The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Do not import or execute `scripts/setup/setup_check.py` as a test shortcut: importing it starts the real interactive installation flow.
 
 [tests/conftest.py](../tests/conftest.py) adds `scripts/` to `sys.path`, matching the benchmark's own top-level imports such as `import config`.
 
@@ -47,7 +47,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 
 On Windows, use `bench-env\Scripts\pip.exe` and `tests.bat`.
 
-[.coveragerc](../.coveragerc) omits `scripts/setup_check.py`, which is unsafe to import, and live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
+[.coveragerc](../.coveragerc) omits `scripts/setup/setup_check.py`, which is unsafe to import, and live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
 
 HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
 

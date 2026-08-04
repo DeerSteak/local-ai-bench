@@ -1,6 +1,6 @@
-import config
+from scripts.runtime import config
 
-from benchmark_options import (
+from scripts.app.benchmark_options import (
     GUI_OPTION_FLAGS, PUBLIC_OPTION_SCHEMA, TEST_CHOICES, TG_TOKEN_CHOICES,
     TIER_CHOICES, gui_option_defaults, option_value_errors,
 )

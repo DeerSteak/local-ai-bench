@@ -40,18 +40,14 @@ def test_shell_wrapper_zero_arguments_launches_frontend(tmp_path):
     wrapper = make_isolated_shell_wrapper(tmp_path)
     result, captured = run_isolated_wrapper(wrapper, tmp_path)
     assert result.returncode == 0
-    assert captured == [
-        str(tmp_path / "scripts" / "benchmark_launcher.py"), "--ui", "auto",
-    ]
+    assert captured == ["-m", "scripts.app.benchmark_launcher", "--ui", "auto"]
 
 
 def test_shell_wrapper_explicit_interface_launches_dispatcher(tmp_path):
     wrapper = make_isolated_shell_wrapper(tmp_path)
     result, captured = run_isolated_wrapper(wrapper, tmp_path, "--interface", "terminal")
     assert result.returncode == 0
-    assert captured == [
-        str(tmp_path / "scripts" / "benchmark_launcher.py"), "--interface", "terminal",
-    ]
+    assert captured == ["-m", "scripts.app.benchmark_launcher", "--interface", "terminal"]
 
 
 def test_shell_wrapper_ui_none_routes_through_dispatcher(tmp_path):
@@ -61,8 +57,7 @@ def test_shell_wrapper_ui_none_routes_through_dispatcher(tmp_path):
     )
     assert result.returncode == 0
     assert captured == [
-        str(tmp_path / "scripts" / "benchmark_launcher.py"),
-        "--ui", "none", "--tests", "llm",
+        "-m", "scripts.app.benchmark_launcher", "--ui", "none", "--tests", "llm",
     ]
 
 
@@ -73,8 +68,7 @@ def test_shell_wrapper_arguments_bypass_frontend_and_preserve_spaces(tmp_path):
     )
     assert result.returncode == 0
     assert captured == [
-        str(tmp_path / "scripts" / "benchmark.py"),
-        "--out", "my results file.json", "--tests", "llm",
+        "-m", "scripts.app.benchmark", "--out", "my results file.json", "--tests", "llm",
     ]
 
 
@@ -95,11 +89,11 @@ def test_shell_wrapper_missing_venv_message_has_timestamp(tmp_path):
 def test_batch_wrapper_uses_label_branches_and_preserves_exit_codes():
     text = (ROOT / "run_bench.bat").read_text()
     assert 'if "%~1"=="" goto frontend' in text
-    assert 'python "%SCRIPT_DIR%scripts\\benchmark.py" %*\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
-    assert ':frontend\npython "%SCRIPT_DIR%scripts\\benchmark_launcher.py" --ui auto\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
+    assert 'python -m scripts.app.benchmark %*\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
+    assert ':frontend\npython -m scripts.app.benchmark_launcher --ui auto\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
     assert 'if /i "%~1"=="--ui" goto frontend_with_args' in text
     assert 'if /i "%~1"=="--interface" goto frontend_with_args' in text
-    assert ':frontend_with_args\npython "%SCRIPT_DIR%scripts\\benchmark_launcher.py" %*' in text
+    assert ':frontend_with_args\npython -m scripts.app.benchmark_launcher %*' in text
     assert ':finish\nif defined PAUSE_ON_EXIT pause\nexit /b %BENCH_EXIT_CODE%' in text
 
 

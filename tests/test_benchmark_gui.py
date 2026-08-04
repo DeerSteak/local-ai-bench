@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from benchmark_frontend import (
+from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS,
     MenuEntry,
     build_benchmark_command,
@@ -11,7 +11,7 @@ from benchmark_frontend import (
     load_frontend_state,
     validate_gui_options,
 )
-from benchmark_gui import (
+from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
@@ -20,7 +20,7 @@ from benchmark_gui import (
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
-from run_plan import RunPlan
+from scripts.results.run_plan import RunPlan
 
 
 def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
@@ -36,7 +36,7 @@ def test_gui_options_round_trip_in_frontend_state(tmp_path):
         "llamacpp", ["llm"], [MenuEntry("model", "Model", "llm", "LLM", True)],
         gui_options=options,
     )
-    from benchmark_frontend import save_frontend_state
+    from scripts.app.benchmark_frontend import save_frontend_state
     assert save_frontend_state(state, path)
     assert load_frontend_state(path)["gui_options"] == options
 
@@ -115,8 +115,7 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
     result = tmp_path / "result.json"
     command = recovery_executor_command(result, python_executable="python")
     assert command == [
-        "python", str(Path(__file__).parents[1] / "scripts" / "recovery_executor.py"),
-        str(result.resolve()),
+        "python", "-m", "scripts.results.recovery_executor", str(result.resolve()),
     ]
     detail = format_recovery_inspection({
         "action": "fork", "plan_id": "plan-1", "interrupted_attempts": 2,
@@ -135,11 +134,11 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
     assert "runtime identity changed" in detail
     fork = fork_executor_command(result, tmp_path / "fork.json", python_executable="python")
     assert fork == [
-        "python", str(Path(__file__).parents[1] / "scripts" / "fork_executor.py"),
+        "python", "-m", "scripts.results.fork_executor",
         str(result.resolve()), str((tmp_path / "fork.json").resolve()),
     ]
     assert retry_executor_command(result, ["case_a"], python_executable="python") == [
-        "python", str(Path(__file__).parents[1] / "scripts" / "retry_executor.py"),
+        "python", "-m", "scripts.results.retry_executor",
         str(result.resolve()), "case_a",
     ]
 

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from evidence_policy import classify_evidence, recommendation_evidence_eligible, supersede_evidence
+from scripts.results.evidence_policy import classify_evidence, recommendation_evidence_eligible, supersede_evidence
 
 
 IDENTITY = {

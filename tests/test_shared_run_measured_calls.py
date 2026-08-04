@@ -1,16 +1,16 @@
 import requests
 import pytest
-import shared
+from scripts.runtime import shared
 
-from shared import (
+from scripts.runtime.shared import (
     EngineBudgetExceeded,
     EngineLoopDetected,
     EngineTimeout,
     Shared,
     split_token_budget,
 )
-import config
-from engines.base import GenerationMeasurement
+from scripts.runtime import config
+from scripts.runtime.engines.base import GenerationMeasurement
 
 
 class _FakeEngine:

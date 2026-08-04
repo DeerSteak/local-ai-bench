@@ -3,7 +3,7 @@ import socket
 
 import pytest
 
-from network_policy import OFFLINE_ENVIRONMENT, OfflineNetworkError, is_loopback_address
+from scripts.runtime.network_policy import OFFLINE_ENVIRONMENT, OfflineNetworkError, is_loopback_address
 
 
 @pytest.mark.parametrize("address", [
@@ -21,7 +21,7 @@ def test_loopback_policy_rejects_external_lan_and_malformed_targets(address):
 
 
 def test_offline_mode_sets_environment_and_blocks_external_socket(monkeypatch):
-    import network_policy
+    from scripts.runtime import network_policy
 
     monkeypatch.delattr(socket, "_local_ai_bench_offline", raising=False)
     original_socket = socket.socket
@@ -37,7 +37,7 @@ def test_offline_mode_sets_environment_and_blocks_external_socket(monkeypatch):
 
 
 def test_offline_mode_blocks_udp_and_sendmsg_egress(monkeypatch):
-    import network_policy
+    from scripts.runtime import network_policy
 
     monkeypatch.delattr(socket, "_local_ai_bench_offline", raising=False)
     monkeypatch.setattr(network_policy.socket, "socket", socket.socket)

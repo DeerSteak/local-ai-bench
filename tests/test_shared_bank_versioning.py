@@ -1,4 +1,4 @@
-from shared import Shared
+from scripts.runtime.shared import Shared
 
 
 # ── file_hash ──

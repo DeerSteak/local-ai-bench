@@ -1,5 +1,5 @@
-from catalogs import CATALOG_VERSION, HARDWARE_CATALOG, catalog_bundle, model_catalog, recommendation_eligible
-from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.results.catalogs import CATALOG_VERSION, HARDWARE_CATALOG, catalog_bundle, model_catalog, recommendation_eligible
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
 def test_catalog_has_stable_unique_hardware_identities_and_sources():

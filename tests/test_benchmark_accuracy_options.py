@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from benchmark import positive_int
+from scripts.app.benchmark import positive_int
 
 
 @pytest.mark.parametrize("value", ["1", "8192"])

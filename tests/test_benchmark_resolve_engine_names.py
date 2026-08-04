@@ -1,4 +1,4 @@
-from benchmark import resolve_engine_names
+from scripts.app.benchmark import resolve_engine_names
 
 
 def test_single_engine_passes_through():

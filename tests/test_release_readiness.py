@@ -1,4 +1,4 @@
-import release_readiness
+from scripts.release import release_readiness
 
 
 def complete_evidence():

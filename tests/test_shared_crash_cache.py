@@ -4,8 +4,8 @@ import http.client
 import pytest
 import requests
 
-from engines.llamacpp import LlamaCppEngine
-from shared import Shared
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.shared import Shared
 
 
 def test_load_crash_cache_missing_file_returns_empty(tmp_path):

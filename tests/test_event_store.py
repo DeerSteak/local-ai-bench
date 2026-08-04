@@ -2,8 +2,8 @@ import sqlite3
 
 import pytest
 
-from event_store import EventStore, JournalEvent
-from run_plan import RunPlan
+from scripts.results.event_store import EventStore, JournalEvent
+from scripts.results.run_plan import RunPlan
 
 
 def make_plan():

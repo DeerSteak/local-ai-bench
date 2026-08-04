@@ -1,6 +1,6 @@
 import json
 
-from sbom import generate_sbom, write_sbom
+from scripts.release.sbom import generate_sbom, write_sbom
 
 
 def make_repo(tmp_path):

@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from engines.base import (
+from scripts.runtime.engines.base import (
     EmbeddingMeasurement, GenerationMeasurement, aggregate_generation_measurements,
     embedding_validation_errors,
     is_valid_measurement, measurement_validation_errors,

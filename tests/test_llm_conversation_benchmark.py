@@ -1,7 +1,7 @@
-from llm_conversation_benchmark import (
+from scripts.workloads.llm_conversation_benchmark import (
     LLMConversationBenchmark as Conv, conversation_failure_status,
 )
-from engines.base import GenerationMeasurement
+from scripts.runtime.engines.base import GenerationMeasurement
 
 
 def test_conversation_failure_status_classifies_retryable_attempts():

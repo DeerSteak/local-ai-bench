@@ -1,6 +1,6 @@
 import pytest
 
-from benchmark import apply_max_prompt_tokens_cap
+from scripts.app.benchmark import apply_max_prompt_tokens_cap
 
 
 def test_no_cap_returns_inputs_unchanged():

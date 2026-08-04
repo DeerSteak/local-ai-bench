@@ -14,11 +14,11 @@ llama.cpp is this project's only inference engine — Ollama support was removed
 
 ## Why an interface
 
-Every benchmark test needs to talk to a running inference server: start/stop it, check which models are installed, warm one up, run generate/chat/embed calls, and unload it when done. `scripts/engines/` is the seam for that: a workload module calls `engine.chat(...)`, never anything server-specific, so `benchmark.py` can swap in a different `InferenceEngine` implementation without any workload module knowing or caring which. The interface is sized to exactly what `LlamaCppEngine` needs, not speculatively designed for engines that don't exist yet.
+Every benchmark test needs to talk to a running inference server: start/stop it, check which models are installed, warm one up, run generate/chat/embed calls, and unload it when done. `scripts/runtime/engines/` is the seam for that: a workload module calls `engine.chat(...)`, never anything server-specific, so `benchmark.py` can swap in a different `InferenceEngine` implementation without any workload module knowing or caring which. The interface is sized to exactly what `LlamaCppEngine` needs, not speculatively designed for engines that don't exist yet.
 
 ## The interface
 
-`InferenceEngine` ([`scripts/engines/base.py`](../scripts/engines/base.py)) is an ABC with three groups of methods:
+`InferenceEngine` ([`scripts/runtime/engines/base.py`](../scripts/runtime/engines/base.py)) is an ABC with three groups of methods:
 
 | Group | Methods |
 |---|---|
@@ -38,7 +38,7 @@ A few design choices worth knowing if you're reading or extending this:
 
 ## `LlamaCppEngine`
 
-[`scripts/engines/llamacpp.py`](../scripts/engines/llamacpp.py) drives llama.cpp's `llama-server` directly. It resolves each catalog tag to GGUF file(s) downloaded ahead of time by `setup_check.py` into `config.MODELS_DIR/llamacpp/<slug>/` (`LlamaCppEngine._models_dir()` returns `config.MODELS_DIR / self.name`, namespacing each engine's own model directory so a future engine, e.g. MLX, gets its own `models/mlx/` subtree instead of colliding with llama.cpp's GGUF layout) — one subdirectory per tag under that, named from the tag with `:`/`/` replaced by `_` (`LlamaCppEngine._slug`) — rather than reading any inference server's own model store. `models.py`'s catalog entries carry `hf_repo` (a HuggingFace repo id) and `hf_file` (a filename, or a list of filenames for a model split across multiple GGUF parts — the two large-tier models, Qwen3-Coder-Next and Nemotron 3 Super, are split 4-way and 3-way respectively) so `setup_check.py` and `LlamaCppEngine` agree on exactly which file(s) a tag resolves to; `model_pulled`/`list_installed_models` check that every listed file exists under that tag's subdirectory, and `max_context_length` reads the real context length straight from the first file's GGUF metadata. For a multi-part model, only that first part's path is ever passed to `llama-server -m` — `llama-server` auto-discovers the sibling parts sitting next to it, so the rest of `hf_file`'s list only matters for `model_pulled`'s completeness check. The existing `tag` field values (e.g. `"granite4.1:3b-q4_K_M"`) are unchanged in shape — they're now opaque catalog identifiers rather than literal server tags, but every other file that already keyed off them (results JSON, crash caches, `--llm-models`/`--models`) doesn't need to change. A non-catalog directory can contain either one GGUF or one complete, consistently named multipart GGUF set; its directory name becomes the custom tag advertised by `list_installed_models` and resolved by the same model-loading path.
+[`scripts/runtime/engines/llamacpp.py`](../scripts/runtime/engines/llamacpp.py) drives llama.cpp's `llama-server` directly. It resolves each catalog tag to GGUF file(s) downloaded ahead of time by `setup_check.py` into `config.MODELS_DIR/llamacpp/<slug>/` (`LlamaCppEngine._models_dir()` returns `config.MODELS_DIR / self.name`, namespacing each engine's own model directory so a future engine, e.g. MLX, gets its own `models/mlx/` subtree instead of colliding with llama.cpp's GGUF layout) — one subdirectory per tag under that, named from the tag with `:`/`/` replaced by `_` (`LlamaCppEngine._slug`) — rather than reading any inference server's own model store. `models.py`'s catalog entries carry `hf_repo` (a HuggingFace repo id) and `hf_file` (a filename, or a list of filenames for a model split across multiple GGUF parts — the two large-tier models, Qwen3-Coder-Next and Nemotron 3 Super, are split 4-way and 3-way respectively) so `setup_check.py` and `LlamaCppEngine` agree on exactly which file(s) a tag resolves to; `model_pulled`/`list_installed_models` check that every listed file exists under that tag's subdirectory, and `max_context_length` reads the real context length straight from the first file's GGUF metadata. For a multi-part model, only that first part's path is ever passed to `llama-server -m` — `llama-server` auto-discovers the sibling parts sitting next to it, so the rest of `hf_file`'s list only matters for `model_pulled`'s completeness check. The existing `tag` field values (e.g. `"granite4.1:3b-q4_K_M"`) are unchanged in shape — they're now opaque catalog identifiers rather than literal server tags, but every other file that already keyed off them (results JSON, crash caches, `--llm-models`/`--models`) doesn't need to change. A non-catalog directory can contain either one GGUF or one complete, consistently named multipart GGUF set; its directory name becomes the custom tag advertised by `list_installed_models` and resolved by the same model-loading path.
 
 Shape differences from an always-on multi-model daemon, both consequences of llama-server being a process-per-model server:
 
@@ -52,21 +52,21 @@ Shape differences from an always-on multi-model daemon, both consequences of lla
 
 ## Selecting an engine
 
-`benchmark.py` takes `--engine <name>|all` (default: `llamacpp`; `all` expands to every name in `scripts/engines/__init__.py`'s registry, sorted, and runs the full `--tests` suite once per engine, back to back, writing a separate results file for each — engine name appended to the filename, and each file tagged internally with `"engine"` so it's self-identifying even if renamed):
+`benchmark.py` takes `--engine <name>|all` (default: `llamacpp`; `all` expands to every name in `scripts/runtime/engines/__init__.py`'s registry, sorted, and runs the full `--tests` suite once per engine, back to back, writing a separate results file for each — engine name appended to the filename, and each file tagged internally with `"engine"` so it's self-identifying even if renamed):
 
 ```
-python scripts/benchmark.py --engine llamacpp --tests llm
-python scripts/benchmark.py --engine all
+python -m scripts.app.benchmark --engine llamacpp --tests llm
+python -m scripts.app.benchmark --engine all
 ```
 
 Only `llamacpp` is registered today, so there's nothing to actually select between yet — `--engine all` runs the same single pass `--engine llamacpp` does. The flag and the `all` expansion logic (`resolve_engine_names` in `benchmark.py`) exist now so a second engine (e.g. MLX) slots in later without any CLI or docs changes. Image generation doesn't depend on `--engine` (a separate ComfyUI call), so a multi-engine `all` run captures it once, on the first pass, rather than once per engine.
 
-`main()` constructs the engine once per pass via `get_engine(engine_name)` ([`scripts/engines/__init__.py`](../scripts/engines/__init__.py)) and places it in a `RunContext` with the immutable serializable `RunPlan`, local-only `RunPaths`, `ResultStore`, profile, and lifecycle coordinator. The same instance reaches every workload's `run()`. Engine-backed workloads use only `InferenceEngine`, so adding a second engine does not require changes to MCQ, embeddings, or the other ordinary workload modules. The two native llama.cpp workloads are deliberate exceptions: `llamabench_benchmark.py` and `llamabench_concurrency_benchmark.py` import `LlamaCppEngine`, verify it with `isinstance`, and otherwise skip because `llama-bench` and `llama-batched-bench` have no cross-engine equivalent.
+`main()` constructs the engine once per pass via `get_engine(engine_name)` ([`scripts/runtime/engines/__init__.py`](../scripts/runtime/engines/__init__.py)) and places it in a `RunContext` with the immutable serializable `RunPlan`, local-only `RunPaths`, `ResultStore`, profile, and lifecycle coordinator. The same instance reaches every workload's `run()`. Engine-backed workloads use only `InferenceEngine`, so adding a second engine does not require changes to MCQ, embeddings, or the other ordinary workload modules. The two native llama.cpp workloads are deliberate exceptions: `llamabench_benchmark.py` and `llamabench_concurrency_benchmark.py` import `LlamaCppEngine`, verify it with `isinstance`, and otherwise skip because `llama-bench` and `llama-batched-bench` have no cross-engine equivalent.
 
 ## Adding a new engine
 
-1. Create `scripts/engines/<name>.py` with a class implementing every `InferenceEngine` method.
-2. Register it in `scripts/engines/__init__.py`'s registry dict.
+1. Create `scripts/runtime/engines/<name>.py` with a class implementing every `InferenceEngine` method.
+2. Register it in `scripts/runtime/engines/__init__.py`'s registry dict.
 3. Nothing else changes. `Shared.run_measured_calls`, `Shared.run_accuracy_benchmark`, and every workload module's `run()` already take an `engine` parameter and only call `InferenceEngine` methods.
 
 A process-per-model server (`LlamaCppEngine`, or MLX's `mlx_lm.server`) needs a few things an always-on multi-model daemon doesn't:

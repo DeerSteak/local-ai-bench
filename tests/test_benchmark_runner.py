@@ -1,8 +1,8 @@
-from benchmark import run_supervised_llm, run_supervised_stage
-from engines.base import GenerationMeasurement
-from llm_event_stage import LLMEventStage
-from native_bench_event_stage import NativeBenchEventStage
-from run_plan import RunPlan
+from scripts.app.benchmark import run_supervised_llm, run_supervised_stage
+from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.results.llm_event_stage import LLMEventStage
+from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.results.run_plan import RunPlan
 
 
 def make_plan():

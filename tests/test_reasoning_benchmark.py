@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-import config
-from mcq_benchmark import MCQBenchmark
-from reasoning_benchmark import ReasoningBenchmark
+from scripts.runtime import config
+from scripts.workloads.mcq_benchmark import MCQBenchmark
+from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 
 
 CHOICES = {"A": "alpha", "B": "beta", "C": "gamma", "D": "delta"}
@@ -211,7 +211,7 @@ class FakeEngine:
 
     def chat(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        from engines.base import ChatMeasurement
+        from scripts.runtime.engines.base import ChatMeasurement
         return ChatMeasurement(0, 0, 0, 0, 0, response_text=self.response)
 
 

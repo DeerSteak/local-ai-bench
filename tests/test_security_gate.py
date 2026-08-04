@@ -1,7 +1,7 @@
 import pytest
 
-import security_gate
-from security_gate import scan_release_tree, security_gate_result
+from scripts.release import security_gate
+from scripts.release.security_gate import scan_release_tree, security_gate_result
 
 
 def test_clean_release_tree_passes_without_echoing_content(tmp_path):

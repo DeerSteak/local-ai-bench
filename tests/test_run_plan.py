@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
 
 
 def make_plan(**overrides):

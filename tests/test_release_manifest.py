@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from release_manifest import build_release_manifest, verify_release_manifest, write_release_manifest
+from scripts.release.release_manifest import build_release_manifest, verify_release_manifest, write_release_manifest
 
 
 def test_manifest_is_deterministic_and_records_provenance(tmp_path):

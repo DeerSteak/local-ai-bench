@@ -1,6 +1,6 @@
 import pytest
 
-from progress_events import emit_model_finished, emit_progress
+from scripts.app.progress_events import emit_model_finished, emit_progress
 
 
 def test_model_progress_preserves_labels_with_punctuation(monkeypatch, capsys):

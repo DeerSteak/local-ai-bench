@@ -1,7 +1,7 @@
 import pytest
 
-import hardware
-from models import LLM_MODELS, IMAGE_MODELS
+from scripts.runtime import hardware
+from scripts.workloads.models import LLM_MODELS, IMAGE_MODELS
 
 
 def test_parse_size_gb_gb_string():

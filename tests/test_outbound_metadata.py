@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from outbound_metadata import (
+from scripts.results.outbound_metadata import (
     format_outbound_preview, outbound_metadata_preview, prepare_outbound_result,
     source_identity_digest, verify_source_identity,
 )

@@ -1,7 +1,7 @@
 import json
 import zipfile
 
-from support_bundle import build_support_payload, export_support_bundle, preview_support_bundle
+from scripts.results.support_bundle import build_support_payload, export_support_bundle, preview_support_bundle
 
 
 def sensitive_result():

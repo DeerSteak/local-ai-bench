@@ -1,7 +1,7 @@
 import pytest
 
-from log_redaction import redact_log_text
-from shared import Shared
+from scripts.runtime.log_redaction import redact_log_text
+from scripts.runtime.shared import Shared
 
 
 @pytest.mark.parametrize("secret", [

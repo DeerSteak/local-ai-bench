@@ -1,4 +1,4 @@
-from shared import Shared
+from scripts.runtime.shared import Shared
 
 
 def test_mean_empty_is_zero():

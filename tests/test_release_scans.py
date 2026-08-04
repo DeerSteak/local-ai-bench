@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from release_scans import run_release_scans, scan_commands
+from scripts.release.release_scans import run_release_scans, scan_commands
 
 
 def make_repo(tmp_path):

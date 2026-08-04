@@ -1,4 +1,4 @@
-from models import (
+from scripts.workloads.models import (
     EMBED_MODELS,
     IMAGE_MODELS,
     LLM_MODELS,

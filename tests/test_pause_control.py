@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from pause_control import (
+from scripts.runtime.pause_control import (
     apply_pause_evidence, create_pause_control, pause_evidence, read_pause_state,
     wait_if_paused, write_pause_state,
 )
-from result_history import discover_results
+from scripts.results.result_history import discover_results
 
 
 def test_pause_control_round_trip_and_unique_paths(tmp_path):
@@ -38,7 +38,7 @@ def test_pause_transitions_become_run_evidence(tmp_path):
 
 
 def test_default_pause_control_never_pollutes_result_history(tmp_path, monkeypatch):
-    monkeypatch.setattr("pause_control.tempfile.gettempdir", lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr("scripts.runtime.pause_control.tempfile.gettempdir", lambda: str(tmp_path / "temp"))
     results = tmp_path / "results"
     results.mkdir()
     path = create_pause_control()

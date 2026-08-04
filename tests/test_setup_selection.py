@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
+from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 
 
 def test_toggle_all_models_selects_models_without_enabling_cleanup():

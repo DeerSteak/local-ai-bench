@@ -1,6 +1,6 @@
-import config
+from scripts.runtime import config
 
-from methodology_profile import resolve_methodology_profile
+from scripts.workloads.methodology_profile import resolve_methodology_profile
 
 
 def test_neutral_profile_records_only_settings_for_selected_runtime_paths():

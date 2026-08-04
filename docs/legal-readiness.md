@@ -16,13 +16,13 @@ Setup downloads llama.cpp, ComfyUI, model weights, and image checkpoints from th
 | Python packages | `requirements.txt` and `tests/requirements.txt` | Generated SBOM uses `NOASSERTION` until package metadata is reviewed |
 | Dashboard packages and IBM Plex fonts | `dashboard/package-lock.json` | Locked versions, integrity, and declared npm license captured by SBOM; notice review required |
 | llama.cpp and ComfyUI | Setup discovery/download logic; vendored `ComfyUI/LICENSE` where present | Upstream license and exact distributed form require review |
-| LLM and embedding references | `scripts/models.py` and the versioned model catalog | License status explicitly unverified; not eligible for supported recommendations |
-| Image checkpoints and supporting encoders | `scripts/models.py` and setup download definitions | Model-specific license review required |
-| Accuracy question banks and sample document | `scripts/data/*.json`, `scripts/*_questions.py`, and `sample_document.txt` | Provenance/authorship record required before commercial distribution |
+| LLM and embedding references | `scripts/workloads/models.py` and the versioned model catalog | License status explicitly unverified; not eligible for supported recommendations |
+| Image checkpoints and supporting encoders | `scripts/workloads/models.py` and setup download definitions | Model-specific license review required |
+| Accuracy question banks and sample document | `scripts/workloads/data/` and the workload loaders | Provenance/authorship record required before commercial distribution |
 | Generated reports, sample results, screenshots, and images | `samples/`, `results/`, and report/export tools | Separate owned, synthetic, customer, and third-party inputs before publication |
 
 ## Repeatable SBOM process
 
-Run `bench-env/bin/python scripts/sbom.py local-ai-bench-sbom.json` from the repository root. The deterministic JSON inventories every declared Python requirement and every locked npm transitive package. It preserves versions, npm integrity values, runtime/development scope, declared npm licenses, and unknown Python license facts without inference. Reviewers then resolve every `NOASSERTION`, produce third-party notices from authoritative license texts, and archive both outputs with the release.
+Run `python -m scripts.release.sbom local-ai-bench-sbom.json` from the repository root. The deterministic JSON inventories every declared Python requirement and every locked npm transitive package. It preserves versions, npm integrity values, runtime/development scope, declared npm licenses, and unknown Python license facts without inference. Reviewers then resolve every `NOASSERTION`, produce third-party notices from authoritative license texts, and archive both outputs with the release.
 
 Every added or upgraded dependency, executable, dataset, question bank, model, font, or generated third-party asset requires source, exact version/digest, license, redistribution mode, attribution/notice obligations, commercial-use constraints, privacy/security review, and an accountable approver. Unknown or conflicting rights block bundling and supported commercial recommendations; they are not waived by a passing test suite.

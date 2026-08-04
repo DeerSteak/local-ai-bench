@@ -1,6 +1,6 @@
-import config
-from benchmark import conv_skip_entry
-from shared import Shared
+from scripts.runtime import config
+from scripts.app.benchmark import conv_skip_entry
+from scripts.runtime.shared import Shared
 
 MODEL = {"label": "Llama 3.2 3B Q4_K_M", "short": "llama3.2-3b-q4"}
 FIRST_CTX = Shared.context_label(config.CONTEXT_LENGTHS[0])

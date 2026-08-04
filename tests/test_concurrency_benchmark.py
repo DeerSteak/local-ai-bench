@@ -1,12 +1,12 @@
-import config
-from concurrency_benchmark import ConcurrencyBenchmark, pending_concurrency_levels
+from scripts.runtime import config
+from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark, pending_concurrency_levels
 
 
 def test_pending_concurrency_levels_preserve_order_and_skip_completed_levels():
     attempts = {1: None, 2: 2, 4: 1}
     assert pending_concurrency_levels([1, 2, 4], attempts.get) == [(2, 2), (4, 1)]
-from engines.base import GenerationMeasurement
-from shared import Shared
+from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.runtime.shared import Shared
 
 
 def test_below_floor_never_stops_even_if_slow():

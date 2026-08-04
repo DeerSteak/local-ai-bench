@@ -5,11 +5,11 @@ import json
 
 import pytest
 
-import config
-from engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
-from mcq_benchmark import MCQBenchmark
-from tool_benchmark import ToolBenchmark
-from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
+from scripts.workloads.mcq_benchmark import MCQBenchmark
+from scripts.workloads.tool_benchmark import ToolBenchmark
+from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
 
 
 class FakeEngine(InferenceEngine):

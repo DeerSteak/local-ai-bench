@@ -1,4 +1,4 @@
-from benchmark import ACCURACY_TESTS, CONCURRENCY_TESTS, expand_tests
+from scripts.app.benchmark import ACCURACY_TESTS, CONCURRENCY_TESTS, expand_tests
 
 
 def test_acc_expands_to_accuracy_tests():

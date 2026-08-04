@@ -6,11 +6,11 @@ import gguf
 import pytest
 import requests
 
-import config
-from engines.base import aggregate_generation_measurements, is_valid_measurement
-from engines.llamacpp import LlamaCppEngine
-import engines.llamacpp as llamacpp_module
-from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
+from scripts.runtime import config
+from scripts.runtime.engines.base import aggregate_generation_measurements, is_valid_measurement
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
+import scripts.runtime.engines.llamacpp as llamacpp_module
+from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -128,7 +128,7 @@ def test_resolve_model_files_missing_tag_returns_none(fake_catalog):
 
 
 def test_resolve_model_files_finds_custom_dropped_in_model(fake_catalog):
-    from benchmark import resolve_custom_models
+    from scripts.app.benchmark import resolve_custom_models
 
     custom_dir = fake_catalog / "llamacpp" / "my-custom-model"
     custom_dir.mkdir(parents=True)
@@ -1002,7 +1002,7 @@ def test_chat_tools_timeout_with_reasoning_only_keeps_reasoning_text(monkeypatch
 def test_embed_returns_embeddings_in_index_order(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
-        "engines.llamacpp.requests.post",
+        "scripts.runtime.engines.llamacpp.requests.post",
         lambda url, json=None, timeout=None: type("R", (), {
             "ok": True,
             "json": lambda self: {"data": [
@@ -1019,7 +1019,7 @@ def test_embed_returns_embeddings_in_index_order(monkeypatch):
 def test_embed_raises_on_rejected_request(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
-        "engines.llamacpp.requests.post",
+        "scripts.runtime.engines.llamacpp.requests.post",
         lambda url, json=None, timeout=None: type("R", (), {
             "ok": False, "status_code": 500, "json": lambda self: {"error": "oom"},
             "text": "oom",

@@ -1,4 +1,4 @@
-from shared import Shared
+from scripts.runtime.shared import Shared
 
 
 def test_tally_correct_entry_updates_category_and_all_but_not_incorrect():

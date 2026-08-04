@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from archive_safety import safe_extract_zip, validate_archive_names
+from scripts.setup.archive_safety import safe_extract_zip, validate_archive_names
 
 
 def test_archive_name_validation_accepts_normal_relative_paths():

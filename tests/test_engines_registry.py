@@ -1,7 +1,7 @@
 import pytest
 
-from engines import engine_names, get_engine
-from engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines import engine_names, get_engine
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
 
 
 def test_engine_names_lists_every_registered_engine():

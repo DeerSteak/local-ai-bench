@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from benchmark import (
+from scripts.app.benchmark import (
     checkpoint_terminal_exception, finish_event_job, fork_provenance, interruption_exit_code,
 )
-from event_store import EventStore
-from orchestration import StageExecutionError
-from result_store import build_run_manifest
-from run_plan import RunPlan
+from scripts.results.event_store import EventStore
+from scripts.app.orchestration import StageExecutionError
+from scripts.results.result_store import build_run_manifest
+from scripts.results.run_plan import RunPlan
 
 
 def make_plan():

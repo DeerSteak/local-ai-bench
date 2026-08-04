@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from workload_packs import BUILTIN_PACKS, load_custom_pack, validate_pack
+from scripts.workloads.workload_packs import BUILTIN_PACKS, load_custom_pack, validate_pack
 
 
 def test_builtin_packs_are_valid_and_have_repeatable_identity():

@@ -1,9 +1,9 @@
 import json
 
-import recovery_inspector
-from event_store import EventStore, JournalEvent
-from recovery_inspector import current_resume_identity, inspect_recovery, retryable_case_records
-from run_plan import RunPlan
+from scripts.results import recovery_inspector
+from scripts.results.event_store import EventStore, JournalEvent
+from scripts.results.recovery_inspector import current_resume_identity, inspect_recovery, retryable_case_records
+from scripts.results.run_plan import RunPlan
 
 
 def make_result(tmp_path):

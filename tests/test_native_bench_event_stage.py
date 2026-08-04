@@ -1,7 +1,7 @@
-from native_bench_event_stage import (
+from scripts.results.native_bench_event_stage import (
     NativeBenchEventStage, export_native_bench_section, group_remaining_sweeps,
 )
-from run_plan import RunPlan
+from scripts.results.run_plan import RunPlan
 
 
 MODEL = {"tag": "model:4b", "short": "model", "label": "Model 4B"}

@@ -157,7 +157,7 @@ VENV_PYTHON="$VENV_DIR/bin/python"
 section "Running setup_check.py"
 info "Using $($VENV_PYTHON --version) from $VENV_PYTHON"
 
-"$VENV_PYTHON" scripts/setup_check.py "$@"
+"$VENV_PYTHON" -m scripts.setup.setup_check "$@"
 
 # ── 5. Done ────────────────────────────────────────────────────────────────────
 echo ""

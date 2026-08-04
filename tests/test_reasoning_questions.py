@@ -3,7 +3,7 @@ from collections import Counter
 from pathlib import Path
 
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "scripts" / "data"
+DATA_DIR = Path(__file__).resolve().parents[1] / "scripts" / "workloads" / "data"
 
 
 def load_json(name):

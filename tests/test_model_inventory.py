@@ -1,6 +1,6 @@
 import pytest
 
-from model_inventory import (
+from scripts.setup.model_inventory import (
     build_model_inventory,
     classify_engine_models,
     delete_non_catalog_model_dirs,
@@ -100,9 +100,9 @@ def test_installed_images_empty_when_checkpoint_directory_missing(tmp_path):
 
 def test_build_inventory_reads_engine_once_and_adds_images(monkeypatch, tmp_path):
     engine = FakeEngine([{"tag": LLM_CATALOG[0]["tag"], "size": 3}])
-    monkeypatch.setattr("model_inventory.LLM_MODELS", LLM_CATALOG)
-    monkeypatch.setattr("model_inventory.EMBED_MODELS", EMBED_CATALOG)
-    monkeypatch.setattr("model_inventory.IMAGE_MODELS", IMAGE_CATALOG)
+    monkeypatch.setattr("scripts.setup.model_inventory.LLM_MODELS", LLM_CATALOG)
+    monkeypatch.setattr("scripts.setup.model_inventory.EMBED_MODELS", EMBED_CATALOG)
+    monkeypatch.setattr("scripts.setup.model_inventory.IMAGE_MODELS", IMAGE_CATALOG)
     checkpoints = tmp_path / "checkpoints"
     checkpoints.mkdir(parents=True)
     (checkpoints / "one.safetensors").write_bytes(b"1")
@@ -220,7 +220,7 @@ def test_delete_non_catalog_model_dirs_reports_filesystem_failure(monkeypatch, t
     def fail_delete(_):
         raise PermissionError("locked")
 
-    monkeypatch.setattr("model_inventory.shutil.rmtree", fail_delete)
+    monkeypatch.setattr("scripts.setup.model_inventory.shutil.rmtree", fail_delete)
     removed, failures = delete_non_catalog_model_dirs(
         tmp_path, [target.name], llm_catalog=[], embed_catalog=[],
     )

@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-import content_store
-from content_store import ArtifactRef, ContentStore
+from scripts.results import content_store
+from scripts.results.content_store import ArtifactRef, ContentStore
 
 
 def test_content_store_deduplicates_bytes_and_uses_digest_only_paths(tmp_path):

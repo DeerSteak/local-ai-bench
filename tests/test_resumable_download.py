@@ -2,7 +2,7 @@ import io
 
 import pytest
 
-from resumable_download import download_file
+from scripts.setup.resumable_download import download_file
 
 
 class Response(io.BytesIO):

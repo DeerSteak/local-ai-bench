@@ -1,9 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 
-import config
-import shared
-from shared import Shared
+from scripts.runtime import config
+from scripts.runtime import shared
+from scripts.runtime.shared import Shared
 
 
 def fixed_now():
@@ -75,13 +75,13 @@ def test_neutral_output_supports_multiline_block_and_custom_end(monkeypatch, cap
 def test_runtime_modules_do_not_bypass_shared_console_output():
     scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
     runtime_files = (
-        "benchmark.py",
-        "benchmark_frontend.py",
-        "llm_prefill_benchmark.py",
-        "llm_conversation_benchmark.py",
-        "embedding_benchmark.py",
-        "image_benchmark.py",
-        "reasoning_benchmark.py",
+        "app/benchmark.py",
+        "app/benchmark_frontend.py",
+        "workloads/llm_prefill_benchmark.py",
+        "workloads/llm_conversation_benchmark.py",
+        "workloads/embedding_benchmark.py",
+        "workloads/image_benchmark.py",
+        "workloads/reasoning_benchmark.py",
     )
     for filename in runtime_files:
         assert "print(" not in (scripts_dir / filename).read_text()

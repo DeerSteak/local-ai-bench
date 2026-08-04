@@ -23,7 +23,7 @@ On a Linux desktop, double-click `Setup Local AI Bench.desktop` to open a termin
 
 On Windows, double-click `Setup Local AI Bench.bat` to launch the graphical wizard. It delegates to the existing `setup.bat`, so prerequisite installation, error handling, and command-line behavior remain in one implementation; cancelling the wizard closes cleanly without offering to run benchmarks.
 
-`setup.sh` / `setup.bat` first switch to the repository directory, locate Python 3.11+, and ask before installing Python or Homebrew when either is missing. On a local macOS or Linux desktop, `setup.sh` also checks Tkinter and offers to install the platform package when it is missing; declining or an unavailable package falls back to terminal setup. The scripts then create or reuse a valid `bench-env/` and hand off to `scripts/setup_check.py`. A local graphical session uses the wizard by default, while SSH/headless sessions retain the terminal interface; pass `--interface gui` or `--interface terminal` to override automatic selection.
+`setup.sh` / `setup.bat` first switch to the repository directory, locate Python 3.11+, and ask before installing Python or Homebrew when either is missing. On a local macOS or Linux desktop, `setup.sh` also checks Tkinter and offers to install the platform package when it is missing; declining or an unavailable package falls back to terminal setup. The scripts then create or reuse a valid `bench-env/` and hand off to `scripts/setup/setup_check.py`. A local graphical session uses the wizard by default, while SSH/headless sessions retain the terminal interface; pass `--interface gui` or `--interface terminal` to override automatic selection.
 
 The setup wizard collects every decision before installation: a memory-aware model checklist, optional non-catalog cleanup, Hugging Face token and save preference, ComfyUI reuse/download choice, and a final review. Closing or cancelling the wizard performs no installation work, closes the double-click launcher's Terminal session without offering to run benchmarks, and downloads begin only after clicking **Install** on the review page. The terminal interface follows the same defaults and installation backend.
 
@@ -67,7 +67,7 @@ bash run_bench.sh
 run_bench.bat
 ```
 
-These scripts activate the virtual environment automatically and forward any arguments to `scripts/benchmark.py` — see the [CLI Reference](cli-reference.md) for available flags.
+These scripts activate the virtual environment automatically and forward any arguments to `scripts/app/benchmark.py` — see the [CLI Reference](cli-reference.md) for available flags.
 
 ## Memory-fit estimate
 
@@ -87,7 +87,7 @@ Independently of that, if completing the downloads would leave less than 10% of 
 
 ## HuggingFace token
 
-Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/models.py` into `models/llamacpp/<tag-slug>/` (see [Engines](engines.md#llamacppengine)). Image checkpoints use the same HuggingFace download client but stay under `models/comfyui/`. Public repositories can be downloaded without an account or token. SD3.5 Large, Flux.1-dev, and Flux.2-dev are gated and require a free account, license acceptance, and an access token:
+Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/workloads/models.py` into `models/llamacpp/<tag-slug>/` (see [Engines](engines.md#llamacppengine)). Image checkpoints use the same HuggingFace download client but stay under `models/comfyui/`. Public repositories can be downloaded without an account or token. SD3.5 Large, Flux.1-dev, and Flux.2-dev are gated and require a free account, license acceptance, and an access token:
 
 - https://huggingface.co/stabilityai/stable-diffusion-3.5-large
 - https://huggingface.co/black-forest-labs/FLUX.1-dev

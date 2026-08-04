@@ -1,6 +1,6 @@
 import pytest
 
-from benchmark_launcher import parse_launcher_request
+from scripts.app.benchmark_launcher import parse_launcher_request
 
 
 @pytest.mark.parametrize("flag", ["--ui", "--interface"])

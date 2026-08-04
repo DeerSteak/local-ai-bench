@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from benchmark_frontend import GUI_OPTION_DEFAULTS
-from benchmark_project import (
+from scripts.app.benchmark_frontend import GUI_OPTION_DEFAULTS
+from scripts.app.benchmark_project import (
     PROJECT_WORKFLOWS, build_project, load_project, project_frontend_state,
     save_project, validate_project,
 )

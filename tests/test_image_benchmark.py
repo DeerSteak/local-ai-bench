@@ -1,8 +1,8 @@
 from pathlib import Path
 
-import config
-from image_benchmark import ImageBenchmark
-from shared import Shared
+from scripts.runtime import config
+from scripts.workloads.image_benchmark import ImageBenchmark
+from scripts.runtime.shared import Shared
 
 
 def _build_kwargs(**overrides):
@@ -118,7 +118,7 @@ def test_comfyui_free_models_posts_unload_and_free_memory(monkeypatch):
             ok = True
         return _Resp()
 
-    monkeypatch.setattr("image_benchmark.requests.post", fake_post)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.post", fake_post)
     ImageBenchmark.comfyui_free_models(timeout=5)
 
     assert len(calls) == 1
@@ -132,7 +132,7 @@ def test_comfyui_free_models_swallows_request_errors(monkeypatch):
     def fake_post(url, json=None, timeout=None):
         raise ConnectionError("comfyui unreachable")
 
-    monkeypatch.setattr("image_benchmark.requests.post", fake_post)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.post", fake_post)
     # Should not raise even though the request fails.
     ImageBenchmark.comfyui_free_models()
 
@@ -154,9 +154,9 @@ def test_comfyui_interrupt_and_clear_stops_once_queue_is_empty(monkeypatch):
         return _Resp()
 
     sleeps = []
-    monkeypatch.setattr("image_benchmark.requests.post", fake_post)
-    monkeypatch.setattr("image_benchmark.requests.get", fake_get)
-    monkeypatch.setattr("image_benchmark.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.post", fake_post)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.get", fake_get)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.time.sleep", lambda s: sleeps.append(s))
 
     ImageBenchmark.comfyui_interrupt_and_clear(timeout=5, confirm_timeout=15)
 
@@ -167,7 +167,7 @@ def test_comfyui_interrupt_and_clear_stops_once_queue_is_empty(monkeypatch):
 
 
 def test_comfyui_interrupt_and_clear_polls_until_queue_drains(monkeypatch):
-    monkeypatch.setattr("image_benchmark.requests.post", lambda *a, **k: None)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.post", lambda *a, **k: None)
 
     responses = [
         {"queue_running": [{"id": 1}], "queue_pending": []},
@@ -182,8 +182,8 @@ def test_comfyui_interrupt_and_clear_polls_until_queue_drains(monkeypatch):
         return _Resp()
 
     sleeps = []
-    monkeypatch.setattr("image_benchmark.requests.get", fake_get)
-    monkeypatch.setattr("image_benchmark.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("scripts.workloads.image_benchmark.requests.get", fake_get)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.time.sleep", lambda s: sleeps.append(s))
 
     ImageBenchmark.comfyui_interrupt_and_clear(timeout=5, confirm_timeout=15)
 

@@ -1,4 +1,4 @@
-from shared import Shared
+from scripts.runtime.shared import Shared
 
 
 def test_looks_like_loop_detects_verbatim_repetition():

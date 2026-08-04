@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from result_bundle import (
+from scripts.results.result_bundle import (
     aggregate_reproduction_errors, export_result_bundle, import_result_bundle,
     methodology_availability_errors, verify_result_bundle,
 )

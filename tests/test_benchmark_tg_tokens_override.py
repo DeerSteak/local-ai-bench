@@ -1,4 +1,4 @@
-from benchmark import apply_tg_tokens_override
+from scripts.app.benchmark import apply_tg_tokens_override
 
 
 def test_no_override_returns_defaults_unchanged():

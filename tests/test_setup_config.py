@@ -1,6 +1,6 @@
 import json
 
-from setup_config import (
+from scripts.setup.setup_config import (
     configured_comfyui_dir,
     configured_llamacpp_tool,
     load_setup_config,

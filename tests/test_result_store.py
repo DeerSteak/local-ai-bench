@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-import result_store
-from run_plan import RunPlan
+from scripts.results import result_store
+from scripts.results.run_plan import RunPlan
 
 
 def _plan():

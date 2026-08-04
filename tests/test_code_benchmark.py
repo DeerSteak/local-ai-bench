@@ -1,8 +1,8 @@
 import pytest
 
-import config
-from engines.base import ChatMeasurement
-from code_benchmark import CodeBenchmark
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement
+from scripts.workloads.code_benchmark import CodeBenchmark
 
 
 # ── build_prompt ──

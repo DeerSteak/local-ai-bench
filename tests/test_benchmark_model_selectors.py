@@ -1,6 +1,6 @@
 import argparse
 
-from benchmark import (
+from scripts.app.benchmark import (
     LLM_TESTS,
     add_model_selection_arguments,
     filter_models_by_pattern,
@@ -10,7 +10,7 @@ from benchmark import (
     validate_catalog_scopes,
     validate_engine_scopes,
 )
-from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
 class FakeEngine:

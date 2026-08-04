@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from resume_policy import (
+from scripts.results.resume_policy import (
     assess_resume, build_engine_resume_identity, build_resume_identity,
     cached_file_identity, file_identity, load_digest_cache,
 )
-from run_plan import RunPlan
+from scripts.results.run_plan import RunPlan
 
 
 def make_plan():
@@ -93,7 +93,7 @@ def test_native_only_identity_does_not_require_server_runtime(tmp_path):
 
 
 def test_digest_cache_avoids_rehash_until_file_metadata_changes(tmp_path, monkeypatch):
-    import resume_policy
+    from scripts.results import resume_policy
 
     artifact = tmp_path / "model.gguf"
     artifact.write_bytes(b"first")

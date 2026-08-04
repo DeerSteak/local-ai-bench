@@ -1,8 +1,8 @@
 import pytest
 
-import config
-from engines.base import ChatMeasurement
-from math_benchmark import MathBenchmark
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement
+from scripts.workloads.math_benchmark import MathBenchmark
 
 
 # ── build_prompt ──

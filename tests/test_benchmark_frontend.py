@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import benchmark_frontend
-import config
-from benchmark_frontend import (
+from scripts.app import benchmark_frontend
+from scripts.runtime import config
+from scripts.app.benchmark_frontend import (
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
@@ -39,8 +39,8 @@ from benchmark_frontend import (
     save_frontend_state,
     toggle_group,
 )
-from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
-from run_plan import RunPlan
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.results.run_plan import RunPlan
 
 
 class InputSequence:
@@ -777,7 +777,7 @@ def test_build_command_uses_default_benchmark_path():
         [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
         python_executable="python",
     )
-    assert command[1] == str(config.SCRIPT_DIR / "scripts" / "benchmark.py")
+    assert command[:3] == ["python", "-m", "scripts.app.benchmark"]
 
 
 def test_build_command_omits_max_prompt_tokens_by_default():

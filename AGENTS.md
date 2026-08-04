@@ -23,29 +23,21 @@ bench-env/           Project venv (gitignored) — created by setup.sh/setup.bat
 requirements.txt      Runtime deps, installed by setup scripts into bench-env/
 tests/requirements.txt  Test-only deps (pytest), installed by tests.sh/.bat into bench-env/
 setup.sh / setup.bat        One-shot install + interactive model picker
-run_bench.sh / .bat          Activates bench-env, runs scripts/benchmark.py
+run_bench.sh / .bat          Activates bench-env, runs scripts/app/benchmark.py
 launch_dashboard.sh / .bat    Builds + serves the dashboard (always rebuilds)
 tests.sh / .bat                Activates bench-env, runs pytest
 .coveragerc            Coverage config — see Testing section below
 ```
 
-`scripts/` modules:
-- `benchmark.py` — CLI entry point, argument parsing, orchestration (`main()`)
-- `config.py` — shared constants (URLs, paths, timeouts, run counts)
-- `shared.py` — cross-cutting helpers: logging, machine profiling, crash-cache/`run_measured_calls`/`run_accuracy_benchmark` orchestration (engine-agnostic — takes an `InferenceEngine`), ComfyUI server lifecycle/HTTP client
-- `engines/base.py` — `InferenceEngine` interface; `engines/llamacpp.py` — `LlamaCppEngine` (server lifecycle + HTTP/process client). llama.cpp is the only engine today; a second engine (e.g. MLX) implements the same interface without touching orchestration.
-- `llm_prefill_benchmark.py` — single-shot cold-prefill LLM test
-- `llm_conversation_benchmark.py` — multi-turn conversation LLM test
-- `embedding_benchmark.py` — embeddings test
-- `image_benchmark.py` — image generation test (ComfyUI workflow builders + submission)
-- `concurrency_benchmark.py` — opt-in tool-style and chat-server concurrency sweeps
-- `mcq_benchmark.py`, `math_benchmark.py`, `reasoning_benchmark.py`, `code_benchmark.py`, `tool_benchmark.py` — accuracy tests
-- `hardware.py` — GPU/system-memory detection and model-fit estimates
-- `models.py` — single source of truth for every model definition (tags, checkpoints, tiers, sizes)
-- `model_inventory.py` — installed-model classification and safe non-catalog folder cleanup helpers
-- `setup_selection.py` — pure selection rules extracted from the side-effectful setup picker
-- `setup_check.py` — hardware detection, interactive model picker, unattended install (called by `setup.sh`/`setup.bat`)
-- `llamabench_benchmark.py` — opt-in `llamabench` test: llama.cpp's own `llama-bench` pp/tg throughput sweep, bypassing the HTTP engine — see [Workloads](docs/workloads.md#llama-bench)
+`scripts/` is a Python package with six broad boundaries:
+- `app/` — benchmark CLI/frontends, options, orchestration, and progress presentation
+- `runtime/` — configuration, hardware, engine adapters, shared execution helpers, and process controls
+- `workloads/` — benchmark implementations, model definitions, methodology, and bundled test data
+- `results/` — durable storage, recovery, bundles, reports, policies, and diagnostics
+- `setup/` — setup interfaces, discovery/configuration, downloads, and archive safety
+- `release/` — release manifests, scans, SBOM/notices, maintenance, and readiness gates
+
+See [Project Structure](docs/project-structure.md#scripts-in-detail) for the module-level map. Public wrapper names remain stable; internal Python commands use `python -m scripts.<package>.<module>`.
 
 ## Critical safety rules
 
@@ -107,7 +99,7 @@ This is the part to get right — **write comprehensive, valuable tests for anyt
 **What to test — the real boundary:**
 - **Do** unit test pure logic and anything mockable at a clean seam: parsing, calculation, decision/skip logic, config selection, request/response shaping. Mock `requests`/`urllib` calls and `Shared.*` seams rather than hitting a real server.
 - **Don't** try to unit test code that spawns real subprocesses, polls a live llama.cpp/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `LlamaCppEngine.start`/`Shared.ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test. Orchestration logic that takes an `InferenceEngine` parameter (e.g. `Shared.run_accuracy_benchmark`) isn't in this bucket — test it with a fake engine instead.
-- `scripts/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
+- `scripts/setup/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
 
 **Extract before testing, when logic is buried in a loop.** Several times in this project's history, business logic embedded in a large orchestration loop turned out to be worth pulling into its own pure, testable function rather than leaving it untested inside a `# pragma: no cover` method:
 - `conv_skip_entry()` in `benchmark.py` — the conversation-test skip/reason logic, pulled out of `main()`'s loop

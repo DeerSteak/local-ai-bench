@@ -1,4 +1,4 @@
-import config
+from scripts.runtime import config
 
 
 def test_context_lengths_ascending():

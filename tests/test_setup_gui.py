@@ -1,6 +1,6 @@
 import pytest
 
-from setup_gui import default_model_selection, mousewheel_scroll_units, validate_gui_plan
+from scripts.setup.setup_gui import default_model_selection, mousewheel_scroll_units, validate_gui_plan
 
 
 def test_default_selection_keeps_embeddings_and_respects_memory_limit():

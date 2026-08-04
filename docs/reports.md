@@ -9,7 +9,7 @@ Current results also identify the active methodology profile and enumerate the e
 Use the report CLI after a benchmark has written its result JSON:
 
 ```bash
-bench-env/bin/python scripts/decision_report_cli.py results/results_system_20260804.json \
+python -m scripts.results.decision_report_cli results/results_system_20260804.json \
   --html results/decision_report_system.html \
   --pdf results/decision_report_system.pdf \
   --reviewed-metadata

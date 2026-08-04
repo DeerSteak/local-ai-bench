@@ -2,10 +2,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from decision_report import (
+from scripts.results.decision_report import (
     build_report_model, render_html, report_output_paths, write_html_report, write_pdf_report,
 )
-from decision_report_cli import main
+from scripts.results.decision_report_cli import main
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

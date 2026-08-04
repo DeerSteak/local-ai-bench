@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from maintenance import build_uninstall_plan, execute_uninstall_plan, installation_health
+from scripts.release.maintenance import build_uninstall_plan, execute_uninstall_plan, installation_health
 
 
 def repo(tmp_path):

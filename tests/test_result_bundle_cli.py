@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from result_bundle_cli import main
+from scripts.results.result_bundle_cli import main
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "results_v4_1_complete.json"

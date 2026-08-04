@@ -1,9 +1,9 @@
 import json
 
-from vendor_diagnostic import (
+from scripts.results.vendor_diagnostic import (
     build_vendor_diagnostic, verify_vendor_diagnostic, write_vendor_diagnostic,
 )
-from vendor_diagnostic_cli import main
+from scripts.results.vendor_diagnostic_cli import main
 
 
 def result(hostname, tps, *, invalid=False):

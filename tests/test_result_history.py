@@ -1,6 +1,6 @@
 import json
 
-from result_history import (
+from scripts.results.result_history import (
     compare_results, discover_results, extract_comparable_metrics, filter_results,
     summarize_result,
 )

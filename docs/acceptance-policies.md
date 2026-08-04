@@ -7,14 +7,14 @@ An acceptance policy turns named benchmark evidence into an explicit accepted/re
 Start from [the example policy](../samples/acceptance_policy_example.json), update its exact model and thresholds, then run:
 
 ```bash
-bench-env/bin/python scripts/acceptance_policy_cli.py \
+python -m scripts.results.acceptance_policy_cli \
   results/results_system_20260804.json \
   samples/acceptance_policy_example.json
 ```
 
 Exit code `0` means every rule passed, `2` means the result was evaluated and rejected, and `1` means the policy or result could not be evaluated. The command writes deterministic JSON containing the overall decision and every rule's status, actual value, threshold, and evidence count.
 
-Policies can also be applied when creating a decision report through the benchmark GUI or with `python scripts/decision_report_cli.py RESULT --html REPORT.html --pdf REPORT.pdf --policy POLICY.json --reviewed-metadata`. The report keeps evidence completeness and policy acceptance separate.
+Policies can also be applied when creating a decision report through the benchmark GUI or with `python -m scripts.results.decision_report_cli RESULT --html REPORT.html --pdf REPORT.pdf --policy POLICY.json --reviewed-metadata`. The report keeps evidence completeness and policy acceptance separate.
 
 ## Rule behavior
 

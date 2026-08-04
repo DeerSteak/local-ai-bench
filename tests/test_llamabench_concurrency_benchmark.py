@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-import config
-from engines.llamacpp import LlamaCppEngine
-from llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark as LBC
-from shared import Shared
+from scripts.runtime import config
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark as LBC
+from scripts.runtime.shared import Shared
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -18,42 +18,42 @@ from shared import Shared
 
 
 def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
     nested = tmp_path / "build" / "bin"
     nested.mkdir(parents=True)
     exe = nested / "llama-batched-bench"
     exe.write_text("")
-    monkeypatch.setattr("llamabench_concurrency_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() == str(exe)
 
 
 def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
     (tmp_path / "tools" / "llama-batched-bench").mkdir(parents=True)
     nested = tmp_path / "build" / "bin"
     nested.mkdir(parents=True)
     exe = nested / "llama-batched-bench"
     exe.write_text("")
-    monkeypatch.setattr("llamabench_concurrency_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() == str(exe)
 
 
 def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
-        "llamabench_concurrency_benchmark.shutil.which",
+        "scripts.workloads.llamabench_concurrency_benchmark.shutil.which",
         lambda name: "/usr/local/bin/llama-batched-bench" if name == "llama-batched-bench" else None,
     )
     assert LBC.find_binary() == "/usr/local/bin/llama-batched-bench"
 
 
 def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
-    monkeypatch.setattr("llamabench_concurrency_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
 
     real_exists = Path.exists
 
@@ -65,9 +65,9 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
 
 
 def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
-    monkeypatch.setattr("llamabench_concurrency_benchmark.shutil.which", lambda name: None)
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() is None
 
 
@@ -186,7 +186,7 @@ def _popen_factory(proc):
 
 def test_run_one_parses_jsonl_rows(monkeypatch):
     lines = [json.dumps(_row(1)) + "\n", json.dumps(_row(2)) + "\n"]
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(0, stdout_lines=lines)))
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1, 2], 2048, 512, 999, 60)
     assert [e["pl"] for e in entries] == [1, 2]
@@ -194,7 +194,7 @@ def test_run_one_parses_jsonl_rows(monkeypatch):
 
 def test_run_one_reports_progress_per_row(monkeypatch):
     lines = [json.dumps(_row(1, 40.0)) + "\n", json.dumps(_row(4, 120.0)) + "\n"]
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(0, stdout_lines=lines)))
     seen = []
     LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1, 4], 2048, 512, 999, 60, on_progress=seen.append)
@@ -206,28 +206,28 @@ def test_run_one_reports_progress_per_row(monkeypatch):
 
 def test_run_one_succeeds_with_empty_stderr(monkeypatch):
     """This build is silent on stderr — an empty stderr must not be treated as a failure."""
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"], stderr_lines=[])))
     assert len(LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)) == 1
 
 
 def test_run_one_skips_blank_and_malformed_lines(monkeypatch):
     lines = ["\n", "warming up...\n", json.dumps(_row(1)) + "\n", "{broken\n", "   \n"]
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(0, stdout_lines=lines)))
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
     assert entries == [_row(1)]
 
 
 def test_run_one_raises_on_nonzero_exit(monkeypatch):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(1, stderr_lines=["error: out of memory\n"])))
     with pytest.raises(RuntimeError, match="out of memory"):
         LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
 
 
 def test_run_one_raises_when_no_entries_parsed(monkeypatch):
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen",
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
                         _popen_factory(_FakePopen(0, stdout_lines=["not json\n"])))
     with pytest.raises(RuntimeError, match="no parseable JSONL output"):
         LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
@@ -235,7 +235,7 @@ def test_run_one_raises_when_no_entries_parsed(monkeypatch):
 
 def test_run_one_propagates_timeout(monkeypatch):
     fake_proc = _FakePopen(stdout_lines=[json.dumps(_row(1)) + "\n"], hang=True)
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
     monkeypatch.setattr(LBC, "IDLE_POLL_INTERVAL", 0.001)
     with pytest.raises(subprocess.TimeoutExpired) as caught:
         LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 0.01)
@@ -245,7 +245,7 @@ def test_run_one_propagates_timeout(monkeypatch):
 
 def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     fake_proc = _FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"])
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
     assert len(entries) == 1
     assert not fake_proc.killed
@@ -253,7 +253,7 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
 
 def test_run_one_propagates_entry_checkpoint_failure(monkeypatch):
     fake_proc = _FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"])
-    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
     with pytest.raises(OSError, match="disk full"):
         LBC.run_one(
             "b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60,

@@ -1,4 +1,4 @@
-from third_party_notices import generate_notices, write_notices
+from scripts.release.third_party_notices import generate_notices, write_notices
 
 
 def sample_sbom():
@@ -26,6 +26,6 @@ def test_notices_are_deterministic_and_escape_table_content():
 
 def test_write_notices_uses_repository_sbom(monkeypatch, tmp_path):
     output = tmp_path / "THIRD_PARTY_NOTICES.md"
-    monkeypatch.setattr("third_party_notices.generate_sbom", lambda _root: sample_sbom())
+    monkeypatch.setattr("scripts.release.third_party_notices.generate_sbom", lambda _root: sample_sbom())
     write_notices(tmp_path, output)
     assert output.read_text(encoding="utf-8") == generate_notices(sample_sbom())

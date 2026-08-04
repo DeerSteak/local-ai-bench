@@ -3,12 +3,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from orchestration import (
+from scripts.app.orchestration import (
     LifecycleCoordinator, RunContext, RunPaths, StageDefinition, StageExecutionError,
     emit_stage_progress, execute_stages, execute_with_final_cleanup, ordered_stage_keys, select_stages,
 )
-from result_store import ResultStore
-from run_plan import RunPlan
+from scripts.results.result_store import ResultStore
+from scripts.results.run_plan import RunPlan
 
 
 def _store(tmp_path):

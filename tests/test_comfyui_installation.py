@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from comfyui_installation import (
+from scripts.runtime.comfyui_installation import (
     add_managed_models_to_comfyui,
     checkpoint_names_from_object_info,
     common_comfyui_candidates,
@@ -101,7 +101,7 @@ def test_process_commands_find_absolute_main_py_paths():
 
 def test_process_discovery_tolerates_permission_denial(monkeypatch):
     monkeypatch.setattr(
-        "comfyui_installation.subprocess.check_output",
+        "scripts.runtime.comfyui_installation.subprocess.check_output",
         lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError("denied")),
     )
     assert running_comfyui_dirs("Linux") == []

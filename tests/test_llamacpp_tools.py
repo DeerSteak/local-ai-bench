@@ -1,4 +1,4 @@
-from llamacpp_tools import find_llamacpp_tool
+from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 
 
 def test_system_path_wins_over_project_vendored_binary(tmp_path):
@@ -53,7 +53,7 @@ def test_valid_configured_tool_wins_over_vendored_copy(tmp_path, monkeypatch):
     vendored.parent.mkdir()
     vendored.touch()
     monkeypatch.setattr(
-        "llamacpp_tools.load_setup_config",
+        "scripts.runtime.llamacpp_tools.load_setup_config",
         lambda path: {"schema_version": 1, "llama_cpp": {"llama-server": str(configured)}},
     )
     assert find_llamacpp_tool(
