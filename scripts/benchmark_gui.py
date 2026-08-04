@@ -212,6 +212,13 @@ def format_recovery_inspection(report: dict) -> str:
     lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
     lines += ["", "Cases:"]
     lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]
+    retryable = report.get("retryable_cases", [])
+    if retryable:
+        lines += ["", "Retry candidates:"]
+        lines += [
+            f"  {case['stage']}: {case['label']} ({case['state']})"
+            for case in retryable
+        ]
     if report["reasons"]:
         lines += ["", "Reasons:", *[f"  - {reason}" for reason in report["reasons"]]]
     return "\n".join(lines)

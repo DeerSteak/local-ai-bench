@@ -1,7 +1,7 @@
 import json
 
 from event_store import EventStore, JournalEvent
-from recovery_inspector import inspect_recovery
+from recovery_inspector import inspect_recovery, retryable_case_records
 from run_plan import RunPlan
 
 
@@ -38,6 +38,13 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
     assert report["action"] == "resume" and report["can_resume"] is True
     assert report["stage_states"] == {"llm": "running"}
     assert report["case_counts"] == {"running": 1}
+    assert len(report["retryable_cases"]) == 1
+    assert report["retryable_cases"][0] == {
+        "case_id": plan.case_id(
+            "llm", plan.model_id("llm", plan.models["llm"][0]), {"context_tokens": 512},
+        ),
+        "stage": "llm", "state": "running", "model": "unknown", "label": "unknown",
+    }
     assert report["interrupted_attempts"] == 1
     assert result.with_suffix(".events.sqlite3").read_bytes() == before
 
@@ -69,3 +76,33 @@ def test_recovery_inspector_never_reopens_a_complete_portable_result(tmp_path):
     report = inspect_recovery(result, lambda _plan: identity)
     assert report["action"] == "fork" and report["can_resume"] is False
     assert report["reasons"] == ["result is already complete"]
+
+
+def test_retryable_case_records_are_ordered_and_exclude_completed_cases(tmp_path):
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["conv", "llm"],
+        stage_order=["conv", "llm"], models={
+            "llm": [{"tag": "model:4b", "short": "model"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
+    projection = {"cases": {
+        "case_complete": {
+            "state": "complete", "parent_id": plan.stage_id("conv"),
+            "model_short": "model", "context_label": "2K",
+        },
+        "case_llm": {
+            "state": "invalid", "parent_id": plan.stage_id("llm"),
+            "model_short": "model", "context_label": "8K",
+        },
+        "case_conv": {
+            "state": "timed_out", "parent_id": plan.stage_id("conv"),
+            "model_short": "model", "context_label": "4K",
+        },
+    }}
+    assert retryable_case_records(plan, projection) == [
+        {"case_id": "case_conv", "stage": "conv", "state": "timed_out",
+         "model": "model", "label": "model · 4K"},
+        {"case_id": "case_llm", "stage": "llm", "state": "invalid",
+         "model": "model", "label": "model · 8K"},
+    ]

@@ -15,6 +15,27 @@ from shared import Shared
 
 
 JOURNAL_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
+
+
+def retryable_case_records(plan, projection):
+    stages = {plan.stage_id(stage): stage for stage in plan.stage_order if stage in JOURNAL_STAGES}
+    records = []
+    for case_id, case in projection["cases"].items():
+        if case.get("state") not in RETRYABLE_CASE_STATES or case.get("parent_id") not in stages:
+            continue
+        details = []
+        if case.get("context_label"):
+            details.append(str(case["context_label"]))
+        elif case.get("case_kind"):
+            details.append(str(case["case_kind"]).replace("_", " "))
+        records.append({
+            "case_id": case_id, "stage": stages[case["parent_id"]],
+            "state": case["state"], "model": case.get("model_short", "unknown"),
+            "label": " · ".join([case.get("model_short", "unknown"), *details]),
+        })
+    return sorted(records, key=lambda item: (plan.stage_order.index(item["stage"]), item["label"],
+                                              item["case_id"]))
 
 
 def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find_llamacpp_tool,
@@ -74,6 +95,7 @@ def inspect_recovery(result_path, identity_builder=current_resume_identity):
         "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),
+        "retryable_cases": retryable_case_records(plan, projection),
         "interrupted_attempts": len(decision.interrupted_attempts),
     }
 

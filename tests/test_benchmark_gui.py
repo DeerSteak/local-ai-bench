@@ -86,11 +86,16 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
         "action": "fork", "plan_id": "plan-1", "interrupted_attempts": 2,
         "stage_states": {"llm": "interrupted"},
         "case_counts": {"complete": 17, "timed_out": 1},
+        "retryable_cases": [{
+            "case_id": "case_1", "stage": "llm", "label": "model · 8K",
+            "state": "timed_out", "model": "model",
+        }],
         "reasons": ["runtime identity changed"],
     })
     assert "Decision: FORK" in detail
     assert "llm: interrupted" in detail
     assert "complete: 17" in detail
+    assert "llm: model · 8K (timed_out)" in detail
     assert "runtime identity changed" in detail
     fork = fork_executor_command(result, tmp_path / "fork.json", python_executable="python")
     assert fork == [
