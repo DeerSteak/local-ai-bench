@@ -174,7 +174,25 @@ def apply_hardware_model_defaults(entries, inventory: dict[str, list[dict]], ram
 def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
                        max_prompt_tokens: int | None, tg_tokens: list[int] | None,
                        comfyui_dir: Path) -> str:
-    models = [entry.label for entry in entries if entry.checked]
+    selected = [entry for entry in entries if entry.checked]
+    models = [entry.label for entry in selected]
+    model_passes = 0
+    for test in tests:
+        if test == "emb":
+            model_passes += sum(entry.kind == "embedding" for entry in selected)
+        elif test == "img":
+            model_passes += sum(entry.kind == "image" for entry in selected)
+        elif test in LLM_BACKED_TESTS:
+            model_passes += sum(entry.kind in {"llm", "custom"} for entry in selected)
+    processes = []
+    if set(tests) - {"llamabench", "llamabenchconc", "img"}:
+        processes.append("llama-server")
+    if "llamabench" in tests:
+        processes.append("llama-bench")
+    if "llamabenchconc" in tests:
+        processes.append("llama-batched-bench")
+    if "img" in tests:
+        processes.append("ComfyUI")
     output = options.get("out") or "Automatic results/results_<host>_<time>.json"
     lines = [
         f"Engine: {engine}", f"Tests: {', '.join(tests)}", f"Models: {', '.join(models)}",
@@ -186,8 +204,13 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
         f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
         f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
         f"Force slow models: {'Yes' if options['force_all'] else 'No'}",
+        f"Broad cases: {model_passes} model-workload passes; contexts, questions, and levels expand within them.",
+        f"Model loads: at least {model_passes}; context and concurrency workloads may reload models.",
+        "Duration range: minutes to hours; this hardware has no calibrated estimate yet.",
+        f"Processes: {', '.join(processes) if processes else 'None'}",
         f"Results: {output}", f"ComfyUI: {comfyui_dir}",
-        "Network during benchmark: none expected; all selected models must already be local.",
+        "Disk use: results JSON plus accuracy sidecars and generated images when selected.",
+        "Network use: none expected; all selected models must already be local.",
     ]
     return "\n".join(lines)
 

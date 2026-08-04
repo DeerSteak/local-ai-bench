@@ -191,5 +191,7 @@ def test_plan_preview_shows_resolved_measurement_values_and_destinations():
     for expected in (
         "Engine: llamacpp", "Tests: llm", "Models: Model", "Measured runs: 5",
         "Prompt cap: 32768", "CPU only: Yes", "Results: chosen.json", "ComfyUI: /ComfyUI",
+        "Broad cases: 1 model-workload passes", "Model loads: at least 1",
+        "Duration range: minutes to hours", "Processes: llama-server", "Network use: none expected",
     ):
         assert expected in preview
