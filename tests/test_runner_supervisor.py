@@ -213,3 +213,61 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
     assert '"kind":"event"' in output
     assert '"status":"complete"' in output
     assert export_llm_section(path, plan.job_id)["fake"]["512"]["tps_mean"] == 50
+
+
+def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["llm", "conv"],
+        stage_order=["llm", "conv"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": 2048,
+            "context_lengths": [512], "llamabench_pp": [512],
+            "llamabench_tg": [128], "sample_size": None,
+        },
+    )
+    model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
+    llm = LLMEventStage(path, plan, lambda _: None)
+    llm.record_case(
+        model, 512, "0.5K", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+    )
+    llm.finish()
+    llm.close()
+    conversation = LLMEventStage(path, plan, lambda _: None, stage_name="conv")
+    conversation.close()
+
+    class Engine:
+        name = "fake"
+
+        @staticmethod
+        def start(*, gpu_visible):
+            return gpu_visible
+
+        @staticmethod
+        def available():
+            return False
+
+    class Benchmark:
+        def run(self, **kwargs):
+            assert [entry["tag"] for entry in kwargs["models"]] == ["fake:model"]
+            assert kwargs["max_prompt_tokens"] == 2048
+            kwargs["journal"].record_case(
+                kwargs["models"][0], 0, "0K",
+                [GenerationMeasurement(0.1, 96, 48, 2.1, 2.0)], "ok", 1,
+                depth_tokens=400,
+            )
+            kwargs["journal"].finish()
+
+    old_timeout = config.RUN_TIMEOUT
+    try:
+        workload_runner.execute_conversation_job(
+            path, plan.job_id, engine_factory=lambda _: Engine(), benchmark_factory=Benchmark,
+        )
+    finally:
+        config.RUN_TIMEOUT = old_timeout
+    result = export_llm_section(path, plan.job_id, "conv")
+    assert result["fake"]["0K"]["depth_tokens"] == 400

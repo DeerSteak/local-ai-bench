@@ -177,6 +177,11 @@ class EventStore:
             )
         return plan.job_id
 
+    def has_job(self, job_id: str) -> bool:
+        return self.connection.execute(
+            "SELECT 1 FROM jobs WHERE job_id = ?", (job_id,),
+        ).fetchone() is not None
+
     def resume_identity(self, job_id: str) -> dict:
         row = self.connection.execute(
             "SELECT resume_identity_json FROM jobs WHERE job_id = ?", (job_id,),

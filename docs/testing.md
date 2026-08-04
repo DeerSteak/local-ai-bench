@@ -112,10 +112,10 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Atomic results, run state, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
 | Transactional event journal, transition safety, and projections | [test_event_store.py](../tests/test_event_store.py) |
-| Journal-owned single-shot LLM projection and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
+| Journal-owned single-shot/conversation projection, stage isolation, depth retention, and golden compatibility | [test_llm_event_stage.py](../tests/test_llm_event_stage.py) |
 | Resume identity and case-boundary resume/fork policy | [test_resume_policy.py](../tests/test_resume_policy.py) |
 | Content-addressed artifact storage, integrity, limits, and failure cleanup | [test_content_store.py](../tests/test_content_store.py) |
-| Runner command confinement, event authentication, heartbeat, cleanup escalation, and parent checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |
+| Runner command confinement, event authentication, heartbeat, cleanup escalation, conversation preflight, and parent stage checkpoint dispatch | [test_runner_supervisor.py](../tests/test_runner_supervisor.py), [test_benchmark_runner.py](../tests/test_benchmark_runner.py) |
 | Portable result bundles, verification, and CLI | [test_result_bundle.py](../tests/test_result_bundle.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py) |
 | Redacted support-bundle allowlist and preview | [test_support_bundle.py](../tests/test_support_bundle.py) |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |

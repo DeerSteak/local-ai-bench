@@ -11,7 +11,9 @@ import time
 import config
 from engines import get_engine
 from event_store import EventStore
-from llm_event_stage import LLMEventStage
+from conversation_selection import conv_skip_entry
+from llm_event_stage import LLMEventStage, export_llm_section
+from llm_conversation_benchmark import LLMConversationBenchmark
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from models import LLM_MODELS
 from runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
@@ -89,6 +91,63 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         Shared.shutdown_managed()
 
 
+def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
+                             benchmark_factory=LLMConversationBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "conv" not in plan.tests:
+        raise ValueError("runner job does not include the conversation stage")
+    settings = plan.effective_config
+    config.RUN_TIMEOUT = settings["run_timeout_seconds"]
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    Shared._active_engine = engine
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "conv", "committed": True})
+
+    journal = None
+    try:
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = LLMEventStage(
+            path, plan, notify, stage_name="conv", initialize=False,
+        )
+        if "llm" in plan.tests:
+            llm_results = export_llm_section(path, job_id)
+            first_ctx = Shared.context_label(settings["context_lengths"][0])
+            selected = []
+            for model in models:
+                skip = conv_skip_entry(
+                    model, llm_results.get(model["short"]), first_ctx, plan.force_all,
+                )
+                if skip is None:
+                    selected.append(model)
+                else:
+                    journal.record_model_state(model, "skipped", skip)
+            models = selected
+        benchmark_factory().run(
+            engine=engine, models=models, warmup_runs=plan.warmup_runs,
+            force_all=plan.force_all, max_prompt_tokens=settings["max_prompt_tokens"],
+            journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
 def heartbeat(stop_event: threading.Event) -> None:
     while not stop_event.wait(5):
         emit("heartbeat")
@@ -103,7 +162,10 @@ def main(argv=None) -> int:
     thread = threading.Thread(target=heartbeat, args=(stop_event,), daemon=True)
     thread.start()
     try:
-        execute_llm_job(args.event_store, args.job_id)
+        if args.stage == "llm":
+            execute_llm_job(args.event_store, args.job_id)
+        else:
+            execute_conversation_job(args.event_store, args.job_id)
     except BaseException as exc:
         sys.stderr.write(f"Runner failed: {type(exc).__name__}: {exc}\n")
         emit("terminal", status="failed", job_id=args.job_id, stage=args.stage)

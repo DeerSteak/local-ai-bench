@@ -85,7 +85,7 @@ class LLMConversationBenchmark:
         )
 
     def run(self, engine, models, warmup_runs, force_all=False, save_fn=None,
-            max_prompt_tokens=None):  # pragma: no cover — orchestrates real engine runs
+            max_prompt_tokens=None, journal=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
@@ -109,11 +109,17 @@ class LLMConversationBenchmark:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "label": label, "skipped": True, "skip_reason": "not_installed",
+                        })
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
                 model_max = engine.max_context_length(tag)
@@ -212,6 +218,12 @@ class LLMConversationBenchmark:
                             # (or the opening turn for target == 0).
                             samples_by_label.setdefault(label_ctx, []).append(
                                 (measurement, cumulative_tokens))
+                            if journal:
+                                journal.record_case(
+                                    model, target, label_ctx, [measurement], "ok",
+                                    LLMConversationBenchmark.CONV_RUNS,
+                                    depth_tokens=cumulative_tokens,
+                                )
                             Shared.output(
                                 f"    run {run_i+1}/{LLMConversationBenchmark.CONV_RUNS}: "
                                 f"{label_ctx}  TTFT={measurement.client_ttft_sec:.2f}s  "
@@ -292,19 +304,35 @@ class LLMConversationBenchmark:
 
                 if timed_out_label:
                     results[short]["timed_out"] = timed_out_label
+                    if journal:
+                        journal.record_model_state(
+                            model, "timed_out", {"timed_out": timed_out_label},
+                        )
                 if slow_label:
                     results[short]["slow_tps"] = slow_label
+                    if journal:
+                        journal.record_model_state(
+                            model, "complete", {"slow_tps": slow_label},
+                        )
                 if crashed:
                     results[short]["crashed"] = crashed_label or "0K"
                     results[short]["crashed_at"] = Shared.record_crash(
                         tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
+                    if journal:
+                        journal.record_model_state(model, "failed", {
+                            "crashed": results[short]["crashed"],
+                            "crashed_at": results[short]["crashed_at"],
+                        })
 
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
             finally:
                 if save_fn:
-                    save_fn(results)
+                    save_fn(journal.export() if journal else results)
                 emit_model_finished("conv", label, results.get(short))
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

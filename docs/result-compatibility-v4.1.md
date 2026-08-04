@@ -34,7 +34,7 @@ Context keys are public display/schema identities rather than arbitrary formatti
 
 The maximum-prompt cap changes which checkpoints are planned; it does not rename retained checkpoints or synthesize missing ones. Missing, skipped, timed-out, and invalid work is never emitted as a numeric zero.
 
-The journal-owned single-shot implementation reproduces every LLM field in the immutable schema-3 golden fixture value-for-value from recorded samples. Its acceptance test also permits only additive current validity/client-timing diagnostics; it preserves the legacy TTFT/TPS means, counts, sample payload, timeout/crash/slow markers, context labels, and missing-data semantics. JSON is now an export projection for this section; the sibling SQLite journal is its live recovery source.
+The journal-owned single-shot implementation reproduces every LLM field in the immutable schema-3 golden fixture value-for-value from recorded samples. Conversation uses the same named measurement projection plus `depth_tokens`, preserving its client/server timing distinction, checkpoint labels, timeout/crash/slow markers, and usable shallower checkpoints after an early stop. Acceptance tests permit only additive current validity/client-timing diagnostics. JSON is now an export projection for these sections; the sibling SQLite journal is their live recovery source.
 
 ## LLM measurement contract
 

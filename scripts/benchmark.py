@@ -14,11 +14,11 @@ from pathlib import Path
 import config
 from benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
+from conversation_selection import conv_skip_entry
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from llm_event_stage import LLMEventStage, event_store_path, export_llm_section
-from llm_conversation_benchmark import LLMConversationBenchmark
 from embedding_benchmark import EmbeddingBenchmark
 from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
@@ -59,17 +59,19 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
         checkpoint("run interrupted")
 
 
-def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
-                       supervisor_factory=RunnerSupervisor) -> dict:
+def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
+                         supervisor_factory=RunnerSupervisor) -> dict:
     event_path = Path(event_path).resolve()
-    journal = LLMEventStage(event_path, plan, lambda _: None)
+    journal = LLMEventStage(
+        event_path, plan, lambda _: None, stage_name=stage_name,
+    )
     journal.close()
-    supervisor = supervisor_factory(RunnerSpec(plan.job_id, "llm", event_path))
+    supervisor = supervisor_factory(RunnerSpec(plan.job_id, stage_name, event_path))
     terminal = []
 
     def on_runner_event(event):
         if event["kind"] == "event":
-            save_fn(export_llm_section(event_path, plan.job_id))
+            save_fn(export_llm_section(event_path, plan.job_id, stage_name))
         elif event["kind"] == "terminal":
             terminal.append(event["status"])
         elif event["kind"] == "log":
@@ -79,11 +81,16 @@ def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
         return_code = supervisor.run(on_runner_event)
     finally:
         supervisor.cancel()
-    section = export_llm_section(event_path, plan.job_id)
+    section = export_llm_section(event_path, plan.job_id, stage_name)
     save_fn(section)
     if return_code or terminal != ["complete"]:
-        raise RuntimeError(f"LLM runner failed with exit code {return_code}")
+        raise RuntimeError(f"{stage_name} runner failed with exit code {return_code}")
     return section
+
+
+def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
+                       supervisor_factory=RunnerSupervisor) -> dict:
+    return run_supervised_stage(plan, event_path, "llm", save_fn, supervisor_factory)
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -338,47 +345,6 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "or shell-style wildcards (default: every image model allowed by --maxtier). "
              "Applied after --maxtier. Quote wildcards in a shell.",
     )
-
-
-def conv_skip_entry(model: dict, llm_data: dict | None, first_ctx_label: str, force_all: bool) -> dict | None:
-    """Conversation-test skip decision from single-shot LLM results — see
-    docs/workloads.md's LLM pre-flight section."""
-    label = model["label"]
-
-    if not llm_data:
-        detail = "no LLM benchmark data (checkpoint skipped or model failed)"
-        return {"label": label, "skipped": True,
-                "skip_reason": "no_llm_data", "skip_detail": detail}
-
-    if llm_data.get("skipped") or llm_data.get("crashed"):
-        detail = llm_data.get("skip_detail") or (
-            f"The engine's runner crashed repeatedly during the LLM test "
-            f"(at {llm_data['crashed']} context)"
-        )
-        return {"label": label, "skipped": True,
-                "skip_reason": llm_data.get("skip_reason", "known_crash"), "skip_detail": detail}
-
-    if llm_data.get("timed_out") == first_ctx_label:
-        detail = f"LLM test timed out at {llm_data['timed_out']} context"
-        return {"label": label, "skipped": True,
-                "skip_reason": "timed_out", "skip_detail": detail}
-
-    slow_ctx = None if force_all else llm_data.get("slow_tps") or (
-        first_ctx_label if isinstance(llm_data.get(first_ctx_label), dict)
-        and llm_data[first_ctx_label].get("tps_mean") is not None
-        and llm_data[first_ctx_label]["tps_mean"] < config.SLOW_MODEL_MIN_TPS
-        else None
-    )
-    if slow_ctx is not None:
-        ctx_data = llm_data.get(slow_ctx)
-        detail = (f"{ctx_data['tps_mean']:.1f} tok/s at {slow_ctx} "
-                  f"context (below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff)"
-                  if isinstance(ctx_data, dict) and ctx_data.get("tps_mean") is not None
-                  else f"below {config.SLOW_MODEL_MIN_TPS:.0f} tok/s cutoff at {slow_ctx} context")
-        return {"label": label, "skipped": True,
-                "skip_reason": "slow_tps", "skip_detail": detail}
-
-    return None
 
 
 def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
@@ -781,29 +747,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         def run_conversation(_context):
-            conv_models = llm_models
-            skips = {}
-            if "llm" in _context.plan.tests:
-                conv_models = []
-                first_ctx = Shared.context_label(config.CONTEXT_LENGTHS[0])
-                for model in llm_models:
-                    skip = conv_skip_entry(
-                        model, results["llm"].get(model["short"]), first_ctx,
-                        _context.plan.force_all,
-                    )
-                    if skip is None:
-                        conv_models.append(model)
-                    else:
-                        Shared.warn(f"{model['label']}: skipping conversation test — {skip['skip_detail']}")
-                        skips[model["short"]] = skip
-            section = LLMConversationBenchmark().run(
-                engine=engine, models=conv_models, warmup_runs=_context.plan.warmup_runs,
-                force_all=_context.plan.force_all,
-                save_fn=make_save("llm_conversation", "conv"),
-                max_prompt_tokens=args.max_prompt_tokens,
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "conv",
+                make_save("llm_conversation", "conv"),
             )
-            section.update(skips)
-            return section
 
         def stop_for_native(_context):
             if engine.available():
@@ -879,7 +826,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
-                            requires_engine=True),
+                            requires_engine=False),
             StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,
                             prepare=stop_for_native),
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),

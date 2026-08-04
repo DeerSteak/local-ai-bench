@@ -1,4 +1,4 @@
-from benchmark import run_supervised_llm
+from benchmark import run_supervised_llm, run_supervised_stage
 from engines.base import GenerationMeasurement
 from llm_event_stage import LLMEventStage
 from run_plan import RunPlan
@@ -153,3 +153,39 @@ def test_parent_interruption_keeps_child_commit(tmp_path):
         assert reopened.export()["fake"]["512"]["tps_mean"] == 50
     finally:
         reopened.close()
+
+
+def test_generic_supervisor_projects_conversation_stage(tmp_path):
+    base = make_plan()
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="fake", tests=["conv"],
+        stage_order=["conv"], models=base.models,
+        effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.stage == "conv"
+
+        def run(self, callback):
+            stage = LLMEventStage(
+                path.resolve(), plan, lambda _: None, stage_name="conv", initialize=False,
+            )
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                0, "0K", [GenerationMeasurement(0.1, 96, 48, 2.1, 2.0)], "ok", 1,
+                depth_tokens=400,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    result = run_supervised_stage(plan, path, "conv", lambda _: None, Supervisor)
+    assert result["fake"]["0K"]["depth_tokens"] == 400

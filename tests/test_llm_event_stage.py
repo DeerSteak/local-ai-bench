@@ -59,6 +59,35 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
+def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["llm", "conv"],
+        stage_order=["llm", "conv"], models=make_plan().models,
+        effective_config=make_plan().effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+    llm = LLMEventStage(path, plan, lambda _: None)
+    llm.record_case(MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "ok", 1)
+    llm.finish()
+    llm.close()
+    conversation = LLMEventStage(
+        path, plan, lambda _: None, stage_name="conv",
+    )
+    try:
+        conversation.record_case(
+            MODEL, 0, "0K", [measurement(0.1, 96, 48)], "ok", 1,
+            depth_tokens=400,
+        )
+        conversation.finish()
+    finally:
+        conversation.close()
+    assert set(export_llm_section(path, plan.job_id)) == {"model"}
+    projected = export_llm_section(path, plan.job_id, "conv")["model"]
+    assert set(projected) == {"0K"}
+    assert projected["0K"]["depth_tokens"] == 400
+    assert projected["0K"]["client_ttft_mean_sec"] == 0.1
+
+
 def test_llm_journal_rebuilds_compatible_aggregate_and_checkpoints_projection(tmp_path):
     snapshots = []
     plan = make_plan()

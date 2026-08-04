@@ -95,21 +95,21 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Reconsideration gate: none; adding arbitrary command execution requires a new security review and is outside the product contract.
 - Evidence: `docs/coordinator-api.md`; implementation and adversarial API tests remain required before activation.
 
-### AD-011 — Migrate single-shot LLM without shadow writes
+### AD-011 — Migrate LLM workloads without shadow writes
 
 - Status: accepted
 - Requirement: prove the event path on a real workload while retaining 4.1 result compatibility and per-model durability.
-- Decision: single-shot cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints and the stage return value rebuild from events. Ephemeral in-memory values may guide the active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
-- Compatibility: schema-3 golden LLM fields are asserted value-for-value; current additive validity diagnostics remain allowed.
+- Decision: single-shot and conversation cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints and stage return values rebuild from stage-scoped events. Conversation commits each sampled checkpoint before further growth. Ephemeral in-memory values may guide an active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
+- Compatibility: schema-3 golden LLM fields are asserted value-for-value; conversation retains its depth and timing fields, partial checkpoints, selection rules, retry, and cache behavior; current additive validity diagnostics remain allowed.
 - Deletion gate: after all workloads migrate, remove runtime JSON ownership and export the whole result from journal projections.
 
 ### AD-012 — Activate process isolation only after fixed-protocol proof
 
 - Status: accepted
 - Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
-- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The entrypoint remains deliberately inactive until it can reconstruct and execute the single-shot job solely from journal state.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot and conversation are currently supported.
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
-- Activation gate: fake-runner hang/crash/cancel/disk tests and schema-3 single-shot export parity must pass with the child path enabled.
+- Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 
 ## Migration and deletion ledger
 
