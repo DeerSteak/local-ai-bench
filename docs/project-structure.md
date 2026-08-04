@@ -56,6 +56,7 @@
 | `release_readiness.py` (in `scripts/`) | Machine-readable local release blockers without waiving external qualification |
 | `maintenance.py` (in `scripts/`) | Read-only installation health and previewed project-owned uninstall boundaries |
 | `archive_safety.py` (in `scripts/`) | Pre-extraction path and ZIP-link validation for downloaded setup archives |
+| `resumable_download.py` (in `scripts/`) | Atomic resumable HTTPS setup downloads with range and size validation |
 | `security_gate.py` (in `scripts/`) | Offline release-staging secret, credential-file, symlink, and inspectability gate |
 | `release_manifest.py` (in `scripts/`) | Deterministic artifact checksums and provenance prepared for external signing |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |

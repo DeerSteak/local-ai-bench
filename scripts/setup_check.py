@@ -31,6 +31,7 @@ from comfyui_installation import (
 from llamacpp_tools import find_llamacpp_tool
 from model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
 from models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
+from resumable_download import download_file
 from setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from interface_mode import select_interface_mode
@@ -535,7 +536,7 @@ def download_llamacpp_windows(max_cuda_version=None):
     tmp_paths = [SCRIPT_DIR / a["name"] for a in assets]
     try:
         for asset, tmp in zip(assets, tmp_paths):
-            urllib.request.urlretrieve(asset["browser_download_url"], str(tmp))
+            download_file(asset["browser_download_url"], tmp, expected_size=asset["size"])
     except Exception as e:
         fail(f"Download failed: {e}")
         for tmp in tmp_paths:
@@ -1306,7 +1307,7 @@ else:
         info(f"Downloading ComfyUI {tag} {label} portable ({size} MB) — this may take a while ...")
         tmp = SCRIPT_DIR / asset["name"]
         try:
-            urllib.request.urlretrieve(url, str(tmp))
+            download_file(url, tmp, expected_size=asset["size"])
         except Exception as e:
             fail(f"Download failed: {e}")
             tmp.unlink(missing_ok=True)
@@ -1320,9 +1321,9 @@ else:
             if not szr.exists():
                 info("Downloading 7zr.exe for extraction ...")
                 try:
-                    urllib.request.urlretrieve(
+                    download_file(
                         "https://github.com/ip7z/7zip/releases/download/26.02/7zr.exe",
-                        str(szr),
+                        szr,
                     )
                     ok("7zr.exe downloaded")
                 except Exception as e:
