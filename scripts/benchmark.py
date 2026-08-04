@@ -18,6 +18,7 @@ from conversation_selection import conv_skip_entry
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
 from llm_prefill_benchmark import LLMPrefillBenchmark
+from llamacpp_tools import find_llamacpp_tool
 from llm_event_stage import LLMEventStage, event_store_path, export_llm_section
 from native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from embedding_benchmark import EmbeddingBenchmark
@@ -41,6 +42,7 @@ from orchestration import (
 from result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
 from run_plan import RunPlan
+from resume_policy import build_engine_resume_identity
 from runner_supervisor import RunnerSpec, RunnerSupervisor
 from setup_config import configured_comfyui_dir, load_setup_config
 
@@ -62,16 +64,18 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
 
 
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
-                         supervisor_factory=RunnerSupervisor) -> dict:
+                         supervisor_factory=RunnerSupervisor, resume_identity=None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
-        journal = NativeBenchEventStage(event_path, plan, lambda _: None)
+        journal = NativeBenchEventStage(
+            event_path, plan, lambda _: None, resume_identity=resume_identity,
+        )
         project = lambda: export_native_bench_section(event_path, plan.job_id)
     else:
         model_family = "concurrency" if stage_name in {"conc_tool", "conc_chat"} else "llm"
         journal = LLMEventStage(
             event_path, plan, lambda _: None, stage_name=stage_name,
-            model_family=model_family,
+            model_family=model_family, resume_identity=resume_identity,
         )
         project = lambda: export_llm_section(
             event_path, plan.job_id, stage_name, model_family,
@@ -100,8 +104,10 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 
 
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
-                       supervisor_factory=RunnerSupervisor) -> dict:
-    return run_supervised_stage(plan, event_path, "llm", save_fn, supervisor_factory)
+                       supervisor_factory=RunnerSupervisor, resume_identity=None) -> dict:
+    return run_supervised_stage(
+        plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
+    )
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -709,6 +715,32 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             effective_config=effective_config,
         )
         plan.validate_for_execution()
+        journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+        resume_identity = None
+        if journal_stages:
+            extra_resume_runtimes = {}
+            if "llamabench" in tests:
+                llama_bench_path = find_llamacpp_tool("llama-bench")
+                if not llama_bench_path:
+                    raise ValueError("cannot identify llama-bench runtime for resume")
+                extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
+            model_families = []
+            if journal_stages & {"llm", "conv", "llamabench"}:
+                model_families.append("llm")
+            if journal_stages & {"conc_tool", "conc_chat"}:
+                model_families.append("concurrency")
+            identity_model_count = len({
+                model["tag"] for family in model_families for model in plan.models[family]
+            })
+            Shared.log(
+                f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
+            )
+            resume_identity = build_engine_resume_identity(
+                plan, engine, model_families=model_families,
+                include_engine_runtime=bool(journal_stages - {"llamabench"}),
+                extra_runtimes=extra_resume_runtimes,
+                digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
+            )
 
         results = {
             "version":         config.VERSION,
@@ -774,12 +806,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def run_llm(_context):
             return run_supervised_llm(
                 _context.plan, event_store_path(Path(out_path)), make_save("llm"),
+                resume_identity=resume_identity,
             )
 
         def run_conversation(_context):
             return run_supervised_stage(
                 _context.plan, event_store_path(Path(out_path)), "conv",
-                make_save("llm_conversation", "conv"),
+                make_save("llm_conversation", "conv"), resume_identity=resume_identity,
             )
 
         def stop_for_native(_context):
@@ -789,7 +822,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def run_llamabench(_context):
             return run_supervised_stage(
                 _context.plan, event_store_path(Path(out_path)), "llamabench",
-                make_save("llamabench"),
+                make_save("llamabench"), resume_identity=resume_identity,
             )
 
         def run_llamabench_concurrency(_context):
@@ -828,7 +861,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
                 return run_supervised_stage(
                     _context.plan, event_store_path(Path(out_path)), key,
-                    make_save(section, key),
+                    make_save(section, key), resume_identity=resume_identity,
                 )
             return StageDefinition(key, section, len(conc_models), runner)
 

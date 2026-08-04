@@ -2,7 +2,10 @@ import json
 
 import pytest
 
-from resume_policy import assess_resume, build_resume_identity, file_identity
+from resume_policy import (
+    assess_resume, build_engine_resume_identity, build_resume_identity,
+    cached_file_identity, file_identity, load_digest_cache,
+)
 from run_plan import RunPlan
 
 
@@ -40,6 +43,90 @@ def test_resume_identity_rejects_path_bearing_logical_names(tmp_path):
         build_resume_identity(
             make_plan(), artifacts={"/private/model": artifact}, runtimes={}, methodology={},
         )
+
+
+def test_engine_resume_identity_covers_selected_models_runtime_and_methodology(tmp_path):
+    plan = make_plan()
+    model = tmp_path / "model.gguf"
+    runtime = tmp_path / "llama-server"
+    extra = tmp_path / "llama-bench"
+    for path, content in ((model, b"model"), (runtime, b"runtime"), (extra, b"bench")):
+        path.write_bytes(content)
+
+    class Engine:
+        def resume_artifact_paths(self, tag):
+            assert tag == "model:4b"
+            return (model,)
+
+        @staticmethod
+        def resume_runtime_paths():
+            return {"llama-server": runtime}
+
+    identity = build_engine_resume_identity(
+        plan, Engine(), model_families=["llm"], extra_runtimes={"llama-bench": extra},
+    )
+    assert identity["artifacts"]["model:model:4b:part1"] == file_identity(model)
+    assert identity["runtimes"]["llama-server"] == file_identity(runtime)
+    assert identity["runtimes"]["llama-bench"] == file_identity(extra)
+    assert len(identity["methodology"]["execution"]) == 64
+
+
+def test_native_only_identity_does_not_require_server_runtime(tmp_path):
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"model")
+
+    class Engine:
+        @staticmethod
+        def resume_artifact_paths(_tag):
+            return (model,)
+
+        @staticmethod
+        def resume_runtime_paths():
+            raise AssertionError("server runtime should not be requested")
+
+    identity = build_engine_resume_identity(
+        make_plan(), Engine(), model_families=["llm"], include_engine_runtime=False,
+    )
+    assert identity["runtimes"] == {}
+
+
+def test_digest_cache_avoids_rehash_until_file_metadata_changes(tmp_path, monkeypatch):
+    import resume_policy
+
+    artifact = tmp_path / "model.gguf"
+    artifact.write_bytes(b"first")
+    cache = {}
+    first = cached_file_identity(artifact, cache)
+    monkeypatch.setattr(resume_policy, "file_identity", lambda _path: (_ for _ in ()).throw(
+        AssertionError("unchanged file should use cached digest")
+    ))
+    assert cached_file_identity(artifact, cache) == first
+    artifact.write_bytes(b"second-longer")
+    with pytest.raises(AssertionError, match="cached digest"):
+        cached_file_identity(artifact, cache)
+
+
+def test_engine_identity_persists_private_digest_cache_but_not_paths_in_identity(tmp_path):
+    plan = make_plan()
+    model = tmp_path / "private" / "model.gguf"
+    model.parent.mkdir()
+    model.write_bytes(b"model")
+    cache_path = tmp_path / "cache.json"
+
+    class Engine:
+        @staticmethod
+        def resume_artifact_paths(_tag):
+            return (model,)
+
+        @staticmethod
+        def resume_runtime_paths():
+            return {}
+
+    identity = build_engine_resume_identity(
+        plan, Engine(), model_families=["llm"], digest_cache_path=cache_path,
+    )
+    assert str(tmp_path) not in json.dumps(identity)
+    assert str(model.resolve()) in load_digest_cache(cache_path)
 
 
 def test_exact_identity_resumes_only_remaining_cases_and_advances_attempt_number():

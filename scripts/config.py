@@ -30,6 +30,7 @@ LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 MODELS_DIR = SCRIPT_DIR / "models"
 COMFYUI_MODELS_DIR = MODELS_DIR / "comfyui"
 COMFYUI_EXTRA_MODEL_PATHS = COMFYUI_MODELS_DIR / "extra_model_paths.yaml"
+RESUME_DIGEST_CACHE_PATH = SCRIPT_DIR / ".resume_digest_cache.json"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
 

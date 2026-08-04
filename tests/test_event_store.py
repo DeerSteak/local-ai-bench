@@ -275,3 +275,14 @@ def test_terminal_transition_requires_explicit_recovery_payload(tmp_path):
                      parent_id=plan.job_id),
     ])
     store.close()
+
+
+def test_later_stage_must_match_jobs_saved_resume_identity(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    identity = {"plan_id": plan.plan_id, "artifacts": {"a": {"sha256": "x", "size": 1}},
+                "runtimes": {}, "methodology": {}}
+    store.start_stage(plan, "llm", identity)
+    with pytest.raises(ValueError, match="resume identity"):
+        store.start_stage(plan, "llm", {**identity, "artifacts": {}})
+    store.close()

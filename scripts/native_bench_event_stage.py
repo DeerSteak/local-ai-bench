@@ -7,14 +7,15 @@ from run_plan import RunPlan
 
 
 class NativeBenchEventStage:
-    def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True):
+    def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True,
+                 resume_identity: dict | None = None):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
         self.stage_id = plan.stage_id("llamabench")
         self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
         if initialize:
-            self.store.start_stage(plan, "llamabench")
+            self.store.start_stage(plan, "llamabench", resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
             raise ValueError("runner plan does not match the journal job")
 

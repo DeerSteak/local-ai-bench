@@ -69,6 +69,7 @@
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
 | `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths |
 | `.benchmark_frontend_state.json` | Gitignored Custom GUI/terminal selection and execution settings; stale or invalid values fall back to current defaults |
+| `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |

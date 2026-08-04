@@ -34,7 +34,8 @@ def measurement_from_payload(payload: dict) -> GenerationMeasurement:
 
 class LLMEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, stage_name: str = "llm",
-                 model_family: str = "llm", initialize: bool = True):
+                 model_family: str = "llm", initialize: bool = True,
+                 resume_identity: dict | None = None):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
@@ -43,7 +44,7 @@ class LLMEventStage:
         self.stage_id = plan.stage_id(stage_name)
         self.model_identities = {model.get("tag"): model for model in plan.models[model_family]}
         if initialize:
-            self.store.start_stage(plan, stage_name)
+            self.store.start_stage(plan, stage_name, resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
             raise ValueError("runner plan does not match the journal job")
 

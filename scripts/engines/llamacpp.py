@@ -196,6 +196,18 @@ class LlamaCppEngine(InferenceEngine):
     def model_pulled(self, tag: str) -> bool:
         return self._resolve_model_files(tag) is not None
 
+    def resume_artifact_paths(self, tag: str) -> tuple[Path, ...]:
+        paths = self._resolve_model_files(tag)
+        if paths is None:
+            raise ValueError(f"cannot identify local model artifact for resume: {tag}")
+        return tuple(path.resolve() for path in paths)
+
+    def resume_runtime_paths(self) -> dict[str, Path]:
+        binary = self._binary_path()
+        if binary is None:
+            raise ValueError("cannot identify llama-server runtime for resume")
+        return {"llama-server": Path(binary).resolve()}
+
     def list_installed_models(self) -> list[dict]:
         """Every fully-present catalog tag, plus any non-catalog directory —
         see docs/engines.md's custom-tag resolution."""

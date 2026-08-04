@@ -192,6 +192,14 @@ class InferenceEngine(ABC):
         hardware classification when an engine has no stronger signal."""
         return "cpu" if cpu_only else hardware_backend
 
+    def resume_artifact_paths(self, tag: str) -> tuple[Path, ...]:
+        """Return local model files whose bytes must match before safe resume."""
+        raise NotImplementedError(f"{self.name} does not expose resume artifact identity")
+
+    def resume_runtime_paths(self) -> dict[str, Path]:
+        """Return stable runtime names and executable files required for safe resume."""
+        raise NotImplementedError(f"{self.name} does not expose resume runtime identity")
+
     # ── model lifecycle ──
 
     @abstractmethod
