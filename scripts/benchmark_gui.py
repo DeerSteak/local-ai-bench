@@ -245,6 +245,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     default_models = build_model_entries(inventory, default_test_values)
     apply_hardware_model_defaults(default_models, inventory, system_ram_gb)
     custom_tests = build_test_entries(inventory)
+    custom_test_defaults = {entry.value: entry.checked for entry in custom_tests}
     apply_saved_test_selection(custom_tests, saved)
     custom_test_values = [entry.value for entry in custom_tests if entry.checked]
     custom_models = build_model_entries(inventory, [entry.value for entry in custom_tests if entry.available])
@@ -359,6 +360,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         text = label if entry.available else f"{label} (model not installed)"
         widget = ttk.Checkbutton(tests_box, text=text, variable=test_vars[name])
         widget.grid(row=row, column=0, sticky="w")
+        ttk.Button(
+            tests_box, text="Reset", width=6,
+            command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
+        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         test_widgets[name] = widget
     ttk.Label(
         tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
@@ -377,6 +382,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             previous = entry.section
         widget = ttk.Checkbutton(models_box, text=entry.label, variable=model_vars[entry.value])
         widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
+        ttk.Button(
+            models_box, text="Reset", width=6,
+            command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
+        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         model_widgets[entry.value] = widget
         row += 1
     model_end_row = row
@@ -391,11 +400,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
                              values=["No cap", *[str(value) for value in MAX_PROMPT_TOKEN_OPTIONS]], width=18)
     cap_combo.grid(row=0, column=1, sticky="w", padx=(10, 0))
+    ttk.Button(workload_box, text="Reset", width=6, command=lambda: cap_var.set("No cap")).grid(
+        row=0, column=2, padx=(8, 0),
+    )
     ttk.Label(workload_box, text="llama-bench generation sizes").grid(row=1, column=0, sticky="w", pady=(10, 0))
     tg_frame = ttk.Frame(workload_box)
     tg_frame.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
     for column, value in enumerate(TG_TOKEN_OPTIONS):
         ttk.Checkbutton(tg_frame, text=str(value), variable=tg_vars[value]).grid(row=0, column=column, padx=(0, 8))
+    ttk.Button(workload_box, text="Reset", width=6, command=lambda: [
+        variable.set(value in config.LLAMABENCH_TG) for value, variable in tg_vars.items()
+    ]).grid(row=1, column=2, padx=(8, 0), pady=(10, 0))
     ttk.Label(
         workload_box, text="Prompt and generation values are tokens. No cap tests every configured depth; larger values increase time and memory.",
         wraplength=430,
@@ -407,6 +422,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
                                 values=available_engines, width=16)
     engine_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=2)
+    ttk.Button(
+        execution_box, text="Reset", width=6,
+        command=lambda: engine_var.set(available_engines[0]),
+    ).grid(row=0, column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
@@ -415,8 +434,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     for row, (key, label) in enumerate(labels, 1):
         ttk.Label(execution_box, text=label).grid(row=row, column=0, sticky="w", pady=2)
         ttk.Entry(execution_box, textvariable=option_vars[key], width=12).grid(row=row, column=1, sticky="w", padx=(10, 0), pady=2)
+        ttk.Button(
+            execution_box, text="Reset", width=6,
+            command=lambda option=key: option_vars[option].set(str(GUI_OPTION_DEFAULTS[option])),
+        ).grid(row=row, column=2, padx=(8, 0), pady=2)
     ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=7, column=2, padx=(8, 0))
     ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=8, column=0, columnspan=2, sticky="w")
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=8, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
@@ -430,11 +455,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(paths_box, text="Browse…", command=lambda: option_vars["out"].set(
         filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON results", "*.json")]) or option_vars["out"].get()
     )).grid(row=0, column=2)
+    ttk.Button(paths_box, text="Reset", width=6, command=lambda: option_vars["out"].set("")).grid(row=0, column=3, padx=(8, 0))
     ttk.Label(paths_box, text="ComfyUI installation").grid(row=1, column=0, sticky="w", pady=(8, 0))
     ttk.Entry(paths_box, textvariable=option_vars["comfyui"]).grid(row=1, column=1, sticky="ew", padx=10, pady=(8, 0))
     ttk.Button(paths_box, text="Browse…", command=lambda: option_vars["comfyui"].set(
         filedialog.askdirectory() or option_vars["comfyui"].get()
     )).grid(row=1, column=2, pady=(8, 0))
+    ttk.Button(
+        paths_box, text="Reset", width=6,
+        command=lambda: option_vars["comfyui"].set(str(detected_comfyui)),
+    ).grid(row=1, column=3, padx=(8, 0), pady=(8, 0))
     ttk.Label(
         paths_box, text="Blank output uses results/results_<host>_<time>.json. ComfyUI must identify a usable program installation, not its model folder.",
         wraplength=900,
