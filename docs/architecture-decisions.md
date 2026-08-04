@@ -143,11 +143,21 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: suspending only the GUI-owned parent process, which would leave isolated runner/server processes active and could trigger supervisor timeouts.
 - Evidence and deletion gate: pause-control validation/blocking and measured-boundary tests; replace the file only if a future authenticated coordinator becomes the execution owner.
 
+### AD-017 — Retrospective simplicity review of the commercial engineering surface
+
+- Status: accepted with consolidation triggers
+- Requirement: the commercial slice added a large module surface, so per-slice approval is insufficient evidence that the aggregate remains the smallest practical architecture.
+- Aggregate review: the added modules remain one modular Python application plus the existing dashboard. They separate current user capabilities (plans, presets, projects, history, reports, bundles, diagnostics), reliability boundaries (event journal, supervision, recovery, pause), and release/security checks. Persistence uses direct SQLite/JSON functions, execution uses focused dataclasses and explicit subprocesses, and the UI calls those modules directly. The review found no dependency-injection container, repository/service/controller stack, event-bus framework, generic workflow engine, dynamic plugin loader, or network service.
+- Interfaces retained: `RunPlan`/`RunPaths` prevents private paths entering portable plans; `EventStore` supplies transactional recovery; `RunnerSupervisor` isolates owned workload children; narrowly named report, bundle, policy, and release modules give CLI and GUI code testable functions without adding runtime layers.
+- Small wrappers retained: dedicated `*_cli.py`, recovery, retry, and fork entry points are process/user boundaries with distinct exit behavior, not domain layers. They must remain thin and may not acquire independent business rules.
+- Consolidation triggers: merge a module when it becomes a pass-through with no independent contract or test seam; remove a CLI wrapper when no documented invocation or process boundary uses it; do not add a manager/provider/repository abstraction around the current functions; require another aggregate review before the first stable commercial release or after 15 additional `scripts/` modules, whichever comes first.
+- Evidence: module dependency inspection, 4.1 compatibility fixtures, direct unit tests, and the absence of framework-style types named by the simplicity gate. This decision supplies the aggregate review that the original slice-by-slice ledger did not.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
 |---|---|---|---|
-| Atomic mutable result JSON | `ResultStore` | Every supported workload exports compatibly from the transactional store | Remove runtime JSON mutation; keep deterministic export only |
+| Atomic mutable result JSON | Engineering owner (`ResultStore`) | Every supported workload exports compatibly from the transactional store; deadline is the first stable commercial release | Remove runtime JSON mutation and keep deterministic export only. If migration is not complete by that release gate, remove journal-backed recovery from supported release scope or record a product-owner-approved superseding decision; do not ship indefinite dual ownership. |
 | Runner closures inside `benchmark.py` | CLI orchestration | Typed runner jobs execute all workloads with parity fixtures | Remove closures and their duplicate argument capture |
 | Direct Tk-to-CLI subprocess ownership | `benchmark_gui.py` | Persistent coordinator proves authenticated lifecycle, resume, and cancellation | Point Tk and CLI at the coordinator and remove duplicate supervision |
 | Schema-2 compatibility reads | Dashboard and result utilities | Published support window expires with migration tooling available | Remove only in a separately announced compatibility boundary |

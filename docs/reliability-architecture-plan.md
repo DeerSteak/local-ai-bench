@@ -1,8 +1,10 @@
 [← Back to README](../README.md)
 
-# Reliability Architecture Plan
+# Reliability Architecture Plan (historical)
 
-**Status:** All three increments implemented during v4.1 development.
+**Status:** Superseded implementation plan. All three increments were completed during v4.1 development, but this file is no longer normative architecture guidance.
+
+The current decisions, ownership boundaries, deletion gates, and later recovery work are maintained in [Architecture Decisions](architecture-decisions.md). Current runtime behavior is documented in [How It Works](how-it-works.md), measurement behavior in [Workloads](workloads.md), and compatibility in [Result Compatibility v4.1](result-compatibility-v4.1.md). The details below remain as the reviewed historical scope and acceptance record for the original three increments; when they conflict with current documentation, the current documents control.
 
 ## Purpose
 
