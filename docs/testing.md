@@ -34,6 +34,8 @@ tests.bat -k "select_tier"
 
 The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Do not import or execute `scripts/setup/setup_check.py` as a test shortcut: importing it starts the real interactive installation flow.
 
+The scripts tree is a package rather than a flat import directory. A structural test parses every Python module and rejects bare imports of another project module, preventing delayed GUI/setup paths from passing unit collection and then failing only when launched through `python -m`.
+
 [tests/conftest.py](../tests/conftest.py) adds `scripts/` to `sys.path`, matching the benchmark's own top-level imports such as `import config`.
 
 ## Coverage and safety boundaries

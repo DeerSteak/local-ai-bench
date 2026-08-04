@@ -46,7 +46,7 @@ def main():  # pragma: no cover — frontend dispatch entrypoint
         print(f"Cannot start benchmark interface: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     if mode == "gui":
-        from benchmark_gui import run_benchmark_gui
+        from scripts.app.benchmark_gui import run_benchmark_gui
         raise SystemExit(run_benchmark_gui())
     if mode == "terminal":
         from scripts.app.benchmark_frontend import run_frontend

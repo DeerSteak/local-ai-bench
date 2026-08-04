@@ -693,10 +693,10 @@ def test_build_command_emits_every_applicable_explicit_selector(tmp_path):
     entries = build_model_entries(sample_inventory(), ["llm", "emb", "img"])
     command = build_benchmark_command(
         "fake", tmp_path / "Comfy UI", ["llm", "emb", "img"], entries,
-        python_executable="python-test", benchmark_path=Path("/repo/scripts/benchmark.py"),
+        python_executable="python-test", benchmark_path=Path("/repo/custom/benchmark.py"),
     )
     assert command[:8] == [
-        "python-test", "/repo/scripts/benchmark.py", "--engine", "fake",
+        "python-test", "/repo/custom/benchmark.py", "--engine", "fake",
         "--comfyui", str(tmp_path / "Comfy UI"), "--tests", "llm",
     ]
     assert "--llm-models" in command
