@@ -216,3 +216,62 @@ def test_event_validation_rejects_unknown_identity_state_and_nonfinite_payload(t
         assert store.events(plan.job_id) == []
     finally:
         store.close()
+
+
+def test_recovery_abandons_running_attempt_and_reopens_only_incomplete_case(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    model_id = plan.model_id("llm", plan.models["llm"][0])
+    complete_case = plan.case_id("llm", model_id, {"context_tokens": 512})
+    running_case = plan.case_id("llm", model_id, {"context_tokens": 2048})
+    complete_attempt = plan.attempt_id(complete_case, 1)
+    running_attempt = plan.attempt_id(running_case, 1)
+    stage_id = plan.stage_id("llm")
+    store.append(plan.job_id, [
+        JournalEvent("case", complete_case, "running", {}, parent_id=stage_id),
+        JournalEvent("attempt", complete_attempt, "running", {"number": 1},
+                     parent_id=complete_case),
+        JournalEvent("attempt", complete_attempt, "complete", {}, parent_id=complete_case),
+        JournalEvent("case", complete_case, "complete", {}, parent_id=stage_id),
+        JournalEvent("case", running_case, "running", {}, parent_id=stage_id),
+        JournalEvent("attempt", running_attempt, "running", {"number": 1},
+                     parent_id=running_case),
+    ])
+    assert store.prepare_recovery(plan.job_id, "llm") == {running_case: 2}
+    projection = store.rebuild(plan.job_id)
+    assert projection["cases"][complete_case]["state"] == "complete"
+    assert projection["cases"][running_case]["state"] == "running"
+    assert projection["attempts"][running_attempt]["state"] == "interrupted"
+    store.close()
+
+
+def test_recovery_rejects_completed_stage(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    store.append(plan.job_id, [JournalEvent(
+        "stage", plan.stage_id("llm"), "complete", {}, parent_id=plan.job_id,
+    )])
+    with pytest.raises(ValueError, match="create a fork"):
+        store.prepare_recovery(plan.job_id, "llm")
+    store.close()
+
+
+def test_terminal_transition_requires_explicit_recovery_payload(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    stage_id = plan.stage_id("llm")
+    store.append(plan.job_id, [
+        JournalEvent("stage", stage_id, "failed", {}, parent_id=plan.job_id),
+    ])
+    with pytest.raises(ValueError, match="illegal stage transition"):
+        store.append(plan.job_id, [
+            JournalEvent("stage", stage_id, "running", {}, parent_id=plan.job_id),
+        ])
+    store.append(plan.job_id, [
+        JournalEvent("stage", stage_id, "running", {"recovery": "resume"},
+                     parent_id=plan.job_id),
+    ])
+    store.close()

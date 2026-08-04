@@ -21,6 +21,7 @@ STATE_TRANSITIONS = {
     "pending": {"running", *TERMINAL_STATES},
     "running": TERMINAL_STATES,
 }
+RECOVERABLE_STATES = {"failed", "interrupted", "invalid", "timed_out"}
 
 
 def _canonical_json(value) -> str:
@@ -96,7 +97,12 @@ def apply_event(projection: dict, event: JournalEvent) -> None:
         return
     current = entities.get(event.entity_id)
     previous = current["state"] if current else None
-    if event.state not in STATE_TRANSITIONS.get(previous, set()):
+    recovery_transition = (
+        event.state == "running" and previous in RECOVERABLE_STATES
+        and event.payload.get("recovery") in {"resume", "retry"}
+        and event.entity_type in {"job", "stage", "case"}
+    )
+    if event.state not in STATE_TRANSITIONS.get(previous, set()) and not recovery_transition:
         raise ValueError(
             f"illegal {event.entity_type} transition for {event.entity_id}: "
             f"{previous} -> {event.state}"
@@ -302,4 +308,58 @@ class EventStore:
                 key: statistics.mean(sample["measurement"][key] for sample in valid)
                 for key in sorted(numeric_keys)
             },
+        }
+
+    def prepare_recovery(self, job_id: str, stage: str,
+                         selected_case_ids: list[str] | None = None) -> dict[str, int]:
+        """Reopen recoverable state and return the next attempt number for selected cases."""
+        plan = self.load_plan(job_id)
+        if stage not in plan.stage_order:
+            raise ValueError(f"stage is absent from run plan: {stage}")
+        projection = self.rebuild(job_id)
+        stage_id = plan.stage_id(stage)
+        stage_state = projection["stages"].get(stage_id, {}).get("state")
+        job_state = projection["jobs"].get(job_id, {}).get("state")
+        if stage_state in {"complete", "skipped"} or job_state == "complete":
+            raise ValueError("completed state cannot be resumed; create a fork")
+        candidates = {
+            case_id for case_id, case in projection["cases"].items()
+            if case["parent_id"] == stage_id and case["state"] not in {"complete", "skipped"}
+        }
+        selected = candidates if selected_case_ids is None else set(selected_case_ids)
+        unknown = selected - candidates
+        if unknown:
+            raise ValueError(f"cases are not retry-eligible: {', '.join(sorted(unknown))}")
+        events = []
+        for attempt_id, attempt in projection["attempts"].items():
+            if attempt["state"] == "running" and attempt["parent_id"] in selected:
+                events.append(JournalEvent(
+                    "attempt", attempt_id, "interrupted", {"reason": "recovery"},
+                    parent_id=attempt["parent_id"],
+                ))
+        for case_id in sorted(selected):
+            case = projection["cases"][case_id]
+            if case["state"] == "running":
+                events.append(JournalEvent(
+                    "case", case_id, "interrupted", {"reason": "recovery"},
+                    parent_id=stage_id,
+                ))
+            events.append(JournalEvent(
+                "case", case_id, "running", {"recovery": "retry"}, parent_id=stage_id,
+            ))
+        if stage_state in RECOVERABLE_STATES:
+            events.append(JournalEvent(
+                "stage", stage_id, "running", {"recovery": "resume"}, parent_id=job_id,
+            ))
+        if job_state in RECOVERABLE_STATES:
+            events.append(JournalEvent("job", job_id, "running", {"recovery": "resume"}))
+        if events:
+            self.append(job_id, events)
+        attempts = projection["attempts"]
+        return {
+            case_id: max((
+                attempt.get("number", 0) for attempt in attempts.values()
+                if attempt["parent_id"] == case_id
+            ), default=0) + 1
+            for case_id in sorted(selected)
         }
