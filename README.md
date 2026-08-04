@@ -57,6 +57,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
 | [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
+| [4.1 Result Compatibility](docs/result-compatibility-v4.1.md) | Export, partial-result, measurement, and dashboard behavior protected during the commercial rewrite |
 
 ---
 

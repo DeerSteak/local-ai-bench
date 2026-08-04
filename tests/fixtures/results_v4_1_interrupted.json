@@ -1,0 +1,90 @@
+{
+  "version": "4.1",
+  "engine": "llamacpp",
+  "profile": {
+    "hostname": "commercial-golden-system",
+    "os": "Test OS",
+    "gpu": "Golden GPU",
+    "ram_gb": 64
+  },
+  "accuracy_settings": {},
+  "bank_versions": {},
+  "sample_ids": {},
+  "llm": {
+    "golden": {
+      "0.5K": {
+        "ttft_mean_sec": 0.1,
+        "tps_mean": 50.0,
+        "n_runs": 1,
+        "requested_runs": 3,
+        "completed_runs": 1,
+        "valid_runs": 1,
+        "invalid_runs": [],
+        "valid_samples": [
+          {
+            "client_ttft_sec": 0.1,
+            "server_prompt_sec": 0.08,
+            "client_wall_sec": 2.1,
+            "decode_sec": 2.0,
+            "generated_tokens": 100,
+            "tokens_per_sec": 50.0,
+            "finish_reason": "length",
+            "model_load_sec": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "llm_conversation": {},
+  "embeddings": {},
+  "images": {},
+  "mcq": {},
+  "math": {},
+  "reasoning": {},
+  "code": {},
+  "tool": {},
+  "concurrency_tool": {},
+  "concurrency_chat": {},
+  "llamabench": {},
+  "llamabenchconc": {},
+  "run": {
+    "run_id": "00000000-0000-4000-8000-000000000042",
+    "schema_version": 2,
+    "started_at": "2026-01-02T00:00:00+00:00",
+    "finished_at": "2026-01-02T00:10:00+00:00",
+    "status": "interrupted",
+    "reason": "signal",
+    "requested_tests": ["llm", "conv"],
+    "stage_order": ["llm", "conv"],
+    "engine": "llamacpp",
+    "models": {
+      "llm": [{"tag": "golden:model", "short": "golden"}],
+      "concurrency": [],
+      "embeddings": [],
+      "images": []
+    },
+    "effective_config": {
+      "runs": 3,
+      "warmup_runs": 1,
+      "max_prompt_tokens": 2048,
+      "context_lengths": [512, 2048]
+    },
+    "source": {
+      "git_commit": null,
+      "git_dirty": null
+    },
+    "llamabench_repetition_mode": "streamed_internal_repetitions",
+    "stages": {
+      "llm": {
+        "status": "interrupted",
+        "reason": "signal",
+        "started_at": "2026-01-02T00:00:00+00:00",
+        "finished_at": "2026-01-02T00:10:00+00:00",
+        "selected_models": 1,
+        "models_with_results": 1,
+        "models_skipped": 0,
+        "models_failed": 0
+      }
+    }
+  }
+}

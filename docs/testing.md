@@ -51,6 +51,8 @@ On Windows, use `bench-env\Scripts\pip.exe` and `tests.bat`.
 
 HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
 
+The immutable complete and interrupted 4.1 result fixtures are shared by pytest and Vitest. They enforce the [4.1 result compatibility contract](result-compatibility-v4.1.md) across producer state/count semantics and dashboard chart/reliability behavior before the commercial execution-kernel migration. A later producer adds a new fixture for a schema or methodology boundary rather than editing the 4.1 files in place.
+
 ## Suite map
 
 The Python modules are grouped by responsibility below. The test files themselves are the authoritative, executable detail; this guide intentionally summarizes them instead of duplicating every assertion.
@@ -93,7 +95,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
 | Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
-| Atomic results and run state | [test_result_store.py](../tests/test_result_store.py) |
+| Atomic results, run state, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |
 
 `LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Stage tests use fake runners and engines to cover fixed ordering, selection, preparation/execution/cleanup classification, state transitions, engine exclusivity, CPU-mode restoration, and cleanup after failure. Shared workload orchestration covers retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
