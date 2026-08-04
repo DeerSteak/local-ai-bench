@@ -5,7 +5,7 @@ import pytest
 from engines.base import GenerationMeasurement
 from event_store import EventStore
 from llm_event_stage import LLMEventStage
-from recovery_executor import resume_journal_run
+from recovery_executor import fork_journal_run, resume_journal_run
 from result_store import build_run_manifest, finish_run, finish_stage, start_stage
 from run_plan import RunPlan
 
@@ -116,3 +116,50 @@ def test_recovery_executor_records_user_interrupt_truthfully(tmp_path):
     assert recovered["run"]["status"] == "interrupted"
     assert recovered["run"]["stages"]["llm"]["status"] == "interrupted"
     assert recovered["run"]["stages"]["llm"]["reason"] == "KeyboardInterrupt"
+
+
+def test_recovery_executor_forks_plan_without_mutating_source(tmp_path):
+    source, source_plan = stopped_result(tmp_path)
+    source_before = source.read_bytes()
+    output = tmp_path / "fork.json"
+    calls = []
+
+    def identity_builder(plan):
+        assert plan.plan_id == source_plan.plan_id
+        assert plan.job_id != source_plan.job_id
+        return {"plan_id": plan.plan_id}
+
+    def runner(plan, journal, stage, save, identity, resume):
+        calls.append((plan.job_id, journal, stage, identity, resume))
+        section = {"model": {"512": {"tps_mean": 42.0}}}
+        save(section)
+        return section
+
+    forked = fork_journal_run(
+        source, output, identity_builder=identity_builder, stage_runner=runner,
+    )
+    assert source.read_bytes() == source_before
+    assert forked["run"]["status"] == "complete"
+    assert forked["run"]["plan_id"] == source_plan.plan_id
+    assert forked["run"]["job_id"] != source_plan.job_id
+    assert forked["run"]["forked_from"] == {
+        "run_id": json.loads(source_before)["run"]["run_id"],
+        "job_id": source_plan.job_id, "plan_id": source_plan.plan_id,
+    }
+    assert calls == [(
+        forked["run"]["job_id"], output.with_suffix(".events.sqlite3"), "llm",
+        {"plan_id": source_plan.plan_id}, False,
+    )]
+    assert json.loads(output.read_text())["llm"]["model"]["512"]["tps_mean"] == 42.0
+
+
+def test_recovery_executor_fork_refuses_existing_output_before_identity_work(tmp_path):
+    source, _ = stopped_result(tmp_path)
+    output = tmp_path / "fork.json"
+    output.write_text("keep", encoding="utf-8")
+    with pytest.raises(ValueError, match="already exists"):
+        fork_journal_run(
+            source, output,
+            identity_builder=lambda _plan: pytest.fail("identity should not be built"),
+        )
+    assert output.read_text(encoding="utf-8") == "keep"

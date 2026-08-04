@@ -111,7 +111,7 @@ Custom mode can create and open versioned `.labproject` files for hardware compa
 
 During a GUI-launched benchmark, the separate progress window reports the current stage and model queue, finished and usable model coverage, implausible-rate retries and invalid drops, combined CPU/RAM use for the benchmark process tree, and estimated remaining time. The Run Log remains the authoritative detailed stream, and checkpointed JSON remains the durable source after interruption.
 
-The **Result History** tab scans local result JSON files and supports search, status and engine filters, baseline selection, methodology-safe named-measurement comparison, and acceptance-policy evaluation. It does not create a second result database or sync results. See [Local Result History](result-history.md).
+The **Result History** tab scans local result JSON files and supports search, status and engine filters, baseline selection, methodology-safe named-measurement comparison, acceptance-policy evaluation, read-only recovery inspection, confirmed resume, and reviewed full-plan fork into a new result. Recovery controls currently require a plan made entirely of journal-owned LLM, conversation, llama-bench, or HTTP concurrency stages. It does not create a second result database or sync results. See [Local Result History](result-history.md).
 
 After selecting a baseline and candidate, **Export Diagnostic** creates a reviewed `.labdiag` containing the first divergence, both environments/plans, relevant raw evidence and invalidity, source digests, and reproduction steps. The CLI equivalents are `python scripts/vendor_diagnostic_cli.py create BASELINE CANDIDATE OUTPUT --reviewed-metadata` and `verify OUTPUT BASELINE CANDIDATE`. See [Vendor Diagnostics](vendor-diagnostics.md).
 

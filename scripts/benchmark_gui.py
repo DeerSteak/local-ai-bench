@@ -195,6 +195,14 @@ def recovery_executor_command(result_path: Path, python_executable=sys.executabl
             str(Path(result_path).resolve())]
 
 
+def fork_executor_command(source_path: Path, output_path: Path,
+                          python_executable=sys.executable) -> list[str]:
+    return [
+        python_executable, str(config.SCRIPT_DIR / "scripts" / "fork_executor.py"),
+        str(Path(source_path).resolve()), str(Path(output_path).resolve()),
+    ]
+
+
 def format_recovery_inspection(report: dict) -> str:
     lines = [
         f"Decision: {report['action'].upper()}",
@@ -1255,7 +1263,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Vendor diagnostic failed", str(exc), parent=root)
 
-    def inspect_history_recovery(start_after=False):
+    def inspect_history_recovery(action="inspect"):
         try:
             result_path = selected_history_path()
         except ValueError as exc:
@@ -1278,13 +1286,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 history_message.set(
                     f"Recovery decision for {result_path.name}: {report['action']}"
                 )
-                if not start_after:
+                if action == "inspect":
                     show_history_details("Recovery inspection", format_recovery_inspection(report))
                     return
-                if not report["can_resume"]:
+                if action == "resume" and not report["can_resume"]:
                     show_history_details("Fork required", format_recovery_inspection(report))
                     return
-                start_history_recovery(result_path, report)
+                if action == "resume":
+                    start_history_recovery(result_path, report)
+                else:
+                    start_history_fork(result_path, report)
 
             root.after(0, finish)
 
@@ -1331,6 +1342,56 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(plan.stage_order, recovery_progress_entries(plan))
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
+    def start_history_fork(source_path, report):
+        nonlocal process, active_process_kind
+        if process is not None and process.poll() is None:
+            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
+            return
+        plan = load_run_plan(source_path)
+        unsupported = [stage for stage in plan.stage_order if stage not in {
+            "llm", "conv", "llamabench", "conc_tool", "conc_chat",
+        }]
+        if unsupported:
+            messagebox.showerror(
+                "Fork unavailable",
+                "This saved plan contains stages without durable fork execution: "
+                + ", ".join(unsupported), parent=root,
+            )
+            return
+        destination = filedialog.asksaveasfilename(
+            title="Save forked benchmark", defaultextension=".json",
+            initialdir=str(config.RESULTS_DIR),
+            initialfile=f"{source_path.stem}_fork.json",
+            filetypes=[("JSON results", "*.json")],
+        )
+        if not destination:
+            return
+        output_path = Path(destination).resolve()
+        detail = format_recovery_inspection(report)
+        if not messagebox.askyesno(
+            "Fork benchmark plan",
+            f"{detail}\n\nRun this saved plan from the beginning as a new result? "
+            "The source result will not be changed.", parent=root,
+        ):
+            return
+        command = fork_executor_command(source_path, output_path)
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
+        process = subprocess.Popen(
+            command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, creationflags=creationflags, env=child_env,
+        )
+        active_process_kind = "fork"
+        log_text.configure(state="normal")
+        log_text.delete("1.0", "end")
+        log_text.configure(state="disabled")
+        run_status.set("Forked run is active. The source evidence remains unchanged.")
+        start_button.configure(state="disabled")
+        stop_button.configure(state="normal")
+        notebook.select(log_tab)
+        show_progress_window(plan.stage_order, recovery_progress_entries(plan))
+        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
     ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
     ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
@@ -1344,10 +1405,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     )
     ttk.Button(
         history_actions, text="Inspect Recovery",
-        command=lambda: inspect_history_recovery(False),
+        command=lambda: inspect_history_recovery("inspect"),
     ).pack(side="left", padx=(8, 0))
     ttk.Button(
-        history_actions, text="Resume", command=lambda: inspect_history_recovery(True),
+        history_actions, text="Resume", command=lambda: inspect_history_recovery("resume"),
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        history_actions, text="Fork", command=lambda: inspect_history_recovery("fork"),
     ).pack(side="left", padx=(8, 0))
     history_query.trace_add("write", apply_history_filters)
     history_status_filter.trace_add("write", apply_history_filters)
@@ -1527,11 +1591,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     process = None
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
-                    if active_process_kind == "recovery":
+                    if active_process_kind in {"recovery", "fork"}:
+                        label = "Recovery" if active_process_kind == "recovery" else "Forked run"
                         run_status.set(
-                            "Recovery completed successfully. Results are ready to review."
+                            f"{label} completed successfully. Results are ready to review."
                             if value == 0 else
-                            f"Recovery stopped with exit code {value}. Preserved evidence remains available."
+                            f"{label} stopped with exit code {value}. Preserved evidence remains available."
                         )
                     else:
                         run_status.set(format_run_outcome(value))

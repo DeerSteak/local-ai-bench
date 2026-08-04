@@ -14,7 +14,7 @@ from benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    format_recovery_inspection, open_path_command, parse_progress_line,
+    fork_executor_command, format_recovery_inspection, open_path_command, parse_progress_line,
     recovery_executor_command, recovery_progress_entries, resolve_preset,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
@@ -92,6 +92,11 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
     assert "llm: interrupted" in detail
     assert "complete: 17" in detail
     assert "runtime identity changed" in detail
+    fork = fork_executor_command(result, tmp_path / "fork.json", python_executable="python")
+    assert fork == [
+        "python", str(Path(__file__).parents[1] / "scripts" / "fork_executor.py"),
+        str(result.resolve()), str((tmp_path / "fork.json").resolve()),
+    ]
 
 
 def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():

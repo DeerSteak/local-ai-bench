@@ -113,6 +113,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
 | `recovery_inspector.py` | Read-only resume/fork eligibility, identity revalidation, and durable coverage report |
 | `recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
+| `fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
 | `workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |
