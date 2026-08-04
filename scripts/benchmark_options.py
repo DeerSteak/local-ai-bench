@@ -48,6 +48,7 @@ PUBLIC_OPTION_SCHEMA = {
     "--acc-token-budget": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=config.ACC_TOKEN_BUDGET, minimum=1),
     "--cpu-only": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--force-all": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
+    "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
 }
@@ -56,7 +57,7 @@ PUBLIC_OPTION_SCHEMA = {
 GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
-    "cpu_only": "--cpu-only", "force_all": "--force-all", "out": "--out",
+    "cpu_only": "--cpu-only", "force_all": "--force-all", "offline": "--offline", "out": "--out",
     "comfyui": "--comfyui",
 }
 

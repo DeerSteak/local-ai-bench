@@ -6,7 +6,7 @@ A local benchmark project keeps one decision workflow, one portable benchmark co
 
 Select **Custom** in the benchmark GUI, configure the run, then choose **New Project**. Name the project, choose its decision workflow, optionally attach an existing baseline result and an acceptance-policy JSON file, and save the `.labproject` file. **Open Project** restores its engine, tests, selected models, workload sizes, and execution settings after verifying that they are available on the current machine.
 
-The project configuration uses the same versioned portable-preset shape as the GUI. Machine-local output and ComfyUI paths are not copied into the project; opening it retains the current machine's paths. A baseline path is intentionally local and may need to be reselected if the project file moves to another machine. An attached acceptance policy is embedded by value so later edits to a separate policy file cannot silently change the project's gate.
+The project configuration uses the same versioned portable-preset shape as the GUI, including offline mode. Machine-local output and ComfyUI paths are not copied into the project; opening it retains the current machine's paths. A baseline path is intentionally local and may need to be reselected if the project file moves to another machine. An attached acceptance policy is embedded by value so later edits to a separate policy file cannot silently change the project's gate.
 
 When a project with an acceptance policy is active, **Create Report** applies that policy automatically and lists every rule's result. A baseline is preserved as project context, and the [Local Result History](result-history.md) tab provides current-file filtering, baseline comparison, and policy evaluation.
 

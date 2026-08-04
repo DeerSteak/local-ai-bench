@@ -113,6 +113,16 @@ def test_methodology_profile_is_identity_bearing_and_validated():
         make_plan(effective_config=invalid).validate_for_execution()
 
 
+def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
+    legacy = make_plan()
+    config = complete_plan().effective_config
+    config["offline"] = True
+    offline = make_plan(effective_config=config)
+    assert offline.execution_identity["privacy"]["offline"] is True
+    assert "offline" not in legacy.execution_identity["privacy"]
+    assert offline.plan_id != make_plan(effective_config=dict(config, offline=False)).plan_id
+
+
 def test_returned_models_and_config_cannot_mutate_the_plan():
     plan = make_plan()
     plan.models["llm"].append({"tag": "injected"})

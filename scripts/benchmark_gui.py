@@ -259,6 +259,7 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
         f"Prompt cap: {max_prompt_tokens or 'No cap'}",
         f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
         f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
+        f"Offline: {'Yes' if options['offline'] else 'No'}",
         f"Force slow models: {'Yes' if options['force_all'] else 'No'}",
         f"Broad cases: {model_passes} model-workload passes; contexts, questions, and levels expand within them.",
         f"Model loads: at least {model_passes}; context and concurrency workloads may reload models.",
@@ -505,10 +506,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=7, column=2, padx=(8, 0))
     ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=8, column=0, columnspan=2, sticky="w")
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=8, column=2, padx=(8, 0))
+    ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=9, column=0, columnspan=2, sticky="w")
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=9, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
     paths_box.grid(row=5, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
@@ -551,7 +554,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         engine_var.set(available_engines[0])
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
-                    "cpu_only", "force_all"):
+                    "cpu_only", "force_all", "offline"):
             variable = option_vars[key]
             variable.set(defaults[key])
 
@@ -801,7 +804,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=10, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=11, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
@@ -1407,7 +1410,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 values[key] = int(option_vars[key].get())
             except ValueError:
                 values[key] = option_vars[key].get()
-        for key in ("cpu_only", "force_all"):
+        for key in ("cpu_only", "force_all", "offline"):
             values[key] = option_vars[key].get()
         for key in ("out", "comfyui"):
             values[key] = option_vars[key].get().strip()

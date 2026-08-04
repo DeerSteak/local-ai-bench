@@ -122,8 +122,12 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
             or not all(isinstance(v, int) and v > 0 for v in tg_tokens)
             or len(tg_tokens) != len(set(tg_tokens))):
         return None
-    if "gui_options" in state and validate_gui_options(state["gui_options"]):
-        return None
+    if "gui_options" in state:
+        options = state["gui_options"]
+        if isinstance(options, dict) and set(options) == set(GUI_OPTION_DEFAULTS) - {"offline"}:
+            options["offline"] = False
+        if validate_gui_options(options):
+            return None
     return state
 
 
@@ -131,7 +135,7 @@ def validate_gui_options(options: object) -> list[str]:
     if not isinstance(options, dict) or set(options) != set(GUI_OPTION_DEFAULTS):
         return ["GUI settings are incomplete."]
     errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
-    if not isinstance(options["cpu_only"], bool) or not isinstance(options["force_all"], bool):
+    if any(not isinstance(options[key], bool) for key in ("cpu_only", "force_all", "offline")):
         errors.append("Execution mode settings must be true or false.")
     if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
         errors.append("Output and ComfyUI paths must be text.")
@@ -179,7 +183,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "runs": "runs", "warmup_runs": "warmup", "run_timeout_seconds": "timeout",
         "accuracy_timeout_seconds": "acc_timeout",
         "accuracy_token_budget": "acc_token_budget", "cpu_only": "cpu_only",
-        "force_all": "force_all",
+        "force_all": "force_all", "offline": "offline",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
@@ -635,6 +639,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--cpu-only")
         if gui_options["force_all"]:
             command.append("--force-all")
+        if gui_options["offline"]:
+            command.append("--offline")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"]:

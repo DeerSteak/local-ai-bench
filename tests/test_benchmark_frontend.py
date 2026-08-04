@@ -8,6 +8,7 @@ import benchmark_frontend
 import config
 from benchmark_frontend import (
     FRONTEND_STATE_VERSION,
+    GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
     FRONTEND_OPTION_INVENTORY,
     FrontendCancelled,
@@ -73,6 +74,15 @@ def test_frontend_inventory_classifies_every_public_benchmark_option():
 
 def test_frontend_inventory_exposes_the_remaining_configuration_work():
     assert frontend_option_gaps() == []
+
+
+def test_build_command_includes_offline_mode_when_selected():
+    options = dict(GUI_OPTION_DEFAULTS, offline=True)
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--offline" in command
 
 
 def test_frontend_classifies_every_option_for_ui_presentation():
@@ -150,6 +160,14 @@ def test_frontend_state_round_trip_uses_strict_json(tmp_path):
     assert load_frontend_state(path) == state
     assert json.loads(path.read_text()) == state
     assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["offline"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["offline"] is False
 
 
 @pytest.mark.parametrize("contents", [

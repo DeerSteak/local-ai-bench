@@ -25,6 +25,7 @@ from image_benchmark import ImageBenchmark
 from mcq_benchmark import MCQBenchmark
 from math_benchmark import MathBenchmark
 from methodology_profile import resolve_methodology_profile
+from network_policy import apply_offline_mode
 from reasoning_benchmark import ReasoningBenchmark
 from code_benchmark import CodeBenchmark
 from tool_benchmark import ToolBenchmark
@@ -491,6 +492,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "also disable the chat-concurrency soft exit. "
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
+    parser.add_argument(
+        "--offline", action="store_true",
+        help="Block non-loopback network connections during benchmark execution and propagate "
+             "offline/telemetry-disabled environment settings to managed runtimes. Local "
+             "llama.cpp and ComfyUI HTTP connections remain available.",
+    )
     _engines = registered_engine_names()
     parser.add_argument(
         "--engine", type=str, default=_engines[0], choices=_engines + ["all"],
@@ -503,6 +510,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+    if args.offline:
+        apply_offline_mode()
 
     option_errors = option_value_errors({
         "--warmup": args.warmup, "--runs": args.runs, "--timeout": args.timeout,
@@ -684,6 +693,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
             "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
             "sample_size": args.sample,
+            "offline": args.offline,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
         }

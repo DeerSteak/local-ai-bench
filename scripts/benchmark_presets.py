@@ -8,7 +8,7 @@ from result_store import atomic_write_json
 
 PRESET_SCHEMA_VERSION = 1
 PORTABLE_GUI_KEYS = (
-    "warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "cpu_only", "force_all",
+    "warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "cpu_only", "force_all", "offline",
 )
 
 
@@ -43,7 +43,8 @@ def validate_portable_preset(preset: object) -> list[str]:
         return ["Preset engine and tests are invalid."]
     if not isinstance(config["models"], dict) or set(config["models"]) != {"llm", "embedding", "image"}:
         return ["Preset model selections are invalid."]
-    if not isinstance(config["options"], dict) or set(config["options"]) != set(PORTABLE_GUI_KEYS):
+    option_keys = set(config["options"]) if isinstance(config["options"], dict) else set()
+    if option_keys not in (set(PORTABLE_GUI_KEYS), set(PORTABLE_GUI_KEYS) - {"offline"}):
         return ["Preset execution options are invalid."]
     return []
 

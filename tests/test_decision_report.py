@@ -21,6 +21,7 @@ def test_report_model_uses_explicit_evidence_without_composite_score():
     result["run"]["plan"] = {"effective_config": {
         "methodology_profile": "neutral-v1",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "offline": True,
     }}
     model = build_report_model(result)
     assert model.title == "Local AI Bench Decision Report - commercial-golden-system"
@@ -31,6 +32,7 @@ def test_report_model_uses_explicit_evidence_without_composite_score():
     )
     assert model.accuracy == (("MCQ", "golden", "75.0%", "3 / 4"),)
     assert ("Methodology profile", "neutral-v1") in model.metadata
+    assert ("Offline mode", "Yes") in model.metadata
     assert model.optimizations == ("llamacpp:flash_attention=on",)
     assert model.evidence == (
         ("Single-shot LLM", "golden / 2K", "2", "0"),

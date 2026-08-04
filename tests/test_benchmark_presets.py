@@ -28,6 +28,12 @@ def test_portable_preset_excludes_private_paths_and_round_trips(tmp_path):
     assert load_portable_preset(path) == preset
 
 
+def test_legacy_preset_without_offline_setting_remains_valid():
+    preset = build_portable_preset("Legacy", sample_state())
+    del preset["configuration"]["options"]["offline"]
+    assert validate_portable_preset(preset) == []
+
+
 def test_duplicate_is_independent_and_compare_reports_changed_sections():
     original = build_portable_preset("Original", sample_state())
     duplicate = duplicate_portable_preset(original, "Copy")

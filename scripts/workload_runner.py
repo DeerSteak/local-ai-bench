@@ -19,6 +19,7 @@ from llm_prefill_benchmark import LLMPrefillBenchmark
 from llamabench_benchmark import LlamaBenchBenchmark
 from models import LLM_MODELS
 from native_bench_event_stage import NativeBenchEventStage
+from network_policy import apply_offline_mode
 from runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from shared import Shared
 
@@ -251,6 +252,9 @@ def main(argv=None) -> int:
     if not os.environ.get("LOCAL_AI_BENCH_RUNNER_TOKEN"):
         sys.stderr.write("Runner ownership token is required.\n")
         return 2
+    plan = load_runner_plan(args.event_store, args.job_id)
+    if plan.effective_config.get("offline", False):
+        apply_offline_mode()
     stop_event = threading.Event()
     thread = threading.Thread(target=heartbeat, args=(stop_event,), daemon=True)
     thread.start()

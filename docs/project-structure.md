@@ -36,6 +36,7 @@
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
 | `docs/result-history.md` | Filesystem-owned result discovery, filtering, comparison, and policy evaluation |
 | `docs/outbound-review.md` | Embargo-safe identity preview, private aliases, and source verification |
+| `docs/offline-mode.md` | Loopback-only execution policy, inherited controls, and qualification boundary |
 | `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
 | `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
@@ -77,6 +78,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
 | `outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
+| `network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
 | `result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
 | `decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |

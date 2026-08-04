@@ -17,12 +17,12 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_levels", "concurrency_chat_levels",
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
-    "methodology_profile", "effective_optimizations",
+    "methodology_profile", "effective_optimizations", "offline",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
-EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {"methodology_profile", "effective_optimizations"}
+EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {"methodology_profile", "effective_optimizations", "offline"}
 
 
 def _canonical_json(value) -> str:
@@ -140,6 +140,8 @@ class RunPlan:
             },
             "output": {"result_schema": 3, "event_schema": 1},
         }
+        if "offline" in settings:
+            identity["privacy"]["offline"] = settings["offline"]
         has_profile = "methodology_profile" in settings
         has_optimizations = "effective_optimizations" in settings
         if has_profile != has_optimizations:
@@ -199,7 +201,9 @@ class RunPlan:
             if (isinstance(value, bool) or not isinstance(value, int) or value < minimum
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
-        for key in ("cpu_only", "force_all"):
+        for key in ("cpu_only", "force_all", "offline"):
+            if key not in settings and key == "offline":
+                continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
         if "methodology_profile" in settings:

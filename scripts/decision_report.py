@@ -58,6 +58,7 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
         ("Memory", f"{profile['ram_gb']} GB" if profile.get("ram_gb") is not None else "Not recorded"),
         ("Run status", status), ("Plan ID", _text(run.get("plan_id"))),
         ("Methodology profile", _text(settings.get("methodology_profile"), "Legacy / not recorded")),
+        ("Offline mode", "Yes" if settings.get("offline") else "No"),
         ("Source identity", _text(export_identity.get("source_sha256"))),
     )
     coverage = []
