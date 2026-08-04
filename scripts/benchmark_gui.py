@@ -42,6 +42,7 @@ from benchmark_presets import (
     load_portable_preset, save_portable_preset,
 )
 from comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
+from decision_report import load_result, report_output_paths, write_html_report, write_pdf_report
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from run_plan import load_run_plan
@@ -769,6 +770,31 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, KeyError) as exc:
             messagebox.showerror("Bundle verification failed", str(exc), parent=root)
 
+    def create_report():
+        result_path = filedialog.askopenfilename(
+            title="Choose result JSON", initialdir=config.RESULTS_DIR,
+            filetypes=[("Benchmark result", "*.json")],
+        )
+        if not result_path:
+            return
+        destination = filedialog.asksaveasfilename(
+            title="Save decision report", initialdir=config.RESULTS_DIR,
+            defaultextension=".html", filetypes=[("Decision report", "*.html")],
+        )
+        if not destination:
+            return
+        try:
+            html_path, pdf_path = report_output_paths(Path(destination))
+            result = load_result(Path(result_path))
+            write_html_report(result, html_path)
+            write_pdf_report(result, pdf_path)
+            messagebox.showinfo(
+                "Decision report created",
+                f"HTML and PDF reports saved to:\n{html_path.parent}", parent=root,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror("Report creation failed", str(exc), parent=root)
+
     def confirm_support_preview(preview):
         accepted = {"value": False}
         dialog = tk.Toplevel(root)
@@ -828,6 +854,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     )
     ttk.Button(log_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(10, 0))
     ttk.Button(log_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(10, 0))
+    ttk.Button(log_actions, text="Create Report", command=create_report).pack(side="left", padx=(10, 0))
     ttk.Button(log_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(10, 0))
 
     def walk_widgets(parent):

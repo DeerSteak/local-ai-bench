@@ -14,6 +14,8 @@ bench-env/bin/python scripts/decision_report_cli.py results/results_system_20260
 
 At least one output flag is required. Both formats are generated locally with no external assets, scripts, telemetry, or network requests. The HTML is a single portable file, and identical validated input produces identical bytes in each format.
 
+The graphical benchmark launcher also provides **Create Report** on the Run Log screen. Choose a result JSON and an HTML destination; the matching PDF is written beside it with the same filename stem.
+
 Example outputs are available as [HTML](../samples/decision_report_example.html) and [PDF](../samples/decision_report_example.pdf).
 
 ## Readiness and evidence

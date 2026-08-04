@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from decision_report import (
-    build_report_model, render_html, write_html_report, write_pdf_report,
+    build_report_model, render_html, report_output_paths, write_html_report, write_pdf_report,
 )
 from decision_report_cli import main
 
@@ -84,3 +84,9 @@ def test_report_cli_writes_both_formats_and_rejects_nonfinite_result(tmp_path):
     invalid = tmp_path / "invalid.json"
     invalid.write_text('{"metric": NaN}', encoding="utf-8")
     assert main([str(invalid), "--html", str(tmp_path / "bad.html")]) == 1
+
+
+def test_report_output_paths_create_adjacent_html_and_pdf():
+    assert report_output_paths(Path("results/vendor.report")) == (
+        Path("results/vendor.html"), Path("results/vendor.pdf"),
+    )

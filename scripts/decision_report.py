@@ -174,6 +174,11 @@ def write_html_report(result: dict, path: Path) -> Path:
     return path
 
 
+def report_output_paths(html_path: Path) -> tuple[Path, Path]:
+    html_path = Path(html_path).with_suffix(".html")
+    return html_path, html_path.with_suffix(".pdf")
+
+
 def write_pdf_report(result: dict, path: Path) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
