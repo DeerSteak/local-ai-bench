@@ -51,6 +51,9 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 |---|---|
 | [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
 | [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
+| [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
+| [Limitations](docs/limitations.md) | Representativeness, environmental variance, compatibility, and recommendation constraints |
+| [Local Data Lifecycle](docs/data-lifecycle.md) | Local storage, retention, deletion, portability, and support-bundle handling |
 | [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
 | [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
 | [How It Works](docs/how-it-works.md) | Execution order, orchestration, and code organization |
@@ -58,6 +61,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
 | [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
 | [4.1 Result Compatibility](docs/result-compatibility-v4.1.md) | Export, partial-result, measurement, and dashboard behavior protected during the commercial rewrite |
+| [Architecture Decisions](docs/architecture-decisions.md) | Simplicity gate, data ownership decisions, and migration deletion ledger |
 
 ---
 
