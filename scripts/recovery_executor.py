@@ -31,6 +31,18 @@ def _run_stage(plan, journal_path, stage, save, identity, resume, selected_case_
     )
 
 
+def _finish_journal_job(journal_path, plan, state, reason=None, preserve_terminal=False):
+    journal = EventStore(journal_path)
+    try:
+        current = journal.rebuild(plan.job_id)["jobs"][plan.job_id]["state"]
+        if preserve_terminal and current in {"complete", "invalid", "skipped", "timed_out",
+                                             "interrupted", "failed"}:
+            return
+        journal.finish_job(plan.job_id, state, reason)
+    finally:
+        journal.close()
+
+
 def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
                        stage_runner=_run_stage):
     """Resume a stopped journal-only result after a read-only eligibility decision."""
@@ -45,10 +57,15 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
         raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
+    journal_path = event_store_path(result_path)
+    journal = EventStore(journal_path)
+    try:
+        journal.resume_job(plan.job_id)
+    finally:
+        journal.close()
     data = json.loads(result_path.read_text(encoding="utf-8"))
     store = ResultStore(result_path, data)
     store.begin_recovery()
-    journal_path = event_store_path(result_path)
     try:
         for stage in plan.stage_order:
             record = data["run"]["stages"].get(stage)
@@ -69,6 +86,7 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
             )
             store.update_section(section, result, stage)
             store.complete_stage(stage, section)
+        _finish_journal_job(journal_path, plan, "complete")
         store.finish("complete")
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
@@ -81,6 +99,9 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
                 active, SECTION_BY_STAGE[active], status=terminal_status,
                 reason=type(exc).__name__,
             )
+        _finish_journal_job(
+            journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
+        )
         store.finish(terminal_status, type(exc).__name__)
         raise
     return data
@@ -130,11 +151,15 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resu
         status = "complete" if journal_state == "complete" else "failed"
         reason = None if status == "complete" else "selected_retry_has_remaining_cases"
         store.complete_stage(stage, section, status=status, reason=reason)
+        _finish_journal_job(journal_path, plan, status, reason)
         store.finish(status, reason)
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
         store.complete_stage(
             stage, section, status=terminal_status, reason=type(exc).__name__,
+        )
+        _finish_journal_job(
+            journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
         )
         store.finish(terminal_status, type(exc).__name__)
         raise
@@ -186,6 +211,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
             )
             store.update_section(section, result, stage)
             store.complete_stage(stage, section)
+        _finish_journal_job(journal_path, plan, "complete")
         store.finish("complete")
     except BaseException as exc:
         terminal_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
@@ -198,6 +224,9 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
                 active, SECTION_BY_STAGE[active], status=terminal_status,
                 reason=type(exc).__name__,
             )
+        _finish_journal_job(
+            journal_path, plan, terminal_status, type(exc).__name__, preserve_terminal=True,
+        )
         store.finish(terminal_status, type(exc).__name__)
         raise
     return data

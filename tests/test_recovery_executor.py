@@ -69,6 +69,9 @@ def test_recovery_executor_resumes_attempt_and_completes_original_result(tmp_pat
     assert recovered["run"]["recovery_history"][0]["status"] == "interrupted"
     assert recovered["llm"]["model"]["512"]["tps_mean"] == 60
     assert json.loads(result.read_text())["run"]["status"] == "complete"
+    journal = EventStore(path)
+    assert journal.rebuild(plan.job_id)["jobs"][plan.job_id]["state"] == "complete"
+    journal.close()
 
 
 def test_recovery_executor_rejects_legacy_stage_before_mutation(tmp_path):
@@ -93,6 +96,32 @@ def test_recovery_executor_requires_fork_before_mutation_on_identity_drift(tmp_p
     with pytest.raises(ValueError, match="fork required"):
         resume_journal_run(result, identity_builder=lambda _plan: changed)
     assert result.read_bytes() == before
+
+
+def test_recovery_executor_finalizes_when_all_stage_evidence_already_completed(tmp_path):
+    result, plan = stopped_result(tmp_path)
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}, "environment": {}}
+    path = result.with_suffix(".events.sqlite3")
+    stage = LLMEventStage(path, plan, lambda _: None, resume_identity=identity)
+    stage.finish()
+    stage.close()
+    journal = EventStore(path)
+    journal.finish_job(plan.job_id, "interrupted", "signal_after_stage")
+    journal.close()
+    data = json.loads(result.read_text())
+    data["run"]["stages"]["llm"]["status"] = "complete"
+    data["run"]["stages"]["llm"]["finished_at"] = "finished"
+    result.write_text(json.dumps(data), encoding="utf-8")
+
+    recovered = resume_journal_run(
+        result, identity_builder=lambda _plan: identity,
+        stage_runner=lambda *_args: pytest.fail("completed stage reran"),
+    )
+    assert recovered["run"]["status"] == "complete"
+    journal = EventStore(path)
+    assert journal.rebuild(plan.job_id)["jobs"][plan.job_id]["state"] == "complete"
+    journal.close()
 
 
 def test_recovery_executor_records_user_interrupt_truthfully(tmp_path):
@@ -131,6 +160,9 @@ def test_recovery_executor_forks_plan_without_mutating_source(tmp_path):
 
     def runner(plan, journal, stage, save, identity, resume):
         calls.append((plan.job_id, journal, stage, identity, resume))
+        owner = LLMEventStage(journal, plan, lambda _: None, resume_identity=identity)
+        owner.finish()
+        owner.close()
         section = {"model": {"512": {"tps_mean": 42.0}}}
         save(section)
         return section
@@ -151,6 +183,9 @@ def test_recovery_executor_forks_plan_without_mutating_source(tmp_path):
         {"plan_id": source_plan.plan_id}, False,
     )]
     assert json.loads(output.read_text())["llm"]["model"]["512"]["tps_mean"] == 42.0
+    journal = EventStore(output.with_suffix(".events.sqlite3"))
+    assert journal.rebuild(forked["run"]["job_id"])["jobs"][forked["run"]["job_id"]]["state"] == "complete"
+    journal.close()
 
 
 def test_recovery_executor_fork_refuses_existing_output_before_identity_work(tmp_path):
@@ -206,4 +241,5 @@ def test_recovery_executor_retries_only_selected_case_and_keeps_run_incomplete(t
     journal.close()
     assert projection["cases"][selected]["state"] == "complete"
     assert projection["cases"][untouched]["state"] == "timed_out"
+    assert projection["jobs"][plan.job_id]["state"] == "failed"
     assert retried["llm"]["model"]["512"]["tps_mean"] == 50

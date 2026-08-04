@@ -18,6 +18,7 @@ from comfyui_installation import find_comfyui_installation, normalize_comfyui_di
 from conversation_selection import conv_skip_entry
 from shared import Shared
 from engines import get_engine, engine_names as registered_engine_names
+from event_store import EventStore
 from llm_prefill_benchmark import LLMPrefillBenchmark
 from llamacpp_tools import find_llamacpp_tool
 from llm_event_stage import LLMEventStage, event_store_path, export_llm_section
@@ -225,6 +226,18 @@ def fork_provenance(source_path: Path, plan: RunPlan, output_path: Path) -> dict
         "run_id": source.get("run", {}).get("run_id"),
         "job_id": source_plan.job_id, "plan_id": source_plan.plan_id,
     }
+
+
+def finish_event_job(path: Path, plan: RunPlan, state: str, reason=None) -> bool:
+    path = Path(path)
+    if not path.is_file():
+        return False
+    journal = EventStore(path)
+    try:
+        journal.finish_job(plan.job_id, state, reason)
+    finally:
+        journal.close()
+    return True
 
 
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
@@ -684,6 +697,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     finish_active_stage(results["run"], "interrupted", "signal")
                     finish_run(results["run"], "interrupted", "signal")
                     try:
+                        finish_event_job(
+                            event_store_path(Path(out_path)), plan, "interrupted", "signal",
+                        )
+                    except Exception as exc:
+                        Shared.err(f"Failed to terminalize interrupted event journal: {exc}")
+                    try:
                         atomic_write_json(Path(out_path), results)
                     except Exception as exc:
                         Shared.err(f"Failed to checkpoint interrupted state: {exc}")
@@ -946,11 +965,20 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         try:
             execute_with_final_cleanup(run_selected_stages, lifecycle)
         except BaseException as exc:
+            terminal = "interrupted" if results["run"].get("status") == "interrupted" \
+                or isinstance(exc, (KeyboardInterrupt, SystemExit)) else "failed"
+            try:
+                finish_event_job(
+                    event_store_path(Path(out_path)), plan, terminal, type(exc).__name__,
+                )
+            except Exception as journal_exc:
+                Shared.err(f"Failed to terminalize event journal: {journal_exc}")
             checkpoint_terminal_exception(results, exc, _checkpoint)
             raise
 
         # ── Save results ───────────────────────────────────────────────────────────
         Shared.section("Saving Results")
+        finish_event_job(event_store_path(Path(out_path)), plan, "complete")
         store.finish("complete")
         Shared.ok(f"Results saved to: {out_path}")
 

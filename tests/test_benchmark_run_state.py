@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from benchmark import checkpoint_terminal_exception, fork_provenance
+from benchmark import checkpoint_terminal_exception, finish_event_job, fork_provenance
+from event_store import EventStore
 from orchestration import StageExecutionError
 from result_store import build_run_manifest
 from run_plan import RunPlan
@@ -89,3 +90,16 @@ def test_fork_provenance_rejects_configuration_drift(tmp_path):
     source.write_text(json.dumps({"run": {"plan": plan.to_dict()}}), encoding="utf-8")
     with pytest.raises(ValueError, match="no longer matches"):
         fork_provenance(source, changed, tmp_path / "fork.json")
+
+
+def test_finish_event_job_terminalizes_existing_journal_only(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+    assert finish_event_job(path, plan, "complete") is False
+    store = EventStore(path)
+    store.start_stage(plan, "emb")
+    store.close()
+    assert finish_event_job(path, plan, "failed", "boom") is True
+    store = EventStore(path)
+    assert store.rebuild(plan.job_id)["jobs"][plan.job_id]["state"] == "failed"
+    store.close()

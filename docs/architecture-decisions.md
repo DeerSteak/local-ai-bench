@@ -131,7 +131,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: stopped work must preserve valid evidence without implying that aggregate-only workloads can resume cases they never journaled.
-- Decision: exact-identity journal plans may resume remaining work; eligible measured context/level cases may be retried explicitly within one stage; a full-plan fork always creates a distinct run/job/output and retains source provenance. Plans containing JSON-owned legacy stages replay through normal orchestration under an exact source-plan guard rather than claiming in-place case resume.
+- Decision: exact-identity journal plans may resume remaining work; eligible measured context/level cases may be retried explicitly within one stage; a full-plan fork always creates a distinct run/job/output and retains source provenance. Journal job state terminalizes with every run outcome and reopens explicitly for recovery, including finalization after all stage evidence committed. Plans containing JSON-owned legacy stages replay through normal orchestration under an exact source-plan guard rather than claiming in-place case resume.
 - Compatibility and data ownership: resume/retry update the original result only after the inspector gate and retain terminal/attempt history; fork never mutates source evidence. Native llama-bench resumes the remaining sweep because unstarted rows have no selectable case identity.
 - Evidence: inspector, executor, event-stage, GUI command/presentation, exact-plan, overwrite, source-preservation, and interruption tests.
 

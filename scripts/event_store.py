@@ -374,3 +374,26 @@ class EventStore:
             ), default=0) + 1
             for case_id in sorted(selected)
         }
+
+    def finish_job(self, job_id: str, state: str, reason: str | None = None) -> None:
+        if state not in TERMINAL_STATES:
+            raise ValueError(f"invalid terminal job state: {state}")
+        projection = self.rebuild(job_id)
+        current = projection["jobs"].get(job_id, {}).get("state")
+        if current == state:
+            return
+        if current != "running":
+            raise ValueError(f"job cannot finish from state: {current}")
+        payload = {"reason": reason} if reason else {}
+        self.append(job_id, [JournalEvent("job", job_id, state, payload)])
+
+    def resume_job(self, job_id: str) -> None:
+        projection = self.rebuild(job_id)
+        current = projection["jobs"].get(job_id, {}).get("state")
+        if current == "running":
+            return
+        if current not in RECOVERABLE_STATES:
+            raise ValueError(f"job cannot resume from state: {current}")
+        self.append(job_id, [JournalEvent(
+            "job", job_id, "running", {"recovery": "resume"},
+        )])

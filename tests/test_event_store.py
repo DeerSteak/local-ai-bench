@@ -281,6 +281,24 @@ def test_selected_recovery_marks_scope_and_reopens_only_requested_case(tmp_path)
     store.close()
 
 
+def test_job_terminal_state_is_durable_idempotent_and_recoverable(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    store.finish_job(plan.job_id, "interrupted", "signal")
+    assert store.rebuild(plan.job_id)["jobs"][plan.job_id] == {
+        "state": "interrupted", "parent_id": "", "reason": "signal",
+    }
+    store.resume_job(plan.job_id)
+    store.resume_job(plan.job_id)
+    assert store.rebuild(plan.job_id)["jobs"][plan.job_id]["state"] == "running"
+    store.finish_job(plan.job_id, "complete")
+    store.finish_job(plan.job_id, "complete")
+    with pytest.raises(ValueError, match="cannot finish"):
+        store.finish_job(plan.job_id, "failed")
+    store.close()
+
+
 def test_terminal_transition_requires_explicit_recovery_payload(tmp_path):
     plan = make_plan()
     store = EventStore(tmp_path / "events.sqlite3")
