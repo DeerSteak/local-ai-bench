@@ -130,6 +130,26 @@ def test_journal_rejects_model_not_present_in_plan(tmp_path):
         stage.close()
 
 
+def test_failed_json_export_does_not_undo_committed_measurement(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+
+    def fail_export(_section):
+        raise OSError("output volume is read-only")
+
+    stage = LLMEventStage(path, plan, fail_export)
+    try:
+        try:
+            stage.record_case(MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "ok", 1)
+        except OSError:
+            pass
+        else:
+            raise AssertionError("failed export was accepted")
+    finally:
+        stage.close()
+    assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
+
+
 def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):
     fixture_path = Path(__file__).parent / "fixtures" / "results_v4_1_schema3_plan.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

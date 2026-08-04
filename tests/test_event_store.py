@@ -157,6 +157,29 @@ def test_verify_detects_digest_tampering_even_if_trigger_is_removed(tmp_path):
         store.close()
 
 
+def test_sqlite_write_failure_preserves_prior_committed_events(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    try:
+        store.create_job(plan)
+        store.append(plan.job_id, [JournalEvent("job", plan.job_id, "running", {})])
+        store.connection.execute("""
+            CREATE TRIGGER simulate_disk_full BEFORE INSERT ON events
+            BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END
+        """)
+        with pytest.raises(sqlite3.IntegrityError, match="disk is full"):
+            store.append(plan.job_id, [
+                JournalEvent("stage", plan.stage_id("llm"), "running", {"stage": "llm"},
+                             parent_id=plan.job_id),
+            ])
+        assert [(event.entity_type, event.state) for event in store.events(plan.job_id)] == [
+            ("job", "running"),
+        ]
+        store.verify(plan.job_id)
+    finally:
+        store.close()
+
+
 def test_child_event_requires_existing_parent(tmp_path):
     plan = make_plan()
     stage_id, _, case_id, _, _ = ids(plan)

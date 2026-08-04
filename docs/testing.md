@@ -78,7 +78,7 @@ Run-plan round-trip tests load both standalone plans and plans embedded in CLI r
 
 Run-plan identity tests prove that schema-2 hierarchical IDs are deterministic, distinct by entity kind and input, and reject entities outside the plan or invalid ordinals. A schema-1 golden result is deserialized and reserialized exactly and must reproduce its recorded `plan_id`, preventing the identity upgrade from rewriting historical plans.
 
-Execution-progress tests verify the structured event parser, idempotent model coverage, retry/invalid counters, remaining-time estimates, and recursive child-process resource totals. Runner tests additionally reconstruct an immutable journal plan with a fake engine, record a case through the child execution seam, and verify its committed-event notification and compatible projection. Workload tests also assert that an implausible token-rate retry emits recovered or invalid measurement events without changing the one-retry policy.
+Execution-progress tests verify the structured event parser, idempotent model coverage, retry/invalid counters, remaining-time estimates, and recursive child-process resource totals. Runner tests additionally reconstruct an immutable journal plan with a fake engine, record a case through the child execution seam, and verify its committed-event notification and compatible projection. Failure tests reopen and verify prior committed measurements after a runner crash, coordinator interruption, read-only JSON export, and simulated SQLite disk-full abort. Workload tests also assert that an implausible token-rate retry emits recovered or invalid measurement events without changing the one-retry policy.
 
 ### Workloads and graders
 

@@ -47,3 +47,109 @@ def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path
     assert result == saved[-1]
     assert saved[0]["fake"]["512"]["tps_mean"] == 50
     assert cancelled == [True]
+
+
+def test_runner_failure_preserves_committed_case_for_parent_recovery(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+
+    class CrashedSupervisor:
+        def __init__(self, _spec):
+            pass
+
+        def run(self, callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                512, "512", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+            )
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "failed"})
+            return 1
+
+        @staticmethod
+        def cancel():
+            pass
+
+    saved = []
+    try:
+        run_supervised_llm(plan, path, saved.append, CrashedSupervisor)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("failed runner was accepted")
+    assert saved[-1]["fake"]["512"]["tps_mean"] == 50
+
+
+def test_parent_export_failure_keeps_child_commit(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+
+    class InterruptedSupervisor:
+        def __init__(self, _spec):
+            pass
+
+        def run(self, callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                512, "512", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+            )
+            stage.close()
+            callback({"kind": "event"})
+            raise KeyboardInterrupt
+
+        @staticmethod
+        def cancel():
+            pass
+
+    def read_only_export(_section):
+        raise OSError("read-only output")
+
+    try:
+        run_supervised_llm(plan, path, read_only_export, InterruptedSupervisor)
+    except (KeyboardInterrupt, OSError):
+        pass
+    else:
+        raise AssertionError("coordinator failure was swallowed")
+
+    reopened = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        assert reopened.export()["fake"]["512"]["tps_mean"] == 50
+    finally:
+        reopened.close()
+
+
+def test_parent_interruption_keeps_child_commit(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+
+    class InterruptedSupervisor:
+        def __init__(self, _spec):
+            pass
+
+        def run(self, _callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                512, "512", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+            )
+            stage.close()
+            raise KeyboardInterrupt
+
+        @staticmethod
+        def cancel():
+            pass
+
+    try:
+        run_supervised_llm(plan, path, lambda _: None, InterruptedSupervisor)
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("interruption was swallowed")
+    reopened = LLMEventStage(path, plan, lambda _: None, initialize=False)
+    try:
+        assert reopened.export()["fake"]["512"]["tps_mean"] == 50
+    finally:
+        reopened.close()
