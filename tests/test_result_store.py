@@ -92,13 +92,15 @@ def test_model_identity_excludes_paths_and_unknown_fields():
 def test_run_manifest_identifies_streamed_internal_llamabench_methodology(
         monkeypatch, tmp_path):
     monkeypatch.setattr(result_store, "source_identity", lambda _: {})
+    plan = _plan()
     run = result_store.build_run_manifest(
-        plan=_plan(), repo_root=tmp_path,
+        plan=plan, repo_root=tmp_path,
     )
     assert run["schema_version"] == 3
     assert run["llamabench_repetition_mode"] == "streamed_internal_repetitions"
-    assert run["plan_id"] == _plan().plan_id
-    assert run["plan"] == _plan().to_dict()
+    assert run["plan_id"] == plan.plan_id
+    assert run["job_id"] == plan.job_id
+    assert run["plan"] == plan.to_dict()
 
 
 def test_finish_stage_counts_models_missing_from_section_as_failed():

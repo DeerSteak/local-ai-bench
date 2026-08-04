@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,7 @@ def _stable_id(kind: str, *parts) -> str:
 @dataclass(frozen=True)
 class RunPlan:
     schema_version: int
+    _job_id: str
     application_version: str
     engine_name: str
     tests: tuple[str, ...]
@@ -41,13 +43,17 @@ class RunPlan:
     @classmethod
     def create(cls, *, application_version: str, engine_name: str, tests,
                stage_order, models: dict, effective_config: dict,
-               schema_version: int = PLAN_SCHEMA_VERSION):
+               schema_version: int = PLAN_SCHEMA_VERSION, job_id: str | None = None):
         tests = tuple(tests)
         stage_order = tuple(stage_order)
         if not engine_name:
             raise ValueError("run plan requires an engine")
         if schema_version not in SUPPORTED_PLAN_SCHEMAS:
             raise ValueError(f"unsupported run-plan schema: {schema_version}")
+        if schema_version >= 2:
+            job_id = job_id or f"job_{uuid.uuid4().hex}"
+            if not isinstance(job_id, str) or not job_id.startswith("job_"):
+                raise ValueError("run plan requires a valid job identity")
         if len(set(tests)) != len(tests) or len(set(stage_order)) != len(stage_order):
             raise ValueError("run plan tests and stage order must not contain duplicates")
         if set(tests) != set(stage_order):
@@ -72,6 +78,7 @@ class RunPlan:
                     )
         return cls(
             schema_version=schema_version,
+            _job_id=job_id or "",
             application_version=str(application_version),
             engine_name=str(engine_name),
             tests=tests,
@@ -87,11 +94,14 @@ class RunPlan:
             raise ValueError(f"unsupported run-plan schema: {schema_version}")
         if schema_version == PLAN_SCHEMA_VERSION and value.get("identity_scheme") != IDENTITY_SCHEME:
             raise ValueError("unsupported or missing run-plan identity scheme")
+        if schema_version >= 2 and not value.get("job_id"):
+            raise ValueError("run-plan schema 2 requires a job identity")
         return cls.create(
             application_version=value["application_version"], engine_name=value["engine"],
             tests=value["requested_tests"], stage_order=value["stage_order"],
             models=value["models"], effective_config=value["effective_config"],
             schema_version=schema_version,
+            job_id=value.get("job_id"),
         )
 
     @property
@@ -126,25 +136,28 @@ class RunPlan:
         }
         if self.schema_version >= 2:
             value["identity_scheme"] = IDENTITY_SCHEME
+            value["job_id"] = self.job_id
         return value
 
     @property
     def plan_id(self) -> str:
-        return hashlib.sha256(_canonical_json(self.to_dict()).encode("utf-8")).hexdigest()
+        value = self.to_dict()
+        value.pop("job_id", None)
+        return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
     @property
     def job_id(self) -> str:
-        return f"job_{self.plan_id}"
+        return self._job_id or f"job_{self.plan_id}"
 
     def stage_id(self, stage: str) -> str:
         if stage not in self.stage_order:
             raise ValueError(f"stage is not present in run plan: {stage}")
-        return _stable_id("stage", self.plan_id, stage)
+        return _stable_id("stage", self.job_id, stage)
 
     def model_id(self, family: str, identity: dict) -> str:
         if family not in MODEL_FAMILIES or identity not in self.models.get(family, []):
             raise ValueError("model identity is not present in run plan")
-        return _stable_id("model", self.plan_id, family, identity)
+        return _stable_id("model", self.job_id, family, identity)
 
     def case_id(self, stage: str, model_id: str, case_key) -> str:
         return _stable_id("case", self.stage_id(stage), model_id, case_key)

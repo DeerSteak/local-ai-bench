@@ -42,21 +42,24 @@ def test_plan_identity_is_deterministic_across_mapping_order():
     reordered_models = dict(reversed(list(plan.models.items())))
     equivalent = make_plan(models=reordered_models, effective_config=reordered_config)
     assert equivalent.plan_id == plan.plan_id
+    assert equivalent.job_id != plan.job_id
     assert len(plan.plan_id) == 64
 
 
 def test_schema_two_derives_stable_hierarchical_execution_ids():
     plan = make_plan()
+    restored = RunPlan.from_dict(plan.to_dict())
     identity = plan.models["llm"][0]
     model_id = plan.model_id("llm", identity)
     case_id = plan.case_id("llm", model_id, {"context_tokens": 2048})
     attempt_id = plan.attempt_id(case_id, 1)
     assert plan.to_dict()["identity_scheme"] == IDENTITY_SCHEME
-    assert plan.job_id == f"job_{plan.plan_id}"
-    assert plan.stage_id("llm") == make_plan().stage_id("llm")
-    assert model_id == make_plan().model_id("llm", identity)
-    assert case_id == make_plan().case_id("llm", model_id, {"context_tokens": 2048})
-    assert plan.sample_id(attempt_id, 1) == make_plan().sample_id(attempt_id, 1)
+    assert plan.job_id.startswith("job_")
+    assert plan.job_id == restored.job_id
+    assert plan.stage_id("llm") == restored.stage_id("llm")
+    assert model_id == restored.model_id("llm", identity)
+    assert case_id == restored.case_id("llm", model_id, {"context_tokens": 2048})
+    assert plan.sample_id(attempt_id, 1) == restored.sample_id(attempt_id, 1)
     assert len({plan.job_id, plan.stage_id("llm"), model_id, case_id, attempt_id,
                 plan.sample_id(attempt_id, 1)}) == 6
 
@@ -151,13 +154,21 @@ def test_schema_two_requires_known_identity_scheme():
         RunPlan.from_dict(encoded)
 
 
+def test_schema_two_requires_serialized_job_identity():
+    encoded = make_plan().to_dict()
+    encoded.pop("job_id")
+    with pytest.raises(ValueError, match="job identity"):
+        RunPlan.from_dict(encoded)
+
+
 @pytest.mark.parametrize("wrapped", [False, True])
 def test_load_run_plan_accepts_plan_or_cli_results(tmp_path, wrapped):
-    encoded = make_plan().to_dict()
+    plan = make_plan()
+    encoded = plan.to_dict()
     document = {"run": {"plan": encoded}} if wrapped else encoded
     path = tmp_path / "plan.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert load_run_plan(path) == make_plan()
+    assert load_run_plan(path) == plan
 
 
 def test_load_run_plan_rejects_unrelated_json(tmp_path):
