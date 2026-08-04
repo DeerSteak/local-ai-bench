@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, sanitizeForFilename, applyEngineLabels, fmt,
+  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, sanitizeForFilename, applyEngineLabels, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -34,6 +34,45 @@ describe("parseResultsJSON", () => {
     };
     expect(parseResultsJSON("not json")).toEqual(expected);
     expect(parseResultsJSON('{"given":Infinity}')).toEqual(expected);
+  });
+});
+
+describe("getRunReliabilityWarning", () => {
+  it("keeps legacy and complete results quiet", () => {
+    expect(getRunReliabilityWarning({})).toBe("");
+    expect(getRunReliabilityWarning({ run: { status: "complete" } })).toBe("");
+  });
+
+  it("warns without hiding partial measurements", () => {
+    expect(getRunReliabilityWarning({ run: { status: "running" } })).toContain("still running");
+    expect(getRunReliabilityWarning({ run: { status: "partial" } })).toContain("partial");
+    expect(getRunReliabilityWarning({ run: { status: "interrupted" } })).toContain("interrupted");
+    expect(getRunReliabilityWarning({ run: { status: "failed" } })).toContain("failed");
+  });
+
+  it("warns for malformed run metadata", () => {
+    expect(getRunReliabilityWarning({ run: [] })).toContain("malformed");
+    expect(getRunReliabilityWarning({ run: 0 })).toContain("malformed");
+  });
+});
+
+describe("getLlamaBenchMethodologyWarning", () => {
+  it("warns when legacy and isolated-repetition files are compared", () => {
+    const files = [
+      { data: { llamabench: { m: {} } } },
+      { data: { llamabench: { m: {} }, run: { llamabench_repetition_mode: "separate_process_r1" } } },
+    ];
+    expect(getLlamaBenchMethodologyWarning(files)).toContain("different repetition");
+  });
+
+  it("does not warn for one file or matching modes", () => {
+    const legacy = { data: { llamabench: { m: {} } } };
+    expect(getLlamaBenchMethodologyWarning([legacy])).toBe("");
+    expect(getLlamaBenchMethodologyWarning([legacy, legacy])).toBe("");
+    const current = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "separate_process_r1",
+    } } };
+    expect(getLlamaBenchMethodologyWarning([current, current])).toBe("");
   });
 });
 

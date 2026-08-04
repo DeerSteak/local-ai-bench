@@ -106,7 +106,8 @@ The main file is checkpointed throughout a run, so completed stages and models s
 
 | Key | Contents |
 |---|---|
-| `version`, `engine` | Benchmark schema/version label and inference-engine name |
+| `version`, `engine` | Application release and inference-engine name |
+| `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, and per-stage state/coverage |
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
@@ -118,7 +119,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `llamabench` | Opt-in — per-model raw `llama-bench -o json` `prefill_entries` and depth-aware `decode_entries` arrays (or an `error` string) — see [Workloads](workloads.md#llama-bench) |
 | `llamabenchconc` | Opt-in — per-model raw `llama-batched-bench` JSONL entries plus the effective `pp`/`ctx_size` used (or an `error` string), one entry per pp/tg/concurrency-level combination — see [Workloads](workloads.md#llama-bench-concurrency) |
 
-Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. Concurrency snapshots include system RAM and add GPU VRAM when a trustworthy discrete-GPU reading is available; a failed load records `memory_at_failure`. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
+Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. New files use `run.schema_version` for results-schema compatibility; the top-level `version` remains the application release, while older files without `run` remain supported. Main results, answer sidecars, crash caches, and regraded outputs use same-directory temporary files plus atomic replacement so a failed checkpoint leaves the prior valid file intact. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
 
 `results/` is gitignored — nothing under it is tracked. Load its contents into the [dashboard](dashboard.md) to compare across machines.
 

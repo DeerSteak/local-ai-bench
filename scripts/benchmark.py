@@ -4,7 +4,6 @@ See docs/workloads.md for what each test measures, docs/cli-reference.md for fla
 
 import argparse
 import fnmatch
-import json
 import platform
 import re
 import signal
@@ -29,6 +28,22 @@ from llamabench_benchmark import LlamaBenchBenchmark
 from llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
+from result_store import (atomic_write_json, build_run_manifest, finish_run,
+                          finish_active_stage, finish_stage, model_counts, model_identity, start_stage,
+                          validate_json_data)
+
+
+def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
+    run = results["run"]
+    if run["status"] == "running":
+        reason = "invalid_numeric_value" if isinstance(exc, ValueError) \
+            and "non-finite numeric value" in str(exc) else type(exc).__name__
+        finish_active_stage(run, "failed", reason)
+        finish_run(run, "failed", reason)
+        checkpoint("run failed")
+    elif run["status"] == "interrupted":
+        finish_active_stage(run, "interrupted", run.get("reason", "signal"))
+        checkpoint("run interrupted")
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -368,8 +383,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         "--runs", type=int, default=config.N_RUNS, choices=range(1, 11),
         metavar="[1-10]",
         help=f"Measured runs per checkpoint for single-shot LLM, embeddings, and "
-             f"images, averaged (default: {config.N_RUNS}). Also used as llama-bench's own "
-             "-r repetitions for the 'llamabench' test. Conversation, accuracy, "
+             f"images, averaged (default: {config.N_RUNS}). Also sets how many isolated "
+             "llama-bench -r 1 repetitions are aggregated for 'llamabench'. Conversation, accuracy, "
              "and concurrency tests use one measured pass/batch. Total measured time scales roughly in "
              "proportion — e.g. going from 3 to 6 runs roughly doubles it "
              "(warmup time is unaffected; see --warmup).",
@@ -597,6 +612,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     f"{config.YELLOW}Interrupted — unloading models before exit ...{config.RESET}",
                     leading_blank=True,
                 )
+                if results.get("run", {}).get("status") == "running":
+                    finish_active_stage(results["run"], "interrupted", "signal")
+                    finish_run(results["run"], "interrupted", "signal")
+                    try:
+                        atomic_write_json(Path(out_path), results)
+                    except Exception as exc:
+                        Shared.err(f"Failed to checkpoint interrupted state: {exc}")
             if engine.available():
                 engine.unload_all()
             if Shared.comfyui_available():
@@ -609,9 +631,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 Shared.shutdown_managed()
             if sig is not None:
                 sys.exit(0)
-
-        signal.signal(signal.SIGINT,  _cleanup)
-        signal.signal(signal.SIGTERM, _cleanup)
 
         results = {
             "version":         config.VERSION,
@@ -646,16 +665,58 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamabenchconc":  {},
         }
 
+        stage_order = [
+            stage for stage in ("llm", "conv", "llamabench", "llamabenchconc", "emb",
+                                "mcq", "math", "reasoning", "code", "tool",
+                                "conc_tool", "conc_chat", "img") if stage in tests
+        ]
+        results["run"] = build_run_manifest(
+            tests=tests, stage_order=stage_order, engine=engine_name,
+            models={
+                "llm": model_identity(llm_models),
+                "concurrency": model_identity(conc_models),
+                "embeddings": model_identity(embedding_models),
+                "images": model_identity(image_models),
+            },
+            effective_config={
+                "runs": config.N_RUNS, "warmup_runs": args.warmup,
+                "run_timeout_seconds": config.RUN_TIMEOUT,
+                "accuracy_timeout_seconds": config.ACC_TIMEOUT,
+                "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
+                "cpu_only": args.cpu_only, "force_all": args.force_all,
+                "context_lengths": config.CONTEXT_LENGTHS,
+                "llamabench_pp": config.LLAMABENCH_PP,
+                "llamabench_tg": config.LLAMABENCH_TG,
+            },
+            repo_root=config.SCRIPT_DIR,
+        )
+
         def _checkpoint(label=""):
-            Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
+            atomic_write_json(Path(out_path), results)
             if label:
                 Shared.log(f"Partial results saved to {out_path} ({label})")
 
-        def make_save(key):
+        def make_save(key, stage_key=None):
             def _save(partial):
+                validate_json_data(partial)
                 results[key] = partial
+                stage = results["run"]["stages"].get(stage_key or key)
+                if stage:
+                    stage.update(model_counts(partial))
                 _checkpoint()
             return _save
+
+        def _start(key, selected_models):
+            start_stage(results["run"], key, len(selected_models))
+            _checkpoint()
+
+        def _done(key, section_key=None):
+            finish_stage(results["run"], key, results[section_key or key])
+            _checkpoint(f"{key} done")
+
+        _checkpoint("run started")
+        signal.signal(signal.SIGINT,  _cleanup)
+        signal.signal(signal.SIGTERM, _cleanup)
 
         try:
             # ── LLM-backed tests share one server lifecycle
@@ -682,6 +743,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
             # ── LLM ───────────────────────────────────────────────────────────────
             if "llm" in tests:
+                _start("llm", llm_models)
                 results["llm"] = LLMPrefillBenchmark().run(
                     engine=engine,
                     models=llm_models,
@@ -690,9 +752,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     force_all=args.force_all,
                     save_fn=make_save("llm"),
                 )
-                _checkpoint("LLM done")
+                _done("llm")
 
             if "conv" in tests:
+                _start("conv", llm_models)
                 conv_models = llm_models
                 llm_conv_skips = {}
                 if "llm" in tests:
@@ -713,13 +776,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     models=conv_models,
                     warmup_runs=args.warmup,
                     force_all=args.force_all,
-                    save_fn=make_save("llm_conversation"),
+                    save_fn=make_save("llm_conversation", "conv"),
                 )
                 results["llm_conversation"].update(llm_conv_skips)
-                _checkpoint("LLM conversation done")
+                _done("conv", "llm_conversation")
 
             # ── llama-bench: raw pp/tg throughput sweep (bypasses the HTTP engine) ──
             if "llamabench" in tests:
+                _start("llamabench", llm_models)
                 if engine.available():
                     Shared.log("Stopping the engine entirely to free memory for llama-bench ...")
                     engine.stop()
@@ -731,10 +795,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     cpu_only=args.cpu_only,
                     save_fn=make_save("llamabench"),
                 )
-                _checkpoint("llama-bench done")
+                _done("llamabench")
 
             # ── llama-batched-bench: aggregate throughput vs. concurrency (bypasses the HTTP engine) ──
             if "llamabenchconc" in tests:
+                _start("llamabenchconc", llm_models)
                 if engine.available():
                     Shared.log("Stopping the engine entirely to free memory for llama-batched-bench ...")
                     engine.stop()
@@ -745,17 +810,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     cpu_only=args.cpu_only,
                     save_fn=make_save("llamabenchconc"),
                 )
-                _checkpoint("llama-batched-bench done")
+                _done("llamabenchconc")
 
             # ── Embeddings ─────────────────────────────────────────────────────────
             if "emb" in tests:
+                _start("emb", embedding_models)
                 results["embeddings"] = EmbeddingBenchmark().run(
                     engine=engine,
                     models=embedding_models,
                     warmup_runs=args.warmup,
-                    save_fn=make_save("embeddings"),
+                    save_fn=make_save("embeddings", "emb"),
                 )
-                _checkpoint("embeddings done")
+                _done("emb", "embeddings")
 
             # ── Accuracy tests (MCQ / Math / Code / Tool) — identical wiring, only test/class/label vary ──
             for test_name, Bench, done_label in (
@@ -765,6 +831,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             ):
                 if test_name not in tests:
                     continue
+
+                _start(test_name, llm_models)
 
                 questions = Bench.load_questions()
                 if args.sample is not None:
@@ -780,11 +848,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     save_fn=make_save(test_name),
                     answers_path=answers_path,
                 )
-                _checkpoint(f"{done_label} done")
+                _done(test_name)
                 Shared.ok(f"Answers saved to: {answers_path}")
 
             # ── Concurrency: tool-style (agentic fan-out, no early exit) ───────────
             if "conc_tool" in tests:
+                _start("conc_tool", conc_models)
                 if not conc_models:
                     Shared.warn("No downloaded models to test — "
                                 "conc_tool test will have nothing to run")
@@ -799,12 +868,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     section_label="Concurrency (Tool)",
                     soft_exit_floor=None,
                     force_all=args.force_all,
-                    save_fn=make_save("concurrency_tool"),
+                    save_fn=make_save("concurrency_tool", "conc_tool"),
                 )
-                _checkpoint("concurrency (tool) done")
+                _done("conc_tool", "concurrency_tool")
 
             # ── Concurrency: chat-server (many simultaneous users, soft exit) ──────
             if "conc_chat" in tests:
+                _start("conc_chat", conc_models)
                 if not conc_models:
                     Shared.warn("No downloaded models to test — "
                                 "conc_chat test will have nothing to run")
@@ -819,9 +889,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     section_label="Concurrency (Chat)",
                     soft_exit_floor=config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
                     force_all=args.force_all,
-                    save_fn=make_save("concurrency_chat"),
+                    save_fn=make_save("concurrency_chat", "conc_chat"),
                 )
-                _checkpoint("concurrency (chat) done")
+                _done("conc_chat", "concurrency_chat")
 
             # Restore normal GPU-enabled mode — see docs/workloads.md's --cpu-only note.
             if llm_tests and args.cpu_only and engine._cpu_only_active:
@@ -831,6 +901,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
             # ── Image generation ───────────────────────────────────────────────────
             if "img" in tests:
+                _start("img", image_models)
                 Shared.section("Starting Servers")
                 # Kill the whole server, not just unload its models, to free memory the idle process itself still holds.
                 if engine.available():
@@ -854,20 +925,26 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                         prompt=config.IMAGE_PROMPT,
                         comfyui_dir=comfyui_dir,
                         timeout=config.RUN_TIMEOUT * 2,
-                        save_fn=make_save("images"),
+                        save_fn=make_save("images", "img"),
                         images_dir=config.RESULTS_DIR / _images_dirname,
                     )
                     # Shut down ComfyUI as soon as image tests are done
                     # to free GPU memory before saving results
                     Shared.shutdown_managed()
 
+                _done("img", "images")
+
+        except BaseException as exc:
+            checkpoint_terminal_exception(results, exc, _checkpoint)
+            raise
         finally:
             # Always shut down anything still running, even on error
             Shared.shutdown_managed()
 
         # ── Save results ───────────────────────────────────────────────────────────
         Shared.section("Saving Results")
-        Path(out_path).write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
+        finish_run(results["run"], "complete")
+        atomic_write_json(Path(out_path), results)
         Shared.ok(f"Results saved to: {out_path}")
 
     Shared.output("  Compare it against other machines in the dashboard:", leading_blank=True)

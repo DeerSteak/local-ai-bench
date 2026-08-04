@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, applyEngineLabels } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -98,6 +98,9 @@ export default function Dashboard() {
     () => getAccuracySettingsWarning(effectiveFiles),
     [effectiveFiles],
   );
+  const llamaBenchMethodologyWarning = useMemo(
+    () => getLlamaBenchMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
 
   const updateHostnameOverride = useCallback((fileId, value) => {
     setHostnameOverrides(prev => ({ ...prev, [fileId]: value }));
@@ -134,6 +137,7 @@ export default function Dashboard() {
       os:       p.os       || "",
       ram_gb:   p.ram_gb   || null,
       timestamp: p.timestamp || null,
+      reliabilityWarning: getRunReliabilityWarning(data),
       data,
     }, error: null };
   };
@@ -231,7 +235,7 @@ export default function Dashboard() {
         onDragLeave={handleDragLeave}
         onRemoveFile={removeFile}
         onFileInput={handleFileInput}
-        fileError={[fileError, accuracySettingsWarning].filter(Boolean).join(" ")}
+        fileError={[fileError, accuracySettingsWarning, llamaBenchMethodologyWarning].filter(Boolean).join(" ")}
       />
 
       <Controls

@@ -346,9 +346,45 @@ def test_answers_sidecar_includes_correct_and_incorrect_responses(tmp_path):
 
 def test_answers_sidecar_rejects_non_finite_numbers(tmp_path):
     path = tmp_path / "answers.json"
-    with pytest.raises(ValueError, match="Out of range float values"):
+    with pytest.raises(ValueError, match="non-finite numeric value"):
         Shared.write_answers_sidecar(path, {"given": float("inf")})
     assert not path.exists()
+
+
+def test_answers_sidecar_preserves_pending_completed_answers(tmp_path):
+    path = tmp_path / "answers.json"
+    pending = {"m": {"label": "Model", "partial": True, "answers": [
+        {"id": "q1", "given": "A", "raw_response": "Answer: A"},
+    ]}}
+    Shared.write_answers_sidecar(path, pending)
+    assert json.loads(path.read_text()) == pending
+
+
+def test_interrupt_flushes_completed_questions_from_current_model(tmp_path):
+    questions = [_question("q1", "A"), _question("q2", "B")]
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    answers_path = tmp_path / "answers.json"
+    calls = iter([("A", "Answer: A", False)])
+
+    def ask(_tag, _question):
+        try:
+            return next(calls)
+        except StopIteration:
+            raise KeyboardInterrupt from None
+
+    with pytest.raises(KeyboardInterrupt):
+        Shared.run_accuracy_benchmark(
+            "MCQ", "MCQ", "questions", data_path, tmp_path / "crash.json",
+            [{"tag": "fake", "label": "Fake", "short": "fake"}], questions, 0,
+            FakeEngine({}), ask, lambda q, text: text, MCQBenchmark.score,
+            answers_path=answers_path,
+        )
+    sidecar = json.loads(answers_path.read_text())
+    assert sidecar["fake"]["partial"] is True
+    assert sidecar["fake"]["answers"] == [
+        {"id": "q1", "given": "A", "raw_response": "Answer: A"},
+    ]
 
 
 def test_tool_crashed_run_stops_early(tmp_path):

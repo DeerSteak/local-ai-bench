@@ -2,13 +2,13 @@
 """Interactive launcher that translates selections into benchmark CLI flags."""
 
 import json
-import os
 import platform
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from result_store import atomic_write_json
 
 import config
 from benchmark import CONCURRENCY_TESTS, LLM_TESTS
@@ -99,25 +99,11 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
 
 
 def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
-    path = Path(path)
-    temporary_path = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-                mode="w", dir=path.parent, prefix=f".{path.name}.",
-                suffix=".tmp", delete=False, encoding="utf-8") as stream:
-            temporary_path = Path(stream.name)
-            json.dump(state, stream, indent=2, allow_nan=False)
-        os.replace(temporary_path, path)
+        atomic_write_json(Path(path), state)
         return True
     except (OSError, TypeError, ValueError):
         return False
-    finally:
-        if temporary_path is not None:
-            try:
-                temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 def build_frontend_state(engine_name: str, tests: list[str],

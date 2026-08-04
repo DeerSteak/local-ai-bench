@@ -23,6 +23,7 @@ import requests
 import config
 import hardware
 from models import IMAGE_MODELS
+from result_store import atomic_write_json
 
 if TYPE_CHECKING:
     from engines.base import InferenceEngine
@@ -572,7 +573,7 @@ class Shared:
     @staticmethod
     def save_crash_cache(path: Path, cache: dict) -> None:
         try:
-            path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+            atomic_write_json(path, cache)
         except Exception as e:
             Shared.warn(f"Failed to save crash cache to {path}: {e}")
 
@@ -737,8 +738,7 @@ class Shared:
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
         """Write an accuracy test's raw-answer sidecar — see docs/project-structure.md's "answers_*.json" section."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, allow_nan=False), encoding="utf-8")
+        atomic_write_json(path, data)
 
     @staticmethod
     def run_accuracy_benchmark(section_label: str, skip_label: str, question_noun: str,
@@ -798,6 +798,8 @@ class Shared:
                 budget_nudged_ids: list[str] = []
                 budget_exceeded_ids: list[str] = []
                 stopped_early = None
+                answers_out[short] = {"label": label, "answers": [], "partial": True}
+                results[short] = {"label": label, "partial": True, "answered": 0, "total": len(questions)}
 
                 for i, q in enumerate(questions):
                     samples, status, partial_text, metadata = Shared.run_measured_calls(
@@ -814,6 +816,10 @@ class Shared:
                         given, raw = None, ""
                     answers[q["id"]] = given
                     raw_responses[q["id"]] = raw
+                    answers_out[short]["answers"].append({
+                        "id": q["id"], "given": given, "raw_response": raw,
+                    })
+                    results[short]["answered"] = len(answers)
 
                     if budget_nudged:
                         budget_nudged_ids.append(q["id"])

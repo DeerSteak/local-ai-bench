@@ -234,12 +234,13 @@ def test_run_one_raises_when_no_entries_parsed(monkeypatch):
 
 
 def test_run_one_propagates_timeout(monkeypatch):
-    fake_proc = _FakePopen(hang=True)
+    fake_proc = _FakePopen(stdout_lines=[json.dumps(_row(1)) + "\n"], hang=True)
     monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
     monkeypatch.setattr(LBC, "IDLE_POLL_INTERVAL", 0.001)
-    with pytest.raises(subprocess.TimeoutExpired):
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
         LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 0.01)
     assert fake_proc.killed
+    assert caught.value.partial_entries == [_row(1)]
 
 
 def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
@@ -248,6 +249,16 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
     assert len(entries) == 1
     assert not fake_proc.killed
+
+
+def test_run_one_propagates_entry_checkpoint_failure(monkeypatch):
+    fake_proc = _FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"])
+    monkeypatch.setattr("llamabench_concurrency_benchmark.subprocess.Popen", _popen_factory(fake_proc))
+    with pytest.raises(OSError, match="disk full"):
+        LBC.run_one(
+            "b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60,
+            on_entry=lambda entry: (_ for _ in ()).throw(OSError("disk full")),
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -368,7 +379,7 @@ def test_run_calls_save_fn_after_each_model(fake_engine, monkeypatch):
     monkeypatch.setattr(LBC, "run_one", classmethod(lambda cls, *a, **kw: [_row(1)]))
     saved = []
     LBC().run(fake_engine, _MODELS, save_fn=lambda partial: saved.append(dict(partial)))
-    assert len(saved) == 1
+    assert len(saved) >= 1
     assert saved[0]["m1"]["entries"] == [_row(1)]
 
 
@@ -385,7 +396,7 @@ def test_run_records_generic_exception(fake_engine, monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
-    assert LBC().run(fake_engine, _MODELS)["m1"] == {"error": "boom"}
+    assert LBC().run(fake_engine, _MODELS)["m1"]["error"] == "boom"
 
 
 def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
@@ -398,7 +409,7 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     result = LBC().run(fake_engine, models)
-    assert result["bad"] == {"error": "boom"}
+    assert result["bad"]["error"] == "boom"
     assert "entries" in result["good"]
 
 
@@ -406,7 +417,7 @@ def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
     captured = {}
 
     def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size,
-                     ngl, timeout, on_progress=None):
+                     ngl, timeout, on_progress=None, on_entry=None):
         captured["ngl"] = ngl
         return [_row(1)]
 
@@ -419,7 +430,7 @@ def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch):
     captured = {}
 
     def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size,
-                     ngl, timeout, on_progress=None):
+                     ngl, timeout, on_progress=None, on_entry=None):
         captured["ngl"] = ngl
         return [_row(1)]
 

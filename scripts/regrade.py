@@ -2,8 +2,6 @@
 
 import argparse
 import json
-import os
-import tempfile
 from pathlib import Path
 
 import config
@@ -12,6 +10,7 @@ from math_benchmark import MathBenchmark
 from mcq_benchmark import MCQBenchmark
 from reasoning_benchmark import ReasoningBenchmark
 from shared import Shared
+from result_store import atomic_write_json
 from tool_benchmark import ToolBenchmark
 
 
@@ -255,22 +254,8 @@ def write_outputs(outputs: dict[Path, dict]) -> None:
     if existing:
         raise RegradeError("Refusing to overwrite existing files: " + ", ".join(map(str, existing)))
 
-    staged = []
-    try:
-        for output_path, data in outputs.items():
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            descriptor, temporary_name = tempfile.mkstemp(
-                dir=output_path.parent, prefix=f".{output_path.name}.", suffix=".tmp",
-            )
-            temporary_path = Path(temporary_name)
-            staged.append((temporary_path, output_path))
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(data, stream, indent=2, allow_nan=False)
-        for temporary_path, output_path in staged:
-            os.replace(temporary_path, output_path)
-    finally:
-        for temporary_path, _ in staged:
-            temporary_path.unlink(missing_ok=True)
+    for output_path, data in outputs.items():
+        atomic_write_json(output_path, data)
 
 
 def score_changes(original: dict, regraded: dict) -> list[str]:

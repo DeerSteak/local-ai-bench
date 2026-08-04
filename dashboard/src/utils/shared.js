@@ -20,6 +20,30 @@ export function parseResultsJSON(text) {
   }
 }
 
+export function getRunReliabilityWarning(data) {
+  const run = data?.run;
+  if (run == null) return "";
+  if (!run || typeof run !== "object" || Array.isArray(run)) return "Run metadata is malformed.";
+  if (run.status === "complete") return "";
+  const labels = {
+    running: "This result was saved while the benchmark was still running.",
+    partial: "This benchmark ended with partial results.",
+    interrupted: "This benchmark was interrupted; completed measurements are still shown.",
+    failed: "This benchmark failed before every selected stage completed.",
+  };
+  return labels[run.status] || "This result has an unknown completion state.";
+}
+
+export function getLlamaBenchMethodologyWarning(files) {
+  const relevant = files.filter(file => Object.keys(file.data?.llamabench || {}).length > 0);
+  if (relevant.length < 2) return "";
+  const modes = new Set(relevant.map(file =>
+    file.data?.run?.llamabench_repetition_mode || "legacy_internal_repetitions"));
+  return modes.size > 1
+    ? "Loaded llama-bench files use different repetition methodologies."
+    : "";
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-

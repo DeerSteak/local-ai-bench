@@ -139,9 +139,8 @@ def test_load_frontend_state_rejects_missing_or_malformed_state(tmp_path, conten
 
 
 def test_save_frontend_state_failure_cleans_temporary_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(benchmark_frontend.os, "replace", lambda *args: (_ for _ in ()).throw(
-        OSError("read only")
-    ))
+    monkeypatch.setattr(benchmark_frontend, "atomic_write_json", lambda *args: (_ for _ in ()).throw(
+        OSError("read only")))
     assert not save_frontend_state(saved_state(), tmp_path / "state.json")
     assert not list(tmp_path.glob(".*.tmp"))
 

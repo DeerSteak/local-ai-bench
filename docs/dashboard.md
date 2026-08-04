@@ -30,6 +30,8 @@ Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuild
 
 Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file now displays an import error below the drop zone rather than failing silently.
 
+New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning.
+
 ## Sections
 
 | Section | Charts |

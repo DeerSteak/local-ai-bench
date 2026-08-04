@@ -66,14 +66,16 @@ class LlamaBenchConcurrencyBenchmark:
     @classmethod
     def run_one(cls, binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
                 npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int,
-                on_progress=None) -> list[dict]:
+                on_progress=None, on_entry=None) -> list[dict]:
         """Parses each stdout JSONL row as it arrives (this build is silent on stderr, so
         that's the only progress signal). `timeout` is an idle timeout, not a wall-clock cap."""
         cmd = cls.build_command(binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size, ngl)
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        Shared._managed_procs.append(proc)
 
         entries: list[dict] = []
         stderr_chunks: list[str] = []
+        callback_errors: list[BaseException] = []
         activity_lock = threading.Lock()
         last_activity = [time.monotonic()]
 
@@ -93,6 +95,13 @@ class LlamaBenchConcurrencyBenchmark:
                 except json.JSONDecodeError:
                     continue
                 entries.append(entry)
+                if on_entry:
+                    try:
+                        on_entry(entry)
+                    except BaseException as exc:
+                        callback_errors.append(exc)
+                        proc.kill()
+                        return
                 if on_progress:
                     on_progress(cls.format_entry(entry))
 
@@ -120,9 +129,16 @@ class LlamaBenchConcurrencyBenchmark:
         proc.wait()
         stdout_thread.join()
         stderr_thread.join()
+        if proc in Shared._managed_procs:
+            Shared._managed_procs.remove(proc)
+
+        if callback_errors:
+            raise callback_errors[0]
 
         if idle_timed_out:
-            raise subprocess.TimeoutExpired(cmd, timeout)
+            error = subprocess.TimeoutExpired(cmd, timeout)
+            error.partial_entries = list(entries)
+            raise error
 
         if proc.returncode != 0:
             raise RuntimeError(
@@ -177,24 +193,38 @@ class LlamaBenchConcurrencyBenchmark:
                     Shared.warn(f"{label}: prompt depth clamped to {effective_pp} tokens to fit the "
                                 f"model's {model_max}-token context")
 
+                entries = []
+                results[short] = {
+                    "entries": entries, "pp": effective_pp, "ctx_size": ctx_size,
+                    "requested_cases": len(config.LLAMABENCH_CONC_TG) * len(npl),
+                    "completed_cases": 0,
+                }
+
+                def _record_entry(entry):
+                    entries.append(entry)
+                    results[short]["completed_cases"] = len(entries)
+                    if save_fn:
+                        save_fn(results)
+
                 try:
-                    entries = self.run_one(
+                    returned_entries = self.run_one(
                         binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
                         config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
                         ngl, config.LLAMABENCH_TIMEOUT,
-                        on_progress=Shared.log,
+                        on_progress=Shared.log, on_entry=_record_entry,
                     )
+                    if not entries:
+                        for entry in returned_entries:
+                            _record_entry(entry)
                 except subprocess.TimeoutExpired:
-                    Shared.err(f"{label}: llama-batched-bench produced no output for "
-                               f"{config.LLAMABENCH_TIMEOUT}s — skipping")
-                    results[short] = {"error": f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)"}
+                    Shared.err(f"{label}: llama-batched-bench stopped with {len(entries)} completed entries")
+                    results[short]["timed_out"] = True
+                    results[short]["error"] = f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)"
                     continue
                 except Exception as e:
                     Shared.err(f"{label}: {e}")
-                    results[short] = {"error": str(e)}
+                    results[short]["error"] = str(e)
                     continue
-
-                results[short] = {"entries": entries, "pp": effective_pp, "ctx_size": ctx_size}
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
             finally:

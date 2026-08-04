@@ -69,6 +69,15 @@
   font-family: 'IBM Plex Mono', monospace;
 }
 
+.reliabilityWarning {
+  color: #9a6700;
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
 .dropZoneArea {
   display: flex;
   flex-direction: column;

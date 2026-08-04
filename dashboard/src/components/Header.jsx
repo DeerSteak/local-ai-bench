@@ -52,6 +52,9 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
               {file.timestamp && (
                 <span className={styles.tagTimestamp}>{formatTimestamp(file.timestamp)}</span>
               )}
+              {file.reliabilityWarning && (
+                <span className={styles.reliabilityWarning} role="status">{file.reliabilityWarning}</span>
+              )}
             </div>
           );
         })}
