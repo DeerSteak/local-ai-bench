@@ -14,7 +14,10 @@
 | `Setup Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical setup wizard |
 | `Setup Local AI Bench.bat` | Double-clickable Windows launcher for the graphical setup wizard |
 | `setup.bat` | One-shot setup for Windows |
-| `run_bench.sh` | Activates the venv; opens the interactive frontend with no arguments or forwards arguments directly to `scripts/benchmark.py` on Linux / macOS |
+| `Run Local AI Bench.command` | Double-clickable macOS launcher for the graphical benchmark screen |
+| `Run Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical benchmark screen |
+| `Run Local AI Bench.bat` | Double-clickable Windows launcher for the graphical benchmark screen |
+| `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
 | `launch_dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
@@ -35,7 +38,7 @@
 | `scripts/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
 | `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths |
-| `.benchmark_frontend_state.json` | Gitignored last-confirmed interactive engine/test/model/max-prompt-tokens/tg-tokens selection; stale or invalid values fall back to current defaults |
+| `.benchmark_frontend_state.json` | Gitignored Custom GUI/terminal selection and execution settings; stale or invalid values fall back to current defaults |
 | `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
@@ -56,6 +59,8 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 |---|---|
 | `benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
 | `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
+| `benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
+| `benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
 | `interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
@@ -84,6 +89,7 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 | `comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
 | `setup_check.py` | Hardware detection, model picker, unattended install |
 | `setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
+| `tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
 | `close_terminal_tab.applescript` | Closes only the macOS Terminal tab that launched a cancelled graphical setup |
 | `setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
 | `data/` | Question banks used by accuracy tests (see above) |

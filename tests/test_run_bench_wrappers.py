@@ -40,7 +40,18 @@ def test_shell_wrapper_zero_arguments_launches_frontend(tmp_path):
     wrapper = make_isolated_shell_wrapper(tmp_path)
     result, captured = run_isolated_wrapper(wrapper, tmp_path)
     assert result.returncode == 0
-    assert captured == [str(tmp_path / "scripts" / "benchmark_frontend.py")]
+    assert captured == [
+        str(tmp_path / "scripts" / "benchmark_launcher.py"), "--interface", "auto",
+    ]
+
+
+def test_shell_wrapper_explicit_interface_launches_dispatcher(tmp_path):
+    wrapper = make_isolated_shell_wrapper(tmp_path)
+    result, captured = run_isolated_wrapper(wrapper, tmp_path, "--interface", "terminal")
+    assert result.returncode == 0
+    assert captured == [
+        str(tmp_path / "scripts" / "benchmark_launcher.py"), "--interface", "terminal",
+    ]
 
 
 def test_shell_wrapper_arguments_bypass_frontend_and_preserve_spaces(tmp_path):
@@ -73,7 +84,9 @@ def test_batch_wrapper_uses_label_branches_and_preserves_exit_codes():
     text = (ROOT / "run_bench.bat").read_text()
     assert 'if "%~1"=="" goto frontend' in text
     assert 'python "%SCRIPT_DIR%scripts\\benchmark.py" %*\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
-    assert ':frontend\npython "%SCRIPT_DIR%scripts\\benchmark_frontend.py"\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
+    assert ':frontend\npython "%SCRIPT_DIR%scripts\\benchmark_launcher.py" --interface auto\nset "BENCH_EXIT_CODE=%errorlevel%"' in text
+    assert 'if /i "%~1"=="--interface" goto frontend_with_args' in text
+    assert ':frontend_with_args\npython "%SCRIPT_DIR%scripts\\benchmark_launcher.py" %*' in text
     assert ':finish\nif defined PAUSE_ON_EXIT pause\nexit /b %BENCH_EXIT_CODE%' in text
 
 
@@ -88,3 +101,16 @@ def test_batch_wrapper_only_pauses_for_explorer_style_invocation():
     assert 'set CMDCMDLINE | %SystemRoot%\\System32\\findstr.exe /l /i /c:"%~f0" >nul' in text
     assert 'if not errorlevel 1 set "PAUSE_ON_EXIT=1"' in text
     assert text.count('if defined PAUSE_ON_EXIT pause') == 1
+
+
+def test_double_click_benchmark_launchers_force_the_gui():
+    command = (ROOT / "Run Local AI Bench.command").read_text()
+    assert "bash run_bench.sh --interface gui" in command
+    assert "close_terminal_tab.applescript" in command
+    assert '"$LAUNCHER_TTY"' in command
+    assert "launchctl submit" in command
+    assert "run_bench.bat --interface gui" in (ROOT / "Run Local AI Bench.bat").read_text()
+    desktop = (ROOT / "Run Local AI Bench.desktop").read_text()
+    assert "bash run_bench.sh --interface gui" in desktop
+    assert os.access(ROOT / "Run Local AI Bench.command", os.X_OK)
+    assert os.access(ROOT / "Run Local AI Bench.desktop", os.X_OK)

@@ -5,10 +5,10 @@ SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_ROOT" || exit 1
 LAUNCHER_TTY="$(tty 2>/dev/null || true)"
 
-bash setup.sh --interface gui
+bash run_bench.sh --interface gui
 status=$?
 
-if [ "$status" -eq 10 ]; then
+if [ "$status" -eq 0 ]; then
     if [ -n "$LAUNCHER_TTY" ] && command -v launchctl >/dev/null 2>&1; then
         launchctl submit -l "local-ai-bench.close-terminal.$$" -- \
             /usr/bin/osascript "$SCRIPT_ROOT/scripts/close_terminal_tab.applescript" "$LAUNCHER_TTY"
@@ -16,10 +16,8 @@ if [ "$status" -eq 10 ]; then
     exit 0
 fi
 
-if [ "$status" -ne 0 ]; then
-    echo
-    echo "Setup stopped with an error. Review the messages above."
-    read -r -p "Press Enter to close this window."
-fi
+echo
+echo "Local AI Bench stopped with an error. Review the messages above."
+read -r -p "Press Enter to close this window."
 
 exit "$status"

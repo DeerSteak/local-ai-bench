@@ -9,7 +9,7 @@
 
 ## Execution order
 
-With no wrapper arguments, `run_bench.sh`/`run_bench.bat` opens the interactive launcher (`scripts/benchmark_frontend.py`), which launches `benchmark.py` as a child process with explicit CLI flags — see [Launch modes](cli-reference.md#launch-modes) for the launcher's own behavior. The frontend never calls benchmark orchestration directly; any wrapper argument bypasses it and forwards straight to `benchmark.py`, which is always non-interactive.
+With no wrapper arguments, `run_bench.sh`/`run_bench.bat` uses `benchmark_launcher.py` to select the Tk GUI on a usable local desktop or the terminal frontend over SSH/headless sessions. Both launch `benchmark.py` as a child process with explicit CLI flags — see [Launch modes](cli-reference.md#launch-modes). The frontends never call benchmark orchestration directly; benchmark arguments bypass them and forward straight to `benchmark.py`, which is always non-interactive.
 
 Before profiling hardware or creating an output path, the CLI expands test groups, applies `--maxtier`, resolves the LLM/embedding/image selectors, and performs a validation-only pre-pass for every selected engine. Local inventory is read only when custom LLM matching or concurrency scoping needs it; no model is loaded and no inference server is started. An explicit selector that leaves one of its selected workload families empty aborts the invocation at this point. With `--engine all`, every engine must validate before any runs; the resolved scopes are cached so hardware profiling and the filename timestamp still happen once and all per-engine files share the same stem.
 

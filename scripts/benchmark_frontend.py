@@ -60,18 +60,29 @@ FRONTEND_OPTION_INVENTORY = {
     "--models": ("equivalent", "Backward-compatible alias for --llm-models"),
     "--list-models": ("equivalent", "Installed models are shown in the selection screens"),
     "--sample": ("excluded", "Developer-only non-comparable accuracy sampling"),
-    "--warmup": ("missing", "Add to advanced execution settings"),
-    "--runs": ("missing", "Add to advanced execution settings"),
-    "--timeout": ("missing", "Add to advanced execution settings"),
-    "--acc-timeout": ("missing", "Add when an accuracy workload is selected"),
-    "--acc-token-budget": ("missing", "Add when an accuracy workload is selected"),
-    "--cpu-only": ("missing", "Add to execution-mode settings"),
-    "--force-all": ("missing", "Add with a slow-run cost warning"),
-    "--out": ("missing", "Add to output settings"),
-    "--comfyui": ("missing", "Add before image inventory discovery"),
+    "--warmup": ("exposed", "Graphical execution settings"),
+    "--runs": ("exposed", "Graphical execution settings"),
+    "--timeout": ("exposed", "Graphical execution settings"),
+    "--acc-timeout": ("exposed", "Graphical execution settings"),
+    "--acc-token-budget": ("exposed", "Graphical execution settings"),
+    "--cpu-only": ("exposed", "Graphical execution settings"),
+    "--force-all": ("exposed", "Graphical execution settings"),
+    "--out": ("exposed", "Graphical path settings"),
+    "--comfyui": ("exposed", "Graphical path settings"),
 }
 FRONTEND_STATE_PATH = config.SCRIPT_DIR / ".benchmark_frontend_state.json"
 FRONTEND_STATE_VERSION = 2
+GUI_OPTION_DEFAULTS = {
+    "warmup": config.WARMUP_RUNS,
+    "runs": config.N_RUNS,
+    "timeout": 300,
+    "acc_timeout": config.ACC_TIMEOUT,
+    "acc_token_budget": config.ACC_TOKEN_BUDGET,
+    "cpu_only": False,
+    "force_all": False,
+    "out": "",
+    "comfyui": "",
+}
 FRONTEND_MODEL_FAMILIES = {
     "llm": {"llm", "custom"},
     "embedding": {"embedding"},
@@ -105,7 +116,8 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
     except (OSError, json.JSONDecodeError):
         return None
     required_keys = {"version", "engine", "tests", "models", "max_prompt_tokens", "tg_tokens"}
-    if not isinstance(state, dict) or set(state) != required_keys:
+    allowed_keys = required_keys | {"gui_options"}
+    if not isinstance(state, dict) or not required_keys.issubset(state) or not set(state).issubset(allowed_keys):
         return None
     if state["version"] != FRONTEND_STATE_VERSION or not isinstance(state["engine"], str):
         return None
@@ -131,7 +143,26 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
             or not all(isinstance(v, int) and v > 0 for v in tg_tokens)
             or len(tg_tokens) != len(set(tg_tokens))):
         return None
+    if "gui_options" in state and validate_gui_options(state["gui_options"]):
+        return None
     return state
+
+
+def validate_gui_options(options: object) -> list[str]:
+    if not isinstance(options, dict) or set(options) != set(GUI_OPTION_DEFAULTS):
+        return ["GUI settings are incomplete."]
+    errors = []
+    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
+        value = options[key]
+        if not isinstance(value, int) or isinstance(value, bool) or value < (0 if key == "warmup" else 1):
+            errors.append(f"{key} must be a valid whole number.")
+    if isinstance(options.get("runs"), int) and not 1 <= options["runs"] <= 10:
+        errors.append("runs must be between 1 and 10.")
+    if not isinstance(options["cpu_only"], bool) or not isinstance(options["force_all"], bool):
+        errors.append("Execution mode settings must be true or false.")
+    if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
+        errors.append("Output and ComfyUI paths must be text.")
+    return errors
 
 
 def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
@@ -145,9 +176,10 @@ def save_frontend_state(state: dict, path: Path = FRONTEND_STATE_PATH) -> bool:
 def build_frontend_state(engine_name: str, tests: list[str],
                          entries: list[MenuEntry],
                          max_prompt_tokens: int | None = None,
-                         tg_tokens: list[int] | None = None) -> dict:
+                         tg_tokens: list[int] | None = None,
+                         gui_options: dict | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
-    return {
+    state = {
         "version": FRONTEND_STATE_VERSION,
         "engine": engine_name,
         "tests": list(tests),
@@ -160,6 +192,9 @@ def build_frontend_state(engine_name: str, tests: list[str],
         "max_prompt_tokens": max_prompt_tokens,
         "tg_tokens": list(tg_tokens) if tg_tokens is not None else None,
     }
+    if gui_options is not None:
+        state["gui_options"] = dict(gui_options)
+    return state
 
 
 def apply_saved_test_selection(entries: list[MenuEntry], state: dict | None) -> bool:
@@ -541,7 +576,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
                             entries: list[MenuEntry], python_executable: str = sys.executable,
                             benchmark_path: Path | None = None,
                             max_prompt_tokens: int | None = None,
-                            tg_tokens: list[int] | None = None) -> list[str]:
+                            tg_tokens: list[int] | None = None,
+                            gui_options: dict | None = None) -> list[str]:
     benchmark_path = benchmark_path or config.SCRIPT_DIR / "scripts" / "benchmark.py"
     command = [
         python_executable, str(benchmark_path),
@@ -553,6 +589,20 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         command.extend(["--max-prompt-tokens", str(max_prompt_tokens)])
     if tg_tokens is not None:
         command.extend(["--tg-tokens", *[str(v) for v in tg_tokens]])
+    if gui_options is not None:
+        command.extend(["--warmup", str(gui_options["warmup"])])
+        command.extend(["--runs", str(gui_options["runs"])])
+        command.extend(["--timeout", str(gui_options["timeout"])])
+        command.extend(["--acc-timeout", str(gui_options["acc_timeout"])])
+        command.extend(["--acc-token-budget", str(gui_options["acc_token_budget"])])
+        if gui_options["cpu_only"]:
+            command.append("--cpu-only")
+        if gui_options["force_all"]:
+            command.append("--force-all")
+        if gui_options["out"]:
+            command.extend(["--out", gui_options["out"]])
+        if gui_options["comfyui"]:
+            command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
     if any(test in LLM_BACKED_TESTS for test in tests):
         command.extend([
@@ -670,6 +720,7 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         state = build_frontend_state(
             selected_engine, tests, model_entries,
             max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
+            gui_options=saved_state.get("gui_options") if saved_state else None,
         )
         if not save_frontend_state(state, state_path):
             output_fn("Could not save this launcher selection; continuing without persistence.")

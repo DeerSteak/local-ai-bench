@@ -17,7 +17,7 @@
 | Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental) |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
-On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
+On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. The first time the launcher closes its Terminal window, macOS asks whether it may control another application; choose **Allow** so future setup and benchmark launcher windows can close automatically. macOS may also require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
 
 On a Linux desktop, double-click `Setup Local AI Bench.desktop` to open a terminal and launch the graphical wizard. The launcher resolves the repository from its own location rather than assuming a fixed installation path. Some desktop environments require first enabling **Allow Launching**, **Trust and Launch**, or the executable permission in the file's Properties dialog; the file is shipped executable, but a downloaded archive may not preserve that bit.
 
