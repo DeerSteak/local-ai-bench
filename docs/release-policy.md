@@ -28,6 +28,8 @@ The current matrix is the required test design, not completed evidence. Individu
 
 A stable release requires all automated Python/dashboard tests; current golden compatibility and methodology review; no unexplained behavioral difference from the qualification baseline; completed supported-row hardware records; signed installers/checksums/provenance; SBOM and reviewed notices; dependency, secret, static, artifact, and vulnerability scans; offline evidence; clean install/repair/upgrade/rollback/uninstall evidence; complete option-coverage and accessibility review; current documentation and migration notes; support/incident contacts; and no unresolved high-severity issue without explicit time-bounded acceptance.
 
+`bench-env/bin/python scripts/release_readiness.py` emits a machine-readable local preflight and exits nonzero while front-end option coverage, model licenses, dependency licenses, or target-hardware qualification remain unresolved. It intentionally does not mark external security, installer, usability, legal, or customer gates complete; those require separately linked evidence in the release decision.
+
 Release approval records the product, methodology, engineering, security, licensing, design, and release-operations decisions separately. A failed gate blocks stable status; it may produce a clearly labeled preview build but cannot be silently waived.
 
 ## Release channels and notes
