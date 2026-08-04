@@ -199,5 +199,5 @@ class MathBenchmark:
             ask_fn=lambda tag, q: MathBenchmark._ask(engine, tag, q),
             rescore_partial_fn=lambda q, text: MathBenchmark.parse_answer(text),
             score_fn=MathBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path,
+            save_fn=save_fn, answers_path=answers_path, progress_stage="math",
         )

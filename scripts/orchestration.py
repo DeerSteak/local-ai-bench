@@ -6,6 +6,7 @@ from typing import Callable
 
 from result_store import ResultStore
 from run_plan import RunPlan
+from progress_events import emit_progress
 from shared import Shared
 
 
@@ -13,6 +14,8 @@ STAGE_ORDER = (
     "llm", "conv", "llamabench", "llamabenchconc", "emb",
     "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "img",
 )
+def emit_stage_progress(stage: str, status: str) -> None:
+    emit_progress("stage", stage, status)
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,7 @@ class StageExecutionError(RuntimeError):
 def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
     for stage in stages:
         context.store.start_stage(stage.key, stage.selected_models)
+        emit_stage_progress(stage.key, "running")
         try:
             if stage.requires_engine:
                 context.lifecycle.ensure_engine(context.plan.cpu_only)
@@ -90,7 +94,9 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
                 context.store.record_cleanup_failure(stage.key, cleanup_exc)
                 Shared.warn(f"{stage.key} cleanup also failed: {cleanup_exc}")
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                emit_stage_progress(stage.key, "interrupted")
                 raise
+            emit_stage_progress(stage.key, "failed")
             raise StageExecutionError(stage.key, "preparation", exc) from exc
         try:
             result = stage.runner(context)
@@ -101,14 +107,18 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
                 context.store.record_cleanup_failure(stage.key, cleanup_exc)
                 Shared.warn(f"{stage.key} cleanup also failed: {cleanup_exc}")
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                emit_stage_progress(stage.key, "interrupted")
                 raise
+            emit_stage_progress(stage.key, "failed")
             raise StageExecutionError(stage.key, "execution", exc) from exc
         context.store.update_section(stage.section, result, stage.key)
         try:
             stage.cleanup(context)
         except BaseException as exc:
+            emit_stage_progress(stage.key, "failed")
             raise StageExecutionError(stage.key, "cleanup", exc) from exc
         context.store.complete_stage(stage.key, stage.section)
+        emit_stage_progress(stage.key, "complete")
 
 
 def execute_with_final_cleanup(action: Callable[[], None], lifecycle: "LifecycleCoordinator") -> None:

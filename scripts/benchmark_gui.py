@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Single-screen Tk launcher for Local AI Bench."""
 
+import os
+import json
 import platform
 import queue
 import signal
@@ -13,6 +15,7 @@ import config
 from benchmark_frontend import (
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
+    LLM_BACKED_TESTS,
     MAX_PROMPT_TOKEN_OPTIONS,
     MAX_PROMPT_TOKEN_TESTS,
     TEST_DEFINITIONS,
@@ -33,6 +36,8 @@ from comfyui_installation import find_comfyui_installation
 from engines import engine_names, get_engine
 from llamacpp_tools import find_llamacpp_tool
 from model_inventory import build_model_inventory
+from orchestration import STAGE_ORDER
+from progress_events import PROGRESS_PREFIX
 from shared import Shared
 from setup_config import configured_comfyui_dir, load_setup_config
 from tk_utils import mousewheel_scroll_units
@@ -73,6 +78,24 @@ def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: flo
         "comfyui": str(comfyui_dir) if comfyui_dir else "Not found",
         "issues": issues,
     }
+
+
+def parse_progress_line(line: str) -> dict | None:
+    if not line.startswith(PROGRESS_PREFIX):
+        return None
+    try:
+        event = json.loads(line.removeprefix(PROGRESS_PREFIX))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict) or event.get("kind") not in {"stage", "model"}:
+        return None
+    if event.get("status") not in {"running", "complete", "failed", "interrupted"}:
+        return None
+    if not isinstance(event.get("stage"), str):
+        return None
+    if event["kind"] == "model" and not isinstance(event.get("model"), str):
+        return None
+    return event
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -291,8 +314,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         side="left", padx=(10, 0),
     )
 
-    configurable = [widget for widget in custom_frame.winfo_children()]
-
     def walk_widgets(parent):
         for child in parent.winfo_children():
             yield child
@@ -339,6 +360,71 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     process = None
     output_queue = queue.Queue()
+    progress_window = None
+    stage_progress_vars = {}
+    model_progress_vars = {}
+
+    def show_progress_window(tests, entries):
+        nonlocal progress_window, stage_progress_vars, model_progress_vars
+        if progress_window is not None and progress_window.winfo_exists():
+            progress_window.destroy()
+        progress_window = tk.Toplevel(root)
+        progress_window.title("Local AI Bench Progress")
+        progress_window.geometry("430x520")
+        progress_window.minsize(380, 300)
+        progress_window.attributes("-topmost", True)
+        progress_window.protocol("WM_DELETE_WINDOW", progress_window.withdraw)
+        shell = ttk.Frame(progress_window, padding=18)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(shell, text="Benchmark progress", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            shell, text="Broad stage status. Detailed output remains in the Run Log.",
+            wraplength=390,
+        ).pack(anchor="w", pady=(2, 12))
+        stage_progress_vars = {}
+        model_progress_vars = {}
+        labels = {name: label for name, label, _, _ in TEST_DEFINITIONS}
+        selected = [entry for entry in entries if entry.checked]
+        for stage in (key for key in STAGE_ORDER if key in tests):
+            row = ttk.Frame(shell)
+            row.pack(fill="x", pady=(6, 1))
+            ttk.Label(row, text=labels.get(stage, stage), font=("TkDefaultFont", 10, "bold")).pack(
+                side="left", anchor="w",
+            )
+            stage_progress_vars[stage] = tk.StringVar(value="○ Queued")
+            ttk.Label(row, textvariable=stage_progress_vars[stage]).pack(side="right", anchor="e")
+            if stage == "emb":
+                stage_models = [entry for entry in selected if entry.kind == "embedding"]
+            elif stage == "img":
+                stage_models = [entry for entry in selected if entry.kind == "image"]
+            elif stage in LLM_BACKED_TESTS:
+                stage_models = [entry for entry in selected if entry.kind in {"llm", "custom"}]
+            else:
+                stage_models = []
+            for entry in stage_models:
+                model_row = ttk.Frame(shell)
+                model_row.pack(fill="x", padx=(14, 0), pady=1)
+                ttk.Label(model_row, text=entry.label, width=32).pack(side="left", anchor="w")
+                variable = tk.StringVar(value="○ Queued")
+                model_progress_vars[(stage, entry.label)] = variable
+                ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")
+        progress_window.lift()
+
+    def update_progress(event):
+        if event["kind"] == "model":
+            variable = model_progress_vars.get((event["stage"], event["model"]))
+        else:
+            variable = stage_progress_vars.get(event["stage"])
+        if variable is None:
+            return
+        variable.set({
+            "running": "▶ Running", "complete": "✓ Complete",
+            "failed": "✕ Failed", "interrupted": "■ Interrupted",
+        }[event["status"]])
+        if event["kind"] == "stage" and event["status"] in {"complete", "failed", "interrupted"}:
+            for (stage, _), model_var in model_progress_vars.items():
+                if stage == event["stage"] and model_var.get() in {"○ Queued", "▶ Running"}:
+                    model_var.set("— Not run" if event["status"] != "interrupted" else "■ Interrupted")
 
     def append_log(text):
         log_text.configure(state="normal")
@@ -353,18 +439,27 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 kind, value = output_queue.get_nowait()
                 if kind == "line":
                     append_log(value)
+                elif kind == "progress":
+                    update_progress(value)
                 else:
                     process = None
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
                     run_status.set("Benchmark completed successfully." if value == 0 else f"Benchmark stopped with exit code {value}.")
+                    for variable in stage_progress_vars.values():
+                        if variable.get() in {"○ Queued", "▶ Running"}:
+                            variable.set("— Not run" if value else "✓ Complete")
+                    for variable in model_progress_vars.values():
+                        if variable.get() in {"○ Queued", "▶ Running"}:
+                            variable.set("— Not run")
         except queue.Empty:
             pass
         root.after(100, poll_output)
 
     def read_process(proc):
         for line in proc.stdout:
-            output_queue.put(("line", line))
+            progress = parse_progress_line(line)
+            output_queue.put(("progress", progress) if progress else ("line", line))
         output_queue.put(("done", proc.wait()))
 
     def collect_options():
@@ -425,9 +520,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             gui_options=gui_options,
         )
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1"}
         process = subprocess.Popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags,
+            text=True, bufsize=1, creationflags=creationflags, env=child_env,
         )
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
@@ -436,6 +532,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         start_button.configure(state="disabled")
         stop_button.configure(state="normal")
         notebook.select(log_tab)
+        show_progress_window(tests, entries)
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def stop_run():

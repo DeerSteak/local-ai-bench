@@ -289,5 +289,5 @@ class CodeBenchmark:
             ask_fn=lambda tag, q: CodeBenchmark._ask(engine, tag, q),
             rescore_partial_fn=_rescore_partial,
             score_fn=CodeBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path,
+            save_fn=save_fn, answers_path=answers_path, progress_stage="code",
         )

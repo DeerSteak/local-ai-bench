@@ -13,6 +13,7 @@ import config
 from llamacpp_tools import find_llamacpp_tool
 from engines.llamacpp import LlamaCppEngine
 from shared import Shared
+from progress_events import emit_model_finished, emit_progress
 
 
 class LlamaBenchBenchmark:
@@ -188,6 +189,7 @@ class LlamaBenchBenchmark:
             tag, label, short = model["tag"], model["label"], model["short"]
             Shared.section(f"llama-bench ({engine.name}): {label}")
 
+            emit_progress("model", "llamabench", "running", label)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -256,5 +258,6 @@ class LlamaBenchBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
+                emit_model_finished("llamabench", label)
 
         return results

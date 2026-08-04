@@ -5,7 +5,7 @@ import pytest
 
 from orchestration import (
     LifecycleCoordinator, RunContext, RunPaths, StageDefinition, StageExecutionError,
-    execute_stages, execute_with_final_cleanup, ordered_stage_keys, select_stages,
+    emit_stage_progress, execute_stages, execute_with_final_cleanup, ordered_stage_keys, select_stages,
 )
 from result_store import ResultStore
 from run_plan import RunPlan
@@ -47,6 +47,16 @@ def test_execute_stages_preserves_registry_order_and_transitions(tmp_path):
     assert events == ["prepare-a", "run-a", "cleanup-a", "run-b"]
     assert list(store.data["run"]["stages"]) == ["a", "b"]
     assert all(stage["status"] == "complete" for stage in store.data["run"]["stages"].values())
+
+
+def test_stage_progress_is_opt_in_and_machine_parseable(monkeypatch, capsys):
+    emit_stage_progress("llm", "running")
+    assert capsys.readouterr().out == ""
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    emit_stage_progress("llm", "running")
+    assert capsys.readouterr().out == (
+        '::local-ai-bench-progress::{"kind":"stage","stage":"llm","status":"running"}\n'
+    )
 
 
 def test_execute_stages_prepares_only_engine_required_stages(tmp_path):

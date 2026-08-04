@@ -216,4 +216,5 @@ class ReasoningBenchmark:
             score_fn=ReasoningBenchmark.score,
             save_fn=save_fn,
             answers_path=answers_path,
+            progress_stage="reasoning",
         )

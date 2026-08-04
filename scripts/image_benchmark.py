@@ -7,6 +7,7 @@ import requests
 
 import config
 from shared import Shared
+from progress_events import emit_model_finished, emit_progress
 
 
 class ImageBenchmark:
@@ -358,6 +359,7 @@ class ImageBenchmark:
             short      = model["short"]
             model_resolutions = model.get("resolutions", resolutions)
 
+            emit_progress("model", "img", "running", label)
             try:
                 ckpt_path = checkpoints_dir / checkpoint
                 if not ckpt_path.exists():
@@ -464,5 +466,6 @@ class ImageBenchmark:
                     save_fn(results)
                 Shared.log(f"Unloading {label} from VRAM ...")
                 ImageBenchmark.comfyui_free_models()
+                emit_model_finished("img", label)
 
         return results

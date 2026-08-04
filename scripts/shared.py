@@ -30,6 +30,7 @@ from comfyui_installation import (
 import hardware
 from models import IMAGE_MODELS
 from result_store import atomic_write_json
+from progress_events import emit_model_finished, emit_progress
 
 if TYPE_CHECKING:
     from engines.base import InferenceEngine
@@ -764,7 +765,8 @@ class Shared:
                                 data_path: Path, crash_cache_path: Path, models, questions,
                                 warmup_runs: int, engine: "InferenceEngine",
                                 ask_fn, rescore_partial_fn, score_fn,
-                                save_fn=None, answers_path: Path | None = None
+                                save_fn=None, answers_path: Path | None = None,
+                                progress_stage: str | None = None,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
@@ -788,6 +790,8 @@ class Shared:
             if not engine.reachable_or_abort():
                 break
 
+            if progress_stage:
+                emit_progress("model", progress_stage, "running", label)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
@@ -908,6 +912,8 @@ class Shared:
                     save_fn(results)
                 if answers_path:
                     Shared.write_answers_sidecar(answers_path, answers_out)
+                if progress_stage:
+                    emit_model_finished(progress_stage, label)
 
         return results
 

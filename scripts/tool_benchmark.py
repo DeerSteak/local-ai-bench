@@ -200,5 +200,5 @@ class ToolBenchmark:
             ask_fn=lambda tag, q: ToolBenchmark._ask(engine, tag, q),
             rescore_partial_fn=ToolBenchmark.rescore_partial_fn,
             score_fn=ToolBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path,
+            save_fn=save_fn, answers_path=answers_path, progress_stage="tool",
         )

@@ -8,7 +8,9 @@ from benchmark_frontend import (
     load_frontend_state,
     validate_gui_options,
 )
-from benchmark_gui import build_discovery_report, effective_gui_options, open_path_command
+from benchmark_gui import (
+    build_discovery_report, effective_gui_options, open_path_command, parse_progress_line,
+)
 
 
 def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
@@ -98,3 +100,14 @@ def test_discovery_report_identifies_blockers_and_image_runtime_gap():
         tools={"llama-server": "/bin/server"}, comfyui_dir=None, inventory=empty,
     )
     assert report["issues"] == ["Image models are installed, but ComfyUI was not found."]
+
+
+def test_progress_line_parser_accepts_only_structured_stage_events():
+    assert parse_progress_line(
+        '::local-ai-bench-progress::{"kind":"stage","stage":"llm","status":"running"}\n'
+    ) == {"kind": "stage", "stage": "llm", "status": "running"}
+    assert parse_progress_line(
+        '::local-ai-bench-progress::{"kind":"model","stage":"llm","status":"complete","model":"Qwen: 4B"}\n'
+    ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
+    assert parse_progress_line("ordinary benchmark output") is None
+    assert parse_progress_line("::local-ai-bench-progress::{bad json") is None

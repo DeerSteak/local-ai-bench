@@ -211,5 +211,5 @@ class MCQBenchmark:
             ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
             rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
             score_fn=MCQBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path,
+            save_fn=save_fn, answers_path=answers_path, progress_stage="mcq",
         )

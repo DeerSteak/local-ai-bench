@@ -6,6 +6,7 @@ from pathlib import Path
 import config
 from engines.base import aggregate_generation_measurements, measurement_validation_errors
 from shared import Shared
+from progress_events import emit_model_finished, emit_progress
 
 
 class LLMConversationBenchmark:
@@ -103,6 +104,7 @@ class LLMConversationBenchmark:
             if not engine.reachable_or_abort():
                 break
 
+            emit_progress("model", "conv", "running", label)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -302,5 +304,6 @@ class LLMConversationBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
+                emit_model_finished("conv", label)
 
         return results
