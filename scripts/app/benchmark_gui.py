@@ -5,6 +5,7 @@ import os
 import json
 import platform
 import queue
+import re
 import signal
 import shutil
 import subprocess
@@ -183,6 +184,43 @@ def process_resource_usage(pid: int, psutil_module=psutil) -> tuple[float, float
         return cpu, memory_gb
     except (psutil_module.Error, OSError):
         return None
+
+
+def parse_gpu_usage(platform_name: str, output: str) -> float | None:
+    if platform_name == "Darwin":
+        values = re.findall(r'"Device Utilization %"\s*=\s*([0-9.]+)', output)
+    elif "GPU use (%)" in output:
+        values = re.findall(r'"?GPU use \(%\)"?\s*[:=]\s*"?([0-9.]+)', output)
+    else:
+        values = re.findall(r"(?m)^\s*([0-9.]+)\s*%?\s*$", output)
+    percentages = [float(value) for value in values if 0 <= float(value) <= 100]
+    return max(percentages) if percentages else None
+
+
+def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
+                    which_fn=shutil.which) -> float | None:
+    platform_name = platform_name or platform.system()
+    if platform_name == "Darwin":
+        executable = which_fn("ioreg") or "/usr/sbin/ioreg"
+        command = [executable, "-r", "-d", "1", "-c", "AGXAccelerator"]
+    elif executable := which_fn("nvidia-smi"):
+        command = [executable, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
+    elif executable := which_fn("rocm-smi"):
+        command = [executable, "--showuse", "--json"]
+    else:
+        return None
+    try:
+        result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_gpu_usage(platform_name, result.stdout) if result.returncode == 0 else None
+
+
+def format_resource_usage(process_usage, gpu_usage: float | None) -> str:
+    process_text = ("unavailable" if process_usage is None
+                    else f"{process_usage[0]:.0f}% CPU · {process_usage[1]:.1f} GB RAM")
+    gpu_text = "GPU unavailable" if gpu_usage is None else f"{gpu_usage:.0f}% GPU"
+    return f"{process_text} · {gpu_text}"
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
@@ -1710,10 +1748,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_resource_var = tk.StringVar(value="")
     progress_metrics = {}
     progress_started_at = None
+    gpu_sample = {"usage": None, "next_at": 0.0, "running": False, "generation": 0}
 
     def show_progress_window(tests, entries):
         nonlocal progress_window, stage_progress_vars, model_progress_vars
         nonlocal progress_metrics, progress_started_at
+        gpu_sample.update({
+            "usage": None, "next_at": 0.0, "running": False,
+            "generation": gpu_sample["generation"] + 1,
+        })
         if progress_window is not None and progress_window.winfo_exists():
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
@@ -1847,15 +1890,27 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except queue.Empty:
             pass
         if process is not None and process.poll() is None and progress_started_at is not None:
-            elapsed = time.monotonic() - progress_started_at
+            now = time.monotonic()
+            elapsed = now - progress_started_at
             completed = len(progress_metrics.get("finished_models", ()))
             remaining = estimate_remaining_seconds(
                 elapsed, completed, progress_metrics.get("total_models", 0),
             )
             estimate = "calibrating" if remaining is None else f"about {remaining // 60}m {remaining % 60}s"
             usage = process_resource_usage(process.pid)
-            resources = ("unavailable" if usage is None
-                         else f"{usage[0]:.0f}% CPU · {usage[1]:.1f} GB RAM")
+            if now >= gpu_sample["next_at"] and not gpu_sample["running"]:
+                gpu_sample["running"] = True
+                gpu_sample["next_at"] = now + 2.0
+                generation = gpu_sample["generation"]
+
+                def sample_gpu():
+                    value = query_gpu_usage()
+                    if gpu_sample["generation"] == generation:
+                        gpu_sample["usage"] = value
+                        gpu_sample["running"] = False
+
+                threading.Thread(target=sample_gpu, daemon=True).start()
+            resources = format_resource_usage(usage, gpu_sample["usage"])
             progress_resource_var.set(f"Resources: {resources} · Remaining time: {estimate}")
         root.after(100, poll_output)
 

@@ -15,9 +15,10 @@ from scripts.app.benchmark_frontend import (
 from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
-    effective_gui_options, estimate_remaining_seconds, format_run_outcome,
+    effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
+    parse_gpu_usage, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
@@ -291,6 +292,39 @@ def test_process_resource_usage_includes_child_processes():
             return parent
 
     assert process_resource_usage(42, Psutil) == (50, 3.0)
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "output", "expected"),
+    [
+        ("Darwin", '"PerformanceStatistics" = {"Device Utilization %"=67}', 67.0),
+        ("Linux", "12\n84\n", 84.0),
+        ("Linux", '{"card0": {"GPU use (%)": "53"}}', 53.0),
+        ("Linux", "not available", None),
+    ],
+)
+def test_parse_gpu_usage_handles_apple_nvidia_and_amd(platform_name, output, expected):
+    assert parse_gpu_usage(platform_name, output) == expected
+
+
+def test_query_gpu_usage_uses_non_privileged_apple_statistics():
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {
+            "returncode": 0,
+            "stdout": '"Device Utilization %"=72',
+        })()
+
+    assert query_gpu_usage("Darwin", run_fn=run, which_fn=lambda _: "/usr/sbin/ioreg") == 72
+    assert calls[0][0] == ["/usr/sbin/ioreg", "-r", "-d", "1", "-c", "AGXAccelerator"]
+    assert calls[0][1]["timeout"] == 2
+
+
+def test_format_resource_usage_includes_gpu_and_graceful_fallbacks():
+    assert format_resource_usage((50, 3.25), 77) == "50% CPU · 3.2 GB RAM · 77% GPU"
+    assert format_resource_usage(None, None) == "unavailable · GPU unavailable"
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():
