@@ -86,6 +86,8 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).
 
+Each loaded file's header row carries a `v<version>` badge showing the suite version that produced it, read from the results file's own top-level `version` field. Files written before that field existed simply omit the badge. The dashboard's own version — parsed from `config.py`'s `VERSION` at build time, so it is never a separately maintained copy — appears once beside the "Results Explorer" eyebrow. Comparing files whose badges disagree is supported, but a schema difference between versions is worth keeping in mind when a section renders unevenly.
+
 The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD and Intel hardware, and on NVIDIA hardware without a driver new enough for any of the prebuilt CUDA builds. The raw results retain that physical classification separately as `profile.hardware_backend`.
 
 **llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows.

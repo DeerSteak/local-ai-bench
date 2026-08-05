@@ -145,6 +145,7 @@ export default function Dashboard() {
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       ram_gb:   p.ram_gb   || null,
+      version:  data.version || null,
       timestamp: p.timestamp || null,
       reliabilityWarning: getRunReliabilityWarning(data),
       data,

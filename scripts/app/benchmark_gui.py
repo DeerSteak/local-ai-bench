@@ -593,7 +593,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     apply_saved_model_selection(custom_models, saved)
 
     root = tk.Tk()
-    root.title("Local AI Bench")
+    root.title(f"Local AI Bench v{config.VERSION}")
     root.geometry("1080x820")
     root.minsize(860, 650)
     root.columnconfigure(0, weight=1)
@@ -635,7 +635,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     config_tab.columnconfigure(0, weight=1)
     config_tab.rowconfigure(2, weight=1)
 
-    ttk.Label(config_tab, text="Local AI Bench", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+    ttk.Label(config_tab, text=f"Local AI Bench v{config.VERSION}", style="Title.TLabel").grid(row=0, column=0, sticky="w")
     ttk.Label(
         config_tab,
         text="Choose a ready-made preset or adjust any setting to create a remembered Custom configuration.",
@@ -1879,7 +1879,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if progress_window is not None and progress_window.winfo_exists():
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
-        progress_window.title("Local AI Bench Progress")
+        progress_window.title(f"Local AI Bench v{config.VERSION} Progress")
         progress_window.geometry("460x640")
         progress_window.minsize(380, 300)
         progress_window.attributes("-topmost", True)
