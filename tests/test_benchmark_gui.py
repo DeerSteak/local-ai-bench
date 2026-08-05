@@ -15,12 +15,13 @@ from scripts.app.benchmark_frontend import (
 from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
+    dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_usage, plan_preview_sections, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
-    process_resource_usage, update_progress_metrics, workload_preflight_errors,
+    process_resource_usage, selected_result_paths, update_progress_metrics, workload_preflight_errors,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -29,6 +30,28 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_selected_result_paths_supports_multiple_and_enforces_action_limits(tmp_path):
+    mapping = {"one": tmp_path / "one.json", "two": tmp_path / "two.json"}
+    assert selected_result_paths(("one", "two"), mapping) == [
+        (tmp_path / "one.json").resolve(), (tmp_path / "two.json").resolve(),
+    ]
+    with pytest.raises(ValueError, match="exactly 1"):
+        selected_result_paths(("one", "two"), mapping, exact=1)
+    with pytest.raises(ValueError, match="no more than 1"):
+        selected_result_paths(("one", "two"), mapping, maximum=1)
+
+
+def test_dashboard_launcher_command_passes_each_result_as_a_separate_argument(tmp_path):
+    paths = [tmp_path / "first result.json", tmp_path / "second.json"]
+    assert dashboard_launcher_command(paths, "Darwin", tmp_path) == [
+        "bash", str((tmp_path / "launch_dashboard.sh").resolve()),
+        "--result", str(paths[0].resolve()), "--result", str(paths[1].resolve()),
+    ]
+    assert dashboard_launcher_command(paths[:1], "Windows", tmp_path)[:3] == [
+        "cmd", "/c", str((tmp_path / "launch_dashboard.bat").resolve()),
+    ]
 
 
 def test_gui_options_round_trip_in_frontend_state(tmp_path):

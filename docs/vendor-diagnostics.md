@@ -10,7 +10,7 @@ Identity incompatibility takes precedence over a numerical difference. When iden
 
 ## Create and verify
 
-In **Result History**, set a baseline, select the candidate, and choose **Export Diagnostic**. Both systems' outbound metadata must be reviewed before the destination is selected.
+In **Result History**, select exactly two rows and choose **Export Diagnostic**. The earlier row is treated as the baseline and the later row as the candidate; both systems' outbound metadata must be reviewed before the destination is selected.
 
 ```bash
 python -m scripts.results.vendor_diagnostic_cli create BASELINE CANDIDATE OUTPUT.labdiag

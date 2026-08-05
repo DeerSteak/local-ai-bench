@@ -18,10 +18,12 @@ An interactive results explorer for visualising and exporting benchmark output.
 # Linux / macOS
 bash launch_dashboard.sh
 bash launch_dashboard.sh --port 8080   # use a different port
+bash launch_dashboard.sh --result results/first.json --result results/second.json
 
 # Windows
 launch_dashboard.bat
 launch_dashboard.bat --port 8080       # use a different port
+launch_dashboard.bat --result results\first.json --result results\second.json
 ```
 
 Desktop users can instead double-click **Launch Local AI Bench Dashboard** with the platform suffix `.command` on macOS, `.desktop` on Linux, or `.bat` on Windows. The launcher keeps the terminal open while the local dashboard server is running; closing or interrupting that server ends the dashboard session.
@@ -30,7 +32,7 @@ Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuild
 
 ## Loading results
 
-Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file now displays an import error below the drop zone rather than failing silently.
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
 
 New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning.
 

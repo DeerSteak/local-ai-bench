@@ -53,7 +53,7 @@ from scripts.runtime.engines import engine_names, get_engine
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.run_plan import load_run_plan
 from scripts.results.result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
-from scripts.results.result_history import compare_results, discover_results, filter_results, load_result as load_history_result
+from scripts.results.result_history import discover_results, filter_results, load_result as load_history_result
 from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
@@ -79,6 +79,30 @@ def open_path_command(path: Path, system: str) -> list[str]:
     if system == "Windows":
         return ["explorer", str(path)]
     return ["xdg-open", str(path)]
+
+
+def selected_result_paths(selected_items, item_paths: dict, *, exact: int | None = None,
+                          maximum: int | None = None) -> list[Path]:
+    paths = [Path(item_paths[item]).resolve() for item in selected_items if item in item_paths]
+    if exact is not None and len(paths) != exact:
+        noun = "result" if exact == 1 else "results"
+        raise ValueError(f"Select exactly {exact} {noun} first.")
+    if not paths:
+        raise ValueError("Select at least one result first.")
+    if maximum is not None and len(paths) > maximum:
+        raise ValueError(f"Select no more than {maximum} results.")
+    return paths
+
+
+def dashboard_launcher_command(result_paths: list[Path], system: str,
+                               repo_root: Path = config.SCRIPT_DIR) -> list[str]:
+    root = Path(repo_root).resolve()
+    launcher = root / ("launch_dashboard.bat" if system == "Windows"
+                       else "launch_dashboard.sh")
+    command = ["cmd", "/c", str(launcher)] if system == "Windows" else ["bash", str(launcher)]
+    for result_path in result_paths:
+        command.extend(("--result", str(Path(result_path).resolve())))
+    return command
 
 
 def launch_controlled_process(command: list[str], *, creationflags: int = 0,
@@ -1237,7 +1261,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_engine_combo.pack(side="left", padx=(8, 14))
     history_tree = ttk.Treeview(
         history_tab, columns=("date", "system", "status", "engine", "profile", "models"),
-        show="headings", selectmode="browse",
+        show="headings", selectmode="extended",
     )
     for column, label, width in (
         ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
@@ -1255,13 +1279,28 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Label(history_tab, textvariable=history_message).grid(row=4, column=0, sticky="w", pady=(8, 0))
     history_entries = {"all": [], "visible": []}
     history_item_paths = {}
-    baseline_path = {"value": None}
+
+    def selected_history_items():
+        return sorted(history_tree.selection(), key=history_tree.index)
 
     def selected_history_path():
-        selected = history_tree.selection()
-        if not selected:
-            raise ValueError("Select one result first.")
-        return Path(history_item_paths[selected[0]])
+        return selected_result_paths(selected_history_items(), history_item_paths, exact=1)[0]
+
+    def open_history_in_dashboard():
+        try:
+            paths = selected_result_paths(
+                selected_history_items(), history_item_paths, maximum=6,
+            )
+            command = dashboard_launcher_command(paths, platform.system())
+            options = {"cwd": config.SCRIPT_DIR}
+            if platform.system() == "Windows":
+                options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+            subprocess.Popen(command, **options)
+            history_message.set(
+                f"Opening {len(paths)} selected result{'s' if len(paths) != 1 else ''} in the dashboard."
+            )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Dashboard launch failed", str(exc), parent=root)
 
     def show_history_details(title, content):
         dialog = tk.Toplevel(root)
@@ -1312,34 +1351,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 f"Showing {len(history_entries['visible'])} results; ignored {len(skipped)} unreadable/non-result JSON files."
             )
 
-    def set_history_baseline():
-        try:
-            baseline_path["value"] = selected_history_path()
-            history_message.set(f"Baseline: {baseline_path['value'].name}")
-        except ValueError as exc:
-            messagebox.showerror("Baseline selection", str(exc), parent=root)
-
-    def compare_history_selection():
-        try:
-            candidate_path = selected_history_path()
-            if baseline_path["value"] is None:
-                raise ValueError("Set a baseline result first.")
-            comparison = compare_results(
-                load_history_result(baseline_path["value"]), load_history_result(candidate_path),
-            )
-            lines = [
-                "Compatible comparison" if comparison["compatible"] else
-                "Blocked comparison: " + ", ".join(comparison["incompatible_fields"]), "",
-            ]
-            for row in comparison["rows"]:
-                before = "missing" if row["baseline"] is None else f"{row['baseline']:.4g}"
-                after = "missing" if row["candidate"] is None else f"{row['candidate']:.4g}"
-                delta = "—" if row["percent_change"] is None else f"{row['percent_change']:+.2f}%"
-                lines.append(f"{row['metric']}: {before} → {after} ({delta})")
-            show_history_details("Baseline comparison", "\n".join(lines))
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Baseline comparison failed", str(exc), parent=root)
-
     def evaluate_history_selection():
         try:
             result_path = selected_history_path()
@@ -1362,10 +1373,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def export_history_diagnostic():
         try:
-            candidate_path = selected_history_path()
-            if baseline_path["value"] is None:
-                raise ValueError("Set a baseline result first.")
-            baseline = load_history_result(baseline_path["value"])
+            baseline_path, candidate_path = selected_result_paths(
+                selected_history_items(), history_item_paths, exact=2,
+            )
+            baseline = load_history_result(baseline_path)
             candidate = load_history_result(candidate_path)
             if review_outbound_metadata(
                     baseline, "diagnostic baseline", allow_aliases=False) is None:
@@ -1379,7 +1390,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             )
             if not destination:
                 return
-            write_vendor_diagnostic(baseline_path["value"], candidate_path, Path(destination))
+            write_vendor_diagnostic(baseline_path, candidate_path, Path(destination))
             messagebox.showinfo("Vendor diagnostic created", destination, parent=root)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Vendor diagnostic failed", str(exc), parent=root)
@@ -1625,10 +1636,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
-    ttk.Button(history_actions, text="Set Baseline", command=set_history_baseline).pack(side="left")
-    ttk.Button(history_actions, text="Compare to Baseline", command=compare_history_selection).pack(
-        side="left", padx=(8, 0),
-    )
+    ttk.Button(
+        history_actions, text="Open in Dashboard", command=open_history_in_dashboard,
+    ).pack(side="left")
     ttk.Button(history_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
         side="left", padx=(8, 0),
     )

@@ -5,6 +5,7 @@ import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
 import { getAccuracySettingsWarning } from "./utils/accuracy";
+import { fetchSelectedResultFiles } from "./utils/autoload";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
@@ -36,6 +37,7 @@ export default function Dashboard() {
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
+  const autoloadStartedRef = useRef(false);
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { sectionRef.current = section; }, [section]);
 
@@ -161,6 +163,14 @@ export default function Dashboard() {
       setFiles(prev => [...prev, entries[0]]);
     }
   }, []);
+
+  useEffect(() => {
+    if (autoloadStartedRef.current) return;
+    autoloadStartedRef.current = true;
+    fetchSelectedResultFiles(window.location.search)
+      .then(selectedFiles => processJsonFiles(selectedFiles))
+      .catch(error => setFileError(error.message));
+  }, [processJsonFiles]);
 
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();

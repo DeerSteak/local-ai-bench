@@ -28,7 +28,7 @@ Resume is allowed only when plan, model artifact, runtime, methodology, and case
 
 ## 7. Review evidence
 
-The user opens Result History, filters local files, selects a compatible baseline, and compares named measurements. Raw-sample inspection shows valid, excluded, and legacy evidence. An acceptance policy evaluates exact workload/model/case metrics with required evidence counts; missing, incompatible, insufficient, and invalid data reject rather than becoming zero. Evidence completeness and policy acceptance remain separate.
+The user opens Result History, filters and multi-selects local files, then opens them directly in the dashboard for visual comparison and raw-sample inspection of valid, excluded, and legacy evidence. An acceptance policy evaluates exact workload/model/case metrics with required evidence counts; missing, incompatible, insufficient, and invalid data reject rather than becoming zero. Evidence completeness and policy acceptance remain separate.
 
 ## 8. Export and report
 

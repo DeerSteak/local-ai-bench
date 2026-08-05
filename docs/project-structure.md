@@ -22,13 +22,13 @@
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
-| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
-| `launch_dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
+| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
+| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `scripts/` | Packaged implementation grouped by application, runtime, workloads, results, setup, and release responsibilities |
 | `results/` | Default benchmark output — `results_*.json`, generated-image folders, and one `answers_<test>_*` JSON sidecar per selected accuracy workload |
-| `dashboard/` | The results-explorer web app (React + Vite) |
+| `dashboard/` | The results-explorer web app (React + Vite), including the temporary selected-result staging utility used by local launchers |
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `tests/fixtures/` | Immutable compatibility results that freeze commercially important application/schema behavior before execution-kernel migration |
 | `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
@@ -40,7 +40,7 @@
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
-| `docs/result-history.md` | Filesystem-owned result discovery, filtering, comparison, and policy evaluation |
+| `docs/result-history.md` | Filesystem-owned result discovery, filtering, dashboard launch, and policy evaluation |
 | `docs/vendor-diagnostics.md` | First-divergence diagnostic content, verification, and engineer workflow |
 | `docs/outbound-review.md` | Embargo-safe identity preview, private aliases, and source verification |
 | `docs/offline-mode.md` | Loopback-only execution policy, inherited controls, and qualification boundary |
