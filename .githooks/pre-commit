@@ -1,0 +1,16 @@
+#!/bin/sh
+# Keeps every mirrored version string equal to config.py's VERSION (see docs/release-policy.md).
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+if [ -x "$root/bench-env/bin/python" ]; then
+  python="$root/bench-env/bin/python"
+elif [ -x "$root/bench-env/Scripts/python.exe" ]; then
+  python="$root/bench-env/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then
+  python=python3
+else
+  python=python
+fi
+
+"$python" -m scripts.release.version_sync || exit 1

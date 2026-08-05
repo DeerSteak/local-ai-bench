@@ -27,6 +27,7 @@
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `scripts/` | Packaged implementation grouped by application, runtime, workloads, results, setup, and release responsibilities |
+| `.githooks/pre-commit` | Version-sync hook — see [Release policy](release-policy.md#version-sync-hook); enable per clone with `git config core.hooksPath .githooks` |
 | `results/` | Default benchmark output — `results_*.json`, generated-image folders, and one `answers_<test>_*` JSON sidecar per selected accuracy workload |
 | `dashboard/` | The results-explorer web app (React + Vite), including the temporary selected-result staging utility used by local launchers |
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |

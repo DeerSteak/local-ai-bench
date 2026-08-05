@@ -34,6 +34,20 @@ The [release artifact manifest](release-artifacts.md) records deterministic SHA-
 
 Release approval records the product, methodology, engineering, security, licensing, design, and release-operations decisions separately. A failed gate blocks stable status; it may produce a clearly labeled preview build but cannot be silently waived.
 
+## Version sync hook
+
+`VERSION` in [`scripts/runtime/config.py`](../scripts/runtime/config.py) is the single source of truth for the application version. Every other place the version appears is a mirror generated from it: the `# Local AI Bench vX.Y` title in `README.md`, and the dashboard's `SUITE_VERSION`, which `dashboard/vite.config.js` already parses out of `config.py` at build time.
+
+`.githooks/pre-commit` runs `python -m scripts.release.version_sync` on every commit. It rewrites any mirror that disagrees with `VERSION` and stages the rewrite, so bumping `VERSION` alone is enough to release a new version. It refuses the commit — printing which file and which string — when the version was edited in a mirror instead of in `config.py`, so a bump can never enter the repo through the wrong file. Mirror drift that predates the commit is repaired rather than blocked.
+
+Hooks are not cloned with a repository, so enable the hook once per working copy:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing whitespace as groups 1–3.
+
 ## Release channels and notes
 
 Preview builds are opt-in and may be promoted only after a staged cohort shows acceptable install, valid-run, recovery, and support outcomes. Stable rollout is staged with a halt condition and a tested route back to the last signed stable release. Automatic updates are not enabled until signature verification, downgrade protection, recovery, and rollback are implemented and qualified.
