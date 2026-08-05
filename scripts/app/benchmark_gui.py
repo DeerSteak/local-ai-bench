@@ -73,6 +73,10 @@ def effective_gui_options(state: dict | None) -> dict:
     return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
 
 
+def compact_configuration_layout(width: int) -> bool:
+    return width < 960
+
+
 def open_path_command(path: Path, system: str) -> list[str]:
     if system == "Darwin":
         return ["open", str(path)]
@@ -629,17 +633,19 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
         text = label if entry.available else f"{label} (model not installed)"
-        widget = ttk.Checkbutton(tests_box, text=text, variable=test_vars[name])
-        widget.grid(row=row, column=0, sticky="w")
+        control_row = ttk.Frame(tests_box)
+        control_row.grid(row=row, column=0, columnspan=2, sticky="ew")
+        widget = ttk.Checkbutton(control_row, text=text, variable=test_vars[name])
+        widget.pack(side="left")
         ttk.Button(
-            tests_box, text="Reset", width=6,
+            control_row, text="Reset", width=6,
             command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
-        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
+        ).pack(side="left", padx=(8, 0))
         test_widgets[name] = widget
     ttk.Label(
         tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
         wraplength=430,
-    ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
+    ).grid(row=len(TEST_DEFINITIONS), column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(configuration_frame, text="Installed models", padding=12)
     models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
@@ -651,19 +657,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             ttk.Label(models_box, text=entry.section, style="Section.TLabel").grid(row=row, column=0, sticky="w", pady=(7, 2))
             row += 1
             previous = entry.section
-        widget = ttk.Checkbutton(models_box, text=entry.label, variable=model_vars[entry.value])
-        widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
+        control_row = ttk.Frame(models_box)
+        control_row.grid(row=row, column=0, columnspan=2, sticky="ew", padx=(12, 0))
+        widget = ttk.Checkbutton(control_row, text=entry.label, variable=model_vars[entry.value])
+        widget.pack(side="left")
         ttk.Button(
-            models_box, text="Reset", width=6,
+            control_row, text="Reset", width=6,
             command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
-        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
+        ).pack(side="left", padx=(8, 0))
         model_widgets[entry.value] = widget
         row += 1
     model_end_row = row
     ttk.Label(
         models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
         wraplength=430,
-    ).grid(row=row, column=0, sticky="w", pady=(8, 0))
+    ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(configuration_frame, text="Workload sizes", padding=12)
     workload_box.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -1010,6 +1018,37 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
     )
+
+    configuration_layout = {"compact": None}
+
+    def update_configuration_layout(event=None):
+        compact = compact_configuration_layout(
+            event.width if event is not None else configuration_frame.winfo_width(),
+        )
+        if configuration_layout["compact"] == compact:
+            return
+        configuration_layout["compact"] = compact
+        tests_box.grid_configure(
+            row=3, column=0, columnspan=2 if compact else 1,
+            padx=0 if compact else (0, 6),
+        )
+        models_box.grid_configure(
+            row=4 if compact else 3, column=0 if compact else 1,
+            columnspan=2 if compact else 1, padx=0 if compact else (6, 0),
+        )
+        workload_box.grid_configure(row=5 if compact else 4)
+        execution_box.grid_configure(
+            row=6 if compact else 5, column=0, columnspan=2 if compact else 1,
+            padx=0 if compact else (0, 6),
+        )
+        paths_box.grid_configure(
+            row=7 if compact else 5, column=0 if compact else 1,
+            columnspan=2 if compact else 1, padx=0 if compact else (6, 0),
+        )
+        refresh_tk_layout(configuration_frame)
+
+    configuration_frame.bind("<Configure>", update_configuration_layout, add="+")
+    root.after_idle(update_configuration_layout)
 
     footer = ttk.Frame(config_tab)
     footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))

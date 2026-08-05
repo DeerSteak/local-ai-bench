@@ -21,7 +21,8 @@ from scripts.app.benchmark_gui import (
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_usage, plan_preview_sections, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
-    preset_control_values, process_resource_usage, preset_after_control_change, restored_preset_name,
+    compact_configuration_layout, preset_control_values, process_resource_usage,
+    preset_after_control_change, restored_preset_name,
     selected_result_paths, update_progress_metrics, workload_preflight_errors,
 )
 from scripts.results.run_plan import RunPlan
@@ -31,6 +32,11 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_configuration_layout_stacks_sections_below_breakpoint():
+    assert compact_configuration_layout(959) is True
+    assert compact_configuration_layout(960) is False
 
 
 def test_selected_result_paths_supports_multiple_and_enforces_action_limits(tmp_path):
