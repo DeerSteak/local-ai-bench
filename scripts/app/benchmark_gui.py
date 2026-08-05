@@ -1926,8 +1926,36 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             ttk.Label(resource_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
         progress_remaining_var.set("Remaining time: calibrating")
         ttk.Label(shell, textvariable=progress_remaining_var).pack(anchor="w", pady=(2, 6))
+        status_shell = ttk.Frame(shell)
+        status_shell.pack(fill="both", expand=True)
+        status_canvas = tk.Canvas(status_shell, highlightthickness=0)
+        status_scrollbar = ttk.Scrollbar(status_shell, orient="vertical", command=status_canvas.yview)
+        status_list = ttk.Frame(status_canvas)
+        status_window = status_canvas.create_window((0, 0), window=status_list, anchor="nw")
+        status_list.bind(
+            "<Configure>", lambda _event: status_canvas.configure(scrollregion=status_canvas.bbox("all")),
+        )
+        status_canvas.bind(
+            "<Configure>", lambda event: status_canvas.itemconfigure(status_window, width=event.width),
+        )
+        status_canvas.configure(yscrollcommand=status_scrollbar.set)
+        status_canvas.pack(side="left", fill="both", expand=True)
+        status_scrollbar.pack(side="right", fill="y")
+
+        def scroll_status(event):
+            units = mousewheel_scroll_units(
+                delta=getattr(event, "delta", 0), button=getattr(event, "num", 0),
+                platform_name=root.tk.call("tk", "windowingsystem"),
+            )
+            if units:
+                status_canvas.yview_scroll(units, "units")
+            return "break"
+
+        progress_window.bind("<MouseWheel>", scroll_status)
+        progress_window.bind("<Button-4>", scroll_status)
+        progress_window.bind("<Button-5>", scroll_status)
         for stage in (key for key in STAGE_ORDER if key in tests):
-            row = ttk.Frame(shell)
+            row = ttk.Frame(status_list)
             row.pack(fill="x", pady=(6, 1))
             ttk.Label(row, text=labels.get(stage, stage), font=("TkDefaultFont", 10, "bold")).pack(
                 side="left", anchor="w",
@@ -1943,7 +1971,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             else:
                 stage_models = []
             for entry in stage_models:
-                model_row = ttk.Frame(shell)
+                model_row = ttk.Frame(status_list)
                 model_row.pack(fill="x", padx=(14, 0), pady=1)
                 ttk.Label(model_row, text=entry.label, width=32).pack(side="left", anchor="w")
                 variable = tk.StringVar(value="○ Queued")
