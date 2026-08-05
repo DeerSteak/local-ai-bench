@@ -23,11 +23,12 @@ def engine_model_dir(models_root: Path, engine: str, tag: str) -> Path:
     return Path(models_root) / engine / model_tag_slug(tag)
 
 
-def engine_download_size(model: dict, engine: str) -> str:
-    """The download size for this model under `engine`; engines carry different weights."""
+def engine_download_size(model: dict, engine: str) -> str | None:
+    """Download size under `engine`, or None for entries with no engine weights
+    (image checkpoints). Engines carry different weights for the same model."""
     if engine == "vllm":
-        return model.get("vllm_download_size") or model["download_size"]
-    return model["download_size"]
+        return model.get("vllm_download_size") or model.get("download_size")
+    return model.get("download_size")
 
 
 def engine_model_complete(model_dir: Path, engine: str, filenames=()) -> bool:
@@ -51,6 +52,8 @@ def engine_fit_report(model: dict, engines, ceiling_gb: float | None) -> dict[st
         if engine == "vllm" and not model.get("vllm_repo"):
             continue
         size = engine_download_size(model, engine)
+        if size is None:
+            continue
         report[engine] = {
             "size": size,
             "needed_gb": hardware.model_memory_requirement_gb(size),

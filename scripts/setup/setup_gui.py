@@ -37,7 +37,7 @@ HF_LOGIN_URL = "https://huggingface.co/login"
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
     """One model row: per-engine sizes, plus a warning per engine it won't fit."""
     report = engine_fit_report(model, engines, memory_ceiling_gb)
-    if not report:
+    if not report:  # image checkpoints carry no per-engine weights
         return f"{model['label']}  {model.get('download_size', '')}".rstrip()
     label = f"{model['label']}  {format_engine_sizes(report)}"
     for warning in engine_fit_warnings(report, memory_ceiling_gb):

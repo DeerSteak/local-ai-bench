@@ -388,3 +388,17 @@ def test_real_catalog_sizes_differ_between_engines():
     differing = [m for m in LLM_MODELS
                  if engine_download_size(m, "vllm") != engine_download_size(m, "llamacpp")]
     assert len(differing) == len(LLM_MODELS), "every LLM should carry its own vLLM size"
+
+
+def test_image_checkpoints_have_no_engine_download_size():
+    image = {"label": "SDXL", "checkpoint": "sd_xl_base_1.0.safetensors", "short": "sdxl"}
+    assert engine_download_size(image, "llamacpp") is None
+    assert engine_download_size(image, "vllm") is None
+    assert engine_fit_report(image, ["llamacpp", "vllm"], 100) == {}
+    assert fits_any_engine(engine_fit_report(image, ["llamacpp"], 100)) is None
+
+
+def test_fit_report_skips_engines_without_a_size_but_keeps_the_others():
+    partial = {"tag": "m", "vllm_download_size": "~9 GB", "vllm_repo": "org/m"}
+    report = engine_fit_report(partial, ["llamacpp", "vllm"], 100)
+    assert list(report) == ["vllm"]

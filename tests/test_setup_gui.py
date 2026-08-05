@@ -220,3 +220,26 @@ def test_a_model_fitting_only_one_selected_engine_stays_checked():
     both = default_model_selection(12.0, ["llamacpp", "vllm"])
     llamacpp = default_model_selection(12.0, ["llamacpp"])
     assert both == llamacpp, "still worth downloading for the engine it fits"
+
+
+def test_model_row_label_renders_every_real_catalog_entry():
+    """Image checkpoints carry no download_size; the GUI labels them anyway."""
+    from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+    for engines in (["llamacpp"], ["vllm"], ["llamacpp", "vllm"]):
+        for model in LLM_MODELS + EMBED_MODELS + IMAGE_MODELS:
+            label = model_row_label(model, engines, 117.1)
+            assert label.startswith(model["label"])
+
+
+def test_model_row_label_handles_an_entry_without_any_size():
+    assert model_row_label({"label": "SDXL"}, ["llamacpp", "vllm"], 100) == "SDXL"
+
+
+def test_default_model_selection_covers_every_real_catalog_entry():
+    from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS
+    for engines in (["llamacpp"], ["vllm"], ["llamacpp", "vllm"]):
+        selection = default_model_selection(117.1, engines)
+        for model in LLM_MODELS:
+            assert model["tag"] in selection
+        for model in IMAGE_MODELS:
+            assert model["short"] in selection
