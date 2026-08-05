@@ -174,26 +174,41 @@ def test_rocm_and_nightly_commands_use_their_own_indexes():
     assert NIGHTLY_CU130_INDEX in nightly
 
 
-def test_find_vllm_binary_prefers_the_project_venv():
+def test_find_vllm_binary_prefers_a_system_install():
+    assert find_vllm_binary(
+        platform_name="Linux", venv_dir=Path("/proj/vllm-env"),
+        exists_fn=lambda _: True, which_fn=lambda _: "/usr/bin/vllm",
+    ) == "/usr/bin/vllm"
+
+
+def test_find_vllm_binary_falls_back_to_the_project_venv():
     venv = Path("/proj/vllm-env")
-    found = find_vllm_binary(
+    assert find_vllm_binary(
         platform_name="Linux", venv_dir=venv,
         exists_fn=lambda path: str(path).endswith("vllm-env/bin/vllm"),
-        which_fn=lambda _: "/usr/bin/vllm",
-    )
-    assert found == str(venv / "bin" / "vllm")
+        which_fn=lambda _: None,
+    ) == str(venv / "bin" / "vllm")
 
 
-def test_find_vllm_binary_falls_back_to_metal_venv_then_path():
+def test_find_vllm_binary_prefers_the_metal_venv_over_the_project_venv_on_macos():
     metal = str(Path.home() / ".venv-vllm-metal" / "bin" / "vllm")
     assert find_vllm_binary(
         platform_name="Darwin", venv_dir=Path("/proj/vllm-env"),
-        exists_fn=lambda path: str(path) == metal, which_fn=lambda _: None,
+        exists_fn=lambda _: True, which_fn=lambda _: None,
     ) == metal
-    assert find_vllm_binary(
-        platform_name="Linux", venv_dir=Path("/proj/vllm-env"),
-        exists_fn=lambda _: False, which_fn=lambda _: "/usr/bin/vllm",
-    ) == "/usr/bin/vllm"
+
+
+def test_find_vllm_binary_returns_none_when_nothing_is_installed():
+    assert find_vllm_binary(platform_name="Linux", venv_dir=Path("/proj/vllm-env"),
+                            exists_fn=lambda _: False, which_fn=lambda _: None) is None
+
+
+def test_find_vllm_binary_uses_windows_paths():
+    found = find_vllm_binary(
+        platform_name="Windows", venv_dir=Path("C:/proj/vllm-env"),
+        exists_fn=lambda _: True, which_fn=lambda _: None,
+    )
+    assert found.endswith("Scripts/vllm.exe") or found.endswith("Scripts\\vllm.exe")
 
 
 def test_find_vllm_binary_does_not_look_for_a_metal_venv_off_macos():

@@ -12,6 +12,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Small tier (≤20B params)](#small-tier-20b-params)
   - [Medium tier (26–35B params)](#medium-tier-2635b-params)
   - [Large tier (70B+ params)](#large-tier-70b-params)
+  - [Per-engine weights](#per-engine-weights)
   - [Dense vs. Mixture-of-Experts (MoE)](#dense-vs-mixture-of-experts-moe)
 - [Image Generation](#image-generation)
 - [Embeddings](#embeddings)
@@ -97,6 +98,31 @@ The medium tier contrasts three models with similar total parameter counts but v
 The large tier assigns each slot a distinct role. Llama 3.3 70B is the dense general-purpose baseline. Qwen3-Coder-Next is the long-horizon execution specialist, trained for coding agents, complex tool use, and recovery after failed actions. Nemotron 3 Super is the broader agentic reasoning model and represents the planner/verifier role for long-context, multi-step workflows. This combination measures a dense generalist, a fast sparse tool specialist, and a more capable sparse planner instead of using two large Llama-family models with overlapping general-purpose roles.
 
 The tier is intentionally limited to one model per role and avoids spending multiple slots on overlapping general-purpose models. Its capabilities also align with what the suite can measure: the code and tool accuracy tests exercise structured execution, while conversation and concurrency exercise sustained context and multi-request behavior. Qwen3-Coder-Next therefore represents carrying out long sequences of tool-heavy steps, while Nemotron 3 Super represents planning and verifying the broader workflow. Their different sparse architectures add an inference comparison that model size alone would not expose.
+
+### Per-engine weights
+
+Every size in the tier tables above is the **llama.cpp** `Q4_K_M` GGUF. Those files are llama.cpp's alone — vLLM cannot use them, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into `models/vllm/<slug>/` when vLLM is a selected engine. Same model, same tier, same tag, different file:
+
+| Tag | vLLM weights | Format | Size |
+|---|---|---|---|
+| `gemma3:1b-it-q4_K_M` | `gaunernst/gemma-3-1b-it-int4-awq` | AWQ INT4 | ~1.1 GB |
+| `granite4.1:3b-q4_K_M` | `cyankiwi/granite-4.1-3b-AWQ-INT4` | AWQ INT4 | ~2.4 GB |
+| `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | AWQ INT4 | ~4.1 GB |
+| `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | AWQ INT4 | ~5.5 GB |
+| `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | AWQ INT4 | ~12.4 GB |
+| `gemma4:12b-it-q4_K_M` | `google/gemma-4-12B-it-qat-w4a16-ct` | QAT W4A16 (compressed-tensors) | ~10.3 GB |
+| `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | W4A16 | ~19.8 GB |
+| `nemotron-3-nano:30b-a3b-q4_K_M` | `stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ` | AWQ INT4 | ~17.9 GB |
+| `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | AWQ INT4 | ~25.1 GB |
+| `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
+| `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |
+| `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | AWQ INT4 | ~80.7 GB |
+| `nomic-embed-text` | `nomic-ai/nomic-embed-text-v1.5` | fp16 | ~0.6 GB |
+| `mxbai-embed-large` | `mixedbread-ai/mxbai-embed-large-v1` | fp16 | ~0.7 GB |
+
+These are selected to match `Q4_K_M`'s **bit width**, which is as close as the two runtimes get — see [Limitations](limitations.md#cross-engine-comparison) for what that does and doesn't license you to conclude. Gemma 4 12B is the one entry that differs in kind: Google publishes an official quantization-aware-trained W4A16 checkpoint, which is a better weight than any community AWQ conversion of the same model, so it is used in preference. The two embedding models are unquantized upstream fp16 repos on both engines.
+
+Sizes here are the sum of the repo's safetensors and config files. A vLLM snapshot is generally *not* the same size as the corresponding GGUF — compare the two size columns before selecting both engines, and see [Setup](setup.md#choosing-engines).
 
 ### Dense vs. Mixture-of-Experts (MoE)
 

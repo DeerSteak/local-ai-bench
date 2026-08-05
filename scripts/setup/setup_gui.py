@@ -54,6 +54,8 @@ def validate_gui_plan(plan: dict) -> list[str]:
         entered = str(plan.get("comfyui_path", "")).strip()
         if not entered or not normalize_comfyui_dir(Path(entered)):
             errors.append("The existing ComfyUI path is not usable.")
+    if "engines" in plan and not plan["engines"]:
+        errors.append("Select at least one inference engine.")
     return errors
 
 
@@ -85,19 +87,21 @@ def token_controls_enabled(existing_available: bool, override: bool) -> bool:
     return not existing_available or override
 
 
-def vllm_offer_label(offer: dict | None) -> str:
-    """Checkbox text for the optional vLLM install, or "" when it isn't on offer."""
-    if not offer:
-        return ""
-    suffix = " (experimental on this platform)" if offer.get("status") == "experimental" else ""
-    return f"Also install vLLM as a second engine{suffix} — several GB, in its own environment"
+def engine_checkbox_label(entry: dict) -> str:
+    """Checkbox text for one engine row, including why a disabled one is unavailable."""
+    label = entry["label"]
+    if entry.get("experimental") and entry["enabled"]:
+        label += " (experimental)"
+    if not entry["enabled"]:
+        label += " (unavailable on this system)"
+    return f"{label} — {entry['note']}"
 
 
 def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
                              existing_hf_token: bool = False,
-                             vllm_offer: dict | None = None) -> dict | None:
+                             engine_entries: list[dict] | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -109,7 +113,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "detected_comfyui": str(detected_comfyui) if detected_comfyui else None,
             "cleanup_names": cleanup_names,
             "existing_hf_token": existing_hf_token,
-            "vllm_offer": vllm_offer,
+            "engine_entries": engine_entries or [],
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -128,7 +132,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
                      existing_hf_token: bool = False,
-                     vllm_offer: dict | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     engine_entries: list[dict] | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -193,13 +197,21 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(welcome, text=memory_text, wraplength=740).grid(sticky="w", pady=8)
     if detected_comfyui:
         ttk.Label(welcome, text=f"Existing ComfyUI detected: {detected_comfyui}", wraplength=740).grid(sticky="w")
-    install_vllm_var = tk.BooleanVar(value=False)
-    if vllm_offer:
-        ttk.Checkbutton(
-            welcome, text=vllm_offer_label(vllm_offer), variable=install_vllm_var,
-        ).grid(sticky="w", pady=(12, 0))
-        ttk.Label(welcome, text=vllm_offer.get("reason", ""), wraplength=740,
-                  justify="left").grid(sticky="w")
+    engine_entries = engine_entries or []
+    engine_vars: dict[str, "tk.BooleanVar"] = {}
+    if engine_entries:
+        ttk.Label(welcome, text="Engines", font=("TkDefaultFont", 12, "bold")).grid(
+            sticky="w", pady=(16, 0))
+        ttk.Label(welcome, wraplength=740, justify="left",
+                  text="Models you select later are downloaded for every engine checked here.",
+                  ).grid(sticky="w")
+        for entry in engine_entries:
+            var = tk.BooleanVar(value=entry["checked"] and entry["enabled"])
+            engine_vars[entry["name"]] = var
+            ttk.Checkbutton(
+                welcome, text=engine_checkbox_label(entry), variable=var,
+                state="normal" if entry["enabled"] else "disabled",
+            ).grid(sticky="w", pady=(4, 0))
 
     models_page = new_page()
     ttk.Label(models_page, text="Choose models", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -376,7 +388,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             "use_existing_hf_token": existing_hf_token and not hf_token,
             "comfyui_mode": comfy_mode_var.get(),
             "comfyui_path": comfy_path_var.get().strip(),
-            "install_vllm": bool(vllm_offer) and install_vllm_var.get(),
+            "engines": [entry["name"] for entry in engine_entries
+                        if entry["enabled"] and engine_vars[entry["name"]].get()],
         }
 
     def refresh_review() -> None:
@@ -389,8 +402,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Hugging Face token: {hf_token_review_label(plan)}",
             f"ComfyUI: {plan['comfyui_mode']}",
         ]
-        if vllm_offer:
-            lines.append(f"Install vLLM: {'yes' if plan['install_vllm'] else 'no'}")
+        if engine_entries:
+            lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
         if plan["comfyui_path"]:
             lines.append(f"ComfyUI path: {plan['comfyui_path']}")
         lines.extend(["", "Nothing will be downloaded until you click Install."])
@@ -453,7 +466,7 @@ def main() -> None:  # pragma: no cover
         detected_comfyui=Path(request["detected_comfyui"]) if request["detected_comfyui"] else None,
         cleanup_names=request["cleanup_names"],
         existing_hf_token=request["existing_hf_token"],
-        vllm_offer=request.get("vllm_offer"),
+        engine_entries=request.get("engine_entries") or [],
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

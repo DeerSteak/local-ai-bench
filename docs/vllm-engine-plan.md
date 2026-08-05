@@ -16,7 +16,7 @@
 
 ## Status
 
-**The setup half is implemented** — [`scripts/setup/vllm_install.py`](../scripts/setup/vllm_install.py) plus detection, the opt-in prompt/checkbox, and the installer in `setup_check.py`/`setup_gui.py`; see [Setup](setup.md#optional-vllm-install). Scope as agreed: Linux CUDA and ROCm as supported, DGX Spark (nightly cu130) and macOS Apple Silicon (vllm-metal) as experimental, Windows/XPU/CPU-only reported unsupported with a reason. Item 5 below (model weights) was deliberately left out — it is blocked on the quantization question.
+**The setup half is complete** — [`scripts/setup/vllm_install.py`](../scripts/setup/vllm_install.py) plus detection, the opt-in prompt/checkbox, and the installer in `setup_check.py`/`setup_gui.py`; see [Setup](setup.md#optional-vllm-install). Scope as agreed: Linux CUDA and ROCm as supported, DGX Spark (nightly cu130) and macOS Apple Silicon (vllm-metal) as experimental, Windows/XPU/CPU-only reported unsupported with a reason. Model weights are included: setup now asks which engines to install up front (llama.cpp on by default, vLLM off and disabled where unsupported), and downloads the selected models for every selected engine. The quantization question below is answered — vLLM uses 4-bit AWQ/GPTQ/W4A16 safetensors as the closest analogue to this project's `Q4_K_M` GGUFs.
 
 Everything else here — the engine, the catalog, the results/dashboard changes — is still plan only. Written August 2026 against vLLM's stable docs at the time; vLLM's install matrix moves fast, so every command below should be re-checked against [docs.vllm.ai](https://docs.vllm.ai/en/stable/getting_started/installation/) at implementation time rather than trusted as pinned truth.
 
@@ -86,7 +86,7 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 - GUI (`setup_gui.py`): matching checkbox, plus the plan record it returns.
 - The "This will:" summary block gains a `• Install vLLM (…)` line.
 
-**5. Model downloads.** *(not started — needs the quantization decision below)* vLLM weights are whole repos, not single files.
+**5. Model downloads.** *(done)* vLLM weights are whole repos, not single files.
 - Extend the catalog (see below) and add a `snapshot_download`-based path alongside `hf_download` (`huggingface_hub` is already a dependency), with allow-patterns to skip `.bin` duplicates of `.safetensors`.
 - Reuse `resumable_download.py`'s behavior where possible; whole-repo snapshots need their own completeness check.
 - Store under `config.MODELS_DIR / "vllm" / <slug>`, matching `LlamaCppEngine._models_dir()`'s per-engine namespacing.
@@ -144,9 +144,10 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 
 ## Open questions for the user
 
-1. **Which quantization for vLLM weights?** bf16 (comparable across backends, but rules out most of the catalog on smaller GPUs), FP8 (fast, needs Hopper/Blackwell or MI300+), or AWQ/GPTQ (closest in size to `q4_K_M`, but CUDA-centric kernels)? This decides how much of the catalog is runnable and how honest the cross-engine comparison can be.
-2. **Which platforms are actually in scope for v1?** Recommendation: Linux CUDA + Linux ROCm only, with everything else reporting "unsupported" and a reason. macOS via `vllm-metal` and DGX Spark via nightly wheels are real but experimental; Windows and XPU are not worth the maintenance.
-3. **Embeddings under vLLM** — support them (a second `--task embed` server per model) or skip the embeddings workload on this engine in v1?
+1. ~~Which quantization for vLLM weights?~~ **Answered: 4-bit AWQ/GPTQ/W4A16**, to match `Q4_K_M`'s bit width. Every catalog entry now carries a verified `vllm_repo`. Two consequences to watch: AWQ/GPTQ Marlin kernels are CUDA-centric, so some of these will not run on ROCm or Metal, and `google/gemma-4-12B-it-qat-w4a16-ct` is a compressed-tensors QAT checkpoint rather than AWQ — the one entry that differs in kind from the rest.
+2. ~~Which platforms are in scope?~~ **Answered: Linux CUDA + ROCm supported, DGX Spark and macOS Metal experimental**, Windows/XPU/CPU-only declined with a reason.
+3. **Embeddings under vLLM** — the two embedding models now download their upstream fp16 repos, but serving them needs a separate `--task embed` server per model. Still open whether `VllmEngine` supports the embeddings workload in v1.
+4. **Which models actually load under vLLM at these quantizations** is unverified — the repos exist and are ungated, but nothing has been served yet. Expect some to need `--max-model-len` capping or to fail on a given backend.
 
 ---
 

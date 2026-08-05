@@ -5,7 +5,7 @@ import pytest
 
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
-    vllm_offer_label,
+    engine_checkbox_label,
     default_model_selection,
     hf_token_review_label,
     license_button_label,
@@ -158,8 +158,20 @@ def test_refresh_tk_layout_flushes_now_and_after_idle():
     assert calls == ["refresh", "scheduled", "refresh"]
 
 
-def test_vllm_offer_label_marks_experimental_platforms():
-    assert vllm_offer_label(None) == ""
-    supported = vllm_offer_label({"status": "supported", "reason": "x"})
-    assert "experimental" not in supported and "vLLM" in supported
-    assert "experimental" in vllm_offer_label({"status": "experimental", "reason": "x"})
+def test_engine_checkbox_label_marks_experimental_and_unavailable_engines():
+    plain = {"label": "llama.cpp", "enabled": True, "note": "already installed"}
+    assert engine_checkbox_label(plain) == "llama.cpp — already installed"
+
+    experimental = {"label": "vLLM", "enabled": True, "experimental": True, "note": "nightly"}
+    assert "(experimental)" in engine_checkbox_label(experimental)
+
+    blocked = {"label": "vLLM", "enabled": False, "experimental": True, "note": "no Windows build"}
+    assert "(unavailable on this system)" in engine_checkbox_label(blocked)
+    assert "(experimental)" not in engine_checkbox_label(blocked)
+
+
+def test_gui_plan_requires_at_least_one_engine():
+    base = {"comfyui_mode": "download"}
+    assert validate_gui_plan({**base, "engines": []}) == ["Select at least one inference engine."]
+    assert validate_gui_plan({**base, "engines": ["llamacpp"]}) == []
+    assert validate_gui_plan(base) == []

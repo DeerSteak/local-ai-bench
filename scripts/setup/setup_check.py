@@ -30,12 +30,19 @@ from scripts.runtime.comfyui_installation import (
     write_extra_model_paths,
 )
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
-from scripts.setup.model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
+from scripts.setup.model_inventory import (
+    delete_non_catalog_model_dirs, engine_download_size, engine_model_complete,
+    engine_model_dir, find_non_catalog_model_dirs, models_missing_engine_support,
+)
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
+from scripts.setup.engine_selection import (
+    LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
+    selected_engine_names, toggle_engine,
+)
 from scripts.setup.vllm_install import find_vllm_binary, install_vllm, vllm_platform_support
 from scripts.app.interface_mode import select_interface_mode
 
@@ -148,6 +155,36 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
                 except OSError:
                     pass
     return success
+
+def hf_snapshot_download(repo, dest_dir, token=None):
+    """Download a whole HF repo (vLLM needs the config/tokenizer beside the weights).
+    Real files under dest_dir, not symlinks into the shared HF cache, so deleting
+    models/vllm/<slug>/ actually frees the space."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    if token:
+        env["HF_TOKEN"] = token
+    ignore = ["*.pth", "*.bin", "original/*"]  # skip duplicate formats of the same weights
+    for cli in ["hf", "huggingface-cli"]:
+        if shutil.which(cli):
+            command = [cli, "download", repo, "--local-dir", str(dest_dir)]
+            for pattern in ignore:
+                command += ["--exclude", pattern]
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+            stderr = (result.stderr or result.stdout or "").strip()
+            if stderr:
+                warn(f"{cli} error: {stderr}")
+            break
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+        snapshot_download(repo_id=repo, local_dir=str(dest_dir), token=token,
+                          ignore_patterns=ignore)
+        return True
+    except Exception as e:
+        warn(f"Python API download failed: {e}")
+        return False
 
 issues = []
 
@@ -723,25 +760,39 @@ else:
     if vllm_support.status == "experimental":
         info("This vLLM path is experimental and unverified by this project's maintainers")
 
-needs_vllm_install = not vllm_found and vllm_support.installable
+# ── 4c. Engine selection ───────────────────────────────────────────────────────
+# Whatever models are picked later are downloaded for every engine selected here.
+
+engine_entries = build_engine_entries(
+    vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
+)
+
+def select_engines(entries):
+    """Numbered toggle picker for engines — same plain-input style as the model picker."""
+    section("Engines")
+    print("  Models you select later are downloaded for every engine checked here.\n")
+    while True:
+        for index, entry in enumerate(entries, start=1):
+            print(f"   {index}. {engine_summary_line(entry)}")
+        print()
+        choice = input("  Number to toggle, Enter to continue, q to cancel: ").strip().lower()
+        if choice == "":
+            return entries
+        if choice == "q":
+            print("\n  Setup cancelled — nothing was installed.\n")
+            sys.exit(0)
+        if choice.isdigit() and 1 <= int(choice) <= len(entries):
+            target = entries[int(choice) - 1]
+            if not toggle_engine(entries, target["name"]):
+                if not target["enabled"]:
+                    warn(f"{target['label']} can't be installed here — {target['note']}")
+                else:
+                    warn("At least one engine must stay selected")
+        else:
+            warn("Enter a listed number, Enter, or q")
+        print()
 
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
-
-section("Setup Plan")
-print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
-print("  This will:")
-print("    • Install Python dependencies from requirements.txt")
-if needs_llamacpp_install:
-    build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
-    print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
-if _detected_comfyui:
-    print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
-if needs_vllm_install:
-    print("    • Optionally install vLLM (asked separately below — several GB, its own environment)")
-print()
-print("  You'll then pick which models to install — everything after that")
-print("  runs on its own, with no further prompts.")
-print()
 
 try:
     import tkinter  # noqa: F401
@@ -756,6 +807,25 @@ try:
 except ValueError as exc:
     _arg_parser.error(str(exc))
 
+if _interface != "gui":
+    select_engines(engine_entries)
+
+section("Setup Plan")
+print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
+print("  This will:")
+print("    • Install Python dependencies from requirements.txt")
+if needs_llamacpp_install and LLAMACPP in selected_engine_names(engine_entries):
+    build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
+    print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
+if _detected_comfyui:
+    print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
+if _interface != "gui" and VLLM in engines_needing_install(engine_entries):
+    print("    • Install vLLM (several GB, into its own vllm-env/ environment)")
+print()
+print("  You'll then pick which models to install — everything after that")
+print("  runs on its own, with no further prompts.")
+print()
+
 _gui_plan = None
 if _interface == "gui":
     from scripts.setup.setup_gui import run_setup_wizard_process
@@ -767,25 +837,20 @@ if _interface == "gui":
         existing_hf_token=bool(os.environ.get("HF_TOKEN", "").strip() or (
             (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
         )),
-        vllm_offer=({"status": vllm_support.status, "reason": vllm_support.reason}
-                    if needs_vllm_install else None),
+        engine_entries=engine_entries,
     )
     if _gui_plan is None:
         print("\n  Setup cancelled — nothing was installed.\n")
         sys.exit(GUI_CANCEL_EXIT)
+    _chosen = set(_gui_plan.get("engines", [LLAMACPP]))
+    for entry in engine_entries:
+        entry["checked"] = entry["enabled"] and entry["name"] in _chosen
 elif not confirm("Continue?", default=True):
     print(f"\n  Setup cancelled — nothing was installed.\n")
     sys.exit(0)
 
-install_vllm_requested = False
-if needs_vllm_install:
-    if _gui_plan is not None:
-        install_vllm_requested = bool(_gui_plan.get("install_vllm"))
-    else:
-        label = ("Install vLLM as a second engine (experimental on this platform)?"
-                 if vllm_support.status == "experimental"
-                 else "Install vLLM as a second engine?")
-        install_vllm_requested = confirm(label, default=False)
+selected_engines = selected_engine_names(engine_entries)
+pending_engines = engines_needing_install(engine_entries)
 
 # ── 6. Model selection ──────────────────────────────────────────────────────────
 
@@ -1100,7 +1165,7 @@ else:
     info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
     sys.exit(1)
 
-if needs_llamacpp_install:
+if LLAMACPP in pending_engines:
     llamacpp_installed = install_llamacpp()
     if llamacpp_installed:
         ok("llama.cpp installed successfully")
@@ -1122,7 +1187,7 @@ if needs_llamacpp_install:
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
 
-if install_vllm_requested:
+if VLLM in pending_engines:
     if install_vllm(vllm_support, log=info):
         VLLM_BIN = find_vllm_binary(platform_name=os_name)
         if VLLM_BIN:
@@ -1144,25 +1209,17 @@ VAE_DIR     = config.COMFYUI_MODELS_DIR / "vae"
 
 remaining_gb = 0.0
 
-# Mirrors LlamaCppEngine._models_dir — see docs/engines.md.
-LLAMACPP_MODELS_DIR = config.MODELS_DIR / "llamacpp"
-
-def model_slug(tag):
-    """Filesystem-safe per-tag directory name under LLAMACPP_MODELS_DIR —
-    mirrors LlamaCppEngine._slug."""
-    return tag.replace(":", "_").replace("/", "_")
-
-def model_downloaded(m):
-    """True if every GGUF file models.py lists for `m` already exists under
-    LLAMACPP_MODELS_DIR/<slug>/ — mirrors LlamaCppEngine._resolve_model_files."""
+def model_downloaded(m, engine=LLAMACPP):
+    """True if `engine`'s weights for `m` are already complete under models/<engine>/<slug>/."""
     filenames = m["hf_file"] if isinstance(m["hf_file"], list) else [m["hf_file"]]
-    model_dir = LLAMACPP_MODELS_DIR / model_slug(m["tag"])
-    return all((model_dir / Path(name).name).exists() for name in filenames)
+    model_dir = engine_model_dir(config.MODELS_DIR, engine, m["tag"])
+    return engine_model_complete(model_dir, engine, filenames)
 
 all_llm = selected_embed + selected_llm
-for m in all_llm:
-    if not model_downloaded(m):
-        remaining_gb += hardware.parse_size_gb(m["download_size"])
+for engine in selected_engines:
+    for m in all_llm:
+        if not model_downloaded(m, engine):
+            remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine))
 
 sd35_selected  = "sd35-large" in selected_image_shorts
 flux1_selected = "flux-dev" in selected_image_shorts
@@ -1245,19 +1302,34 @@ deselected_llm = [
 for m in deselected_llm:
     info(f"{m['label']} — skipped (not selected)")
 
-for m in selected_embed + selected_llm:
-    tag, label, size = m["tag"], m["label"], m["download_size"]
-    if model_downloaded(m):
-        ok(f"{label} — already downloaded")
-        continue
-    warn(f"{label} ({size}) — not found, downloading now ...")
-    dest_dir = LLAMACPP_MODELS_DIR / model_slug(tag)
-    success = hf_download(m["hf_repo"], m["hf_file"], token=load_token(), dest_dir=dest_dir)
-    if success:
-        ok(f"{label} — downloaded successfully")
-    else:
-        fail(f"{label} — download failed")
-        issues.append(f"Download {m['hf_repo']} manually into {dest_dir}")
+for engine in selected_engines:
+    if len(selected_engines) > 1:
+        info(f"Models for {engine} ...")
+    unsupported = models_missing_engine_support(selected_embed + selected_llm, engine)
+    for tag in unsupported:
+        warn(f"{tag} — no {engine} weights defined in the catalog, skipping for this engine")
+        issues.append(f"No {engine} weights for {tag} — it will only be benchmarked on other engines")
+    for m in selected_embed + selected_llm:
+        tag, label = m["tag"], m["label"]
+        if tag in unsupported:
+            continue
+        size = engine_download_size(m, engine)
+        if model_downloaded(m, engine):
+            ok(f"{label} [{engine}] — already downloaded")
+            continue
+        warn(f"{label} [{engine}] ({size}) — not found, downloading now ...")
+        dest_dir = engine_model_dir(config.MODELS_DIR, engine, tag)
+        if engine == VLLM:
+            repo = m["vllm_repo"]
+            success = hf_snapshot_download(repo, dest_dir, token=load_token())
+        else:
+            repo = m["hf_repo"]
+            success = hf_download(repo, m["hf_file"], token=load_token(), dest_dir=dest_dir)
+        if success:
+            ok(f"{label} [{engine}] — downloaded successfully")
+        else:
+            fail(f"{label} [{engine}] — download failed")
+            issues.append(f"Download {repo} manually into {dest_dir}")
 
 # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 

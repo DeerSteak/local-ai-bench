@@ -154,18 +154,23 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool) -> li
 
 def find_vllm_binary(*, platform_name: str, venv_dir: Path = None,
                      which_fn=shutil.which, exists_fn=None) -> str | None:
-    """Locate a `vllm` executable: this project's venv first, then vllm-metal's, then PATH."""
+    """Locate a `vllm` executable, system-first — matching the llama.cpp policy so a
+    working installation is never shadowed by a second project-local copy."""
+    on_path = which_fn("vllm")
+    if on_path:
+        return on_path
     venv_dir = venv_dir or config.VLLM_VENV
     exists_fn = exists_fn or (lambda path: Path(path).is_file())
     subdir = "Scripts" if platform_name == "Windows" else "bin"
     suffix = ".exe" if platform_name == "Windows" else ""
-    candidates = [Path(venv_dir) / subdir / f"vllm{suffix}"]
+    candidates = []
     if platform_name == "Darwin":
         candidates.append(Path.home() / ".venv-vllm-metal" / "bin" / "vllm")
+    candidates.append(Path(venv_dir) / subdir / f"vllm{suffix}")
     for candidate in candidates:
         if exists_fn(candidate):
             return str(candidate)
-    return which_fn("vllm")
+    return None
 
 
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,

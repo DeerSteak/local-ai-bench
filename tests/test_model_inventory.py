@@ -4,6 +4,10 @@ from scripts.setup.model_inventory import (
     build_model_inventory,
     classify_engine_models,
     delete_non_catalog_model_dirs,
+    engine_download_size,
+    engine_model_complete,
+    engine_model_dir,
+    models_missing_engine_support,
     find_non_catalog_model_dirs,
     format_model_inventory,
     installed_image_models,
@@ -242,3 +246,65 @@ def test_delete_non_catalog_model_dirs_rejects_non_model_directory(tmp_path):
     assert removed == []
     assert failures == {"notes": "directory does not contain a GGUF model"}
     assert (target / "keep.txt").read_text() == "important"
+
+
+# ── per-engine model storage ──
+
+def test_engine_model_dir_namespaces_by_engine(tmp_path):
+    assert engine_model_dir(tmp_path, "llamacpp", "qwen3.5:9b-q4_K_M") == tmp_path / "llamacpp" / "qwen3.5_9b-q4_K_M"
+    assert engine_model_dir(tmp_path, "vllm", "qwen3.5:9b-q4_K_M") == tmp_path / "vllm" / "qwen3.5_9b-q4_K_M"
+
+
+def test_engine_download_size_prefers_the_engines_own_weights():
+    model = {"download_size": "~5.5 GB", "vllm_download_size": "~12.4 GB"}
+    assert engine_download_size(model, "llamacpp") == "~5.5 GB"
+    assert engine_download_size(model, "vllm") == "~12.4 GB"
+
+
+def test_engine_download_size_falls_back_when_no_vllm_size_is_listed():
+    assert engine_download_size({"download_size": "~5.5 GB"}, "vllm") == "~5.5 GB"
+
+
+def test_llamacpp_completeness_needs_every_listed_gguf(tmp_path):
+    model_dir = tmp_path / "m"
+    model_dir.mkdir()
+    files = ["a-00001-of-00002.gguf", "a-00002-of-00002.gguf"]
+    (model_dir / files[0]).touch()
+    assert engine_model_complete(model_dir, "llamacpp", files) is False
+    (model_dir / files[1]).touch()
+    assert engine_model_complete(model_dir, "llamacpp", files) is True
+
+
+def test_vllm_completeness_needs_config_beside_the_weights(tmp_path):
+    model_dir = tmp_path / "m"
+    model_dir.mkdir()
+    (model_dir / "model.safetensors").touch()
+    assert engine_model_complete(model_dir, "vllm") is False, "weights without config.json are unloadable"
+    (model_dir / "config.json").touch()
+    assert engine_model_complete(model_dir, "vllm") is True
+
+
+def test_vllm_completeness_rejects_a_config_only_directory(tmp_path):
+    model_dir = tmp_path / "m"
+    model_dir.mkdir()
+    (model_dir / "config.json").touch()
+    assert engine_model_complete(model_dir, "vllm") is False
+
+
+def test_completeness_is_false_for_a_missing_directory(tmp_path):
+    assert engine_model_complete(tmp_path / "nope", "vllm") is False
+    assert engine_model_complete(tmp_path / "nope", "llamacpp", ["a.gguf"]) is False
+
+
+def test_models_missing_engine_support_only_applies_to_vllm():
+    models = [{"tag": "a", "vllm_repo": "org/a"}, {"tag": "b"}]
+    assert models_missing_engine_support(models, "vllm") == ["b"]
+    assert models_missing_engine_support(models, "llamacpp") == []
+
+
+def test_every_catalog_model_has_vllm_weights_defined():
+    from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+    assert models_missing_engine_support(LLM_MODELS + EMBED_MODELS, "vllm") == []
+    for model in LLM_MODELS + EMBED_MODELS:
+        assert "/" in model["vllm_repo"], model["tag"]
+        assert model["vllm_download_size"].startswith("~")

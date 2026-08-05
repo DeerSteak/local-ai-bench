@@ -18,6 +18,36 @@ def model_tag_slug(tag: str) -> str:
     return tag.replace(":", "_").replace("/", "_")
 
 
+def engine_model_dir(models_root: Path, engine: str, tag: str) -> Path:
+    """Per-engine model directory — mirrors each engine's own `_models_dir()`."""
+    return Path(models_root) / engine / model_tag_slug(tag)
+
+
+def engine_download_size(model: dict, engine: str) -> str:
+    """The download size for this model under `engine`; engines carry different weights."""
+    if engine == "vllm":
+        return model.get("vllm_download_size") or model["download_size"]
+    return model["download_size"]
+
+
+def engine_model_complete(model_dir: Path, engine: str, filenames=()) -> bool:
+    """True once `model_dir` holds everything `engine` needs to load the model."""
+    model_dir = Path(model_dir)
+    if not model_dir.is_dir():
+        return False
+    if engine == "vllm":
+        # A snapshot is only loadable with its config alongside the weights.
+        return (model_dir / "config.json").is_file() and any(model_dir.glob("*.safetensors"))
+    return all((model_dir / Path(name).name).exists() for name in filenames)
+
+
+def models_missing_engine_support(models: list[dict], engine: str) -> list[str]:
+    """Catalog tags with no weights defined for `engine`, so they can be reported, not skipped silently."""
+    if engine != "vllm":
+        return []
+    return [model["tag"] for model in models if not model.get("vllm_repo")]
+
+
 def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None = None,
                                 embed_catalog: list[dict] | None = None) -> list[Path]:
     """Return installed model directories not owned by the current catalog."""
