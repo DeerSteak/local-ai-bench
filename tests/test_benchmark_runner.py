@@ -1,4 +1,4 @@
-from scripts.app.benchmark import run_supervised_llm, run_supervised_stage
+from scripts.app.benchmark import relay_runner_log, run_supervised_llm, run_supervised_stage
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
@@ -15,6 +15,18 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):
+    line = ('::local-ai-bench-progress::{"kind":"model","stage":"llm",'
+            '"status":"running","model":"Qwen 4B"}\n')
+    relay_runner_log(line)
+    assert capsys.readouterr().out == line
+
+
+def test_supervised_ordinary_log_still_uses_shared_formatting(capsys):
+    relay_runner_log("model output\n")
+    assert "model output" in capsys.readouterr().out
 
 
 def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path):

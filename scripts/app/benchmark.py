@@ -14,6 +14,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
+from scripts.app.progress_events import PROGRESS_PREFIX
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
@@ -48,6 +49,14 @@ from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
+
+
+def relay_runner_log(text: str) -> None:
+    if text.startswith(PROGRESS_PREFIX):
+        sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
+        sys.stdout.flush()
+        return
+    Shared.output(text.rstrip())
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -95,7 +104,7 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         elif event["kind"] == "terminal":
             terminal.append(event["status"])
         elif event["kind"] == "log":
-            Shared.output(event["text"].rstrip())
+            relay_runner_log(event["text"])
 
     try:
         return_code = supervisor.run(on_runner_event)
