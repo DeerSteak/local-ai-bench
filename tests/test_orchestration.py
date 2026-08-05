@@ -127,6 +127,23 @@ def test_execute_stages_always_cleans_up_and_leaves_failed_stage_running(tmp_pat
     assert context.store.data["run"]["stages"]["a"]["status"] == "running"
 
 
+def test_execute_stages_cleans_up_when_section_persistence_fails(tmp_path):
+    events = []
+    store = _store(tmp_path)
+    store.update_section = lambda *_: (_ for _ in ()).throw(OSError("disk full"))
+    context = RunContext(
+        _plan(), RunPaths(Path("out")), object(), store, object(),
+    )
+    stage = StageDefinition(
+        "a", "a", 1, lambda _: {"model": {}},
+        cleanup=lambda _: events.append("cleanup"),
+    )
+    with pytest.raises(StageExecutionError) as exc_info:
+        execute_stages(context, [stage])
+    assert exc_info.value.phase == "execution"
+    assert events == ["cleanup"]
+
+
 @pytest.mark.parametrize("phase", ["preparation", "execution"])
 def test_execute_stages_records_secondary_cleanup_failure(tmp_path, phase):
     def fail(_): raise RuntimeError("primary")

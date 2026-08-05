@@ -133,7 +133,7 @@ The CLI translates arguments into an immutable run specification, a stage runner
 
 ### 3.1 Run specification and context
 
-Create an immutable run specification containing validated engines, selected workloads and models, effective configuration, paths, and flags. This initially landed as `RunSpec`; commercial-kernel work subsequently split it into a serializable, path-free `RunPlan` and local-only `RunPaths`. `RunContext` contains those objects with the current engine, hardware profile, result store, and lifecycle services. CLI parsing and model resolution build the plan before any server starts. Existing workload calls may continue to receive explicit resolved inputs from their local runner closures rather than forcing a second dependency-injection layer.
+Create an immutable run specification containing validated engines, selected workloads and models, effective configuration, paths, and flags. This initially landed as `RunSpec`; commercial-kernel work subsequently split it into a serializable, path-free `RunPlan` and local-only `RunPaths`. `RunContext` contains those objects with the current engine, result store, and lifecycle services; hardware identity remains in the result manifest rather than being duplicated into an unused execution-context field. CLI parsing and model resolution build the plan before any server starts. Existing workload calls may continue to receive explicit resolved inputs from their local runner closures rather than forcing a second dependency-injection layer.
 
 Neither object becomes a general dependency container. It includes only data currently threaded through `main()` or captured by nested checkpoint functions, and workload classes continue to accept explicit inputs where that keeps them independently testable.
 

@@ -31,7 +31,6 @@ class RunContext:
     engine: object
     store: ResultStore
     lifecycle: "LifecycleCoordinator"
-    profile: dict | None = None
 
 
 def _noop(_context: RunContext) -> None:
@@ -83,23 +82,14 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
     for stage in stages:
         context.store.start_stage(stage.key, stage.selected_models)
         emit_stage_progress(stage.key, "running")
+        phase = "preparation"
         try:
             if stage.requires_engine:
                 context.lifecycle.ensure_engine(context.plan.cpu_only)
             stage.prepare(context)
-        except BaseException as exc:
-            try:
-                stage.cleanup(context)
-            except Exception as cleanup_exc:
-                context.store.record_cleanup_failure(stage.key, cleanup_exc)
-                Shared.warn(f"{stage.key} cleanup also failed: {cleanup_exc}")
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                emit_stage_progress(stage.key, "interrupted")
-                raise
-            emit_stage_progress(stage.key, "failed")
-            raise StageExecutionError(stage.key, "preparation", exc) from exc
-        try:
+            phase = "execution"
             result = stage.runner(context)
+            context.store.update_section(stage.section, result, stage.key)
         except BaseException as exc:
             try:
                 stage.cleanup(context)
@@ -110,8 +100,7 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
                 emit_stage_progress(stage.key, "interrupted")
                 raise
             emit_stage_progress(stage.key, "failed")
-            raise StageExecutionError(stage.key, "execution", exc) from exc
-        context.store.update_section(stage.section, result, stage.key)
+            raise StageExecutionError(stage.key, phase, exc) from exc
         try:
             stage.cleanup(context)
         except BaseException as exc:

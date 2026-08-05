@@ -153,6 +153,15 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Consolidation triggers: merge a module when it becomes a pass-through with no independent contract or test seam; remove a CLI wrapper when no documented invocation or process boundary uses it; do not add a manager/provider/repository abstraction around the current functions; require another aggregate review before the first stable commercial release or after 15 additional `scripts/` modules, whichever comes first.
 - Evidence: module dependency inspection, 4.1 compatibility fixtures, direct unit tests, and the absence of framework-style types named by the simplicity gate. This decision supplies the aggregate review that the original slice-by-slice ledger did not.
 
+### AD-018 — Keep the current application boundaries and remove incidental duplication
+
+- Status: accepted
+- Requirement: a post-GUI simplicity audit must identify repeated logic and abstractions that do not provide a current reliability, security, compatibility, or user-facing benefit.
+- Decision: retain the current package boundaries, process supervisor, event store, `RunPlan`/`RunPaths`, and thin CLI entry points because each has a live contract described in AD-017. Consolidate identical preparation/execution failure handling in stage orchestration and remove the unused hardware-profile field from `RunContext`; do not split the large Tk callback modules into controller/service classes solely to reduce file length.
+- Rejected alternative: broad module merging or introducing generic UI controllers, repositories, lifecycle interfaces, or dependency injection. Those changes would increase coupling or abstraction count without removing a user-visible failure mode.
+- Follow-up: runner closures and mutable result JSON remain governed by the deletion ledger below. Revisit the GUI module only when a cohesive reusable component or a testability need justifies a boundary, not at an arbitrary line-count threshold.
+- Evidence: static module/import inspection, exact duplicate-body inspection, orchestration failure-path tests, and the full Python suite.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

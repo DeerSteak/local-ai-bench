@@ -873,7 +873,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
         )
         context = RunContext(
-            plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle, profile,
+            plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
 
         def run_llm(_context):
