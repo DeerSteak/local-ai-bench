@@ -53,6 +53,9 @@ PUBLIC_OPTION_SCHEMA = {
         default="layer", choices=("layer", "tensor"),
     ),
     "--force-all": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
+    "--retry-crashed-models": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+    ),
     "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
@@ -63,7 +66,8 @@ GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
-    "force_all": "--force-all", "offline": "--offline", "out": "--out",
+    "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
+    "offline": "--offline", "out": "--out",
     "comfyui": "--comfyui",
 }
 

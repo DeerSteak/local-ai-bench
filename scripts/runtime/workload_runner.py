@@ -253,6 +253,7 @@ def main(argv=None) -> int:
         sys.stderr.write("Runner ownership token is required.\n")
         return 2
     plan = load_runner_plan(args.event_store, args.job_id)
+    config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()
     stop_event = threading.Event()

@@ -11,7 +11,7 @@ def test_schema_defines_every_gui_default_and_cli_choice_set():
         "warmup": config.WARMUP_RUNS, "runs": config.N_RUNS, "timeout": 300,
         "acc_timeout": config.ACC_TIMEOUT, "acc_token_budget": config.ACC_TOKEN_BUDGET,
         "cpu_only": False, "gpu_split_mode": "layer", "force_all": False,
-        "offline": False, "out": "", "comfyui": "",
+        "retry_crashed_models": False, "offline": False, "out": "", "comfyui": "",
     }
     assert set(GUI_OPTION_FLAGS.values()) <= set(PUBLIC_OPTION_SCHEMA)
     assert PUBLIC_OPTION_SCHEMA["--tests"].choices == TEST_CHOICES

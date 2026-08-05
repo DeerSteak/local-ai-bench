@@ -123,6 +123,19 @@ def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
     assert offline.plan_id != make_plan(effective_config=dict(config, offline=False)).plan_id
 
 
+def test_retry_crashed_models_is_recorded_and_legacy_defaults_false():
+    legacy = make_plan()
+    settings = complete_plan().effective_config
+    settings["retry_crashed_models"] = True
+    retrying = make_plan(effective_config=settings)
+
+    assert legacy.retry_crashed_models is False
+    assert retrying.retry_crashed_models is True
+    assert retrying.plan_id != make_plan(
+        effective_config=dict(settings, retry_crashed_models=False),
+    ).plan_id
+
+
 def test_returned_models_and_config_cannot_mutate_the_plan():
     plan = make_plan()
     plan.models["llm"].append({"tag": "injected"})

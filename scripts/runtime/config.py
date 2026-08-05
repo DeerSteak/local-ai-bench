@@ -58,6 +58,7 @@ IMAGE_PROMPT = (
 VERSION        = "4.1"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
+RETRY_CRASHED_MODELS = False
 RUN_TIMEOUT = 300   # base generation/chat timeout; images use 2x — overridden by --timeout
 
 # Per accuracy question (mcq/math/reasoning/code/tool), overridden by --acc-timeout.

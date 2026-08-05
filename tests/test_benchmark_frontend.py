@@ -98,13 +98,17 @@ def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
     ]
 
 
-def test_build_command_includes_offline_mode_when_selected():
-    options = dict(GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor")
+def test_build_command_includes_execution_modes_when_selected():
+    options = dict(
+        GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor",
+        retry_crashed_models=True,
+    )
     command = build_benchmark_command(
         "llamacpp", Path("ComfyUI"), ["llm"],
         [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
     )
     assert "--offline" in command
+    assert "--retry-crashed-models" in command
     assert command[command.index("--gpu-split-mode") + 1] == "tensor"
 
 
@@ -214,6 +218,14 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     assert load_frontend_state(path)["gui_options"]["gpu_split_mode"] == "layer"
 
 
+def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["retry_crashed_models"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["retry_crashed_models"] is False
+
+
 @pytest.mark.parametrize("contents", [
     "{",
     "[]",
@@ -309,7 +321,8 @@ def test_cli_run_plan_converts_to_complete_frontend_state_and_command():
         effective_config={
             "runs": 4, "warmup_runs": 1, "run_timeout_seconds": 240,
             "accuracy_timeout_seconds": 45, "accuracy_token_budget": 1024,
-            "cpu_only": True, "force_all": True, "max_prompt_tokens": 32768,
+            "cpu_only": True, "force_all": True, "retry_crashed_models": True,
+            "max_prompt_tokens": 32768,
             "llamabench_tg": [128, 1024], "sample_size": None,
         },
     )
@@ -337,6 +350,7 @@ def test_cli_run_plan_converts_to_complete_frontend_state_and_command():
     ):
         assert command[command.index(flag) + 1] == value
     assert "--cpu-only" in command and "--force-all" in command
+    assert "--retry-crashed-models" in command
     assert command[command.index("--tg-tokens") + 1:command.index("--warmup")] == ["128", "1024"]
 
 

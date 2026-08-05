@@ -597,6 +597,9 @@ class Shared:
         detail = crash_cache.get(tag)
         if detail is None:
             return None
+        if config.RETRY_CRASHED_MODELS:
+            Shared.warn(f"{tag}: ignoring its prior crash record for this run")
+            return None
         if expected_bank_hash is not None and detail.get("bank_hash") != expected_bank_hash:
             Shared.warn(f"{tag}'s recorded crash is for a different question-bank version "
                         "— ignoring stale entry and retrying")

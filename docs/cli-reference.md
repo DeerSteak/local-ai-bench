@@ -16,6 +16,7 @@ run_bench.bat [options]   # Windows
 --engine ENGINE         Inference engine to benchmark, or 'all' (default: llamacpp)
 --cpu-only              Force CPU-only inference for every engine-backed test
 --gpu-split-mode MODE   llama.cpp multi-GPU mode: layer or tensor (default: layer)
+--retry-crashed-models  Ignore prior workload crash-cache skips for this run
 --warmup N              Engine-backed warmups before measuring (default: 2)
 --runs N                Measured runs to average (default: 3, range: 1-10)
 --timeout N             Seconds per generation/chat call and engine warmup (default: 300)
@@ -82,7 +83,7 @@ After the selection summary, `Start this benchmark? [Y/n]` defaults to yes; pres
 | Classification | Options | Frontend treatment |
 |---|---|---|
 | Guided | `--tests`, `--engine`, `--llm-models`, `--embedding-models`, `--image-models`, `--max-prompt-tokens`, `--tg-tokens`, `--maxtier`, `--models` | Primary workload/model controls; tier and legacy model aliases are represented by the more precise installed-model checklist |
-| Advanced | `--warmup`, `--runs`, `--timeout`, `--acc-timeout`, `--acc-token-budget`, `--cpu-only`, `--gpu-split-mode`, `--force-all`, `--out`, `--comfyui` | Exposed by the advanced-settings toggle because they alter execution cost, failure handling, runtime mode, or output location |
+| Advanced | `--warmup`, `--runs`, `--timeout`, `--acc-timeout`, `--acc-token-budget`, `--cpu-only`, `--gpu-split-mode`, `--force-all`, `--retry-crashed-models`, `--offline`, `--out`, `--comfyui` | Exposed by the advanced-settings toggle because they alter execution cost, failure handling, runtime mode, privacy, or output location |
 | Contextual | `--list-models` | Represented by the installed-model inventory already visible in the frontend; direct CLI retains the printable inventory command |
 | Developer-only | `--sample` | Intentionally excluded because sampled accuracy results are non-comparable and intended only for development iteration |
 
@@ -98,7 +99,7 @@ The interactive launcher clears the terminal before its initial display, between
 
 The launcher maintains an executable inventory of every public `benchmark.py` flag. Tests fail when a CLI option is added or removed without updating that inventory. Every option classified as `exposed` must also map to a unique concrete control identifier, including the bespoke test, engine, model-family, prompt-cap, and generation-size selectors; a declared `missing` option or an exposed option without that binding blocks release readiness. Tier selection and `--list-models` have more precise equivalents in the installed-model selection screens; `--models` is only an alias; and developer-only `--sample` and the internal fork guard are intentionally excluded.
 
-The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only, multi-GPU mode, force-all, and offline modes, output path, and ComfyUI path behind the advanced-settings toggle. Each is validated before launch and included in the resolved plan review; the executable inventory and control-binding tests prevent a future safe public setting from disappearing silently. During a run, the progress window reports aggregate benchmark-process CPU and RAM plus best-effort system GPU utilization sampled every two seconds without blocking the interface. Apple Silicon uses non-privileged AGX `ioreg` statistics, NVIDIA uses `nvidia-smi`, AMD uses `rocm-smi`, and unavailable tooling is reported without affecting the benchmark.
+The graphical frontend exposes warmup count, measured runs, generation and accuracy timeouts, accuracy token budget, CPU-only, multi-GPU mode, force-all, prior-crash retry, and offline modes, output path, and ComfyUI path behind the advanced-settings toggle. Each is validated before launch and included in the resolved plan review; the executable inventory and control-binding tests prevent a future safe public setting from disappearing silently. During a run, the progress window separates process RSS from system RAM and adds best-effort GPU utilization and NVIDIA per-process GPU memory without blocking the interface. Apple Silicon uses non-privileged AGX `ioreg` statistics, NVIDIA uses `nvidia-smi`, AMD utilization uses `rocm-smi`, and unavailable tooling is reported without affecting the benchmark.
 
 CLI and graphical numeric constraints, choice lists, defaults, option classifications, and UI coverage policy share one typed option schema. Warmups must be zero or greater; measured runs remain 1–10; timeouts, token budgets, prompt caps, and developer sample sizes must be positive.
 
@@ -149,6 +150,7 @@ The GUI's **Support Bundle** action creates a separate redacted `.labsupport` ar
 | `--comfyui` | path | saved/system installation, then `./ComfyUI` | ComfyUI program directory or Windows portable root. Resolution otherwise uses `COMFYUI_DIR`, the path saved by setup, conventional user locations, and finally the managed copy. Image models remain under `models/comfyui/` regardless of this path |
 | `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the main JSON path entirely. Accuracy answer sidecars and generated-image folders still go under the repository's `results/` directory, named from the main output's stem — see [Project Structure](project-structure.md) |
 | `--force-all` | (flag) | off | Disables the slow-TPS exits for single-shot LLM, conversation, and chat concurrency. It does not bypass timeouts, crashes, missing data, or load failures |
+| `--retry-crashed-models` | (flag) | off | Ignores workload crash-cache entries for this execution so every selected model is attempted again. It does not delete the cache, suppress a new crash, or bypass missing-model and load-failure handling |
 
 An explicitly supplied selector that resolves to no models for a selected workload is a command error and exits before hardware profiling, result-file creation, or server orchestration. This applies consistently to `--llm-models`/`--models`, `--embedding-models`, and `--image-models`. Selectors for workload families absent from `--tests` are ignored for this validation. Omitted selectors retain the defaults above; selecting a catalog model that is not downloaded still reaches the workload's existing missing-model handling.
 

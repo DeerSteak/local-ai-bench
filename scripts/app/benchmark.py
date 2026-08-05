@@ -568,6 +568,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "Does not override real failures (timeouts, missing data). (default: false)",
     )
     parser.add_argument(
+        "--retry-crashed-models", action="store_true",
+        help="Run models recorded in workload crash caches instead of skipping them. "
+             "Cache files remain intact and repeated crashes are recorded normally. "
+             "(default: false)",
+    )
+    parser.add_argument(
         "--offline", action="store_true",
         help="Block non-loopback network connections during benchmark execution and propagate "
              "offline/telemetry-disabled environment settings to managed runtimes. Local "
@@ -586,6 +592,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     args = parser.parse_args()
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
+    config.RETRY_CRASHED_MODELS = args.retry_crashed_models
     if args.offline:
         apply_offline_mode()
 
@@ -772,6 +779,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "accuracy_timeout_seconds": config.ACC_TIMEOUT,
             "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
             "cpu_only": args.cpu_only, "force_all": args.force_all,
+            "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "max_prompt_tokens": args.max_prompt_tokens,
             "context_lengths": config.CONTEXT_LENGTHS,

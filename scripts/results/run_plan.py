@@ -12,7 +12,8 @@ SUPPORTED_PLAN_SCHEMAS = {1, 2, PLAN_SCHEMA_VERSION}
 IDENTITY_SCHEME = "sha256-v1"
 SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
-    "accuracy_token_budget", "cpu_only", "force_all", "max_prompt_tokens",
+    "accuracy_token_budget", "cpu_only", "force_all", "retry_crashed_models",
+    "max_prompt_tokens",
     "context_lengths", "llamabench_pp", "llamabench_tg", "sample_size",
     "concurrency_tool_levels", "concurrency_chat_levels",
     "concurrency_tool_context", "concurrency_chat_context",
@@ -25,6 +26,7 @@ MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
+    "retry_crashed_models",
 }
 
 
@@ -168,6 +170,10 @@ class RunPlan:
     def force_all(self) -> bool:
         return self.effective_config["force_all"]
 
+    @property
+    def retry_crashed_models(self) -> bool:
+        return self.effective_config.get("retry_crashed_models", False)
+
     def to_dict(self) -> dict:
         value = {
             "schema_version": self.schema_version,
@@ -204,7 +210,9 @@ class RunPlan:
             if (isinstance(value, bool) or not isinstance(value, int) or value < minimum
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
-        for key in ("cpu_only", "force_all", "offline"):
+        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline"):
+            if key == "retry_crashed_models" and key not in settings:
+                continue
             if key not in settings and key == "offline":
                 continue
             if not isinstance(settings[key], bool):

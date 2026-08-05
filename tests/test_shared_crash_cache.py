@@ -4,6 +4,7 @@ import http.client
 import pytest
 import requests
 
+from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
 from scripts.runtime.shared import Shared
 
@@ -45,6 +46,12 @@ def test_check_crash_cache_returns_skip_entry_when_present(tmp_path):
     assert entry["skipped"] is True
     assert entry["skip_reason"] == "known_crash"
     assert entry["label"] == "Some Model"
+
+
+def test_check_crash_cache_can_be_bypassed_for_current_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "RETRY_CRASHED_MODELS", True)
+    cache = {"some-tag": {"crashed_at": "yesterday"}}
+    assert Shared.check_crash_cache("some-tag", "Some Model", cache, tmp_path / "cache") is None
 
 
 def test_record_crash_persists_to_cache(tmp_path):
