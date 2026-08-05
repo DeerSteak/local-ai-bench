@@ -18,7 +18,7 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
-    parse_gpu_usage, query_gpu_usage,
+    parse_gpu_usage, plan_preview_sections, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     process_resource_usage, update_progress_metrics, workload_preflight_errors,
 )
@@ -417,3 +417,16 @@ def test_plan_preview_shows_resolved_measurement_values_and_destinations():
         "Duration range: minutes to hours", "Processes: llama-server", "Network use: none expected",
     ):
         assert expected in preview
+
+
+def test_plan_preview_sections_group_the_review_for_scanning():
+    sections = dict(plan_preview_sections(
+        "Engine: llamacpp\nTests: llm\nWarmups: 2\nBroad cases: 3 passes\n"
+        "Results: automatic\nNetwork use: none expected"
+    ))
+    assert sections == {
+        "Selection": ["Engine: llamacpp", "Tests: llm"],
+        "Measurement settings": ["Warmups: 2"],
+        "Scope and duration": ["Broad cases: 3 passes"],
+        "Output and environment": ["Results: automatic", "Network use: none expected"],
+    }

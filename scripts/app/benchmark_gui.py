@@ -420,6 +420,25 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
     return "\n".join(lines)
 
 
+def plan_preview_sections(preview: str) -> list[tuple[str, list[str]]]:
+    groups = (
+        ("Selection", {"Engine", "Tests", "Models"}),
+        ("Measurement settings", {
+            "Warmups", "Measured runs", "Run timeout", "Accuracy timeout",
+            "Accuracy token budget", "Prompt cap", "llama-bench generation sizes",
+            "CPU only", "Offline", "Force slow models",
+        }),
+        ("Scope and duration", {"Broad cases", "Model loads", "Duration range", "Processes"}),
+        ("Output and environment", {"Results", "ComfyUI", "Disk use", "Network use"}),
+    )
+    sections = [(title, []) for title, _ in groups]
+    for line in preview.splitlines():
+        label = line.partition(":")[0]
+        index = next((i for i, (_, labels) in enumerate(groups) if label in labels), len(groups) - 1)
+        sections[index][1].append(line)
+    return [(title, lines) for title, lines in sections if lines]
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -1933,6 +1952,65 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             values[key] = option_vars[key].get().strip()
         return values
 
+    def confirm_plan_preview(preview: str) -> bool:
+        dialog = tk.Toplevel(root)
+        dialog.title("Review benchmark plan")
+        dialog.geometry("760x620")
+        dialog.minsize(620, 460)
+        dialog.transient(root)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        header = ttk.Frame(dialog)
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 12))
+        ttk.Label(header, text="Review benchmark plan", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(
+            header, text="Confirm the resolved workload, measurement settings, and output before starting.",
+        ).pack(anchor="w", pady=(4, 0))
+
+        body = ttk.Frame(dialog)
+        body.grid(row=1, column=0, sticky="nsew", padx=20)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+        text_widget = tk.Text(body, wrap="word", padx=14, pady=12, borderwidth=1, relief="solid")
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        text_widget.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        text_widget.tag_configure("heading", font=("TkDefaultFont", 12, "bold"), spacing1=10, spacing3=4)
+        text_widget.tag_configure("label", font=("TkDefaultFont", 10, "bold"))
+        text_widget.tag_configure("value", lmargin1=12, lmargin2=12, spacing3=5)
+        for title, lines in plan_preview_sections(preview):
+            text_widget.insert("end", f"{title}\n", "heading")
+            for line in lines:
+                label, separator, value = line.partition(":")
+                if separator:
+                    text_widget.insert("end", f"{label}: ", "label")
+                    text_widget.insert("end", f"{value.strip()}\n", "value")
+                else:
+                    text_widget.insert("end", f"{line}\n", "value")
+        text_widget.configure(state="disabled")
+
+        confirmed = [False]
+
+        def finish(value: bool) -> None:
+            confirmed[0] = value
+            dialog.destroy()
+
+        actions = ttk.Frame(dialog)
+        actions.grid(row=2, column=0, sticky="e", padx=20, pady=18)
+        ttk.Button(actions, text="Cancel", command=lambda: finish(False)).pack(side="left")
+        start = ttk.Button(actions, text="Start Benchmark", style="Start.TButton",
+                           command=lambda: finish(True))
+        start.pack(side="left", padx=(10, 0))
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        dialog.bind("<Escape>", lambda _event: finish(False))
+        dialog.bind("<Return>", lambda _event: finish(True))
+        dialog.grab_set()
+        start.focus_set()
+        dialog.lift()
+        root.wait_window(dialog)
+        return confirmed[0]
+
     def start_run():
         nonlocal process, active_process_kind, pending_fork_source
         custom = mode_var.get() == "custom"
@@ -1971,9 +2049,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
             comfyui_dir=custom_comfyui or detected_comfyui,
         )
-        if not messagebox.askyesno(
-            "Review benchmark plan", f"{preview}\n\nStart this benchmark?", parent=root,
-        ):
+        if not confirm_plan_preview(preview):
             pending_fork_source = None
             return
         state = build_frontend_state(
