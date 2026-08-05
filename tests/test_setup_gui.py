@@ -9,6 +9,7 @@ from scripts.setup.setup_gui import (
     hf_token_review_label,
     license_button_label,
     mousewheel_scroll_units,
+    refresh_tk_layout,
     run_setup_wizard_process,
     selected_gui_token,
     should_save_gui_token,
@@ -138,3 +139,19 @@ def test_mousewheel_scroll_units(delta, button, platform_name, expected):
     assert mousewheel_scroll_units(
         delta=delta, button=button, platform_name=platform_name,
     ) == expected
+
+
+def test_refresh_tk_layout_flushes_now_and_after_idle():
+    calls = []
+
+    class Widget:
+        def update_idletasks(self):
+            calls.append("refresh")
+
+        def after_idle(self, callback):
+            calls.append("scheduled")
+            callback()
+
+    refresh_tk_layout(Widget())
+
+    assert calls == ["refresh", "scheduled", "refresh"]

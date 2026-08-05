@@ -64,7 +64,7 @@ from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_contro
 from scripts.app.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
-from scripts.app.tk_utils import mousewheel_scroll_units
+from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 
 
@@ -560,6 +560,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook.add(config_tab, text="Configuration")
     notebook.add(log_tab, text="Run Log")
     notebook.add(history_tab, text="Result History")
+    notebook.bind(
+        "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
+    )
     config_tab.columnconfigure(0, weight=1)
     config_tab.rowconfigure(2, weight=1)
 

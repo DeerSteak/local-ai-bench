@@ -1,6 +1,12 @@
 """Small shared helpers for the setup and benchmark Tk interfaces."""
 
 
+def refresh_tk_layout(widget) -> None:
+    """Flush layout now and once more when Tk next becomes idle."""
+    widget.update_idletasks()
+    widget.after_idle(widget.update_idletasks)
+
+
 def mousewheel_scroll_units(*, delta: int = 0, button: int = 0,
                             platform_name: str = "") -> int:
     """Translate Tk wheel events into vertical canvas scroll units."""

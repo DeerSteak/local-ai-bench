@@ -18,7 +18,7 @@ from scripts.workloads.models import (
     LLM_MODELS_XSMALL,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
-from scripts.app.tk_utils import mousewheel_scroll_units
+from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 
 
 LLM_GROUPS = (
@@ -294,7 +294,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             token_help.grid(sticky="w", pady=(14, 0))
         else:
             token_help.grid_remove()
-        credentials.update_idletasks()
+        refresh_tk_layout(credentials)
 
     if existing_hf_token:
         override_token_check.configure(command=update_token_controls)
@@ -386,6 +386,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         next_button.configure(text="Install" if index == len(pages) - 1 else "Next")
         if index == len(pages) - 1:
             refresh_review()
+        refresh_tk_layout(root)
 
     def go_back() -> None:
         if page_index:
