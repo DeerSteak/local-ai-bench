@@ -85,7 +85,7 @@ def launch_controlled_process(command: list[str], *, creationflags: int = 0,
                               pause_path_factory=create_pause_control,
                               popen=subprocess.Popen) -> tuple[subprocess.Popen, Path]:
     control_path = pause_path_factory()
-    child_env = {**os.environ, "LOCAL_AI_BENCH_PROGRESS": "1",
+    child_env = {**os.environ, "PYTHONUNBUFFERED": "1", "LOCAL_AI_BENCH_PROGRESS": "1",
                  PAUSE_CONTROL_ENV: str(control_path)}
     try:
         process = popen(

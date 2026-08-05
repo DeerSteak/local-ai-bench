@@ -94,6 +94,7 @@ def test_launch_controlled_process_supplies_progress_environment(tmp_path):
     )
 
     assert process is not None and path == control_path
+    assert calls[0][1]["env"]["PYTHONUNBUFFERED"] == "1"
     assert calls[0][1]["env"]["LOCAL_AI_BENCH_PROGRESS"] == "1"
     assert calls[0][1]["env"]["LOCAL_AI_BENCH_PAUSE_CONTROL"] == str(control_path)
     assert calls[0][1]["creationflags"] == 7
