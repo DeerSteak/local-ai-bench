@@ -19,11 +19,12 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
-    parse_gpu_usage, plan_preview_sections, query_gpu_usage,
+    parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
+    query_gpu_process_memory, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name,
-    selected_result_paths, update_progress_metrics, workload_preflight_errors,
+    selected_result_paths, system_memory_usage, update_progress_metrics, workload_preflight_errors,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -320,6 +321,12 @@ def test_process_resource_usage_includes_child_processes():
     assert process_resource_usage(42, Psutil) == (50, 3.0)
 
 
+def test_system_memory_usage_reports_used_and_total_gibibytes():
+    memory = type("Memory", (), {"used": 32 * 1024 ** 3, "total": 128 * 1024 ** 3})()
+    psutil_module = type("Psutil", (), {"virtual_memory": staticmethod(lambda: memory)})
+    assert system_memory_usage(psutil_module) == (32.0, 128.0)
+
+
 @pytest.mark.parametrize(
     ("platform_name", "output", "expected"),
     [
@@ -348,9 +355,34 @@ def test_query_gpu_usage_uses_non_privileged_apple_statistics():
     assert calls[0][1]["timeout"] == 2
 
 
+def test_gpu_process_memory_filters_to_benchmark_process_tree():
+    assert parse_gpu_process_memory("42, 1024\n43, 2048 MiB\n99, 4096\n", {42, 43}) == 3.0
+    assert parse_gpu_process_memory("N/A\n", {42}) is None
+
+
+def test_query_gpu_process_memory_uses_nvidia_process_accounting():
+    child = type("Child", (), {"pid": 43})()
+    parent = type("Parent", (), {"pid": 42, "children": lambda self, recursive: [child]})()
+    psutil_module = type("Psutil", (), {
+        "Error": RuntimeError,
+        "Process": staticmethod(lambda pid: parent),
+    })
+    result = type("Result", (), {"returncode": 0, "stdout": "42, 512\n43, 1536\n"})()
+
+    assert query_gpu_process_memory(
+        42, run_fn=lambda *args, **kwargs: result,
+        which_fn=lambda name: "/usr/bin/nvidia-smi", psutil_module=psutil_module,
+    ) == 2.0
+
+
 def test_format_resource_usage_includes_gpu_and_graceful_fallbacks():
-    assert format_resource_usage((50, 3.25), 77) == "50% CPU · 3.2 GB RAM · 77% GPU"
-    assert format_resource_usage(None, None) == "unavailable · GPU unavailable"
+    assert format_resource_usage((50, 3.25), (40, 128), 35, 77, 20) == (
+        "50% CPU · Process RAM 3.2 GB · System RAM 40.0/128.0 GB "
+        "(Δ +5.0 GB) · GPU process memory 20.0 GB · 77% GPU"
+    )
+    assert format_resource_usage(None, None, 0, None, None) == (
+        "unavailable · System RAM unavailable · GPU unavailable"
+    )
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():

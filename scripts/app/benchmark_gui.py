@@ -212,6 +212,11 @@ def process_resource_usage(pid: int, psutil_module=psutil) -> tuple[float, float
         return None
 
 
+def system_memory_usage(psutil_module=psutil) -> tuple[float, float]:
+    memory = psutil_module.virtual_memory()
+    return memory.used / (1024 ** 3), memory.total / (1024 ** 3)
+
+
 def parse_gpu_usage(platform_name: str, output: str) -> float | None:
     if platform_name == "Darwin":
         values = re.findall(r'"Device Utilization %"\s*=\s*([0-9.]+)', output)
@@ -242,11 +247,55 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
     return parse_gpu_usage(platform_name, result.stdout) if result.returncode == 0 else None
 
 
-def format_resource_usage(process_usage, gpu_usage: float | None) -> str:
+def parse_gpu_process_memory(output: str, process_ids: set[int]) -> float | None:
+    used_mib = 0.0
+    found = False
+    for line in output.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 2:
+            continue
+        try:
+            pid = int(parts[0])
+            memory = float(re.sub(r"\s*MiB$", "", parts[1], flags=re.IGNORECASE))
+        except ValueError:
+            continue
+        if pid in process_ids:
+            used_mib += memory
+            found = True
+    return used_mib / 1024 if found else None
+
+
+def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.which,
+                             psutil_module=psutil) -> float | None:
+    executable = which_fn("nvidia-smi")
+    if not executable:
+        return None
+    try:
+        parent = psutil_module.Process(pid)
+        process_ids = {parent.pid, *(child.pid for child in parent.children(recursive=True))}
+        result = run_fn(
+            [executable, "--query-compute-apps=pid,used_gpu_memory", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+    except (psutil_module.Error, OSError, subprocess.SubprocessError):
+        return None
+    return parse_gpu_process_memory(result.stdout, process_ids) if result.returncode == 0 else None
+
+
+def format_resource_usage(process_usage, system_usage, baseline_system_used: float,
+                          gpu_usage: float | None, gpu_memory: float | None) -> str:
     process_text = ("unavailable" if process_usage is None
-                    else f"{process_usage[0]:.0f}% CPU · {process_usage[1]:.1f} GB RAM")
+                    else f"{process_usage[0]:.0f}% CPU · Process RAM {process_usage[1]:.1f} GB")
+    system_text = "System RAM unavailable"
+    if system_usage is not None:
+        delta = system_usage[0] - baseline_system_used
+        system_text = (
+            f"System RAM {system_usage[0]:.1f}/{system_usage[1]:.1f} GB "
+            f"(Δ {delta:+.1f} GB)"
+        )
+    gpu_memory_text = "" if gpu_memory is None else f" · GPU process memory {gpu_memory:.1f} GB"
     gpu_text = "GPU unavailable" if gpu_usage is None else f"{gpu_usage:.0f}% GPU"
-    return f"{process_text} · {gpu_text}"
+    return f"{process_text} · {system_text}{gpu_memory_text} · {gpu_text}"
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
@@ -1797,15 +1846,20 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_resource_var = tk.StringVar(value="")
     progress_metrics = {}
     progress_started_at = None
-    gpu_sample = {"usage": None, "next_at": 0.0, "running": False, "generation": 0}
+    gpu_sample = {
+        "usage": None, "memory": None, "next_at": 0.0,
+        "running": False, "generation": 0,
+    }
+    system_memory_baseline = [0.0]
 
     def show_progress_window(tests, entries):
         nonlocal progress_window, stage_progress_vars, model_progress_vars
         nonlocal progress_metrics, progress_started_at
         gpu_sample.update({
-            "usage": None, "next_at": 0.0, "running": False,
+            "usage": None, "memory": None, "next_at": 0.0, "running": False,
             "generation": gpu_sample["generation"] + 1,
         })
+        system_memory_baseline[0] = system_memory_usage()[0]
         if progress_window is not None and progress_window.winfo_exists():
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
@@ -1954,12 +2008,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
                 def sample_gpu():
                     value = query_gpu_usage()
+                    memory = query_gpu_process_memory(process.pid)
                     if gpu_sample["generation"] == generation:
                         gpu_sample["usage"] = value
+                        gpu_sample["memory"] = memory
                         gpu_sample["running"] = False
 
                 threading.Thread(target=sample_gpu, daemon=True).start()
-            resources = format_resource_usage(usage, gpu_sample["usage"])
+            resources = format_resource_usage(
+                usage, system_memory_usage(), system_memory_baseline[0],
+                gpu_sample["usage"], gpu_sample["memory"],
+            )
             progress_resource_var.set(f"Resources: {resources} · Remaining time: {estimate}")
         root.after(100, poll_output)
 
