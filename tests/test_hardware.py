@@ -118,6 +118,18 @@ def test_parse_nvidia_gpus_preserves_each_device_capacity():
     ]
 
 
+def test_parse_rocm_smi_gpus_preserves_each_device_capacity():
+    output = """{
+      "card0": {"VRAM Total Memory (B)": "17179869184"},
+      "card1": {"VRAM Total Memory (B)": 17179869184}
+    }"""
+    assert hardware.parse_rocm_smi_gpus(output, ["Radeon A", "Radeon B"]) == [
+        {"name": "Radeon A", "vram_gb": 16.0, "vendor": "amd", "backend": "rocm"},
+        {"name": "Radeon B", "vram_gb": 16.0, "vendor": "amd", "backend": "rocm"},
+    ]
+    assert hardware.parse_rocm_smi_gpus("not json", []) == []
+
+
 # ── select_cuda_release_assets ──
 
 def _asset(name, size=100):
@@ -227,6 +239,15 @@ def test_ceiling_discrete_amd_with_known_vram():
         os_name="Linux", total_ram_gb=32, gpu_vendor="amd", vram_gb=16)
     assert ceiling == pytest.approx(16 - hardware.VRAM_RESERVE_GB)
     assert "VRAM" in note
+
+
+def test_ceiling_multi_amd_reserves_memory_on_every_device():
+    ceiling, note = hardware.compute_memory_ceiling_gb(
+        os_name="Linux", total_ram_gb=64, gpu_vendor="amd",
+        vram_gb=32, device_vram_gb=[16, 16],
+    )
+    assert ceiling == pytest.approx(30)
+    assert "2 AMD GPUs" in note
 
 
 def test_ceiling_discrete_amd_unknown_vram_returns_none():

@@ -55,7 +55,7 @@
 | `scripts/workloads/data/` | Active accuracy banks plus `sample_document.txt`, the real-world corpus used by the embeddings workload |
 | `scripts/workloads/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
-| `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths plus detected NVIDIA GPU topology |
+| `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths plus detected NVIDIA or ROCm GPU topology |
 | `.benchmark_frontend_state.json` | Gitignored GUI/terminal selection and execution settings plus the last GUI preset name; stale or invalid values fall back to current defaults |
 | `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
 | `.coveragerc` | Coverage config for the test suite — omits `setup/setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |

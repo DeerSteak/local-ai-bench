@@ -58,3 +58,12 @@ def configured_gpu_devices(data: dict) -> list[dict]:
     if not isinstance(devices, list):
         return []
     return [device for device in devices if isinstance(device, dict)]
+
+
+def available_gpu_split_modes(data: dict, runtime_backend: str) -> tuple[str, ...]:
+    """Return split modes supported by the recorded runtime topology."""
+    devices = configured_gpu_devices(data)
+    matching = [device for device in devices if device.get("backend") == runtime_backend]
+    if runtime_backend in {"cuda", "rocm"} and len(matching) >= 2:
+        return "layer", "tensor"
+    return ("layer",)

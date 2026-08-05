@@ -267,9 +267,10 @@ def get_nvidia_compute_cap():
 
 rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
 rocm_vram_gb  = None  # only queried for a discrete GPU — see compute_memory_ceiling_gb
+rocm_gpus = []
 
 def check_rocm():
-    global rocm_gpu_kind, rocm_vram_gb
+    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus
     try:
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
@@ -290,13 +291,9 @@ def check_rocm():
                         ["rocm-smi", "--showmeminfo", "vram", "--json"],
                         text=True, stderr=subprocess.DEVNULL,
                     )
-                    mem_data = json.loads(mem_out)
-                    total_bytes = sum(
-                        int(card.get("VRAM Total Memory (B)", 0))
-                        for card in mem_data.values()
-                    )
-                    if total_bytes > 0:
-                        rocm_vram_gb = total_bytes / (1024**3)
+                    rocm_gpus = hardware.parse_rocm_smi_gpus(mem_out, gpu_names)
+                    if rocm_gpus:
+                        rocm_vram_gb = sum(device["vram_gb"] for device in rocm_gpus)
                 except (FileNotFoundError, subprocess.CalledProcessError,
                         json.JSONDecodeError, ValueError):
                     pass
@@ -474,7 +471,10 @@ else:
 memory_ceiling_gb, memory_ceiling_note = hardware.compute_memory_ceiling_gb(
     os_name=os_name, total_ram_gb=total_ram_gb,
     gpu_vendor=gpu_vendor, vram_gb=gpu_vram_gb,
-    device_vram_gb=[device["vram_gb"] for device in nvidia_gpus] if nvidia_ok else None,
+    device_vram_gb=(
+        [device["vram_gb"] for device in nvidia_gpus] if nvidia_ok else
+        [device["vram_gb"] for device in rocm_gpus] if rocm_ok else None
+    ),
 )
 if memory_ceiling_gb is not None:
     ok(f"Model memory ceiling: {memory_ceiling_note}")
@@ -1699,7 +1699,10 @@ write_setup_config(
         "llama-bench": LLAMACPP_BENCH_BIN,
         "llama-batched-bench": LLAMACPP_BATCHED_BENCH_BIN,
     },
-    gpu_devices=nvidia_gpus,
+    gpu_devices=(
+        [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
+        if nvidia_ok else rocm_gpus
+    ),
 )
 
 section("Summary")

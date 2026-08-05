@@ -1,6 +1,7 @@
 import json
 
 from scripts.setup.setup_config import (
+    available_gpu_split_modes,
     configured_gpu_devices,
     configured_comfyui_dir,
     configured_llamacpp_tool,
@@ -40,3 +41,25 @@ def test_load_accepts_schema_one_without_gpu_topology(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"schema_version": 1, "llama_cpp": {}}))
     assert configured_gpu_devices(load_setup_config(path)) == []
+
+
+def test_tensor_split_requires_two_matching_cuda_or_rocm_devices():
+    cuda = {"gpu": {"devices": [
+        {"backend": "cuda"}, {"backend": "cuda"},
+    ]}}
+    rocm = {"gpu": {"devices": [
+        {"backend": "rocm"}, {"backend": "rocm"},
+    ]}}
+
+    assert available_gpu_split_modes(cuda, "cuda") == ("layer", "tensor")
+    assert available_gpu_split_modes(rocm, "rocm") == ("layer", "tensor")
+    assert available_gpu_split_modes(rocm, "vulkan") == ("layer",)
+
+
+def test_tensor_split_rejects_single_or_unrecorded_devices():
+    single = {"gpu": {"devices": [{"backend": "rocm"}]}}
+    legacy = {"gpu": {"devices": [{"name": "AMD GPU"}, {"name": "AMD GPU"}]}}
+
+    assert available_gpu_split_modes(single, "rocm") == ("layer",)
+    assert available_gpu_split_modes(legacy, "rocm") == ("layer",)
+    assert available_gpu_split_modes({}, "cuda") == ("layer",)

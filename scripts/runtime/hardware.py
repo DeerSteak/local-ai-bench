@@ -1,6 +1,7 @@
 """Pure logic for deciding whether a model fits in available memory, used by
 setup_check.py's picker — see docs/setup.md#memory-fit-estimate."""
 
+import json
 import re
 
 MEMORY_OVERHEAD_MULTIPLIER = 1.2
@@ -74,6 +75,32 @@ def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
     return devices
 
 
+def parse_rocm_smi_gpus(rocm_smi_output: str, names: list[str]) -> list[dict]:
+    """Parse per-card VRAM from rocm-smi JSON and pair it with rocminfo names."""
+    try:
+        data = json.loads(rocm_smi_output)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    devices = []
+    for index, card in enumerate(data.values()):
+        if not isinstance(card, dict):
+            continue
+        try:
+            total_bytes = int(card.get("VRAM Total Memory (B)", 0))
+        except (TypeError, ValueError):
+            continue
+        if total_bytes <= 0:
+            continue
+        devices.append({
+            "name": names[index] if index < len(names) else f"AMD GPU {index}",
+            "vram_gb": total_bytes / (1024 ** 3),
+            "vendor": "amd", "backend": "rocm",
+        })
+    return devices
+
+
 _CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 _CUDA_CUDART_RE = re.compile(r"^cudart-llama-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 
@@ -132,6 +159,12 @@ def compute_memory_ceiling_gb(*, os_name: str, total_ram_gb: float | None,
         ceiling = sum(max(0.0, value - VRAM_RESERVE_GB) for value in device_vram_gb)
         return ceiling, (
             f"~{ceiling:.1f} GB across {len(device_vram_gb)} NVIDIA GPUs "
+            f"(minus {VRAM_RESERVE_GB:.0f} GB per-GPU reserve)"
+        )
+    if gpu_vendor == "amd" and device_vram_gb:
+        ceiling = sum(max(0.0, value - VRAM_RESERVE_GB) for value in device_vram_gb)
+        return ceiling, (
+            f"~{ceiling:.1f} GB across {len(device_vram_gb)} AMD GPUs "
             f"(minus {VRAM_RESERVE_GB:.0f} GB per-GPU reserve)"
         )
     if gpu_vendor == "nvidia" and vram_gb is not None:

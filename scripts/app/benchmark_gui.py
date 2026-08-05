@@ -63,7 +63,9 @@ from scripts.results.outbound_metadata import outbound_metadata_preview, prepare
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.app.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
-from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
+from scripts.setup.setup_config import (
+    available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
+)
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 
@@ -504,9 +506,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         "llama-server", "llama-bench", "llama-batched-bench",
     )}
     system_ram_gb = Shared.system_ram_gb()
+    hardware_backend = Shared.detect_backend()
+    runtime_backend = get_engine(selected_engine).runtime_backend(hardware_backend)
+    gpu_split_modes = available_gpu_split_modes(setup, runtime_backend)
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
-        ram_gb=system_ram_gb, backend=Shared.detect_backend(),
+        ram_gb=system_ram_gb, backend=hardware_backend,
         tools=detected_tools,
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
@@ -545,6 +550,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     saved_tg = set(saved["tg_tokens"] or config.LLAMABENCH_TG) if saved else set(config.LLAMABENCH_TG)
     tg_vars = {value: tk.BooleanVar(value=value in saved_tg) for value in TG_TOKEN_OPTIONS}
     options = effective_gui_options(saved)
+    if options["gpu_split_mode"] not in gpu_split_modes:
+        options["gpu_split_mode"] = "layer"
     option_vars = {
         key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value)))
         for key, value in options.items()
@@ -699,10 +706,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         execution_box, text="Reset", width=6,
         command=lambda: engine_var.set(available_engines[0]),
     ).grid(row=0, column=2, padx=(8, 0))
-    ttk.Label(execution_box, text="Multi-GPU mode").grid(row=1, column=0, sticky="w", pady=2)
+    split_label = "Multi-GPU mode (tensor is experimental)" if "tensor" in gpu_split_modes else "Multi-GPU mode"
+    ttk.Label(execution_box, text=split_label).grid(row=1, column=0, sticky="w", pady=2)
     ttk.Combobox(
         execution_box, state="readonly", textvariable=option_vars["gpu_split_mode"],
-        values=("layer", "tensor"), width=16,
+        values=gpu_split_modes, width=16,
     ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
     ttk.Button(
         execution_box, text="Reset", width=6,
@@ -821,6 +829,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if errors:
             raise ValueError("\n".join(errors))
+        requested_split = state.get("gui_options", {}).get("gpu_split_mode", "layer")
+        if requested_split not in gpu_split_modes:
+            raise ValueError("Tensor split is unavailable for the detected GPU runtime and topology.")
         applying_configuration[0] = True
         try:
             if state["engine"] in available_engines:

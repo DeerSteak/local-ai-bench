@@ -48,7 +48,9 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
-from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
+from scripts.setup.setup_config import (
+    available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
+)
 
 
 def relay_runner_log(text: str) -> None:
@@ -695,6 +697,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
                         if engine_backed_tests else hardware_backend),
         }
+        if (engine_backed_tests
+                and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
+            parser.error(
+                "--gpu-split-mode tensor requires at least two GPUs recorded by setup "
+                "and a CUDA or ROCm/HIP llama.cpp runtime; rerun setup or use layer"
+            )
 
         Shared.output(f"{config.BOLD}LLM Benchmark Suite{config.RESET}", leading_blank=True)
         Shared.output(f"  Host:      {profile['hostname']}")
