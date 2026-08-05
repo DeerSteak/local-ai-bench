@@ -282,20 +282,22 @@ def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.wh
     return parse_gpu_process_memory(result.stdout, process_ids) if result.returncode == 0 else None
 
 
-def format_resource_usage(process_usage, system_usage, baseline_system_used: float,
-                          gpu_usage: float | None, gpu_memory: float | None) -> str:
-    process_text = ("unavailable" if process_usage is None
-                    else f"{process_usage[0]:.0f}% CPU · Process RAM {process_usage[1]:.1f} GB")
-    system_text = "System RAM unavailable"
+def resource_usage_rows(process_usage, system_usage, baseline_system_used: float,
+                        gpu_usage: float | None, gpu_memory: float | None) -> dict[str, str]:
+    rows = {
+        "CPU": "Unavailable" if process_usage is None else f"{process_usage[0]:.0f}%",
+        "Process RAM": "Unavailable" if process_usage is None else f"{process_usage[1]:.1f} GB",
+        "System RAM": "Unavailable",
+        "GPU": "Unavailable" if gpu_usage is None else f"{gpu_usage:.0f}% utilization",
+    }
     if system_usage is not None:
         delta = system_usage[0] - baseline_system_used
-        system_text = (
-            f"System RAM {system_usage[0]:.1f}/{system_usage[1]:.1f} GB "
-            f"(Δ {delta:+.1f} GB)"
+        rows["System RAM"] = (
+            f"{system_usage[0]:.1f} / {system_usage[1]:.1f} GB (Δ {delta:+.1f} GB)"
         )
-    gpu_memory_text = "" if gpu_memory is None else f" · GPU process memory {gpu_memory:.1f} GB"
-    gpu_text = "GPU unavailable" if gpu_usage is None else f"{gpu_usage:.0f}% GPU"
-    return f"{process_text} · {system_text}{gpu_memory_text} · {gpu_text}"
+    if gpu_memory is not None:
+        rows["GPU"] += f" · {gpu_memory:.1f} GB process memory"
+    return rows
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
@@ -1846,7 +1848,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     stage_progress_vars = {}
     model_progress_vars = {}
     progress_summary_var = tk.StringVar(value="")
-    progress_resource_var = tk.StringVar(value="")
+    progress_resource_vars = {}
+    progress_remaining_var = tk.StringVar(value="Remaining time: calibrating")
     progress_metrics = {}
     progress_started_at = None
     gpu_sample = {
@@ -1867,7 +1870,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
         progress_window.title("Local AI Bench Progress")
-        progress_window.geometry("430x520")
+        progress_window.geometry("460x600")
         progress_window.minsize(380, 300)
         progress_window.attributes("-topmost", True)
         progress_window.protocol("WM_DELETE_WINDOW", progress_window.withdraw)
@@ -1896,11 +1899,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         progress_summary_var.set(
             f"Finished: 0/{total_models} models · Usable coverage: 0/{total_models} · Invalid: 0 · Retries: 0"
         )
-        progress_resource_var.set("Resources: starting · Remaining time: calibrating")
         ttk.Label(shell, textvariable=progress_summary_var, wraplength=390).pack(anchor="w")
-        ttk.Label(shell, textvariable=progress_resource_var, wraplength=390).pack(
-            anchor="w", pady=(2, 8),
-        )
+        resource_box = ttk.LabelFrame(shell, text="Resources", padding=(10, 6))
+        resource_box.pack(fill="x", pady=(6, 2))
+        resource_box.columnconfigure(1, weight=1)
+        progress_resource_vars.clear()
+        for row, label in enumerate(("CPU", "Process RAM", "System RAM", "GPU")):
+            ttk.Label(resource_box, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=1)
+            variable = tk.StringVar(value="Starting…")
+            progress_resource_vars[label] = variable
+            ttk.Label(resource_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
+        progress_remaining_var.set("Remaining time: calibrating")
+        ttk.Label(shell, textvariable=progress_remaining_var).pack(anchor="w", pady=(2, 6))
         for stage in (key for key in STAGE_ORDER if key in tests):
             row = ttk.Frame(shell)
             row.pack(fill="x", pady=(6, 1))
@@ -2018,11 +2028,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                         gpu_sample["running"] = False
 
                 threading.Thread(target=sample_gpu, daemon=True).start()
-            resources = format_resource_usage(
+            resources = resource_usage_rows(
                 usage, system_memory_usage(), system_memory_baseline[0],
                 gpu_sample["usage"], gpu_sample["memory"],
             )
-            progress_resource_var.set(f"Resources: {resources} · Remaining time: {estimate}")
+            for label, value in resources.items():
+                progress_resource_vars[label].set(value)
+            progress_remaining_var.set(f"Remaining time: {estimate}")
         root.after(100, poll_output)
 
     def read_process(proc):

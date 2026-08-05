@@ -16,7 +16,7 @@ from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, CUSTOM_PRESET, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     dashboard_launcher_command,
-    effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
+    effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -24,7 +24,8 @@ from scripts.app.benchmark_gui import (
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name,
-    selected_result_paths, system_memory_usage, update_progress_metrics, workload_preflight_errors,
+    resource_usage_rows, selected_result_paths, system_memory_usage,
+    update_progress_metrics, workload_preflight_errors,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -375,14 +376,17 @@ def test_query_gpu_process_memory_uses_nvidia_process_accounting():
     ) == 2.0
 
 
-def test_format_resource_usage_includes_gpu_and_graceful_fallbacks():
-    assert format_resource_usage((50, 3.25), (40, 128), 35, 77, 20) == (
-        "50% CPU · Process RAM 3.2 GB · System RAM 40.0/128.0 GB "
-        "(Δ +5.0 GB) · GPU process memory 20.0 GB · 77% GPU"
-    )
-    assert format_resource_usage(None, None, 0, None, None) == (
-        "unavailable · System RAM unavailable · GPU unavailable"
-    )
+def test_resource_usage_rows_format_table_values_and_fallbacks():
+    assert resource_usage_rows((50, 3.25), (40, 128), 35, 77, 20) == {
+        "CPU": "50%",
+        "Process RAM": "3.2 GB",
+        "System RAM": "40.0 / 128.0 GB (Δ +5.0 GB)",
+        "GPU": "77% utilization · 20.0 GB process memory",
+    }
+    assert resource_usage_rows(None, None, 0, None, None) == {
+        "CPU": "Unavailable", "Process RAM": "Unavailable",
+        "System RAM": "Unavailable", "GPU": "Unavailable",
+    }
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():
