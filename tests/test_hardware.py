@@ -336,3 +336,11 @@ def test_image_model_fits_against_real_catalog_values():
 
     flux2 = next(m for m in IMAGE_MODELS if m["short"] == "flux2-dev")
     assert hardware.image_model_fits(flux2["checkpoint"], flux2["short"], 24.0) is False
+
+
+def test_parse_rocm_version():
+    assert hardware.parse_rocm_version("HIP version: 6.4.43483-a187df25c") == (6, 4)
+    assert hardware.parse_rocm_version("6.3.0-63") == (6, 3)
+    assert hardware.parse_rocm_version("unknown") is None
+    assert hardware.parse_rocm_version("") is None
+    assert hardware.parse_rocm_version(None) is None

@@ -36,6 +36,7 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
+from scripts.setup.vllm_install import find_vllm_binary, install_vllm, vllm_platform_support
 from scripts.app.interface_mode import select_interface_mode
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
@@ -300,6 +301,20 @@ def check_rocm():
         return bool(gpu_names)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+def get_rocm_version():
+    """Installed ROCm major/minor, or None — vLLM's wheels need 6.3+."""
+    try:
+        out = subprocess.check_output(["hipconfig", "--version"],
+                                       text=True, stderr=subprocess.DEVNULL)
+        return hardware.parse_rocm_version(out)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    version_file = Path("/opt/rocm/.info/version")
+    try:
+        return hardware.parse_rocm_version(version_file.read_text())
+    except OSError:
+        return None
 
 def check_metal():
     if platform.system() != "Darwin":
@@ -687,6 +702,29 @@ else:
          "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
          "the llamabenchconc test")
 
+# ── 4b. vLLM detection (read-only) ─────────────────────────────────────────────
+
+section("vLLM")
+
+VLLM_BIN = find_vllm_binary(platform_name=os_name)
+vllm_found = VLLM_BIN is not None
+vllm_support = vllm_platform_support(
+    os_name=os_name, machine=platform.machine(), python_version=sys.version_info[:2],
+    nvidia_ok=nvidia_ok, rocm_ok=rocm_ok, intel_gpu=intel_linux or intel_windows,
+    gpu_names=[device["name"] for device in nvidia_gpus],
+    compute_cap=nvidia_compute_cap, rocm_version=get_rocm_version() if rocm_ok else None,
+)
+if vllm_found:
+    ok(f"vllm found: {VLLM_BIN}")
+elif vllm_support.status == "unsupported":
+    info(f"vLLM not available here — {vllm_support.reason}")
+else:
+    warn(f"vllm not found — {vllm_support.reason}")
+    if vllm_support.status == "experimental":
+        info("This vLLM path is experimental and unverified by this project's maintainers")
+
+needs_vllm_install = not vllm_found and vllm_support.installable
+
 # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
 section("Setup Plan")
@@ -698,6 +736,8 @@ if needs_llamacpp_install:
     print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
 if _detected_comfyui:
     print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
+if needs_vllm_install:
+    print("    • Optionally install vLLM (asked separately below — several GB, its own environment)")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -727,6 +767,8 @@ if _interface == "gui":
         existing_hf_token=bool(os.environ.get("HF_TOKEN", "").strip() or (
             (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
         )),
+        vllm_offer=({"status": vllm_support.status, "reason": vllm_support.reason}
+                    if needs_vllm_install else None),
     )
     if _gui_plan is None:
         print("\n  Setup cancelled — nothing was installed.\n")
@@ -734,6 +776,16 @@ if _interface == "gui":
 elif not confirm("Continue?", default=True):
     print(f"\n  Setup cancelled — nothing was installed.\n")
     sys.exit(0)
+
+install_vllm_requested = False
+if needs_vllm_install:
+    if _gui_plan is not None:
+        install_vllm_requested = bool(_gui_plan.get("install_vllm"))
+    else:
+        label = ("Install vLLM as a second engine (experimental on this platform)?"
+                 if vllm_support.status == "experimental"
+                 else "Install vLLM as a second engine?")
+        install_vllm_requested = confirm(label, default=False)
 
 # ── 6. Model selection ──────────────────────────────────────────────────────────
 
@@ -1069,6 +1121,18 @@ if needs_llamacpp_install:
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
+
+if install_vllm_requested:
+    if install_vllm(vllm_support, log=info):
+        VLLM_BIN = find_vllm_binary(platform_name=os_name)
+        if VLLM_BIN:
+            ok(f"vLLM installed: {VLLM_BIN}")
+            vllm_found = True
+        else:
+            warn("vLLM install reported success but no 'vllm' executable was found")
+    else:
+        fail("vLLM installation failed")
+        issues.append("Install vLLM manually: https://docs.vllm.ai/en/stable/getting_started/installation/")
 
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 

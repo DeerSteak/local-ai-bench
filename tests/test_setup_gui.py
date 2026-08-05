@@ -5,6 +5,7 @@ import pytest
 
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
+    vllm_offer_label,
     default_model_selection,
     hf_token_review_label,
     license_button_label,
@@ -155,3 +156,10 @@ def test_refresh_tk_layout_flushes_now_and_after_idle():
     refresh_tk_layout(Widget())
 
     assert calls == ["refresh", "scheduled", "refresh"]
+
+
+def test_vllm_offer_label_marks_experimental_platforms():
+    assert vllm_offer_label(None) == ""
+    supported = vllm_offer_label({"status": "supported", "reason": "x"})
+    assert "experimental" not in supported and "vLLM" in supported
+    assert "experimental" in vllm_offer_label({"status": "experimental", "reason": "x"})

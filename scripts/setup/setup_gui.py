@@ -85,10 +85,19 @@ def token_controls_enabled(existing_available: bool, override: bool) -> bool:
     return not existing_available or override
 
 
+def vllm_offer_label(offer: dict | None) -> str:
+    """Checkbox text for the optional vLLM install, or "" when it isn't on offer."""
+    if not offer:
+        return ""
+    suffix = " (experimental on this platform)" if offer.get("status") == "experimental" else ""
+    return f"Also install vLLM as a second engine{suffix} — several GB, in its own environment"
+
+
 def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
-                             existing_hf_token: bool = False) -> dict | None:
+                             existing_hf_token: bool = False,
+                             vllm_offer: dict | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -100,6 +109,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "detected_comfyui": str(detected_comfyui) if detected_comfyui else None,
             "cleanup_names": cleanup_names,
             "existing_hf_token": existing_hf_token,
+            "vllm_offer": vllm_offer,
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -117,7 +127,8 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
-                     existing_hf_token: bool = False) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     existing_hf_token: bool = False,
+                     vllm_offer: dict | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -182,6 +193,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(welcome, text=memory_text, wraplength=740).grid(sticky="w", pady=8)
     if detected_comfyui:
         ttk.Label(welcome, text=f"Existing ComfyUI detected: {detected_comfyui}", wraplength=740).grid(sticky="w")
+    install_vllm_var = tk.BooleanVar(value=False)
+    if vllm_offer:
+        ttk.Checkbutton(
+            welcome, text=vllm_offer_label(vllm_offer), variable=install_vllm_var,
+        ).grid(sticky="w", pady=(12, 0))
+        ttk.Label(welcome, text=vllm_offer.get("reason", ""), wraplength=740,
+                  justify="left").grid(sticky="w")
 
     models_page = new_page()
     ttk.Label(models_page, text="Choose models", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -358,6 +376,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             "use_existing_hf_token": existing_hf_token and not hf_token,
             "comfyui_mode": comfy_mode_var.get(),
             "comfyui_path": comfy_path_var.get().strip(),
+            "install_vllm": bool(vllm_offer) and install_vllm_var.get(),
         }
 
     def refresh_review() -> None:
@@ -370,6 +389,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Hugging Face token: {hf_token_review_label(plan)}",
             f"ComfyUI: {plan['comfyui_mode']}",
         ]
+        if vllm_offer:
+            lines.append(f"Install vLLM: {'yes' if plan['install_vllm'] else 'no'}")
         if plan["comfyui_path"]:
             lines.append(f"ComfyUI path: {plan['comfyui_path']}")
         lines.extend(["", "Nothing will be downloaded until you click Install."])
@@ -432,6 +453,7 @@ def main() -> None:  # pragma: no cover
         detected_comfyui=Path(request["detected_comfyui"]) if request["detected_comfyui"] else None,
         cleanup_names=request["cleanup_names"],
         existing_hf_token=request["existing_hf_token"],
+        vllm_offer=request.get("vllm_offer"),
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

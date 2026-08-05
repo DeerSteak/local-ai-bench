@@ -58,6 +58,12 @@ def parse_nvidia_max_cuda_version(nvidia_smi_output: str) -> str | None:
     return m.group(1) if m else None
 
 
+def parse_rocm_version(output: str) -> tuple[int, int] | None:
+    """Major/minor ROCm version from `hipconfig --version` or /opt/rocm/.info/version."""
+    m = re.search(r"(\d+)\.(\d+)", output or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
     """Parse name, MiB VRAM, and driver fields from nvidia-smi CSV output."""
     devices = []

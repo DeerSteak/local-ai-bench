@@ -10,7 +10,7 @@
 - [Adding a new engine](#adding-a-new-engine)
 - [Testing](#testing)
 
-llama.cpp is this project's only inference engine — Ollama support was removed after a head-to-head performance comparison on this project's hardware found llama.cpp marginally faster with no measurable downside. The `InferenceEngine` interface below stays engine-agnostic on purpose, and `--engine` still takes a name (or `all`, see [Selecting an engine](#selecting-an-engine) below): it's not speculative abstraction left over from that comparison, it's what lets a future engine (e.g. MLX) plug in without touching any workload module.
+llama.cpp is this project's only inference engine — Ollama support was removed after a head-to-head performance comparison on this project's hardware found llama.cpp marginally faster with no measurable downside. The `InferenceEngine` interface below stays engine-agnostic on purpose, and `--engine` still takes a name (or `all`, see [Selecting an engine](#selecting-an-engine) below): it's not speculative abstraction left over from that comparison, it's what lets a future engine (e.g. MLX) plug in without touching any workload module. Setup can already install vLLM as an optional second runtime (see [Setup](setup.md#optional-vllm-install)), but no `VllmEngine` exists yet and `--engine vllm` is not selectable — [the engine plan](vllm-engine-plan.md) tracks what remains.
 
 ## Why an interface
 
