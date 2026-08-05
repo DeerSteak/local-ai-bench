@@ -75,7 +75,7 @@ def test_build_prefill_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "512,2048", "-n", "0", "-d", "0",
     ]
@@ -88,10 +88,18 @@ def test_build_decode_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
     ]
+
+
+def test_native_commands_use_selected_tensor_split(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    command = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 1, 999,
+    )
+    assert command[command.index("--split-mode") + 1] == "tensor"
 
 
 def test_commands_suppress_llama_bench_unwanted_defaults():

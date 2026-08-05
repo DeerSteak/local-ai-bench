@@ -57,6 +57,23 @@ def parse_nvidia_max_cuda_version(nvidia_smi_output: str) -> str | None:
     return m.group(1) if m else None
 
 
+def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
+    """Parse name, MiB VRAM, and driver fields from nvidia-smi CSV output."""
+    devices = []
+    for line in nvidia_smi_output.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 3:
+            continue
+        match = re.fullmatch(r"([\d.]+)\s*MiB", parts[1], re.IGNORECASE)
+        if not match:
+            continue
+        devices.append({
+            "name": parts[0], "vram_gb": float(match.group(1)) / 1024,
+            "driver": parts[2],
+        })
+    return devices
+
+
 _CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 _CUDA_CUDART_RE = re.compile(r"^cudart-llama-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 
@@ -106,10 +123,17 @@ def select_cuda_release_assets(assets: list[dict], max_cuda_version: str | None
 
 
 def compute_memory_ceiling_gb(*, os_name: str, total_ram_gb: float | None,
-                               gpu_vendor: str, vram_gb: float | None = None
+                               gpu_vendor: str, vram_gb: float | None = None,
+                               device_vram_gb: list[float] | None = None,
                                ) -> tuple[float | None, str]:
     """Memory ceiling for this machine — see docs/setup.md#memory-fit-estimate.
     gpu_vendor "amd"/"intel" always means *discrete*; call classify_gpu() first."""
+    if gpu_vendor == "nvidia" and device_vram_gb:
+        ceiling = sum(max(0.0, value - VRAM_RESERVE_GB) for value in device_vram_gb)
+        return ceiling, (
+            f"~{ceiling:.1f} GB across {len(device_vram_gb)} NVIDIA GPUs "
+            f"(minus {VRAM_RESERVE_GB:.0f} GB per-GPU reserve)"
+        )
     if gpu_vendor == "nvidia" and vram_gb is not None:
         ceiling = vram_gb - VRAM_RESERVE_GB
         return ceiling, f"~{ceiling:.1f} GB (NVIDIA VRAM, minus {VRAM_RESERVE_GB:.0f} GB reserve)"

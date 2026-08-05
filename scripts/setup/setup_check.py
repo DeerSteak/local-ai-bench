@@ -222,25 +222,24 @@ elif os_name == "Windows":
 
 section("GPU / Acceleration Backend")
 
-nvidia_vram_gb = 0.0  # sum across GPUs — llama.cpp can span a model across multiple
+nvidia_gpus = []
+nvidia_vram_gb = 0.0
 
 def check_nvidia():
-    global nvidia_vram_gb
+    global nvidia_gpus, nvidia_vram_gb
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
              "--format=csv,noheader"],
             text=True, stderr=subprocess.DEVNULL
         )
-        for line in out.strip().splitlines():
-            parts = [p.strip() for p in line.split(",")]
-            print(f"  GPU:     {parts[0]}")
-            print(f"  VRAM:    {parts[1]}")
-            print(f"  Driver:  {parts[2]}")
-            m = re.match(r"([\d.]+)\s*MiB", parts[1])
-            if m:
-                nvidia_vram_gb += float(m.group(1)) / 1024
-        return True
+        nvidia_gpus = hardware.parse_nvidia_gpus(out)
+        nvidia_vram_gb = sum(device["vram_gb"] for device in nvidia_gpus)
+        for device in nvidia_gpus:
+            print(f"  GPU:     {device['name']}")
+            print(f"  VRAM:    {device['vram_gb']:.1f} GB")
+            print(f"  Driver:  {device['driver']}")
+        return bool(nvidia_gpus)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
@@ -475,6 +474,7 @@ else:
 memory_ceiling_gb, memory_ceiling_note = hardware.compute_memory_ceiling_gb(
     os_name=os_name, total_ram_gb=total_ram_gb,
     gpu_vendor=gpu_vendor, vram_gb=gpu_vram_gb,
+    device_vram_gb=[device["vram_gb"] for device in nvidia_gpus] if nvidia_ok else None,
 )
 if memory_ceiling_gb is not None:
     ok(f"Model memory ceiling: {memory_ceiling_note}")
@@ -1699,6 +1699,7 @@ write_setup_config(
         "llama-bench": LLAMACPP_BENCH_BIN,
         "llama-batched-bench": LLAMACPP_BATCHED_BENCH_BIN,
     },
+    gpu_devices=nvidia_gpus,
 )
 
 section("Summary")

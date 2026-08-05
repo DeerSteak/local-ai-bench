@@ -38,6 +38,15 @@ class LlamaCppEngine(InferenceEngine):
     # Model *load* time (disk read + VRAM placement), not inference time — generous since large models can take a while.
     LOAD_TIMEOUT = 300
 
+    @staticmethod
+    def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
+        mode = "none" if cpu_only else config.LLAMACPP_GPU_SPLIT_MODE
+        args = ["--split-mode", mode]
+        if include_cache:
+            cache_type = "f16" if mode == "tensor" else config.LLAMACPP_KV_CACHE_TYPE
+            args += ["--cache-type-k", cache_type, "--cache-type-v", cache_type]
+        return args
+
     def __init__(self):
         self._proc: subprocess.Popen | None = None
         self._log_path: Path | None = None
@@ -425,13 +434,14 @@ class LlamaCppEngine(InferenceEngine):
                 "--port", str(config.LLAMACPP_PORT),
                 # "auto" lets llama-server's own --fit logic offload as many layers as fit in
                 # free VRAM and run the rest on CPU, instead of forcing all layers and OOM-ing.
-                "-ngl", "0" if not self._gpu_visible else "auto",
+                "-ngl", "0" if not self._gpu_visible else (
+                    "all" if config.LLAMACPP_GPU_SPLIT_MODE == "tensor" else "auto"
+                ),
                 "--jinja",   # renders the model's own chat template, not llama.cpp's guessing heuristic — see docs/engines.md
                 "-b", str(config.LLAMACPP_NUM_BATCH),
                 # Quantized KV cache needs flash attention explicitly on — see config.LLAMACPP_KV_CACHE_TYPE.
                 "--flash-attn", "on",
-                "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
-                "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
+                *self.gpu_split_args(include_cache=True, cpu_only=not self._gpu_visible),
             ]
             if num_ctx is not None:
                 # -c is a total KV-cache budget split across --parallel slots — see docs/engines.md.

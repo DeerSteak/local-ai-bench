@@ -139,8 +139,11 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         return None
     if "gui_options" in state:
         options = state["gui_options"]
-        if isinstance(options, dict) and set(options) == set(GUI_OPTION_DEFAULTS) - {"offline"}:
-            options["offline"] = False
+        if isinstance(options, dict):
+            missing = set(GUI_OPTION_DEFAULTS) - set(options)
+            if missing <= {"offline", "gpu_split_mode"}:
+                for key in missing:
+                    options[key] = GUI_OPTION_DEFAULTS[key]
         if validate_gui_options(options):
             return None
     if "selected_preset" in state and (
@@ -205,7 +208,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "runs": "runs", "warmup_runs": "warmup", "run_timeout_seconds": "timeout",
         "accuracy_timeout_seconds": "acc_timeout",
         "accuracy_token_budget": "acc_token_budget", "cpu_only": "cpu_only",
-        "force_all": "force_all", "offline": "offline",
+        "gpu_split_mode": "gpu_split_mode", "force_all": "force_all", "offline": "offline",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
@@ -657,6 +660,7 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         command.extend(["--timeout", str(gui_options["timeout"])])
         command.extend(["--acc-timeout", str(gui_options["acc_timeout"])])
         command.extend(["--acc-token-budget", str(gui_options["acc_token_budget"])])
+        command.extend(["--gpu-split-mode", gui_options["gpu_split_mode"]])
         if gui_options["cpu_only"]:
             command.append("--cpu-only")
         if gui_options["force_all"]:

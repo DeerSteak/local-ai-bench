@@ -38,7 +38,10 @@ def test_each_decision_workflow_builds_a_valid_local_project(workflow):
     assert project["workflow"] == workflow
     assert project["preset"]["configuration"]["options"] == {
         key: GUI_OPTION_DEFAULTS[key]
-            for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "cpu_only", "force_all", "offline")
+            for key in (
+                "warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                "gpu_split_mode", "cpu_only", "force_all", "offline",
+            )
     }
     encoded = str(project)
     assert "/private/result.json" not in encoded and "/private/ComfyUI" not in encoded

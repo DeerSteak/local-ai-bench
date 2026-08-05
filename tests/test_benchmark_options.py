@@ -10,7 +10,8 @@ def test_schema_defines_every_gui_default_and_cli_choice_set():
     assert gui_option_defaults() == {
         "warmup": config.WARMUP_RUNS, "runs": config.N_RUNS, "timeout": 300,
         "acc_timeout": config.ACC_TIMEOUT, "acc_token_budget": config.ACC_TOKEN_BUDGET,
-        "cpu_only": False, "force_all": False, "offline": False, "out": "", "comfyui": "",
+        "cpu_only": False, "gpu_split_mode": "layer", "force_all": False,
+        "offline": False, "out": "", "comfyui": "",
     }
     assert set(GUI_OPTION_FLAGS.values()) <= set(PUBLIC_OPTION_SCHEMA)
     assert PUBLIC_OPTION_SCHEMA["--tests"].choices == TEST_CHOICES
@@ -23,6 +24,9 @@ def test_schema_validates_numeric_types_and_bounds():
     assert option_value_errors({"--warmup": -1}) == ["--warmup must be at least 0."]
     assert option_value_errors({"--runs": 11}) == ["--runs must be at most 10."]
     assert option_value_errors({"--timeout": True}) == ["--timeout must be a whole number."]
+    assert option_value_errors({"--gpu-split-mode": "row"}) == [
+        "--gpu-split-mode must be one of: layer, tensor.",
+    ]
 
 
 def test_schema_has_complete_frontend_policy_for_each_option():

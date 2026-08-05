@@ -699,28 +699,37 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         execution_box, text="Reset", width=6,
         command=lambda: engine_var.set(available_engines[0]),
     ).grid(row=0, column=2, padx=(8, 0))
+    ttk.Label(execution_box, text="Multi-GPU mode").grid(row=1, column=0, sticky="w", pady=2)
+    ttk.Combobox(
+        execution_box, state="readonly", textvariable=option_vars["gpu_split_mode"],
+        values=("layer", "tensor"), width=16,
+    ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
+    ttk.Button(
+        execution_box, text="Reset", width=6,
+        command=lambda: option_vars["gpu_split_mode"].set("layer"),
+    ).grid(row=1, column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
               ("acc_timeout", f"Accuracy timeout, seconds (default {config.ACC_TIMEOUT})"),
               ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"))
-    for row, (key, label) in enumerate(labels, 1):
+    for row, (key, label) in enumerate(labels, 2):
         ttk.Label(execution_box, text=label).grid(row=row, column=0, sticky="w", pady=2)
         ttk.Entry(execution_box, textvariable=option_vars[key], width=12).grid(row=row, column=1, sticky="w", padx=(10, 0), pady=2)
         ttk.Button(
             execution_box, text="Reset", width=6,
             command=lambda option=key: option_vars[option].set(str(GUI_OPTION_DEFAULTS[option])),
         ).grid(row=row, column=2, padx=(8, 0), pady=2)
-    ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=7, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=8, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=8, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=9, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=9, column=2, padx=(8, 0))
+    ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=8, column=2, padx=(8, 0))
+    ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=9, column=0, columnspan=2, sticky="w")
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=9, column=2, padx=(8, 0))
+    ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=10, column=0, columnspan=2, sticky="w")
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=10, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=5, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
@@ -762,7 +771,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def reset_execution():
         engine_var.set(available_engines[0])
         defaults = custom_option_defaults(detected_comfyui)
-        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
                     "cpu_only", "force_all", "offline"):
             variable = option_vars[key]
             variable.set(defaults[key])
@@ -992,7 +1001,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=11, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=12, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),

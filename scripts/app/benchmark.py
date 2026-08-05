@@ -528,6 +528,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "llama-bench/llama-batched-bench) though they don't go through the engine restart above.",
     )
     parser.add_argument(
+        "--gpu-split-mode", choices=("layer", "tensor"), default="layer",
+        help="llama.cpp multi-GPU execution mode: compatible layer splitting or experimental "
+             "tensor parallelism (default: layer). Tensor mode requires supported CUDA GPUs/models "
+             "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
+    )
+    parser.add_argument(
         "--maxtier", type=str, default=None,
         choices=TIER_CHOICES,
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
@@ -577,6 +583,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+    config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     if args.offline:
         apply_offline_mode()
 
@@ -757,6 +764,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "accuracy_timeout_seconds": config.ACC_TIMEOUT,
             "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
             "cpu_only": args.cpu_only, "force_all": args.force_all,
+            "gpu_split_mode": args.gpu_split_mode,
             "max_prompt_tokens": args.max_prompt_tokens,
             "context_lengths": config.CONTEXT_LENGTHS,
             "llamabench_pp": config.LLAMABENCH_PP,

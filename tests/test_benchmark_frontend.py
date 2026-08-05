@@ -99,12 +99,13 @@ def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
 
 
 def test_build_command_includes_offline_mode_when_selected():
-    options = dict(GUI_OPTION_DEFAULTS, offline=True)
+    options = dict(GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor")
     command = build_benchmark_command(
         "llamacpp", Path("ComfyUI"), ["llm"],
         [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
     )
     assert "--offline" in command
+    assert command[command.index("--gpu-split-mode") + 1] == "tensor"
 
 
 def test_frontend_classifies_every_option_for_ui_presentation():
@@ -203,6 +204,14 @@ def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     del options["offline"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
     assert load_frontend_state(path)["gui_options"]["offline"] is False
+
+
+def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["gpu_split_mode"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["gpu_split_mode"] == "layer"
 
 
 @pytest.mark.parametrize("contents", [

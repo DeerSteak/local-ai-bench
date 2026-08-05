@@ -52,6 +52,7 @@ class LlamaBenchConcurrencyBenchmark:
             "-b", str(batch_size),
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
+            *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--output-format", "jsonl",
         ]
 

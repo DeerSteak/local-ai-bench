@@ -16,6 +16,7 @@ LLAMACPP_NUM_BATCH = 512
 # KV cache quantization for llama-server — q8_0 halves KV cache memory vs f16 with negligible quality loss.
 # Requires flash attention, which LlamaCppEngine.ensure_running passes alongside it.
 LLAMACPP_KV_CACHE_TYPE = "q8_0"
+LLAMACPP_GPU_SPLIT_MODE = "layer"
 
 # Repository root shared by all package groups.
 SCRIPT_DIR   = Path(__file__).resolve().parents[2]

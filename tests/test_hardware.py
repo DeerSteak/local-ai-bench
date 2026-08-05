@@ -106,6 +106,18 @@ def test_parse_nvidia_max_cuda_version_missing_returns_none():
     assert hardware.parse_nvidia_max_cuda_version("no nvidia here") is None
 
 
+def test_parse_nvidia_gpus_preserves_each_device_capacity():
+    output = "\n".join([
+        "NVIDIA GeForce RTX 5060 Ti, 16384 MiB, 610.74",
+        "NVIDIA GeForce RTX 5060 Ti, 16384 MiB, 610.74",
+        "malformed",
+    ])
+    assert hardware.parse_nvidia_gpus(output) == [
+        {"name": "NVIDIA GeForce RTX 5060 Ti", "vram_gb": 16.0, "driver": "610.74"},
+        {"name": "NVIDIA GeForce RTX 5060 Ti", "vram_gb": 16.0, "driver": "610.74"},
+    ]
+
+
 # ── select_cuda_release_assets ──
 
 def _asset(name, size=100):
@@ -171,6 +183,15 @@ def test_ceiling_nvidia_uses_vram_minus_reserve():
         os_name="Windows", total_ram_gb=32, gpu_vendor="nvidia", vram_gb=24)
     assert ceiling == pytest.approx(24 - hardware.VRAM_RESERVE_GB)
     assert "VRAM" in note
+
+
+def test_ceiling_multi_nvidia_reserves_memory_on_every_device():
+    ceiling, note = hardware.compute_memory_ceiling_gb(
+        os_name="Windows", total_ram_gb=64, gpu_vendor="nvidia",
+        vram_gb=32, device_vram_gb=[16, 16],
+    )
+    assert ceiling == pytest.approx(30)
+    assert "2 NVIDIA GPUs" in note
 
 
 def test_ceiling_darwin_uses_ram_minus_reserve():

@@ -1247,3 +1247,14 @@ def test_wait_until_unloaded_false_while_still_loaded():
     engine = LlamaCppEngine()
     engine._loaded_tag = "phi4-mini"
     assert engine.wait_until_unloaded("phi4-mini") is False
+
+
+def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
+        "--split-mode", "tensor", "--cache-type-k", "f16", "--cache-type-v", "f16",
+    ]
+    assert LlamaCppEngine.gpu_split_args(include_cache=True, cpu_only=True) == [
+        "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
+        "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
+    ]

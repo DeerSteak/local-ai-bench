@@ -48,6 +48,10 @@ PUBLIC_OPTION_SCHEMA = {
     "--acc-timeout": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=config.ACC_TIMEOUT, minimum=1),
     "--acc-token-budget": _spec("integer", "advanced", "exposed", "Graphical execution settings", default=config.ACC_TOKEN_BUDGET, minimum=1),
     "--cpu-only": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
+    "--gpu-split-mode": _spec(
+        "choice", "advanced", "exposed", "Graphical execution settings",
+        default="layer", choices=("layer", "tensor"),
+    ),
     "--force-all": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
@@ -58,7 +62,8 @@ PUBLIC_OPTION_SCHEMA = {
 GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
-    "cpu_only": "--cpu-only", "force_all": "--force-all", "offline": "--offline", "out": "--out",
+    "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
+    "force_all": "--force-all", "offline": "--offline", "out": "--out",
     "comfyui": "--comfyui",
 }
 
@@ -81,4 +86,6 @@ def option_value_errors(values: dict[str, object]) -> list[str]:
                 errors.append(f"{flag} must be at least {spec.minimum}.")
             if spec.maximum is not None and value > spec.maximum:
                 errors.append(f"{flag} must be at most {spec.maximum}.")
+        elif spec.value_type == "choice" and value not in spec.choices:
+            errors.append(f"{flag} must be one of: {', '.join(spec.choices)}.")
     return errors

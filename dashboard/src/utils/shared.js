@@ -58,6 +58,15 @@ export function getConversationTTFTMethodologyWarning(files) {
     : "";
 }
 
+export function getGpuSplitMethodologyWarning(files) {
+  if (files.length < 2) return "";
+  const modes = new Set(files.map(file =>
+    file.data?.run?.effective_config?.gpu_split_mode || "layer"));
+  return modes.size > 1
+    ? "Loaded files use different multi-GPU modes (layer versus tensor parallelism)."
+    : "";
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-

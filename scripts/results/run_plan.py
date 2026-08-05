@@ -18,11 +18,14 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
     "methodology_profile", "effective_optimizations", "offline",
+    "gpu_split_mode",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
-EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {"methodology_profile", "effective_optimizations", "offline"}
+EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
+    "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
+}
 
 
 def _canonical_json(value) -> str:
@@ -206,6 +209,8 @@ class RunPlan:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
+        if settings.get("gpu_split_mode", "layer") not in ("layer", "tensor"):
+            raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
             if settings["methodology_profile"] != "neutral-v1":
                 raise ValueError("invalid execution setting: methodology_profile")

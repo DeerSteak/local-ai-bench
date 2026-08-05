@@ -127,7 +127,7 @@ def test_build_command_shape():
         "-c", "4096",
         "-npp", "512", "-ntg", "128,512", "-npl", "1,2,4",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999",
+        "-ngl", "999", "--split-mode", "layer",
         "--output-format", "jsonl",
     ]
 

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
-  getConversationTTFTMethodologyWarning, sanitizeForFilename, applyEngineLabels, fmt,
+  getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
+  sanitizeForFilename, applyEngineLabels, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -102,6 +103,21 @@ describe("getConversationTTFTMethodologyWarning", () => {
     expect(getConversationTTFTMethodologyWarning([legacy, legacy])).toBe("");
     expect(getConversationTTFTMethodologyWarning([current, current])).toBe("");
     expect(getConversationTTFTMethodologyWarning([{ data: {} }, current])).toBe("");
+  });
+});
+
+describe("getGpuSplitMethodologyWarning", () => {
+  const legacy = { data: { run: { effective_config: {} } } };
+  const tensor = { data: { run: { effective_config: { gpu_split_mode: "tensor" } } } };
+
+  it("warns when tensor and legacy layer results are compared", () => {
+    expect(getGpuSplitMethodologyWarning([legacy, tensor])).toContain("different multi-GPU");
+  });
+
+  it("stays quiet for one file or matching modes", () => {
+    expect(getGpuSplitMethodologyWarning([tensor])).toBe("");
+    expect(getGpuSplitMethodologyWarning([tensor, tensor])).toBe("");
+    expect(getGpuSplitMethodologyWarning([legacy, legacy])).toBe("");
   });
 });
 
