@@ -110,7 +110,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
     except (OSError, json.JSONDecodeError):
         return None
     required_keys = {"version", "engine", "tests", "models", "max_prompt_tokens", "tg_tokens"}
-    allowed_keys = required_keys | {"gui_options"}
+    allowed_keys = required_keys | {"gui_options", "selected_preset"}
     if not isinstance(state, dict) or not required_keys.issubset(state) or not set(state).issubset(allowed_keys):
         return None
     if state["version"] != FRONTEND_STATE_VERSION or not isinstance(state["engine"], str):
@@ -143,6 +143,10 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
             options["offline"] = False
         if validate_gui_options(options):
             return None
+    if "selected_preset" in state and (
+            not isinstance(state["selected_preset"], str)
+            or not state["selected_preset"].strip()):
+        return None
     return state
 
 
@@ -169,7 +173,8 @@ def build_frontend_state(engine_name: str, tests: list[str],
                          entries: list[MenuEntry],
                          max_prompt_tokens: int | None = None,
                          tg_tokens: list[int] | None = None,
-                         gui_options: dict | None = None) -> dict:
+                         gui_options: dict | None = None,
+                         selected_preset: str | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
     state = {
         "version": FRONTEND_STATE_VERSION,
@@ -186,6 +191,8 @@ def build_frontend_state(engine_name: str, tests: list[str],
     }
     if gui_options is not None:
         state["gui_options"] = dict(gui_options)
+    if selected_preset is not None:
+        state["selected_preset"] = selected_preset
     return state
 
 

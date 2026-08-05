@@ -362,10 +362,6 @@ def default_control_values(test_entries, model_entries, engine: str, comfyui_dir
     }
 
 
-def advanced_controls_visible(mode: str, requested: bool) -> bool:
-    return mode == "custom" and requested
-
-
 BENCHMARK_PRESETS = {
     "Consumer guidance": {"tests": ["llm", "conv"], "max_prompt_tokens": 32768},
     "Vendor validation": {"tests": ["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
@@ -375,6 +371,18 @@ BENCHMARK_PRESETS = {
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
 }
+CUSTOM_PRESET = "Custom"
+DEFAULT_BENCHMARK_PRESET = "Consumer guidance"
+
+
+def restored_preset_name(saved: dict | None) -> str:
+    name = (DEFAULT_BENCHMARK_PRESET if saved is None
+            else saved.get("selected_preset", CUSTOM_PRESET))
+    return name if name in {*BENCHMARK_PRESETS, CUSTOM_PRESET} else CUSTOM_PRESET
+
+
+def preset_after_control_change(current: str, applying_preset: bool) -> str:
+    return current if applying_preset else CUSTOM_PRESET
 
 
 def resolve_preset(name: str, available_tests: set[str]) -> dict:
@@ -385,6 +393,22 @@ def resolve_preset(name: str, available_tests: set[str]) -> dict:
         "max_prompt_tokens": preset.get("max_prompt_tokens"),
         "force_all": preset.get("force_all", False),
     }
+
+
+def preset_control_values(name: str, available_tests: set[str], defaults: dict) -> dict:
+    preset = resolve_preset(name, available_tests)
+    values = {
+        "tests": {test: test in preset["tests"] for test in defaults["tests"]},
+        "models": dict(defaults["models"]),
+        "engine": defaults["engine"],
+        "max_prompt_tokens": (str(preset["max_prompt_tokens"])
+                              if preset["max_prompt_tokens"] else "No cap"),
+        "tg_tokens": set(defaults["tg_tokens"]),
+        "options": dict(defaults["options"]),
+    }
+    values["options"]["runs"] = preset["runs"]
+    values["options"]["force_all"] = preset["force_all"]
+    return values
 
 
 def apply_hardware_model_defaults(entries, inventory: dict[str, list[dict]], ram_gb: float) -> None:
@@ -511,10 +535,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     style = ttk.Style(root)
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
     style.configure("Section.TLabel", font=("TkDefaultFont", 12, "bold"))
-    style.configure("Mode.TRadiobutton", font=("TkDefaultFont", 12, "bold"))
     style.configure("Start.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 9))
 
-    mode_var = tk.StringVar(value="default")
     advanced_var = tk.BooleanVar(value=False)
     engine_var = tk.StringVar(value=selected_engine)
     test_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_tests}
@@ -544,7 +566,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Label(config_tab, text="Local AI Bench", style="Title.TLabel").grid(row=0, column=0, sticky="w")
     ttk.Label(
         config_tab,
-        text="Choose Default for a reliable standard run, or Custom to configure every practical benchmark option.",
+        text="Choose a ready-made preset or adjust any setting to create a remembered Custom configuration.",
     ).grid(row=1, column=0, sticky="w", pady=(2, 12))
 
     canvas = tk.Canvas(config_tab, highlightthickness=0)
@@ -559,17 +581,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     canvas.grid(row=2, column=0, sticky="nsew")
     scrollbar.grid(row=2, column=1, sticky="ns")
 
-    mode_box = ttk.LabelFrame(form, text="Configuration mode", padding=12)
-    mode_box.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
-    ttk.Radiobutton(mode_box, text="Default", value="default", variable=mode_var,
-                    style="Mode.TRadiobutton").grid(row=0, column=0, sticky="w", padx=(0, 28))
-    ttk.Radiobutton(mode_box, text="Custom", value="custom", variable=mode_var,
-                    style="Mode.TRadiobutton").grid(row=0, column=1, sticky="w")
-    mode_note = ttk.Label(mode_box, text="Uses the recommended installed-model selection and standard execution settings.")
-    mode_note.grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
-
     discovery_box = ttk.LabelFrame(form, text="System inventory and preflight", padding=12)
-    discovery_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    discovery_box.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
     for row, (label, value) in enumerate((
         ("System", discovery["system"]), ("Installed models", discovery["models"]),
         ("Storage", discovery["storage"]), ("Memory-fit context", discovery["memory_risk"]),
@@ -585,29 +598,29 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=6, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
 
-    custom_frame = ttk.Frame(form)
-    custom_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
-    custom_frame.columnconfigure(0, weight=1)
-    custom_frame.columnconfigure(1, weight=1)
-    preset_row = ttk.Frame(custom_frame)
+    configuration_frame = ttk.Frame(form)
+    configuration_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
+    configuration_frame.columnconfigure(0, weight=1)
+    configuration_frame.columnconfigure(1, weight=1)
+    preset_row = ttk.Frame(configuration_frame)
     preset_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-    preset_var = tk.StringVar(value="Consumer guidance")
+    preset_var = tk.StringVar(value=restored_preset_name(saved))
     ttk.Label(preset_row, text="Preset").pack(side="left")
     ttk.Combobox(
         preset_row, state="readonly", textvariable=preset_var,
-        values=list(BENCHMARK_PRESETS), width=24,
+        values=[*BENCHMARK_PRESETS, CUSTOM_PRESET], width=24,
     ).pack(side="left", padx=(8, 8))
-    project_row = ttk.Frame(custom_frame)
+    project_row = ttk.Frame(configuration_frame)
     project_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
     active_project = {"value": None}
     project_status = tk.StringVar(value="No project loaded")
     ttk.Label(project_row, textvariable=project_status).pack(side="left", padx=(0, 12))
     advanced_toggle = ttk.Checkbutton(
-        custom_frame, text="Show advanced execution and path settings", variable=advanced_var,
+        configuration_frame, text="Show advanced execution and path settings", variable=advanced_var,
     )
     advanced_toggle.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-    tests_box = ttk.LabelFrame(custom_frame, text="Tests", padding=12)
+    tests_box = ttk.LabelFrame(configuration_frame, text="Tests", padding=12)
     tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     test_widgets = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
@@ -625,7 +638,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=len(TEST_DEFINITIONS), column=0, sticky="w", pady=(8, 0))
 
-    models_box = ttk.LabelFrame(custom_frame, text="Installed models", padding=12)
+    models_box = ttk.LabelFrame(configuration_frame, text="Installed models", padding=12)
     models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     previous = None
     model_widgets = {}
@@ -649,7 +662,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=row, column=0, sticky="w", pady=(8, 0))
 
-    workload_box = ttk.LabelFrame(custom_frame, text="Workload sizes", padding=12)
+    workload_box = ttk.LabelFrame(configuration_frame, text="Workload sizes", padding=12)
     workload_box.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     ttk.Label(workload_box, text="Maximum prompt-processing size").grid(row=0, column=0, sticky="w")
     cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
@@ -671,7 +684,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
-    execution_box = ttk.LabelFrame(custom_frame, text="Execution", padding=12)
+    execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     ttk.Label(execution_box, text="Inference engine").grid(row=0, column=0, sticky="w", pady=2)
     engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
@@ -704,7 +717,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
-    paths_box = ttk.LabelFrame(custom_frame, text="Paths", padding=12)
+    paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=5, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     paths_box.columnconfigure(1, weight=1)
     ttk.Label(paths_box, text="Results JSON (blank = automatic)").grid(row=0, column=0, sticky="w")
@@ -761,15 +774,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         reset_execution()
         reset_paths()
 
-    def apply_preset():
-        available = {entry.value for entry in custom_tests if entry.available}
-        preset = resolve_preset(preset_var.get(), available)
-        for name, variable in test_vars.items():
-            variable.set(name in preset["tests"])
-        option_vars["runs"].set(str(preset["runs"]))
-        option_vars["force_all"].set(preset["force_all"])
-        cap_var.set(str(preset["max_prompt_tokens"]) if preset["max_prompt_tokens"] else "No cap")
-
     def current_custom_state():
         tests = [name for name, variable in test_vars.items() if variable.get()]
         for entry in custom_models:
@@ -779,7 +783,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         tg = [value for value, variable in tg_vars.items() if variable.get()]
         return build_frontend_state(
             engine_var.get(), tests, custom_models, max_prompt_tokens=cap,
-            tg_tokens=tg, gui_options=options,
+            tg_tokens=tg, gui_options=options, selected_preset=preset_var.get(),
         )
 
     def export_preset(preset=None):
@@ -803,25 +807,29 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if errors:
             raise ValueError("\n".join(errors))
-        mode_var.set("custom")
-        if state["engine"] in available_engines:
-            engine_var.set(state["engine"])
-        selected_tests = set(state["tests"])
-        for entry in custom_tests:
-            test_vars[entry.value].set(entry.available and entry.value in selected_tests)
-        selected_models = {
-            *state["models"]["llm"], *state["models"]["embedding"],
-            *state["models"]["image"],
-        }
-        for entry in custom_models:
-            model_vars[entry.value].set(entry.value in selected_models)
-        cap = state["max_prompt_tokens"]
-        cap_var.set(str(cap) if cap else "No cap")
-        selected_tg = set(state["tg_tokens"] or config.LLAMABENCH_TG)
-        for value, variable in tg_vars.items():
-            variable.set(value in selected_tg)
-        for key, value in state.get("gui_options", {}).items():
-            option_vars[key].set(value if isinstance(value, bool) else str(value))
+        applying_configuration[0] = True
+        try:
+            if state["engine"] in available_engines:
+                engine_var.set(state["engine"])
+            selected_tests = set(state["tests"])
+            for entry in custom_tests:
+                test_vars[entry.value].set(entry.available and entry.value in selected_tests)
+            selected_models = {
+                *state["models"]["llm"], *state["models"]["embedding"],
+                *state["models"]["image"],
+            }
+            for entry in custom_models:
+                model_vars[entry.value].set(entry.value in selected_models)
+            cap = state["max_prompt_tokens"]
+            cap_var.set(str(cap) if cap else "No cap")
+            selected_tg = set(state["tg_tokens"] or config.LLAMABENCH_TG)
+            for value, variable in tg_vars.items():
+                variable.set(value in selected_tg)
+            for key, value in state.get("gui_options", {}).items():
+                option_vars[key].set(value if isinstance(value, bool) else str(value))
+        finally:
+            applying_configuration[0] = False
+        preset_var.set(CUSTOM_PRESET)
 
     def apply_portable_preset(portable):
         configuration = portable["configuration"]
@@ -976,7 +984,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Project open failed", str(exc), parent=root)
 
-    ttk.Button(preset_row, text="Apply", command=apply_preset).pack(side="left")
     ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Duplicate", command=duplicate_preset).pack(side="left", padx=(8, 0))
@@ -1007,7 +1014,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Label(footer, textvariable=status_var).pack(side="left")
     start_button = ttk.Button(footer, text="Start Benchmark", style="Start.TButton")
     start_button.pack(side="right")
-    ttk.Button(footer, text="Reset All Custom Options", command=reset_all).pack(side="right", padx=(0, 10))
+    ttk.Button(footer, text="Reset All Options", command=reset_all).pack(side="right", padx=(0, 10))
 
     log_tab.columnconfigure(0, weight=1)
     log_tab.rowconfigure(2, weight=1)
@@ -1027,7 +1034,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     pause_button.pack(side="right", padx=(0, 8))
     ttk.Button(log_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
     def open_results_folder():
-        output = option_vars["out"].get().strip() if mode_var.get() == "custom" else ""
+        output = option_vars["out"].get().strip()
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
         subprocess.Popen(open_path_command(folder, platform.system()))
 
@@ -1663,21 +1670,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_engine_filter.trace_add("write", apply_history_filters)
     refresh_history()
 
-    def walk_widgets(parent):
-        for child in parent.winfo_children():
-            yield child
-            yield from walk_widgets(child)
-
-    def capture_control_values() -> dict:
-        return {
-            "tests": {name: variable.get() for name, variable in test_vars.items()},
-            "models": {name: variable.get() for name, variable in model_vars.items()},
-            "engine": engine_var.get(),
-            "max_prompt_tokens": cap_var.get(),
-            "tg_tokens": {value for value, variable in tg_vars.items() if variable.get()},
-            "options": {key: variable.get() for key, variable in option_vars.items()},
-        }
-
     def apply_control_values(values: dict) -> None:
         for name, variable in test_vars.items():
             variable.set(values["tests"].get(name, False))
@@ -1690,43 +1682,61 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         for key, value in values["options"].items():
             option_vars[key].set(value)
 
-    custom_control_values = [capture_control_values()]
-    displayed_mode = ["custom"]
     defaults_for_display = default_control_values(
         default_tests, default_models, selected_engine, detected_comfyui,
     )
+    applying_configuration = [False]
 
-    def update_mode() -> None:
-        custom = mode_var.get() == "custom"
-        if custom and displayed_mode[0] == "default":
-            apply_control_values(custom_control_values[0])
-        elif not custom and displayed_mode[0] == "custom":
-            custom_control_values[0] = capture_control_values()
-            apply_control_values(defaults_for_display)
-        displayed_mode[0] = mode_var.get()
-        mode_note.configure(text=(
-            "Restores and saves your selections in .benchmark_frontend_state.json."
-            if custom else "Uses the recommended installed-model selection and standard execution settings."
-        ))
-        for widget in walk_widgets(custom_frame):
-            try:
-                widget.configure(state="normal" if custom else "disabled")
-            except tk.TclError:
-                pass
-        if custom:
-            cap_combo.configure(state="readonly")
-            engine_combo.configure(state="readonly")
-            for entry in custom_tests:
-                if not entry.available:
-                    test_widgets[entry.value].configure(state="disabled")
+    def control_signature() -> tuple:
+        return (
+            tuple(variable.get() for variable in test_vars.values()),
+            tuple(variable.get() for variable in model_vars.values()),
+            engine_var.get(), cap_var.get(),
+            tuple(variable.get() for variable in tg_vars.values()),
+            tuple(variable.get() for variable in option_vars.values()),
+        )
+
+    last_control_signature = [control_signature()]
+
+    def apply_named_preset(name: str) -> None:
+        if name == CUSTOM_PRESET:
+            return
+        available = {entry.value for entry in custom_tests if entry.available}
+        applying_configuration[0] = True
+        try:
+            apply_control_values(preset_control_values(name, available, defaults_for_display))
+        finally:
+            applying_configuration[0] = False
+
+    def mark_custom(*_) -> None:
+        signature = control_signature()
+        changed = signature != last_control_signature[0]
+        last_control_signature[0] = signature
+        if not changed:
+            return
+        updated = preset_after_control_change(preset_var.get(), applying_configuration[0])
+        if updated != preset_var.get():
+            preset_var.set(updated)
+
+    def select_preset(*_) -> None:
+        apply_named_preset(preset_var.get())
 
     def update_advanced() -> None:
-        visible = advanced_controls_visible(mode_var.get(), advanced_var.get())
+        visible = advanced_var.get()
         for box in (execution_box, paths_box):
             box.grid() if visible else box.grid_remove()
 
-    mode_var.trace_add("write", lambda *_: (update_mode(), update_advanced()))
+    preset_var.trace_add("write", select_preset)
+    for variable in (
+            *test_vars.values(), *model_vars.values(), engine_var, cap_var,
+            *tg_vars.values(), *option_vars.values()):
+        variable.trace_add("write", mark_custom)
     advanced_var.trace_add("write", lambda *_: update_advanced())
+    for entry in custom_tests:
+        if not entry.available:
+            test_widgets[entry.value].configure(state="disabled")
+    if preset_var.get() != CUSTOM_PRESET:
+        apply_named_preset(preset_var.get())
 
     def scroll_form(event):
         widget = root.winfo_containing(root.winfo_pointerx(), root.winfo_pointery())
@@ -2023,32 +2033,23 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def start_run():
         nonlocal process, active_process_kind, pending_fork_source
-        custom = mode_var.get() == "custom"
-        if custom:
-            tests = [name for name, variable in test_vars.items() if variable.get()]
-            entries = custom_models
-            for entry in entries:
-                entry.checked = model_vars[entry.value].get()
-            max_prompt = None if cap_var.get() == "No cap" else int(cap_var.get())
-            tg_tokens = [value for value, variable in tg_vars.items() if variable.get()]
-            gui_options = collect_options()
-            errors = validate_gui_options(gui_options)
-        else:
-            tests = default_test_values
-            entries = default_models
-            max_prompt = None
-            tg_tokens = None
-            gui_options = None
-            errors = []
+        tests = [name for name, variable in test_vars.items() if variable.get()]
+        entries = custom_models
+        for entry in entries:
+            entry.checked = model_vars[entry.value].get()
+        max_prompt = None if cap_var.get() == "No cap" else int(cap_var.get())
+        tg_tokens = [value for value, variable in tg_vars.items() if variable.get()]
+        gui_options = collect_options()
+        errors = validate_gui_options(gui_options)
         if not tests:
             errors.append("Select at least one benchmark test.")
         selection_error = model_selection_error(entries, tests)
         if selection_error:
             errors.append(selection_error)
-        if custom and TG_TOKEN_TESTS & set(tests) and not tg_tokens:
+        if TG_TOKEN_TESTS & set(tests) and not tg_tokens:
             errors.append("Select at least one llama-bench generation size.")
         custom_comfyui = (normalize_comfyui_dir(Path(gui_options["comfyui"]))
-                          if custom and gui_options["comfyui"] else found_comfyui)
+                          if gui_options["comfyui"] else found_comfyui)
         errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
         if errors:
             messagebox.showerror("Check benchmark options", "\n".join(errors), parent=root)
@@ -2065,16 +2066,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         state = build_frontend_state(
             engine_var.get(), tests, entries, max_prompt_tokens=max_prompt,
             tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-            gui_options=gui_options,
+            gui_options=gui_options, selected_preset=preset_var.get(),
         )
-        should_save = custom or saved is None
-        if should_save and not save_frontend_state(state, FRONTEND_STATE_PATH):
+        if not save_frontend_state(state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
         command = build_benchmark_command(
             engine_var.get(), detected_comfyui, tests, entries,
             max_prompt_tokens=max_prompt if MAX_PROMPT_TOKEN_TESTS & set(tests) else None,
-            tg_tokens=tg_tokens if custom and TG_TOKEN_TESTS & set(tests) else None,
+            tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
             gui_options=gui_options,
         )
         if pending_fork_source is not None:
@@ -2143,7 +2143,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     stop_button.configure(command=stop_run)
     pause_button.configure(command=toggle_pause)
     root.protocol("WM_DELETE_WINDOW", close_window)
-    update_mode()
     update_advanced()
     root.after(100, poll_output)
     root.after(150, lambda: (root.lift(), root.attributes("-topmost", True), root.focus_force(),

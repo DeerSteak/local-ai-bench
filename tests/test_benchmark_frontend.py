@@ -184,6 +184,19 @@ def test_frontend_state_round_trip_uses_strict_json(tmp_path):
     assert not list(tmp_path.glob(".*.tmp"))
 
 
+def test_frontend_state_round_trip_preserves_optional_preset_selection(tmp_path):
+    path = tmp_path / "state.json"
+    state = saved_state(selected_preset="Quick run")
+    assert save_frontend_state(state, path)
+    assert load_frontend_state(path)["selected_preset"] == "Quick run"
+
+
+def test_frontend_state_rejects_invalid_preset_selection(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(saved_state(selected_preset="")), encoding="utf-8")
+    assert load_frontend_state(path) is None
+
+
 def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     path = tmp_path / "state.json"
     options = dict(GUI_OPTION_DEFAULTS)
@@ -266,6 +279,13 @@ def test_build_frontend_state_records_max_prompt_tokens_and_tg_tokens():
     assert build_frontend_state(
         "mlx", ["llamabench"], [], max_prompt_tokens=32768, tg_tokens=[128, 1024],
     )["tg_tokens"] == [128, 1024]
+
+
+def test_build_frontend_state_records_gui_preset_when_provided():
+    state = build_frontend_state(
+        "mlx", ["llm"], [], selected_preset="Custom",
+    )
+    assert state["selected_preset"] == "Custom"
 
 
 def test_cli_run_plan_converts_to_complete_frontend_state_and_command():

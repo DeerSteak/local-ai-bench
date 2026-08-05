@@ -8,11 +8,11 @@ The launcher selects the GUI on a usable local desktop and the terminal frontend
 
 ## 2. Create or open a project
 
-The user selects Custom, creates a decision project for hardware comparison, model selection, acceptance validation, capacity planning, or regression, or opens an existing `.labproject`. The project restores portable configuration while retaining machine-local output and ComfyUI paths. Unavailable engines, tests, or models stop application of the project and name the missing items.
+The user creates a decision project for hardware comparison, model selection, acceptance validation, capacity planning, or regression, or opens an existing `.labproject`. The project restores portable configuration as Custom while retaining machine-local output and ComfyUI paths. Unavailable engines, tests, or models stop application of the project and name the missing items.
 
 ## 3. Configure and review
 
-Default mode locks a supported standard configuration. Custom mode exposes guided and advanced controls with units, ranges, consequences, reset actions, presets, installed-model selection, prompt/generation caps, run counts, timeouts, CPU-only mode, force-all, and offline mode. The final preview resolves tests, exact models, cases, process/load count, estimated duration, storage/network implications, paths, and every measurement-affecting setting. Invalid or unsupported combinations are corrected before launch, not during a long run.
+Named presets immediately load a supported hardware-aware configuration. Every control remains editable, and any change labels the configuration Custom; guided and advanced controls expose units, ranges, consequences, reset actions, installed-model selection, prompt/generation caps, run counts, timeouts, CPU-only mode, force-all, and offline mode. The final preview resolves tests, exact models, cases, process/load count, estimated duration, storage/network implications, paths, and every measurement-affecting setting. Invalid or unsupported combinations are corrected before launch, not during a long run.
 
 ## 4. Execute
 

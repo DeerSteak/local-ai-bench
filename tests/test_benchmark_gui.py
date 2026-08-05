@@ -13,7 +13,7 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
-    BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
+    BENCHMARK_PRESETS, CUSTOM_PRESET, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_resource_usage, format_run_outcome,
@@ -21,7 +21,8 @@ from scripts.app.benchmark_gui import (
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_usage, plan_preview_sections, query_gpu_usage,
     recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
-    process_resource_usage, selected_result_paths, update_progress_metrics, workload_preflight_errors,
+    preset_control_values, process_resource_usage, preset_after_control_change, restored_preset_name,
+    selected_result_paths, update_progress_metrics, workload_preflight_errors,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -392,10 +393,18 @@ def test_default_control_values_describe_the_actual_default_run():
     assert values["options"] == custom_option_defaults(Path("/ComfyUI"))
 
 
-def test_advanced_controls_require_custom_mode_and_explicit_request():
-    assert advanced_controls_visible("custom", True)
-    assert not advanced_controls_visible("custom", False)
-    assert not advanced_controls_visible("default", True)
+def test_preset_selection_restores_named_custom_and_legacy_states():
+    assert restored_preset_name(None) == "Consumer guidance"
+    assert restored_preset_name({"selected_preset": "Quick run"}) == "Quick run"
+    assert restored_preset_name({"selected_preset": CUSTOM_PRESET}) == CUSTOM_PRESET
+    assert restored_preset_name({}) == CUSTOM_PRESET
+    assert restored_preset_name({"selected_preset": "Removed preset"}) == CUSTOM_PRESET
+
+
+def test_control_changes_switch_named_presets_to_custom_except_during_application():
+    assert preset_after_control_change("Quick run", False) == CUSTOM_PRESET
+    assert preset_after_control_change("Quick run", True) == "Quick run"
+    assert preset_after_control_change(CUSTOM_PRESET, False) == CUSTOM_PRESET
 
 
 def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests():
@@ -408,6 +417,23 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     full = resolve_preset("Full run", {"llm", "img"})
     assert full["tests"] == ["llm", "img"]
     assert full["force_all"]
+
+
+def test_named_preset_replaces_the_complete_control_configuration():
+    defaults = {
+        "tests": {"llm": True, "emb": True, "img": True},
+        "models": {"small": True}, "engine": "llamacpp",
+        "max_prompt_tokens": "No cap", "tg_tokens": {128, 256},
+        "options": dict(GUI_OPTION_DEFAULTS),
+    }
+    values = preset_control_values("Quick run", {"llm", "emb", "img"}, defaults)
+    assert values["tests"] == {"llm": True, "emb": True, "img": False}
+    assert values["max_prompt_tokens"] == "8192"
+    assert values["options"]["runs"] == 1
+    assert values["options"]["force_all"] is False
+    assert values["options"]["out"] == ""
+    values["options"]["out"] = "changed.json"
+    assert defaults["options"]["out"] == ""
 
 
 def test_hardware_defaults_uncheck_models_that_exceed_usable_ram():
