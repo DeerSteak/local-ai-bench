@@ -5,6 +5,10 @@ from scripts.setup.model_inventory import (
     classify_engine_models,
     delete_non_catalog_model_dirs,
     engine_download_size,
+    engine_fit_report,
+    engine_fit_warnings,
+    fits_any_engine,
+    format_engine_sizes,
     engine_model_complete,
     engine_model_dir,
     models_missing_engine_support,
@@ -308,3 +312,79 @@ def test_every_catalog_model_has_vllm_weights_defined():
     for model in LLM_MODELS + EMBED_MODELS:
         assert "/" in model["vllm_repo"], model["tag"]
         assert model["vllm_download_size"].startswith("~")
+
+
+# ── per-engine size and memory fit ──
+
+MIXED = {"tag": "m", "download_size": "~6.2 GB", "vllm_download_size": "~12.4 GB",
+         "vllm_repo": "org/m-awq"}
+
+
+def test_fit_report_uses_each_engines_own_weights():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=100)
+    assert report["llamacpp"]["size"] == "~6.2 GB"
+    assert report["vllm"]["size"] == "~12.4 GB"
+    assert report["vllm"]["needed_gb"] > report["llamacpp"]["needed_gb"]
+
+
+def test_a_model_can_fit_one_engine_and_not_the_other():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=12.0)
+    assert report["llamacpp"]["fits"] is True
+    assert report["vllm"]["fits"] is False
+    assert fits_any_engine(report) is True, "still worth downloading for llama.cpp"
+
+
+def test_vllm_only_selection_reports_only_vllm():
+    report = engine_fit_report(MIXED, ["vllm"], ceiling_gb=12.0)
+    assert list(report) == ["vllm"]
+    assert fits_any_engine(report) is False
+    assert format_engine_sizes(report) == "~12.4 GB"
+
+
+def test_llamacpp_only_selection_is_unchanged():
+    report = engine_fit_report(MIXED, ["llamacpp"], ceiling_gb=12.0)
+    assert list(report) == ["llamacpp"]
+    assert format_engine_sizes(report) == "~6.2 GB"
+    assert engine_fit_warnings(report, 12.0) == []
+
+
+def test_both_engines_label_names_each_one():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=12.0)
+    assert format_engine_sizes(report) == "llama.cpp ~6.2 GB · vLLM ~12.4 GB"
+
+
+def test_warnings_name_the_engine_only_when_several_are_selected():
+    both = engine_fit_warnings(engine_fit_report(MIXED, ["llamacpp", "vllm"], 12.0), 12.0)
+    assert both == ["vLLM needs ~14.9 GB, ~12.0 GB available"]
+    single = engine_fit_warnings(engine_fit_report(MIXED, ["vllm"], 12.0), 12.0)
+    assert single == ["needs ~14.9 GB, ~12.0 GB available"]
+
+
+def test_unknown_ceiling_yields_no_verdict_and_no_warnings():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=None)
+    assert fits_any_engine(report) is None
+    assert engine_fit_warnings(report, None) == []
+
+
+def test_a_model_fitting_nothing_is_reported_as_unfit():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=1.0)
+    assert fits_any_engine(report) is False
+    assert len(engine_fit_warnings(report, 1.0)) == 2
+
+
+def test_a_model_without_vllm_weights_is_skipped_in_the_report():
+    model = {"tag": "m", "download_size": "~6.2 GB"}
+    report = engine_fit_report(model, ["llamacpp", "vllm"], ceiling_gb=100)
+    assert list(report) == ["llamacpp"]
+    assert format_engine_sizes(report) == "~6.2 GB"
+
+
+def test_empty_engine_selection_has_no_verdict():
+    assert fits_any_engine(engine_fit_report(MIXED, [], ceiling_gb=12.0)) is None
+
+
+def test_real_catalog_sizes_differ_between_engines():
+    from scripts.workloads.models import LLM_MODELS
+    differing = [m for m in LLM_MODELS
+                 if engine_download_size(m, "vllm") != engine_download_size(m, "llamacpp")]
+    assert len(differing) == len(LLM_MODELS), "every LLM should carry its own vLLM size"

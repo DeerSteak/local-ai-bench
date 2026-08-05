@@ -18,6 +18,10 @@ from scripts.workloads.models import (
     LLM_MODELS_XSMALL,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
+from scripts.setup.engine_selection import LLAMACPP
+from scripts.setup.model_inventory import (
+    engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
+)
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 
 
@@ -30,13 +34,25 @@ LLM_GROUPS = (
 HF_LOGIN_URL = "https://huggingface.co/login"
 
 
-def default_model_selection(memory_ceiling_gb: float | None) -> dict[str, bool]:
-    """Return the same memory-aware defaults used by terminal setup."""
+def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
+    """One model row: per-engine sizes, plus a warning per engine it won't fit."""
+    report = engine_fit_report(model, engines, memory_ceiling_gb)
+    if not report:
+        return f"{model['label']}  {model.get('download_size', '')}".rstrip()
+    label = f"{model['label']}  {format_engine_sizes(report)}"
+    for warning in engine_fit_warnings(report, memory_ceiling_gb):
+        label += f"   ⚠ {warning}"
+    return label
+
+
+def default_model_selection(memory_ceiling_gb: float | None,
+                            engines=(LLAMACPP,)) -> dict[str, bool]:
+    """Memory-aware defaults, matching terminal setup. Checked if it fits any engine."""
     selected: dict[str, bool] = {}
     for _, models in LLM_GROUPS:
         for model in models:
-            selected[model["tag"]] = hardware.model_fits(
-                model["download_size"], memory_ceiling_gb,
+            selected[model["tag"]] = fits_any_engine(
+                engine_fit_report(model, engines, memory_ceiling_gb),
             ) is not False
     for model in EMBED_MODELS:
         selected[model["tag"]] = True
@@ -152,8 +168,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
 
     root.after(150, bring_to_front)
 
-    defaults = default_model_selection(memory_ceiling_gb)
+    engine_entries = engine_entries or []
+    initial_engines = [entry["name"] for entry in engine_entries
+                       if entry["checked"] and entry["enabled"]] or [LLAMACPP]
+    defaults = default_model_selection(memory_ceiling_gb, initial_engines)
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
+    labelled_models: dict[str, tuple] = {}
+    applied_engines = list(initial_engines)
     token_var = tk.StringVar()
     save_token_var = tk.BooleanVar(value=True)
     override_token_var = tk.BooleanVar(value=False)
@@ -197,7 +218,6 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(welcome, text=memory_text, wraplength=740).grid(sticky="w", pady=8)
     if detected_comfyui:
         ttk.Label(welcome, text=f"Existing ComfyUI detected: {detected_comfyui}", wraplength=740).grid(sticky="w")
-    engine_entries = engine_entries or []
     engine_vars: dict[str, "tk.BooleanVar"] = {}
     if engine_entries:
         ttk.Label(welcome, text="Engines", font=("TkDefaultFont", 12, "bold")).grid(
@@ -256,10 +276,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         row += 1
         for model in models:
             key = model.get("tag", model.get("short"))
-            size = model.get("download_size", "")
-            ttk.Checkbutton(
-                model_list, text=f"{model['label']}  {size}", variable=model_vars[key],
-            ).grid(row=row, column=0, sticky="w", padx=(16, 0))
+            checkbutton = ttk.Checkbutton(
+                model_list, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                variable=model_vars[key],
+            )
+            checkbutton.grid(row=row, column=0, sticky="w", padx=(16, 0))
+            if "download_size" in model:
+                labelled_models[key] = (checkbutton, model)
             license_url = model.get("license_url")
             if license_url:
                 ttk.Button(
@@ -412,9 +435,29 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         review_text.insert("1.0", "\n".join(lines))
         review_text.configure(state="disabled")
 
+    def selected_engines() -> list[str]:
+        chosen = [entry["name"] for entry in engine_entries
+                  if entry["enabled"] and engine_vars[entry["name"]].get()]
+        return chosen or [LLAMACPP]
+
+    def refresh_model_rows() -> None:
+        """Re-label and re-default the model list for the checked engines."""
+        nonlocal applied_engines
+        engines = selected_engines()
+        if engines == applied_engines:
+            return
+        applied_engines = engines
+        for key, (checkbutton, model) in labelled_models.items():
+            checkbutton.configure(text=model_row_label(model, engines, memory_ceiling_gb))
+        for key, value in default_model_selection(memory_ceiling_gb, engines).items():
+            if key in model_vars:
+                model_vars[key].set(value)
+
     def show_page(index: int) -> None:
         nonlocal page_index
         page_index = index
+        if pages[index] is models_page:
+            refresh_model_rows()
         pages[index].tkraise()
         back_button.configure(state="disabled" if index == 0 else "normal")
         next_button.configure(text="Install" if index == len(pages) - 1 else "Next")

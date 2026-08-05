@@ -58,6 +58,20 @@ def parse_nvidia_max_cuda_version(nvidia_smi_output: str) -> str | None:
     return m.group(1) if m else None
 
 
+def rocminfo_gfx_targets(output: str) -> list[str]:
+    """gfx targets of GPU agents, feature suffixes stripped (gfx90a:sramecc+ → gfx90a)."""
+    targets = []
+    agent_blocks = re.split(r"(?m)^\s*Agent\s+\d+\s*$", output)[1:]
+    for block in agent_blocks:
+        device_type = re.search(r"(?m)^\s*Device Type:\s*(\S+)", block)
+        if not device_type or device_type.group(1).upper() != "GPU":
+            continue
+        target = re.search(r"(?m)^\s*Name:\s*(gfx\w+)", block)
+        if target and target.group(1) not in targets:
+            targets.append(target.group(1).split(":")[0])
+    return targets
+
+
 def parse_rocm_version(output: str) -> tuple[int, int] | None:
     """Major/minor ROCm version from `hipconfig --version` or /opt/rocm/.info/version."""
     m = re.search(r"(\d+)\.(\d+)", output or "")

@@ -27,11 +27,13 @@ SETUP_CONFIG_PATH = SCRIPT_DIR / "local_ai_bench_config.json"
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 
-# vLLM gets its own venv: it pins a torch build that would collide with the one
-# already installed in bench-env, and its ROCm/Metal wheels are CPython 3.12 only.
+# Own venv: vLLM pins a torch build that would collide with bench-env's.
 VLLM_VENV = SCRIPT_DIR / "vllm-env"
 VLLM_PORT = 8000
 VLLM_URL  = f"http://localhost:{VLLM_PORT}"
+
+# vLLM's own default, then AMD `vllm-launch`'s.
+VLLM_DISCOVERY_PORTS = (8000, 8001)
 
 # Model downloads land here (setup_check.py), namespaced one subdirectory per engine — see docs/engines.md.
 MODELS_DIR = SCRIPT_DIR / "models"

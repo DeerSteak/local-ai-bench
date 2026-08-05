@@ -1,12 +1,10 @@
-"""vLLM install support matrix and installer — see docs/setup.md's vLLM section.
-
-Everything above `install_vllm` is pure decision logic so it can be unit tested
-without running the real installer.
-"""
+"""vLLM support matrix, discovery, and installer — see docs/setup.md."""
 
 from dataclasses import dataclass
 from pathlib import Path
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -16,10 +14,15 @@ from scripts.runtime import config
 METAL_INSTALL_URL = "https://raw.githubusercontent.com/vllm-project/vllm-metal/main/install.sh"
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
 NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
+# Pointed at, never pulled — see docs/setup.md's Strix Halo note.
+STRIX_HALO_TOOLBOX_URL = "https://github.com/kyuz0/amd-strix-halo-vllm-toolboxes"
 
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
+
+# gfx targets the prebuilt ROCm wheels ship kernels for; anything else is experimental.
+VLLM_ROCM_WHEEL_TARGETS = ("gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1200", "gfx1201")
 
 # The ROCm and Metal builds publish CPython 3.12 wheels only; CUDA spans a range.
 CUDA_PYTHON_RANGE = ((3, 10), (3, 13))
@@ -59,7 +62,8 @@ def vllm_platform_support(*, os_name: str, machine: str,
                           intel_gpu: bool = False,
                           gpu_names=None,
                           compute_cap: str | None = None,
-                          rocm_version: tuple[int, int] | None = None) -> VllmSupport:
+                          rocm_version: tuple[int, int] | None = None,
+                          rocm_gfx_targets=None) -> VllmSupport:
     """Whether setup can install vLLM here, and how. See docs/setup.md's support table."""
     if os_name == "Windows":
         return VllmSupport("unsupported", None,
@@ -104,6 +108,17 @@ def vllm_platform_support(*, os_name: str, machine: str,
             return VllmSupport("unsupported", None,
                                f"vLLM needs ROCm {MIN_ROCM_VERSION[0]}.{MIN_ROCM_VERSION[1]}+, "
                                f"this system reports {version_text}")
+        untargeted = [target for target in (rocm_gfx_targets or [])
+                      if target not in VLLM_ROCM_WHEEL_TARGETS]
+        if untargeted and not any(target in VLLM_ROCM_WHEEL_TARGETS
+                                  for target in rocm_gfx_targets):
+            return VllmSupport("experimental", "rocm_wheel",
+                               f"vLLM's prebuilt ROCm wheels ship no kernels for "
+                               f"{', '.join(untargeted)} — they target "
+                               f"{', '.join(VLLM_ROCM_WHEEL_TARGETS)}. A TheRock-based "
+                               f"container is the known-working route ({STRIX_HALO_TOOLBOX_URL}); "
+                               "installing these wheels here may not produce a usable vLLM",
+                               requires_python=PINNED_PYTHON)
         return VllmSupport("supported", "rocm_wheel",
                            "Linux + AMD ROCm has prebuilt wheels, published for CPython 3.12 only",
                            requires_python=PINNED_PYTHON)
@@ -154,8 +169,7 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool) -> li
 
 def find_vllm_binary(*, platform_name: str, venv_dir: Path = None,
                      which_fn=shutil.which, exists_fn=None) -> str | None:
-    """Locate a `vllm` executable, system-first — matching the llama.cpp policy so a
-    working installation is never shadowed by a second project-local copy."""
+    """Locate a `vllm`, system-first — matching the llama.cpp policy."""
     on_path = which_fn("vllm")
     if on_path:
         return on_path
@@ -173,9 +187,60 @@ def find_vllm_binary(*, platform_name: str, venv_dir: Path = None,
     return None
 
 
+LAUNCHER_NAMES = ("vllm-launch",)
+LAUNCHER_CONF = Path("~/.local/share/vLLM/vllm-launch.conf")
+
+
+def find_vllm_launcher(which_fn=shutil.which) -> str | None:
+    """A platform wrapper around `vllm serve`, preferred over it — see docs/setup.md."""
+    for name in LAUNCHER_NAMES:
+        found = which_fn(name)
+        if found:
+            return found
+    return None
+
+
+def parse_launcher_extra_args(text: str) -> list[str]:
+    """`VLLM_EXTRA_ARGS=(...)`/`+=(...)` args a launcher conf injects into every run."""
+    args = []
+    for match in re.finditer(r"^\s*VLLM_EXTRA_ARGS\+?=\(([^)]*)\)", text or "", re.MULTILINE):
+        args.extend(shlex.split(match.group(1)))
+    return args
+
+
+def read_launcher_extra_args(path: Path = None) -> list[str]:
+    path = Path(path or LAUNCHER_CONF).expanduser()
+    try:
+        return parse_launcher_extra_args(path.read_text(encoding="utf-8"))
+    except OSError:
+        return []
+
+
+def vllm_server_reachable(url: str = None, timeout: float = 2.0, open_fn=None) -> bool:
+    """True if an OpenAI-compatible vLLM server answers at `url`."""
+    url = url or config.VLLM_URL
+    if open_fn is None:  # pragma: no cover — real socket
+        import urllib.request
+        open_fn = urllib.request.urlopen
+    try:
+        with open_fn(f"{url}/v1/models", timeout=timeout) as response:
+            return 200 <= getattr(response, "status", 200) < 300
+    except Exception:
+        return False
+
+
+def find_vllm_server(ports=None, timeout: float = 2.0, open_fn=None) -> str | None:
+    """URL of an already-running vLLM, or None."""
+    for port in (ports if ports is not None else config.VLLM_DISCOVERY_PORTS):
+        url = f"http://localhost:{port}"
+        if vllm_server_reachable(url, timeout=timeout, open_fn=open_fn):
+            return url
+    return None
+
+
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
                  venv_dir: Path = None) -> bool:  # pragma: no cover
-    """Install vLLM per `support.method`. Real network/venv side effects — see AGENTS.md."""
+    """Install vLLM per `support.method`. Real network/venv side effects."""
     if not support.installable:
         return False
     if support.method == "metal_plugin":

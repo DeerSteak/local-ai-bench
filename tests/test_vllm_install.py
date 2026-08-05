@@ -3,8 +3,14 @@ from pathlib import Path
 
 from scripts.setup.vllm_install import (
     ROCM_WHEEL_INDEX,
+    VLLM_ROCM_WHEEL_TARGETS,
     NIGHTLY_CU130_INDEX,
     find_vllm_binary,
+    find_vllm_launcher,
+    parse_launcher_extra_args,
+    read_launcher_extra_args,
+    find_vllm_server,
+    vllm_server_reachable,
     is_dgx_spark,
     parse_compute_capability,
     python_candidates,
@@ -74,6 +80,37 @@ def test_linux_rocm_is_supported_and_pins_python_312():
     result = support(rocm_ok=True, rocm_version=(6, 4))
     assert (result.status, result.method) == ("supported", "rocm_wheel")
     assert result.requires_python == (3, 12)
+
+
+def test_strix_halo_gfx1151_is_experimental_not_supported():
+    result = support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=["gfx1151"])
+    assert result.status == "experimental"
+    assert result.method == "rocm_wheel"  # still installable, but the user is warned
+    assert "gfx1151" in result.reason
+    assert "amd-strix-halo-vllm-toolboxes" in result.reason
+
+
+def test_every_wheel_target_stays_supported():
+    for target in VLLM_ROCM_WHEEL_TARGETS:
+        result = support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=[target])
+        assert result.status == "supported", target
+
+
+def test_an_unknown_gfx_target_does_not_downgrade_a_targeted_gpu():
+    result = support(rocm_ok=True, rocm_version=(7, 0),
+                     rocm_gfx_targets=["gfx942", "gfx1151"])
+    assert result.status == "supported", "one targeted GPU is enough to use the wheels"
+
+
+def test_undetected_gfx_targets_keep_the_default_supported_verdict():
+    assert support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=None).status == "supported"
+    assert support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=[]).status == "supported"
+
+
+def test_gfx_gate_does_not_override_an_unsupported_rocm_version():
+    result = support(rocm_ok=True, rocm_version=(6, 0), rocm_gfx_targets=["gfx1151"])
+    assert result.status == "unsupported"
+    assert "6.0" in result.reason
 
 
 def test_rocm_below_the_minimum_is_unsupported():
@@ -217,3 +254,100 @@ def test_find_vllm_binary_does_not_look_for_a_metal_venv_off_macos():
                      exists_fn=lambda path: probed.append(str(path)) or False,
                      which_fn=lambda _: None)
     assert not any(".venv-vllm-metal" in path for path in probed)
+
+
+# ── already-running server ──
+
+class _FakeResponse:
+    def __init__(self, status): self.status = status
+    def __enter__(self): return self
+    def __exit__(self, *exc): return False
+
+
+def test_server_probe_accepts_a_healthy_endpoint():
+    seen = {}
+    def opener(url, timeout=None):
+        seen["url"] = url
+        return _FakeResponse(200)
+    assert vllm_server_reachable("http://localhost:8000", open_fn=opener) is True
+    assert seen["url"] == "http://localhost:8000/v1/models"
+
+
+def test_server_probe_rejects_an_error_status():
+    assert vllm_server_reachable("http://localhost:8000",
+                                 open_fn=lambda *a, **k: _FakeResponse(503)) is False
+
+
+def test_server_probe_is_false_when_nothing_is_listening():
+    def refuse(*args, **kwargs):
+        raise OSError("connection refused")
+    assert vllm_server_reachable("http://localhost:8000", open_fn=refuse) is False
+
+
+def test_server_discovery_checks_amd_launch_port_as_well_as_the_default():
+    tried = []
+    def opener(url, timeout=None):
+        tried.append(url)
+        if ":8001/" in url:
+            return _FakeResponse(200)
+        raise OSError("connection refused")
+    assert find_vllm_server(open_fn=opener) == "http://localhost:8001"
+    assert tried == ["http://localhost:8000/v1/models", "http://localhost:8001/v1/models"]
+
+
+def test_server_discovery_prefers_the_first_port_that_answers():
+    assert find_vllm_server(open_fn=lambda *a, **k: _FakeResponse(200)) == "http://localhost:8000"
+
+
+def test_server_discovery_returns_none_when_no_port_answers():
+    def refuse(*args, **kwargs):
+        raise OSError("connection refused")
+    assert find_vllm_server(open_fn=refuse) is None
+
+
+def test_server_discovery_accepts_an_explicit_port_list():
+    seen = []
+    def opener(url, timeout=None):
+        seen.append(url)
+        raise OSError("nope")
+    assert find_vllm_server(ports=[9999], open_fn=opener) is None
+    assert seen == ["http://localhost:9999/v1/models"]
+
+
+# ── platform launcher ──
+
+def test_find_vllm_launcher_prefers_a_platform_wrapper():
+    assert find_vllm_launcher(which_fn=lambda name:
+        "/usr/bin/vllm-launch" if name == "vllm-launch" else None) == "/usr/bin/vllm-launch"
+    assert find_vllm_launcher(which_fn=lambda _: None) is None
+
+
+def test_launcher_conf_extra_args_are_parsed():
+    assert parse_launcher_extra_args(
+        "VLLM_EXTRA_ARGS=(--gpu-memory-utilization 0.85 --enforce-eager)"
+    ) == ["--gpu-memory-utilization", "0.85", "--enforce-eager"]
+
+
+def test_launcher_conf_append_form_accumulates():
+    text = "VLLM_EXTRA_ARGS=(--a 1)\nVLLM_EXTRA_ARGS+=(--b 2)\n"
+    assert parse_launcher_extra_args(text) == ["--a", "1", "--b", "2"]
+
+
+def test_launcher_conf_respects_quoting_and_ignores_other_lines():
+    text = '# comment\nOTHER=(--x)\nVLLM_EXTRA_ARGS=(--served-model-name "two words")\n'
+    assert parse_launcher_extra_args(text) == ["--served-model-name", "two words"]
+
+
+def test_launcher_conf_parsing_is_empty_for_junk():
+    for text in ("", None, "VLLM_EXTRA_ARGS=", "nothing"):
+        assert parse_launcher_extra_args(text) == []
+
+
+def test_reading_a_missing_launcher_conf_is_not_an_error(tmp_path):
+    assert read_launcher_extra_args(tmp_path / "nope.conf") == []
+
+
+def test_reading_a_real_launcher_conf(tmp_path):
+    conf = tmp_path / "vllm-launch.conf"
+    conf.write_text("VLLM_EXTRA_ARGS=(--max-model-len 8192)\n")
+    assert read_launcher_extra_args(conf) == ["--max-model-len", "8192"]

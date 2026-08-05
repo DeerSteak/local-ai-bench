@@ -4,7 +4,7 @@ import re
 import shutil
 from pathlib import Path
 
-from scripts.runtime import config
+from scripts.runtime import config, hardware
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
@@ -41,8 +41,54 @@ def engine_model_complete(model_dir: Path, engine: str, filenames=()) -> bool:
     return all((model_dir / Path(name).name).exists() for name in filenames)
 
 
+ENGINE_LABELS = {"llamacpp": "llama.cpp", "vllm": "vLLM"}
+
+
+def engine_fit_report(model: dict, engines, ceiling_gb: float | None) -> dict[str, dict]:
+    """Per-engine size, memory need, and fit — engines carry different weights."""
+    report = {}
+    for engine in engines:
+        if engine == "vllm" and not model.get("vllm_repo"):
+            continue
+        size = engine_download_size(model, engine)
+        report[engine] = {
+            "size": size,
+            "needed_gb": hardware.model_memory_requirement_gb(size),
+            "fits": hardware.model_fits(size, ceiling_gb),
+        }
+    return report
+
+
+def fits_any_engine(report: dict[str, dict]) -> bool | None:
+    """True if at least one engine can hold it, None when the ceiling is unknown."""
+    verdicts = [entry["fits"] for entry in report.values()]
+    if not verdicts or all(verdict is None for verdict in verdicts):
+        return None
+    return any(verdict for verdict in verdicts)
+
+
+def format_engine_sizes(report: dict[str, dict]) -> str:
+    """'~6.2 GB' for one engine, 'llama.cpp ~6.2 GB · vLLM ~12.4 GB' for several."""
+    if len(report) == 1:
+        return next(iter(report.values()))["size"]
+    return " · ".join(f"{ENGINE_LABELS.get(engine, engine)} {entry['size']}"
+                      for engine, entry in report.items())
+
+
+def engine_fit_warnings(report: dict[str, dict], ceiling_gb: float | None) -> list[str]:
+    """One warning per engine that can't hold this model."""
+    if ceiling_gb is None:
+        return []
+    prefix_needed = len(report) > 1
+    return [
+        (f"{ENGINE_LABELS.get(engine, engine)} needs " if prefix_needed else "needs ")
+        + f"~{entry['needed_gb']:.1f} GB, ~{ceiling_gb:.1f} GB available"
+        for engine, entry in report.items() if entry["fits"] is False
+    ]
+
+
 def models_missing_engine_support(models: list[dict], engine: str) -> list[str]:
-    """Catalog tags with no weights defined for `engine`, so they can be reported, not skipped silently."""
+    """Catalog tags with no weights defined for `engine`."""
     if engine != "vllm":
         return []
     return [model["tag"] for model in models if not model.get("vllm_repo")]

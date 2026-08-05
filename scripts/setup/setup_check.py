@@ -31,8 +31,9 @@ from scripts.runtime.comfyui_installation import (
 )
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import (
-    delete_non_catalog_model_dirs, engine_download_size, engine_model_complete,
-    engine_model_dir, find_non_catalog_model_dirs, models_missing_engine_support,
+    delete_non_catalog_model_dirs, engine_download_size, engine_fit_report,
+    engine_fit_warnings, engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
+    fits_any_engine, format_engine_sizes, models_missing_engine_support,
 )
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
@@ -43,7 +44,10 @@ from scripts.setup.engine_selection import (
     LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
     selected_engine_names, toggle_engine,
 )
-from scripts.setup.vllm_install import find_vllm_binary, install_vllm, vllm_platform_support
+from scripts.setup.vllm_install import (
+    find_vllm_binary, find_vllm_launcher, find_vllm_server, install_vllm,
+    read_launcher_extra_args, vllm_platform_support,
+)
 from scripts.app.interface_mode import select_interface_mode
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
@@ -157,9 +161,7 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
     return success
 
 def hf_snapshot_download(repo, dest_dir, token=None):
-    """Download a whole HF repo (vLLM needs the config/tokenizer beside the weights).
-    Real files under dest_dir, not symlinks into the shared HF cache, so deleting
-    models/vllm/<slug>/ actually frees the space."""
+    """Download a whole HF repo as real files, not symlinks into the shared HF cache."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     if token:
@@ -303,17 +305,19 @@ def get_nvidia_compute_cap():
     except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
         return None
 
+rocm_gfx = []         # gfx targets, set by check_rocm() — vLLM's wheels are per-target
 rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
 rocm_vram_gb  = None  # only queried for a discrete GPU — see compute_memory_ceiling_gb
 rocm_gpus = []
 
 def check_rocm():
-    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus
+    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus, rocm_gfx
     try:
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
         )
         gpu_names = hardware.rocminfo_gpu_names(out)
+        rocm_gfx = hardware.rocminfo_gfx_targets(out)
         for name in gpu_names[:3]:
             print(f"  ROCm GPU: {name}")
         if gpu_names:
@@ -744,15 +748,26 @@ else:
 section("vLLM")
 
 VLLM_BIN = find_vllm_binary(platform_name=os_name)
-vllm_found = VLLM_BIN is not None
+# A reachable server counts as present even with no host-side binary — AMD's Strix Halo
+# image ships one preconfigured, and a container/remote server looks the same from here.
+VLLM_LAUNCHER = find_vllm_launcher()
+VLLM_SERVER_URL = find_vllm_server()
+VLLM_LAUNCHER_ARGS = read_launcher_extra_args() if VLLM_LAUNCHER else []
+vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
+vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
+             else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
+             else f"found at {VLLM_BIN}" if VLLM_BIN else None)
 vllm_support = vllm_platform_support(
     os_name=os_name, machine=platform.machine(), python_version=sys.version_info[:2],
     nvidia_ok=nvidia_ok, rocm_ok=rocm_ok, intel_gpu=intel_linux or intel_windows,
     gpu_names=[device["name"] for device in nvidia_gpus],
     compute_cap=nvidia_compute_cap, rocm_version=get_rocm_version() if rocm_ok else None,
+    rocm_gfx_targets=rocm_gfx,
 )
-if vllm_found:
-    ok(f"vllm found: {VLLM_BIN}")
+if VLLM_SERVER_URL:
+    ok(f"vLLM server already running at {VLLM_SERVER_URL} — nothing to install")
+elif VLLM_BIN or VLLM_LAUNCHER:
+    ok(f"vllm found: {VLLM_LAUNCHER or VLLM_BIN}")
 elif vllm_support.status == "unsupported":
     info(f"vLLM not available here — {vllm_support.reason}")
 else:
@@ -760,11 +775,18 @@ else:
     if vllm_support.status == "experimental":
         info("This vLLM path is experimental and unverified by this project's maintainers")
 
+if VLLM_LAUNCHER_ARGS:
+    warn(f"{VLLM_LAUNCHER} injects extra vLLM arguments on every launch: "
+         f"{' '.join(VLLM_LAUNCHER_ARGS)}")
+    info("These are recorded in the setup configuration so a run reports the flags "
+         "that actually ran")
+
 # ── 4c. Engine selection ───────────────────────────────────────────────────────
 # Whatever models are picked later are downloaded for every engine selected here.
 
 engine_entries = build_engine_entries(
     vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
+    vllm_note=vllm_note,
 )
 
 def select_engines(entries):
@@ -856,7 +878,7 @@ pending_engines = engines_needing_install(engine_entries)
 
 section("Model Selection")
 
-def select_models(memory_ceiling_gb=None):
+def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
     """Flat numbered model picker — see docs/setup.md's "What the setup scripts do".
     Returns (selected_llm, selected_images, selected_embed, cleanup_names)."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
@@ -876,6 +898,10 @@ def select_models(memory_ceiling_gb=None):
         ("Optional cleanup",                   cleanup_items,     "cleanup", "clean"),
     ]
     group_keys = {group_key for _, items, _, group_key in groups if items}
+
+    def hardware_fit_report(model):
+        return engine_fit_report(model, engines, memory_ceiling_gb)
+
     entries = []
     for _, items, kind, group_key in groups:
         # LLM groups are already one-per-tier; image models carry their own
@@ -887,7 +913,8 @@ def select_models(memory_ceiling_gb=None):
                 fits = None
                 checked = False
             elif kind == "llm":
-                fits = hardware.model_fits(m["download_size"], memory_ceiling_gb)
+                report = hardware_fit_report(m)
+                fits = fits_any_engine(report)
                 checked = fits is not False
             elif kind == "image":
                 fits = hardware.image_model_fits(m["checkpoint"], m["short"], memory_ceiling_gb)
@@ -897,18 +924,18 @@ def select_models(memory_ceiling_gb=None):
                 checked = True
             entries.append({"item": m, "kind": kind, "group": group_key,
                             "tier": entry_tier, "checked": checked,
-                            "fits": fits})
+                            "fits": fits,
+                            "report": hardware_fit_report(m) if kind in ("llm", "embed") else {}})
 
     def size_label(e, m, kind):
         if kind == "cleanup":
             return "  (unchecked by default)"
         if kind == "embed":
-            return f"  ({m['download_size']})"
+            return f"  ({format_engine_sizes(e['report'])})"
         if kind == "llm":
-            label = f"  ({m['download_size']})"
-            if e["fits"] is False:
-                needed = hardware.model_memory_requirement_gb(m["download_size"])
-                label += f"  {YELLOW}⚠ needs ~{needed:.1f} GB, ~{memory_ceiling_gb:.1f} GB available{RESET}"
+            label = f"  ({format_engine_sizes(e['report'])})"
+            for warning in engine_fit_warnings(e["report"], memory_ceiling_gb):
+                label += f"  {YELLOW}⚠ {warning}{RESET}"
             return label
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
         label = f"  (~{gb:.1f} GB)" if gb else ""
@@ -1005,7 +1032,8 @@ def select_models(memory_ceiling_gb=None):
     return selected_llm, selected_images, selected_embed, cleanup_names
 
 if _gui_plan is None:
-    selected_llm, selected_images, selected_embed, cleanup_names = select_models(memory_ceiling_gb)
+    selected_llm, selected_images, selected_embed, cleanup_names = select_models(
+        memory_ceiling_gb, engines=selected_engines)
 else:
     _llm_tags = set(_gui_plan["llm_tags"])
     _image_shorts = set(_gui_plan["image_shorts"])
@@ -1839,6 +1867,12 @@ write_setup_config(
         [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
         if nvidia_ok else rocm_gpus
     ),
+    vllm={
+        "executable": VLLM_BIN,
+        "launcher": VLLM_LAUNCHER,
+        "server_url": VLLM_SERVER_URL,
+        "launcher_extra_args": VLLM_LAUNCHER_ARGS,
+    } if vllm_found else {},
 )
 
 section("Summary")

@@ -6,6 +6,7 @@ import pytest
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
     engine_checkbox_label,
+    model_row_label,
     default_model_selection,
     hf_token_review_label,
     license_button_label,
@@ -175,3 +176,47 @@ def test_gui_plan_requires_at_least_one_engine():
     assert validate_gui_plan({**base, "engines": []}) == ["Select at least one inference engine."]
     assert validate_gui_plan({**base, "engines": ["llamacpp"]}) == []
     assert validate_gui_plan(base) == []
+
+
+def test_model_row_label_shows_one_size_for_one_engine():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    assert model_row_label(model, ["llamacpp"], 100) == "Qwen3.5 9B  ~6.2 GB"
+    assert model_row_label(model, ["vllm"], 100) == "Qwen3.5 9B  ~12.4 GB"
+
+
+def test_model_row_label_names_both_engines_when_both_are_selected():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    label = model_row_label(model, ["llamacpp", "vllm"], 100)
+    assert label == "Qwen3.5 9B  llama.cpp ~6.2 GB · vLLM ~12.4 GB"
+
+
+def test_model_row_label_warns_per_engine_that_will_not_fit():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    label = model_row_label(model, ["llamacpp", "vllm"], 12.0)
+    assert "⚠ vLLM needs ~14.9 GB" in label
+    assert "llama.cpp needs" not in label
+
+    only_vllm = model_row_label(model, ["vllm"], 12.0)
+    assert "⚠ needs ~14.9 GB, ~12.0 GB available" in only_vllm
+
+
+def test_model_row_label_falls_back_when_the_engine_has_no_weights():
+    model = {"label": "Some Model", "download_size": "~6.2 GB"}
+    assert model_row_label(model, ["vllm"], 100) == "Some Model  ~6.2 GB"
+
+
+def test_defaults_differ_between_engines_at_the_same_ceiling():
+    llamacpp = default_model_selection(12.0, ["llamacpp"])
+    vllm = default_model_selection(12.0, ["vllm"])
+    assert vllm != llamacpp
+    unchecked = lambda sel: sum(1 for value in sel.values() if not value)
+    assert unchecked(vllm) > unchecked(llamacpp), "vLLM weights are larger, so fewer fit"
+
+
+def test_a_model_fitting_only_one_selected_engine_stays_checked():
+    both = default_model_selection(12.0, ["llamacpp", "vllm"])
+    llamacpp = default_model_selection(12.0, ["llamacpp"])
+    assert both == llamacpp, "still worth downloading for the engine it fits"

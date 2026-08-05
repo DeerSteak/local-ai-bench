@@ -98,3 +98,27 @@ def test_summary_lines_show_state_and_reason():
     assert engine_summary_line(entries[1]) == "[ ] vLLM (unavailable) — no upstream Windows support"
     flagged = build_engine_entries(vllm_support=EXPERIMENTAL)
     assert "(experimental)" in engine_summary_line(flagged[1])
+
+
+# ── an already-present vLLM overrides the install gate ──
+
+def test_a_running_server_makes_vllm_selectable_on_an_unsupported_platform():
+    entries = build_engine_entries(vllm_support=UNSUPPORTED, vllm_found=True,
+                                   llamacpp_found=True,
+                                   vllm_note="preconfigured server at http://localhost:8000")
+    vllm = find_entry(entries, VLLM)
+    assert vllm["enabled"] is True, "nothing is being installed, so the gate does not apply"
+    assert toggle_engine(entries, VLLM) is True
+    assert engines_needing_install(entries) == []
+    assert vllm["note"] == "preconfigured server at http://localhost:8000"
+
+
+def test_a_present_vllm_is_not_labelled_experimental():
+    entries = build_engine_entries(vllm_support=EXPERIMENTAL, vllm_found=True)
+    assert find_entry(entries, VLLM)["experimental"] is False
+    assert "(experimental)" not in engine_summary_line(entries[1])
+
+
+def test_an_absent_vllm_on_an_experimental_platform_stays_flagged():
+    entries = build_engine_entries(vllm_support=EXPERIMENTAL, vllm_found=False)
+    assert find_entry(entries, VLLM)["experimental"] is True

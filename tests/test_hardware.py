@@ -344,3 +344,42 @@ def test_parse_rocm_version():
     assert hardware.parse_rocm_version("unknown") is None
     assert hardware.parse_rocm_version("") is None
     assert hardware.parse_rocm_version(None) is None
+
+
+STRIX_HALO_ROCMINFO = """
+Agent 1
+  Name:                    AMD Ryzen AI Max+ 395
+  Marketing Name:          AMD Ryzen AI Max+ 395 w/ Radeon 8060S
+  Device Type:             CPU
+Agent 2
+  Name:                    gfx1151
+  Marketing Name:          AMD Radeon Graphics
+  Device Type:             GPU
+"""
+
+MI300_ROCMINFO = """
+Agent 1
+  Name:                    AMD EPYC 9654
+  Device Type:             CPU
+Agent 2
+  Name:                    gfx942:sramecc+:xnack-
+  Marketing Name:          AMD Instinct MI300X
+  Device Type:             GPU
+Agent 3
+  Name:                    gfx942:sramecc+:xnack-
+  Marketing Name:          AMD Instinct MI300X
+  Device Type:             GPU
+"""
+
+
+def test_rocminfo_gfx_targets_ignores_the_cpu_agent():
+    assert hardware.rocminfo_gfx_targets(STRIX_HALO_ROCMINFO) == ["gfx1151"]
+
+
+def test_rocminfo_gfx_targets_strips_feature_suffixes_and_deduplicates():
+    assert hardware.rocminfo_gfx_targets(MI300_ROCMINFO) == ["gfx942"]
+
+
+def test_rocminfo_gfx_targets_is_empty_without_gpu_agents():
+    assert hardware.rocminfo_gfx_targets("") == []
+    assert hardware.rocminfo_gfx_targets("Agent 1\n  Name: cpu\n  Device Type: CPU\n") == []
