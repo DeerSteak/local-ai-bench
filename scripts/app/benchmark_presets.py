@@ -64,15 +64,6 @@ def load_portable_preset(path: Path) -> dict:
     return preset
 
 
-def duplicate_portable_preset(preset: dict, name: str) -> dict:
-    duplicate = json.loads(json.dumps(preset))
-    duplicate["name"] = name.strip()
-    errors = validate_portable_preset(duplicate)
-    if errors:
-        raise ValueError(errors[0])
-    return duplicate
-
-
 def compare_portable_presets(left: dict, right: dict) -> list[str]:
     left_config = left["configuration"]
     right_config = right["configuration"]

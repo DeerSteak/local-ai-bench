@@ -41,8 +41,8 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_presets import (
-    build_portable_preset, compare_portable_presets, duplicate_portable_preset,
-    load_portable_preset, save_portable_preset,
+    build_portable_preset, compare_portable_presets, load_portable_preset,
+    save_portable_preset,
 )
 from scripts.app.benchmark_project import (
     PROJECT_WORKFLOWS, build_project, load_project, project_frontend_state, save_project,
@@ -71,10 +71,6 @@ from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 def effective_gui_options(state: dict | None) -> dict:
     options = state.get("gui_options") if state else None
     return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
-
-
-def compact_configuration_layout(width: int) -> bool:
-    return width < 960
 
 
 def open_path_command(path: Path, system: str) -> list[str]:
@@ -607,8 +603,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     configuration_frame = ttk.Frame(form)
     configuration_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
-    configuration_frame.columnconfigure(0, weight=1)
-    configuration_frame.columnconfigure(1, weight=1)
+    configuration_frame.columnconfigure(0, weight=1, uniform="configuration")
+    configuration_frame.columnconfigure(1, weight=1, uniform="configuration")
     preset_row = ttk.Frame(configuration_frame)
     preset_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
     preset_var = tk.StringVar(value=restored_preset_name(saved))
@@ -629,26 +625,26 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     tests_box = ttk.LabelFrame(configuration_frame, text="Tests", padding=12)
     tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    tests_box.columnconfigure(0, weight=1)
     test_widgets = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
         text = label if entry.available else f"{label} (model not installed)"
-        control_row = ttk.Frame(tests_box)
-        control_row.grid(row=row, column=0, columnspan=2, sticky="ew")
-        widget = ttk.Checkbutton(control_row, text=text, variable=test_vars[name])
-        widget.pack(side="left")
+        widget = ttk.Checkbutton(tests_box, text=text, variable=test_vars[name])
+        widget.grid(row=row, column=0, sticky="w")
         ttk.Button(
-            control_row, text="Reset", width=6,
+            tests_box, text="Reset", width=6,
             command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         test_widgets[name] = widget
     ttk.Label(
         tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
-        wraplength=430,
+        wraplength=330,
     ).grid(row=len(TEST_DEFINITIONS), column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     models_box = ttk.LabelFrame(configuration_frame, text="Installed models", padding=12)
     models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    models_box.columnconfigure(0, weight=1)
     previous = None
     model_widgets = {}
     row = 0
@@ -657,20 +653,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             ttk.Label(models_box, text=entry.section, style="Section.TLabel").grid(row=row, column=0, sticky="w", pady=(7, 2))
             row += 1
             previous = entry.section
-        control_row = ttk.Frame(models_box)
-        control_row.grid(row=row, column=0, columnspan=2, sticky="ew", padx=(12, 0))
-        widget = ttk.Checkbutton(control_row, text=entry.label, variable=model_vars[entry.value])
-        widget.pack(side="left")
+        widget = ttk.Checkbutton(models_box, text=entry.label, variable=model_vars[entry.value])
+        widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
         ttk.Button(
-            control_row, text="Reset", width=6,
+            models_box, text="Reset", width=6,
             command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         model_widgets[entry.value] = widget
         row += 1
     model_end_row = row
     ttk.Label(
         models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
-        wraplength=430,
+        wraplength=330,
     ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(configuration_frame, text="Workload sizes", padding=12)
@@ -863,20 +857,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Preset import failed", str(exc), parent=root)
 
-    def duplicate_preset():
-        path = filedialog.askopenfilename(
-            title="Choose preset to duplicate", filetypes=[("Benchmark preset", "*.json")],
-        )
-        if not path:
-            return
-        try:
-            source = load_portable_preset(Path(path))
-            name = simpledialog.askstring("Duplicate preset", "Name the duplicate:", parent=root)
-            if name:
-                export_preset(duplicate_portable_preset(source, name))
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Preset duplication failed", str(exc), parent=root)
-
     def compare_preset():
         path = filedialog.askopenfilename(
             title="Compare with preset", filetypes=[("Benchmark preset", "*.json")],
@@ -997,7 +977,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
-    ttk.Button(preset_row, text="Duplicate", command=duplicate_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Compare", command=compare_preset).pack(side="left", padx=(8, 0))
     ttk.Button(preset_row, text="Import CLI Plan", command=import_run_plan).pack(side="left", padx=(8, 0))
     ttk.Button(project_row, text="New Project", command=save_current_project).pack(side="left")
@@ -1018,37 +997,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
     )
-
-    configuration_layout = {"compact": None}
-
-    def update_configuration_layout(event=None):
-        compact = compact_configuration_layout(
-            event.width if event is not None else configuration_frame.winfo_width(),
-        )
-        if configuration_layout["compact"] == compact:
-            return
-        configuration_layout["compact"] = compact
-        tests_box.grid_configure(
-            row=3, column=0, columnspan=2 if compact else 1,
-            padx=0 if compact else (0, 6),
-        )
-        models_box.grid_configure(
-            row=4 if compact else 3, column=0 if compact else 1,
-            columnspan=2 if compact else 1, padx=0 if compact else (6, 0),
-        )
-        workload_box.grid_configure(row=5 if compact else 4)
-        execution_box.grid_configure(
-            row=6 if compact else 5, column=0, columnspan=2 if compact else 1,
-            padx=0 if compact else (0, 6),
-        )
-        paths_box.grid_configure(
-            row=7 if compact else 5, column=0 if compact else 1,
-            columnspan=2 if compact else 1, padx=0 if compact else (6, 0),
-        )
-        refresh_tk_layout(configuration_frame)
-
-    configuration_frame.bind("<Configure>", update_configuration_layout, add="+")
-    root.after_idle(update_configuration_layout)
 
     footer = ttk.Frame(config_tab)
     footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))

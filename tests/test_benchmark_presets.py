@@ -5,8 +5,7 @@ import pytest
 from scripts.app.benchmark_frontend import GUI_OPTION_DEFAULTS, MenuEntry, build_frontend_state
 from scripts.app.benchmark_presets import (
     PORTABLE_GUI_KEYS, build_portable_preset, compare_portable_presets,
-    duplicate_portable_preset, load_portable_preset, save_portable_preset,
-    validate_portable_preset,
+    load_portable_preset, save_portable_preset, validate_portable_preset,
 )
 
 
@@ -34,12 +33,11 @@ def test_legacy_preset_without_offline_setting_remains_valid():
     assert validate_portable_preset(preset) == []
 
 
-def test_duplicate_is_independent_and_compare_reports_changed_sections():
+def test_compare_reports_changed_sections():
     original = build_portable_preset("Original", sample_state())
-    duplicate = duplicate_portable_preset(original, "Copy")
-    duplicate["configuration"]["options"]["runs"] = 7
-    assert original["name"] == "Original"
-    assert compare_portable_presets(original, duplicate) == ["options"]
+    changed = build_portable_preset("Changed", sample_state())
+    changed["configuration"]["options"]["runs"] = 7
+    assert compare_portable_presets(original, changed) == ["options"]
 
 
 @pytest.mark.parametrize("mutation", [
