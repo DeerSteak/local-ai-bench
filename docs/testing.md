@@ -36,7 +36,7 @@ The wrapper installs or updates [tests/requirements.txt](../tests/requirements.t
 
 The scripts tree is a package rather than a flat import directory. A structural test parses every Python module and rejects bare imports of another project module, preventing delayed GUI/setup paths from passing unit collection and then failing only when launched through `python -m`.
 
-[tests/conftest.py](../tests/conftest.py) adds `scripts/` to `sys.path`, matching the benchmark's own top-level imports such as `import config`.
+[tests/conftest.py](../tests/conftest.py) prevents llama.cpp discovery tests from reading the machine's real saved setup configuration, so running setup cannot change mocked discovery outcomes. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
 ## Coverage and safety boundaries
 

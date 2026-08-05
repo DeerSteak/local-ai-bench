@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.runtime import config
 from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS,
     MenuEntry,
@@ -13,7 +14,7 @@ from scripts.app.benchmark_frontend import (
 )
 from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, advanced_controls_visible, apply_hardware_model_defaults,
-    build_discovery_report, build_plan_preview, custom_option_defaults,
+    build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
@@ -319,6 +320,18 @@ def test_custom_option_defaults_reset_paths_without_mutating_global_defaults():
     assert defaults["comfyui"] == "/chosen/ComfyUI"
     assert defaults["runs"] == GUI_OPTION_DEFAULTS["runs"]
     assert GUI_OPTION_DEFAULTS["comfyui"] == ""
+
+
+def test_default_control_values_describe_the_actual_default_run():
+    tests = [MenuEntry("llm", "LLM", "test", "", True), MenuEntry("img", "Images", "test", "", False)]
+    models = [MenuEntry("small", "Small", "llm", "", True)]
+    values = default_control_values(tests, models, "llamacpp", Path("/ComfyUI"))
+    assert values["tests"] == {"llm": True, "img": False}
+    assert values["models"] == {"small": True}
+    assert values["engine"] == "llamacpp"
+    assert values["max_prompt_tokens"] == "No cap"
+    assert values["tg_tokens"] == set(config.LLAMABENCH_TG)
+    assert values["options"] == custom_option_defaults(Path("/ComfyUI"))
 
 
 def test_advanced_controls_require_custom_mode_and_explicit_request():

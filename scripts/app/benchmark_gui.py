@@ -289,6 +289,17 @@ def custom_option_defaults(comfyui_dir: Path) -> dict:
     return {**GUI_OPTION_DEFAULTS, "comfyui": str(comfyui_dir)}
 
 
+def default_control_values(test_entries, model_entries, engine: str, comfyui_dir: Path) -> dict:
+    return {
+        "tests": {entry.value: entry.checked for entry in test_entries},
+        "models": {entry.value: entry.checked for entry in model_entries},
+        "engine": engine,
+        "max_prompt_tokens": "No cap",
+        "tg_tokens": set(config.LLAMABENCH_TG),
+        "options": custom_option_defaults(comfyui_dir),
+    }
+
+
 def advanced_controls_visible(mode: str, requested: bool) -> bool:
     return mode == "custom" and requested
 
@@ -1590,8 +1601,42 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             yield child
             yield from walk_widgets(child)
 
+    def capture_control_values() -> dict:
+        return {
+            "tests": {name: variable.get() for name, variable in test_vars.items()},
+            "models": {name: variable.get() for name, variable in model_vars.items()},
+            "engine": engine_var.get(),
+            "max_prompt_tokens": cap_var.get(),
+            "tg_tokens": {value for value, variable in tg_vars.items() if variable.get()},
+            "options": {key: variable.get() for key, variable in option_vars.items()},
+        }
+
+    def apply_control_values(values: dict) -> None:
+        for name, variable in test_vars.items():
+            variable.set(values["tests"].get(name, False))
+        for name, variable in model_vars.items():
+            variable.set(values["models"].get(name, False))
+        engine_var.set(values["engine"])
+        cap_var.set(values["max_prompt_tokens"])
+        for value, variable in tg_vars.items():
+            variable.set(value in values["tg_tokens"])
+        for key, value in values["options"].items():
+            option_vars[key].set(value)
+
+    custom_control_values = [capture_control_values()]
+    displayed_mode = ["custom"]
+    defaults_for_display = default_control_values(
+        default_tests, default_models, selected_engine, detected_comfyui,
+    )
+
     def update_mode() -> None:
         custom = mode_var.get() == "custom"
+        if custom and displayed_mode[0] == "default":
+            apply_control_values(custom_control_values[0])
+        elif not custom and displayed_mode[0] == "custom":
+            custom_control_values[0] = capture_control_values()
+            apply_control_values(defaults_for_display)
+        displayed_mode[0] = mode_var.get()
         mode_note.configure(text=(
             "Restores and saves your selections in .benchmark_frontend_state.json."
             if custom else "Uses the recommended installed-model selection and standard execution settings."
