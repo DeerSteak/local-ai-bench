@@ -1,7 +1,8 @@
 import pytest
 
-import config
-from mcq_benchmark import MCQBenchmark
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement
+from scripts.workloads.mcq_benchmark import MCQBenchmark
 
 
 # ── build_prompt ──
@@ -20,7 +21,7 @@ def test_ask_passes_shared_accuracy_budget():
     class Engine:
         def chat(self, *args, **kwargs):
             self.kwargs = kwargs
-            return 0, 0, 0, 0, "Answer: B", True
+            return ChatMeasurement(0, 0, 0, 0, 0, response_text="Answer: B", budget_nudged=True)
 
     question = {
         "prompt": "What is 2+2?",

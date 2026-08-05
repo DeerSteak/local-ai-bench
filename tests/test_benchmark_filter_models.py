@@ -1,5 +1,5 @@
-from benchmark import filter_models_by_pattern
-from models import LLM_MODELS
+from scripts.app.benchmark import filter_models_by_pattern
+from scripts.workloads.models import LLM_MODELS
 
 
 def test_no_patterns_returns_models_unchanged():

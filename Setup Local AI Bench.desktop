@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Setup Local AI Bench
+Comment=Configure Local AI Bench with the graphical setup wizard
+Exec=sh -c 'p="$1"; case "$p" in file://*) p="${p#file://}";; esac; cd "$(dirname "$p")" && exec bash setup.sh --interface gui' sh %k
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;Utility;
+StartupNotify=true

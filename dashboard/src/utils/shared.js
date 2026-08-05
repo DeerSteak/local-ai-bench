@@ -20,6 +20,53 @@ export function parseResultsJSON(text) {
   }
 }
 
+export function getRunReliabilityWarning(data) {
+  const run = data?.run;
+  if (run == null) return "";
+  if (!run || typeof run !== "object" || Array.isArray(run)) return "Run metadata is malformed.";
+  if (run.status === "complete") return "";
+  const labels = {
+    running: "This result was saved while the benchmark was still running.",
+    partial: "This benchmark ended with partial results.",
+    interrupted: "This benchmark was interrupted; completed measurements are still shown.",
+    failed: "This benchmark failed before every selected stage completed.",
+  };
+  return labels[run.status] || "This result has an unknown completion state.";
+}
+
+export function getLlamaBenchMethodologyWarning(files) {
+  const relevant = files.filter(file => Object.keys(file.data?.llamabench || {}).length > 0);
+  if (relevant.length < 2) return "";
+  const modes = new Set(relevant.map(file =>
+    file.data?.run?.llamabench_repetition_mode || "legacy_internal_repetitions"));
+  return modes.size > 1
+    ? "Loaded llama-bench files use different repetition methodologies."
+    : "";
+}
+
+export function getConversationTTFTMethodologyWarning(files) {
+  const modes = new Set();
+  for (const file of files) {
+    const samples = Object.values(file.data?.llm_conversation || {})
+      .flatMap(model => Object.values(model || {}))
+      .filter(sample => sample && typeof sample === "object");
+    if (samples.some(sample => sample.client_ttft_mean_sec != null)) modes.add("client");
+    else if (samples.some(sample => sample.ttft_mean_sec != null)) modes.add("legacy_server");
+  }
+  return modes.size > 1
+    ? "Loaded conversation files use different TTFT methodologies (client-observed versus legacy server prompt time)."
+    : "";
+}
+
+export function getGpuSplitMethodologyWarning(files) {
+  if (files.length < 2) return "";
+  const modes = new Set(files.map(file =>
+    file.data?.run?.effective_config?.gpu_split_mode || "layer"));
+  return modes.size > 1
+    ? "Loaded files use different multi-GPU modes (layer versus tensor parallelism)."
+    : "";
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-

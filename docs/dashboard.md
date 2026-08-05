@@ -18,17 +18,23 @@ An interactive results explorer for visualising and exporting benchmark output.
 # Linux / macOS
 bash launch_dashboard.sh
 bash launch_dashboard.sh --port 8080   # use a different port
+bash launch_dashboard.sh --result results/first.json --result results/second.json
 
 # Windows
 launch_dashboard.bat
 launch_dashboard.bat --port 8080       # use a different port
+launch_dashboard.bat --result results\first.json --result results\second.json
 ```
+
+Desktop users can instead double-click **Launch Local AI Bench Dashboard** with the platform suffix `.command` on macOS, `.desktop` on Linux, or `.bat` on Windows. The launcher keeps the terminal open while the local dashboard server is running; closing or interrupting that server ends the dashboard session.
 
 Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuilds the app, then starts a local server on port 3000 and opens the browser automatically.
 
 ## Loading results
 
-Drag one or more `results_*.json` files onto the drop zone in the top-right corner, or click to open a file picker. Up to six files can be loaded at once. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file now displays an import error below the drop zone rather than failing silently.
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
+
+New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning. Multi-file comparisons also warn when one result used llama.cpp layer splitting and another used tensor parallelism; older files are treated as the historical layer default.
 
 ## Sections
 
@@ -80,6 +86,8 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).
 
+Each loaded file's header row carries a `v<version>` badge showing the suite version that produced it, read from the results file's own top-level `version` field. Files written before that field existed simply omit the badge. The dashboard's own version — parsed from `config.py`'s `VERSION` at build time, so it is never a separately maintained copy — appears once beside the "Results Explorer" eyebrow. Comparing files whose badges disagree is supported, but a schema difference between versions is worth keeping in mind when a section renders unevenly.
+
 The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD and Intel hardware, and on NVIDIA hardware without a driver new enough for any of the prebuilt CUDA builds. The raw results retain that physical classification separately as `profile.hardware_backend`.
 
 **llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows.
@@ -95,6 +103,8 @@ The backend badge identifies the inference backend actually exposed by the selec
 ## Stats table
 
 Below the charts, every section also renders a sortable raw-numbers table (one row per model/context-length/category, depending on section) — click a column header to sort by it, click again to reverse direction. Useful for reading exact values or copying numbers out, where a chart is more about the overall shape.
+
+Performance sections with sample evidence also render a collapsible **Decision-grade sample review**. It lists every available sample, whether it contributed to the aggregate, and any exclusion reason such as `implausible_server_tps`; the filter isolates valid, excluded, or legacy evidence. Historical files that contain only means and run counts are labeled **legacy aggregate-only** rather than being presented as if their raw samples were recoverable. Native llama-bench internal repetitions appear when `ts_runs` or `samples_ts` is present. When schema-4 pause evidence exists, this review opens automatically and shows each affected system's pause count and total derived paused duration; an unfinished or malformed final interval is labeled unavailable rather than treated as zero time.
 
 ## Multi-file comparison
 
@@ -125,6 +135,8 @@ llama3.1-8b-q4_llamabench_prefill.png # llama-bench prefill section
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
 
 A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.js` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
+
+When explicit measurement fields are present, TTFT charts and tables prefer client-observed TTFT and run tables prefer `valid_runs`; older files fall back to `ttft_mean_sec` and `n_runs`. Server-reported prompt duration remains available for auditing but is not silently substituted into the TTFT charts. Comparing legacy server-prompt conversation TTFT with explicit client-observed conversation TTFT produces a methodology warning.
 
 ## Development
 

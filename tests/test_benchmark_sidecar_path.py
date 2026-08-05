@@ -1,7 +1,7 @@
 from pathlib import Path
 
-import config
-from benchmark import sidecar_path
+from scripts.runtime import config
+from scripts.app.benchmark import sidecar_path
 
 
 def test_swaps_results_prefix_for_given_prefix():

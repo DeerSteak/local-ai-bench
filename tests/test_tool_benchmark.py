@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-import config
-from tool_benchmark import ToolBenchmark
+from scripts.runtime import config
+from scripts.workloads.tool_benchmark import ToolBenchmark
 
 
 # ── evaluate_question: call cases ──
@@ -371,11 +371,13 @@ class _FakeChatToolsEngine:
 
     def chat_tools(self, tag, messages, tools, timeout=None, num_ctx=None,
                    num_predict=None, check_loop=None, token_budget=None):
+        from scripts.runtime.engines.base import ChatMeasurement
         self.kwargs = {
             "num_predict": num_predict,
             "token_budget": token_budget,
         }
-        return None, None, None, None, self._response_text, self._tool_calls, False
+        return ChatMeasurement(0, 0, 0, 0, 0, response_text=self._response_text,
+                               tool_calls=self._tool_calls)
 
 
 def test_ask_raw_response_is_tool_calls_json_when_a_call_was_made():

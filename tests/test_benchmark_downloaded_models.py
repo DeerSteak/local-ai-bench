@@ -1,5 +1,5 @@
-from benchmark import downloaded_models, resolve_model_scopes
-from models import LLM_MODELS
+from scripts.app.benchmark import downloaded_models, resolve_model_scopes
+from scripts.workloads.models import LLM_MODELS
 
 CATALOG = [
     {"tag": "phi4-mini", "label": "Phi 4 Mini"},

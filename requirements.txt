@@ -5,3 +5,4 @@ tqdm
 huggingface_hub[cli]
 py7zr
 gguf
+reportlab==4.4.10

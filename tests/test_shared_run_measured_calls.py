@@ -1,14 +1,16 @@
 import requests
 import pytest
+from scripts.runtime import shared
 
-from shared import (
+from scripts.runtime.shared import (
     EngineBudgetExceeded,
     EngineLoopDetected,
     EngineTimeout,
     Shared,
     split_token_budget,
 )
-import config
+from scripts.runtime import config
+from scripts.runtime.engines.base import GenerationMeasurement
 
 
 class _FakeEngine:
@@ -67,6 +69,49 @@ def test_run_measured_calls_all_succeed(tmp_path):
     assert partial_text == ""
     assert metadata == {"budget_nudged": False}
     assert calls == [0, 1, 2]
+
+
+def test_run_measured_calls_observes_pause_before_every_attempt(tmp_path, monkeypatch):
+    pauses = []
+    monkeypatch.setattr(shared, "wait_if_paused", lambda: pauses.append("boundary"))
+    Shared.run_measured_calls(
+        3, lambda run_i: run_i, "tag", {}, tmp_path / "crash.json", "testing", _FakeEngine(),
+    )
+    assert pauses == ["boundary", "boundary", "boundary"]
+
+
+def _measurement(implausible=False):
+    return GenerationMeasurement(
+        client_ttft_sec=0.1, generated_tokens=10, tokens_per_sec=20,
+        client_wall_sec=0.6, decode_sec=0.5,
+        server_tps_implausible=implausible,
+    )
+
+
+def test_retry_implausible_tps_retries_once_and_uses_valid_retry(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    outcomes = iter([_measurement(True), _measurement(False)])
+    result = Shared.retry_implausible_tps(lambda: next(outcomes), "model", "llm")
+    assert result.server_tps_implausible is False
+    output = capsys.readouterr().out
+    assert '"status":"retrying"' in output
+    assert '"status":"valid"' in output
+
+
+def test_retry_implausible_tps_returns_second_invalid_measurement_without_third_call(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    calls = []
+
+    def call():
+        calls.append(True)
+        return _measurement(True)
+
+    result = Shared.retry_implausible_tps(call, "model", "llm")
+    assert result.server_tps_implausible is True
+    assert len(calls) == 2
+    output = capsys.readouterr().out
+    assert '"status":"retrying"' in output
+    assert '"status":"invalid"' in output
 
 
 def test_run_measured_calls_timeout_stops_immediately(tmp_path):

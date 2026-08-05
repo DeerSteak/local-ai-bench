@@ -1,8 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
   getBarStatusLabel, getAllLLMModels, getLLMModelsWithSectionResults,
-  buildLLMBarData, buildLLMBarConfigs, flattenLLMData,
+  buildLLMBarData, buildLLMBarConfigs, flattenLLMData, llmTTFTMean, llmValidRuns,
 } from "./llm";
+
+describe("explicit measurement fields", () => {
+  it("prefers explicit client TTFT and valid-run counts with legacy fallback", () => {
+    expect(llmTTFTMean({ client_ttft_mean_sec: 0.4, ttft_mean_sec: 9 })).toBe(0.4);
+    expect(llmTTFTMean({ ttft_mean_sec: 0.8 })).toBe(0.8);
+    expect(llmValidRuns({ valid_runs: 2, n_runs: 3 })).toBe(2);
+    expect(llmValidRuns({ n_runs: 3 })).toBe(3);
+  });
+});
 
 describe("getBarStatusLabel", () => {
   it("returns a whole-model skip label when the model was excluded from this section entirely", () => {

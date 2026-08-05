@@ -5,11 +5,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$SCRIPT_DIR/dashboard"
 RESULTS_DIR="$SCRIPT_DIR/results"
 PORT=3000
+SELECTED_RESULTS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)
+            if [[ $# -lt 2 ]]; then
+                echo "Missing value for --port"
+                exit 1
+            fi
             PORT="$2"
+            shift 2
+            ;;
+        --result)
+            if [[ $# -lt 2 ]]; then
+                echo "Missing value for --result"
+                exit 1
+            fi
+            SELECTED_RESULTS+=("$2")
             shift 2
             ;;
         *)
@@ -39,6 +52,7 @@ fi
 
 echo "Building dashboard ..."
 (cd "$DASHBOARD_DIR" && npm run build)
+node "$DASHBOARD_DIR/stage_selected_results.mjs" "$DASHBOARD_DIR/dist" "${SELECTED_RESULTS[@]}"
 echo "Build complete."
 echo
 
@@ -47,7 +61,7 @@ echo "Drop your results JSON files onto the page to analyze them."
 echo "Ctrl-C to stop."
 echo
 
-if [ -d "$RESULTS_DIR" ]; then
+if [ ${#SELECTED_RESULTS[@]} -eq 0 ] && [ -d "$RESULTS_DIR" ]; then
     if command -v open >/dev/null 2>&1; then
         open "$RESULTS_DIR"
     elif command -v xdg-open >/dev/null 2>&1; then
@@ -55,4 +69,13 @@ if [ -d "$RESULTS_DIR" ]; then
     fi
 fi
 
-exec npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open
+cleanup_selected_results() {
+    node "$DASHBOARD_DIR/stage_selected_results.mjs" "$DASHBOARD_DIR/dist" >/dev/null 2>&1 || true
+}
+trap cleanup_selected_results EXIT
+
+if [ ${#SELECTED_RESULTS[@]} -gt 0 ]; then
+    npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open "/?autoload=1"
+else
+    npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open
+fi

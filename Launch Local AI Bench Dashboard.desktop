@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Launch Local AI Bench Dashboard
+Comment=Build and open the Local AI Bench results dashboard
+Exec=sh -c 'p="$1"; case "$p" in file://*) p="${p#file://}";; esac; cd "$(dirname "$p")" && exec bash launch_dashboard.sh' sh %k
+Icon=utilities-system-monitor
+Terminal=true
+Categories=Development;Utility;
+StartupNotify=true

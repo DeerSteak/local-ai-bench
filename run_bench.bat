@@ -3,6 +3,7 @@ setlocal
 
 set SCRIPT_DIR=%~dp0
 set VENV=%SCRIPT_DIR%bench-env
+cd /d "%SCRIPT_DIR%"
 set "PAUSE_ON_EXIT="
 set CMDCMDLINE | %SystemRoot%\System32\findstr.exe /l /i /c:"%~f0" >nul
 if not errorlevel 1 set "PAUSE_ON_EXIT=1"
@@ -15,12 +16,19 @@ if not exist "%VENV%\Scripts\activate.bat" (
 
 call "%VENV%\Scripts\activate.bat"
 if "%~1"=="" goto frontend
-python "%SCRIPT_DIR%scripts\benchmark.py" %*
+if /i "%~1"=="--ui" goto frontend_with_args
+if /i "%~1"=="--interface" goto frontend_with_args
+python -m scripts.app.benchmark %*
 set "BENCH_EXIT_CODE=%errorlevel%"
 goto finish
 
 :frontend
-python "%SCRIPT_DIR%scripts\benchmark_frontend.py"
+python -m scripts.app.benchmark_launcher --ui auto
+set "BENCH_EXIT_CODE=%errorlevel%"
+goto finish
+
+:frontend_with_args
+python -m scripts.app.benchmark_launcher %*
 set "BENCH_EXIT_CODE=%errorlevel%"
 
 :finish

@@ -217,6 +217,7 @@ export const CONCURRENCY_STOP_LABELS = {
   load_failed: "couldn't load at this level — the model's real ceiling on this hardware",
   crashed:     "the engine crashed during this batch",
   failed:      "the batch failed (e.g. timed out)",
+  invalid:     "the completed batch contained no valid measurements",
   slow:        "per-request tokens/sec dropped below the slow-model cutoff",
 };
 
@@ -299,3 +300,6 @@ export const BACKEND_COLORS = {
   vulkan:{ bg: "#fff4e5", color: "#b45309", border: "#f3c98b" },
   cpu:   { bg: "#f6f8fa", color: "#57606a", border: "#d0d7de" },
 };
+
+// Injected by vite.config.js from config.py's VERSION; null when that read fails.
+export const SUITE_VERSION = import.meta.env.VITE_SUITE_VERSION || null;

@@ -1,0 +1,190 @@
+{
+  "version": "4.1",
+  "engine": "llamacpp",
+  "profile": {
+    "hostname": "commercial-golden-system",
+    "os": "Test OS",
+    "gpu": "Golden GPU",
+    "ram_gb": 64
+  },
+  "accuracy_settings": {
+    "timeout_seconds": 60,
+    "token_budget": 8192,
+    "first_pass_fraction": 0.6
+  },
+  "bank_versions": {},
+  "sample_ids": {},
+  "llm": {
+    "golden": {
+      "2K": {
+        "ttft_mean_sec": 0.25,
+        "ttft_stdev_sec": 0.01,
+        "tps_mean": 50.0,
+        "tps_stdev": 1.0,
+        "ttft_runs": [0.24, 0.26],
+        "tps_runs": [49.0, 51.0],
+        "n_runs": 2,
+        "requested_runs": 2,
+        "completed_runs": 2,
+        "valid_runs": 2,
+        "invalid_runs": [],
+        "valid_samples": [
+          {
+            "client_ttft_sec": 0.24,
+            "server_prompt_sec": 0.2,
+            "client_wall_sec": 2.24,
+            "decode_sec": 2.0,
+            "generated_tokens": 98,
+            "tokens_per_sec": 49.0,
+            "finish_reason": "length",
+            "model_load_sec": 0.0
+          },
+          {
+            "client_ttft_sec": 0.26,
+            "server_prompt_sec": 0.21,
+            "client_wall_sec": 2.26,
+            "decode_sec": 2.0,
+            "generated_tokens": 102,
+            "tokens_per_sec": 51.0,
+            "finish_reason": "length",
+            "model_load_sec": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "llm_conversation": {
+    "golden": {
+      "0K": {
+        "client_ttft_mean_sec": 0.1,
+        "server_prompt_mean_sec": 0.08,
+        "tps_mean": 48.0,
+        "depth_tokens": 400,
+        "n_runs": 1,
+        "requested_runs": 1,
+        "completed_runs": 1,
+        "valid_runs": 1,
+        "invalid_runs": [],
+        "valid_samples": [
+          {
+            "client_ttft_sec": 0.1,
+            "server_prompt_sec": 0.08,
+            "client_wall_sec": 2.1,
+            "decode_sec": 2.0,
+            "generated_tokens": 96,
+            "tokens_per_sec": 48.0,
+            "finish_reason": "length",
+            "model_load_sec": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "embeddings": {},
+  "images": {},
+  "mcq": {},
+  "math": {},
+  "reasoning": {},
+  "code": {},
+  "tool": {},
+  "concurrency_tool": {},
+  "concurrency_chat": {},
+  "llamabench": {
+    "golden": {
+      "methodology": "streamed_internal_repetitions",
+      "prefill_entries": [
+        {
+          "n_prompt": 2048,
+          "n_gen": 0,
+          "n_depth": 0,
+          "avg_ts": 1000.0,
+          "stddev_ts": 10.0
+        }
+      ],
+      "decode_entries": [
+        {
+          "n_prompt": 0,
+          "n_gen": 128,
+          "n_depth": 2048,
+          "avg_ts": 50.0,
+          "stddev_ts": 1.0
+        }
+      ],
+      "requested_cases": 2,
+      "completed_cases": 2,
+      "requested_repetitions": 2,
+      "completed_repetitions": 2
+    }
+  },
+  "llamabenchconc": {},
+  "run": {
+    "run_id": "00000000-0000-4000-8000-000000000041",
+    "schema_version": 2,
+    "started_at": "2026-01-01T00:00:00+00:00",
+    "finished_at": "2026-01-01T01:00:00+00:00",
+    "status": "complete",
+    "requested_tests": ["llm", "conv", "llamabench"],
+    "stage_order": ["llm", "conv", "llamabench"],
+    "engine": "llamacpp",
+    "models": {
+      "llm": [
+        {
+          "tag": "golden:model",
+          "short": "golden",
+          "size_gb": 4.0,
+          "params_b": 4
+        }
+      ],
+      "concurrency": [],
+      "embeddings": [],
+      "images": []
+    },
+    "effective_config": {
+      "runs": 2,
+      "warmup_runs": 1,
+      "run_timeout_seconds": 300,
+      "accuracy_timeout_seconds": 60,
+      "accuracy_token_budget": 8192,
+      "cpu_only": false,
+      "force_all": false,
+      "max_prompt_tokens": 2048,
+      "context_lengths": [512, 2048],
+      "llamabench_pp": [512, 2048],
+      "llamabench_tg": [128]
+    },
+    "source": {
+      "git_commit": null,
+      "git_dirty": null
+    },
+    "llamabench_repetition_mode": "streamed_internal_repetitions",
+    "stages": {
+      "llm": {
+        "status": "complete",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:20:00+00:00",
+        "selected_models": 1,
+        "models_with_results": 1,
+        "models_skipped": 0,
+        "models_failed": 0
+      },
+      "conv": {
+        "status": "complete",
+        "started_at": "2026-01-01T00:20:00+00:00",
+        "finished_at": "2026-01-01T00:40:00+00:00",
+        "selected_models": 1,
+        "models_with_results": 1,
+        "models_skipped": 0,
+        "models_failed": 0
+      },
+      "llamabench": {
+        "status": "complete",
+        "started_at": "2026-01-01T00:40:00+00:00",
+        "finished_at": "2026-01-01T01:00:00+00:00",
+        "selected_models": 1,
+        "models_with_results": 1,
+        "models_skipped": 0,
+        "models_failed": 0
+      }
+    }
+  }
+}

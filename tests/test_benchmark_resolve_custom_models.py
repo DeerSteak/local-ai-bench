@@ -1,5 +1,5 @@
-from benchmark import resolve_custom_models, sanitize_tag_to_short
-from models import LLM_MODELS
+from scripts.app.benchmark import resolve_custom_models, sanitize_tag_to_short
+from scripts.workloads.models import LLM_MODELS
 
 
 def test_catalog_pattern_behaves_like_filter_models_by_pattern():

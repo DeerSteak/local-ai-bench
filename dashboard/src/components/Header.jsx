@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { BACKEND_COLORS, FILE_COLORS, MAX_FILES } from "../constants";
+import { BACKEND_COLORS, FILE_COLORS, MAX_FILES, SUITE_VERSION } from "../constants";
 import styles from "./Header.module.css";
 
 function BackendTag({ backend }) {
@@ -29,7 +29,10 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
   return (
     <header className={styles.header}>
       <div className={styles.headerLeft}>
-        <div className={styles.brand}>local-ai-bench · Results Explorer</div>
+        <div className={styles.brand}>
+          local-ai-bench · Results Explorer
+          {SUITE_VERSION && <span className={styles.suiteVersion}>v{SUITE_VERSION}</span>}
+        </div>
         <h1 className={styles.title}>AI Performance Dashboard</h1>
         {files.map((file, i) => {
           const color = FILE_COLORS[i % FILE_COLORS.length];
@@ -49,8 +52,16 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
               {file.ram_gb && (
                 <span className={`tag ${styles.tagRam}`}>{file.ram_gb} GB RAM</span>
               )}
+              {file.version && (
+                <span className={`tag ${styles.tagVersion}`} title="Benchmark suite version that produced this file">
+                  v{file.version}
+                </span>
+              )}
               {file.timestamp && (
                 <span className={styles.tagTimestamp}>{formatTimestamp(file.timestamp)}</span>
+              )}
+              {file.reliabilityWarning && (
+                <span className={styles.reliabilityWarning} role="status">{file.reliabilityWarning}</span>
               )}
             </div>
           );

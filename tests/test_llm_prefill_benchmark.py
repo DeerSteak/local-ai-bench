@@ -1,5 +1,5 @@
-import config
-from llm_prefill_benchmark import LLMPrefillBenchmark
+from scripts.runtime import config
+from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 
 
 def test_prefill_server_ctx_adds_generation_headroom():

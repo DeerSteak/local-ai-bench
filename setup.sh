@@ -3,6 +3,9 @@
 # Usage: bash setup.sh
 set -euo pipefail
 
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_ROOT"
+
 VENV_DIR="bench-env"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=11
@@ -80,7 +83,7 @@ else
             eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
         fi
         brew install python@3.11
-        PYTHON=/opt/homebrew/bin/python3.11
+        PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
     elif command -v apt-get &>/dev/null; then
         sudo apt-get update -qq
         sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
@@ -95,11 +98,49 @@ else
     ok "Installed $($PYTHON --version)"
 fi
 
+GUI_SESSION=0
+if [ -z "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ]; then
+    if [ "$OS" = "Darwin" ] || [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        GUI_SESSION=1
+    fi
+fi
+if [ "$GUI_SESSION" = "1" ] && ! "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
+    warn "Tkinter is not available, so the graphical setup wizard cannot start."
+    read -r -p "  Install Tkinter support? [Y/n] " _tk_reply || _tk_reply="y"
+    if [[ -z "$_tk_reply" || "$_tk_reply" =~ ^[Yy] ]]; then
+        if [ "$OS" = "Darwin" ] && command -v brew &>/dev/null; then
+            PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+            brew install "python-tk@$PYTHON_SERIES"
+        elif command -v apt-get &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y python3-tk
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y python3-tkinter
+        else
+            warn "Install Tkinter with your package manager to use the GUI; continuing with terminal setup."
+        fi
+        if "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
+            ok "Tkinter support available"
+        else
+            warn "Tkinter is still unavailable; continuing with terminal setup."
+        fi
+    else
+        info "Continuing with terminal setup"
+    fi
+fi
+
 # ── 2. Create venv ─────────────────────────────────────────────────────────────
 section "Virtual Environment"
 
-if [ -d "$VENV_DIR" ]; then
+if [ -x "$VENV_DIR/bin/python" ]; then
+    if ! "$VENV_DIR/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
+        fail "$VENV_DIR uses Python older than 3.11. Move or remove it, then re-run setup."
+        exit 1
+    fi
     ok "Venv already exists at $VENV_DIR"
+elif [ -e "$VENV_DIR" ]; then
+    fail "$VENV_DIR exists but is not a usable virtual environment. Move or remove it, then re-run setup."
+    exit 1
 else
     info "Creating venv at $VENV_DIR..."
     $PYTHON -m venv "$VENV_DIR"
@@ -107,14 +148,8 @@ else
 fi
 
 VENV_PYTHON="$VENV_DIR/bin/python"
-VENV_PIP="$VENV_DIR/bin/pip"
 
 # ── 3. Base Python dependencies ────────────────────────────────────────────────
-section "Python Packages"
-info "Installing from requirements.txt ..."
-"$VENV_PIP" install -r requirements.txt
-ok "Base dependencies installed"
-
 # ── 4. Run setup_check.py inside the venv ─────────────────────────────────────
 # (llama.cpp detection/install — including on Linux — happens inside
 # setup_check.py, gated behind its own approval prompt, so it isn't
@@ -122,7 +157,7 @@ ok "Base dependencies installed"
 section "Running setup_check.py"
 info "Using $($VENV_PYTHON --version) from $VENV_PYTHON"
 
-"$VENV_PYTHON" scripts/setup_check.py "$@"
+"$VENV_PYTHON" -m scripts.setup.setup_check "$@"
 
 # ── 5. Done ────────────────────────────────────────────────────────────────────
 echo ""

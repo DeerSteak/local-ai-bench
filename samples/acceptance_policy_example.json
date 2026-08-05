@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "name": "Example interactive performance gate",
+  "methodology_profile": "neutral-v1",
+  "rules": [
+    {
+      "id": "small-model-2k-throughput",
+      "section": "llm",
+      "model": "gemma3-1b",
+      "case": "2K",
+      "metric": "tps_mean",
+      "operator": "at_least",
+      "threshold": 30.0,
+      "minimum_evidence": 3
+    },
+    {
+      "id": "small-model-2k-latency",
+      "section": "llm",
+      "model": "gemma3-1b",
+      "case": "2K",
+      "metric": "ttft_mean_sec",
+      "operator": "at_most",
+      "threshold": 1.0,
+      "minimum_evidence": 3
+    }
+  ]
+}

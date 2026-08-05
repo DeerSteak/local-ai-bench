@@ -6,10 +6,11 @@ import gguf
 import pytest
 import requests
 
-import config
-from engines.llamacpp import LlamaCppEngine
-import engines.llamacpp as llamacpp_module
-from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
+from scripts.runtime import config
+from scripts.runtime.engines.base import aggregate_generation_measurements, is_valid_measurement
+from scripts.runtime.engines.llamacpp import LlamaCppEngine
+import scripts.runtime.engines.llamacpp as llamacpp_module
+from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -127,7 +128,7 @@ def test_resolve_model_files_missing_tag_returns_none(fake_catalog):
 
 
 def test_resolve_model_files_finds_custom_dropped_in_model(fake_catalog):
-    from benchmark import resolve_custom_models
+    from scripts.app.benchmark import resolve_custom_models
 
     custom_dir = fake_catalog / "llamacpp" / "my-custom-model"
     custom_dir.mkdir(parents=True)
@@ -363,35 +364,47 @@ def test_generate_uses_server_reported_timings(monkeypatch):
         {"content": "", "stop": True,
          "timings": {"predicted_n": 10, "predicted_ms": 2000, "prompt_ms": 500}},
     ])
-    ttft, tokens, tps = LlamaCppEngine().generate("some-tag", "prompt", num_ctx=2048)
-    assert ttft >= 0
-    assert tokens == 10
-    assert tps == pytest.approx(5.0)  # 10 tokens / 2 sec
+    result = LlamaCppEngine().generate("some-tag", "prompt", num_ctx=2048)
+    assert result.client_ttft_sec >= 0
+    assert result.server_prompt_sec == pytest.approx(0.5)
+    assert result.generated_tokens == 10
+    assert result.tokens_per_sec == pytest.approx(5.0)
 
 
 def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch):
     _patch_ensure_model(monkeypatch)
-    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(100.0, 100.0, 101.5, 101.5, 102.0))
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter",
+        _clock(90.0, 90.0, 100.0, 100.0, 101.5, 101.5, 101.7, 102.0),
+    )
     _patch_urlopen(monkeypatch, [
         {"content": "Hi", "tokens": [1]},
         {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 0}},
     ])
-    ttft, tokens, tps = LlamaCppEngine().generate("some-tag", "prompt")
-    assert ttft == pytest.approx(1.5)
-    assert tps == pytest.approx(2.0)
+    result = LlamaCppEngine().generate("some-tag", "prompt")
+    assert result.client_ttft_sec == pytest.approx(1.5)
+    assert result.server_prompt_sec is None
+    assert result.tokens_per_sec == pytest.approx(2.0)
 
 
-def test_generate_sanitizes_implausible_server_reported_tps(monkeypatch):
+def test_generate_marks_corrected_implausible_server_tps_invalid(monkeypatch):
     # Reproduces the real observed failure: predicted_n=1, predicted_ms=0.001 -> raw tps of 1000000.0.
     _patch_ensure_model(monkeypatch)
-    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(100.0, 100.0, 100.5, 100.5, 110.5))
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter",
+        _clock(90.0, 90.0, 100.0, 100.0, 100.5, 100.5, 105.0, 110.5),
+    )
     _patch_urlopen(monkeypatch, [
         {"content": "Hi", "tokens": [1]},
         {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 0.001}},
     ])
-    ttft, tokens, tps = LlamaCppEngine().generate("some-tag", "prompt")
-    assert ttft == pytest.approx(0.5)
-    assert tps == pytest.approx(0.1)  # 1 token / (10.5 - 0.5)s wall-clock decode time
+    result = LlamaCppEngine().generate("some-tag", "prompt")
+    assert result.client_ttft_sec == pytest.approx(0.5)
+    assert result.tokens_per_sec == pytest.approx(0.1)
+    assert result.decode_sec == pytest.approx(10.0)
+    assert result.server_tps_implausible is True
+    assert not is_valid_measurement(result)
+    assert aggregate_generation_measurements([result], 1)["valid_runs"] == 0
 
 
 def test_generate_counts_native_token_ids_not_sse_fragments(monkeypatch):
@@ -401,8 +414,8 @@ def test_generate_counts_native_token_ids_not_sse_fragments(monkeypatch):
         {"content": "x", "tokens": []},
         {"content": "", "stop": True, "timings": {"predicted_n": 1, "predicted_ms": 1000}},
     ])
-    _, tokens, _ = LlamaCppEngine().generate("some-tag", "prompt")
-    assert tokens == 2
+    result = LlamaCppEngine().generate("some-tag", "prompt")
+    assert result.generated_tokens == 2
 
 
 def test_generate_logs_raw_server_values_when_sanitizing(monkeypatch):
@@ -439,19 +452,25 @@ def test_generate_does_not_warn_when_tps_is_plausible(monkeypatch):
 
 def test_generate_preserves_request_to_first_output_ttft(monkeypatch):
     _patch_ensure_model(monkeypatch)
-    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(10.0, 10.0, 12.0, 12.0, 13.0))
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter",
+        _clock(0.0, 0.0, 10.0, 10.0, 12.0, 12.0, 12.5, 13.0),
+    )
     _patch_urlopen(monkeypatch, [
         {"content": "Hi", "tokens": [1]},
         {"content": "", "stop": True,
          "timings": {"predicted_n": 1, "predicted_ms": 500, "prompt_ms": 100}},
     ])
-    ttft, _, _ = LlamaCppEngine().generate("tag", "prompt")
-    assert ttft == pytest.approx(2.0)
+    result = LlamaCppEngine().generate("tag", "prompt")
+    assert result.client_ttft_sec == pytest.approx(2.0)
+    assert result.server_prompt_sec == pytest.approx(0.1)
 
 
 def test_generate_enforces_total_deadline_and_keeps_partial_text(monkeypatch):
     _patch_ensure_model(monkeypatch)
-    monkeypatch.setattr(llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 1.0, 1.0, 6.0))
+    monkeypatch.setattr(
+        llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 6.0),
+    )
     _patch_urlopen(monkeypatch, [
         {"content": "partial", "tokens": [1]},
         {"content": " too late", "tokens": [2]},
@@ -487,30 +506,32 @@ def test_chat_returns_content_and_server_timings(monkeypatch):
          "timings": {"predicted_n": 4, "predicted_ms": 1000, "prompt_ms": 200, "prompt_n": 50}},
         {"choices": [], "usage": {"prompt_tokens": 50, "completion_tokens": 4, "total_tokens": 54}},
     ])
-    ttft, tokens, tps, prompt_eval_count, text = LlamaCppEngine().chat(
+    result = LlamaCppEngine().chat(
         "tag", [{"role": "user", "content": "hi"}])
-    assert text == "Hello"
-    assert prompt_eval_count == 50
-    assert ttft == pytest.approx(0.2)
-    assert tokens == 4
-    assert tps == pytest.approx(4.0)
+    assert result.response_text == "Hello"
+    assert result.prompt_tokens == 50
+    assert result.client_ttft_sec >= 0
+    assert result.server_prompt_sec == pytest.approx(0.2)
+    assert result.generated_tokens == 4
+    assert result.tokens_per_sec == pytest.approx(4.0)
 
 
-def test_chat_sanitizes_implausible_server_reported_tps(monkeypatch):
+def test_chat_marks_corrected_implausible_server_tps_invalid(monkeypatch):
     # Same real bug as generate()'s equivalent test, via the chat() code path.
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
         llamacpp_module.time, "perf_counter",
-        _clock(100.0, 100.0, 100.5, 100.5, 105.0, 110.5),
+        _clock(100.0, 100.0, 100.0, 100.5, 105.0, 110.5),
     )
     _patch_urlopen(monkeypatch, [
         {"choices": [{"delta": {"content": "Hi"}}]},
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 1, "predicted_ms": 0.001}},
     ])
-    ttft, tokens, tps, _, _ = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
-    assert ttft == pytest.approx(0.5)
-    assert tps == pytest.approx(0.1)  # 1 token / (10.5 - 0.5)s wall-clock decode time
+    result = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
+    assert result.client_ttft_sec == pytest.approx(0.5)
+    assert result.tokens_per_sec == pytest.approx(0.1)
+    assert result.server_tps_implausible is True
 
 
 def test_chat_prefers_usage_prompt_tokens_over_timings_prompt_n(monkeypatch):
@@ -523,9 +544,9 @@ def test_chat_prefers_usage_prompt_tokens_over_timings_prompt_n(monkeypatch):
          "timings": {"predicted_n": 4, "predicted_ms": 1000, "prompt_n": 12}},
         {"choices": [], "usage": {"prompt_tokens": 2048, "completion_tokens": 4, "total_tokens": 2052}},
     ])
-    _, _, _, prompt_eval_count, _ = LlamaCppEngine().chat(
+    result = LlamaCppEngine().chat(
         "tag", [{"role": "user", "content": "hi"}])
-    assert prompt_eval_count == 2048
+    assert result.prompt_tokens == 2048
 
 
 def test_chat_falls_back_to_reasoning_text_when_content_empty(monkeypatch):
@@ -537,9 +558,9 @@ def test_chat_falls_back_to_reasoning_text_when_content_empty(monkeypatch):
          "timings": {"predicted_n": 8, "predicted_ms": 1000, "prompt_n": 10}},
         {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}},
     ])
-    _, tokens, _, _, text = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
-    assert text == "Let me consider... the answer is 42."
-    assert tokens == 8
+    result = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
+    assert result.response_text == "Let me consider... the answer is 42."
+    assert result.generated_tokens == 8
 
 
 def test_chat_prefers_content_over_reasoning_when_both_present(monkeypatch):
@@ -549,8 +570,8 @@ def test_chat_prefers_content_over_reasoning_when_both_present(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 1, "predicted_ms": 1000, "prompt_n": 10}},
     ])
-    _, _, _, _, text = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
-    assert text == "answer"
+    result = LlamaCppEngine().chat("tag", [{"role": "user", "content": "hi"}])
+    assert result.response_text == "answer"
 
 
 def test_chat_check_loop_raises_early_on_repeated_hedging(monkeypatch):
@@ -595,6 +616,8 @@ def _chat_result(text, finish_reason, *, calls=None, tokens=2, prompt_tokens=10)
         "tokens": tokens,
         "tps": 2.0,
         "decode_seconds": 1.0,
+        "wall_seconds": 1.2,
+        "server_prompt_sec": 0.1,
         "prompt_eval_count": prompt_tokens,
         "response_text": text,
         "tool_calls": calls or [],
@@ -607,8 +630,8 @@ def test_budgeted_chat_only_retries_literal_length(monkeypatch, finish_reason):
     _patch_ensure_model(monkeypatch)
     calls = []
 
-    def fake_request(self, tag, messages, tools, deadline, request_start,
-                     num_predict, check_loop, budget_nudged):
+    def fake_request(self, tag, messages, tools, deadline, num_predict,
+                     check_loop, budget_nudged):
         calls.append((messages, num_predict, deadline, budget_nudged))
         return _chat_result("Answer: B", finish_reason)
 
@@ -617,7 +640,7 @@ def test_budgeted_chat_only_retries_literal_length(monkeypatch, finish_reason):
         "tag", [{"role": "user", "content": "question"}],
         num_predict=-1, token_budget=10,
     )
-    assert result[-2:] == ("Answer: B", False)
+    assert (result.response_text, result.budget_nudged) == ("Answer: B", False)
     assert [call[1] for call in calls] == [6]
 
 
@@ -631,8 +654,8 @@ def test_budgeted_chat_retries_with_original_history_and_grades_only_second(monk
         _chat_result("Answer: C", "stop", tokens=2, prompt_tokens=30),
     ])
 
-    def fake_request(self, tag, messages, tools, deadline, request_start,
-                     num_predict, check_loop, budget_nudged):
+    def fake_request(self, tag, messages, tools, deadline, num_predict,
+                     check_loop, budget_nudged):
         calls.append({
             "messages": [dict(message) for message in messages],
             "deadline": deadline,
@@ -642,7 +665,7 @@ def test_budgeted_chat_retries_with_original_history_and_grades_only_second(monk
         return next(responses)
 
     monkeypatch.setattr(LlamaCppEngine, "_chat_request", fake_request)
-    ttft, tokens, tps, prompt_tokens, text, nudged = LlamaCppEngine().chat(
+    result = LlamaCppEngine().chat(
         "tag", original, timeout=60, num_predict=-1, token_budget=10,
     )
     assert original == snapshot
@@ -653,7 +676,12 @@ def test_budgeted_chat_retries_with_original_history_and_grades_only_second(monk
         {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
     ]
     assert calls[1]["budget_nudged"] is True
-    assert (ttft, tokens, tps, prompt_tokens, text, nudged) == (0.2, 8, 4.0, 30, "Answer: C", True)
+    assert result.client_ttft_sec == 0.2
+    assert result.generated_tokens == 8
+    assert result.tokens_per_sec == 4.0
+    assert result.prompt_tokens == 30
+    assert result.response_text == "Answer: C"
+    assert result.budget_nudged is True
 
 
 def test_budgeted_chat_two_streams_send_exact_split_and_return_second(monkeypatch):
@@ -688,8 +716,8 @@ def test_budgeted_chat_two_streams_send_exact_split_and_return_second(monkeypatc
         {"role": "assistant", "content": "unfinished"},
         {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
     ]
-    assert result[1] == 8
-    assert result[-2:] == ("Answer: B", True)
+    assert result.generated_tokens == 8
+    assert (result.response_text, result.budget_nudged) == ("Answer: B", True)
 
 
 def test_budgeted_tool_chat_grades_replacement_call_without_merging(monkeypatch):
@@ -706,8 +734,8 @@ def test_budgeted_tool_chat_grades_replacement_call_without_merging(monkeypatch)
         "tag", [{"role": "user", "content": "call"}], [{"type": "function"}],
         num_predict=-1, token_budget=10,
     )
-    assert result[-2] == [{"name": "final", "arguments": {"x": 1}}]
-    assert result[-1] is True
+    assert result.tool_calls == [{"name": "final", "arguments": {"x": 1}}]
+    assert result.budget_nudged is True
 
 
 def test_budgeted_chat_pass_two_length_raises_gradeable_exhaustion(monkeypatch):
@@ -733,8 +761,8 @@ def test_one_token_budget_scores_pass_one_as_exhausted_without_nudge(monkeypatch
     _patch_ensure_model(monkeypatch)
     requests = []
 
-    def fake_request(self, tag, messages, tools, deadline, request_start,
-                     num_predict, check_loop, budget_nudged):
+    def fake_request(self, tag, messages, tools, deadline, num_predict,
+                     check_loop, budget_nudged):
         requests.append(num_predict)
         return _chat_result("Answer: B", "length", tokens=1)
 
@@ -830,11 +858,11 @@ def test_chat_tools_accumulates_fragmented_arguments(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
          "timings": {"predicted_n": 3, "predicted_ms": 1000, "prompt_n": 20}},
     ])
-    _, _, _, prompt_eval_count, text, tool_calls = LlamaCppEngine().chat_tools(
+    result = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "weather?"}], tools=[{"type": "function"}])
-    assert tool_calls == [{"name": "get_weather", "arguments": {"location": "Paris", "unit": "celsius"}}]
-    assert prompt_eval_count == 20
-    assert text == ""  # no content chunks, only tool calls
+    assert result.tool_calls == [{"name": "get_weather", "arguments": {"location": "Paris", "unit": "celsius"}}]
+    assert result.prompt_tokens == 20
+    assert result.response_text == ""
 
 
 def test_chat_tools_zero_tool_calls_returns_empty_list(monkeypatch):
@@ -846,10 +874,10 @@ def test_chat_tools_zero_tool_calls_returns_empty_list(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 5, "predicted_ms": 1000, "prompt_n": 15}},
     ])
-    _, _, _, _, text, tool_calls = LlamaCppEngine().chat_tools(
+    result = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "hi"}], tools=[{"type": "function"}])
-    assert tool_calls == []
-    assert text == "I can't help with that."
+    assert result.tool_calls == []
+    assert result.response_text == "I can't help with that."
 
 
 def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
@@ -861,9 +889,9 @@ def test_chat_tools_malformed_arguments_falls_back_to_empty_dict(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
          "timings": {"predicted_n": 1, "predicted_ms": 1000, "prompt_n": 10}},
     ])
-    _, _, _, _, _, tool_calls = LlamaCppEngine().chat_tools(
+    result = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "timer"}], tools=[{"type": "function"}])
-    assert tool_calls == [{"name": "set_timer", "arguments": {}, "incomplete": True}]
+    assert result.tool_calls == [{"name": "set_timer", "arguments": {}, "incomplete": True}]
 
 
 def test_chat_tools_multiple_calls_ordered_by_index(monkeypatch):
@@ -876,9 +904,9 @@ def test_chat_tools_multiple_calls_ordered_by_index(monkeypatch):
         {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
          "timings": {"predicted_n": 2, "predicted_ms": 1000, "prompt_n": 10}},
     ])
-    _, _, _, _, _, tool_calls = LlamaCppEngine().chat_tools(
+    result = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "two"}], tools=[{"type": "function"}])
-    assert [c["name"] for c in tool_calls] == ["first", "second"]
+    assert [call["name"] for call in result.tool_calls] == ["first", "second"]
 
 
 def test_chat_tools_timeout_serializes_completed_fragmented_call(monkeypatch):
@@ -930,11 +958,11 @@ def test_chat_tools_falls_back_to_reasoning_text_when_content_empty(monkeypatch)
         {"choices": [{"delta": {}, "finish_reason": "stop"}],
          "timings": {"predicted_n": 8, "predicted_ms": 1000, "prompt_n": 10}},
     ])
-    _, tokens, _, _, text, tool_calls = LlamaCppEngine().chat_tools(
+    result = LlamaCppEngine().chat_tools(
         "tag", [{"role": "user", "content": "hi"}], tools=[{"type": "function"}])
-    assert text == "Let me consider... no tool fits."
-    assert tool_calls == []
-    assert tokens == 8
+    assert result.response_text == "Let me consider... no tool fits."
+    assert result.tool_calls == []
+    assert result.generated_tokens == 8
 
 
 def test_chat_tools_check_loop_raises_during_reasoning_phase(monkeypatch):
@@ -974,7 +1002,7 @@ def test_chat_tools_timeout_with_reasoning_only_keeps_reasoning_text(monkeypatch
 def test_embed_returns_embeddings_in_index_order(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
-        "engines.llamacpp.requests.post",
+        "scripts.runtime.engines.llamacpp.requests.post",
         lambda url, json=None, timeout=None: type("R", (), {
             "ok": True,
             "json": lambda self: {"data": [
@@ -983,15 +1011,15 @@ def test_embed_returns_embeddings_in_index_order(monkeypatch):
             ]},
         })(),
     )
-    embeddings, elapsed = LlamaCppEngine().embed("nomic-embed-text", ["a", "b"])
-    assert embeddings == [[0.1], [0.2]]
-    assert elapsed >= 0
+    result = LlamaCppEngine().embed("nomic-embed-text", ["a", "b"])
+    assert result.embeddings == [[0.1], [0.2]]
+    assert result.client_wall_sec >= 0
 
 
 def test_embed_raises_on_rejected_request(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
-        "engines.llamacpp.requests.post",
+        "scripts.runtime.engines.llamacpp.requests.post",
         lambda url, json=None, timeout=None: type("R", (), {
             "ok": False, "status_code": 500, "json": lambda self: {"error": "oom"},
             "text": "oom",
@@ -1219,3 +1247,14 @@ def test_wait_until_unloaded_false_while_still_loaded():
     engine = LlamaCppEngine()
     engine._loaded_tag = "phi4-mini"
     assert engine.wait_until_unloaded("phi4-mini") is False
+
+
+def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
+        "--split-mode", "tensor", "--cache-type-k", "f16", "--cache-type-v", "f16",
+    ]
+    assert LlamaCppEngine.gpu_split_args(include_cache=True, cpu_only=True) == [
+        "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
+        "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
+    ]

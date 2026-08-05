@@ -1,9 +1,10 @@
-"""conftest.py — makes scripts/ importable as top-level modules (config, shared,
-models, ...) since that's how the scripts themselves import each other."""
+"""Shared pytest configuration for package-based script imports."""
 
-import sys
-from pathlib import Path
+import pytest
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+
+@pytest.fixture(autouse=True)
+def isolate_saved_llamacpp_tool_config(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.runtime.llamacpp_tools.load_setup_config", lambda _path: {},
+    )

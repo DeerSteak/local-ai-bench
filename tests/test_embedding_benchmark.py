@@ -1,4 +1,4 @@
-from embedding_benchmark import EmbeddingBenchmark
+from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
 
 
 def _write_doc(tmp_path, text):

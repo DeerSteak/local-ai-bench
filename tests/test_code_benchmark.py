@@ -1,7 +1,8 @@
 import pytest
 
-import config
-from code_benchmark import CodeBenchmark
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement
+from scripts.workloads.code_benchmark import CodeBenchmark
 
 
 # ── build_prompt ──
@@ -17,7 +18,8 @@ def test_ask_passes_shared_accuracy_budget(monkeypatch):
     class Engine:
         def chat(self, *args, **kwargs):
             self.kwargs = kwargs
-            return 0, 0, 0, 0, "def sum_two(a, b): return a + b", False
+            return ChatMeasurement(0, 0, 0, 0, 0,
+                                   response_text="def sum_two(a, b): return a + b")
 
     monkeypatch.setattr(
         CodeBenchmark, "evaluate_question",
@@ -255,7 +257,7 @@ def test_execute_tests_does_not_replace_prefix_placeholder_in_candidate_code():
     assert results == [{"passed": True, "got": "__RESULT_PREFIX__", "error": None}]
 
 
-def test_execute_tests_preserves_results_before_process_failure():
+def test_execute_tests_rejects_process_escape_before_any_candidate_code_runs():
     code = (
         "def f(value):\n"
         "    if value == 2:\n"
@@ -269,11 +271,9 @@ def test_execute_tests_preserves_results_before_process_failure():
         {"args": [3], "expected": 3},
     ]
     results = CodeBenchmark.execute_tests(code, "f", tests)
-    assert results[0] == {"passed": True, "got": 1, "error": None}
-    assert results[1]["passed"] is False
-    assert results[1]["got"] is None
-    assert results[1]["error"] != "timeout"
-    assert results[2] == results[1]
+    assert results == [
+        {"passed": False, "got": None, "error": "unsafe generated code: imports are not allowed"},
+    ] * 3
 
 
 def test_parse_harness_output_rejects_malformed_or_duplicate_records():

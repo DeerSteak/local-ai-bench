@@ -1,0 +1,80 @@
+.wrapper {
+  margin-top: 20px;
+  padding: 18px 20px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  cursor: pointer;
+  color: #1a1f24;
+  font-family: 'IBM Plex Sans';
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.counts {
+  color: #57606a;
+  font-family: 'IBM Plex Mono';
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.intro {
+  max-width: 980px;
+  margin: 16px 0 12px;
+  color: #57606a;
+  line-height: 1.5;
+}
+
+.pauseList { display: grid; gap: 8px; margin: 0 0 14px; }
+.pauseNotice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #d4a72c; border-radius: 7px; background: #fff8c5; color: #633c01; }
+.pauseBadge { padding: 2px 7px; border-radius: 999px; background: #bf8700; color: white; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+
+.filterLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  margin-bottom: 12px;
+  color: #57606a;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.filterLabel select {
+  min-height: 36px;
+  padding: 6px 30px 6px 10px;
+  border: 1px solid #afb8c1;
+  border-radius: 6px;
+  background: white;
+  color: #24292f;
+}
+
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { color: #57606a; font-size: 12px; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.table th, .table td { padding: 7px 10px; border-bottom: 1px solid #eaeef2; white-space: nowrap; }
+.table tbody tr:nth-child(even) { background: #f6f8faaa; }
+
+.status {
+  display: inline-block;
+  min-width: 62px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-align: center;
+  text-transform: capitalize;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.valid { background: #dafbe1; color: #116329; }
+.invalid { background: #ffebe9; color: #cf222e; }
+.legacy { background: #fff8c5; color: #9a6700; }
+.truncated { margin-top: 10px; color: #57606a; font-size: 13px; }
+
+@media (max-width: 720px) {
+  .heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+}

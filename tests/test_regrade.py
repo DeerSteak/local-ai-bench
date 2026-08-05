@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-import config
-import regrade
-from shared import Shared
+from scripts.runtime import config
+from scripts.results import regrade
+from scripts.runtime.shared import Shared
 
 
 def score_block(label="Model"):

@@ -1,15 +1,17 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, applyEngineLabels } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
 import { getAccuracySettingsWarning } from "./utils/accuracy";
+import { fetchSelectedResultFiles } from "./utils/autoload";
 import { MAX_FILES } from "./constants";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
 import ChartPanel from "./components/ChartPanel";
 import StatsTable from "./components/StatsTable";
+import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 
@@ -35,6 +37,7 @@ export default function Dashboard() {
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
+  const autoloadStartedRef = useRef(false);
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { sectionRef.current = section; }, [section]);
 
@@ -98,6 +101,15 @@ export default function Dashboard() {
     () => getAccuracySettingsWarning(effectiveFiles),
     [effectiveFiles],
   );
+  const llamaBenchMethodologyWarning = useMemo(
+    () => getLlamaBenchMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
+  const conversationTTFTMethodologyWarning = useMemo(
+    () => getConversationTTFTMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
+  const gpuSplitMethodologyWarning = useMemo(
+    () => getGpuSplitMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
 
   const updateHostnameOverride = useCallback((fileId, value) => {
     setHostnameOverrides(prev => ({ ...prev, [fileId]: value }));
@@ -133,7 +145,9 @@ export default function Dashboard() {
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       ram_gb:   p.ram_gb   || null,
+      version:  data.version || null,
       timestamp: p.timestamp || null,
+      reliabilityWarning: getRunReliabilityWarning(data),
       data,
     }, error: null };
   };
@@ -153,6 +167,14 @@ export default function Dashboard() {
       setFiles(prev => [...prev, entries[0]]);
     }
   }, []);
+
+  useEffect(() => {
+    if (autoloadStartedRef.current) return;
+    autoloadStartedRef.current = true;
+    fetchSelectedResultFiles(window.location.search)
+      .then(selectedFiles => processJsonFiles(selectedFiles))
+      .catch(error => setFileError(error.message));
+  }, [processJsonFiles]);
 
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
@@ -231,7 +253,10 @@ export default function Dashboard() {
         onDragLeave={handleDragLeave}
         onRemoveFile={removeFile}
         onFileInput={handleFileInput}
-        fileError={[fileError, accuracySettingsWarning].filter(Boolean).join(" ")}
+        fileError={[
+          fileError, accuracySettingsWarning, llamaBenchMethodologyWarning,
+          conversationTTFTMethodologyWarning, gpuSplitMethodologyWarning,
+        ].filter(Boolean).join(" ")}
       />
 
       <Controls
@@ -276,6 +301,8 @@ export default function Dashboard() {
         sortConfig={sortConfig}
         onCycleSort={cycleSort}
       />
+
+      <ValidityInspector key={section} files={effectiveFiles} section={section} />
     </div>
   );
 }

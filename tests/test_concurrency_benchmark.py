@@ -1,6 +1,12 @@
-import config
-from concurrency_benchmark import ConcurrencyBenchmark
-from shared import Shared
+from scripts.runtime import config
+from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark, pending_concurrency_levels
+
+
+def test_pending_concurrency_levels_preserve_order_and_skip_completed_levels():
+    attempts = {1: None, 2: 2, 4: 1}
+    assert pending_concurrency_levels([1, 2, 4], attempts.get) == [(2, 2), (4, 1)]
+from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.runtime.shared import Shared
 
 
 def test_below_floor_never_stops_even_if_slow():
@@ -183,3 +189,46 @@ def test_fire_batch_negative_retry_limit_returns_defensive_fallback(monkeypatch)
         _RetryEngine(), "tag", 2, 512,
     )
     assert result == ([], "crashed", None, 0)
+
+
+def _concurrency_measurement(implausible=False):
+    return GenerationMeasurement(
+        client_ttft_sec=0.1, generated_tokens=10, tokens_per_sec=20,
+        client_wall_sec=0.6, decode_sec=0.5,
+        server_tps_implausible=implausible,
+    )
+
+
+def test_measured_batch_retries_entire_batch_once_after_implausible_tps(monkeypatch):
+    outcomes = iter([
+        ([_concurrency_measurement(True)], "ok", None, 1.0),
+        ([_concurrency_measurement(False)], "ok", None, 2.0),
+    ])
+    monkeypatch.setattr(
+        ConcurrencyBenchmark, "_fire_batch_with_crash_retries",
+        staticmethod(lambda *args: next(outcomes)),
+    )
+    samples, status, _, elapsed = ConcurrencyBenchmark._fire_measured_batch(
+        object(), "tag", 4, 512, "Model",
+    )
+    assert status == "ok"
+    assert samples[0].server_tps_implausible is False
+    assert elapsed == 2.0
+
+
+def test_measured_batch_returns_second_implausible_batch_without_third_attempt(monkeypatch):
+    calls = []
+
+    def fire(*args):
+        calls.append(True)
+        return [_concurrency_measurement(True)], "ok", None, 1.0
+
+    monkeypatch.setattr(
+        ConcurrencyBenchmark, "_fire_batch_with_crash_retries", staticmethod(fire),
+    )
+    samples, status, _, _ = ConcurrencyBenchmark._fire_measured_batch(
+        object(), "tag", 4, 512, "Model",
+    )
+    assert status == "ok"
+    assert samples[0].server_tps_implausible is True
+    assert len(calls) == 2

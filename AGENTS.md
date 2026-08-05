@@ -23,29 +23,21 @@ bench-env/           Project venv (gitignored) — created by setup.sh/setup.bat
 requirements.txt      Runtime deps, installed by setup scripts into bench-env/
 tests/requirements.txt  Test-only deps (pytest), installed by tests.sh/.bat into bench-env/
 setup.sh / setup.bat        One-shot install + interactive model picker
-run_bench.sh / .bat          Activates bench-env, runs scripts/benchmark.py
+run_bench.sh / .bat          Activates bench-env, runs scripts/app/benchmark.py
 launch_dashboard.sh / .bat    Builds + serves the dashboard (always rebuilds)
 tests.sh / .bat                Activates bench-env, runs pytest
 .coveragerc            Coverage config — see Testing section below
 ```
 
-`scripts/` modules:
-- `benchmark.py` — CLI entry point, argument parsing, orchestration (`main()`)
-- `config.py` — shared constants (URLs, paths, timeouts, run counts)
-- `shared.py` — cross-cutting helpers: logging, machine profiling, crash-cache/`run_measured_calls`/`run_accuracy_benchmark` orchestration (engine-agnostic — takes an `InferenceEngine`), ComfyUI server lifecycle/HTTP client
-- `engines/base.py` — `InferenceEngine` interface; `engines/llamacpp.py` — `LlamaCppEngine` (server lifecycle + HTTP/process client). llama.cpp is the only engine today; a second engine (e.g. MLX) implements the same interface without touching orchestration.
-- `llm_prefill_benchmark.py` — single-shot cold-prefill LLM test
-- `llm_conversation_benchmark.py` — multi-turn conversation LLM test
-- `embedding_benchmark.py` — embeddings test
-- `image_benchmark.py` — image generation test (ComfyUI workflow builders + submission)
-- `concurrency_benchmark.py` — opt-in tool-style and chat-server concurrency sweeps
-- `mcq_benchmark.py`, `math_benchmark.py`, `reasoning_benchmark.py`, `code_benchmark.py`, `tool_benchmark.py` — accuracy tests
-- `hardware.py` — GPU/system-memory detection and model-fit estimates
-- `models.py` — single source of truth for every model definition (tags, checkpoints, tiers, sizes)
-- `model_inventory.py` — installed-model classification and safe non-catalog folder cleanup helpers
-- `setup_selection.py` — pure selection rules extracted from the side-effectful setup picker
-- `setup_check.py` — hardware detection, interactive model picker, unattended install (called by `setup.sh`/`setup.bat`)
-- `llamabench_benchmark.py` — opt-in `llamabench` test: llama.cpp's own `llama-bench` pp/tg throughput sweep, bypassing the HTTP engine — see [Workloads](docs/workloads.md#llama-bench)
+`scripts/` is a Python package with six broad boundaries:
+- `app/` — benchmark CLI/frontends, options, orchestration, and progress presentation
+- `runtime/` — configuration, hardware, engine adapters, shared execution helpers, and process controls
+- `workloads/` — benchmark implementations, model definitions, methodology, and bundled test data
+- `results/` — durable storage, recovery, bundles, reports, policies, and diagnostics
+- `setup/` — setup interfaces, discovery/configuration, downloads, and archive safety
+- `release/` — release manifests, scans, SBOM/notices, maintenance, and readiness gates
+
+See [Project Structure](docs/project-structure.md#scripts-in-detail) for the module-level map. Public wrapper names remain stable; internal Python commands use `python -m scripts.<package>.<module>`.
 
 ## Critical safety rules
 
@@ -79,7 +71,7 @@ The reasoning below isn't fully written down anywhere else — the docs describe
 
 **Two LLM test modes measure genuinely different things — don't compare their TTFT numbers at face value.**
 - **Single-shot** (`llm_prefill_benchmark.py`): a fresh, unique-content prompt padded to a target size (2K/8K/32K/64K), sent cold every run — the whole prompt is processed with nothing cached. TTFT is measured wall-clock, from request start until the first output reaches the client.
-- **Conversation** (`llm_conversation_benchmark.py`): one real multi-turn chat, grown from a blank slate toward 96K. TTFT here measures only the *new* turn's marginal cost, relying on the backend's slot/KV-cache reuse — that's why conversation TTFT at, say, 32K is a small fraction of single-shot TTFT at 32K. TPS (decode speed) *is* comparable between the two, since it depends on total context depth in both cases, not on what's cached.
+- **Conversation** (`llm_conversation_benchmark.py`): one real multi-turn chat, grown from a blank slate toward 96K. Client-observed TTFT measures the next cached turn's full request-to-first-output latency; the separately recorded server prompt time isolates prompt evaluation. Conversation TTFT at 32K is typically much smaller than single-shot TTFT because the backend reuses its slot/KV cache. TPS remains comparable because it depends on total context depth in both modes.
 
 **`llamabench` (`llamabench_benchmark.py`) intentionally overlaps with `llm`'s own prefill/decode numbers.** It runs llama.cpp's own `llama-bench` binary directly (not through `LlamaCppEngine`'s HTTP server), so it's comparable to community-published `llama-bench` results and useful as a cross-check against this project's own TTFT/TPS pipeline — don't try to make it "different enough" to justify its existence, and don't route it through `InferenceEngine` (it's the one workload module that's inherently llama.cpp-specific — see `docs/engines.md`). It always passes an explicit `-ngl` (999 full offload / 0 under `--cpu-only`) rather than relying on `llama-bench`'s own default (`-1`), since that default isn't documented as meaning "every layer."
 
@@ -107,7 +99,7 @@ This is the part to get right — **write comprehensive, valuable tests for anyt
 **What to test — the real boundary:**
 - **Do** unit test pure logic and anything mockable at a clean seam: parsing, calculation, decision/skip logic, config selection, request/response shaping. Mock `requests`/`urllib` calls and `Shared.*` seams rather than hitting a real server.
 - **Don't** try to unit test code that spawns real subprocesses, polls a live llama.cpp/ComfyUI server, or orchestrates a full run end-to-end (`benchmark.py`'s `main()`, each workload class's `run()`, `LlamaCppEngine.start`/`Shared.ensure_comfyui`/`get_hostname`/`detect_backend`, etc.). These are marked `# pragma: no cover` at their `def` line (coverage.py excludes the whole function body from that point) rather than skipped silently — the exclusion is deliberate and documented, not a gap to "fix" by adding a live-server test. Orchestration logic that takes an `InferenceEngine` parameter (e.g. `Shared.run_accuracy_benchmark`) isn't in this bucket — test it with a fake engine instead.
-- `scripts/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
+- `scripts/setup/setup_check.py` is entirely omitted from coverage via `.coveragerc` (`omit = [scripts/setup/setup_check.py]`) — it has no `__main__` guard, so importing it runs the whole interactive install flow. Don't try to cover it directly; see the safety rules above for how to test logic inside it.
 
 **Extract before testing, when logic is buried in a loop.** Several times in this project's history, business logic embedded in a large orchestration loop turned out to be worth pulling into its own pure, testable function rather than leaving it untested inside a `# pragma: no cover` method:
 - `conv_skip_entry()` in `benchmark.py` — the conversation-test skip/reason logic, pulled out of `main()`'s loop
@@ -132,7 +124,7 @@ When you write similar logic (a decision, a calculation, a dispatch) inside an o
 - **CLI-overridable config uses dotted access, not `from` imports.** `RUN_TIMEOUT`, `ACC_TIMEOUT`, and `N_RUNS` in `config.py` can be overridden by `--timeout`/`--acc-timeout`/`--runs` at runtime (`config.RUN_TIMEOUT = args.timeout`). Every reference to them elsewhere must be `config.RUN_TIMEOUT`/`config.ACC_TIMEOUT`/`config.N_RUNS` (dotted attribute lookup) — never `from config import RUN_TIMEOUT`, which binds a stale copy at import time and silently ignores the override.
 - **A timed-out accuracy question (`mcq`/`math`/`reasoning`/`code`/`tool`, `--acc-timeout`, default 60s) is scored from its partial response and the bank continues — a single timeout doesn't affect the rest of that model's run.** Whatever text streamed before the cutoff is captured (`EngineTimeout.partial_text` in `shared.py`) and scored the same as a completed answer, so a timed-out response can still be correct. Streaming output is also checked periodically with `Shared.looks_like_loop` (verbatim n-gram repetition or repeated hedging phrases), which can stop a likely loop before the timeout. Completed responses are never loop-checked. Results carry `timed_out_count`/`timed_out_ids` and, when applicable, separate `likely_loop_count`/`likely_loop_ids` diagnostics per model. See `docs/workloads.md#timeouts-and-loop-detection`.
 - **Logging goes through `Shared.log/ok/warn/err/section`**, not bare `print()`, for consistent colored CLI output across all workload modules.
-- **`VERSION` in `config.py` and the `# Local AI Bench vX.Y` title in `README.md` must be bumped together.** They're two independent strings with no code linking them — nothing will catch a mismatch except noticing it.
+- **`VERSION` in `config.py` is the only place to edit the version.** The `.githooks/pre-commit` hook (`python -m scripts.release.version_sync`) rewrites every mirror — currently `README.md`'s `# Local AI Bench vX.Y` title — from it, and rejects a commit that changes the version in a mirror instead. Enable it per clone with `git config core.hooksPath .githooks`; see [Release policy](docs/release-policy.md#version-sync-hook).
 - **`N_RUNS` defaults to 3 and is CLI-configurable from 1–10 with `--runs`; measured values are averaged directly with no outlier dropping.** It applies only to single-shot LLM, embeddings, and image generation. Conversation and every accuracy test run one pass, while concurrency records one measured batch per level. (Note: `SLOW_MODEL_MIN_TPS` skip/early-exit logic is separate — see `docs/workloads.md`.)
 - **Crash caches** memoize repeatable engine-runner crashes per workload so later runs do not rediscover them. Single-shot, conversation, and embeddings have their own caches; the five accuracy caches also carry question-bank hashes; tool/chat concurrency use separate caches. Keep behavior symmetric within whichever workload family you touch.
 - **No comments explaining *what* code does** — names should do that. Comments are reserved for non-obvious *why* (a constraint, a workaround, a subtle invariant) — this codebase already leans heavily on that style; match it.

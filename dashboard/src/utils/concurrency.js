@@ -1,5 +1,7 @@
 import { CONCURRENCY_LEVELS, CONCURRENCY_STOP_LABELS, LLM_DISPLAY_ORDER } from "../constants";
 
+const ttftMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
+
 // `section` is "concurrency_tool" or "concurrency_chat" — the two
 // concurrency tests share this shape but have different level ladders (see
 // CONCURRENCY_LEVELS in constants.js) and live under separate results JSON
@@ -31,7 +33,7 @@ export function buildConcurrencyDataForModel(files, section, model, metric) {
       const s = f.data[section]?.[model]?.[level];
       if (!s) return;
       row[`f${fi}`] = metric === "tps" ? s.tps_mean
-        : metric === "ttft" ? s.ttft_mean_sec
+        : metric === "ttft" ? ttftMean(s)
         : s.aggregate_tps;
     });
     return row;
@@ -71,7 +73,8 @@ export function flattenConcurrencyData(files, section) {
           _fileId: f.id, model, level,
           tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
           aggregate_tps: s.aggregate_tps,
-          ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
+          ttft_mean: ttftMean(s),
+          ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,
           total_tokens: s.total_tokens,
         };
       });

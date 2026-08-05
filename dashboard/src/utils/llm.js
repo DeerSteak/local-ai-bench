@@ -11,6 +11,9 @@ const SKIP_REASON_LABELS = {
   known_crash: "Skipped - Engine Crashed",
 };
 
+export const llmTTFTMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
+export const llmValidRuns = sample => sample?.valid_runs ?? sample?.n_runs;
+
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
 // llm_conversation both set a "timed_out" field), "{ctx} - Crashed" for the
@@ -99,7 +102,7 @@ export function buildLLMDataForModel(files, model, metric, section = "llm") {
     const row = { ctxLabel: ctx };
     files.forEach((f, fi) => {
       const s = f.data[section]?.[model]?.[ctx];
-      if (s) row[`f${fi}`] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      if (s) row[`f${fi}`] = metric === "tps" ? s.tps_mean : llmTTFTMean(s);
     });
     return row;
   });
@@ -120,7 +123,7 @@ export function buildLLMData(files, metric, enabledModels) {
       for (const [model, md] of Object.entries(f.data.llm || {})) {
         if (!enabledModels.has(model) || !md[ctx]) continue;
         const key = isSingle ? model : `f${fi}_${model}`;
-        row[key] = metric === "tps" ? md[ctx].tps_mean : md[ctx].ttft_mean_sec;
+        row[key] = metric === "tps" ? md[ctx].tps_mean : llmTTFTMean(md[ctx]);
       }
     });
     return row;
@@ -161,7 +164,7 @@ export function buildLLMBarData(files, model, metric, section = "llm") {
     const ctxData = f.data[section]?.[model] || {};
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
-      if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      if (s) row[ctx] = metric === "tps" ? s.tps_mean : llmTTFTMean(s);
       const status = getBarStatusLabel(f, model, ctx, section);
       if (status) row[`_status_${ctx}`] = status;
     }
@@ -196,7 +199,7 @@ export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
     const ctxData = file.data[section]?.[model] || {};
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
-      if (s) row[ctx] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      if (s) row[ctx] = metric === "tps" ? s.tps_mean : llmTTFTMean(s);
       const status = getBarStatusLabel(file, model, ctx, section);
       if (status) row[`_status_${ctx}`] = status;
     }
@@ -234,7 +237,7 @@ export function buildLLMLineDataByCtx(file, models, metric, section = "llm") {
     const row = { ctxLabel: ctx };
     for (const model of models) {
       const s = file.data[section]?.[model]?.[ctx];
-      if (s) row[model] = metric === "tps" ? s.tps_mean : s.ttft_mean_sec;
+      if (s) row[model] = metric === "tps" ? s.tps_mean : llmTTFTMean(s);
     }
     return row;
   });
@@ -260,8 +263,9 @@ export function flattenLLMData(files, section = "llm") {
         .map(([ctx, s]) => ({
           _fileId: f.id, model, ctx,
           tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
-          ttft_mean: s.ttft_mean_sec, ttft_stdev: s.ttft_stdev_sec,
-          n_runs: s.n_runs,
+          ttft_mean: llmTTFTMean(s),
+          ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,
+          n_runs: llmValidRuns(s),
         }));
     })
   );

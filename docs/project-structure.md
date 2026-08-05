@@ -10,27 +10,56 @@
 | File / Folder | Purpose |
 |---|---|
 | `setup.sh` | One-shot setup for macOS and Linux |
+| `Setup Local AI Bench.command` | Double-clickable macOS launcher for the graphical setup wizard |
+| `Setup Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical setup wizard |
+| `Setup Local AI Bench.bat` | Double-clickable Windows launcher for the graphical setup wizard |
 | `setup.bat` | One-shot setup for Windows |
-| `run_bench.sh` | Activates the venv; opens the interactive frontend with no arguments or forwards arguments directly to `scripts/benchmark.py` on Linux / macOS |
+| `Run Local AI Bench.command` | Double-clickable macOS launcher for the graphical benchmark screen |
+| `Run Local AI Bench.desktop` | Double-clickable Linux desktop launcher for the graphical benchmark screen |
+| `Run Local AI Bench.bat` | Double-clickable Windows launcher for the graphical benchmark screen |
+| `Launch Local AI Bench Dashboard.command` | Double-clickable macOS launcher that builds, serves, and opens the dashboard |
+| `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
+| `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
+| `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
-| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, opens browser automatically |
-| `launch_dashboard.bat` | Builds and serves the dashboard on Windows, opens browser automatically |
+| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
+| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
-| `scripts/` | Benchmark implementation — see [How It Works](how-it-works.md#code-organization) for what each module does |
+| `scripts/` | Packaged implementation grouped by application, runtime, workloads, results, setup, and release responsibilities |
+| `.githooks/pre-commit` | Version-sync hook — see [Release policy](release-policy.md#version-sync-hook); enable per clone with `git config core.hooksPath .githooks` |
 | `results/` | Default benchmark output — `results_*.json`, generated-image folders, and one `answers_<test>_*` JSON sidecar per selected accuracy workload |
-| `dashboard/` | The results-explorer web app (React + Vite) |
+| `dashboard/` | The results-explorer web app (React + Vite), including the temporary selected-result staging utility used by local launchers |
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
-| `samples/` | Sample `results_*.json` files for trying the dashboard without running a benchmark |
-| `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup_check.py`, gitignored |
-| `models.py` (in `scripts/`) | Single source of truth for every model definition — imported by `benchmark.py`, `setup_check.py`, and `shared.py` |
+| `tests/fixtures/` | Immutable compatibility results that freeze commercially important application/schema behavior before execution-kernel migration |
+| `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
+| `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
+| `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
+| `docs/product-requirements.md` | Primary pre-launch hardware-validation decision, scope, outcomes, and product qualities |
+| `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
+| `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
+| `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
+| `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
+| `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
+| `docs/result-history.md` | Filesystem-owned result discovery, filtering, dashboard launch, and policy evaluation |
+| `docs/vendor-diagnostics.md` | First-divergence diagnostic content, verification, and engineer workflow |
+| `docs/outbound-review.md` | Embargo-safe identity preview, private aliases, and source verification |
+| `docs/offline-mode.md` | Loopback-only execution policy, inherited controls, and qualification boundary |
+| `docs/limitations.md` | Benchmark representativeness, variance, compatibility, and recommendation limitations |
+| `docs/data-lifecycle.md` | Local retention, deletion, portability, and artifact-handling behavior |
+| `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
+| `docs/extension-contracts.md` | Versioned workload SDK, conformance-vector format, and capability-negotiated engine adapter contract |
+| `docs/security-and-privacy.md` | Working threat model, data classifications, embargo policy, controls, and verification gaps |
+| `samples/` | Sample `results_*.json` files for trying the dashboard plus reviewed HTML/PDF decision-report examples |
+| `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup/setup_check.py`, gitignored |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
-| `sample_document.txt` | The corpus chunked and embedded by the embeddings test |
-| `scripts/data/` | Active accuracy banks—`mcq_questions.json` (150 questions), `math_questions.json` (150 questions), `reasoning_questions.json` (60 questions), `code_problems.json` (60 problems), and `tool_questions.json` (100 tool-calling questions) |
-| `scripts/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
+| `scripts/workloads/data/` | Active accuracy banks plus `sample_document.txt`, the real-world corpus used by the embeddings workload |
+| `scripts/workloads/data/reasoning_questions.json` | Versioned, validated reasoning bank across ten categories, including a 20-question `very_hard` tail |
 | `hf.txt` | Optional saved HuggingFace token (see [Setup](setup.md#huggingface-token)) — not tracked in git |
-| `.benchmark_frontend_state.json` | Gitignored last-confirmed interactive engine/test/model/max-prompt-tokens/tg-tokens selection; stale or invalid values fall back to current defaults |
-| `.coveragerc` | Coverage config for the test suite — omits `setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
+| `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths plus detected NVIDIA or ROCm GPU topology |
+| `.benchmark_frontend_state.json` | Gitignored GUI/terminal selection and execution settings plus the last GUI preset name; stale or invalid values fall back to current defaults |
+| `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
+| `.coveragerc` | Coverage config for the test suite — omits `setup/setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
@@ -46,32 +75,76 @@ The old `compare.py` CLI tool has been dropped — it's been replaced by the [da
 
 ## `scripts/` in detail
 
+The package boundaries are deliberately broad and practical: `app/` owns user entry points and coordination, `runtime/` owns engine and process infrastructure, `workloads/` owns benchmark definitions and bundled data, `results/` owns persistence, recovery, and reporting, `setup/` owns installation, and `release/` owns shipping gates. Public shell and batch wrappers remain at the repository root, so existing automation does not depend on internal file locations.
+
 | Module | Purpose |
 |---|---|
-| `benchmark.py` | CLI entry point — argument parsing and test orchestration |
-| `benchmark_frontend.py` | Interactive installed-model/test picker; launches `benchmark.py` with explicit public CLI flags |
-| `config.py` | Shared constants (URLs, paths, timeouts, run counts) |
-| `model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
-| `setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
-| `shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
-| `hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
-| `engines/base.py`, `engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
-| `llm_prefill_benchmark.py` | Single-shot LLM test |
-| `llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
-| `embedding_benchmark.py` | Embeddings test |
-| `image_benchmark.py` | Image generation test (ComfyUI workflow builders + submission) |
-| `concurrency_benchmark.py` | Shared implementation for the tool-style and chat concurrency sweeps |
-| `mcq_benchmark.py` | MCQ accuracy test |
-| `math_benchmark.py` | Numeric-answer math accuracy test |
-| `reasoning_benchmark.py` | Knowledge-light A–D reasoning accuracy test and validated bank loader |
-| `code_benchmark.py` | Isolated Python code-generation accuracy test |
-| `tool_benchmark.py` | Tool-calling accuracy test |
-| `regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
-| `llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
-| `llamabench_concurrency_benchmark.py` | Opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench-concurrency)) |
-| `models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
-| `setup_check.py` | Hardware detection, model picker, unattended install |
-| `data/` | Question banks used by accuracy tests (see above) |
+| `app/benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
+| `app/benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
+| `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
+| `app/benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
+| `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
+| `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
+| `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
+| `results/outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
+| `runtime/network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
+| `results/vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |
+| `results/vendor_diagnostic_cli.py` | Reviewed diagnostic creation and source-pair verification commands |
+| `results/result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
+| `results/result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
+| `results/decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |
+| `results/decision_report_cli.py` | Command-line decision-report generator for validated result JSON |
+| `results/acceptance_policy.py` | Validates and evaluates versioned per-case evidence-threshold policies |
+| `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
+| `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
+| `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
+| `results/run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
+| `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
+| `results/resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
+| `results/recovery_inspector.py` | Read-only resume/fork eligibility, identity revalidation, and durable coverage report |
+| `results/recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
+| `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
+| `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
+| `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
+| `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
+| `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
+| `runtime/workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |
+| `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
+| `app/orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
+| `results/result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
+| `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
+| `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
+| `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
+| `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
+| `runtime/shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
+| `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
+| `runtime/engines/base.py`, `runtime/engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
+| `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
+| `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
+| `workloads/conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
+| `results/native_bench_event_stage.py` | Journal-owned streamed llama-bench rows, partial markers, repetition counts, and compatible projection |
+| `workloads/llm_conversation_benchmark.py` | Multi-turn conversation LLM test |
+| `workloads/embedding_benchmark.py` | Embeddings test |
+| `workloads/image_benchmark.py` | Image generation test (ComfyUI workflow builders + submission) |
+| `workloads/concurrency_benchmark.py` | Shared implementation for the tool-style and chat concurrency sweeps |
+| `workloads/mcq_benchmark.py` | MCQ accuracy test |
+| `workloads/math_benchmark.py` | Numeric-answer math accuracy test |
+| `workloads/reasoning_benchmark.py` | Knowledge-light A–D reasoning accuracy test and validated bank loader |
+| `workloads/code_benchmark.py` | Restricted Python code-generation accuracy test |
+| `workloads/code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
+| `workloads/tool_benchmark.py` | Tool-calling accuracy test |
+| `results/regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
+| `workloads/llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
+| `workloads/llamabench_concurrency_benchmark.py` | Opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench-concurrency)) |
+| `workloads/models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
+| `runtime/comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
+| `setup/setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
+| `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
+| `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
+| `setup/setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
+| `workloads/data/` | Question banks used by accuracy tests (see above) |
 
 ## `results/` in detail
 
@@ -98,7 +171,7 @@ Each auxiliary name is derived from the main results filename's stem by swapping
 
 The `answers_*.json` sidecars hold every question's answer for that accuracy test, keyed by model, each with the model's full graded response text and a `correct` flag. They stay outside the main results JSON because raw answers are much larger than summary scores and diagnostics. The main results JSON's own `incorrect` list (per model, per test) is unaffected and still covers only wrong answers.
 
-`python scripts/regrade.py results/results_...json` reapplies every accuracy grader with stored model results when the bank hashes exactly match the banks in `scripts/data/`; empty blocks from unselected tests require no sidecar. This keeps pre-reasoning result files regradeable while new files can include reasoning. It writes a complete `regraded_results_...json` plus matching `regraded_answers_*_...json` sidecars and never edits the source files. `--dry-run` validates and scores without writing. Code answers run again through the existing timeout harness, which provides process isolation and timeout recovery rather than a security sandbox.
+`python -m scripts.results.regrade results/results_...json` reapplies every accuracy grader with stored model results when the bank hashes exactly match the banks in `scripts/workloads/data/`; empty blocks from unselected tests require no sidecar. This keeps pre-reasoning result files regradeable while new files can include reasoning. It writes a complete `regraded_results_...json` plus matching `regraded_answers_*_...json` sidecars and never edits the source files. `--dry-run` validates and scores without writing. Code answers run again through the existing timeout harness, which provides process isolation and timeout recovery rather than a security sandbox.
 
 ### Main results JSON
 
@@ -106,7 +179,8 @@ The main file is checkpointed throughout a run, so completed stages and models s
 
 | Key | Contents |
 |---|---|
-| `version`, `engine` | Benchmark schema/version label and inference-engine name |
+| `version`, `engine` | Application release and inference-engine name |
+| `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, and per-stage state/coverage |
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
@@ -118,7 +192,9 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `llamabench` | Opt-in — per-model raw `llama-bench -o json` `prefill_entries` and depth-aware `decode_entries` arrays (or an `error` string) — see [Workloads](workloads.md#llama-bench) |
 | `llamabenchconc` | Opt-in — per-model raw `llama-batched-bench` JSONL entries plus the effective `pp`/`ctx_size` used (or an `error` string), one entry per pp/tg/concurrency-level combination — see [Workloads](workloads.md#llama-bench-concurrency) |
 
-Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. Concurrency snapshots include system RAM and add GPU VRAM when a trustworthy discrete-GPU reading is available; a failed load records `memory_at_failure`. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
+Generation, conversation, concurrency, and embedding aggregates add explicit `requested_runs`, `completed_runs`, and `valid_runs` counts. Generation-family entries retain legacy aggregate fields while adding client-TTFT, server-prompt, wall/decode, token, finish-reason, valid-sample, and invalid-diagnostic fields; `n_runs` remains the completed-call count for compatibility.
+
+Performance workloads retain means, standard deviations, run counts, and—where applicable—the individual measured values. New files use `run.schema_version` for results-schema compatibility; the top-level `version` remains the application release, while older files without `run` remain supported. Main results, answer sidecars, crash caches, and regraded outputs use same-directory temporary files plus atomic replacement so a failed checkpoint leaves the prior valid file intact. Missing keys and empty sections are valid because the dashboard supports partial runs and older schema versions.
 
 `results/` is gitignored — nothing under it is tracked. Load its contents into the [dashboard](dashboard.md) to compare across machines.
 

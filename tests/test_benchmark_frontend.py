@@ -1,14 +1,20 @@
 import json
+import ast
 from pathlib import Path
 
 import pytest
 
-import benchmark_frontend
-import config
-from benchmark_frontend import (
+from scripts.app import benchmark_frontend
+from scripts.runtime import config
+from scripts.app.benchmark_frontend import (
     FRONTEND_STATE_VERSION,
+    GUI_OPTION_DEFAULTS,
+    FRONTEND_OPTION_CLASSIFICATION,
+    FRONTEND_CONTROL_BINDINGS,
+    FRONTEND_OPTION_INVENTORY,
     FrontendCancelled,
     MenuEntry,
+    apply_test_shortcut,
     apply_saved_model_selection,
     apply_saved_test_selection,
     build_benchmark_command,
@@ -26,11 +32,15 @@ from benchmark_frontend import (
     parse_toggle_numbers,
     render_model_menu,
     render_summary,
+    frontend_option_gaps,
+    frontend_state_availability_errors,
+    frontend_state_from_run_plan,
     run_frontend,
     save_frontend_state,
     toggle_group,
 )
-from models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.results.run_plan import RunPlan
 
 
 class InputSequence:
@@ -42,6 +52,72 @@ class InputSequence:
         if isinstance(value, BaseException):
             raise value
         return value
+
+
+def test_frontend_inventory_classifies_every_public_benchmark_option():
+    benchmark_path = Path(benchmark_frontend.__file__).with_name("benchmark.py")
+    tree = ast.parse(benchmark_path.read_text(encoding="utf-8"))
+    public_flags = {
+        argument.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_argument"
+        for argument in node.args
+        if isinstance(argument, ast.Constant)
+        and isinstance(argument.value, str)
+        and argument.value.startswith("--")
+    }
+    assert set(FRONTEND_OPTION_INVENTORY) == public_flags
+    assert all(status in {"exposed", "equivalent", "excluded", "missing"}
+               and explanation for status, explanation in FRONTEND_OPTION_INVENTORY.values())
+
+
+def test_frontend_inventory_exposes_the_remaining_configuration_work():
+    assert frontend_option_gaps() == []
+
+
+def test_every_exposed_option_is_bound_to_a_concrete_control():
+    exposed = {
+        flag for flag, (status, _) in FRONTEND_OPTION_INVENTORY.items()
+        if status == "exposed"
+    }
+    assert set(FRONTEND_CONTROL_BINDINGS) == exposed
+    assert len(set(FRONTEND_CONTROL_BINDINGS.values())) == len(FRONTEND_CONTROL_BINDINGS)
+
+
+def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
+    inventory = {
+        "--ready": ("exposed", "Ready control"),
+        "--unbound": ("exposed", "Missing control"),
+        "--future": ("missing", "Not implemented"),
+        "--internal": ("excluded", "Internal only"),
+    }
+    assert frontend_option_gaps(inventory, {"--ready": "ready_control"}) == [
+        "--future", "--unbound",
+    ]
+
+
+def test_build_command_includes_execution_modes_when_selected():
+    options = dict(
+        GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor",
+        retry_crashed_models=True,
+    )
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--offline" in command
+    assert "--retry-crashed-models" in command
+    assert command[command.index("--gpu-split-mode") + 1] == "tensor"
+
+
+def test_frontend_classifies_every_option_for_ui_presentation():
+    assert set(FRONTEND_OPTION_CLASSIFICATION) == set(FRONTEND_OPTION_INVENTORY)
+    assert set(FRONTEND_OPTION_CLASSIFICATION.values()) <= {
+        "guided", "advanced", "contextual", "developer-only", "unsafe", "unsupported",
+    }
+    assert FRONTEND_OPTION_CLASSIFICATION["--sample"] == "developer-only"
 
 
 class FakeEngine:
@@ -113,6 +189,43 @@ def test_frontend_state_round_trip_uses_strict_json(tmp_path):
     assert not list(tmp_path.glob(".*.tmp"))
 
 
+def test_frontend_state_round_trip_preserves_optional_preset_selection(tmp_path):
+    path = tmp_path / "state.json"
+    state = saved_state(selected_preset="Quick run")
+    assert save_frontend_state(state, path)
+    assert load_frontend_state(path)["selected_preset"] == "Quick run"
+
+
+def test_frontend_state_rejects_invalid_preset_selection(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(saved_state(selected_preset="")), encoding="utf-8")
+    assert load_frontend_state(path) is None
+
+
+def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["offline"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["offline"] is False
+
+
+def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["gpu_split_mode"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["gpu_split_mode"] == "layer"
+
+
+def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["retry_crashed_models"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path)["gui_options"]["retry_crashed_models"] is False
+
+
 @pytest.mark.parametrize("contents", [
     "{",
     "[]",
@@ -139,9 +252,8 @@ def test_load_frontend_state_rejects_missing_or_malformed_state(tmp_path, conten
 
 
 def test_save_frontend_state_failure_cleans_temporary_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(benchmark_frontend.os, "replace", lambda *args: (_ for _ in ()).throw(
-        OSError("read only")
-    ))
+    monkeypatch.setattr(benchmark_frontend, "atomic_write_json", lambda *args: (_ for _ in ()).throw(
+        OSError("read only")))
     assert not save_frontend_state(saved_state(), tmp_path / "state.json")
     assert not list(tmp_path.glob(".*.tmp"))
 
@@ -188,6 +300,86 @@ def test_build_frontend_state_records_max_prompt_tokens_and_tg_tokens():
     assert build_frontend_state(
         "mlx", ["llamabench"], [], max_prompt_tokens=32768, tg_tokens=[128, 1024],
     )["tg_tokens"] == [128, 1024]
+
+
+def test_build_frontend_state_records_gui_preset_when_provided():
+    state = build_frontend_state(
+        "mlx", ["llm"], [], selected_preset="Custom",
+    )
+    assert state["selected_preset"] == "Custom"
+
+
+def test_cli_run_plan_converts_to_complete_frontend_state_and_command():
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp",
+        tests=["llm", "emb", "img", "llamabench"],
+        stage_order=["llm", "emb", "img", "llamabench"],
+        models={
+            "llm": [{"tag": "model:4b"}], "concurrency": [{"tag": "model:4b"}],
+            "embeddings": [{"tag": "embed:latest"}], "images": [{"short": "sdxl"}],
+        },
+        effective_config={
+            "runs": 4, "warmup_runs": 1, "run_timeout_seconds": 240,
+            "accuracy_timeout_seconds": 45, "accuracy_token_budget": 1024,
+            "cpu_only": True, "force_all": True, "retry_crashed_models": True,
+            "max_prompt_tokens": 32768,
+            "llamabench_tg": [128, 1024], "sample_size": None,
+        },
+    )
+    local_options = {**benchmark_frontend.GUI_OPTION_DEFAULTS, "out": "/local/results.json"}
+    state = frontend_state_from_run_plan(plan, local_options)
+    assert state["models"] == {
+        "llm": ["model:4b"], "embedding": ["embed:latest"], "image": ["sdxl"],
+    }
+    assert state["gui_options"]["out"] == "/local/results.json"
+    entries = [
+        MenuEntry("model:4b", "Model", "llm", "LLM", True),
+        MenuEntry("embed:latest", "Embed", "embedding", "Embeddings", True),
+        MenuEntry("sdxl", "Image", "image", "Images", True),
+    ]
+    command = build_benchmark_command(
+        state["engine"], Path("/comfy"), state["tests"], entries,
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        max_prompt_tokens=state["max_prompt_tokens"], tg_tokens=state["tg_tokens"],
+        gui_options=state["gui_options"],
+    )
+    for flag, value in (
+        ("--runs", "4"), ("--warmup", "1"), ("--timeout", "240"),
+        ("--acc-timeout", "45"), ("--acc-token-budget", "1024"),
+        ("--max-prompt-tokens", "32768"),
+    ):
+        assert command[command.index(flag) + 1] == value
+    assert "--cpu-only" in command and "--force-all" in command
+    assert "--retry-crashed-models" in command
+    assert command[command.index("--tg-tokens") + 1:command.index("--warmup")] == ["128", "1024"]
+
+
+def test_cli_sample_plan_is_rejected_instead_of_silently_losing_value():
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["mcq"],
+        stage_order=["mcq"], models={"llm": [], "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False,
+                          "sample_size": 5},
+    )
+    with pytest.raises(ValueError, match="cannot be represented"):
+        frontend_state_from_run_plan(plan)
+
+
+def test_imported_state_reports_every_unavailable_selection():
+    state = saved_state(
+        engine="missing-engine", tests=["llm", "img"],
+        models={"llm": ["missing-llm"], "embedding": [], "image": ["missing-image"]},
+    )
+    errors = frontend_state_availability_errors(
+        state, ["llamacpp"],
+        [MenuEntry("llm", "LLM", "llm", "Tests", True, available=True),
+         MenuEntry("img", "Images", "image", "Tests", False, available=False)],
+        [MenuEntry("installed", "Installed", "llm", "LLM", True)],
+    )
+    assert errors == [
+        "Engine is not installed: missing-engine", "Tests are unavailable: img",
+        "Models are not installed: missing-image, missing-llm",
+    ]
 
 
 def test_saved_test_selection_applies_only_available_remembered_tests():
@@ -309,6 +501,40 @@ def test_group_toggle_reports_when_no_entries_match():
     assert not toggle_group([], lambda entry: True)
 
 
+def test_test_shortcut_all_selects_every_available_test_only():
+    entries = build_test_entries(sample_inventory())
+    entries[3].available = False
+    entries[3].checked = False
+    assert apply_test_shortcut(entries, "a")
+    assert all(entry.checked for entry in entries if entry.available)
+    assert not entries[3].checked
+
+
+@pytest.mark.parametrize(
+    ("shortcut", "expected"),
+    [
+        ("l", {"llm", "conv", "llamabench"}),
+        ("x", {"mcq", "math", "reasoning", "code", "tool"}),
+        ("c", {"conc_tool", "conc_chat", "llamabenchconc"}),
+        ("e", {"emb"}),
+        ("i", {"img"}),
+    ],
+)
+def test_test_shortcuts_toggle_workload_groups(shortcut, expected):
+    entries = build_test_entries(sample_inventory())
+    for entry in entries:
+        entry.checked = False
+    assert apply_test_shortcut(entries, shortcut)
+    assert {entry.value for entry in entries if entry.checked} == expected
+    assert apply_test_shortcut(entries, shortcut)
+    assert not any(entry.checked for entry in entries)
+
+
+def test_test_shortcut_rejects_unknown_or_unavailable_group():
+    assert not apply_test_shortcut([], "x")
+    assert not apply_test_shortcut(build_test_entries(sample_inventory()), "unknown")
+
+
 def test_custom_and_embedding_bulk_toggles_are_independent():
     entries = [
         MenuEntry("c1", "C1", "custom", "Custom", False),
@@ -367,6 +593,19 @@ def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     assert any("cannot be selected" in message for message in messages)
 
 
+def test_choose_tests_accepts_shortcuts_and_renders_legend():
+    entries = build_test_entries(sample_inventory())
+    for entry in entries:
+        entry.checked = False
+    messages, output = output_collector()
+    selected = choose_tests(entries, InputSequence(["x", "c", ""]), output)
+    assert selected == [
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
+        "llamabenchconc",
+    ]
+    assert any("a all" in message and "x accuracy" in message for message in messages)
+
+
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
@@ -401,7 +640,7 @@ def test_choose_tests_clears_each_redraw_and_keeps_feedback_visible():
     assert selected == ["llm", "conv", "emb", "img"]
     assert len(clears) == 1
     second_menu = messages[clears[0]:]
-    assert "Couldn't parse that selection; use numbers/ranges such as `2 4 7-9`." in second_menu
+    assert "Couldn't parse that selection; use numbers/ranges or a shortcut from the legend." in second_menu
 
 
 def test_choose_models_tier_partial_to_all_then_all_to_none():
@@ -497,10 +736,10 @@ def test_build_command_emits_every_applicable_explicit_selector(tmp_path):
     entries = build_model_entries(sample_inventory(), ["llm", "emb", "img"])
     command = build_benchmark_command(
         "fake", tmp_path / "Comfy UI", ["llm", "emb", "img"], entries,
-        python_executable="python-test", benchmark_path=Path("/repo/scripts/benchmark.py"),
+        python_executable="python-test", benchmark_path=Path("/repo/custom/benchmark.py"),
     )
     assert command[:8] == [
-        "python-test", "/repo/scripts/benchmark.py", "--engine", "fake",
+        "python-test", "/repo/custom/benchmark.py", "--engine", "fake",
         "--comfyui", str(tmp_path / "Comfy UI"), "--tests", "llm",
     ]
     assert "--llm-models" in command
@@ -581,7 +820,7 @@ def test_build_command_uses_default_benchmark_path():
         [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
         python_executable="python",
     )
-    assert command[1] == str(config.SCRIPT_DIR / "scripts" / "benchmark.py")
+    assert command[:3] == ["python", "-m", "scripts.app.benchmark"]
 
 
 def test_build_command_omits_max_prompt_tokens_by_default():
@@ -962,6 +1201,27 @@ def test_run_frontend_prompts_for_max_prompt_tokens_when_llamabench_selected():
     assert commands[0][commands[0].index("--tg-tokens") + 1:commands[0].index("--llm-models")] == ["128", "512"]
 
 
+@pytest.mark.parametrize("test_toggles", ["2 4 13", "1 4 13"])
+def test_run_frontend_applies_max_prompt_tokens_to_llm_and_conversation(test_toggles):
+    commands = []
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence([test_toggles, "", "", "5", ""]),
+        output_fn=output,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["fake"],
+        engine_factory=FakeEngine,
+        inventory_builder=lambda engine, path: sample_inventory(),
+        clear_fn=lambda: None,
+        python_executable="python",
+        benchmark_path=Path("/benchmark.py"),
+    )
+    assert result == 0
+    assert any("Cap the max prompt-processing size" in message for message in messages)
+    index = commands[0].index("--max-prompt-tokens")
+    assert commands[0][index + 1] == "16384"
+
+
 def test_run_frontend_cancel_does_not_create_state_file(tmp_path):
     state_path = tmp_path / "state.json"
     result = run_frontend(
@@ -1013,7 +1273,7 @@ def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
         benchmark_path=Path("/benchmark.py"),
     )
     assert result == 0
-    assert seen == [("mlx", config.COMFYUI_DIR)]
+    assert seen == [("mlx", config.COMFYUI_MODELS_DIR)]
     assert commands[0][commands[0].index("--engine") + 1] == "mlx"
     assert commands[0][commands[0].index("--comfyui") + 1] == str(config.COMFYUI_DIR)
 

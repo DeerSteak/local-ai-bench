@@ -1,5 +1,5 @@
-from benchmark import select_tier
-from models import (
+from scripts.app.benchmark import select_tier
+from scripts.workloads.models import (
     IMAGE_MODELS,
     LLM_MODELS,
     LLM_MODELS_XSMALL,

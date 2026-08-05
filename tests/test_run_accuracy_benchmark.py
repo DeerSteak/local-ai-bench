@@ -5,11 +5,11 @@ import json
 
 import pytest
 
-import config
-from engines.base import InferenceEngine
-from mcq_benchmark import MCQBenchmark
-from tool_benchmark import ToolBenchmark
-from shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
+from scripts.runtime import config
+from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
+from scripts.workloads.mcq_benchmark import MCQBenchmark
+from scripts.workloads.tool_benchmark import ToolBenchmark
+from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout, Shared
 
 
 class FakeEngine(InferenceEngine):
@@ -57,7 +57,7 @@ class FakeEngine(InferenceEngine):
 
     # inference
     def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
-        return 0.1, 1, 1.0
+        return GenerationMeasurement(0.1, 1, 1.0, 1.1, 1.0)
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024,
              check_loop=False, token_budget=None):
@@ -66,9 +66,12 @@ class FakeEngine(InferenceEngine):
         for marker, (kind, text) in self._behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, len(text.split()), 5.0, 10, text, False
+                    return ChatMeasurement(0.1, len(text.split()), 5.0, 1.1, 1.0,
+                                           prompt_tokens=10, response_text=text)
                 if kind == "nudged":
-                    return 0.1, len(text.split()), 5.0, 10, text, True
+                    return ChatMeasurement(0.1, len(text.split()), 5.0, 1.1, 1.0,
+                                           prompt_tokens=10, response_text=text,
+                                           budget_nudged=True)
                 if kind == "budget":
                     raise EngineBudgetExceeded("budget exhausted", partial_text=text)
                 if kind == "nudged_timeout":
@@ -88,7 +91,9 @@ class FakeEngine(InferenceEngine):
         for marker, (kind, payload) in self._tool_behaviors.items():
             if marker in content:
                 if kind == "ok":
-                    return 0.1, 1, 5.0, 10, json.dumps(payload), payload, False
+                    return ChatMeasurement(0.1, 1, 5.0, 0.3, 0.2,
+                                           prompt_tokens=10, response_text=json.dumps(payload),
+                                           tool_calls=payload)
                 if kind == "timeout":
                     raise EngineTimeout("timed out", partial_text=payload)
                 if kind == "loop":
@@ -98,7 +103,7 @@ class FakeEngine(InferenceEngine):
         raise AssertionError(f"no canned tool behavior matched prompt: {content!r}")
 
     def embed(self, tag, inputs, timeout=120):
-        return [], 0.0
+        return EmbeddingMeasurement([], 0.1)
 
 
 def _question(qid: str, answer: str) -> dict:
@@ -346,9 +351,45 @@ def test_answers_sidecar_includes_correct_and_incorrect_responses(tmp_path):
 
 def test_answers_sidecar_rejects_non_finite_numbers(tmp_path):
     path = tmp_path / "answers.json"
-    with pytest.raises(ValueError, match="Out of range float values"):
+    with pytest.raises(ValueError, match="non-finite numeric value"):
         Shared.write_answers_sidecar(path, {"given": float("inf")})
     assert not path.exists()
+
+
+def test_answers_sidecar_preserves_pending_completed_answers(tmp_path):
+    path = tmp_path / "answers.json"
+    pending = {"m": {"label": "Model", "partial": True, "answers": [
+        {"id": "q1", "given": "A", "raw_response": "Answer: A"},
+    ]}}
+    Shared.write_answers_sidecar(path, pending)
+    assert json.loads(path.read_text()) == pending
+
+
+def test_interrupt_flushes_completed_questions_from_current_model(tmp_path):
+    questions = [_question("q1", "A"), _question("q2", "B")]
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    answers_path = tmp_path / "answers.json"
+    calls = iter([("A", "Answer: A", False)])
+
+    def ask(_tag, _question):
+        try:
+            return next(calls)
+        except StopIteration:
+            raise KeyboardInterrupt from None
+
+    with pytest.raises(KeyboardInterrupt):
+        Shared.run_accuracy_benchmark(
+            "MCQ", "MCQ", "questions", data_path, tmp_path / "crash.json",
+            [{"tag": "fake", "label": "Fake", "short": "fake"}], questions, 0,
+            FakeEngine({}), ask, lambda q, text: text, MCQBenchmark.score,
+            answers_path=answers_path,
+        )
+    sidecar = json.loads(answers_path.read_text())
+    assert sidecar["fake"]["partial"] is True
+    assert sidecar["fake"]["answers"] == [
+        {"id": "q1", "given": "A", "raw_response": "Answer: A"},
+    ]
 
 
 def test_tool_crashed_run_stops_early(tmp_path):

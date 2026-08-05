@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, sanitizeForFilename, applyEngineLabels, fmt,
+  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
+  getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
+  sanitizeForFilename, applyEngineLabels, fmt,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -34,6 +36,88 @@ describe("parseResultsJSON", () => {
     };
     expect(parseResultsJSON("not json")).toEqual(expected);
     expect(parseResultsJSON('{"given":Infinity}')).toEqual(expected);
+  });
+});
+
+describe("getRunReliabilityWarning", () => {
+  it("keeps legacy and complete results quiet", () => {
+    expect(getRunReliabilityWarning({})).toBe("");
+    expect(getRunReliabilityWarning({ run: { status: "complete" } })).toBe("");
+  });
+
+  it("warns without hiding partial measurements", () => {
+    expect(getRunReliabilityWarning({ run: { status: "running" } })).toContain("still running");
+    expect(getRunReliabilityWarning({ run: { status: "partial" } })).toContain("partial");
+    expect(getRunReliabilityWarning({ run: { status: "interrupted" } })).toContain("interrupted");
+    expect(getRunReliabilityWarning({ run: { status: "failed" } })).toContain("failed");
+  });
+
+  it("warns for malformed run metadata", () => {
+    expect(getRunReliabilityWarning({ run: [] })).toContain("malformed");
+    expect(getRunReliabilityWarning({ run: 0 })).toContain("malformed");
+  });
+});
+
+describe("getLlamaBenchMethodologyWarning", () => {
+  it("warns when legacy and isolated-repetition files are compared", () => {
+    const files = [
+      { data: { llamabench: { m: {} } } },
+      { data: { llamabench: { m: {} }, run: { llamabench_repetition_mode: "separate_process_r1" } } },
+    ];
+    expect(getLlamaBenchMethodologyWarning(files)).toContain("different repetition");
+  });
+
+  it("does not warn for one file or matching modes", () => {
+    const legacy = { data: { llamabench: { m: {} } } };
+    expect(getLlamaBenchMethodologyWarning([legacy])).toBe("");
+    expect(getLlamaBenchMethodologyWarning([legacy, legacy])).toBe("");
+    const current = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "streamed_internal_repetitions",
+    } } };
+    expect(getLlamaBenchMethodologyWarning([current, current])).toBe("");
+  });
+
+  it("warns when per-case and streamed internal-repetition v4.1 files are compared", () => {
+    const perCase = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "separate_process_r1",
+    } } };
+    const streamed = { data: { llamabench: { m: {} }, run: {
+      llamabench_repetition_mode: "streamed_internal_repetitions",
+    } } };
+    expect(getLlamaBenchMethodologyWarning([perCase, streamed])).toContain("different repetition");
+  });
+});
+
+describe("getConversationTTFTMethodologyWarning", () => {
+  const legacy = { data: { llm_conversation: { m: { "2K": { ttft_mean_sec: 0.2 } } } } };
+  const current = { data: { llm_conversation: { m: {
+    "2K": { ttft_mean_sec: 0.4, client_ttft_mean_sec: 0.4 },
+  } } } };
+
+  it("warns when client-observed and legacy server-prompt TTFT files are compared", () => {
+    expect(getConversationTTFTMethodologyWarning([legacy, current])).toContain("different TTFT");
+  });
+
+  it("does not warn for one file, matching modes, or files without conversation measurements", () => {
+    expect(getConversationTTFTMethodologyWarning([legacy])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([legacy, legacy])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([current, current])).toBe("");
+    expect(getConversationTTFTMethodologyWarning([{ data: {} }, current])).toBe("");
+  });
+});
+
+describe("getGpuSplitMethodologyWarning", () => {
+  const legacy = { data: { run: { effective_config: {} } } };
+  const tensor = { data: { run: { effective_config: { gpu_split_mode: "tensor" } } } };
+
+  it("warns when tensor and legacy layer results are compared", () => {
+    expect(getGpuSplitMethodologyWarning([legacy, tensor])).toContain("different multi-GPU");
+  });
+
+  it("stays quiet for one file or matching modes", () => {
+    expect(getGpuSplitMethodologyWarning([tensor])).toBe("");
+    expect(getGpuSplitMethodologyWarning([tensor, tensor])).toBe("");
+    expect(getGpuSplitMethodologyWarning([legacy, legacy])).toBe("");
   });
 });
 
