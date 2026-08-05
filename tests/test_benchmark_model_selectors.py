@@ -7,6 +7,7 @@ from scripts.app.benchmark import (
     resolve_catalog_scopes,
     resolve_engine_scopes,
     select_tier,
+    selected_plan_models,
     validate_catalog_scopes,
     validate_engine_scopes,
 )
@@ -267,3 +268,26 @@ def test_installed_embedding_tag_does_not_reappear_as_custom_llm():
         f"--llm-models {embedding_tag} matched no LLM models in the selected tier "
         "(all) or installed for fake"
     ]
+
+
+def test_plan_models_exclude_families_without_selected_workloads():
+    llm = [{"tag": "llm:4b", "short": "llm"}]
+    concurrency = [{"tag": "conc:4b", "short": "conc"}]
+    embeddings = [{"tag": "embed", "short": "embed"}]
+    images = [{"short": "sdxl"}]
+    assert selected_plan_models(
+        ["llm", "emb"], llm, concurrency, embeddings, images,
+    ) == {
+        "llm": llm,
+        "concurrency": [],
+        "embeddings": embeddings,
+        "images": [],
+    }
+
+
+def test_plan_models_include_short_only_images_for_selected_image_workload():
+    scoped = selected_plan_models(["img"], [], [], [], [{"short": "sdxl"}])
+    assert scoped == {
+        "llm": [], "concurrency": [], "embeddings": [],
+        "images": [{"short": "sdxl"}],
+    }

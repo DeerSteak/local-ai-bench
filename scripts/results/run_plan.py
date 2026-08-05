@@ -234,9 +234,10 @@ class RunPlan:
             if invalid_values or len(values) != len(set(values)):
                 raise ValueError(f"invalid execution setting: {key}")
         for family, models in self.models.items():
+            required_keys = ("short",) if family == "images" else ("tag", "short")
             for model in models:
                 if not all(isinstance(model.get(key), str) and model[key]
-                           for key in ("tag", "short")):
+                           for key in required_keys):
                     raise ValueError(f"invalid model identity in family: {family}")
 
     @property

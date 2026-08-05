@@ -269,6 +269,19 @@ CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc"]
 
 
+def selected_plan_models(tests: list[str], llm_models: list[dict],
+                         concurrency_models: list[dict], embedding_models: list[dict],
+                         image_models: list[dict]) -> dict[str, list[dict]]:
+    selected = set(tests)
+    return {
+        "llm": model_identity(llm_models) if selected & set(LLM_TESTS) else [],
+        "concurrency": (model_identity(concurrency_models)
+                        if selected & set(CONCURRENCY_TESTS) else []),
+        "embeddings": model_identity(embedding_models) if "emb" in selected else [],
+        "images": model_identity(image_models) if "img" in selected else [],
+    }
+
+
 def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
                            image_patterns: list[str] | None) -> tuple[list[dict], list[dict]]:
     """Resolve the engine-independent embedding and image model scopes."""
@@ -749,12 +762,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
         }
-        plan_models = {
-            "llm": model_identity(llm_models),
-            "concurrency": model_identity(conc_models),
-            "embeddings": model_identity(embedding_models),
-            "images": model_identity(image_models),
-        }
+        plan_models = selected_plan_models(
+            tests, llm_models, conc_models, embedding_models, image_models,
+        )
         plan = RunPlan.create(
             application_version=config.VERSION, engine_name=engine_name,
             tests=tests, stage_order=stage_order, models=plan_models,

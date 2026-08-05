@@ -284,3 +284,19 @@ def test_complete_plan_validation_rejects_missing_settings_and_model_identity():
     invalid = make_plan(models=models, effective_config=plan.effective_config)
     with pytest.raises(ValueError, match="invalid model identity"):
         invalid.validate_for_execution()
+
+
+def test_complete_plan_validation_accepts_short_only_image_identity():
+    plan = complete_plan()
+    models = plan.models
+    models["images"] = [{"short": "sdxl"}]
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
+
+
+def test_complete_plan_validation_rejects_image_without_short_identity():
+    plan = complete_plan()
+    models = plan.models
+    models["images"] = [{"tag": "sdxl"}]
+    invalid = make_plan(models=models, effective_config=plan.effective_config)
+    with pytest.raises(ValueError, match="invalid model identity in family: images"):
+        invalid.validate_for_execution()
