@@ -195,6 +195,16 @@ def update_progress_metrics(metrics: dict, event: dict) -> dict:
     return updated
 
 
+def progress_summary_rows(metrics: dict) -> dict[str, str]:
+    total = metrics["total_models"]
+    return {
+        "Finished models": f"{len(metrics['finished_models'])} / {total}",
+        "Usable coverage": f"{len(metrics['usable_models'])} / {total}",
+        "Invalid measurements": str(metrics["invalid"]),
+        "Retries": str(metrics["retries"]),
+    }
+
+
 def estimate_remaining_seconds(elapsed: float, completed: int, total: int) -> int | None:
     if elapsed < 0 or completed <= 0 or total <= completed:
         return 0 if total > 0 and completed >= total else None
@@ -1847,7 +1857,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_window = None
     stage_progress_vars = {}
     model_progress_vars = {}
-    progress_summary_var = tk.StringVar(value="")
+    progress_summary_vars = {}
     progress_resource_vars = {}
     progress_remaining_var = tk.StringVar(value="Remaining time: calibrating")
     progress_metrics = {}
@@ -1870,7 +1880,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_window.destroy()
         progress_window = tk.Toplevel(root)
         progress_window.title("Local AI Bench Progress")
-        progress_window.geometry("460x600")
+        progress_window.geometry("460x640")
         progress_window.minsize(380, 300)
         progress_window.attributes("-topmost", True)
         progress_window.protocol("WM_DELETE_WINDOW", progress_window.withdraw)
@@ -1896,10 +1906,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             "retries": 0, "valid": 0, "invalid": 0,
         }
         progress_started_at = time.monotonic()
-        progress_summary_var.set(
-            f"Finished: 0/{total_models} models · Usable coverage: 0/{total_models} · Invalid: 0 · Retries: 0"
-        )
-        ttk.Label(shell, textvariable=progress_summary_var, wraplength=390).pack(anchor="w")
+        summary_box = ttk.LabelFrame(shell, text="Run summary", padding=(10, 6))
+        summary_box.pack(fill="x", pady=(0, 2))
+        summary_box.columnconfigure(1, weight=1)
+        progress_summary_vars.clear()
+        for row, (label, value) in enumerate(progress_summary_rows(progress_metrics).items()):
+            ttk.Label(summary_box, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=1)
+            variable = tk.StringVar(value=value)
+            progress_summary_vars[label] = variable
+            ttk.Label(summary_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
         resource_box = ttk.LabelFrame(shell, text="Resources", padding=(10, 6))
         resource_box.pack(fill="x", pady=(6, 2))
         resource_box.columnconfigure(1, weight=1)
@@ -1940,12 +1955,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         nonlocal progress_metrics
         progress_metrics = update_progress_metrics(progress_metrics, event)
         completed = len(progress_metrics["finished_models"])
-        progress_summary_var.set(
-            f"Finished: {completed}/{progress_metrics['total_models']} models · "
-            f"Usable coverage: {len(progress_metrics['usable_models'])}/{progress_metrics['total_models']} · "
-            f"Invalid: {progress_metrics['invalid']} · "
-            f"Retries: {progress_metrics['retries']}"
-        )
+        for label, value in progress_summary_rows(progress_metrics).items():
+            progress_summary_vars[label].set(value)
         if event["kind"] == "measurement":
             return
         if event["kind"] == "model":

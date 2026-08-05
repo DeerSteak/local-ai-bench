@@ -21,7 +21,8 @@ from scripts.app.benchmark_gui import (
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
-    recovery_executor_command, recovery_progress_entries, resolve_preset, retry_executor_command,
+    progress_summary_rows, recovery_executor_command, recovery_progress_entries,
+    resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name,
     resource_usage_rows, selected_result_paths, system_memory_usage,
@@ -277,6 +278,12 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     metrics = update_progress_metrics(metrics, terminal)
     assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 1)
     assert metrics["usable_models"] == {("llm", "A")}
+    assert progress_summary_rows(metrics) == {
+        "Finished models": "1 / 2",
+        "Usable coverage": "1 / 2",
+        "Invalid measurements": "1",
+        "Retries": "1",
+    }
 
 
 @pytest.mark.parametrize(("elapsed", "completed", "total", "expected"), [
