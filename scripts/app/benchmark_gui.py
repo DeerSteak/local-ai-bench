@@ -433,6 +433,11 @@ BENCHMARK_PRESETS = {
     "Offline / private": {"tests": ["llm", "conv", "emb"]},
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
+    "Role: Orchestrator": {"tests": ["llm", "conv", "reasoning", "tool", "conc_chat"]},
+    "Role: Agent / tool caller": {"tests": ["llm", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
+    "Role: Coding assistant": {"tests": ["llm", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
+    "Role: Chat assistant": {"tests": ["llm", "conv", "mcq", "reasoning", "conc_chat"], "max_prompt_tokens": 8192},
+    "Role: RAG / retrieval": {"tests": ["llm", "conv", "emb", "mcq"], "max_prompt_tokens": 32768},
 }
 CUSTOM_PRESET = "Custom"
 DEFAULT_BENCHMARK_PRESET = "Consumer guidance"

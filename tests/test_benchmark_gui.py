@@ -7,6 +7,7 @@ from scripts.runtime import config
 from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS,
     MenuEntry,
+    TEST_DEFINITIONS,
     build_benchmark_command,
     build_frontend_state,
     load_frontend_state,
@@ -455,12 +456,37 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     assert set(BENCHMARK_PRESETS) == {
         "Consumer guidance", "Vendor validation", "Neutral comparison", "Platform optimized",
         "Offline / private", "Quick run", "Full run",
+        "Role: Orchestrator", "Role: Agent / tool caller", "Role: Coding assistant",
+        "Role: Chat assistant", "Role: RAG / retrieval",
     }
     quick = resolve_preset("Quick run", {"llm"})
     assert quick == {"tests": ["llm"], "runs": 1, "max_prompt_tokens": 8192, "force_all": False}
     full = resolve_preset("Full run", {"llm", "img"})
     assert full["tests"] == ["llm", "img"]
     assert full["force_all"]
+
+
+def test_role_presets_select_role_relevant_tests_and_depth():
+    every_test = {name for name, *_ in TEST_DEFINITIONS}
+    orchestrator = resolve_preset("Role: Orchestrator", every_test)
+    assert orchestrator == {
+        "tests": ["llm", "conv", "reasoning", "tool", "conc_chat"], "runs": config.N_RUNS,
+        "max_prompt_tokens": None, "force_all": False,
+    }
+    agent = resolve_preset("Role: Agent / tool caller", every_test)
+    assert agent["tests"] == ["llm", "conv", "tool", "code", "conc_tool"]
+    assert agent["max_prompt_tokens"] == 32768
+    coding = resolve_preset("Role: Coding assistant", every_test)
+    assert coding["tests"] == ["llm", "conv", "code", "reasoning"]
+    assert coding["max_prompt_tokens"] == 32768
+    chat = resolve_preset("Role: Chat assistant", every_test)
+    assert chat["tests"] == ["llm", "conv", "mcq", "reasoning", "conc_chat"]
+    assert chat["max_prompt_tokens"] == 8192
+    rag = resolve_preset("Role: RAG / retrieval", every_test)
+    assert rag["tests"] == ["llm", "conv", "emb", "mcq"]
+    assert rag["max_prompt_tokens"] == 32768
+    assert resolve_preset("Role: RAG / retrieval", {"llm", "emb"})["tests"] == ["llm", "emb"]
+    assert restored_preset_name({"selected_preset": "Role: Orchestrator"}) == "Role: Orchestrator"
 
 
 def test_named_preset_replaces_the_complete_control_configuration():
