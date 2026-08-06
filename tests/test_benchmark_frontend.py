@@ -9,6 +9,8 @@ from scripts.runtime import config
 from scripts.app.benchmark_frontend import (
     merge_model_inventories,
     models_runnable_by,
+    parse_engine_selection,
+    format_engine_selection,
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
@@ -1383,3 +1385,36 @@ def test_a_single_engine_inventory_is_unchanged():
     merged, owners = merge_model_inventories({"llamacpp": _inventory(["a", "b"])})
     entries = build_model_entries(merged, ["llm"])
     assert all(models_runnable_by(entries, "llamacpp", owners).values())
+
+
+# ── multi-engine selection ──
+
+def test_engine_selection_parses_one_or_many():
+    assert parse_engine_selection("vllm") == ["vllm"]
+    assert parse_engine_selection("llamacpp,vllm") == ["llamacpp", "vllm"]
+    assert parse_engine_selection(" llamacpp , vllm ") == ["llamacpp", "vllm"]
+    assert parse_engine_selection("") == [] and parse_engine_selection(None) == []
+
+
+def test_engine_selection_round_trips():
+    for names in (["vllm"], ["llamacpp", "vllm"]):
+        assert parse_engine_selection(format_engine_selection(names)) == names
+
+
+def test_saved_state_naming_an_uninstalled_engine_is_reported():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "llamacpp,mlx", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    errors = frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models)
+    assert any("mlx" in e for e in errors)
+
+
+def test_a_fully_installed_multi_engine_state_is_accepted():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "llamacpp,vllm", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models) == []

@@ -20,6 +20,7 @@ import psutil
 from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.app.benchmark_frontend import (
     merge_model_inventories, models_runnable_by,
+    parse_engine_selection, format_engine_selection,
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
     LLM_BACKED_TESTS,
@@ -770,20 +771,29 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
-    engine_box = ttk.LabelFrame(configuration_frame, text="Inference engine", padding=12)
+    engine_box = ttk.LabelFrame(configuration_frame, text="Inference engines", padding=12)
     engine_box.grid(row=4, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
-    engine_combo = ttk.Combobox(engine_box, state="readonly", textvariable=engine_var,
-                                values=available_engines, width=16)
-    engine_combo.grid(row=0, column=0, sticky="w", pady=2)
+    engine_check_vars = {
+        name: tk.BooleanVar(value=name in parse_engine_selection(selected_engine))
+        for name in available_engines
+    }
+    engine_note = tk.StringVar()
+
+    def set_selected_engines(names) -> None:
+        """Point the checkboxes at `names`, ignoring any engine that isn't installed."""
+        wanted = [name for name in names if name in engine_check_vars] or [available_engines[0]]
+        for name, variable in engine_check_vars.items():
+            variable.set(name in wanted)
+
+    for index, name in enumerate(available_engines):
+        ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
+            row=index, column=0, sticky="w", pady=2)
     ttk.Button(
         engine_box, text="Reset", width=6,
-        command=lambda: engine_var.set(available_engines[0]),
-    ).grid(row=0, column=1, padx=(8, 0))
-    ttk.Label(
-        engine_box, wraplength=330,
-        text=("Only installed engines are listed. Models the selected engine cannot run "
-              "are unchecked and disabled."),
-    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        command=lambda: set_selected_engines([available_engines[0]]),
+    ).grid(row=0, column=1, padx=(8, 0), sticky="e")
+    ttk.Label(engine_box, textvariable=engine_note, wraplength=330).grid(
+        row=len(available_engines), column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
@@ -860,7 +870,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             variable.set(value in config.LLAMABENCH_TG)
 
     def reset_execution():
-        engine_var.set(available_engines[0])
+        set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
                     "cpu_only", "force_all", "retry_crashed_models", "offline"):
@@ -917,8 +927,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             raise ValueError("Tensor split is unavailable for the detected GPU runtime and topology.")
         applying_configuration[0] = True
         try:
-            if state["engine"] in available_engines:
-                engine_var.set(state["engine"])
+            restored = [name for name in parse_engine_selection(state["engine"])
+                        if name in available_engines]
+            if restored:
+                for name, variable in engine_check_vars.items():
+                    variable.set(name in restored)
             selected_tests = set(state["tests"])
             for entry in custom_tests:
                 test_vars[entry.value].set(entry.available and entry.value in selected_tests)
@@ -1768,7 +1781,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             variable.set(values["tests"].get(name, False))
         for name, variable in model_vars.items():
             variable.set(values["models"].get(name, False))
-        engine_var.set(values["engine"])
+        set_selected_engines(parse_engine_selection(values["engine"]))
         cap_var.set(values["max_prompt_tokens"])
         for value, variable in tg_vars.items():
             variable.set(value in values["tg_tokens"])
@@ -1820,15 +1833,30 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             box.grid() if visible else box.grid_remove()
 
     def apply_engine_availability(*_) -> None:
-        """Disable and uncheck models the selected engine cannot run."""
-        runnable = models_runnable_by(custom_models, engine_var.get(), model_owners)
+        """Mirror the engine checkboxes into engine_var, then disable and uncheck any
+        model none of the selected engines can run."""
+        chosen = [name for name in available_engines if engine_check_vars[name].get()]
+        if not chosen:  # never leave a run with no engine at all
+            chosen = [available_engines[0]]
+            engine_check_vars[chosen[0]].set(True)
+        engine_var.set(format_engine_selection(chosen))
+        engine_note.set(
+            f"Runs the full selection once per engine ({len(chosen)} passes, "
+            f"{len(chosen)} results files)." if len(chosen) > 1
+            else "Only installed engines are listed. Models this engine cannot run are disabled."
+        )
+        runnable = {}
+        for name in chosen:
+            for value, ok_here in models_runnable_by(custom_models, name, model_owners).items():
+                runnable[value] = runnable.get(value, False) or ok_here
         for value, widget in model_widgets.items():
             available = runnable.get(value, True)
             widget.configure(state="normal" if available else "disabled")
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
 
-    engine_var.trace_add("write", apply_engine_availability)
+    for _engine_var in engine_check_vars.values():
+        _engine_var.trace_add("write", apply_engine_availability)
     apply_engine_availability()
 
     preset_var.trace_add("write", select_preset)

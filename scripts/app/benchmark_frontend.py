@@ -250,8 +250,11 @@ def frontend_state_availability_errors(state: dict, engines: list[str],
                                        test_entries: list[MenuEntry],
                                        model_entries: list[MenuEntry]) -> list[str]:
     errors = []
-    if state["engine"] not in engines:
-        errors.append(f"Engine is not installed: {state['engine']}")
+    selected_engines = parse_engine_selection(state["engine"])
+    missing_engines = [name for name in selected_engines if name not in engines]
+    if not selected_engines or missing_engines:
+        errors.append("Engine is not installed: "
+                      + (", ".join(missing_engines) or state["engine"]))
     available_tests = {entry.value for entry in test_entries if entry.available}
     missing_tests = sorted(set(state["tests"]) - available_tests)
     if missing_tests:
@@ -514,6 +517,16 @@ def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
         for number in numbers:
             value = options[number - 1]
             checked[value] = not checked[value]
+
+
+def parse_engine_selection(value: str) -> list[str]:
+    """Engine names from a --engine value. One name, or several comma-separated;
+    "all" is expanded later, against the registry."""
+    return [name.strip() for name in str(value or "").split(",") if name.strip()]
+
+
+def format_engine_selection(names) -> str:
+    return ",".join(names)
 
 
 def merge_model_inventories(inventories: dict[str, dict]) -> tuple[dict, dict[str, set[str]]]:

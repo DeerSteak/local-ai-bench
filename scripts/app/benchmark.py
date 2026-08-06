@@ -399,9 +399,18 @@ def expand_tests(tests: list[str]) -> list[str]:
 
 
 def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
-    """Resolve --engine into an ordered engine-name list; "all" expands to
-    every registered engine, sorted for a deterministic run order."""
-    return list(available) if engine == "all" else [engine]
+    """Resolve --engine into an ordered engine-name list. "all" expands to every
+    registered engine; a comma-separated list runs exactly those, in registry order
+    so a multi-engine run is deterministic regardless of how it was typed."""
+    if engine == "all":
+        return list(available)
+    requested = [name.strip() for name in engine.split(",") if name.strip()]
+    unknown = [name for name in requested if name not in available]
+    if unknown or not requested:
+        raise ValueError(
+            f"Unknown inference engine {', '.join(unknown) or engine!r} — "
+            f"known engines: {', '.join(available)}, or 'all'")
+    return [name for name in available if name in requested]
 
 
 def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
@@ -585,7 +594,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     _engines = registered_engine_names()
     parser.add_argument(
-        "--engine", type=str, default=_engines[0], choices=_engines + ["all"],
+        "--engine", type=str, default=_engines[0],
         help=f"Inference engine to benchmark against (default: {_engines[0]}). "
              "'all' runs the full --tests suite once per registered engine, back "
              "to back (sorted order), writing a separate results file for each "
@@ -617,7 +626,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         saved_path=configured_comfyui_dir(setup_config),
         managed_dir=config.COMFYUI_DIR,
     ) or config.COMFYUI_DIR
-    run_engine_names = resolve_engine_names(args.engine, _engines)
+    try:
+        run_engine_names = resolve_engine_names(args.engine, _engines)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.list_models:
         any_installed = False
