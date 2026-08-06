@@ -101,7 +101,7 @@ The tier is intentionally limited to one model per role and avoids spending mult
 
 ### Per-engine weights
 
-Every size in the tier tables above is the **llama.cpp** `Q4_K_M` GGUF. Those files are llama.cpp's alone — vLLM cannot use them, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into `models/vllm/<slug>/` when vLLM is a selected engine. Same model, same tier, same tag, different file:
+Every size in the tier tables above is the **llama.cpp** `Q4_K_M` GGUF. Those files are llama.cpp's alone — vLLM cannot use them, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, same tag, different file:
 
 | Tag | vLLM weights | Format | Size |
 |---|---|---|---|

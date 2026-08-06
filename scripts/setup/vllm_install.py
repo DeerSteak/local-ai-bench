@@ -187,6 +187,11 @@ def find_vllm_binary(*, platform_name: str, venv_dir: Path = None,
     return None
 
 
+# AMD's launcher bind-mounts this as the container's HF_HOME, so weights placed
+# here are found by repo id — see docs/setup.md's Strix Halo note.
+LAUNCHER_CACHE_HOMES = ("~/.local/share/vLLM/models",)
+DEFAULT_HF_HOME = "~/.cache/huggingface"
+
 LAUNCHER_NAMES = ("vllm-launch",)
 LAUNCHER_CONF = Path("~/.local/share/vLLM/vllm-launch.conf")
 
@@ -198,6 +203,33 @@ def find_vllm_launcher(which_fn=shutil.which) -> str | None:
         if found:
             return found
     return None
+
+
+def vllm_cache_home(launcher: str | None = None, env=None, exists_fn=None) -> Path:
+    """HF cache vLLM actually reads. A platform launcher's own cache wins, because a
+    containerised vLLM cannot see the host's default one."""
+    env = os.environ if env is None else env
+    exists_fn = exists_fn or (lambda path: path.is_dir())
+    if launcher:
+        for candidate in LAUNCHER_CACHE_HOMES:
+            path = Path(candidate).expanduser()
+            if exists_fn(path):
+                return path
+    return Path(env.get("HF_HOME") or DEFAULT_HF_HOME).expanduser()
+
+
+def hf_cache_model_dir(cache_home: Path, repo: str) -> Path:
+    """Where huggingface_hub stores `repo` inside a cache home."""
+    return Path(cache_home) / "hub" / ("models--" + repo.replace("/", "--"))
+
+
+def hf_cache_model_complete(cache_home: Path, repo: str) -> bool:
+    """True once a snapshot of `repo` holds weights and the config beside them."""
+    snapshots = hf_cache_model_dir(cache_home, repo) / "snapshots"
+    if not snapshots.is_dir():
+        return False
+    return any((snapshot / "config.json").is_file() and any(snapshot.glob("*.safetensors"))
+               for snapshot in snapshots.iterdir() if snapshot.is_dir())
 
 
 def parse_launcher_extra_args(text: str) -> list[str]:

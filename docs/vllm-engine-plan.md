@@ -112,7 +112,7 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 ## Config, catalog, and CLI changes
 
 - `scripts/runtime/config.py`: `VLLM_PORT = 8000`, `VLLM_URL`, `VLLM_DISCOVERY_PORTS`, `VLLM_VENV = SCRIPT_DIR / "vllm-env"`, `VLLM_GPU_MEMORY_UTILIZATION`, `VLLM_DTYPE`. *(done)* Setup records the resolved runtime in `local_ai_bench_config.json` under `vllm`, so the engine reads `executable`/`launcher`/`server_url`/`launcher_extra_args` rather than repeating discovery. *(done)*
-- `scripts/workloads/models.py`: per-tag `vllm_repo` (+ `vllm_download_size`, and per-backend quant variants if that is the direction chosen). Tags themselves stay unchanged — they are opaque catalog identifiers.
+- `scripts/workloads/models.py`: per-tag `vllm_repo` (+ `vllm_download_size`). Tags stay unchanged. *(done)* `vllm_repo` is handed to vLLM as the model id, and weights live in vLLM's own HF cache, so the engine never resolves a path. *(done)*
 - `.gitignore`: `vllm-env/`.
 - `--engine all` starts genuinely expanding to two passes. The filename suffixing and internal `"engine"` tagging already exist; what needs checking is that a partially-installed second engine produces a clean skip rather than a failed pass.
 - Results should record the vLLM weight identity (repo + revision + quant) alongside the engine name, so a cross-engine comparison is auditable rather than misleading.

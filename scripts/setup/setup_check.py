@@ -45,8 +45,8 @@ from scripts.setup.engine_selection import (
     selected_engine_names, toggle_engine,
 )
 from scripts.setup.vllm_install import (
-    find_vllm_binary, find_vllm_launcher, find_vllm_server, install_vllm,
-    read_launcher_extra_args, vllm_platform_support,
+    find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
+    install_vllm, read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -160,16 +160,16 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
                     pass
     return success
 
-def hf_snapshot_download(repo, dest_dir, token=None):
-    """Download a whole HF repo as real files, not symlinks into the shared HF cache."""
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
+def hf_snapshot_download(repo, cache_home, token=None):
+    """Download a whole HF repo into the cache vLLM reads, so it resolves by repo id."""
+    cache_home.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HF_HOME": str(cache_home)}
     if token:
         env["HF_TOKEN"] = token
-    ignore = ["*.pth", "*.bin", "original/*"]  # skip duplicate formats of the same weights
+    ignore = ["*.pth", "*.bin", "original/*"]  # duplicate formats of the same weights
     for cli in ["hf", "huggingface-cli"]:
         if shutil.which(cli):
-            command = [cli, "download", repo, "--local-dir", str(dest_dir)]
+            command = [cli, "download", repo]
             for pattern in ignore:
                 command += ["--exclude", pattern]
             result = subprocess.run(command, env=env, capture_output=True, text=True)
@@ -181,8 +181,8 @@ def hf_snapshot_download(repo, dest_dir, token=None):
             break
     try:
         from huggingface_hub import snapshot_download  # type: ignore
-        snapshot_download(repo_id=repo, local_dir=str(dest_dir), token=token,
-                          ignore_patterns=ignore)
+        snapshot_download(repo_id=repo, token=token, ignore_patterns=ignore,
+                          cache_dir=str(cache_home / "hub"))
         return True
     except Exception as e:
         warn(f"Python API download failed: {e}")
@@ -753,6 +753,7 @@ VLLM_BIN = find_vllm_binary(platform_name=os_name)
 VLLM_LAUNCHER = find_vllm_launcher()
 VLLM_SERVER_URL = find_vllm_server()
 VLLM_LAUNCHER_ARGS = read_launcher_extra_args() if VLLM_LAUNCHER else []
+VLLM_CACHE_HOME = vllm_cache_home(VLLM_LAUNCHER)
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
 vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
              else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
@@ -768,6 +769,7 @@ if VLLM_SERVER_URL:
     ok(f"vLLM server already running at {VLLM_SERVER_URL} — nothing to install")
 elif VLLM_BIN or VLLM_LAUNCHER:
     ok(f"vllm found: {VLLM_LAUNCHER or VLLM_BIN}")
+    info(f"vLLM model cache: {VLLM_CACHE_HOME}")
 elif vllm_support.status == "unsupported":
     info(f"vLLM not available here — {vllm_support.reason}")
 else:
@@ -1238,7 +1240,9 @@ VAE_DIR     = config.COMFYUI_MODELS_DIR / "vae"
 remaining_gb = 0.0
 
 def model_downloaded(m, engine=LLAMACPP):
-    """True if `engine`'s weights for `m` are already complete under models/<engine>/<slug>/."""
+    """True if `engine`'s weights for `m` are already present."""
+    if engine == VLLM:
+        return hf_cache_model_complete(VLLM_CACHE_HOME, m["vllm_repo"])
     filenames = m["hf_file"] if isinstance(m["hf_file"], list) else [m["hf_file"]]
     model_dir = engine_model_dir(config.MODELS_DIR, engine, m["tag"])
     return engine_model_complete(model_dir, engine, filenames)
@@ -1346,18 +1350,18 @@ for engine in selected_engines:
             ok(f"{label} [{engine}] — already downloaded")
             continue
         warn(f"{label} [{engine}] ({size}) — not found, downloading now ...")
-        dest_dir = engine_model_dir(config.MODELS_DIR, engine, tag)
         if engine == VLLM:
-            repo = m["vllm_repo"]
-            success = hf_snapshot_download(repo, dest_dir, token=load_token())
+            repo, dest = m["vllm_repo"], VLLM_CACHE_HOME
+            success = hf_snapshot_download(repo, VLLM_CACHE_HOME, token=load_token())
         else:
             repo = m["hf_repo"]
-            success = hf_download(repo, m["hf_file"], token=load_token(), dest_dir=dest_dir)
+            dest = engine_model_dir(config.MODELS_DIR, engine, tag)
+            success = hf_download(repo, m["hf_file"], token=load_token(), dest_dir=dest)
         if success:
             ok(f"{label} [{engine}] — downloaded successfully")
         else:
             fail(f"{label} [{engine}] — download failed")
-            issues.append(f"Download {repo} manually into {dest_dir}")
+            issues.append(f"Download {repo} manually into {dest}")
 
 # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 
@@ -1872,6 +1876,7 @@ write_setup_config(
         "launcher": VLLM_LAUNCHER,
         "server_url": VLLM_SERVER_URL,
         "launcher_extra_args": VLLM_LAUNCHER_ARGS,
+        "hf_home": str(VLLM_CACHE_HOME),
     } if vllm_found else {},
 )
 

@@ -279,24 +279,7 @@ def test_llamacpp_completeness_needs_every_listed_gguf(tmp_path):
     assert engine_model_complete(model_dir, "llamacpp", files) is True
 
 
-def test_vllm_completeness_needs_config_beside_the_weights(tmp_path):
-    model_dir = tmp_path / "m"
-    model_dir.mkdir()
-    (model_dir / "model.safetensors").touch()
-    assert engine_model_complete(model_dir, "vllm") is False, "weights without config.json are unloadable"
-    (model_dir / "config.json").touch()
-    assert engine_model_complete(model_dir, "vllm") is True
-
-
-def test_vllm_completeness_rejects_a_config_only_directory(tmp_path):
-    model_dir = tmp_path / "m"
-    model_dir.mkdir()
-    (model_dir / "config.json").touch()
-    assert engine_model_complete(model_dir, "vllm") is False
-
-
 def test_completeness_is_false_for_a_missing_directory(tmp_path):
-    assert engine_model_complete(tmp_path / "nope", "vllm") is False
     assert engine_model_complete(tmp_path / "nope", "llamacpp", ["a.gguf"]) is False
 
 

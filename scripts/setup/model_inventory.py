@@ -19,7 +19,8 @@ def model_tag_slug(tag: str) -> str:
 
 
 def engine_model_dir(models_root: Path, engine: str, tag: str) -> Path:
-    """Per-engine model directory — mirrors each engine's own `_models_dir()`."""
+    """Per-engine model directory — mirrors each engine's own `_models_dir()`.
+    Not used by vLLM, which resolves weights from an HF cache by repo id."""
     return Path(models_root) / engine / model_tag_slug(tag)
 
 
@@ -32,13 +33,11 @@ def engine_download_size(model: dict, engine: str) -> str | None:
 
 
 def engine_model_complete(model_dir: Path, engine: str, filenames=()) -> bool:
-    """True once `model_dir` holds everything `engine` needs to load the model."""
+    """True once `model_dir` holds every file `engine` needs. vLLM keeps its weights in
+    an HF cache instead — see vllm_install.hf_cache_model_complete."""
     model_dir = Path(model_dir)
     if not model_dir.is_dir():
         return False
-    if engine == "vllm":
-        # A snapshot is only loadable with its config alongside the weights.
-        return (model_dir / "config.json").is_file() and any(model_dir.glob("*.safetensors"))
     return all((model_dir / Path(name).name).exists() for name in filenames)
 
 

@@ -5,6 +5,9 @@ from scripts.setup.vllm_install import (
     ROCM_WHEEL_INDEX,
     VLLM_ROCM_WHEEL_TARGETS,
     NIGHTLY_CU130_INDEX,
+    hf_cache_model_complete,
+    hf_cache_model_dir,
+    vllm_cache_home,
     find_vllm_binary,
     find_vllm_launcher,
     parse_launcher_extra_args,
@@ -351,3 +354,62 @@ def test_reading_a_real_launcher_conf(tmp_path):
     conf = tmp_path / "vllm-launch.conf"
     conf.write_text("VLLM_EXTRA_ARGS=(--max-model-len 8192)\n")
     assert read_launcher_extra_args(conf) == ["--max-model-len", "8192"]
+
+
+# ── model cache location ──
+
+def test_cache_home_prefers_the_launchers_own_cache():
+    found = vllm_cache_home(launcher="/usr/bin/vllm-launch", env={},
+                            exists_fn=lambda path: path.name == "models")
+    assert found == Path("~/.local/share/vLLM/models").expanduser()
+
+
+def test_cache_home_falls_back_when_the_launcher_cache_is_absent():
+    assert vllm_cache_home(launcher="/usr/bin/vllm-launch", env={},
+                           exists_fn=lambda _: False) == Path("~/.cache/huggingface").expanduser()
+
+
+def test_cache_home_without_a_launcher_uses_the_standard_cache():
+    assert vllm_cache_home(launcher=None, env={},
+                           exists_fn=lambda _: True) == Path("~/.cache/huggingface").expanduser()
+
+
+def test_cache_home_honours_hf_home():
+    assert vllm_cache_home(launcher=None, env={"HF_HOME": "/mnt/hf"},
+                           exists_fn=lambda _: False) == Path("/mnt/hf")
+
+
+def test_hf_cache_model_dir_uses_the_hub_naming_convention():
+    assert hf_cache_model_dir(Path("/c"), "cyankiwi/granite-4.1-3b-AWQ-INT4") == \
+        Path("/c/hub/models--cyankiwi--granite-4.1-3b-AWQ-INT4")
+
+
+def test_cache_completeness_requires_weights_and_config_in_one_snapshot(tmp_path):
+    repo = "org/model"
+    snapshot = hf_cache_model_dir(tmp_path, repo) / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    assert hf_cache_model_complete(tmp_path, repo) is False
+
+    (snapshot / "model.safetensors").touch()
+    assert hf_cache_model_complete(tmp_path, repo) is False, "weights without config are unloadable"
+
+    (snapshot / "config.json").touch()
+    assert hf_cache_model_complete(tmp_path, repo) is True
+
+
+def test_cache_completeness_is_false_for_an_unfetched_repo(tmp_path):
+    assert hf_cache_model_complete(tmp_path, "org/never-downloaded") is False
+
+
+def test_cache_completeness_ignores_a_partial_sibling_snapshot(tmp_path):
+    repo = "org/model"
+    snapshots = hf_cache_model_dir(tmp_path, repo) / "snapshots"
+    (snapshots / "partial").mkdir(parents=True)
+    (snapshots / "partial" / "config.json").touch()
+    assert hf_cache_model_complete(tmp_path, repo) is False
+
+    good = snapshots / "complete"
+    good.mkdir()
+    (good / "config.json").touch()
+    (good / "model.safetensors").touch()
+    assert hf_cache_model_complete(tmp_path, repo) is True
