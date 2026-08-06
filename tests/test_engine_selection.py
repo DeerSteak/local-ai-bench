@@ -4,6 +4,7 @@ from scripts.setup.engine_selection import (
     build_engine_entries,
     engine_summary_line,
     engines_needing_install,
+    needs_python_headers,
     find_entry,
     selected_engine_names,
     toggle_engine,
@@ -122,3 +123,25 @@ def test_a_present_vllm_is_not_labelled_experimental():
 def test_an_absent_vllm_on_an_experimental_platform_stays_flagged():
     entries = build_engine_entries(vllm_support=EXPERIMENTAL, vllm_found=False)
     assert find_entry(entries, VLLM)["experimental"] is True
+
+
+def test_python_headers_are_needed_whenever_vllm_is_selected():
+    """The bug this replaces: gating on *installation* skipped an already-installed vLLM,
+    which still cannot start without the headers."""
+    installed = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True, llamacpp_found=True)
+    toggle_engine(installed, VLLM)
+    assert engines_needing_install(installed) == [], "nothing to install"
+    assert needs_python_headers(installed, "/usr/include/python3.12/Python.h") is True
+
+
+def test_python_headers_are_not_needed_when_vllm_is_unselected_or_present():
+    entries = build_engine_entries(vllm_support=SUPPORTED)
+    assert needs_python_headers(entries, "/usr/include/python3.12/Python.h") is False
+    toggle_engine(entries, VLLM)
+    assert needs_python_headers(entries, None) is False
+
+
+def test_a_disabled_vllm_never_triggers_a_header_install():
+    entries = build_engine_entries(vllm_support=UNSUPPORTED)
+    find_entry(entries, VLLM)["checked"] = True
+    assert needs_python_headers(entries, "/usr/include/python3.12/Python.h") is False

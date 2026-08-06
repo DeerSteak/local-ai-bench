@@ -44,7 +44,7 @@ from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.engine_selection import (
     LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
-    selected_engine_names, toggle_engine,
+    needs_python_headers, selected_engine_names, toggle_engine,
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
@@ -859,8 +859,8 @@ if _detected_comfyui:
     print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
 if _interface != "gui" and VLLM in engines_needing_install(engine_entries):
     print("    • Install vLLM (several GB, into its own vllm-env/ environment)")
-    if missing_python_header:
-        print("    • Install Python development headers vLLM needs (requires sudo)")
+if _interface != "gui" and needs_python_headers(engine_entries, missing_python_header):
+    print("    • Install the Python development headers vLLM needs (requires sudo)")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -1233,7 +1233,7 @@ if LLAMACPP in pending_engines:
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
 
-if VLLM in pending_engines and missing_python_header:
+if needs_python_headers(engine_entries, missing_python_header):
     header_command = next(
         (command for manager in ("apt-get", "dnf", "zypper")
          for command in [python_dev_package_command(manager, sys.version_info[:2])] if command),

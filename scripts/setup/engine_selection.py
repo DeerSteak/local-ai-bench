@@ -64,6 +64,12 @@ def engines_needing_install(entries: list[dict]) -> list[str]:
     ]
 
 
+def needs_python_headers(entries: list[dict], missing_header: str | None) -> bool:
+    """True when vLLM is selected and its Python headers are absent. Selection, not
+    installation: an already-installed vLLM needs them just as much at run time."""
+    return bool(missing_header) and VLLM in selected_engine_names(entries)
+
+
 def engine_summary_line(entry: dict) -> str:
     """One picker row, e.g. '[x] llama.cpp — already installed'."""
     box = "x" if entry["checked"] else " "
