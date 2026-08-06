@@ -901,6 +901,11 @@ elif not confirm("Continue?", default=True):
 
 selected_engines = selected_engine_names(engine_entries)
 pending_engines = engines_needing_install(engine_entries)
+_engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}
+ok(f"Engines selected: {', '.join(_engine_labels[name] for name in selected_engines)}")
+for _name in _engine_labels:
+    if _name not in selected_engines:
+        info(f"{_engine_labels[_name]} not selected — its models and tools are skipped")
 
 # ── 6. Model selection ──────────────────────────────────────────────────────────
 
@@ -1271,6 +1276,11 @@ if VLLM in pending_engines:
 if VLLM in selected_engines:
     _vllm_venv_python = config.VLLM_VENV / "bin" / "python"
     _missing_tools = missing_build_tools(config.VLLM_VENV) if _vllm_venv_python.is_file() else []
+    if not _vllm_venv_python.is_file():
+        info(f"No project vLLM venv at {config.VLLM_VENV} — build tools are that "
+             "installation's own responsibility")
+    elif not _missing_tools:
+        ok("vLLM build tools already present")
     if _missing_tools:
         info(f"Installing vLLM build tools ({', '.join(_missing_tools)}) — "
              "FlashInfer compiles kernels on first use ...")

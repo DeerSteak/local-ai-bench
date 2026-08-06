@@ -7,8 +7,8 @@ VLLM = "vllm"
 def build_engine_entries(*, vllm_support=None, vllm_found: bool = False,
                           llamacpp_found: bool = False,
                           vllm_note: str | None = None) -> list[dict]:
-    """Initial picker state. A present vLLM is always selectable: the platform gate
-    only decides whether setup can *install* one."""
+    """Initial picker state. An already-installed engine starts checked, so setup keeps
+    maintaining it; only an engine that would need installing starts unchecked."""
     vllm_enabled = bool(vllm_found) or bool(
         vllm_support and vllm_support.status != "unsupported")
     return [
@@ -23,7 +23,7 @@ def build_engine_entries(*, vllm_support=None, vllm_found: bool = False,
         {
             "name": VLLM,
             "label": "vLLM",
-            "checked": False,
+            "checked": bool(vllm_found),
             "enabled": vllm_enabled,
             "installed": vllm_found,
             "note": (

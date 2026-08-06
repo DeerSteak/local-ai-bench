@@ -17,10 +17,31 @@ EXPERIMENTAL = VllmSupport("experimental", "metal_plugin", "Apple Silicon plugin
 UNSUPPORTED = VllmSupport("unsupported", None, "no upstream Windows support")
 
 
-def test_llamacpp_starts_selected_and_vllm_does_not():
+def test_an_uninstalled_vllm_starts_unselected():
     entries = build_engine_entries(vllm_support=SUPPORTED)
     assert find_entry(entries, LLAMACPP)["checked"] is True
     assert find_entry(entries, VLLM)["checked"] is False
+    assert selected_engine_names(entries) == [LLAMACPP]
+
+
+def test_an_installed_engine_starts_selected():
+    """Otherwise setup silently stops maintaining an engine that is already present:
+    no headers, no build tools, no weights, while the row says "already installed"."""
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True, llamacpp_found=True)
+    assert find_entry(entries, VLLM)["checked"] is True
+    assert selected_engine_names(entries) == [LLAMACPP, VLLM]
+
+
+def test_an_installed_but_unsupported_vllm_is_still_selected():
+    """A present vLLM needs maintaining regardless of whether we could install one."""
+    entries = build_engine_entries(vllm_support=UNSUPPORTED, vllm_found=True)
+    vllm = find_entry(entries, VLLM)
+    assert (vllm["enabled"], vllm["checked"]) == (True, True)
+
+
+def test_an_installed_engine_can_still_be_deselected():
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True, llamacpp_found=True)
+    assert toggle_engine(entries, VLLM) is True
     assert selected_engine_names(entries) == [LLAMACPP]
 
 
@@ -129,7 +150,6 @@ def test_python_headers_are_needed_whenever_vllm_is_selected():
     """The bug this replaces: gating on *installation* skipped an already-installed vLLM,
     which still cannot start without the headers."""
     installed = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True, llamacpp_found=True)
-    toggle_engine(installed, VLLM)
     assert engines_needing_install(installed) == [], "nothing to install"
     assert needs_python_headers(installed, "/usr/include/python3.12/Python.h") is True
 
