@@ -77,6 +77,11 @@ class VllmEngine(InferenceEngine):
         entry = cls._catalog_entry(tag)
         return entry.get("vllm_tool_parser") if entry else None
 
+    def supports_tool_calls(self, tag: str) -> bool:
+        """vLLM emits no tool_calls without --tool-call-parser, and its parsers are
+        per-model, so a tag with none configured cannot be measured."""
+        return self._tool_parser(tag) is not None
+
     @classmethod
     def _repo(cls, tag: str) -> str | None:
         """The HF repo id vLLM serves for `tag`, or None when the catalog has none."""

@@ -6,11 +6,12 @@
 - [Why an interface](#why-an-interface)
 - [The interface](#the-interface)
 - [`LlamaCppEngine`](#llamacppengine)
+- [`VllmEngine`](#vllmengine)
 - [Selecting an engine](#selecting-an-engine)
 - [Adding a new engine](#adding-a-new-engine)
 - [Testing](#testing)
 
-llama.cpp is this project's only inference engine — Ollama support was removed after a head-to-head performance comparison on this project's hardware found llama.cpp marginally faster with no measurable downside. The `InferenceEngine` interface below stays engine-agnostic on purpose, and `--engine` still takes a name (or `all`, see [Selecting an engine](#selecting-an-engine) below): it's not speculative abstraction left over from that comparison, it's what lets a future engine (e.g. MLX) plug in without touching any workload module. Setup can already install vLLM as an optional second engine and download its weights (see [Setup](setup.md#choosing-engines)), but no `VllmEngine` exists yet and `--engine vllm` is not selectable — [the engine plan](vllm-engine-plan.md) tracks what remains. The two engines run different weight files for the same catalog tag — see [Workloads](workloads.md#per-engine-weights) and [Limitations](limitations.md#cross-engine-comparison).
+This project has two inference engines: llama.cpp and vLLM. Ollama was removed earlier, after a head-to-head comparison on this project's hardware found llama.cpp marginally faster with no measurable downside — the `InferenceEngine` interface it left behind is what let vLLM plug in without touching a single workload module. `--engine` takes a name or `all` (see [Selecting an engine](#selecting-an-engine)). The two engines run different weight files for the same catalog tag — see [Workloads](workloads.md#per-engine-weights) and [Limitations](limitations.md#cross-engine-comparison).
 
 ## Why an interface
 
@@ -50,6 +51,21 @@ Shape differences from an always-on multi-model daemon, both consequences of lla
 - **`_sanitize_tps`** detects a real observed llama-server quirk: under heavy concurrent-slot contention (see [Concurrency](workloads.md#concurrency)), a streamed chunk's `timings.predicted_ms` can be implausibly tiny relative to `predicted_n`, producing a tps ratio with no physical basis. The engine calculates a wall-clock diagnostic but marks the measurement `server_tps_implausible`, so validation excludes it from aggregates rather than substituting the corrected value. Single-shot and conversation requests retry once; HTTP concurrency retries the entire batch once to preserve contention. If the retry is also implausible, it remains an invalid completed measurement and execution moves on. `_warn_tps_sanitized` logs the raw server values and wall-clock diagnostic for investigation.
 - **`runtime_backend`** runs llama-server's read-only `--list-devices` query and reports the build/runtime family it can actually use (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`). Results retain physical GPU detection separately as `profile.hardware_backend`, so a Vulkan Windows build or a CPU-only Linux build is not mislabeled from hardware presence alone.
 
+## `VllmEngine`
+
+[`scripts/runtime/engines/vllm.py`](../scripts/runtime/engines/vllm.py) drives vLLM's OpenAI-compatible server. Like llama-server it is one model per process, so it shares `LlamaCppEngine`'s lazy per-tag spawn, its `available()`-is-`False`-between-models behavior, and the same unconditional `reachable_or_abort()`/`wait_for_recovery()`. What differs:
+
+- **Models resolve by HuggingFace repo id, never by path.** Each catalog entry's `vllm_repo` is passed straight to `vllm serve` and used as the request's `model`; the weights live in vLLM's own HF cache, recorded by setup as `vllm.hf_home`. This is what lets a containerised vLLM work unchanged — a container cannot see an arbitrary host directory, so a path would resolve to nothing and silently trigger a re-download at run time.
+- **A platform launcher is preferred over bare `vllm serve`.** AMD's Strix Halo image ships `vllm-launch`, which carries the ROCm environment that hardware needs and passes extra arguments through. The port is always passed explicitly, because the wrapper's default (8001) is not vLLM's (8000).
+- **`prepare_concurrency` does not scale the context.** `--max-model-len` is per sequence, unlike llama-server's `-c` total budget, so `per_slot_ctx` is passed as-is alongside `--max-num-seqs n_parallel`. Copying llama.cpp's multiplication here would measure a different depth than the results claim.
+- **`server_prompt_sec` is always `None`.** vLLM reports no per-request prompt duration, so only client-observed TTFT exists on this engine; the field is left empty rather than synthesized from a value that would not mean the same thing.
+- **Token counts come from `usage.completion_tokens`** via `stream_options.include_usage`, the same rule as llama.cpp: streamed SSE fragments are transport units and are never counted as tokens.
+- **`supports_tool_calls` is per model.** vLLM returns no `tool_calls` without `--enable-auto-tool-choice --tool-call-parser <name>`, and the parser is model-specific — see [Workloads](workloads.md#tool-calling-across-engines). The parser name is part of the respawn key, since a server started without it cannot serve a tool request.
+- **`stop()` also kills a server this project did not start.** vLLM holds its `--gpu-memory-utilization` share for whatever model it is hosting, so a preconfigured server (AMD's image ships one) is competing for the memory a run needs, not a shortcut to reuse.
+- **Embeddings use `--runner pooling`**, vLLM's replacement for the deprecated `--task embed`.
+
+vLLM compiles kernels at run time rather than shipping them all prebuilt, so it needs a working toolchain: a C compiler, the Python development headers (Triton), and `ninja` (FlashInfer). Setup installs the latter two — see [Setup](setup.md#choosing-engines).
+
 ## Selecting an engine
 
 `benchmark.py` takes `--engine <name>|all` (default: `llamacpp`; `all` expands to every name in `scripts/runtime/engines/__init__.py`'s registry, sorted, and runs the full `--tests` suite once per engine, back to back, writing a separate results file for each — engine name appended to the filename, and each file tagged internally with `"engine"` so it's self-identifying even if renamed):
@@ -59,7 +75,7 @@ python -m scripts.app.benchmark --engine llamacpp --tests llm
 python -m scripts.app.benchmark --engine all
 ```
 
-Only `llamacpp` is registered today, so there's nothing to actually select between yet — `--engine all` runs the same single pass `--engine llamacpp` does. The flag and the `all` expansion logic (`resolve_engine_names` in `benchmark.py`) exist now so a second engine (e.g. MLX) slots in later without any CLI or docs changes. Image generation doesn't depend on `--engine` (a separate ComfyUI call), so a multi-engine `all` run captures it once, on the first pass, rather than once per engine.
+`llamacpp` and `vllm` are registered, so `--engine all` runs the suite twice and writes two results files. They do not measure the same weights — see [Workloads](workloads.md#per-engine-weights) — and a model with no vLLM weights or no tool-call parser is skipped on that pass with a recorded reason rather than scored. Image generation doesn't depend on `--engine` (a separate ComfyUI call), so a multi-engine `all` run captures it once, on the first pass, rather than once per engine.
 
 `main()` constructs the engine once per pass via `get_engine(engine_name)` ([`scripts/runtime/engines/__init__.py`](../scripts/runtime/engines/__init__.py)) and places it in a `RunContext` with the immutable serializable `RunPlan`, local-only `RunPaths`, `ResultStore`, profile, and lifecycle coordinator. The same instance reaches every workload's `run()`. Engine-backed workloads use only `InferenceEngine`, so adding a second engine does not require changes to MCQ, embeddings, or the other ordinary workload modules. The two native llama.cpp workloads are deliberate exceptions: `llamabench_benchmark.py` and `llamabench_concurrency_benchmark.py` import `LlamaCppEngine`, verify it with `isinstance`, and otherwise skip because `llama-bench` and `llama-batched-bench` have no cross-engine equivalent.
 

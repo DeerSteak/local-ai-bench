@@ -313,3 +313,25 @@ def test_resume_identity_builds_for_a_cached_model(engine):
     for path in engine.resume_artifact_paths("qwen3.5:9b-q4_K_M"):
         assert cached_file_identity(path, cache)["sha256"]
     assert len(cache) == 2
+
+
+# ── tool-call capability ──
+
+def test_tool_support_follows_the_configured_parser(engine):
+    from scripts.workloads.models import LLM_MODELS
+    configured = [m["tag"] for m in LLM_MODELS if m.get("vllm_tool_parser")]
+    unconfigured = [m["tag"] for m in LLM_MODELS if not m.get("vllm_tool_parser")]
+    assert configured and unconfigured, "the catalog should exercise both cases"
+    assert all(engine.supports_tool_calls(tag) for tag in configured)
+    assert not any(engine.supports_tool_calls(tag) for tag in unconfigured)
+
+
+def test_llamacpp_supports_tool_calls_for_everything():
+    """Only vLLM needs a per-model parser; the default must not narrow llama.cpp."""
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    assert LlamaCppEngine().supports_tool_calls("anything") is True
+
+
+def test_configured_parsers_are_passed_to_the_server(engine):
+    command = engine.server_command("org/m", 1024, tool_parser=engine._tool_parser("granite4.1:8b-q4_K_M"))
+    assert command[command.index("--tool-call-parser") + 1] == "granite4"

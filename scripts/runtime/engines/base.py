@@ -251,6 +251,11 @@ class InferenceEngine(ABC):
              check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
         """Return one named chat measurement."""
 
+    def supports_tool_calls(self, tag: str) -> bool:
+        """Whether this engine can return parsed tool_calls for `tag`. False makes the
+        tool workload skip the model rather than score unparsed calls as wrong answers."""
+        return True
+
     @abstractmethod
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,

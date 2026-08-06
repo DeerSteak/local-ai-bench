@@ -780,6 +780,7 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None,
                                 progress_stage: str | None = None,
+                                requires_tool_calls: bool = False,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
@@ -809,6 +810,17 @@ class Shared:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    continue
+
+                if requires_tool_calls and not engine.supports_tool_calls(tag):
+                    Shared.warn(f"{tag}: {engine.name} cannot return parsed tool calls for "
+                                "this model — skipping rather than scoring unparsed calls wrong")
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "tool_calls_unsupported",
+                        "skip_detail": f"{engine.name} has no tool-call parser configured for {tag}",
+                    }
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,

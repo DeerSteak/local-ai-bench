@@ -113,6 +113,7 @@ LLM_MODELS_XSMALL = sorted([
         "hf_file":        "granite-4.1-3b-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/granite-4.1-3b-AWQ-INT4",
         "vllm_download_size": "~2.4 GB",
+        "vllm_tool_parser": "granite4",
     },
     {
         "tag":            "qwen3.5:4b-q4_K_M",
@@ -142,6 +143,7 @@ LLM_MODELS_SMALL = sorted([
         "hf_file":        "granite-4.1-8b-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/granite-4.1-8b-AWQ-INT4",
         "vllm_download_size": "~5.5 GB",
+        "vllm_tool_parser": "granite4",
     },
     {
         "tag":            "qwen3.5:9b-q4_K_M",
@@ -223,6 +225,7 @@ LLM_MODELS_LARGE = sorted([
         "hf_file":        "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
         "vllm_repo":      "ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4",
         "vllm_download_size": "~39.8 GB",
+        "vllm_tool_parser": "llama3_json",
     },
     {
         "tag":            "qwen3-coder-next:80b-a3b-q4_K_M",
@@ -240,6 +243,7 @@ LLM_MODELS_LARGE = sorted([
         ],
         "vllm_repo":      "bullpoint/Qwen3-Coder-Next-AWQ-4bit",
         "vllm_download_size": "~48.3 GB",
+        "vllm_tool_parser": "qwen3_coder",
     },
     {
         "tag":            "nemotron-3-super:120b",

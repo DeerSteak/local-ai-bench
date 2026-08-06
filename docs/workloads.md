@@ -99,6 +99,12 @@ The large tier assigns each slot a distinct role. Llama 3.3 70B is the dense gen
 
 The tier is intentionally limited to one model per role and avoids spending multiple slots on overlapping general-purpose models. Its capabilities also align with what the suite can measure: the code and tool accuracy tests exercise structured execution, while conversation and concurrency exercise sustained context and multi-request behavior. Qwen3-Coder-Next therefore represents carrying out long sequences of tool-heavy steps, while Nemotron 3 Super represents planning and verifying the broader workflow. Their different sparse architectures add an inference comparison that model size alone would not expose.
 
+### Tool calling across engines
+
+llama.cpp parses tool calls from the model's own chat template, so every catalog model can be measured. vLLM cannot: it returns **no** `tool_calls` at all unless the server is started with `--enable-auto-tool-choice --tool-call-parser <name>`, and the parser is model-specific. A model with no parser configured is therefore **skipped** with `skip_reason: "tool_calls_unsupported"` rather than measured — scoring unparsed output as wrong answers would publish 0% for a model that was never actually tested.
+
+`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `llama3_json` (Llama 3.3), `qwen3_coder` (Qwen3-Coder-Next). Gemma has no parser for its instruct models (only `functiongemma`, for a different model), vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.6 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
+
 ### Per-engine weights
 
 Every size in the tier tables above is the **llama.cpp** `Q4_K_M` GGUF. Those files are llama.cpp's alone — vLLM cannot use them, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, same tag, different file:
