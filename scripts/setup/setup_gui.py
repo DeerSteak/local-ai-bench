@@ -103,6 +103,14 @@ def token_controls_enabled(existing_available: bool, override: bool) -> bool:
     return not existing_available or override
 
 
+def sudo_notice(engines, package: str | None) -> str:
+    """Warning shown before any privileged install, or "" when none will run."""
+    if not package or "vllm" not in (engines or []):
+        return ""
+    return (f"Installing {package} needs administrator rights. You may be prompted for "
+            "your password in the terminal window behind this wizard.")
+
+
 def engine_checkbox_label(entry: dict) -> str:
     """Checkbox text for one engine row, including why a disabled one is unavailable."""
     label = entry["label"]
@@ -117,7 +125,8 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
                              existing_hf_token: bool = False,
-                             engine_entries: list[dict] | None = None) -> dict | None:
+                             engine_entries: list[dict] | None = None,
+                             sudo_package: str | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -130,6 +139,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "cleanup_names": cleanup_names,
             "existing_hf_token": existing_hf_token,
             "engine_entries": engine_entries or [],
+            "sudo_package": sudo_package,
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -148,7 +158,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
                      existing_hf_token: bool = False,
-                     engine_entries: list[dict] | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     engine_entries: list[dict] | None = None,
+                     sudo_package: str | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -232,6 +243,12 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 welcome, text=engine_checkbox_label(entry), variable=var,
                 state="normal" if entry["enabled"] else "disabled",
             ).grid(sticky="w", pady=(4, 0))
+        if sudo_package:
+            ttk.Label(welcome, wraplength=740, justify="left",
+                      text=("Note: selecting vLLM also installs "
+                            f"{sudo_package}, which needs administrator rights. "
+                            "You may be prompted for your password in the terminal."),
+                      ).grid(sticky="w", pady=(8, 0))
 
     models_page = new_page()
     ttk.Label(models_page, text="Choose models", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -427,6 +444,9 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         ]
         if engine_entries:
             lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
+        notice = sudo_notice(plan["engines"], sudo_package)
+        if notice:
+            lines.extend(["", notice])
         if plan["comfyui_path"]:
             lines.append(f"ComfyUI path: {plan['comfyui_path']}")
         lines.extend(["", "Nothing will be downloaded until you click Install."])
@@ -510,6 +530,7 @@ def main() -> None:  # pragma: no cover
         cleanup_names=request["cleanup_names"],
         existing_hf_token=request["existing_hf_token"],
         engine_entries=request.get("engine_entries") or [],
+        sudo_package=request.get("sudo_package"),
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

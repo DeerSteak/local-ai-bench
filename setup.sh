@@ -57,9 +57,9 @@ else
     if [ "$OS" = "Darwin" ]; then
         echo "    • Install Python 3.11 via Homebrew"
     elif command -v apt-get &>/dev/null; then
-        echo "    • Install python3.11 via apt-get (requires sudo)"
+        echo "    • Install python3.11, its venv module, and development headers via apt-get (requires sudo)"
     elif command -v dnf &>/dev/null; then
-        echo "    • Install python3.11 via dnf (requires sudo)"
+        echo "    • Install python3.11 and its development headers via dnf (requires sudo)"
     elif command -v snap &>/dev/null; then
         echo "    • Install python311 via snap (requires sudo)"
     else
@@ -89,13 +89,45 @@ else
         sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
         PYTHON=python3.11
     elif command -v dnf &>/dev/null; then
-        sudo dnf install -y python3.11
+        sudo dnf install -y python3.11 python3.11-devel
         PYTHON=python3.11
     elif command -v snap &>/dev/null; then
         sudo snap install python311
         PYTHON=python3.11
     fi
     ok "Installed $($PYTHON --version)"
+fi
+
+# Triton (a vLLM dependency) compiles a CUDA helper at import time and needs Python.h.
+# Installed here, with any other prerequisite, so vLLM never triggers a later sudo prompt.
+# 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/Metal/DGX-Spark wheels require.
+if [ "$OS" = "Linux" ]; then
+    PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    MISSING_HEADERS=()
+    for _series in $(printf '%s\n' "$PYTHON_SERIES" 3.12 | sort -u); do
+        if [ ! -f "/usr/include/python${_series}/Python.h" ]; then
+            MISSING_HEADERS+=("$_series")
+        fi
+    done
+    if [ ${#MISSING_HEADERS[@]} -gt 0 ]; then
+        if command -v apt-get &>/dev/null; then
+            HEADER_PACKAGES=()
+            for _series in "${MISSING_HEADERS[@]}"; do
+                if apt-cache show "python${_series}-dev" &>/dev/null; then
+                    HEADER_PACKAGES+=("python${_series}-dev")
+                fi
+            done
+            if [ ${#HEADER_PACKAGES[@]} -gt 0 ]; then
+                info "Installing Python development headers (${HEADER_PACKAGES[*]}) — needed by vLLM ..."
+                sudo apt-get install -y "${HEADER_PACKAGES[@]}" || \
+                    warn "Header install failed — vLLM will not start until it succeeds"
+            fi
+        elif command -v dnf &>/dev/null; then
+            info "Installing Python development headers — needed by vLLM ..."
+            sudo dnf install -y python3-devel || \
+                warn "Header install failed — vLLM will not start until it succeeds"
+        fi
+    fi
 fi
 
 GUI_SESSION=0

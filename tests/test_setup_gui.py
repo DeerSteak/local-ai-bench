@@ -6,6 +6,7 @@ import pytest
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
     engine_checkbox_label,
+    sudo_notice,
     model_row_label,
     default_model_selection,
     hf_token_review_label,
@@ -243,3 +244,12 @@ def test_default_model_selection_covers_every_real_catalog_entry():
             assert model["tag"] in selection
         for model in IMAGE_MODELS:
             assert model["short"] in selection
+
+
+def test_sudo_notice_only_appears_when_a_privileged_install_will_run():
+    assert sudo_notice(["llamacpp", "vllm"], "python3.12-dev").startswith("Installing python3.12-dev")
+    assert "password" in sudo_notice(["vllm"], "python3.12-dev")
+    assert sudo_notice(["llamacpp"], "python3.12-dev") == "", "no vLLM, no sudo"
+    assert sudo_notice(["vllm"], None) == "", "headers already present"
+    assert sudo_notice(None, "python3.12-dev") == ""
+    assert sudo_notice([], None) == ""

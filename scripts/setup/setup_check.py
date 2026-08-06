@@ -767,6 +767,12 @@ _vllm_include_dir = python_include_dir(
     str(_vllm_python) if _vllm_python.is_file() else sys.executable)
 missing_python_header = missing_python_headers(_vllm_include_dir)
 missing_header_version = python_version_from_include_dir(_vllm_include_dir) or sys.version_info[:2]
+header_command = next(
+    (command for manager in ("apt-get", "dnf", "zypper")
+     for command in [python_dev_package_command(manager, missing_header_version)] if command),
+    None,
+) if missing_python_header else None
+header_package = header_command[-1] if header_command else None
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
 vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
              else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
@@ -881,6 +887,7 @@ if _interface == "gui":
             (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
         )),
         engine_entries=engine_entries,
+        sudo_package=header_package,
     )
     if _gui_plan is None:
         print("\n  Setup cancelled — nothing was installed.\n")
@@ -1237,11 +1244,6 @@ if LLAMACPP in pending_engines:
                       f"{LLAMACPP_DIR})")
 
 if needs_python_headers(engine_entries, missing_python_header):
-    header_command = next(
-        (command for manager in ("apt-get", "dnf", "zypper")
-         for command in [python_dev_package_command(manager, missing_header_version)] if command),
-        None,
-    )
     if header_command is None:
         fail(f"Python development headers are missing ({missing_python_header}) and no known "
              "package manager was found — install your distribution's python3 dev package")
