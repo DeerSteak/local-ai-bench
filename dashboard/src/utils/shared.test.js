@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, fmt,
+  sanitizeForFilename, applyEngineLabels, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -382,5 +382,29 @@ describe("findMostStrenuousKey", () => {
   });
   it("returns null when no row has any of the candidate keys", () => {
     expect(findMostStrenuousKey([{ c: 1 }], ["a", "b"])).toBeNull();
+  });
+});
+
+describe("getCrossEngineWeightsWarning", () => {
+  const file = (engine) => ({ id: engine, engine, data: {} });
+
+  it("warns when files span more than one engine", () => {
+    const warning = getCrossEngineWeightsWarning([file("llamacpp"), file("vllm")]);
+    expect(warning).toContain("do not measure the same weights");
+    expect(warning).toContain("Q4_K_M");
+    expect(warning).toContain("AWQ");
+  });
+
+  it("stays silent for a single engine", () => {
+    expect(getCrossEngineWeightsWarning([file("vllm"), file("vllm")])).toBe("");
+    expect(getCrossEngineWeightsWarning([file("llamacpp")])).toBe("");
+  });
+
+  it("stays silent when no file records an engine", () => {
+    expect(getCrossEngineWeightsWarning([{ id: "a", data: {} }, { id: "b", data: {} }])).toBe("");
+  });
+
+  it("ignores files with no engine while still comparing the rest", () => {
+    expect(getCrossEngineWeightsWarning([file("vllm"), { id: "old", data: {} }])).toBe("");
   });
 });

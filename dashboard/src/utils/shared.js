@@ -67,6 +67,18 @@ export function getGpuSplitMethodologyWarning(files) {
     : "";
 }
 
+// Cross-engine comparison compares different weight files, not just different
+// runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
+// safetensors of the same base model. Matching bit width is as close as they get.
+export function getCrossEngineWeightsWarning(files) {
+  const engines = new Set(files.map(file => file.engine).filter(Boolean));
+  return engines.size > 1
+    ? "Loaded files span multiple engines. They do not measure the same weights: "
+      + "llama.cpp runs Q4_K_M GGUFs and vLLM runs 4-bit AWQ/GPTQ safetensors of the "
+      + "same base model, so differences reflect the quantization as well as the runtime."
+    : "";
+}
+
 // Turn free-typed text (or a whole joined filename stem) into something safe
 // to use as a filename: whitespace and characters reserved/special on common
 // filesystems — including periods, since they read as file extensions/hidden-

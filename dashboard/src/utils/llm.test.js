@@ -175,3 +175,14 @@ describe("flattenLLMData", () => {
     expect(rows[0].tps_mean).toBe(10);
   });
 });
+
+describe("tool_calls_unsupported skip label", () => {
+  it("labels a model vLLM cannot parse tool calls for", () => {
+    const file = { id: "f", data: { tool: { "granite4.1-8b": {
+      skipped: true, skip_reason: "tool_calls_unsupported",
+      skip_detail: "vllm has no tool-call parser configured",
+    } } } };
+    expect(getBarStatusLabel(file, "granite4.1-8b", "512", "tool"))
+      .toBe("Skipped - No Tool Parser");
+  });
+});

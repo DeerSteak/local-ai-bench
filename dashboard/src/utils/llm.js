@@ -9,6 +9,7 @@ const SKIP_REASON_LABELS = {
   slow_tps: "Skipped - LLM Too Slow",
   no_llm_data: "Skipped - No LLM Data",
   known_crash: "Skipped - Engine Crashed",
+  tool_calls_unsupported: "Skipped - No Tool Parser",
 };
 
 export const llmTTFTMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;

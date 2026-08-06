@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getCrossEngineWeightsWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -109,6 +109,9 @@ export default function Dashboard() {
   );
   const gpuSplitMethodologyWarning = useMemo(
     () => getGpuSplitMethodologyWarning(effectiveFiles), [effectiveFiles],
+  );
+  const crossEngineWeightsWarning = useMemo(
+    () => getCrossEngineWeightsWarning(effectiveFiles), [effectiveFiles],
   );
 
   const updateHostnameOverride = useCallback((fileId, value) => {
@@ -256,6 +259,7 @@ export default function Dashboard() {
         fileError={[
           fileError, accuracySettingsWarning, llamaBenchMethodologyWarning,
           conversationTTFTMethodologyWarning, gpuSplitMethodologyWarning,
+          crossEngineWeightsWarning,
         ].filter(Boolean).join(" ")}
       />
 
