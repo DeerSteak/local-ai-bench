@@ -131,6 +131,9 @@ class LlamaCppEngine(InferenceEngine):
         except Exception:
             return False
 
+    def is_installed(self) -> bool:
+        return self._binary_path() is not None
+
     def ensure_running(self) -> bool:
         """Preflight only (binary + model dir exist) — see docs/engines.md's
         "No standalone up-but-idle state". The real spawn is lazy, per tag, in _ensure_model."""

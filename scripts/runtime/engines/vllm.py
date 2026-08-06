@@ -108,6 +108,9 @@ class VllmEngine(InferenceEngine):
         except Exception:
             return False
 
+    def is_installed(self) -> bool:
+        return (self._launcher or self._executable) is not None
+
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
         if self._launcher is None and self._executable is None:

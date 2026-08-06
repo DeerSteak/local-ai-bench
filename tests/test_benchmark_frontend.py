@@ -7,6 +7,8 @@ import pytest
 from scripts.app import benchmark_frontend
 from scripts.runtime import config
 from scripts.app.benchmark_frontend import (
+    merge_model_inventories,
+    models_runnable_by,
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
@@ -1336,3 +1338,48 @@ def test_run_frontend_returns_error_without_any_installed_models():
     )
     assert result == 1
     assert called == []
+
+
+# ── multi-engine model inventories ──
+
+def _inventory(llm_tags, image_shorts=()):
+    return {
+        "llm": [{"tag": tag, "label": tag.upper(), "tier": "small"} for tag in llm_tags],
+        "custom": [], "embedding": [],
+        "image": [{"short": s, "label": s.upper(), "tier": "small"} for s in image_shorts],
+    }
+
+
+def test_merged_inventory_is_the_union_with_owners():
+    merged, owners = merge_model_inventories({
+        "llamacpp": _inventory(["a", "b"]),
+        "vllm": _inventory(["a", "c"]),
+    })
+    assert [m["tag"] for m in merged["llm"]] == ["a", "b", "c"]
+    assert owners["a"] == {"llamacpp", "vllm"}
+    assert owners["b"] == {"llamacpp"} and owners["c"] == {"vllm"}
+
+
+def test_only_models_the_engine_holds_are_runnable():
+    merged, owners = merge_model_inventories({
+        "llamacpp": _inventory(["a", "b"]),
+        "vllm": _inventory(["a"]),
+    })
+    entries = build_model_entries(merged, ["llm"])
+    runnable = models_runnable_by(entries, "vllm", owners)
+    assert runnable["a"] is True
+    assert runnable["b"] is False, "llama.cpp-only model must not be offered under vLLM"
+    assert all(models_runnable_by(entries, "llamacpp", owners).values())
+
+
+def test_image_models_stay_runnable_under_every_engine():
+    """Image generation goes through ComfyUI, not the inference engine."""
+    merged, owners = merge_model_inventories({"llamacpp": _inventory([], ["sdxl"])})
+    entries = build_model_entries(merged, ["img"])
+    assert all(models_runnable_by(entries, "vllm", owners).values())
+
+
+def test_a_single_engine_inventory_is_unchanged():
+    merged, owners = merge_model_inventories({"llamacpp": _inventory(["a", "b"])})
+    entries = build_model_entries(merged, ["llm"])
+    assert all(models_runnable_by(entries, "llamacpp", owners).values())

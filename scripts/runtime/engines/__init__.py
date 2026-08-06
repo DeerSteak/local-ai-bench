@@ -20,6 +20,14 @@ def get_engine(name: str) -> InferenceEngine:
         ) from None
 
 
+def installed_engine_names(factory=None) -> list[str]:
+    """Registered engines whose runtime is actually present. Falls back to every name
+    when none is installed, so a frontend still opens and can report the real problem."""
+    factory = factory or get_engine
+    installed = [name for name in engine_names() if factory(name).is_installed()]
+    return installed or engine_names()
+
+
 def engine_names() -> list[str]:
     """Every registered engine name, sorted — the set --engine all runs across."""
     return sorted(_REGISTRY)

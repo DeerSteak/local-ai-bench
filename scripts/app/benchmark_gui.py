@@ -19,6 +19,7 @@ from scripts.runtime import config
 import psutil
 from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.app.benchmark_frontend import (
+    merge_model_inventories, models_runnable_by,
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
     LLM_BACKED_TESTS,
@@ -49,7 +50,7 @@ from scripts.app.benchmark_project import (
 )
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.results.decision_report import load_result, report_output_paths, write_html_report, write_pdf_report
-from scripts.runtime.engines import engine_names, get_engine
+from scripts.runtime.engines import engine_names, get_engine, installed_engine_names
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.run_plan import load_run_plan
 from scripts.results.result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
@@ -566,9 +567,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         saved_path=configured_comfyui_dir(setup), managed_dir=config.COMFYUI_DIR,
     )
     detected_comfyui = found_comfyui or config.COMFYUI_DIR
-    available_engines = engine_names()
+    available_engines = installed_engine_names()
     selected_engine = saved["engine"] if saved and saved["engine"] in available_engines else available_engines[0]
-    inventory = build_model_inventory(get_engine(selected_engine), config.COMFYUI_MODELS_DIR)
+    # Every installed engine's models, so switching engines re-gates the list instead of
+    # offering models the newly selected engine cannot run.
+    engine_inventories = {
+        name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
+        for name in available_engines
+    }
+    inventory, model_owners = merge_model_inventories(engine_inventories)
     detected_tools = {name: find_llamacpp_tool(name) for name in (
         "llama-server", "llama-bench", "llama-batched-bench",
     )}
@@ -763,16 +770,23 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
+    engine_box = ttk.LabelFrame(configuration_frame, text="Inference engine", padding=12)
+    engine_box.grid(row=4, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    engine_combo = ttk.Combobox(engine_box, state="readonly", textvariable=engine_var,
+                                values=available_engines, width=16)
+    engine_combo.grid(row=0, column=0, sticky="w", pady=2)
+    ttk.Button(
+        engine_box, text="Reset", width=6,
+        command=lambda: engine_var.set(available_engines[0]),
+    ).grid(row=0, column=1, padx=(8, 0))
+    ttk.Label(
+        engine_box, wraplength=330,
+        text=("Only installed engines are listed. Models the selected engine cannot run "
+              "are unchecked and disabled."),
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
-    ttk.Label(execution_box, text="Inference engine").grid(row=0, column=0, sticky="w", pady=2)
-    engine_combo = ttk.Combobox(execution_box, state="readonly", textvariable=engine_var,
-                                values=available_engines, width=16)
-    engine_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=2)
-    ttk.Button(
-        execution_box, text="Reset", width=6,
-        command=lambda: engine_var.set(available_engines[0]),
-    ).grid(row=0, column=2, padx=(8, 0))
     split_label = "Multi-GPU mode (tensor is experimental)" if "tensor" in gpu_split_modes else "Multi-GPU mode"
     ttk.Label(execution_box, text=split_label).grid(row=1, column=0, sticky="w", pady=2)
     ttk.Combobox(
@@ -1804,6 +1818,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         visible = advanced_var.get()
         for box in (execution_box, paths_box):
             box.grid() if visible else box.grid_remove()
+
+    def apply_engine_availability(*_) -> None:
+        """Disable and uncheck models the selected engine cannot run."""
+        runnable = models_runnable_by(custom_models, engine_var.get(), model_owners)
+        for value, widget in model_widgets.items():
+            available = runnable.get(value, True)
+            widget.configure(state="normal" if available else "disabled")
+            if not available and model_vars[value].get():
+                model_vars[value].set(False)
+
+    engine_var.trace_add("write", apply_engine_availability)
+    apply_engine_availability()
 
     preset_var.trace_add("write", select_preset)
     for variable in (

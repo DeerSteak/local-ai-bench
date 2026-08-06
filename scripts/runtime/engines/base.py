@@ -149,6 +149,11 @@ class InferenceEngine(ABC):
 
     # ── server / process lifecycle ──
 
+    def is_installed(self) -> bool:
+        """Whether this engine's runtime is present, without logging or starting anything.
+        Frontends use it to offer only engines that can actually run."""
+        return True
+
     @abstractmethod
     def ensure_running(self) -> bool:
         """Start the engine's server if it isn't already up. Returns True if

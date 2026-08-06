@@ -516,6 +516,32 @@ def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
             checked[value] = not checked[value]
 
 
+def merge_model_inventories(inventories: dict[str, dict]) -> tuple[dict, dict[str, set[str]]]:
+    """Union of every engine's inventory, plus which engines hold each model. Lets a
+    frontend list all models once and enable only those the selected engine can run."""
+    merged: dict[str, list[dict]] = {}
+    owners: dict[str, set[str]] = {}
+    for engine_name, inventory in inventories.items():
+        for section, models in inventory.items():
+            seen = {entry.get("tag") or entry.get("short") for entry in merged.setdefault(section, [])}
+            for model in models:
+                key = model.get("tag") or model.get("short")
+                owners.setdefault(key, set()).add(engine_name)
+                if key not in seen:
+                    merged[section].append(model)
+                    seen.add(key)
+    return merged, owners
+
+
+def models_runnable_by(entries, engine_name: str, owners: dict[str, set[str]]) -> dict[str, bool]:
+    """Which menu entries the given engine can actually run. Image models are engine-
+    independent (ComfyUI), so they stay available whatever engine is selected."""
+    return {
+        entry.value: entry.kind == "image" or engine_name in owners.get(entry.value, set())
+        for entry in entries
+    }
+
+
 def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> list[MenuEntry]:
     entries = []
     if any(test in LLM_BACKED_TESTS for test in tests):
