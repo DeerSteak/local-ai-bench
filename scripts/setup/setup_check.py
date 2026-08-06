@@ -24,6 +24,8 @@ from scripts.runtime.comfyui_installation import (
     checkpoint_names_from_object_info,
     find_comfyui_installation,
     find_comfyui_python,
+    find_image_asset,
+    legacy_models_dir_with_assets,
     managed_checkpoints_visible,
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
@@ -1234,6 +1236,10 @@ if VLLM in pending_engines:
 section("Disk Space")
 
 CHECKPOINTS = config.COMFYUI_MODELS_DIR / "checkpoints"
+
+def image_asset(name, subdir):
+    """Existing path of an image asset, including the pre-4.1 <ComfyUI>/models location."""
+    return find_image_asset(name, config.COMFYUI_MODELS_DIR, subdir, COMFYUI_DIR)
 CLIP_DIR    = config.COMFYUI_MODELS_DIR / "clip"
 VAE_DIR     = config.COMFYUI_MODELS_DIR / "vae"
 
@@ -1258,25 +1264,23 @@ flux1_selected = "flux-dev" in selected_image_shorts
 flux2_selected = "flux2-dev" in selected_image_shorts
 
 for m in selected_images:
-    ckpt_path = CHECKPOINTS / m["checkpoint"]
-    if not ckpt_path.exists():
+    if not image_asset(m["checkpoint"], "checkpoints"):
         remaining_gb += CHECKPOINT_SIZES_GB.get(m["checkpoint"], 0.0)
 
 # Shared T5-XXL + CLIP-L text encoders: used by SD3.5 Large and Flux.1-dev,
 # NOT Flux.2-dev (which has its own Mistral-based encoder below).
 if (sd35_selected or flux1_selected):
     for fname in ("t5xxl_fp16.safetensors", "clip_l.safetensors"):
-        if not (CLIP_DIR / fname).exists():
+        if not image_asset(fname, "clip"):
             remaining_gb += ENCODER_SIZES_GB[fname]
-if sd35_selected and not (CLIP_DIR / "clip_g.safetensors").exists():
+if sd35_selected and not image_asset("clip_g.safetensors", "clip"):
     remaining_gb += ENCODER_SIZES_GB["clip_g.safetensors"]
-if flux1_selected and not (VAE_DIR / "ae.safetensors").exists():
+if flux1_selected and not image_asset("ae.safetensors", "vae"):
     remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
 if flux2_selected:
-    text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
-    if not (text_encoder_dir / "mistral_3_small_flux2_fp8.safetensors").exists():
+    if not image_asset("mistral_3_small_flux2_fp8.safetensors", "text_encoders"):
         remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
-    if not (VAE_DIR / "flux2-vae.safetensors").exists():
+    if not image_asset("flux2-vae.safetensors", "vae"):
         remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
 
 try:
@@ -1615,7 +1619,8 @@ else:
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
 
-        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR)
+        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR,
+                                legacy_models_dir_with_assets(COMFYUI_DIR))
         try:
             model_config = add_managed_models_to_comfyui(COMFYUI_DIR, config.COMFYUI_MODELS_DIR)
             ok(f"ComfyUI model path configured in {model_config}")
@@ -1681,13 +1686,12 @@ else:
                     )
 
         found_ckpts = []
-        if CHECKPOINTS.exists():
-            for m in selected_images:
-                p = CHECKPOINTS / m["checkpoint"]
-                if p.exists():
-                    size_gb = p.stat().st_size / (1024**3)
-                    ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
-                    found_ckpts.append(m["checkpoint"])
+        for m in selected_images:
+            existing = image_asset(m["checkpoint"], "checkpoints")
+            if existing:
+                size_gb = existing.stat().st_size / (1024**3)
+                ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
+                found_ckpts.append(m["checkpoint"])
 
         # ── Download missing checkpoints for the selected image models ────────
         missing = [m for m in selected_images if m["checkpoint"] not in found_ckpts]
@@ -1766,7 +1770,7 @@ else:
                 ("clip_l.safetensors",     CLIP_DIR),
             ]
             for fname, dest in shared_clip_files:
-                if not (dest / fname).exists():
+                if not image_asset(fname, "clip"):
                     info(f"Downloading {fname} (public, no token required) ...")
                     if hf_download("comfyanonymous/flux_text_encoders", fname, token=load_token(), dest_dir=dest):
                         ok(f"{fname} downloaded")
@@ -1777,8 +1781,7 @@ else:
 
         # SD3.5 Large also needs CLIP-G (gated, same license as checkpoint)
         if sd35_present:
-            clip_g = CLIP_DIR / "clip_g.safetensors"
-            if not clip_g.exists():
+            if not image_asset("clip_g.safetensors", "clip"):
                 info("Downloading clip_g.safetensors for SD3.5 Large (requires HuggingFace token) ...")
                 token = load_token()
                 if token:
@@ -1795,8 +1798,7 @@ else:
                 ok("clip_g.safetensors already present")
 
         if flux1_present:
-            vae_file = VAE_DIR / "ae.safetensors"
-            if not vae_file.exists():
+            if not image_asset("ae.safetensors", "vae"):
                 info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
                 token = load_token()
                 if token:
@@ -1815,7 +1817,7 @@ else:
         if flux2_present:
             text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
             mistral_file = "mistral_3_small_flux2_fp8.safetensors"
-            if not (text_encoder_dir / mistral_file).exists():
+            if not image_asset(mistral_file, "text_encoders"):
                 info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev",
                                f"split_files/text_encoders/{mistral_file}",
@@ -1826,8 +1828,7 @@ else:
             else:
                 ok(f"{mistral_file} already present")
 
-            flux2_vae = VAE_DIR / "flux2-vae.safetensors"
-            if not flux2_vae.exists():
+            if not image_asset("flux2-vae.safetensors", "vae"):
                 info("Downloading flux2-vae.safetensors (Flux.2 VAE, public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors",
                                token=load_token(), dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
