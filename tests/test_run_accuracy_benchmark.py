@@ -436,4 +436,5 @@ def test_tool_workload_skips_a_model_the_engine_cannot_parse(monkeypatch, tmp_pa
     entry = results["qwen"]
     assert entry["skipped"] is True
     assert entry["skip_reason"] == "tool_calls_unsupported"
+    assert entry["skip_detail"] == "No vllm tool-call parser for this model"
     assert "score" not in entry, "a skipped model must not publish a score"

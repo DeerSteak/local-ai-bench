@@ -819,7 +819,7 @@ class Shared:
                         "label": label,
                         "skipped": True,
                         "skip_reason": "tool_calls_unsupported",
-                        "skip_detail": f"{engine.name} has no tool-call parser configured for {tag}",
+                        "skip_detail": f"No {engine.name} tool-call parser for this model",
                     }
                     continue
 
