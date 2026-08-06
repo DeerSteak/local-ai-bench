@@ -55,6 +55,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
+        self._loaded_tool_parser: str | None = None
         self._gpu_visible = True
         self._model_lock = threading.RLock()
 
@@ -66,6 +67,12 @@ class VllmEngine(InferenceEngine):
             if model["tag"] == tag:
                 return model
         return None
+
+    @classmethod
+    def _tool_parser(cls, tag: str) -> str | None:
+        """vLLM's per-model tool-call parser name, or None when the catalog has none."""
+        entry = cls._catalog_entry(tag)
+        return entry.get("vllm_tool_parser") if entry else None
 
     @classmethod
     def _repo(cls, tag: str) -> str | None:
@@ -136,6 +143,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
+        self._loaded_tool_parser = None
 
     def is_connection_crash(self, e: Exception) -> bool:
         if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
@@ -236,7 +244,7 @@ class VllmEngine(InferenceEngine):
     # ── model process spawn ──
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
-                       n_parallel: int = 1) -> list[str]:
+                       n_parallel: int = 1, tool_parser: str | None = None) -> list[str]:
         """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
         over bare `vllm serve` because it carries that platform's environment."""
         options = ["--served-model-name", repo,
@@ -245,9 +253,11 @@ class VllmEngine(InferenceEngine):
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
         if embedding:
-            options += ["--task", "embed"]
-        if not self._gpu_visible:
-            options += ["--device", "cpu"]
+            # --task was replaced by --runner; pooling is the embedding runner.
+            options += ["--runner", "pooling"]
+        if tool_parser:
+            # tool_calls stay empty unless the frontend parser is enabled explicitly.
+            options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
         if not self._launcher and not self._executable:
             raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
         if self._launcher:
@@ -256,13 +266,14 @@ class VllmEngine(InferenceEngine):
                 "--port", str(config.VLLM_PORT), *options]
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
-                       n_parallel: int = 1, deadline: float | None = None) -> None:
+                       n_parallel: int = 1, deadline: float | None = None,
+                       tool_parser: str | None = None) -> None:
         """Ensure vLLM is serving `tag`, respawning on any mismatch — one model per process."""
-        want = (tag, num_ctx, embedding, n_parallel)
+        want = (tag, num_ctx, embedding, n_parallel, tool_parser)
 
         def ready():
-            have = (self._loaded_tag, self._loaded_num_ctx,
-                    self._loaded_embedding, self._loaded_n_parallel)
+            have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding,
+                    self._loaded_n_parallel, self._loaded_tool_parser)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -274,6 +285,9 @@ class VllmEngine(InferenceEngine):
             if deadline is not None and time.perf_counter() >= deadline:
                 raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
 
+            if not self._gpu_visible:
+                # vLLM has no --device flag; CPU needs a separately built CPU wheel.
+                raise RuntimeError("vLLM has no CPU-only mode here — run --cpu-only against llama.cpp")
             repo = self._repo(tag)
             if repo is None:
                 raise RuntimeError(f"{tag} has no vLLM weights in the catalog")
@@ -283,7 +297,8 @@ class VllmEngine(InferenceEngine):
                     "download it first with: python -m scripts.setup.setup_check")
 
             self.stop()
-            args = self.server_command(repo, num_ctx, embedding=embedding, n_parallel=n_parallel)
+            args = self.server_command(repo, num_ctx, embedding=embedding,
+                                        n_parallel=n_parallel, tool_parser=tool_parser)
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-vllm-server.log", delete=False)
             self._log_path = Path(log_fh.name)
             try:
@@ -306,6 +321,7 @@ class VllmEngine(InferenceEngine):
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
+                    self._loaded_tool_parser = tool_parser
                     return
                 if proc.poll() is not None:
                     raise RuntimeError(f"vLLM exited unexpectedly (code {proc.returncode}) "
@@ -494,9 +510,14 @@ class VllmEngine(InferenceEngine):
                                       check_loop: bool, token_budget: int | None):
         if token_budget is not None and num_predict != -1:
             raise ValueError("token_budget cannot be combined with finite num_predict")
+        tool_parser = self._tool_parser(tag) if tools is not None else None
+        if tools is not None and tool_parser is None:
+            raise RuntimeError(
+                f"no vLLM tool-call parser is configured for {tag}; vLLM returns no tool_calls "
+                "without --tool-call-parser, so a tool result here would be wrong, not zero")
         operation_start = time.perf_counter()
         deadline = operation_start + timeout
-        self._ensure_model(tag, num_ctx, deadline=deadline)
+        self._ensure_model(tag, num_ctx, deadline=deadline, tool_parser=tool_parser)
         model_load_sec = time.perf_counter() - operation_start
 
         if token_budget is None:

@@ -144,6 +144,16 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 6. Dashboard engine dimension.
 7. Docs.
 
+## Verified against vLLM's current CLI
+
+Three flags written from memory were wrong and are corrected in `VllmEngine`:
+
+- **`--task embed` → `--runner pooling`.** `--task` is deprecated; `--runner` (`auto`/`draft`/`generate`/`pooling`) replaced it.
+- **`--device cpu` does not exist.** vLLM detects the platform, and CPU needs a separately built CPU wheel — so `start(gpu_visible=False)` raises rather than passing a flag that would be rejected. `--cpu-only` belongs to llama.cpp.
+- **Tool calling needs `--enable-auto-tool-choice --tool-call-parser <name>`**, both off by default. Without them vLLM returns *no* `tool_calls` at all, which the tool-accuracy test would score as a wrong answer rather than an unsupported configuration. `chat_tools` therefore refuses a model with no configured parser, and the parser name changes force a respawn.
+
+Still outstanding from this: **no catalog entry carries `vllm_tool_parser` yet.** vLLM's parsers are model-specific (`hermes`, `llama3_json`, `granite`, `qwen3_coder`, …) and picking one wrongly produces silently unparsed calls, so these should be filled in from real runs rather than guessed. Until then the tool workload is unavailable on vLLM and says so. `--reasoning-parser` is the same shape of problem for Nemotron's reasoning output, but degrades more gracefully: without it the thinking text arrives as ordinary content, so grading and token counts still work.
+
 ## Open questions for the user
 
 1. ~~Which quantization for vLLM weights?~~ **Answered: 4-bit AWQ/GPTQ/W4A16**, to match `Q4_K_M`'s bit width. Every catalog entry now carries a verified `vllm_repo`. Two consequences to watch: AWQ/GPTQ Marlin kernels are CUDA-centric, so some of these will not run on ROCm or Metal, and `google/gemma-4-12B-it-qat-w4a16-ct` is a compressed-tensors QAT checkpoint rather than AWQ — the one entry that differs in kind from the rest.

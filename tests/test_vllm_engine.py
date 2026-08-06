@@ -85,10 +85,25 @@ def test_context_is_omitted_when_unset(engine):
     assert "--max-model-len" not in engine.server_command("org/m", None)
 
 
-def test_embedding_mode_and_cpu_only_add_their_flags(engine):
-    assert "--task" in engine.server_command("org/m", None, embedding=True)
-    engine._gpu_visible = False
-    assert engine.server_command("org/m", 1024)[-2:] == ["--device", "cpu"]
+def test_embedding_mode_uses_the_pooling_runner(engine):
+    """--task was replaced by --runner in current vLLM."""
+    command = engine.server_command("org/m", None, embedding=True)
+    assert command[command.index("--runner") + 1] == "pooling"
+    assert "--task" not in command
+
+
+def test_tool_parser_flags_are_only_passed_when_configured(engine):
+    plain = engine.server_command("org/m", 1024)
+    assert "--enable-auto-tool-choice" not in plain and "--tool-call-parser" not in plain
+
+    with_tools = engine.server_command("org/m", 1024, tool_parser="hermes")
+    assert "--enable-auto-tool-choice" in with_tools
+    assert with_tools[with_tools.index("--tool-call-parser") + 1] == "hermes"
+
+
+def test_no_command_ever_passes_a_device_flag(engine):
+    """vLLM has no --device option; CPU needs a separately built wheel."""
+    assert "--device" not in engine.server_command("org/m", 1024, embedding=True)
 
 
 def test_no_runtime_raises_rather_than_building_a_broken_command(engine):
@@ -162,7 +177,18 @@ def test_chat_omits_max_tokens_when_unbounded(engine, monkeypatch):
     assert "max_tokens" not in captured["payload"]
 
 
+def test_chat_tools_refuses_a_model_with_no_configured_parser(engine, monkeypatch):
+    """Without --tool-call-parser vLLM returns no tool_calls, which would score as a
+    wrong answer rather than an unsupported configuration."""
+    _patch_stream(monkeypatch, [_delta_chunk("x", finish="stop")])
+    with pytest.raises(RuntimeError, match="tool-call parser"):
+        engine.chat_tools("qwen3.5:9b-q4_K_M", [{"role": "user", "content": "hi"}],
+                          tools=[{"type": "function"}], timeout=30)
+
+
 def test_chat_tools_parses_streamed_tool_calls(engine, monkeypatch):
+    monkeypatch.setattr(VllmEngine, "_tool_parser", classmethod(lambda cls, tag: "hermes"))
+    engine._loaded_tool_parser = "hermes"  # already serving with the parser enabled
     _patch_stream(monkeypatch, [
         _delta_chunk(tool_calls=[{"index": 0, "function": {"name": "get_weather"}}]),
         _delta_chunk(tool_calls=[{"index": 0, "function": {"arguments": '{"city":'}}]),
@@ -220,3 +246,21 @@ def test_max_context_length_reads_a_nested_text_config(engine):
     snapshot.mkdir(parents=True)
     (snapshot / "config.json").write_text(json.dumps({"text_config": {"max_position_embeddings": 8192}}))
     assert engine.max_context_length(tag) == 8192
+
+
+def test_changing_the_tool_parser_forces_a_respawn(engine, monkeypatch):
+    """A server started without --tool-call-parser cannot serve a tool request."""
+    spawned = []
+    monkeypatch.setattr(VllmEngine, "_tool_parser", classmethod(lambda cls, tag: "hermes"))
+    monkeypatch.setattr(VllmEngine, "stop", lambda self, **kw: None)
+    monkeypatch.setattr(VllmEngine, "model_pulled", lambda self, tag: True)
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+
+    def popen(args, **kwargs):
+        spawned.append(args)
+        return type("P", (), {"poll": staticmethod(lambda: None), "returncode": 0})()
+
+    monkeypatch.setattr("subprocess.Popen", popen)
+    engine._ensure_model("qwen3.5:9b-q4_K_M", 1024, tool_parser="hermes")
+    assert spawned, "the loaded server had no parser, so a respawn was required"
+    assert "--tool-call-parser" in spawned[0]
