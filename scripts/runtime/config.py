@@ -31,6 +31,8 @@ LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
 VLLM_VENV = SCRIPT_DIR / "vllm-env"
 VLLM_PORT = 8000
 VLLM_URL  = f"http://localhost:{VLLM_PORT}"
+# vLLM preallocates this fraction of VRAM for weights + KV cache.
+VLLM_GPU_MEMORY_UTILIZATION = 0.90
 
 # vLLM's own default, then AMD `vllm-launch`'s.
 VLLM_DISCOVERY_PORTS = (8000, 8001)

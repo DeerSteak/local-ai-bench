@@ -1,0 +1,222 @@
+import json
+
+import pytest
+
+from scripts.runtime import config
+from scripts.runtime.engines.vllm import VllmEngine
+from scripts.runtime.shared import EngineTimeout
+
+
+@pytest.fixture
+def engine(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "SETUP_CONFIG_PATH", tmp_path / "absent.json")
+    instance = VllmEngine()
+    instance._cache_home = tmp_path / "cache"
+    instance._launcher = None
+    instance._executable = "/usr/bin/vllm"
+    # Pretend a model is already loaded so inference calls skip the real spawn.
+    instance._loaded_tag = "qwen3.5:9b-q4_K_M"
+    instance._loaded_num_ctx = None
+    instance._loaded_embedding = False
+    instance._loaded_n_parallel = 1
+    instance._proc = type("P", (), {"poll": staticmethod(lambda: None)})()
+    return instance
+
+
+class _Response:
+    def __init__(self, chunks):
+        self._lines = [f"data: {json.dumps(chunk)}".encode() for chunk in chunks] + [b"data: [DONE]"]
+
+    def __enter__(self):
+        return self._lines
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _patch_stream(monkeypatch, chunks):
+    captured = {}
+
+    def post(self, path, payload, timeout):
+        captured["path"], captured["payload"] = path, payload
+        return _Response(chunks)
+
+    monkeypatch.setattr(VllmEngine, "_post", post)
+    return captured
+
+
+def _text_chunk(text, finish=None):
+    return {"choices": [{"text": text, "finish_reason": finish}]}
+
+
+def _delta_chunk(content=None, finish=None, tool_calls=None):
+    delta = {}
+    if content is not None:
+        delta["content"] = content
+    if tool_calls is not None:
+        delta["tool_calls"] = tool_calls
+    return {"choices": [{"delta": delta, "finish_reason": finish}]}
+
+
+# ── command construction ──
+
+def test_launcher_is_preferred_and_pins_the_port(engine):
+    engine._launcher = "/usr/bin/vllm-launch"
+    command = engine.server_command("org/m", 4096)
+    assert command[0] == "/usr/bin/vllm-launch"
+    assert command[command.index("-p") + 1] == str(config.VLLM_PORT)
+    assert command[command.index("-m") + 1] == "org/m"
+
+
+def test_bare_serve_is_used_without_a_launcher(engine):
+    command = engine.server_command("org/m", 4096)
+    assert command[:3] == ["/usr/bin/vllm", "serve", "org/m"]
+    assert "--port" in command
+
+
+def test_max_model_len_is_per_sequence_and_not_scaled_by_parallelism(engine):
+    """Unlike llama-server's -c, --max-model-len is per sequence."""
+    command = engine.server_command("org/m", 4096, n_parallel=8)
+    assert command[command.index("--max-model-len") + 1] == "4096"
+    assert command[command.index("--max-num-seqs") + 1] == "8"
+
+
+def test_context_is_omitted_when_unset(engine):
+    assert "--max-model-len" not in engine.server_command("org/m", None)
+
+
+def test_embedding_mode_and_cpu_only_add_their_flags(engine):
+    assert "--task" in engine.server_command("org/m", None, embedding=True)
+    engine._gpu_visible = False
+    assert engine.server_command("org/m", 1024)[-2:] == ["--device", "cpu"]
+
+
+def test_no_runtime_raises_rather_than_building_a_broken_command(engine):
+    engine._executable = None
+    with pytest.raises(RuntimeError, match="no vLLM runtime"):
+        engine.server_command("org/m", 1024)
+
+
+# ── generate ──
+
+def test_generate_counts_tokens_from_streamed_usage(engine, monkeypatch):
+    captured = _patch_stream(monkeypatch, [
+        _text_chunk("Hello"), _text_chunk(" world", finish="stop"),
+        {"choices": [], "usage": {"completion_tokens": 7, "prompt_tokens": 31}},
+    ])
+    result = engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=30)
+    assert result.generated_tokens == 7, "SSE fragments are never counted as tokens"
+    assert result.prompt_tokens == 31
+    assert result.response_text == "Hello world"
+    assert result.finish_reason == "stop"
+    assert captured["path"] == "/v1/completions"
+    assert captured["payload"]["stream_options"] == {"include_usage": True}
+
+
+def test_generate_reports_no_server_prompt_time(engine, monkeypatch):
+    _patch_stream(monkeypatch, [_text_chunk("x", finish="stop"),
+                                {"choices": [], "usage": {"completion_tokens": 1}}])
+    result = engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=30)
+    assert result.server_prompt_sec is None, "vLLM reports no per-request prompt duration"
+
+
+def test_generate_requests_the_repo_id_not_the_tag(engine, monkeypatch):
+    captured = _patch_stream(monkeypatch, [_text_chunk("x", finish="stop"),
+                                            {"choices": [], "usage": {"completion_tokens": 1}}])
+    engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=30)
+    assert captured["payload"]["model"] == "QuantTrio/Qwen3.5-9B-AWQ"
+
+
+def test_generate_measurement_is_internally_consistent(engine, monkeypatch):
+    _patch_stream(monkeypatch, [_text_chunk("a"), _text_chunk("b", finish="stop"),
+                                {"choices": [], "usage": {"completion_tokens": 4}}])
+    from scripts.runtime.engines.base import measurement_validation_errors
+    assert measurement_validation_errors(engine.generate("qwen3.5:9b-q4_K_M", "hi", 30)) == []
+
+
+def test_generate_times_out_with_a_gradeable_partial(engine, monkeypatch):
+    _patch_stream(monkeypatch, [_text_chunk("partial answer")])
+    with pytest.raises(EngineTimeout) as excinfo:
+        engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=-1)
+    assert "partial answer" in excinfo.value.partial_text
+
+
+# ── chat ──
+
+def test_chat_uses_usage_for_tokens_and_prompt_count(engine, monkeypatch):
+    captured = _patch_stream(monkeypatch, [
+        _delta_chunk("Yes"), _delta_chunk(" indeed", finish="stop"),
+        {"choices": [], "usage": {"completion_tokens": 5, "prompt_tokens": 12}},
+    ])
+    result = engine.chat("qwen3.5:9b-q4_K_M", [{"role": "user", "content": "hi"}], timeout=30)
+    assert (result.generated_tokens, result.prompt_tokens) == (5, 12)
+    assert result.response_text == "Yes indeed"
+    assert captured["path"] == "/v1/chat/completions"
+
+
+def test_chat_omits_max_tokens_when_unbounded(engine, monkeypatch):
+    captured = _patch_stream(monkeypatch, [_delta_chunk("x", finish="stop"),
+                                            {"choices": [], "usage": {"completion_tokens": 1}}])
+    engine.chat("qwen3.5:9b-q4_K_M", [{"role": "user", "content": "hi"}],
+                timeout=30, num_predict=-1)
+    assert "max_tokens" not in captured["payload"]
+
+
+def test_chat_tools_parses_streamed_tool_calls(engine, monkeypatch):
+    _patch_stream(monkeypatch, [
+        _delta_chunk(tool_calls=[{"index": 0, "function": {"name": "get_weather"}}]),
+        _delta_chunk(tool_calls=[{"index": 0, "function": {"arguments": '{"city":'}}]),
+        _delta_chunk(tool_calls=[{"index": 0, "function": {"arguments": '"Paris"}'}}],
+                     finish="tool_calls"),
+        {"choices": [], "usage": {"completion_tokens": 9}},
+    ])
+    result = engine.chat_tools("qwen3.5:9b-q4_K_M", [{"role": "user", "content": "weather?"}],
+                                tools=[{"type": "function"}], timeout=30)
+    assert result.tool_calls == [{"name": "get_weather", "arguments": {"city": "Paris"}}]
+
+
+# ── model resolution ──
+
+def test_model_pulled_reads_the_hf_cache(engine):
+    tag = "qwen3.5:9b-q4_K_M"
+    assert engine.model_pulled(tag) is False
+    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+                / "snapshots" / "abc")
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}")
+    (snapshot / "model.safetensors").touch()
+    assert engine.model_pulled(tag) is True
+    assert [m["tag"] for m in engine.list_installed_models()] == [tag]
+
+
+def test_an_unknown_tag_has_no_repo(engine):
+    assert engine._repo("not-a-model") is None
+    assert engine.model_pulled("not-a-model") is False
+
+
+def test_max_context_length_reads_the_snapshot_config(engine):
+    tag = "qwen3.5:9b-q4_K_M"
+    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+                / "snapshots" / "abc")
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text(json.dumps({"max_position_embeddings": 32768}))
+    assert engine.max_context_length(tag) == 32768
+
+
+def test_max_context_length_falls_back_on_missing_or_broken_config(engine):
+    tag = "qwen3.5:9b-q4_K_M"
+    assert engine.max_context_length(tag, default=4096) == 4096
+    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+                / "snapshots" / "abc")
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{ not json")
+    assert engine.max_context_length(tag, default=4096) == 4096
+
+
+def test_max_context_length_reads_a_nested_text_config(engine):
+    tag = "gemma3:27b-it-q4_K_M"
+    repo = engine._repo(tag).replace("/", "--")
+    snapshot = engine._cache_home / "hub" / f"models--{repo}" / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text(json.dumps({"text_config": {"max_position_embeddings": 8192}}))
+    assert engine.max_context_length(tag) == 8192

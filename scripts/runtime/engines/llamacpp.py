@@ -20,6 +20,7 @@ import requests
 from scripts.runtime import config
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
+from scripts.runtime.engines import openai_api
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.runtime.shared import (
     EngineBudgetExceeded,
@@ -343,45 +344,16 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _urlopen(req, timeout):
-        """urlopen wrapper that surfaces llama-server's JSON error body on
-        HTTP errors, instead of the bare "HTTP Error 500" HTTPError message."""
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode(errors="replace")
-            try:
-                detail = json.loads(body).get("error", body)
-            except json.JSONDecodeError:
-                detail = body
-            raise RuntimeError(f"llama-server returned HTTP {e.code}: {str(detail)[:500]}") from None
+        return openai_api.urlopen_with_detail(req, timeout, "llama-server")
 
     @staticmethod
     def _iter_sse(resp):
-        """Yield parsed JSON from an SSE response body ('data: {...}' lines).
-        Empty dicts for comments/malformed/[DONE] lines, so callers can still enforce a deadline on keepalive-only traffic."""
-        for raw_line in resp:
-            line = raw_line.decode(errors="replace") if isinstance(raw_line, bytes) else raw_line
-            line = line.strip()
-            if not line.startswith("data:"):
-                yield {}
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                yield {}
-                continue
-            try:
-                yield json.loads(data)
-            except json.JSONDecodeError:
-                yield {}
+        return openai_api.iter_sse(resp)
 
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
-        """Replace an implausible self-reported tps with a wall-clock estimate
-        — see docs/engines.md's "_sanitize_tps"."""
-        if tps <= config.MAX_PLAUSIBLE_TPS:
-            return tps
-        decode_elapsed = total - ttft
-        return tokens / decode_elapsed if decode_elapsed > 0 else 0
+        """See docs/engines.md's "_sanitize_tps"."""
+        return openai_api.sanitize_tps(tps, tokens, ttft, total)
 
     @staticmethod
     def _warn_tps_sanitized(tag: str, raw_tps: float, sanitized_tps: float,
@@ -808,16 +780,7 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:
-        tool_calls_out = []
-        for idx in sorted(tool_fragments):
-            frag = tool_fragments[idx]
-            call = {"name": frag["name"], "arguments": {}}
-            try:
-                call["arguments"] = json.loads(frag["arguments"]) if frag["arguments"] else {}
-            except json.JSONDecodeError:
-                call["incomplete"] = True
-            tool_calls_out.append(call)
-        return tool_calls_out
+        return openai_api.tool_calls_from_fragments(tool_fragments)
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:
         """Embed every input in one request, loading in embedding mode."""
