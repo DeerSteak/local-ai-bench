@@ -41,6 +41,9 @@ class VllmEngine(InferenceEngine):
     # vLLM start-up includes weight load, graph capture, and KV allocation.
     LOAD_TIMEOUT = 900
 
+    # vLLM's startup traceback is long and its root cause precedes it, so a short tail hides it.
+    SPAWN_LOG_LINES = 200
+
     def __init__(self):
         setup = load_setup_config(config.SETUP_CONFIG_PATH)
         self._launcher = configured_vllm_path(setup, "launcher") or find_vllm_launcher()
@@ -340,7 +343,8 @@ class VllmEngine(InferenceEngine):
                     return
                 if proc.poll() is not None:
                     raise RuntimeError(f"vLLM exited unexpectedly (code {proc.returncode}) "
-                                        f"loading {tag} — last output:\n{self.tail_log()}")
+                                        f"loading {tag} — last output:\n"
+                                        f"{self.tail_log(self.SPAWN_LOG_LINES)}")
                 time.sleep(1)
 
             self._stop_process()
