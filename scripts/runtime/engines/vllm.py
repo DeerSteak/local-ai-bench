@@ -266,6 +266,13 @@ class VllmEngine(InferenceEngine):
 
     # ── model process spawn ──
 
+    def context_limit(self, tag: str, num_ctx: int | None) -> int | None:
+        """--max-model-len for a padded-to-num_ctx prompt. Character-based padding can
+        overshoot, and vLLM rejects prompt+max_tokens over the limit outright."""
+        if num_ctx is None:
+            return None
+        return min(num_ctx + config.VLLM_CTX_TOLERANCE, self.max_context_length(tag, num_ctx))
+
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None) -> list[str]:
         """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
@@ -320,8 +327,9 @@ class VllmEngine(InferenceEngine):
                     "download it first with: python -m scripts.setup.setup_check")
 
             self.stop()
-            args = self.server_command(repo, num_ctx, embedding=embedding,
-                                        n_parallel=n_parallel, tool_parser=tool_parser)
+            args = self.server_command(repo, self.context_limit(tag, num_ctx),
+                                        embedding=embedding, n_parallel=n_parallel,
+                                        tool_parser=tool_parser)
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-vllm-server.log", delete=False)
             self._log_path = Path(log_fh.name)
             try:

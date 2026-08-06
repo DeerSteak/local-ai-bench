@@ -335,3 +335,30 @@ def test_llamacpp_supports_tool_calls_for_everything():
 def test_configured_parsers_are_passed_to_the_server(engine):
     command = engine.server_command("org/m", 1024, tool_parser=engine._tool_parser("granite4.1:8b-q4_K_M"))
     assert command[command.index("--tool-call-parser") + 1] == "granite4"
+
+
+# ── context tolerance ──
+
+def test_context_limit_adds_tolerance_for_approximate_padding(engine, monkeypatch):
+    """Prompts are padded by characters, so a 512-token target can tokenize to 513+.
+    vLLM rejects prompt+max_tokens over max_model_len outright."""
+    monkeypatch.setattr(VllmEngine, "max_context_length", lambda self, tag, default=0: 32768)
+    assert engine.context_limit("qwen3.5:9b-q4_K_M", 1024) == 1024 + config.VLLM_CTX_TOLERANCE
+
+
+def test_context_limit_never_exceeds_the_models_real_maximum(engine, monkeypatch):
+    """Asking for more than the model supports is rejected by vLLM just as firmly."""
+    monkeypatch.setattr(VllmEngine, "max_context_length", lambda self, tag, default=0: 4096)
+    assert engine.context_limit("qwen3.5:9b-q4_K_M", 4096) == 4096
+    assert engine.context_limit("qwen3.5:9b-q4_K_M", 4000) == 4064
+
+
+def test_context_limit_passes_through_none(engine):
+    assert engine.context_limit("qwen3.5:9b-q4_K_M", None) is None
+
+
+def test_the_tolerance_covers_the_reported_gemma_failure(engine, monkeypatch):
+    """512-token checkpoint: server_ctx 1024, prompt measured 513, generation 512."""
+    monkeypatch.setattr(VllmEngine, "max_context_length", lambda self, tag, default=0: 32768)
+    limit = engine.context_limit("gemma3:1b-it-q4_K_M", 1024)
+    assert 513 + config.GENERATE_MAX_TOKENS <= limit
