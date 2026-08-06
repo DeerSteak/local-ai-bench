@@ -824,6 +824,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 model_families.append("concurrency")
             identity_model_count = len({
                 model["tag"] for family in model_families for model in plan.models[family]
+                if engine.model_pulled(model["tag"])
             })
             Shared.log(
                 f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
