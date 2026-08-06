@@ -15,6 +15,7 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from scripts.app.progress_events import PROGRESS_PREFIX
+from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
@@ -54,11 +55,14 @@ from scripts.setup.setup_config import (
 
 
 def relay_runner_log(text: str) -> None:
+    """Relay a runner's line as-is. The runner already stamped it; stamping again would
+    report when the parent got round to printing, not when the event happened."""
     if text.startswith(PROGRESS_PREFIX):
         sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
         sys.stdout.flush()
         return
-    Shared.output(text.rstrip())
+    sys.stdout.write(f"{redact_log_text(text.rstrip())}\n")
+    sys.stdout.flush()
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
