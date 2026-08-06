@@ -78,19 +78,28 @@ def parse_rocm_version(output: str) -> tuple[int, int] | None:
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
+_VRAM_UNITS_GB = {"MIB": 1 / 1024, "GIB": 1.0, "MB": 1000 / 1024**2, "GB": 1000**3 / 1024**3}
+
+
+def parse_nvidia_vram_gb(value: str) -> float | None:
+    """VRAM in GB from an nvidia-smi memory field, or None when it reports no figure —
+    unified-memory parts (GB10) have no dedicated VRAM to report."""
+    match = re.fullmatch(r"([\d.]+)\s*(MiB|GiB|MB|GB)", (value or "").strip(), re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1)) * _VRAM_UNITS_GB[match.group(2).upper()]
+
+
 def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
-    """Parse name, MiB VRAM, and driver fields from nvidia-smi CSV output."""
+    """Parse name, VRAM, and driver from nvidia-smi CSV output. A device whose memory
+    field is unreadable is still a detected GPU, with vram_gb None."""
     devices = []
     for line in nvidia_smi_output.splitlines():
         parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 3:
-            continue
-        match = re.fullmatch(r"([\d.]+)\s*MiB", parts[1], re.IGNORECASE)
-        if not match:
+        if len(parts) != 3 or not parts[0]:
             continue
         devices.append({
-            "name": parts[0], "vram_gb": float(match.group(1)) / 1024,
-            "driver": parts[2],
+            "name": parts[0], "vram_gb": parse_nvidia_vram_gb(parts[1]), "driver": parts[2],
         })
     return devices
 

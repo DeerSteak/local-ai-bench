@@ -383,3 +383,34 @@ def test_rocminfo_gfx_targets_strips_feature_suffixes_and_deduplicates():
 def test_rocminfo_gfx_targets_is_empty_without_gpu_agents():
     assert hardware.rocminfo_gfx_targets("") == []
     assert hardware.rocminfo_gfx_targets("Agent 1\n  Name: cpu\n  Device Type: CPU\n") == []
+
+
+# ── unified-memory NVIDIA parts (GB10 / DGX Spark) ──
+
+def test_a_gpu_reporting_no_vram_is_still_detected():
+    """GB10 shares memory with the host, so nvidia-smi has no dedicated figure to give.
+    Dropping the row made setup conclude there was no GPU at all."""
+    devices = hardware.parse_nvidia_gpus("NVIDIA GB10, [N/A], 580.173.02")
+    assert devices == [{"name": "NVIDIA GB10", "vram_gb": None, "driver": "580.173.02"}]
+
+
+def test_vram_field_accepts_every_unit_nvidia_smi_uses():
+    assert hardware.parse_nvidia_vram_gb("16384 MiB") == 16.0
+    assert hardware.parse_nvidia_vram_gb("120 GiB") == 120.0
+    assert hardware.parse_nvidia_vram_gb("16384MiB") == 16.0
+    for junk in ("[N/A]", "N/A", "", None, "Insufficient Permissions"):
+        assert hardware.parse_nvidia_vram_gb(junk) is None
+
+
+def test_rows_without_a_name_are_still_rejected():
+    assert hardware.parse_nvidia_gpus(", 16384 MiB, 610.74") == []
+    assert hardware.parse_nvidia_gpus("malformed") == []
+
+
+def test_unknown_vram_falls_back_to_the_system_ram_ceiling():
+    ceiling, note = hardware.compute_memory_ceiling_gb(
+        os_name="Linux", total_ram_gb=121.6, gpu_vendor="nvidia",
+        vram_gb=None, device_vram_gb=None,
+    )
+    assert ceiling == pytest.approx(121.6 - hardware.RAM_RESERVE_GB)
+    assert "system RAM" in note

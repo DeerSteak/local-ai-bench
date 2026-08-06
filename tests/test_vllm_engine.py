@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -264,3 +265,51 @@ def test_changing_the_tool_parser_forces_a_respawn(engine, monkeypatch):
     engine._ensure_model("qwen3.5:9b-q4_K_M", 1024, tool_parser="hermes")
     assert spawned, "the loaded server had no parser, so a respawn was required"
     assert "--tool-call-parser" in spawned[0]
+
+
+# ── resume identity ──
+
+def _cache_snapshot(engine, repo="QuantTrio--Qwen3.5-9B-AWQ", files=("model.safetensors", "config.json")):
+    repo_dir = engine._cache_home / "hub" / f"models--{repo}"
+    blobs, snapshot = repo_dir / "blobs", repo_dir / "snapshots" / "abc"
+    blobs.mkdir(parents=True); snapshot.mkdir(parents=True)
+    for index, name in enumerate(files):
+        blob = blobs / f"b{index}"
+        blob.write_text("weights")
+        (snapshot / name).symlink_to(blob)
+    return snapshot
+
+
+def test_resume_artifacts_resolve_through_the_cache_symlinks(engine):
+    _cache_snapshot(engine, files=("model-00001.safetensors", "model-00002.safetensors", "config.json"))
+    paths = engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
+    assert len(paths) == 3
+    assert all(path.parent.name == "blobs" for path in paths), "identity follows the blob, not the link"
+    assert all(path.exists() for path in paths)
+
+
+def test_resume_artifacts_raise_for_an_uncached_model(engine):
+    with pytest.raises(ValueError, match="cannot identify local model artifact"):
+        engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
+
+
+def test_resume_runtime_prefers_the_launcher(engine):
+    assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm").resolve()}
+    engine._launcher = "/usr/bin/vllm-launch"
+    assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm-launch").resolve()}
+
+
+def test_resume_runtime_raises_without_any_vllm(engine):
+    engine._launcher = engine._executable = None
+    with pytest.raises(ValueError, match="cannot identify vLLM runtime"):
+        engine.resume_runtime_paths()
+
+
+def test_resume_identity_builds_for_a_cached_model(engine):
+    """The failure that stopped the first real run: the base class raised NotImplementedError."""
+    from scripts.results.resume_policy import cached_file_identity
+    _cache_snapshot(engine)
+    cache = {}
+    for path in engine.resume_artifact_paths("qwen3.5:9b-q4_K_M"):
+        assert cached_file_identity(path, cache)["sha256"]
+    assert len(cache) == 2

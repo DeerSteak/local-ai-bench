@@ -164,6 +164,21 @@ class VllmEngine(InferenceEngine):
 
     # ── model lifecycle ──
 
+    def resume_artifact_paths(self, tag: str) -> tuple[Path, ...]:
+        """Weights and config of the cached snapshot, resolved through the HF cache's
+        symlinks so identity follows the blob rather than the link."""
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None:
+            raise ValueError(f"cannot identify local model artifact for resume: {tag}")
+        paths = sorted(snapshot.glob("*.safetensors")) + [snapshot / "config.json"]
+        return tuple(path.resolve() for path in paths if path.exists())
+
+    def resume_runtime_paths(self) -> dict[str, Path]:
+        runtime = self._launcher or self._executable
+        if runtime is None:
+            raise ValueError("cannot identify vLLM runtime for resume")
+        return {"vllm": Path(runtime).resolve()}
+
     def model_pulled(self, tag: str) -> bool:
         repo = self._repo(tag)
         return repo is not None and hf_cache_model_complete(self._cache_home, repo)

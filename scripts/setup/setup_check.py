@@ -276,10 +276,12 @@ def check_nvidia():
             text=True, stderr=subprocess.DEVNULL
         )
         nvidia_gpus = hardware.parse_nvidia_gpus(out)
-        nvidia_vram_gb = sum(device["vram_gb"] for device in nvidia_gpus)
+        nvidia_vram_gb = sum(device["vram_gb"] or 0.0 for device in nvidia_gpus)
         for device in nvidia_gpus:
             print(f"  GPU:     {device['name']}")
-            print(f"  VRAM:    {device['vram_gb']:.1f} GB")
+            vram = device["vram_gb"]
+            # Unified-memory parts report no dedicated VRAM; the RAM ceiling applies instead.
+            print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unified with system RAM'}")
             print(f"  Driver:  {device['driver']}")
         return bool(nvidia_gpus)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -530,9 +532,10 @@ memory_ceiling_gb, memory_ceiling_note = hardware.compute_memory_ceiling_gb(
     os_name=os_name, total_ram_gb=total_ram_gb,
     gpu_vendor=gpu_vendor, vram_gb=gpu_vram_gb,
     device_vram_gb=(
-        [device["vram_gb"] for device in nvidia_gpus] if nvidia_ok else
+        [device["vram_gb"] for device in nvidia_gpus if device["vram_gb"] is not None]
+        if nvidia_ok else
         [device["vram_gb"] for device in rocm_gpus] if rocm_ok else None
-    ),
+    ) or None,
 )
 if memory_ceiling_gb is not None:
     ok(f"Model memory ceiling: {memory_ceiling_note}")
