@@ -353,6 +353,10 @@ class VllmEngine(InferenceEngine):
     def _spawn_env(self) -> dict:
         """Point the server at the cache setup filled, and pass a token when one exists."""
         env = {**os.environ, "HF_HOME": str(self._cache_home)}
+        # The venv's bin holds ninja, which FlashInfer shells out to when JIT-building kernels.
+        venv_bin = config.VLLM_VENV / ("Scripts" if os.name == "nt" else "bin")
+        if venv_bin.is_dir():
+            env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
         token_file = config.SCRIPT_DIR / "hf.txt"
         if not env.get("HF_TOKEN") and token_file.is_file():
             token = token_file.read_text(encoding="utf-8").strip()

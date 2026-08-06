@@ -48,9 +48,9 @@ from scripts.setup.engine_selection import (
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
-    install_vllm, missing_python_headers, python_dev_package_command, python_include_dir,
-    python_version_from_include_dir, read_launcher_extra_args, vllm_cache_home,
-    vllm_platform_support,
+    build_tools_command, install_vllm, missing_build_tools, missing_python_headers,
+    python_dev_package_command, python_include_dir, python_version_from_include_dir,
+    read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -1267,6 +1267,18 @@ if VLLM in pending_engines:
     else:
         fail("vLLM installation failed")
         issues.append("Install vLLM manually: https://docs.vllm.ai/en/stable/getting_started/installation/")
+
+if VLLM in selected_engines:
+    _vllm_venv_python = config.VLLM_VENV / "bin" / "python"
+    _missing_tools = missing_build_tools(config.VLLM_VENV) if _vllm_venv_python.is_file() else []
+    if _missing_tools:
+        info(f"Installing vLLM build tools ({', '.join(_missing_tools)}) — "
+             "FlashInfer compiles kernels on first use ...")
+        if subprocess.run(build_tools_command(str(_vllm_venv_python), _missing_tools)).returncode == 0:
+            ok("vLLM build tools installed")
+        else:
+            fail("vLLM build tool install failed — kernel compilation will fail at run time")
+            issues.append(f"Run: {config.VLLM_VENV}/bin/pip install {' '.join(_missing_tools)}")
 
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 

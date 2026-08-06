@@ -8,6 +8,8 @@ from scripts.setup.vllm_install import (
     hf_cache_model_complete,
     hf_cache_model_dir,
     vllm_cache_home,
+    build_tools_command,
+    missing_build_tools,
     missing_python_headers,
     python_dev_package_command,
     python_version_from_include_dir,
@@ -467,3 +469,24 @@ def test_include_dir_version_parsing_handles_other_layouts():
     assert python_version_from_include_dir("/opt/py/include/python3.13/") == (3, 13)
     assert python_version_from_include_dir("/opt/weird/include") is None
     assert python_version_from_include_dir(None) is None
+
+
+# ── JIT build tools ──
+
+def test_ninja_is_reported_missing_from_a_bare_venv():
+    """FlashInfer shells out to ninja when compiling sampling kernels."""
+    assert missing_build_tools(Path("/v"), exists_fn=lambda _: False) == ["ninja"]
+    assert missing_build_tools(Path("/v"), exists_fn=lambda _: True) == []
+
+
+def test_build_tools_install_into_the_venv_without_sudo():
+    command = build_tools_command("/v/bin/python", ["ninja"])
+    assert command == ["/v/bin/python", "-m", "pip", "install", "ninja"]
+    assert "sudo" not in command
+    assert build_tools_command("/v/bin/python", []) is None
+
+
+def test_build_tools_are_looked_for_in_the_venv_bin():
+    probed = []
+    missing_build_tools(Path("/v"), exists_fn=lambda path: probed.append(path) or True)
+    assert all(path.parent.name in ("bin", "Scripts") for path in probed)

@@ -294,6 +294,21 @@ def python_dev_package_command(package_manager: str, python_version: tuple[int, 
     return prefix + [package_manager, "install", *yes, package]
 
 
+# FlashInfer and Triton JIT-compile kernels at runtime; ninja drives those builds.
+VLLM_BUILD_TOOLS = ("ninja",)
+
+
+def missing_build_tools(venv_dir: Path, exists_fn=None) -> list[str]:
+    """Build tools absent from the vLLM venv. Installed with pip, so no sudo is needed."""
+    exists_fn = exists_fn or (lambda path: Path(path).is_file())
+    bin_dir = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin")
+    return [tool for tool in VLLM_BUILD_TOOLS if not exists_fn(bin_dir / tool)]
+
+
+def build_tools_command(python_exe: str, tools) -> list[str] | None:
+    return [python_exe, "-m", "pip", "install", *tools] if tools else None
+
+
 def vllm_server_reachable(url: str = None, timeout: float = 2.0, open_fn=None) -> bool:
     """True if an OpenAI-compatible vLLM server answers at `url`."""
     url = url or config.VLLM_URL
