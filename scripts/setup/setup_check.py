@@ -48,7 +48,8 @@ from scripts.setup.engine_selection import (
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
-    install_vllm, read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
+    install_vllm, missing_python_headers, python_dev_package_command, python_include_dir,
+    read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -759,6 +760,10 @@ VLLM_LAUNCHER = find_vllm_launcher()
 VLLM_SERVER_URL = find_vllm_server()
 VLLM_LAUNCHER_ARGS = read_launcher_extra_args() if VLLM_LAUNCHER else []
 VLLM_CACHE_HOME = vllm_cache_home(VLLM_LAUNCHER)
+# Triton JIT-compiles a CUDA helper on import, so vLLM cannot start without these.
+_vllm_python = config.VLLM_VENV / "bin" / "python"
+missing_python_header = missing_python_headers(
+    python_include_dir(str(_vllm_python) if _vllm_python.is_file() else sys.executable))
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
 vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
              else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
@@ -775,6 +780,10 @@ if VLLM_SERVER_URL:
 elif VLLM_BIN or VLLM_LAUNCHER:
     ok(f"vllm found: {VLLM_LAUNCHER or VLLM_BIN}")
     info(f"vLLM model cache: {VLLM_CACHE_HOME}")
+
+if missing_python_header and (vllm_found or vllm_support.installable):
+    warn(f"Python development headers are missing ({missing_python_header}) — "
+         "vLLM cannot start without them")
 elif vllm_support.status == "unsupported":
     info(f"vLLM not available here — {vllm_support.reason}")
 else:
@@ -850,6 +859,8 @@ if _detected_comfyui:
     print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
 if _interface != "gui" and VLLM in engines_needing_install(engine_entries):
     print("    • Install vLLM (several GB, into its own vllm-env/ environment)")
+    if missing_python_header:
+        print("    • Install Python development headers vLLM needs (requires sudo)")
 print()
 print("  You'll then pick which models to install — everything after that")
 print("  runs on its own, with no further prompts.")
@@ -1221,6 +1232,24 @@ if LLAMACPP in pending_engines:
         issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
+
+if VLLM in pending_engines and missing_python_header:
+    header_command = next(
+        (command for manager in ("apt-get", "dnf", "zypper")
+         for command in [python_dev_package_command(manager, sys.version_info[:2])] if command),
+        None,
+    )
+    if header_command is None:
+        fail(f"Python development headers are missing ({missing_python_header}) and no known "
+             "package manager was found — install your distribution's python3 dev package")
+        issues.append(f"Install the Python development headers providing {missing_python_header}")
+    else:
+        info(f"Installing Python development headers: {' '.join(header_command)} ...")
+        if subprocess.run(header_command).returncode == 0:
+            ok("Python development headers installed")
+        else:
+            fail("Python development header install failed — vLLM will not start")
+            issues.append(f"Run: {' '.join(header_command)}")
 
 if VLLM in pending_engines:
     if install_vllm(vllm_support, log=info):

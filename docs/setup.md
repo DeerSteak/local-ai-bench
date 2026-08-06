@@ -100,7 +100,9 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | Linux + Intel XPU | Not offered | No prebuilt wheels exist; the source build is out of scope for this script |
 | CPU-only | Not offered | This benchmark measures accelerated inference |
 
-Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. The two experimental paths are unverified by this project's maintainers and are labelled as such in both the wizard and the terminal picker. Setup never installs the third-party native Windows fork of vLLM on your behalf.
+Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`, and it is named in the setup plan before anything runs. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead.
+
+The two experimental paths are unverified by this project's maintainers and are labelled as such in both the wizard and the terminal picker. Setup never installs the third-party native Windows fork of vLLM on your behalf.
 
 ### vLLM weights are not the same files
 

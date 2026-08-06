@@ -321,7 +321,7 @@ class VllmEngine(InferenceEngine):
             self._log_path = Path(log_fh.name)
             try:
                 proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT,
-                                         env={**os.environ, "HF_HOME": str(self._cache_home)})
+                                         env=self._spawn_env())
             except FileNotFoundError:
                 log_fh.close()
                 raise RuntimeError(f"'{args[0]}' not found in PATH") from None
@@ -349,6 +349,16 @@ class VllmEngine(InferenceEngine):
 
             self._stop_process()
             raise RuntimeError(f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
+
+    def _spawn_env(self) -> dict:
+        """Point the server at the cache setup filled, and pass a token when one exists."""
+        env = {**os.environ, "HF_HOME": str(self._cache_home)}
+        token_file = config.SCRIPT_DIR / "hf.txt"
+        if not env.get("HF_TOKEN") and token_file.is_file():
+            token = token_file.read_text(encoding="utf-8").strip()
+            if token:
+                env["HF_TOKEN"] = token
+        return env
 
     # ── HTTP helpers ──
 

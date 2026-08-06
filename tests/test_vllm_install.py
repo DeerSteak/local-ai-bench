@@ -8,6 +8,8 @@ from scripts.setup.vllm_install import (
     hf_cache_model_complete,
     hf_cache_model_dir,
     vllm_cache_home,
+    missing_python_headers,
+    python_dev_package_command,
     find_vllm_binary,
     find_vllm_launcher,
     parse_launcher_extra_args,
@@ -413,3 +415,38 @@ def test_cache_completeness_ignores_a_partial_sibling_snapshot(tmp_path):
     (good / "config.json").touch()
     (good / "model.safetensors").touch()
     assert hf_cache_model_complete(tmp_path, repo) is True
+
+
+# ── Python development headers (Triton JIT dependency) ──
+
+def test_missing_headers_are_reported_with_the_expected_path():
+    assert missing_python_headers("/usr/include/python3.12", exists_fn=lambda _: False) == \
+        "/usr/include/python3.12/Python.h"
+    assert missing_python_headers("/usr/include/python3.12", exists_fn=lambda _: True) is None
+
+
+def test_an_unknown_include_dir_is_not_reported_as_missing():
+    """An interpreter we could not query is not evidence of a broken system."""
+    assert missing_python_headers(None) is None
+    assert missing_python_headers("") is None
+
+
+def test_dev_package_commands_per_manager():
+    which = lambda name: f"/usr/bin/{name}"
+    assert python_dev_package_command("apt-get", (3, 12), which_fn=which)[-1] == "python3.12-dev"
+    assert python_dev_package_command("dnf", (3, 12), which_fn=which)[-1] == "python3-devel"
+    assert python_dev_package_command("zypper", (3, 12), which_fn=which)[-1] == "python312-devel"
+
+
+def test_dev_package_command_is_none_without_that_manager():
+    assert python_dev_package_command("apt-get", (3, 12), which_fn=lambda _: None) is None
+
+
+def test_unknown_package_managers_are_declined():
+    assert python_dev_package_command("brew", (3, 12), which_fn=lambda n: f"/usr/bin/{n}") is None
+    assert python_dev_package_command("pacman", (3, 12), which_fn=lambda n: f"/usr/bin/{n}") is None
+
+
+def test_dev_package_command_is_noninteractive():
+    command = python_dev_package_command("apt-get", (3, 12), which_fn=lambda n: f"/usr/bin/{n}")
+    assert "-y" in command, "setup must not stall on an apt confirmation prompt"

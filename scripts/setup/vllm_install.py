@@ -248,6 +248,45 @@ def read_launcher_extra_args(path: Path = None) -> list[str]:
         return []
 
 
+def missing_python_headers(include_dir: str | None, exists_fn=None) -> str | None:
+    """Path of the absent Python.h, or None. Triton JIT-compiles a CUDA helper at
+    import time, so vLLM cannot start without the development headers."""
+    if not include_dir:
+        return None
+    exists_fn = exists_fn or (lambda path: Path(path).is_file())
+    header = Path(include_dir) / "Python.h"
+    return None if exists_fn(header) else str(header)
+
+
+def python_include_dir(python_exe: str, run=subprocess.run) -> str | None:  # pragma: no cover — subprocess
+    """The include directory of another interpreter, which may not be this one."""
+    try:
+        result = run([python_exe, "-c", "import sysconfig; print(sysconfig.get_paths()['include'])"],
+                     capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def python_dev_package_command(package_manager: str, python_version: tuple[int, int],
+                               which_fn=shutil.which) -> list[str] | None:
+    """Command installing the Python headers Triton needs, for a known package manager."""
+    major, minor = python_version
+    if package_manager == "apt-get":
+        package = f"python{major}.{minor}-dev"
+    elif package_manager == "dnf":
+        package = f"python{major}-devel"
+    elif package_manager == "zypper":
+        package = f"python{major}{minor}-devel"
+    else:
+        return None
+    if not which_fn(package_manager):
+        return None
+    prefix = [] if os.geteuid() == 0 else ["sudo"]
+    yes = ["-y"] if package_manager != "zypper" else ["--non-interactive"]
+    return prefix + [package_manager, "install", *yes, package]
+
+
 def vllm_server_reachable(url: str = None, timeout: float = 2.0, open_fn=None) -> bool:
     """True if an OpenAI-compatible vLLM server answers at `url`."""
     url = url or config.VLLM_URL
