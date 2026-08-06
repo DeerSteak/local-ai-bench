@@ -268,6 +268,13 @@ def python_include_dir(python_exe: str, run=subprocess.run) -> str | None:  # pr
     return result.stdout.strip() or None if result.returncode == 0 else None
 
 
+def python_version_from_include_dir(include_dir: str | None) -> tuple[int, int] | None:
+    """Version whose headers are missing, read from its include path. The vLLM venv's
+    interpreter is often not the one running setup."""
+    match = re.search(r"python(\d+)\.(\d+)", str(include_dir or ""))
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
 def python_dev_package_command(package_manager: str, python_version: tuple[int, int],
                                which_fn=shutil.which) -> list[str] | None:
     """Command installing the Python headers Triton needs, for a known package manager."""

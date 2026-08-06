@@ -49,7 +49,8 @@ from scripts.setup.engine_selection import (
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
     install_vllm, missing_python_headers, python_dev_package_command, python_include_dir,
-    read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
+    python_version_from_include_dir, read_launcher_extra_args, vllm_cache_home,
+    vllm_platform_support,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -762,8 +763,10 @@ VLLM_LAUNCHER_ARGS = read_launcher_extra_args() if VLLM_LAUNCHER else []
 VLLM_CACHE_HOME = vllm_cache_home(VLLM_LAUNCHER)
 # Triton JIT-compiles a CUDA helper on import, so vLLM cannot start without these.
 _vllm_python = config.VLLM_VENV / "bin" / "python"
-missing_python_header = missing_python_headers(
-    python_include_dir(str(_vllm_python) if _vllm_python.is_file() else sys.executable))
+_vllm_include_dir = python_include_dir(
+    str(_vllm_python) if _vllm_python.is_file() else sys.executable)
+missing_python_header = missing_python_headers(_vllm_include_dir)
+missing_header_version = python_version_from_include_dir(_vllm_include_dir) or sys.version_info[:2]
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
 vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
              else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
@@ -780,16 +783,16 @@ if VLLM_SERVER_URL:
 elif VLLM_BIN or VLLM_LAUNCHER:
     ok(f"vllm found: {VLLM_LAUNCHER or VLLM_BIN}")
     info(f"vLLM model cache: {VLLM_CACHE_HOME}")
-
-if missing_python_header and (vllm_found or vllm_support.installable):
-    warn(f"Python development headers are missing ({missing_python_header}) — "
-         "vLLM cannot start without them")
 elif vllm_support.status == "unsupported":
     info(f"vLLM not available here — {vllm_support.reason}")
 else:
     warn(f"vllm not found — {vllm_support.reason}")
     if vllm_support.status == "experimental":
         info("This vLLM path is experimental and unverified by this project's maintainers")
+
+if missing_python_header and (vllm_found or vllm_support.installable):
+    warn(f"Python development headers are missing ({missing_python_header}) — "
+         "vLLM cannot start without them")
 
 if VLLM_LAUNCHER_ARGS:
     warn(f"{VLLM_LAUNCHER} injects extra vLLM arguments on every launch: "
@@ -1236,7 +1239,7 @@ if LLAMACPP in pending_engines:
 if needs_python_headers(engine_entries, missing_python_header):
     header_command = next(
         (command for manager in ("apt-get", "dnf", "zypper")
-         for command in [python_dev_package_command(manager, sys.version_info[:2])] if command),
+         for command in [python_dev_package_command(manager, missing_header_version)] if command),
         None,
     )
     if header_command is None:

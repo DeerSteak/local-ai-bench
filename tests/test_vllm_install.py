@@ -10,6 +10,7 @@ from scripts.setup.vllm_install import (
     vllm_cache_home,
     missing_python_headers,
     python_dev_package_command,
+    python_version_from_include_dir,
     find_vllm_binary,
     find_vllm_launcher,
     parse_launcher_extra_args,
@@ -450,3 +451,19 @@ def test_unknown_package_managers_are_declined():
 def test_dev_package_command_is_noninteractive():
     command = python_dev_package_command("apt-get", (3, 12), which_fn=lambda n: f"/usr/bin/{n}")
     assert "-y" in command, "setup must not stall on an apt confirmation prompt"
+
+
+def test_header_package_targets_the_venv_interpreter_not_setups_own():
+    """setup runs on bench-env's Python; the vLLM venv is often a different minor
+    version, and installing headers for the wrong one fixes nothing."""
+    version = python_version_from_include_dir("/usr/include/python3.12")
+    assert version == (3, 12)
+    command = python_dev_package_command("apt-get", version, which_fn=lambda n: f"/usr/bin/{n}")
+    assert command[-1] == "python3.12-dev"
+
+
+def test_include_dir_version_parsing_handles_other_layouts():
+    assert python_version_from_include_dir("/usr/include/python3.9") == (3, 9)
+    assert python_version_from_include_dir("/opt/py/include/python3.13/") == (3, 13)
+    assert python_version_from_include_dir("/opt/weird/include") is None
+    assert python_version_from_include_dir(None) is None
