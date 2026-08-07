@@ -45,7 +45,7 @@ def test_gemma4_12b_uses_bartowski_q4_model():
 def test_medium_roster_preserves_dense_and_sparse_architecture_mix():
     assert [model["short"] for model in LLM_MODELS_MEDIUM] == [
         "gemma3-27b-q4",
-        "nemotron3-nano-30b-a3b",
+        "nemotron-cascade2-30b-a3b",
         "qwen3.6-35b-a3b",
     ]
 

@@ -210,11 +210,24 @@ def test_model_row_label_falls_back_when_the_engine_has_no_weights():
 
 
 def test_defaults_differ_between_engines_at_the_same_ceiling():
-    llamacpp = default_model_selection(12.0, ["llamacpp"])
-    vllm = default_model_selection(12.0, ["vllm"])
+    """Selection follows each engine's own download size. The ceiling has to sit
+    between a model's two builds, so it moves whenever the catalog is rebalanced."""
+    ceiling = 10.0   # qwen3.5-9b: ~6.2 GB of GGUF against ~9.1 GB of AWQ
+    llamacpp = default_model_selection(ceiling, ["llamacpp"])
+    vllm = default_model_selection(ceiling, ["vllm"])
     assert vllm != llamacpp
     unchecked = lambda sel: sum(1 for value in sel.values() if not value)
-    assert unchecked(vllm) > unchecked(llamacpp), "vLLM weights are larger, so fewer fit"
+    assert unchecked(vllm) > unchecked(llamacpp), "the larger build of a model fits less often"
+
+
+def test_engine_specific_sizing_still_separates_some_ceiling():
+    """Guards the mechanism rather than one ceiling: if per-engine sizes were ever
+    ignored, no ceiling would separate the two engines."""
+    separating = [
+        c / 2 for c in range(2, 200)
+        if default_model_selection(c / 2, ["llamacpp"]) != default_model_selection(c / 2, ["vllm"])
+    ]
+    assert separating, "no ceiling distinguishes the engines — per-engine sizes are unused"
 
 
 def test_a_model_fitting_only_one_selected_engine_stays_checked():

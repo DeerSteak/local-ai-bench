@@ -154,8 +154,8 @@ LLM_MODELS_SMALL = sorted([
         "params_b":       9,
         "hf_repo":        "bartowski/Qwen_Qwen3.5-9B-GGUF",
         "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
-        "vllm_repo":      "QuantTrio/Qwen3.5-9B-AWQ",
-        "vllm_download_size": "~12.4 GB",
+        "vllm_repo":      "cyankiwi/Qwen3.5-9B-AWQ-4bit",
+        "vllm_download_size": "~9.1 GB",
     },
     {
         "tag":            "gemma4:12b-it-q4_K_M",
@@ -166,8 +166,8 @@ LLM_MODELS_SMALL = sorted([
         "params_b":       12,
         "hf_repo":        "bartowski/gemma-4-12B-it-GGUF",
         "hf_file":        "gemma-4-12B-it-Q4_K_M.gguf",
-        "vllm_repo":      "google/gemma-4-12B-it-qat-w4a16-ct",
-        "vllm_download_size": "~10.3 GB",
+        "vllm_repo":      "mattbucci/gemma-4-12B-AWQ",
+        "vllm_download_size": "~7.8 GB",
     },
 ], key=lambda m: m["params_b"])
 
@@ -182,20 +182,20 @@ LLM_MODELS_MEDIUM = sorted([
         "params_b":       27,
         "hf_repo":        "ggml-org/gemma-3-27b-it-GGUF",
         "hf_file":        "gemma-3-27b-it-Q4_K_M.gguf",
-        "vllm_repo":      "RedHatAI/gemma-3-27b-it-quantized.w4a16",
-        "vllm_download_size": "~19.8 GB",
+        "vllm_repo":      "ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g",
+        "vllm_download_size": "~16.9 GB",
     },
     {
-        "tag":            "nemotron-3-nano:30b-a3b-q4_K_M",
-        "label":          "Nemotron 3 Nano 30B-A3B",
-        "short":          "nemotron3-nano-30b-a3b",
+        "tag":            "nemotron-cascade2:30b-a3b-q4_K_M",
+        "label":          "Nemotron Cascade 2 30B-A3B",
+        "short":          "nemotron-cascade2-30b-a3b",
         "tier":           "medium",
-        "download_size":  "~24.0 GB",
-        "params_b":       30,   # 3B active — hybrid Mamba-Transformer MoE
-        "hf_repo":        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
-        "hf_file":        "Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf",
-        "vllm_repo":      "stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ",
-        "vllm_download_size": "~17.9 GB",
+        "download_size":  "~24.7 GB",
+        "params_b":       32,   # 3B active — hybrid Mamba MoE, post-trained from Nemotron 3 Nano's base
+        "hf_repo":        "bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF",
+        "hf_file":        "nvidia_Nemotron-Cascade-2-30B-A3B-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit",
+        "vllm_download_size": "~20.8 GB",
     },
     {
         "tag":            "qwen3.6:35b-a3b",

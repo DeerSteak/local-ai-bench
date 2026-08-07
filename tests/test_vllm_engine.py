@@ -5,6 +5,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import VllmEngine
+from scripts.workloads.models import LLM_MODELS
 from scripts.runtime.shared import EngineTimeout
 
 
@@ -44,6 +45,11 @@ def _patch_stream(monkeypatch, chunks):
 
     monkeypatch.setattr(VllmEngine, "_post", post)
     return captured
+
+
+TEST_TAG = "qwen3.5:9b-q4_K_M"
+TEST_REPO = next(m["vllm_repo"] for m in LLM_MODELS if m["tag"] == TEST_TAG)
+TEST_REPO_DIR = "models--" + TEST_REPO.replace("/", "--")
 
 
 def _text_chunk(text, finish=None):
@@ -140,7 +146,7 @@ def test_generate_requests_the_repo_id_not_the_tag(engine, monkeypatch):
     captured = _patch_stream(monkeypatch, [_text_chunk("x", finish="stop"),
                                             {"choices": [], "usage": {"completion_tokens": 1}}])
     engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=30)
-    assert captured["payload"]["model"] == "QuantTrio/Qwen3.5-9B-AWQ"
+    assert captured["payload"]["model"] == TEST_REPO
 
 
 def test_generate_measurement_is_internally_consistent(engine, monkeypatch):
@@ -207,7 +213,7 @@ def test_chat_tools_parses_streamed_tool_calls(engine, monkeypatch):
 def test_model_pulled_reads_the_hf_cache(engine):
     tag = "qwen3.5:9b-q4_K_M"
     assert engine.model_pulled(tag) is False
-    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+    snapshot = (engine._cache_home / "hub" / TEST_REPO_DIR
                 / "snapshots" / "abc")
     snapshot.mkdir(parents=True)
     (snapshot / "config.json").write_text("{}")
@@ -223,7 +229,7 @@ def test_an_unknown_tag_has_no_repo(engine):
 
 def test_max_context_length_reads_the_snapshot_config(engine):
     tag = "qwen3.5:9b-q4_K_M"
-    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+    snapshot = (engine._cache_home / "hub" / TEST_REPO_DIR
                 / "snapshots" / "abc")
     snapshot.mkdir(parents=True)
     (snapshot / "config.json").write_text(json.dumps({"max_position_embeddings": 32768}))
@@ -233,7 +239,7 @@ def test_max_context_length_reads_the_snapshot_config(engine):
 def test_max_context_length_falls_back_on_missing_or_broken_config(engine):
     tag = "qwen3.5:9b-q4_K_M"
     assert engine.max_context_length(tag, default=4096) == 4096
-    snapshot = (engine._cache_home / "hub" / "models--QuantTrio--Qwen3.5-9B-AWQ"
+    snapshot = (engine._cache_home / "hub" / TEST_REPO_DIR
                 / "snapshots" / "abc")
     snapshot.mkdir(parents=True)
     (snapshot / "config.json").write_text("{ not json")
@@ -269,7 +275,8 @@ def test_changing_the_tool_parser_forces_a_respawn(engine, monkeypatch):
 
 # ── resume identity ──
 
-def _cache_snapshot(engine, repo="QuantTrio--Qwen3.5-9B-AWQ", files=("model.safetensors", "config.json")):
+def _cache_snapshot(engine, repo=None, files=("model.safetensors", "config.json")):
+    repo = repo or TEST_REPO_DIR.removeprefix("models--")
     repo_dir = engine._cache_home / "hub" / f"models--{repo}"
     blobs, snapshot = repo_dir / "blobs", repo_dir / "snapshots" / "abc"
     blobs.mkdir(parents=True); snapshot.mkdir(parents=True)

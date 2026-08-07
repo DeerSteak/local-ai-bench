@@ -75,7 +75,7 @@ The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-lig
 |---|---|---|---|---|
 | Granite 4.1 8B 4-Bit Quantization | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | ~5.4 GB | Dense |
 | Qwen3.5 9B 4-Bit Quantization | `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | ~6.2 GB | Dense |
-| Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `google/gemma-4-12B-it-qat-w4a16-ct` | ~7.7 GB | Dense |
+| Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | ~7.7 GB | Dense |
 
 The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
 
@@ -84,10 +84,10 @@ The small tier scales the same worker-model experiment upward. Granite 4.1 8B me
 | Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
 |---|---|---|---|---|
 | Gemma 3 27B 4-Bit Quantization | `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | ~16.6 GB | Dense |
-| Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | `stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
+| Nemotron Cascade 2 30B-A3B | `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | ~24.7 GB | Hybrid Mamba MoE — 3B active of 32B total |
 | Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~24.0 GB | MoE — 3B active of 35B total |
 
-The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron 3 Nano represents hybrid long-context reasoning with only 3B parameters active per token. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
+The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron Cascade 2 represents hybrid long-context reasoning with only 3B parameters active per token; it is post-trained from Nemotron 3 Nano's base and replaced that model in this tier. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
 
 ### Large tier (70B+ params)
 
@@ -117,10 +117,10 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 | `granite4.1:3b-q4_K_M` | `cyankiwi/granite-4.1-3b-AWQ-INT4` | AWQ INT4 | ~2.4 GB |
 | `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | AWQ INT4 | ~4.1 GB |
 | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | AWQ INT4 | ~5.5 GB |
-| `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | AWQ INT4 | ~12.4 GB |
-| `gemma4:12b-it-q4_K_M` | `google/gemma-4-12B-it-qat-w4a16-ct` | QAT W4A16 (compressed-tensors) | ~10.3 GB |
-| `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | W4A16 | ~19.8 GB |
-| `nemotron-3-nano:30b-a3b-q4_K_M` | `stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ` | AWQ INT4 | ~17.9 GB |
+| `qwen3.5:9b-q4_K_M` | `cyankiwi/Qwen3.5-9B-AWQ-4bit` | AWQ INT4 | ~9.1 GB |
+| `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | AWQ INT4 | ~7.8 GB |
+| `gemma3:27b-it-q4_K_M` | `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` | GPTQ 4-bit (128g) | ~16.9 GB |
+| `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | AWQ INT4 | ~20.8 GB |
 | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | AWQ INT4 | ~25.1 GB |
 | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
 | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |
@@ -128,17 +128,35 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 | `nomic-embed-text` | `nomic-ai/nomic-embed-text-v1.5` | fp16 | ~0.6 GB |
 | `mxbai-embed-large` | `mixedbread-ai/mxbai-embed-large-v1` | fp16 | ~0.7 GB |
 
-These are selected to match `Q4_K_M`'s **bit width**, which is as close as the two runtimes get — see [Limitations](limitations.md#cross-engine-comparison) for what that does and doesn't license you to conclude. Gemma 4 12B is the one entry that differs in kind: Google publishes an official quantization-aware-trained W4A16 checkpoint, which is a better weight than any community AWQ conversion of the same model, so it is used in preference. The two embedding models are unquantized upstream fp16 repos on both engines.
+These are selected to match `Q4_K_M`'s **bit width**, which is as close as the two runtimes get — see [Limitations](limitations.md#cross-engine-comparison) for what that does and doesn't license you to conclude. Where several builds of the same model exist, the one whose footprint sits closest to the GGUF is preferred over the most popular or the most official, because a size gap is a precision gap (see below). The two embedding models are unquantized upstream fp16 repos on both engines.
 
 Sizes here are the sum of the repo's safetensors and config files. A vLLM snapshot is generally *not* the same size as the corresponding GGUF — compare the two size columns before selecting both engines, and see [Setup](setup.md#choosing-engines).
+
+#### Where the two builds diverge
+
+Both columns say "4-bit", and that label hides real differences. `Q4_K_M` is mixed precision by design: llama.cpp promotes selected tensors to `Q6_K`, so its effective rate lands nearer 5 bits per weight than 4. AWQ and GPTQ recipes make their own choices about what to leave in higher precision — embeddings, `lm_head`, the MoE router, Mamba state layers — and different quantizers disagree. The result is that two files both described as 4-bit can differ by a factor of two in size.
+
+Dividing each build's size by the model's parameter count gives an effective bits-per-weight, and comparing that across a pair shows how far apart they really are. Most of the catalog is within ±0.25 bpw. Three entries are not, and all three lean the same way:
+
+| Model | GGUF | vLLM | Δ bits/weight |
+|---|---|---|---|
+| Qwen3.5 9B | ~5.5 | ~8.1 | **+2.6** |
+| Gemma 3 1B | ~6.4 | ~8.8 | **+2.4** |
+| Qwen3.5 4B | ~6.2 | ~8.2 | **+2.0** |
+
+On those three, the vLLM build carries meaningfully more precision than the GGUF. Expect it to look slightly *better* on accuracy — fewer bits discarded means less quantization error — and slightly *worse* on tokens/sec, because decode is memory-bandwidth-bound and a larger file moves more bytes per token. Neither difference is attributable to the runtime, which is the whole point of flagging them.
+
+This matters only when reading one engine against the other. Comparing llama.cpp results across machines, or vLLM results across machines, is unaffected: both sides of that comparison use the same weights.
+
+The effect concentrates in small models because a vocabulary embedding is a large fraction of a 1–4B parameter model, and most quantizers keep it at higher precision. That inflates both sides, unevenly. It is not a sign that a better build exists — for each of these three, the entry in use is already the closest match available.
 
 ### Dense vs. Mixture-of-Experts (MoE)
 
 A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super use a hybrid Mamba-Transformer architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron Cascade 2 (3B active of 32B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron Cascade 2 and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
-**Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
+**Reasoning models** (Nemotron Cascade 2 here, a unified model for both reasoning and non-reasoning tasks, with thinking off unless the chat template's `enable_thinking` is set) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
 
 Measured generation results record requested, completed, and valid sample counts. Invalid non-finite, negative, internally inconsistent, or TTFT-after-wall measurements remain visible as diagnostic run entries but are excluded from means and raw valid-sample arrays; legacy `n_runs` keeps its historical completed-call meaning. With at least two valid samples, results also include medians and coefficients of variation without dropping outliers or assigning an instability verdict.
 

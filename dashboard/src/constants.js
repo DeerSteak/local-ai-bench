@@ -8,7 +8,7 @@ export const MODEL_COLORS = {
   "qwen3.5-9b-q4":          "#cf222e",
   "gemma4-12b-q4":          "#9a3078",
   "gemma3-27b-q4":          "#0e7490",
-  "nemotron3-nano-30b-a3b": "#5c6bc0",
+  "nemotron-cascade2-30b-a3b": "#5c6bc0",
   "qwen3.6-35b-a3b":        "#00796b",
   "llama3.3-70b-q4":        "#6a1b9a",
   "qwen3-coder-next-80b-a3b-q4": "#9a6700",
@@ -22,6 +22,7 @@ export const MODEL_COLORS = {
   "llama4-16x17b":          "#a40e26",
   "qwen3.6-27b-q4":         "#0a3069",
   "phi4-14b":               "#5a32a3",
+  "nemotron3-nano-30b-a3b": "#5c6bc0",
 };
 
 // Matches models.py's IMAGE_MODELS list
@@ -100,7 +101,7 @@ export const LLM_MODEL_LABELS = {
   "qwen3.5-9b-q4":          "Qwen3.5 9B 4-Bit Quantization",
   "gemma4-12b-q4":          "Gemma 4 12B 4-Bit Quantization",
   "gemma3-27b-q4":          "Gemma 3 27B 4-Bit Quantization",
-  "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
+  "nemotron-cascade2-30b-a3b": "Nemotron Cascade 2 30B-A3B",
   "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
   "llama3.3-70b-q4":        "Llama 3.3 70B 4-Bit Quantization",
   "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B 4-Bit Quantization",
@@ -114,6 +115,7 @@ export const LLM_MODEL_LABELS = {
   "llama4-16x17b":          "Llama 4 Scout 16x17B",
   "qwen3.6-27b-q4":         "Qwen3.6 27B 4-Bit Quantization",
   "phi4-14b":               "Phi 4 14B",
+  "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
 };
 
 // Canonical model order (determines chart line order and color assignment).
@@ -122,13 +124,13 @@ export const LLM_MODEL_LABELS = {
 export const LLM_MODEL_ORDER = [
   "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
   "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
-  "gemma3-27b-q4", "nemotron3-nano-30b-a3b", "qwen3.6-35b-a3b",
+  "gemma3-27b-q4", "nemotron-cascade2-30b-a3b", "qwen3.6-35b-a3b",
   "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
 ];
 
 export const LEGACY_LLM_MODEL_ORDER = [
   "llama3.2-3b-q4", "phi4-mini", "mistral-7b-q4", "llama3.1-8b-q4",
-  "llama4-16x17b", "qwen3.6-27b-q4", "phi4-14b",
+  "llama4-16x17b", "qwen3.6-27b-q4", "phi4-14b", "nemotron3-nano-30b-a3b",
 ];
 
 export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER];
@@ -145,6 +147,7 @@ export const MODEL_SIZE_TIER = {
   "qwen3.5-9b-q4":          "small",
   "gemma4-12b-q4":          "small",
   "gemma3-27b-q4":          "medium",
+  "nemotron-cascade2-30b-a3b": "medium",
   "nemotron3-nano-30b-a3b": "medium",
   "qwen3.6-35b-a3b":        "medium",
   "llama3.3-70b-q4":        "large",
