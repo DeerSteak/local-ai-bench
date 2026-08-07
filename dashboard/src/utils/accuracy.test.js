@@ -105,7 +105,7 @@ describe("buildAccuracyTimeoutData", () => {
     const rows = buildAccuracyTimeoutData(files, "mcq", new Set(["phi4-mini", "mistral-7b-q4"]));
     expect(rows).toEqual([
       { rowLabel: "Phi 4 Mini", timed_out_count: 2, likely_loop_count: 2, budget_exceeded_count: 0 },
-      { rowLabel: "Mistral 7B v0.3 Q4_K_M", timed_out_count: 0, likely_loop_count: 0, budget_exceeded_count: 0 },
+      { rowLabel: "Mistral 7B v0.3 4-Bit Quantization", timed_out_count: 0, likely_loop_count: 0, budget_exceeded_count: 0 },
     ]);
   });
   it("prefixes the row label with hostname across multiple files, to tell them apart", () => {

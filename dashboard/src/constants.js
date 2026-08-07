@@ -94,25 +94,25 @@ export const MAX_FILES = 6;
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
   "gemma3-1b":              "Gemma 3 1B",
-  "granite4.1-3b-q4":       "Granite 4.1 3B Q4_K_M",
-  "qwen3.5-4b-q4":          "Qwen3.5 4B Q4_K_M",
-  "granite4.1-8b-q4":       "Granite 4.1 8B Q4_K_M",
-  "qwen3.5-9b-q4":          "Qwen3.5 9B Q4_K_M",
-  "gemma4-12b-q4":          "Gemma 4 12B Q4_K_M",
-  "gemma3-27b-q4":          "Gemma 3 27B Q4_K_M",
+  "granite4.1-3b-q4":       "Granite 4.1 3B 4-Bit Quantization",
+  "qwen3.5-4b-q4":          "Qwen3.5 4B 4-Bit Quantization",
+  "granite4.1-8b-q4":       "Granite 4.1 8B 4-Bit Quantization",
+  "qwen3.5-9b-q4":          "Qwen3.5 9B 4-Bit Quantization",
+  "gemma4-12b-q4":          "Gemma 4 12B 4-Bit Quantization",
+  "gemma3-27b-q4":          "Gemma 3 27B 4-Bit Quantization",
   "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
   "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
-  "llama3.3-70b-q4":        "Llama 3.3 70B Q4_K_M",
-  "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B Q4_K_M",
+  "llama3.3-70b-q4":        "Llama 3.3 70B 4-Bit Quantization",
+  "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B 4-Bit Quantization",
   "nemotron3-super-120b":   "Nemotron 3 Super 120B",
 
   // Retained so older results remain human-readable.
-  "llama3.2-3b-q4":         "Llama 3.2 3B Q4_K_M",
+  "llama3.2-3b-q4":         "Llama 3.2 3B 4-Bit Quantization",
   "phi4-mini":              "Phi 4 Mini",
-  "mistral-7b-q4":          "Mistral 7B v0.3 Q4_K_M",
-  "llama3.1-8b-q4":         "Llama 3.1 8B Q4_K_M",
+  "mistral-7b-q4":          "Mistral 7B v0.3 4-Bit Quantization",
+  "llama3.1-8b-q4":         "Llama 3.1 8B 4-Bit Quantization",
   "llama4-16x17b":          "Llama 4 Scout 16x17B",
-  "qwen3.6-27b-q4":         "Qwen3.6 27B Q4_K_M",
+  "qwen3.6-27b-q4":         "Qwen3.6 27B 4-Bit Quantization",
   "phi4-14b":               "Phi 4 14B",
 };
 

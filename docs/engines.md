@@ -59,13 +59,23 @@ Shape differences from an always-on multi-model daemon, both consequences of lla
 - **A platform launcher is preferred over bare `vllm serve`.** AMD's Strix Halo image ships `vllm-launch`, which carries the ROCm environment that hardware needs and passes extra arguments through. The port is always passed explicitly, because the wrapper's default (8001) is not vLLM's (8000).
 - **`prepare_concurrency` does not scale the context.** `--max-model-len` is per sequence, unlike llama-server's `-c` total budget, so `per_slot_ctx` is passed as-is alongside `--max-num-seqs n_parallel`. Copying llama.cpp's multiplication here would measure a different depth than the results claim.
 - **`--max-model-len` carries a small tolerance above the requested `num_ctx`** (`config.VLLM_CTX_TOLERANCE`), clamped to the model's real maximum. Prompts are padded by characters at roughly 4 per token, so a 512-token target can tokenize to slightly more — and vLLM rejects `prompt_tokens + max_tokens > max_model_len` outright, where llama-server simply generates a few tokens fewer. Without the tolerance the shallowest checkpoint fails on models whose padding overshoots, while deeper ones pass.
-- **`server_prompt_sec` is always `None`.** vLLM reports no per-request prompt duration, so only client-observed TTFT exists on this engine; the field is left empty rather than synthesized from a value that would not mean the same thing.
+- **`server_prompt_sec` is scraped from `/metrics`, not read off the response.** See [Prefill timing](#prefill-timing) below.
 - **Token counts come from `usage.completion_tokens`** via `stream_options.include_usage`, the same rule as llama.cpp: streamed SSE fragments are transport units and are never counted as tokens.
 - **`supports_tool_calls` is per model.** vLLM returns no `tool_calls` without `--enable-auto-tool-choice --tool-call-parser <name>`, and the parser is model-specific — see [Workloads](workloads.md#tool-calling-across-engines). The parser name is part of the respawn key, since a server started without it cannot serve a tool request.
 - **`stop()` also kills a server this project did not start.** vLLM holds its `--gpu-memory-utilization` share for whatever model it is hosting, so a preconfigured server (AMD's image ships one) is competing for the memory a run needs, not a shortcut to reuse.
 - **Embeddings use `--runner pooling`**, vLLM's replacement for the deprecated `--task embed`.
 
 vLLM compiles kernels at run time rather than shipping them all prebuilt, so it needs a working toolchain: a C compiler, the Python development headers (Triton), and `ninja` (FlashInfer). Setup installs the latter two — see [Setup](setup.md#choosing-engines).
+
+### Prefill timing
+
+Both engines report how long prompt processing took, which is what makes prefill throughput (`prompt_tokens / server_prompt_sec`) a real measurement rather than something inferred from client wall time. They report it very differently.
+
+llama.cpp returns it directly: `timings.prompt_ms` and `timings.prompt_n` come back on the completion response. vLLM returns no such thing — its per-request timing-header proposal ([#36189](https://github.com/vllm-project/vllm/issues/36189), `x-prefill-time` and friends) was closed as not planned, and the companion proposal to put timing in the response body ([#40076](https://github.com/vllm-project/vllm/issues/40076)) never shipped either. The only documented response headers are `X-Request-Id` and `X-Vllm-Priority`.
+
+What vLLM *does* have is a per-request observation recorded into the `vllm:request_prefill_time_seconds` histogram on `/metrics`. `VllmEngine` reads that histogram's `_sum`/`_count` immediately before and after each generation call, and attributes the difference to that request. Because a histogram is cumulative and shared, the delta is only trustworthy when the count advanced by **exactly one** — so `prefill_seconds_from_delta` returns `None` for a count that moved by zero (an older build with no such metric, or a request that never reached prefill), by more than one (a concurrent or retried call, where the sum is not ours alone), or for a negative sum delta (the server restarted and reset the histogram). The single-shot and conversation workloads issue one request at a time, which is what makes the attribution sound; do not reuse this path for the concurrency workloads.
+
+A missing or unattributable reading leaves `server_prompt_sec` as `None`, and `prefill_tokens_per_sec` then returns `None` rather than dividing by client wall time. The results JSON simply omits `prefill_tps_mean` for that case, which the dashboard renders as absent instead of as a zero.
 
 ## Selecting an engine
 

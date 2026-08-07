@@ -104,7 +104,7 @@ LLM_MODELS_XSMALL = sorted([
     },
     {
         "tag":            "granite4.1:3b-q4_K_M",
-        "label":          "Granite 4.1 3B Q4_K_M",
+        "label":          "Granite 4.1 3B 4-Bit Quantization",
         "short":          "granite4.1-3b-q4",
         "tier":           "xsmall",
         "download_size":  "~2.1 GB",
@@ -117,7 +117,7 @@ LLM_MODELS_XSMALL = sorted([
     },
     {
         "tag":            "qwen3.5:4b-q4_K_M",
-        "label":          "Qwen3.5 4B Q4_K_M",
+        "label":          "Qwen3.5 4B 4-Bit Quantization",
         "short":          "qwen3.5-4b-q4",
         "tier":           "xsmall",
         "download_size":  "~3.1 GB",
@@ -134,7 +134,7 @@ LLM_MODELS_XSMALL = sorted([
 LLM_MODELS_SMALL = sorted([
     {
         "tag":            "granite4.1:8b-q4_K_M",
-        "label":          "Granite 4.1 8B Q4_K_M",
+        "label":          "Granite 4.1 8B 4-Bit Quantization",
         "short":          "granite4.1-8b-q4",
         "tier":           "small",
         "download_size":  "~5.4 GB",
@@ -147,7 +147,7 @@ LLM_MODELS_SMALL = sorted([
     },
     {
         "tag":            "qwen3.5:9b-q4_K_M",
-        "label":          "Qwen3.5 9B Q4_K_M",
+        "label":          "Qwen3.5 9B 4-Bit Quantization",
         "short":          "qwen3.5-9b-q4",
         "tier":           "small",
         "download_size":  "~6.2 GB",
@@ -159,7 +159,7 @@ LLM_MODELS_SMALL = sorted([
     },
     {
         "tag":            "gemma4:12b-it-q4_K_M",
-        "label":          "Gemma 4 12B Q4_K_M",
+        "label":          "Gemma 4 12B 4-Bit Quantization",
         "short":          "gemma4-12b-q4",
         "tier":           "small",
         "download_size":  "~7.7 GB",
@@ -175,7 +175,7 @@ LLM_MODELS_SMALL = sorted([
 LLM_MODELS_MEDIUM = sorted([
     {
         "tag":            "gemma3:27b-it-q4_K_M",
-        "label":          "Gemma 3 27B Q4_K_M",
+        "label":          "Gemma 3 27B 4-Bit Quantization",
         "short":          "gemma3-27b-q4",
         "tier":           "medium",
         "download_size":  "~16.6 GB",
@@ -216,7 +216,7 @@ LLM_MODELS_MEDIUM = sorted([
 LLM_MODELS_LARGE = sorted([
     {
         "tag":            "llama3.3:70b-instruct-q4_K_M",
-        "label":          "Llama 3.3 70B Q4_K_M",
+        "label":          "Llama 3.3 70B 4-Bit Quantization",
         "short":          "llama3.3-70b-q4",
         "tier":           "large",
         "download_size":  "~39.7 GB",
@@ -229,7 +229,7 @@ LLM_MODELS_LARGE = sorted([
     },
     {
         "tag":            "qwen3-coder-next:80b-a3b-q4_K_M",
-        "label":          "Qwen3-Coder-Next 80B-A3B Q4_K_M",
+        "label":          "Qwen3-Coder-Next 80B-A3B 4-Bit Quantization",
         "short":          "qwen3-coder-next-80b-a3b-q4",
         "tier":           "large",
         "download_size":  "~48.4 GB",

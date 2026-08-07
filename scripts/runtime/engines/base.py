@@ -86,6 +86,18 @@ def embedding_validation_errors(measurement: EmbeddingMeasurement) -> list[str]:
     return errors
 
 
+def prefill_tokens_per_sec(prompt_tokens, server_prompt_sec) -> float | None:
+    """Prompt-processing throughput. None unless the engine reported both a token
+    count and a prompt duration, so it is never inferred from client wall time."""
+    if not isinstance(prompt_tokens, int) or isinstance(prompt_tokens, bool) or prompt_tokens <= 0:
+        return None
+    if not isinstance(server_prompt_sec, (int, float)) or isinstance(server_prompt_sec, bool):
+        return None
+    if not math.isfinite(server_prompt_sec) or server_prompt_sec <= 0:
+        return None
+    return prompt_tokens / server_prompt_sec
+
+
 def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                                       requested_runs: int) -> dict:
     valid = [sample for sample in samples if not measurement_validation_errors(sample)]
@@ -108,6 +120,11 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                 "decode_sec": round(sample.decode_sec, 3),
                 "generated_tokens": sample.generated_tokens,
                 "tokens_per_sec": round(sample.tokens_per_sec, 2),
+                "prompt_tokens": sample.prompt_tokens,
+                "prefill_tps": (
+                    round(value, 2) if (value := prefill_tokens_per_sec(
+                        sample.prompt_tokens, sample.server_prompt_sec)) is not None else None
+                ),
                 "finish_reason": sample.finish_reason,
                 "model_load_sec": round(sample.model_load_sec, 3),
             }
@@ -132,6 +149,16 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                     if sample.server_prompt_sec is not None]
     if server_times:
         result["server_prompt_mean_sec"] = round(statistics.mean(server_times), 3)
+    prefill_rates = [rate for sample in valid
+                     if (rate := prefill_tokens_per_sec(
+                         sample.prompt_tokens, sample.server_prompt_sec)) is not None]
+    if prefill_rates:
+        result.update({
+            "prefill_tps_mean": round(statistics.mean(prefill_rates), 2),
+            "prefill_tps_stdev": round(statistics.stdev(prefill_rates), 2)
+            if len(prefill_rates) >= 2 else 0,
+            "prefill_tps_runs": [round(rate, 2) for rate in prefill_rates],
+        })
     if len(valid) >= 2:
         result.update({
             "client_ttft_median_sec": round(statistics.median(ttfts), 3),

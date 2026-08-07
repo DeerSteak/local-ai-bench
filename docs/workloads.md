@@ -61,41 +61,41 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 ### Extra-small tier (<6B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Gemma 3 1B | `gemma3:1b-it-q4_K_M` | ~0.8 GB | Dense |
-| Granite 4.1 3B Q4_K_M | `granite4.1:3b-q4_K_M` | ~2.1 GB | Dense |
-| Qwen3.5 4B Q4_K_M | `qwen3.5:4b-q4_K_M` | ~3.1 GB | Dense |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Gemma 3 1B | `gemma3:1b-it-q4_K_M` | `gaunernst/gemma-3-1b-it-int4-awq` | ~0.8 GB | Dense |
+| Granite 4.1 3B 4-Bit Quantization | `granite4.1:3b-q4_K_M` | `cyankiwi/granite-4.1-3b-AWQ-INT4` | ~2.1 GB | Dense |
+| Qwen3.5 4B 4-Bit Quantization | `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | ~3.1 GB | Dense |
 
 The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-light speed floor, showing what the suite costs on the smallest practical general model. Granite 4.1 3B is the compact structured-execution and tool-calling specialist. Qwen3.5 4B is the more capable general executor, trading some speed for stronger instruction following, reasoning, coding, and tool use. This makes the tier useful for evaluating fast worker models rather than filling it with three interchangeable general chat baselines.
 
 ### Small tier (≤20B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Granite 4.1 8B Q4_K_M | `granite4.1:8b-q4_K_M` | ~5.4 GB | Dense |
-| Qwen3.5 9B Q4_K_M | `qwen3.5:9b-q4_K_M` | ~6.2 GB | Dense |
-| Gemma 4 12B Q4_K_M | `gemma4:12b-it-q4_K_M` | ~7.7 GB | Dense |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Granite 4.1 8B 4-Bit Quantization | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | ~5.4 GB | Dense |
+| Qwen3.5 9B 4-Bit Quantization | `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | ~6.2 GB | Dense |
+| Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `google/gemma-4-12B-it-qat-w4a16-ct` | ~7.7 GB | Dense |
 
 The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
 
 ### Medium tier (26–35B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Gemma 3 27B Q4_K_M | `gemma3:27b-it-q4_K_M` | ~16.6 GB | Dense |
-| Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
-| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~24.0 GB | MoE — 3B active of 35B total |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Gemma 3 27B 4-Bit Quantization | `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | ~16.6 GB | Dense |
+| Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | `stelterlab/NVIDIA-Nemotron-3-Nano-30B-A3B-AWQ` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
+| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~24.0 GB | MoE — 3B active of 35B total |
 
 The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron 3 Nano represents hybrid long-context reasoning with only 3B parameters active per token. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
 
 ### Large tier (70B+ params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~39.7 GB | Dense |
-| Qwen3-Coder-Next 80B-A3B Q4_K_M | `qwen3-coder-next:80b-a3b-q4_K_M` | ~48.4 GB | Hybrid-attention MoE — 3B active of 80B total |
-| Nemotron 3 Super 120B | `nemotron-3-super:120b` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Llama 3.3 70B 4-Bit Quantization | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | ~39.7 GB | Dense |
+| Qwen3-Coder-Next 80B-A3B 4-Bit Quantization | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | ~48.4 GB | Hybrid-attention MoE — 3B active of 80B total |
+| Nemotron 3 Super 120B | `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
 
 The large tier assigns each slot a distinct role. Llama 3.3 70B is the dense general-purpose baseline. Qwen3-Coder-Next is the long-horizon execution specialist, trained for coding agents, complex tool use, and recovery after failed actions. Nemotron 3 Super is the broader agentic reasoning model and represents the planner/verifier role for long-context, multi-step workflows. This combination measures a dense generalist, a fast sparse tool specialist, and a more capable sparse planner instead of using two large Llama-family models with overlapping general-purpose roles.
 
@@ -109,7 +109,7 @@ llama.cpp parses tool calls from the model's own chat template, so every catalog
 
 ### Per-engine weights
 
-Every size in the tier tables above is the **llama.cpp** `Q4_K_M` GGUF. Those files are llama.cpp's alone — vLLM cannot use them, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, same tag, different file:
+The tier tables above give each model's identifier on both engines. The llama.cpp tag names a `Q4_K_M` GGUF, and that file is llama.cpp's alone — vLLM cannot use it, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, different identifier and different file. This table adds each vLLM repo's quantization format and download size:
 
 | Tag | vLLM weights | Format | Size |
 |---|---|---|---|

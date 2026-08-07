@@ -101,6 +101,52 @@ class VllmEngine(InferenceEngine):
                 return snapshot
         return None
 
+    # ── per-request prefill timing ──
+
+    # vLLM exposes no prompt duration on the response itself, but it records one
+    # per request into this histogram. See docs/engines.md#prefill-timing.
+    PREFILL_METRIC = "vllm:request_prefill_time_seconds"
+
+    @staticmethod
+    def parse_prefill_metric(text: str, metric: str = PREFILL_METRIC) -> tuple[float, int] | None:
+        """The histogram's running (sum, count) from a Prometheus /metrics body."""
+        totals = {}
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if line.startswith("#"):
+                continue
+            for suffix in ("_sum", "_count"):
+                prefix = metric + suffix
+                # A bare name or one carrying labels, e.g. metric_sum{model_name="x"} 1.5
+                if line.startswith(prefix) and line[len(prefix):len(prefix) + 1] in ("", " ", "{"):
+                    try:
+                        totals[suffix] = totals.get(suffix, 0.0) + float(line.rsplit(" ", 1)[-1])
+                    except ValueError:
+                        return None
+        if "_sum" not in totals or "_count" not in totals:
+            return None
+        return totals["_sum"], int(totals["_count"])
+
+    @staticmethod
+    def prefill_seconds_from_delta(before, after) -> float | None:
+        """Prefill seconds for a single request, from readings taken around it.
+
+        Only attributable when the histogram advanced by exactly one request, so a
+        concurrent or retried call yields None rather than a blended number."""
+        if before is None or after is None:
+            return None
+        if after[1] - before[1] != 1:
+            return None
+        seconds = after[0] - before[0]
+        return seconds if seconds >= 0 else None
+
+    def _prefill_reading(self):  # pragma: no cover — real HTTP call
+        try:
+            response = requests.get(f"{config.VLLM_URL}/metrics", timeout=5)
+        except Exception:
+            return None
+        return self.parse_prefill_metric(response.text) if response.status_code == 200 else None
+
     # ── server/process lifecycle ──
 
     def available(self) -> bool:  # pragma: no cover — real HTTP call
@@ -434,6 +480,7 @@ class VllmEngine(InferenceEngine):
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        prefill_before = self._prefill_reading()
         request_start = time.perf_counter()
         ttft = None
         tokens = 0
@@ -461,6 +508,7 @@ class VllmEngine(InferenceEngine):
                                         partial_text="".join(response_parts))
 
         total = time.perf_counter() - request_start
+        prefill_sec = self.prefill_seconds_from_delta(prefill_before, self._prefill_reading())
         if ttft is None:
             ttft = total
         decode_seconds = max(total - ttft, 0)
@@ -472,7 +520,7 @@ class VllmEngine(InferenceEngine):
             tokens_per_sec=tps,
             client_wall_sec=total,
             decode_sec=decode_seconds if tps == raw_tps else (tokens / tps if tps else 0),
-            server_prompt_sec=None,   # vLLM reports no per-request prompt duration
+            server_prompt_sec=prefill_sec,
             prompt_tokens=prompt_tokens,
             response_text="".join(response_parts),
             finish_reason=finish_reason,

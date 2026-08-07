@@ -40,13 +40,24 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
       const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
 
+      // Value-only filter, not hasValueOrStatus: a system whose engine reported no
+      // prompt duration gets no prefill card at all rather than a wall of N/A.
+      const rawPrefillBarData = buildLLMBarDataByModel(f, models, "prefill", section);
+      const prefillBarConfigs = buildLLMBarConfigsByModel(f, models, section)
+        .filter(bc => rawPrefillBarData.some(row => row[bc.dataKey] != null));
+      const prefillBarData = sortBarData(rawPrefillBarData, prefillBarConfigs.map(bc => bc.dataKey), "desc");
+
       const tpsLineData = buildLLMLineDataByCtx(f, models, "tps", section);
       const ttftLineData = buildLLMLineDataByCtx(f, models, "ttft", section);
       const tpsLineConfigs = buildLLMLineConfigsByCtx(models, tpsLineData);
       const ttftLineConfigs = buildLLMLineConfigsByCtx(models, ttftLineData);
+      const prefillLineData = buildLLMLineDataByCtx(f, models, "prefill", section);
+      const prefillLineConfigs = buildLLMLineConfigsByCtx(models, prefillLineData)
+        .filter(lc => prefillLineData.some(row => row[lc.dataKey] != null));
 
       const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
       const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
+      const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
 
       const metrics = [];
       if (hasTps) metrics.push({
@@ -58,6 +69,13 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
         key: "ttft", title: `Time to First Token${titleSuffix}`, yLabel: ttftYLabel, unit: ttftUnit, direction: "lower",
         xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}ttft`,
         barData: ttftBarData, barConfigs: ttftBarConfigs, lineData: ttftLineData, lineConfigs: ttftLineConfigs,
+      });
+      if (hasPrefill) metrics.push({
+        key: "prefill", title: `Prefill Tokens/sec${titleSuffix}`, yLabel: "Prefill tokens/sec",
+        unit: "tps", direction: "higher",
+        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}prefill_tps`,
+        barData: prefillBarData, barConfigs: prefillBarConfigs,
+        lineData: prefillLineData, lineConfigs: prefillLineConfigs,
       });
       if (!metrics.length) return null;
       return { tier, metrics };

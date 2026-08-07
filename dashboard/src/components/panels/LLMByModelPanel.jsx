@@ -24,20 +24,29 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const rawTtftBarConfigs = buildLLMBarConfigs(files, model, section);
     const rawTpsBarData = buildLLMBarData(files, model, "tps", section);
     const rawTtftBarData = buildLLMBarData(files, model, "ttft", section);
+    const prefillData = buildLLMDataForModel(files, model, "prefill", section);
+    const prefillLineConfigs = lineConfigs.filter(lc => prefillData.some(r => r[lc.dataKey] != null));
+    const rawPrefillBarConfigs = buildLLMBarConfigs(files, model, section);
+    const rawPrefillBarData = buildLLMBarData(files, model, "prefill", section);
     const byCtxOrder = (a, b) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
     const tpsBarConfigs = rawTpsBarConfigs.filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey)).sort(byCtxOrder);
     const ttftBarConfigs = rawTtftBarConfigs.filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey)).sort(byCtxOrder);
     const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
     const ttftBarData = sortBarData(rawTtftBarData, ttftBarConfigs.map(bc => bc.dataKey), "asc");
+    // Unlike tps/ttft, a prefill series is absent whenever the engine reported no
+    // prompt duration, so the card is dropped rather than drawn empty.
+    const prefillBarConfigs = rawPrefillBarConfigs.filter(bc => rawPrefillBarData.some(r => r[bc.dataKey] != null)).sort(byCtxOrder);
+    const prefillBarData = sortBarData(rawPrefillBarData, prefillBarConfigs.map(bc => bc.dataKey), "desc");
     const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
     const { ttftUnit, ttftYLabel } = deriveTtftUnit(allTtftVals);
     const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
     const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
+    const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
       .filter(e => e.info);
-    if (!hasTps && !hasTtft && !skipEntries.length) return null;
-    return { model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, skipEntries };
+    if (!hasTps && !hasTtft && !hasPrefill && !skipEntries.length) return null;
+    return { model, tpsData, ttftData, prefillData, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries };
   }).filter(Boolean);
 
   if (!modelGroups.length) {
@@ -49,7 +58,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {modelGroups.map(({ model, tpsData, ttftData, tpsLineConfigs, ttftLineConfigs, tpsBarConfigs, ttftBarConfigs, tpsBarData, ttftBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, skipEntries }) => (
+      {modelGroups.map(({ model, tpsData, ttftData, prefillData, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries }) => (
         <div key={model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
           {skipEntries.length > 0 && (
@@ -101,6 +110,27 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               isMultiFile={isMultiFile}
               chartName={`${chartNamePrefix}ttft`} chartModel={model}
               logoSrc={logoSrc} direction="lower"
+            />
+          ))}
+          {hasPrefill && (isBar ? (
+            <GroupedBarCard
+              title={`Prefill Tokens/sec${titleSuffix}`}
+              modelName={modelLabel(model)}
+              data={prefillBarData}
+              barConfigs={prefillBarConfigs}
+              xKey="systemLabel" yLabel="Prefill tokens/sec" unit="tps"
+              chartName={`${chartNamePrefix}prefill_tps`} chartModel={model}
+              logoSrc={logoSrc} direction="higher" orderedSeries
+            />
+          ) : (
+            <ChartCard
+              title={`Prefill Tokens/sec${titleSuffix}`}
+              modelName={modelLabel(model)}
+              data={prefillData} lineConfigs={prefillLineConfigs}
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Prefill tokens/sec" unit="tps"
+              isMultiFile={isMultiFile}
+              chartName={`${chartNamePrefix}prefill_tps`} chartModel={model}
+              logoSrc={logoSrc} direction="higher"
             />
           ))}
         </div>

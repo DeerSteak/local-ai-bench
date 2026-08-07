@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   getBarStatusLabel, getAllLLMModels, getLLMModelsWithSectionResults,
   buildLLMBarData, buildLLMBarConfigs, flattenLLMData, llmTTFTMean, llmValidRuns,
+  buildLLMDataForModel, llmPrefillTPS, llmMetricValue,
 } from "./llm";
 
 describe("explicit measurement fields", () => {
@@ -184,5 +185,60 @@ describe("tool_calls_unsupported skip label", () => {
     } } } };
     expect(getBarStatusLabel(file, "granite4.1-8b", "512", "tool"))
       .toBe("Skipped - No Tool Parser");
+  });
+});
+
+describe("prefill throughput", () => {
+  const file = (prefill) => ({
+    id: "f0", hostname: "host",
+    data: { llm: { "gemma3-1b": { "2K": { tps_mean: 50, ttft_mean_sec: 0.5, ...prefill } } } },
+  });
+
+  it("reads prefill_tps_mean for the prefill metric", () => {
+    const rows = buildLLMDataForModel([file({ prefill_tps_mean: 3200 })], "gemma3-1b", "prefill");
+    expect(rows).toEqual([{ ctxLabel: "2K", f0: 3200 }]);
+  });
+
+  it("leaves the cell absent when the engine reported no prompt duration", () => {
+    // An older results file, or a run where the prefill timing was unattributable.
+    const rows = buildLLMDataForModel([file({})], "gemma3-1b", "prefill");
+    expect(rows).toEqual([{ ctxLabel: "2K" }]);
+    expect(rows[0].f0).toBeUndefined();
+  });
+
+  it("does not disturb the tps and ttft metrics", () => {
+    const files = [file({ prefill_tps_mean: 3200 })];
+    expect(buildLLMDataForModel(files, "gemma3-1b", "tps")).toEqual([{ ctxLabel: "2K", f0: 50 }]);
+    expect(buildLLMDataForModel(files, "gemma3-1b", "ttft")).toEqual([{ ctxLabel: "2K", f0: 0.5 }]);
+  });
+
+  it("carries prefill through the flattened table rows", () => {
+    const [row] = flattenLLMData([file({ prefill_tps_mean: 3200, prefill_tps_stdev: 12 })]);
+    expect(row.prefill_tps).toBe(3200);
+    expect(row.prefill_tps_stdev).toBe(12);
+  });
+
+  it("reports an absent prefill value as undefined rather than zero", () => {
+    const [row] = flattenLLMData([file({})]);
+    expect(row.prefill_tps).toBeUndefined();
+  });
+});
+
+describe("llmMetricValue", () => {
+  it("dispatches each metric to its own field", () => {
+    const sample = { tps_mean: 50, ttft_mean_sec: 0.5, prefill_tps_mean: 3200 };
+    expect(llmMetricValue(sample, "tps")).toBe(50);
+    expect(llmMetricValue(sample, "prefill")).toBe(3200);
+    expect(llmMetricValue(sample, "ttft")).toBe(0.5);
+  });
+
+  it("prefers the newer client_ttft_mean_sec key for ttft", () => {
+    expect(llmMetricValue({ client_ttft_mean_sec: 0.9, ttft_mean_sec: 0.5 }, "ttft")).toBe(0.9);
+  });
+
+  it("survives a missing sample", () => {
+    expect(llmPrefillTPS(undefined)).toBeUndefined();
+    expect(llmMetricValue(undefined, "prefill")).toBeUndefined();
+    expect(llmMetricValue(null, "tps")).toBeUndefined();
   });
 });

@@ -428,3 +428,84 @@ def test_stop_falls_back_when_the_group_is_gone(engine, monkeypatch):
     engine._stop_process(timeout=0.01)
     assert sent, "falls back to signalling the process itself"
     assert engine._loaded_tag is None
+
+
+# ── per-request prefill timing (scraped from /metrics) ──
+
+METRICS_BODY = """\
+# HELP vllm:request_prefill_time_seconds Request prefill time
+# TYPE vllm:request_prefill_time_seconds histogram
+vllm:request_prefill_time_seconds_bucket{le="0.1",model_name="m"} 0.0
+vllm:request_prefill_time_seconds_bucket{le="+Inf",model_name="m"} 4.0
+vllm:request_prefill_time_seconds_sum{model_name="m"} 12.5
+vllm:request_prefill_time_seconds_count{model_name="m"} 4.0
+vllm:time_to_first_token_seconds_sum{model_name="m"} 99.0
+vllm:time_to_first_token_seconds_count{model_name="m"} 4.0
+"""
+
+
+def test_prefill_metric_parses_sum_and_count_ignoring_buckets_and_other_metrics():
+    from scripts.runtime.engines.vllm import VllmEngine
+    assert VllmEngine.parse_prefill_metric(METRICS_BODY) == (12.5, 4)
+
+
+def test_prefill_metric_sums_across_label_sets():
+    """Two loaded models each carry their own labelled series."""
+    from scripts.runtime.engines.vllm import VllmEngine
+    body = (
+        'vllm:request_prefill_time_seconds_sum{model_name="a"} 1.5\n'
+        'vllm:request_prefill_time_seconds_count{model_name="a"} 2.0\n'
+        'vllm:request_prefill_time_seconds_sum{model_name="b"} 2.5\n'
+        'vllm:request_prefill_time_seconds_count{model_name="b"} 3.0\n'
+    )
+    assert VllmEngine.parse_prefill_metric(body) == (4.0, 5)
+
+
+def test_prefill_metric_parses_unlabelled_series():
+    from scripts.runtime.engines.vllm import VllmEngine
+    body = ("vllm:request_prefill_time_seconds_sum 1.25\n"
+            "vllm:request_prefill_time_seconds_count 1.0\n")
+    assert VllmEngine.parse_prefill_metric(body) == (1.25, 1)
+
+
+@pytest.mark.parametrize("body", [
+    "",
+    "# only comments\n",
+    # A build without the metric, or one exposing only part of the histogram.
+    'vllm:time_to_first_token_seconds_sum{model_name="m"} 9.0\n',
+    'vllm:request_prefill_time_seconds_sum{model_name="m"} 9.0\n',
+    'vllm:request_prefill_time_seconds_count{model_name="m"} 9.0\n',
+    'vllm:request_prefill_time_seconds_sum{model_name="m"} not-a-number\n',
+])
+def test_prefill_metric_returns_none_when_unavailable_or_malformed(body):
+    from scripts.runtime.engines.vllm import VllmEngine
+    assert VllmEngine.parse_prefill_metric(body) is None
+
+
+def test_prefill_metric_does_not_match_a_longer_metric_name():
+    """A name this one is a prefix of must not be mistaken for it."""
+    from scripts.runtime.engines.vllm import VllmEngine
+    body = ("vllm:request_prefill_time_seconds_extra_sum 5.0\n"
+            "vllm:request_prefill_time_seconds_extra_count 1.0\n")
+    assert VllmEngine.parse_prefill_metric(body) is None
+
+
+def test_prefill_delta_attributes_a_single_request():
+    from scripts.runtime.engines.vllm import VllmEngine
+    assert VllmEngine.prefill_seconds_from_delta((12.5, 4), (13.25, 5)) == 0.75
+
+
+@pytest.mark.parametrize("before,after", [
+    (None, (1.0, 1)),
+    ((1.0, 1), None),
+    (None, None),
+    # Nothing was recorded: an older build, or a request that never reached prefill.
+    ((12.5, 4), (12.5, 4)),
+    # More than one request landed in the window, so the sum is not ours alone.
+    ((12.5, 4), (14.0, 6)),
+    # A restarted server resets the histogram.
+    ((12.5, 4), (0.5, 5)),
+])
+def test_prefill_delta_refuses_unattributable_readings(before, after):
+    from scripts.runtime.engines.vllm import VllmEngine
+    assert VllmEngine.prefill_seconds_from_delta(before, after) is None
