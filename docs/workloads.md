@@ -351,6 +351,25 @@ Each model's `llamabenchconc` result is either `{"entries": [...], "pp": <effect
 
 Requires `llama-batched-bench` to be installed — `setup.sh`/`setup.bat` install it alongside `llama-server` (see [Setup](setup.md)); if it's missing, the test prints where to get it and records nothing rather than failing the whole run.
 
+## vllm bench
+
+Opt-in (`--tests vllmbench`, not part of the default set) — runs vLLM's own `vllm bench` tool against every model in the same `--maxtier`/`--llm-models` scope as `llm`/`conv`, and is the vLLM counterpart to [llama-bench](#llama-bench): the tool the engine's own community publishes numbers with, run outside this project's HTTP/SSE pipeline so a divergence from the `llm` test isolates where a difference comes from. It is skipped with a warning under any non-vLLM engine, mirroring how `llamabench` is skipped under any non-llama.cpp engine.
+
+Two subcommands run per size, both offline — they load the weights themselves rather than talking to a server, so the stage stops this project's vLLM server first and nothing else may hold the GPU:
+
+- **`vllm bench latency`** measures one batch end to end and reports `avg_latency` in seconds, plus every iteration and a percentile map. vLLM's own defaults (30 iterations, 10 warmups) are far more than this suite needs, so `config.VLLMBENCH_ITERS`/`VLLMBENCH_WARMUP_ITERS` pin them down.
+- **`vllm bench throughput`** runs `config.VLLMBENCH_NUM_PROMPTS` prompts and reports `elapsed_time`, `num_requests`, `total_num_tokens`, and rates.
+
+`config.VLLMBENCH_INPUT`/`VLLMBENCH_OUTPUT` use the same shapes as `LLAMABENCH_PP`/`LLAMABENCH_TG` so both engines sweep the same points. A pair is skipped when input plus output exceeds the model's context: vLLM rejects such a request outright, where llama-server merely generates fewer tokens.
+
+**These numbers are not comparable to `llamabench`, and the dashboard never puts them on the same chart.** Two independent reasons, either of which alone would be enough. The weights differ — llama.cpp runs Q4_K_M GGUFs while vLLM runs 4-bit AWQ/GPTQ safetensors of the same base model (see [Per-engine weights](#per-engine-weights)). And the metrics differ: `llama-bench` reports separate prefill and decode token rates, while `vllm bench latency` reports whole-batch seconds and `throughput` reports a combined rate over prompt *and* output tokens. This suite derives an output-only rate (`requests × output_len / elapsed`) rather than reporting vLLM's `tokens_per_second`, which counts prompt tokens too.
+
+Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
+
+Requires the benchmark extra, which the base vLLM package does not include — setup installs `vllm[bench]` (see [Setup](setup.md)). If `vllm bench` is unavailable the test prints the `pip install 'vllm[bench]'` hint and records nothing rather than failing the run.
+
+Concurrency through vLLM's own tooling (`vllm bench serve`) is not implemented yet. Unlike these two subcommands it requires a *running* server, so it cannot reuse this stage's shape; it would sit alongside `conc_tool`/`conc_chat` as a further cross-check rather than replacing them.
+
 ---
 
 [← Setup](setup.md) · [Back to README](../README.md) · [CLI Reference →](cli-reference.md)
