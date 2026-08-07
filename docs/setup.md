@@ -101,7 +101,7 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | Linux + AMD ROCm, any other gfx target (e.g. gfx1151 / Strix Halo) | Experimental | Same wheels, but they ship no kernels for that target — see the Strix Halo platform note below |
 | DGX Spark (GB10) | Experimental | CUDA 13 nightly wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
 | macOS (Apple Silicon) | Experimental | The community-maintained `vllm-metal` plugin, via its own installer into `~/.venv-vllm-metal` |
-| Windows | Not offered | vLLM has no upstream Windows support; run it under WSL2, where the Linux path applies |
+| Windows (native) | Not offered | vLLM has no upstream Windows support — see [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2) |
 | Linux + Intel XPU | Not offered | No prebuilt wheels exist; the source build is out of scope for this script |
 | CPU-only | Not offered | This benchmark measures accelerated inference |
 
@@ -117,7 +117,41 @@ The full per-model mapping is in [Workloads](workloads.md#per-engine-weights). I
 
 Selecting vLLM roughly doubles the download for a given model set, and the two weight sets are usually different sizes — a 4-bit AWQ snapshot is not the same size as the equivalent `Q4_K_M` GGUF. The disk-space check accounts for both.
 
-Setup installs the runtime and fetches these weights, but there is still no `VllmEngine` and no `--engine vllm` to select. See [the engine plan](vllm-engine-plan.md) for what remains.
+## vLLM on Windows via WSL2
+
+Native Windows cannot run vLLM, but **WSL2 can, and needs no special support from this project**: inside a WSL2 distribution `platform.system()` returns `Linux`, so setup takes the ordinary Linux CUDA path described above with no Windows-specific code involved. What follows is a procedure, not a separate install mode.
+
+Treat it as a second machine. WSL2 gets its own clone, its own `bench-env/`, and its own HuggingFace cache — nothing is shared with a Windows-side installation, so the model set is downloaded again in full.
+
+**1. Configure memory before installing anything.** WSL2 defaults to about half the host's RAM, and setup's memory-fit estimate believes what the OS reports — so on a 64GB machine it will silently filter out models that actually fit. Create `%UserProfile%\.wslconfig`:
+
+```ini
+[wsl2]
+memory=56GB
+```
+
+VRAM is unaffected; the GPU is passed through directly rather than partitioned.
+
+**2. Install WSL2**, from an administrator PowerShell:
+
+```powershell
+wsl --install
+```
+
+**3. Install the NVIDIA driver on Windows only.** The host driver projects the GPU into WSL2 through `/dev/dxg`, and `nvidia-smi` works inside the distribution without any Linux driver. Installing an NVIDIA Linux driver inside WSL2 overwrites that passthrough and is the most common way this setup breaks.
+
+**4. Inside the WSL2 shell**, install the prerequisites, clone into the WSL2 filesystem, and run setup as normal:
+
+```bash
+sudo apt update && sudo apt install -y python3.12-venv python3.12-dev build-essential git
+git clone <repo-url> ~/local-ai-bench && cd ~/local-ai-bench && bash setup.sh
+```
+
+Clone into the WSL2 filesystem (`~/`), **not** a Windows drive under `/mnt/c`. That path crosses a 9p filesystem bridge slow enough to distort model-load timings, which matters when every benchmarked model is a multi-GB safetensors snapshot.
+
+Runs made this way record `wsl: true` in the results profile and are tagged `WSL2` in the dashboard. This is not cosmetic: GPU access under WSL2 is virtualized and carries real overhead, so a WSL2 result is not interchangeable with a bare-metal Linux result on identical hardware. See [Limitations](limitations.md).
+
+This route is reasoned from the platform detection rather than verified on hardware by the project maintainer. If something does fail first, expect it to be `nvidia-smi`'s compute-capability output or the memory ceiling above.
 
 ## Memory-fit estimate
 
@@ -180,6 +214,8 @@ Setup **points at that toolbox rather than installing it**, deliberately. A cont
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
 **Windows (Intel Arc) — experimental** — Setup downloads ComfyUI's Intel portable build and uses llama.cpp's Vulkan package. Results therefore report `backend: "vulkan"` while retaining `hardware_backend: "xpu"`; a manual SYCL build reports `xpu`. This path has not been verified on real Arc hardware by the project maintainer.
+
+**Windows (vLLM)** — Not available natively; run the benchmark inside WSL2, where the ordinary Linux CUDA path applies. See [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2). llama.cpp and image generation are unaffected and run natively.
 
 **Windows (all)** — If `bench-env\Scripts\activate` gives a permissions error: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
