@@ -399,9 +399,8 @@ def expand_tests(tests: list[str]) -> list[str]:
 
 
 def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
-    """Resolve --engine into an ordered engine-name list. "all" expands to every
-    registered engine; a comma-separated list runs exactly those, in registry order
-    so a multi-engine run is deterministic regardless of how it was typed."""
+    """Resolve --engine into an ordered engine-name list ("all", or comma-separated),
+    always in registry order so a multi-engine run is deterministic."""
     if engine == "all":
         return list(available)
     requested = [name.strip() for name in engine.split(",") if name.strip()]
@@ -930,7 +929,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 make_save("llm_conversation", "conv"), resume_identity=resume_identity,
             )
 
-        def stop_for_native(_context):
+        def release_port_for_runner(_context):
+            """A runner is a separate process and cannot stop this one's server, so a
+            server left up here would answer its requests instead — see docs/engines.md."""
             if engine.available():
                 engine.stop()
 
@@ -978,7 +979,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     _context.plan, event_store_path(Path(out_path)), key,
                     make_save(section, key), resume_identity=resume_identity,
                 )
-            return StageDefinition(key, section, len(conc_models), runner)
+            return StageDefinition(key, section, len(conc_models), runner,
+                                   prepare=release_port_for_runner)
 
         def prepare_images(_context):
             lifecycle.restore_gpu()
@@ -1000,23 +1002,21 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         registry = [
-            StageDefinition("llm", "llm", len(llm_models), run_llm),
+            StageDefinition("llm", "llm", len(llm_models), run_llm,
+                            prepare=release_port_for_runner),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
-                            requires_engine=False),
-            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench),
+                            requires_engine=False, prepare=release_port_for_runner),
+            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,
+                            prepare=release_port_for_runner),
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
-                            run_llamabench_concurrency, prepare=stop_for_native),
+                            run_llamabench_concurrency, prepare=release_port_for_runner),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
                             requires_engine=True),
             accuracy_stage("mcq", MCQBenchmark), accuracy_stage("math", MathBenchmark),
             accuracy_stage("reasoning", ReasoningBenchmark),
             accuracy_stage("code", CodeBenchmark), accuracy_stage("tool", ToolBenchmark),
-            concurrency_stage(
-                "conc_tool", "concurrency_tool",
-            ),
-            concurrency_stage(
-                "conc_chat", "concurrency_chat",
-            ),
+            concurrency_stage("conc_tool", "concurrency_tool"),
+            concurrency_stage("conc_chat", "concurrency_chat"),
             StageDefinition("img", "images", len(image_models), run_images,
                             prepare=prepare_images, cleanup=lambda _: Shared.shutdown_managed()),
         ]

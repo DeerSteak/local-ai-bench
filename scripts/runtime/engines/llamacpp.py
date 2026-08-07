@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import gguf
 import requests
@@ -130,6 +130,29 @@ class LlamaCppEngine(InferenceEngine):
             return r.status_code == 200
         except Exception:
             return False
+
+    @staticmethod
+    def serving_model_file(props: dict | None) -> str | None:
+        """Model filename llama-server reports on /props, across the keys it has used.
+        None when the running server cannot be identified — see docs/engines.md."""
+        if not isinstance(props, dict):
+            return None
+        candidates = (
+            props.get("model_path"),
+            (props.get("default_generation_settings") or {}).get("model"),
+            props.get("model"),
+        )
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                return PurePosixPath(value.replace("\\", "/")).name
+        return None
+
+    def _fetch_props(self) -> dict | None:  # pragma: no cover — real HTTP call
+        try:
+            response = requests.get(f"{config.LLAMACPP_URL}/props", timeout=5)
+            return response.json() if response.status_code == 200 else None
+        except Exception:
+            return None
 
     def is_installed(self) -> bool:
         return self._binary_path() is not None
@@ -442,15 +465,24 @@ class LlamaCppEngine(InferenceEngine):
                 if deadline is not None and time.perf_counter() >= deadline:
                     self._stop_process()
                     raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
+                # Before health: a bind failure exits fast, and /health cannot tell our
+                # server from one another process already has on the port.
+                if proc.poll() is not None:
+                    raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
+                                       f"loading {tag} — last output:\n{self.tail_log()}")
                 if self.available():
+                    serving = self.serving_model_file(self._fetch_props())
+                    if serving is not None and serving != paths[0].name:
+                        self._stop_process()
+                        raise RuntimeError(
+                            f"port {config.LLAMACPP_PORT} is serving {serving}, not {paths[0].name} "
+                            f"— another llama-server owns it; stop it before loading {tag}"
+                        )
                     self._loaded_tag = tag
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
                     return
-                if proc.poll() is not None:
-                    raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
-                                       f"loading {tag} — last output:\n{self.tail_log()}")
                 time.sleep(1)
 
             self._stop_process()
