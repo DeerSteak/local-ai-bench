@@ -67,8 +67,9 @@ def vllm_platform_support(*, os_name: str, machine: str,
     """Whether setup can install vLLM here, and how. See docs/setup.md's support table."""
     if os_name == "Windows":
         return VllmSupport("unsupported", None,
-                           "vLLM has no upstream Windows support — run it under WSL2 "
-                           "(the Linux path applies inside WSL2) or Docker Desktop")
+                           "vLLM has no upstream Windows support — install WSL2 and run "
+                           "setup inside it, where the Linux CUDA path applies. "
+                           "See docs/setup.md#vllm-on-windows-via-wsl2")
 
     if os_name == "Darwin":
         if str(machine).lower() not in ("arm64", "aarch64"):

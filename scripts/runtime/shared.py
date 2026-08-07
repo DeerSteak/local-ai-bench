@@ -353,6 +353,13 @@ class Shared:
     # ── machine profile ──
 
     @staticmethod
+    def detect_wsl(os_name: str, release: str) -> bool:
+        """WSL reports itself as Linux; only the kernel release distinguishes it."""
+        if os_name != "Linux":
+            return False
+        return "microsoft" in (release or "").lower()
+
+    @staticmethod
     def get_hostname():  # pragma: no cover — shells out to OS-specific hardware profiling tools
         system = platform.system()
         ram_gb = round(Shared.system_ram_gb())
@@ -458,16 +465,18 @@ class Shared:
 
     @staticmethod
     def build_profile():  # pragma: no cover — thin wrapper around get_hostname/detect_backend
-        os_name = platform.system()
+        os_name, release = platform.system(), platform.release()
         profile = {
             "hostname":   Shared.get_hostname(),
-            "os":         f"{os_name} {platform.release()}",
+            "os":         f"{os_name} {release}",
             "arch":       platform.machine(),
             "python":     sys.version.split()[0],
             "ram_gb":     round(Shared.system_ram_gb(), 1),
             "timestamp":  datetime.now(timezone.utc).isoformat(),
             "backend":    Shared.detect_backend(),
         }
+        if Shared.detect_wsl(os_name, release):
+            profile["wsl"] = True
         return profile
 
     @staticmethod

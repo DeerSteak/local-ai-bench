@@ -154,6 +154,13 @@ def test_windows_is_unsupported_even_with_an_nvidia_gpu():
     result = support(os_name="Windows", nvidia_ok=True, compute_cap="8.9")
     assert result.status == "unsupported"
     assert "WSL2" in result.reason
+    assert "setup.md" in result.reason
+
+
+def test_wsl2_takes_the_linux_path_since_it_reports_as_linux():
+    result = support(os_name="Linux", nvidia_ok=True, compute_cap="8.9")
+    assert result.status == "supported"
+    assert result.method == "cuda_wheel"
 
 
 def test_intel_xpu_is_unsupported():
