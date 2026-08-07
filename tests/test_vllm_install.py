@@ -208,8 +208,17 @@ def test_install_commands_target_the_venv_interpreter():
     assert "--torch-backend=auto" in uv
 
     pip = vllm_install_command("cuda_wheel", "/v/bin/python", uv_available=False)
-    assert pip == ["/v/bin/python", "-m", "pip", "install", "vllm"]
+    assert pip == ["/v/bin/python", "-m", "pip", "install", "vllm[bench]"]
     assert "--torch-backend=auto" not in pip  # a pip-only flag would fail the install
+
+
+def test_every_install_method_requests_the_bench_extra():
+    """`vllm bench` deps ship only with the extra, and the vllmbench test needs them."""
+    for method in ("cuda_wheel", "rocm_wheel", "nightly_cu130"):
+        for uv_available in (True, False):
+            command = vllm_install_command(method, "/v/bin/python", uv_available=uv_available)
+            assert "vllm[bench]" in command
+            assert "vllm" not in command
 
 
 def test_rocm_and_nightly_commands_use_their_own_indexes():

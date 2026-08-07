@@ -11,7 +11,7 @@ from scripts.runtime.shared import Shared
 
 
 STAGE_ORDER = (
-    "llm", "conv", "llamabench", "llamabenchconc", "emb",
+    "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb",
     "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "img",
 )
 def emit_stage_progress(stage: str, status: str) -> None:

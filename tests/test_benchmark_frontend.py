@@ -517,7 +517,7 @@ def test_test_shortcut_all_selects_every_available_test_only():
 @pytest.mark.parametrize(
     ("shortcut", "expected"),
     [
-        ("l", {"llm", "conv", "llamabench"}),
+        ("l", {"llm", "conv", "llamabench", "vllmbench"}),
         ("x", {"mcq", "math", "reasoning", "code", "tool"}),
         ("c", {"conc_tool", "conc_chat", "llamabenchconc"}),
         ("e", {"emb"}),
@@ -613,9 +613,10 @@ def test_choose_tests_accepts_shortcuts_and_renders_legend():
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
-    # 1/2/4/13 are the default-checked entries (llm, conv, emb, img); toggling them
-    # off leaves nothing selected without disturbing llamabench/llamabenchconc's own default-off state.
-    selected = choose_tests(entries, InputSequence(["1 2 4 13", "", "1", ""]), output)
+    # Toggle off exactly the default-checked entries by position, so inserting a new
+    # default-off test elsewhere in TEST_DEFINITIONS does not shift this selection.
+    checked = " ".join(str(i) for i, e in enumerate(entries, 1) if e.checked)
+    selected = choose_tests(entries, InputSequence([checked, "", "1", ""]), output)
     assert selected == ["llm"]
     assert any("Select at least one" in message for message in messages)
 

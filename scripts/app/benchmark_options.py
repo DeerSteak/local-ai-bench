@@ -18,7 +18,7 @@ class OptionSpec:
 
 
 TEST_CHOICES = (
-    "llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math",
+    "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb", "mcq", "math",
     "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "img",
 )
 TG_TOKEN_CHOICES = (128, 512, 1024)

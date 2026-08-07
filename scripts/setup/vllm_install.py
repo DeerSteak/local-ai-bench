@@ -155,12 +155,17 @@ def resolve_python(requires_python: tuple[int, int] | None,
     return None
 
 
+# `vllm bench` deps are not in the base package — see docs/workloads.md#vllm-bench.
+VLLM_PACKAGE = "vllm[bench]"
+
+
 def vllm_install_command(method: str, python_exe: str, uv_available: bool) -> list[str]:
     """Argv that installs vLLM into the venv owned by `python_exe`."""
     extra = {
-        "cuda_wheel": ["vllm", "--torch-backend=auto"] if uv_available else ["vllm"],
-        "rocm_wheel": ["vllm", "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
-        "nightly_cu130": ["-U", "vllm", "--extra-index-url", NIGHTLY_CU130_INDEX],
+        "cuda_wheel": ([VLLM_PACKAGE, "--torch-backend=auto"] if uv_available
+                       else [VLLM_PACKAGE]),
+        "rocm_wheel": [VLLM_PACKAGE, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
+        "nightly_cu130": ["-U", VLLM_PACKAGE, "--extra-index-url", NIGHTLY_CU130_INDEX],
     }[method]
     if uv_available:
         return ["uv", "pip", "install", "--python", python_exe] + extra

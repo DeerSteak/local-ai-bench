@@ -106,6 +106,18 @@ LLAMABENCH_TIMEOUT = 1800
 # default (-1) isn't documented as meaning "all layers".
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
+# `vllm bench` latency/throughput sweep (opt-in `vllmbench` test) — see docs/workloads.md#vllm-bench.
+# Same shapes as LLAMABENCH_PP/TG so both engines sweep the same points; the numbers are
+# still not comparable across engines (different weights and different metric definitions).
+VLLMBENCH_INPUT = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+VLLMBENCH_OUTPUT = [128, 512]
+VLLMBENCH_BATCH_SIZE = 1
+# vllm bench latency defaults to 30 iterations and 10 warmups, far more than this suite needs.
+VLLMBENCH_ITERS = 3
+VLLMBENCH_WARMUP_ITERS = 1
+VLLMBENCH_NUM_PROMPTS = 32
+VLLMBENCH_TIMEOUT = 1800
+
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth
 LLAMABENCH_CONC_TG = [128, 512]

@@ -37,6 +37,7 @@ from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
+from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
@@ -884,6 +885,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "concurrency_chat": {},
             "llamabench":      {},
             "llamabenchconc":  {},
+            "vllmbench":       {},
         }
 
         results["run"] = build_run_manifest(
@@ -945,6 +947,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             return LlamaBenchConcurrencyBenchmark().run(
                 engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
                 save_fn=make_save("llamabenchconc"),
+            )
+
+        def run_vllmbench(_context):
+            return VllmBenchBenchmark().run(
+                engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
             )
 
         def run_embeddings(_context):
@@ -1010,6 +1017,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                             prepare=release_port_for_runner),
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
                             run_llamabench_concurrency, prepare=release_port_for_runner),
+            StageDefinition("vllmbench", "vllmbench", len(llm_models), run_vllmbench,
+                            prepare=release_port_for_runner),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
                             requires_engine=True),
             accuracy_stage("mcq", MCQBenchmark), accuracy_stage("math", MathBenchmark),

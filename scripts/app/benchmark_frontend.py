@@ -38,10 +38,11 @@ TEST_DEFINITIONS = [
     ("conc_tool", "Tool concurrency", "llm", False),
     ("conc_chat", "Chat concurrency", "llm", False),
     ("llamabenchconc", "llama-bench concurrency", "llm", False),
+    ("vllmbench", "vllm bench latency/throughput", "llm", False),
     ("img", "Image generation", "image", True),
 ]
 TEST_SHORTCUT_GROUPS = {
-    "l": {"llm", "conv", "llamabench"},
+    "l": {"llm", "conv", "llamabench", "vllmbench"},
     "x": {"mcq", "math", "reasoning", "code", "tool"},
     "c": {"conc_tool", "conc_chat", "llamabenchconc"},
     "e": {"emb"},
@@ -49,7 +50,7 @@ TEST_SHORTCUT_GROUPS = {
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
-MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc"}
+MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
 MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS = list(TG_TOKEN_CHOICES)

@@ -156,6 +156,13 @@ class VllmEngine(InferenceEngine):
     def is_installed(self) -> bool:
         return (self._launcher or self._executable) is not None
 
+    def cache_home(self) -> Path:
+        return self._cache_home
+
+    def bench_executable(self) -> str | None:
+        """`vllm bench` needs the real binary — a launcher only wraps `vllm serve`."""
+        return self._executable
+
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
         if self._launcher is None and self._executable is None:
