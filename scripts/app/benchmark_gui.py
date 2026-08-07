@@ -27,6 +27,8 @@ from scripts.app.benchmark_frontend import (
     MAX_PROMPT_TOKEN_OPTIONS,
     MAX_PROMPT_TOKEN_TESTS,
     TEST_DEFINITIONS,
+    TEST_STAGE_LABELS,
+    expand_selected_tests,
     TG_TOKEN_OPTIONS,
     TG_TOKEN_TESTS,
     apply_saved_model_selection,
@@ -431,7 +433,7 @@ BENCHMARK_PRESETS = {
     "Consumer guidance": {"tests": ["llm", "conv"], "max_prompt_tokens": 32768},
     "Vendor validation": {"tests": ["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
     "Neutral comparison": {"tests": ["llm", "conv", "emb", "img"]},
-    "Platform optimized": {"tests": ["llm", "conv", "llamabench", "llamabenchconc"]},
+    "Platform optimized": {"tests": ["llm", "conv", "llamabench"]},
     "Offline / private": {"tests": ["llm", "conv", "emb"]},
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
@@ -905,7 +907,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         reset_paths()
 
     def current_custom_state():
-        tests = [name for name, variable in test_vars.items() if variable.get()]
+        tests = expand_selected_tests(
+            name for name, variable in test_vars.items() if variable.get())
         for entry in custom_models:
             entry.checked = model_vars[entry.value].get()
         options = collect_options()
@@ -1972,7 +1975,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ).pack(anchor="w", pady=(2, 12))
         stage_progress_vars = {}
         model_progress_vars = {}
-        labels = {name: label for name, label, _, _ in TEST_DEFINITIONS}
+        labels = TEST_STAGE_LABELS
         selected = [entry for entry in entries if entry.checked]
         total_models = sum(
             1 for stage in STAGE_ORDER if stage in tests for entry in selected
@@ -2251,7 +2254,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def start_run():
         nonlocal process, active_process_kind, pending_fork_source
-        tests = [name for name, variable in test_vars.items() if variable.get()]
+        tests = expand_selected_tests(
+            name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
         for entry in entries:
             entry.checked = model_vars[entry.value].get()

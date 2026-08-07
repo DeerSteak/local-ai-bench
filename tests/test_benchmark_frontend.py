@@ -431,8 +431,11 @@ def test_default_test_state_matches_documented_matrix():
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
-        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "llamabench", "llamabenchconc",
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
+        "llamabench", "vllmbench",
     ))
+    # llamabenchconc is folded into the llamabench toggle and is not its own entry.
+    assert "llamabenchconc" not in entries
 
 
 def test_empty_inventory_makes_every_test_unavailable_and_unchecked():
@@ -519,7 +522,7 @@ def test_test_shortcut_all_selects_every_available_test_only():
     [
         ("l", {"llm", "conv", "llamabench", "vllmbench"}),
         ("x", {"mcq", "math", "reasoning", "code", "tool"}),
-        ("c", {"conc_tool", "conc_chat", "llamabenchconc"}),
+        ("c", {"conc_tool", "conc_chat"}),
         ("e", {"emb"}),
         ("i", {"img"}),
     ],
@@ -588,10 +591,14 @@ def test_choose_engine_preserves_first_render_then_clears_each_redraw():
 
 def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     entries = build_test_entries(sample_inventory())
-    entries[3].available = False  # emb
-    entries[3].checked = False
+    positions = {entry.value: i for i, entry in enumerate(entries, 1)}
+    emb = next(entry for entry in entries if entry.value == "emb")
+    emb.available = False
+    emb.checked = False
     messages, output = output_collector()
-    selected = choose_tests(entries, InputSequence(["5", "4", ""]), output)
+    selected = choose_tests(
+        entries, InputSequence([str(positions["mcq"]), str(positions["emb"]), ""]), output,
+    )
     assert "mcq" in selected
     assert "emb" not in selected
     assert any("cannot be selected" in message for message in messages)
@@ -605,7 +612,6 @@ def test_choose_tests_accepts_shortcuts_and_renders_legend():
     selected = choose_tests(entries, InputSequence(["x", "c", ""]), output)
     assert selected == [
         "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
-        "llamabenchconc",
     ]
     assert any("a all" in message and "x accuracy" in message for message in messages)
 
@@ -1438,3 +1444,59 @@ def test_an_empty_engine_string_is_still_rejected_when_the_key_is_present():
     state = {"engine": "", "tests": ["llm"],
              "models": {"llm": ["a"], "embedding": [], "image": []}}
     assert frontend_state_availability_errors(state, ["llamacpp"], tests, models)
+
+
+# ── combined menu toggles ──
+
+def test_llamabench_toggle_expands_to_both_native_llama_cpp_tests():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests(["llm", "llamabench"]) == [
+        "llm", "llamabench", "llamabenchconc",
+    ]
+
+
+def test_expansion_preserves_order_and_does_not_duplicate():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests([]) == []
+    assert expand_selected_tests(["conv", "llm"]) == ["conv", "llm"]
+    # A CLI-shaped list already containing both must not gain a duplicate.
+    assert expand_selected_tests(["llamabench", "llamabenchconc"]) == [
+        "llamabench", "llamabenchconc",
+    ]
+
+
+def test_uncombined_tests_pass_through_expansion_untouched():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests(["vllmbench", "emb", "img"]) == ["vllmbench", "emb", "img"]
+
+
+def test_collapse_maps_either_native_test_back_to_the_single_toggle():
+    from scripts.app.benchmark_frontend import collapse_tests_to_entries
+    assert collapse_tests_to_entries(["llm", "llamabench"]) == {"llm", "llamabench"}
+    # A state saved before the toggles were combined recorded only the concurrency test.
+    assert collapse_tests_to_entries(["llamabenchconc"]) == {"llamabench"}
+    assert collapse_tests_to_entries(["llamabench", "llamabenchconc"]) == {"llamabench"}
+
+
+def test_collapse_leaves_every_other_test_as_its_own_entry():
+    from scripts.app.benchmark_frontend import collapse_tests_to_entries
+    assert collapse_tests_to_entries(["llm", "conv", "vllmbench", "img"]) == {
+        "llm", "conv", "vllmbench", "img",
+    }
+    assert collapse_tests_to_entries([]) == set()
+
+
+def test_a_legacy_saved_selection_restores_the_combined_toggle():
+    entries = build_test_entries(sample_inventory())
+    assert apply_saved_test_selection(entries, saved_state(tests=["llamabenchconc"]))
+    checked = {entry.value for entry in entries if entry.checked}
+    assert checked == {"llamabench"}
+
+
+def test_every_stage_a_toggle_can_produce_has_a_progress_label():
+    from scripts.app.benchmark_frontend import (
+        TEST_DEFINITIONS, TEST_STAGE_LABELS, expand_selected_tests,
+    )
+    produced = expand_selected_tests(name for name, *_ in TEST_DEFINITIONS)
+    assert set(produced) <= set(TEST_STAGE_LABELS)
+    assert all(TEST_STAGE_LABELS[name] for name in produced)

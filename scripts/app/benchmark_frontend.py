@@ -28,7 +28,8 @@ from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 TEST_DEFINITIONS = [
     ("llm", "Single-shot LLM", "llm", True),
     ("conv", "Conversation", "llm", True),
-    ("llamabench", "llama-bench throughput", "llm", False),
+    ("llamabench", "llama-bench (throughput + concurrency)", "llm", False),
+    ("vllmbench", "vllm bench (latency + throughput)", "llm", False),
     ("emb", "Embeddings", "embedding", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),
@@ -37,14 +38,22 @@ TEST_DEFINITIONS = [
     ("tool", "Tool accuracy", "llm", False),
     ("conc_tool", "Tool concurrency", "llm", False),
     ("conc_chat", "Chat concurrency", "llm", False),
-    ("llamabenchconc", "llama-bench concurrency", "llm", False),
-    ("vllmbench", "vllm bench latency/throughput", "llm", False),
     ("img", "Image generation", "image", True),
 ]
+# One frontend toggle can cover several CLI tests. The CLI keeps them separate so
+# `--tests llamabenchconc` alone still works; only the menus combine them.
+TEST_ENTRY_TESTS = {"llamabench": ("llamabench", "llamabenchconc")}
+# Every CLI test name a menu toggle can produce, including ones folded into another
+# toggle, so the progress window can title their rows.
+TEST_STAGE_LABELS = {
+    **{name: label for name, label, _, _ in TEST_DEFINITIONS},
+    "llamabench": "llama-bench throughput",
+    "llamabenchconc": "llama-bench concurrency",
+}
 TEST_SHORTCUT_GROUPS = {
     "l": {"llm", "conv", "llamabench", "vllmbench"},
     "x": {"mcq", "math", "reasoning", "code", "tool"},
-    "c": {"conc_tool", "conc_chat", "llamabenchconc"},
+    "c": {"conc_tool", "conc_chat"},
     "e": {"emb"},
     "i": {"img"},
 }
@@ -81,6 +90,28 @@ FRONTEND_MODEL_FAMILIES = {
 
 class FrontendCancelled(Exception):
     pass
+
+
+def expand_selected_tests(values) -> list[str]:
+    """Menu selections to CLI test names, preserving order and de-duplicating."""
+    expanded = []
+    for value in values:
+        for name in TEST_ENTRY_TESTS.get(value, (value,)):
+            if name not in expanded:
+                expanded.append(name)
+    return expanded
+
+
+def collapse_tests_to_entries(tests) -> set[str]:
+    """CLI test names back to the menu values that cover them, so a saved selection
+    or preset written before two tests were combined still restores its toggle."""
+    selected = set()
+    for value, covered in TEST_ENTRY_TESTS.items():
+        if any(name in tests for name in covered):
+            selected.add(value)
+    covered_names = {name for names in TEST_ENTRY_TESTS.values() for name in names}
+    selected.update(name for name in tests if name not in covered_names)
+    return selected
 
 
 def frontend_option_gaps(inventory=None, bindings=None) -> list[str]:
@@ -273,7 +304,7 @@ def frontend_state_availability_errors(state: dict, engines: list[str],
 def apply_saved_test_selection(entries: list[MenuEntry], state: dict | None) -> bool:
     if state is None:
         return False
-    saved = set(state["tests"])
+    saved = collapse_tests_to_entries(state["tests"])
     if not any(entry.available and entry.value in saved for entry in entries):
         return False
     for entry in entries:
@@ -797,10 +828,10 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
 
         if len(available_engines) > 1:
             clear_fn()
-        tests = choose_tests(
+        tests = expand_selected_tests(choose_tests(
             test_entries, input_fn, output_fn, clear_fn,
             selection_note=selection_note,
-        )
+        ))
         model_entries = build_model_entries(inventory, tests)
         apply_saved_model_selection(model_entries, saved_state)
         hint = missing_catalog_hint(inventory, system)
