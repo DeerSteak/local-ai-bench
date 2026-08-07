@@ -33,7 +33,9 @@ from scripts.runtime.comfyui_installation import (
 )
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import (
-    delete_non_catalog_model_dirs, engine_download_size, engine_fit_report,
+    delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
+    engine_download_size, engine_fit_report, find_non_catalog_vllm_repos,
+    hf_cache_repo_id,
     engine_fit_warnings, engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
     fits_any_engine, format_engine_sizes, models_missing_engine_support,
 )
@@ -883,6 +885,7 @@ if _interface == "gui":
         memory_ceiling_gb=memory_ceiling_gb,
         detected_comfyui=_detected_comfyui,
         cleanup_names=[path.name for path in _cleanup_candidates],
+        vllm_cleanup=find_non_catalog_vllm_repos(VLLM_CACHE_HOME),
         existing_hf_token=bool(os.environ.get("HF_TOKEN", "").strip() or (
             (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
         )),
@@ -921,6 +924,12 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
         "label": f"Delete {len(non_catalog_dirs)} installed non-catalog model {folder_word}",
         "directory_names": [path.name for path in non_catalog_dirs],
     }] if non_catalog_dirs else []
+    # One entry per cached repo, not one aggregate: the vLLM cache is shared with
+    # anything else on the machine, so each deletion is chosen individually.
+    vllm_cleanup_items = [{
+        "label": f"Delete {entry['repo']}  (~{entry['size'] / 1e9:.1f} GB)",
+        "directory_names": [entry["directory_name"]],
+    } for entry in find_non_catalog_vllm_repos(VLLM_CACHE_HOME)]
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
         ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
@@ -929,6 +938,8 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
         ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
         ("Image generation models",           IMAGE_MODELS,      "image", "img"),
         ("Optional cleanup",                   cleanup_items,     "cleanup", "clean"),
+        ("Optional cleanup — cached vLLM weights not in the catalog",
+         vllm_cleanup_items, "vllm_cleanup", "vclean"),
     ]
     group_keys = {group_key for _, items, _, group_key in groups if items}
 
@@ -942,7 +953,7 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
         tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
             entry_tier = tier if kind == "llm" else m.get("tier")
-            if kind == "cleanup":
+            if kind in ("cleanup", "vllm_cleanup"):
                 fits = None
                 checked = False
             elif kind == "llm":
@@ -961,7 +972,7 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
                             "report": hardware_fit_report(m) if kind in ("llm", "embed") else {}})
 
     def size_label(e, m, kind):
-        if kind == "cleanup":
+        if kind in ("cleanup", "vllm_cleanup"):
             return "  (unchecked by default)"
         if kind == "embed":
             return f"  ({format_engine_sizes(e['report'])})"
@@ -990,7 +1001,7 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
                 e = entries[n - 1]
                 box = "[x]" if e["checked"] else "[ ]"
                 print(f"    {box} {n:>2}  {m['label']}{size_label(e, m, kind)}")
-                if kind == "cleanup":
+                if kind in ("cleanup", "vllm_cleanup"):
                     for name in m["directory_names"]:
                         print(f"             {name!r}")
                 n += 1
@@ -1062,10 +1073,11 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
     selected_images = [e["item"] for e in entries if e["checked"] and e["kind"] == "image"]
     selected_embed  = [e["item"] for e in entries if e["checked"] and e["kind"] == "embed"]
     cleanup_names = selected_cleanup_names(entries)
-    return selected_llm, selected_images, selected_embed, cleanup_names
+    vllm_cleanup_names = selected_cleanup_names(entries, "vllm_cleanup")
+    return selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names
 
 if _gui_plan is None:
-    selected_llm, selected_images, selected_embed, cleanup_names = select_models(
+    selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names = select_models(
         memory_ceiling_gb, engines=selected_engines)
 else:
     _llm_tags = set(_gui_plan["llm_tags"])
@@ -1078,6 +1090,7 @@ else:
     selected_images = [model for model in IMAGE_MODELS if model["short"] in _image_shorts]
     selected_embed = [model for model in EMBED_MODELS if model["tag"] in _embed_tags]
     cleanup_names = list(_gui_plan["cleanup_names"])
+    vllm_cleanup_names = list(_gui_plan.get("vllm_cleanup_names", []))
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
@@ -1087,6 +1100,8 @@ info(f"Image models selected: {len(selected_images)}/{len(IMAGE_MODELS)}")
 info(f"Embeddings models selected: {len(selected_embed)}/{len(EMBED_MODELS)}")
 if cleanup_names:
     warn(f"Non-catalog model cleanup selected: {len(cleanup_names)} folder(s)")
+if vllm_cleanup_names:
+    warn(f"Cached vLLM weight cleanup selected: {len(vllm_cleanup_names)} repo(s)")
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
@@ -1385,6 +1400,16 @@ if cleanup_names:
     for name, reason in cleanup_failures.items():
         fail(f"{name!r} — could not delete: {reason}")
         issues.append(f"Delete non-catalog model folder {str(cleanup_root / name)!r}")
+
+if vllm_cleanup_names:
+    section("Cached vLLM Weight Cleanup")
+    _vllm_cache = VLLM_CACHE_HOME
+    removed, cleanup_failures = delete_non_catalog_vllm_repos(_vllm_cache, vllm_cleanup_names)
+    for name in removed:
+        ok(f"{hf_cache_repo_id(name)} — deleted")
+    for name, reason in cleanup_failures.items():
+        fail(f"{name!r} — could not delete: {reason}")
+        issues.append(f"Delete cached vLLM weights {str(_vllm_cache / 'hub' / name)!r}")
 
 # ── 8b. LLM/embedding models — download selected GGUFs, skip the rest ─────────
 

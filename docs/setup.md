@@ -35,13 +35,14 @@ The setup wizard collects every decision before installation: an engine checklis
    - Numbers to toggle individual models (`2 4 7-9`)
    - A size tier (`xs`/`s`/`m`/`l`) to toggle every model at that tier — LLM and image checkpoints together, e.g. `s` toggles the small-tier LLMs and SDXL as a group
    - `emb`/`img` to toggle a whole section
-   - `clean` to toggle deletion of the listed non-catalog model folders
+   - `clean` to toggle deletion of the listed non-catalog llama.cpp model folders
+   - `vclean` to toggle deletion of the listed cached vLLM repos, each of which is its own checkbox
    - `a` to select/deselect all models; it deliberately does not enable cleanup
    - Enter to install everything shown
    - `q` or Ctrl-C to cancel before the unattended installation phase; the bootstrap may already have installed Python or created `bench-env/`
 5. If you selected any LLM, embedding, or image model, asks for a HuggingFace token next (see [HuggingFace token](#huggingface-token) below).
 6. If image models were selected and no usable ComfyUI installation was detected, offers to download a managed copy by default or accept an existing ComfyUI directory, `main.py`, or Windows-portable launcher path. A valid entry is reused and saved; an invalid entry is reported and setup falls back to the managed download.
-7. Installs everything you approved — llama.cpp, vLLM if you opted into it, any ComfyUI dependencies, LLM/embedding weights for every selected engine, and image checkpoints — with no further prompts. If cleanup was selected, it first deletes only the non-catalog folders shown in the picker; catalog folders and loose files are never cleanup targets.
+7. Installs everything you approved — llama.cpp, vLLM if you opted into it, any ComfyUI dependencies, LLM/embedding weights for every selected engine, and image checkpoints — with no further prompts. If cleanup was selected, it first deletes only the entries shown in the picker; catalog models and loose files are never cleanup targets.
 
 Setup checks the system installation before planning any llama.cpp install. When `llama-server` is available through `PATH` or a standard macOS Homebrew location, setup does not install or build another llama.cpp copy. It independently detects `llama-bench` and `llama-batched-bench`; when all three system tools are present, benchmark runs use those exact system tools. Models remain managed by Local AI Bench under `models/llamacpp/`, and the selected system binary receives the downloaded GGUF's explicit path, so system installation and project model storage do not need to share a directory. If `llama-server` exists but either optional native benchmark tool is absent, setup leaves the existing installation untouched and reports that the corresponding opt-in test is unavailable rather than installing a second distribution behind the user's back.
 
@@ -85,7 +86,11 @@ Both engines follow the same system-first policy: if a working `vllm` is already
 
 The two engines store weights differently. llama.cpp's GGUFs are managed by this project under `models/llamacpp/<slug>/`. vLLM's are downloaded into the **HuggingFace cache vLLM itself reads**, so it resolves them by repo id and downloads nothing at run time; the engine never passes a filesystem path. Setup picks that cache in this order: a platform launcher's own cache (`~/.local/share/vLLM/models`, which AMD's `vllm-launch` bind-mounts into its container as `HF_HOME`), then `HF_HOME`, then `~/.cache/huggingface`. The resolved location is printed during setup and recorded in `local_ai_bench_config.json`.
 
-This matters most for a containerised vLLM: the container cannot see an arbitrary host directory, so weights downloaded to a project folder would be invisible to it and silently re-downloaded at run time. Because that cache is shared with other tools on the machine, non-catalog cleanup never touches it — cleanup remains limited to `models/llamacpp/`.
+This matters most for a containerised vLLM: the container cannot see an arbitrary host directory, so weights downloaded to a project folder would be invisible to it and silently re-downloaded at run time.
+
+Cached vLLM repos that the catalog does not own can be deleted from setup, listed separately from the llama.cpp folders and with one checkbox each rather than a single group toggle. That separation is deliberate: `models/llamacpp/` belongs to this project outright, while the Hugging Face cache is shared with anything else on the machine that uses it, so each entry is a decision of its own and nothing is selected by default. Two guards apply. A catalog model's repo is never offered and is refused even if named directly, so a swap in `models.py` cannot make the model you are currently using deletable. And an entry is only listed when it actually contains `.safetensors` weights, which keeps tokenizer-only and dataset cache entries out of the list — the counterpart to the `*.gguf` check that guards llama.cpp cleanup. Symlinked cache entries are refused rather than followed.
+
+Replacing a model's `vllm_repo` strands the previous snapshot in that cache, since nothing removes it automatically. Setup's cleanup list is where those show up.
 
 vLLM's own platform support is much narrower than llama.cpp's, so setup decides what is possible here before offering anything, and states its reasoning rather than attempting an install that would fail after a multi-GB download:
 

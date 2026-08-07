@@ -94,6 +94,7 @@ Execution-progress tests verify the structured event parser, idempotent model co
 | HTTP concurrency | [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
 | llama.cpp native benchmarks | [test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py), [test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py) |
 | vLLM native benchmark | [test_vllm_benchmark.py](../tests/test_vllm_benchmark.py) |
+| Non-catalog vLLM cache cleanup | [test_vllm_cleanup.py](../tests/test_vllm_cleanup.py) |
 | MCQ, math, and reasoning | [test_mcq_benchmark.py](../tests/test_mcq_benchmark.py), [test_math_benchmark.py](../tests/test_math_benchmark.py), [test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py), [test_reasoning_questions.py](../tests/test_reasoning_questions.py) |
 | Code and tool use | [test_code_benchmark.py](../tests/test_code_benchmark.py), [test_tool_benchmark.py](../tests/test_tool_benchmark.py) |
 | Offline regrading | [test_regrade.py](../tests/test_regrade.py) |

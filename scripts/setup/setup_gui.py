@@ -124,6 +124,7 @@ def engine_checkbox_label(entry: dict) -> str:
 def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
+                             vllm_cleanup: list[dict] | None = None,
                              existing_hf_token: bool = False,
                              engine_entries: list[dict] | None = None,
                              sudo_package: str | None = None) -> dict | None:
@@ -137,6 +138,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "memory_ceiling_gb": memory_ceiling_gb,
             "detected_comfyui": str(detected_comfyui) if detected_comfyui else None,
             "cleanup_names": cleanup_names,
+            "vllm_cleanup": vllm_cleanup or [],
             "existing_hf_token": existing_hf_token,
             "engine_entries": engine_entries or [],
             "sudo_package": sudo_package,
@@ -157,6 +159,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
+                     vllm_cleanup: list[dict] | None = None,
                      existing_hf_token: bool = False,
                      engine_entries: list[dict] | None = None,
                      sudo_package: str | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
@@ -190,6 +193,11 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     save_token_var = tk.BooleanVar(value=True)
     override_token_var = tk.BooleanVar(value=False)
     cleanup_var = tk.BooleanVar(value=False)
+    vllm_cleanup = list(vllm_cleanup or [])
+    # One variable per cached repo: the vLLM cache is shared with other tools, so
+    # each entry is opted into individually rather than as a group.
+    vllm_cleanup_vars = {entry["directory_name"]: tk.BooleanVar(value=False)
+                         for entry in vllm_cleanup}
     comfy_mode_var = tk.StringVar(value="detected" if detected_comfyui else "download")
     comfy_path_var = tk.StringVar(value=str(detected_comfyui or ""))
     result: dict | None = None
@@ -313,6 +321,26 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             text=f"Delete {len(cleanup_names)} non-catalog model folder(s): {', '.join(cleanup_names)}",
             variable=cleanup_var,
         ).grid(row=row, column=0, sticky="w", pady=(14, 4))
+        row += 1
+    if vllm_cleanup:
+        ttk.Label(
+            model_list, font=("TkDefaultFont", 11, "bold"),
+            text="Cached vLLM weights not in the catalog",
+        ).grid(row=row, column=0, sticky="w", pady=(14, 0))
+        row += 1
+        ttk.Label(
+            model_list, wraplength=520,
+            text=("This cache is shared with anything else on this machine that uses "
+                  "Hugging Face. Delete only what you recognize."),
+        ).grid(row=row, column=0, sticky="w", pady=(0, 4))
+        row += 1
+        for entry in vllm_cleanup:
+            ttk.Checkbutton(
+                model_list,
+                text=f"Delete {entry['repo']}  (~{entry['size'] / 1e9:.1f} GB)",
+                variable=vllm_cleanup_vars[entry["directory_name"]],
+            ).grid(row=row, column=0, sticky="w")
+            row += 1
 
     credentials = new_page()
     ttk.Label(credentials, text="Hugging Face", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -423,6 +451,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             "embedding_tags": [m["tag"] for m in EMBED_MODELS if model_vars[m["tag"]].get()],
             "image_shorts": [m["short"] for m in IMAGE_MODELS if model_vars[m["short"]].get()],
             "cleanup_names": cleanup_names if cleanup_var.get() else [],
+            "vllm_cleanup_names": [name for name, var in vllm_cleanup_vars.items() if var.get()],
             "hf_token": hf_token,
             "save_hf_token": should_save_gui_token(hf_token, save_token_var.get()),
             "use_existing_hf_token": existing_hf_token and not hf_token,
@@ -439,6 +468,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Embedding models: {len(plan['embedding_tags'])}",
             f"Image models: {len(plan['image_shorts'])}",
             f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
+            f"Delete cached vLLM weights: {len(plan['vllm_cleanup_names'])}",
             f"Hugging Face token: {hf_token_review_label(plan)}",
             f"ComfyUI: {plan['comfyui_mode']}",
         ]
@@ -528,6 +558,7 @@ def main() -> None:  # pragma: no cover
         memory_ceiling_gb=request["memory_ceiling_gb"],
         detected_comfyui=Path(request["detected_comfyui"]) if request["detected_comfyui"] else None,
         cleanup_names=request["cleanup_names"],
+        vllm_cleanup=request.get("vllm_cleanup", []),
         existing_hf_token=request["existing_hf_token"],
         engine_entries=request.get("engine_entries") or [],
         sudo_package=request.get("sudo_package"),

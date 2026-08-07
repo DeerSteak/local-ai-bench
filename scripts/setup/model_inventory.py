@@ -225,3 +225,88 @@ def format_model_inventory(inventory: dict[str, list[dict]], engine_name: str) -
         f"{counts['custom']} custom, {counts['image']} image installed"
     )
     return lines
+
+
+# ── non-catalog vLLM weights (HuggingFace cache) ──
+
+def hf_cache_repo_id(directory_name: str) -> str | None:
+    """`models--org--name` back to `org/name`. None for anything else in the cache."""
+    if not directory_name.startswith("models--"):
+        return None
+    parts = directory_name[len("models--"):].split("--")
+    if len(parts) < 2 or not all(parts):
+        return None
+    return "/".join(parts)
+
+
+def catalog_vllm_repos(llm_catalog: list[dict] | None = None,
+                       embed_catalog: list[dict] | None = None) -> set[str]:
+    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
+    return {model["vllm_repo"] for model in llm_catalog + embed_catalog
+            if model.get("vllm_repo")}
+
+
+def _cached_repo_weight_bytes(path: Path) -> int:
+    """Total safetensors bytes under a cache entry, following its blob symlinks."""
+    total = 0
+    for snapshot_file in path.glob("snapshots/*/*.safetensors"):
+        try:
+            total += snapshot_file.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def find_non_catalog_vllm_repos(cache_home: Path, llm_catalog: list[dict] | None = None,
+                                embed_catalog: list[dict] | None = None) -> list[dict]:
+    """Cached HuggingFace repos holding weights that the catalog does not own.
+
+    The cache is shared with anything else on the machine, so an entry is only
+    reported when it actually holds safetensors — the counterpart to the GGUF
+    check that guards llama.cpp cleanup. See docs/setup.md."""
+    catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
+    hub = Path(cache_home) / "hub"
+    if not hub.is_dir():
+        return []
+    found = []
+    for path in hub.iterdir():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        repo = hf_cache_repo_id(path.name)
+        if repo is None or repo in catalog:
+            continue
+        size = _cached_repo_weight_bytes(path)
+        if not size:
+            continue
+        found.append({"repo": repo, "directory_name": path.name, "size": size})
+    return sorted(found, key=lambda entry: entry["repo"])
+
+
+def delete_non_catalog_vllm_repos(cache_home: Path, directory_names: list[str],
+                                  llm_catalog: list[dict] | None = None,
+                                  embed_catalog: list[dict] | None = None,
+                                  ) -> tuple[list[str], dict[str, str]]:
+    """Delete explicitly named cache entries, refusing anything the catalog owns."""
+    catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
+    hub = Path(cache_home) / "hub"
+    removed = []
+    failures = {}
+    for name in directory_names:
+        repo = hf_cache_repo_id(name)
+        if name != Path(name).name or repo is None or repo in catalog:
+            failures[name] = "not an eligible non-catalog cache entry"
+            continue
+        target = hub / name
+        if target.is_symlink() or not target.is_dir():
+            failures[name] = "cache entry no longer exists"
+            continue
+        if not _cached_repo_weight_bytes(target):
+            failures[name] = "cache entry holds no model weights"
+            continue
+        try:
+            shutil.rmtree(target)
+            removed.append(name)
+        except OSError as exc:
+            failures[name] = str(exc)
+    return removed, failures
