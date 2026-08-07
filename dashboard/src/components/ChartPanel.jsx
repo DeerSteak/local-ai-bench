@@ -7,6 +7,7 @@ import EmbeddingsPanel from "./panels/EmbeddingsPanel";
 import AccuracyPanel from "./panels/AccuracyPanel";
 import ConcurrencyPanel from "./panels/ConcurrencyPanel";
 import LlamaBenchPanel from "./panels/LlamaBenchPanel";
+import VllmBenchPanel from "./panels/VllmBenchPanel";
 import LlamaBenchBySystemPanel from "./panels/LlamaBenchBySystemPanel";
 import LlamaBenchConcPanel from "./panels/LlamaBenchConcPanel";
 import { EmptyState } from "./panels/shared";
@@ -50,6 +51,15 @@ export default function ChartPanel({
   if (section === "llamabench") {
     return (
       <LlamaBenchPanel
+        containerRef={containerRef} files={files} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
+      />
+    );
+  }
+
+  if (section === "vllmbench") {
+    return (
+      <VllmBenchPanel
         containerRef={containerRef} files={files} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
