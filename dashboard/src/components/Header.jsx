@@ -49,6 +49,14 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
               <span className={`tag ${styles.tagHostname}`}>{file.hostname}</span>
               <BackendTag backend={file.backend} />
               {file.os && <span className={`tag ${styles.tagOs}`}>{file.os}</span>}
+              {file.wsl && (
+                <span
+                  className={`tag ${styles.tagWsl}`}
+                  title="Ran inside WSL2 — GPU access is virtualized, so results are not directly comparable to bare-metal Linux"
+                >
+                  WSL2
+                </span>
+              )}
               {file.ram_gb && (
                 <span className={`tag ${styles.tagRam}`}>{file.ram_gb} GB RAM</span>
               )}

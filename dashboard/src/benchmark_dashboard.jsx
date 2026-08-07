@@ -147,6 +147,7 @@ export default function Dashboard() {
       engine:   data.engine || null,
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
+      wsl:      p.wsl === true,
       ram_gb:   p.ram_gb   || null,
       version:  data.version || null,
       timestamp: p.timestamp || null,
