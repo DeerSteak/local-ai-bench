@@ -466,11 +466,12 @@ def resolve_preset(name: str, available_tests: set[str]) -> dict:
 
 
 def preset_control_values(name: str, available_tests: set[str], defaults: dict) -> dict:
+    """No "engine" key: presets describe tests and run settings, so applying one
+    must leave the live engine selection alone."""
     preset = resolve_preset(name, available_tests)
     values = {
         "tests": {test: test in preset["tests"] for test in defaults["tests"]},
         "models": dict(defaults["models"]),
-        "engine": defaults["engine"],
         "max_prompt_tokens": (str(preset["max_prompt_tokens"])
                               if preset["max_prompt_tokens"] else "No cap"),
         "tg_tokens": set(defaults["tg_tokens"]),
@@ -687,8 +688,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
     configuration_frame.columnconfigure(0, weight=1, uniform="configuration")
     configuration_frame.columnconfigure(1, weight=1, uniform="configuration")
-    preset_row = ttk.Frame(configuration_frame)
-    preset_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    header_frame = ttk.Frame(configuration_frame)
+    header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    # Engine choice sits above the preset row: it changes what a run produces, and
+    # presets no longer carry it, so it has to be visible without scrolling.
+    engine_box = ttk.LabelFrame(header_frame, text="Inference engines", padding=12)
+    engine_box.pack(side="top", fill="x", pady=(0, 10))
+    preset_row = ttk.Frame(header_frame)
+    preset_row.pack(side="top", fill="x")
     preset_var = tk.StringVar(value=restored_preset_name(saved))
     ttk.Label(preset_row, text="Preset").pack(side="left")
     ttk.Combobox(
@@ -771,8 +778,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         wraplength=430,
     ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
-    engine_box = ttk.LabelFrame(configuration_frame, text="Inference engines", padding=12)
-    engine_box.grid(row=4, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     engine_check_vars = {
         name: tk.BooleanVar(value=name in parse_engine_selection(selected_engine))
         for name in available_engines
@@ -787,13 +792,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     for index, name in enumerate(available_engines):
         ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
-            row=index, column=0, sticky="w", pady=2)
+            row=0, column=index, sticky="w", padx=(0, 16))
     ttk.Button(
         engine_box, text="Reset", width=6,
         command=lambda: set_selected_engines([available_engines[0]]),
-    ).grid(row=0, column=1, padx=(8, 0), sticky="e")
-    ttk.Label(engine_box, textvariable=engine_note, wraplength=330).grid(
-        row=len(available_engines), column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=0, column=len(available_engines), padx=(8, 0), sticky="w")
+    engine_box.columnconfigure(len(available_engines) + 1, weight=1)
+    ttk.Label(engine_box, textvariable=engine_note).grid(
+        row=1, column=0, columnspan=len(available_engines) + 2, sticky="w", pady=(8, 0))
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
@@ -927,7 +933,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             raise ValueError("Tensor split is unavailable for the detected GPU runtime and topology.")
         applying_configuration[0] = True
         try:
-            restored = [name for name in parse_engine_selection(state["engine"])
+            restored = [name for name in parse_engine_selection(state.get("engine", ""))
                         if name in available_engines]
             if restored:
                 for name, variable in engine_check_vars.items():
@@ -955,7 +961,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def apply_portable_preset(portable):
         configuration = portable["configuration"]
         apply_frontend_state({
-            "engine": configuration["engine"], "tests": configuration["tests"],
+            "tests": configuration["tests"],
             "models": configuration["models"],
             "max_prompt_tokens": configuration["max_prompt_tokens"],
             "tg_tokens": configuration["tg_tokens"],
@@ -1784,7 +1790,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             variable.set(values["tests"].get(name, False))
         for name, variable in model_vars.items():
             variable.set(values["models"].get(name, False))
-        set_selected_engines(parse_engine_selection(values["engine"]))
+        if values.get("engine"):
+            set_selected_engines(parse_engine_selection(values["engine"]))
         cap_var.set(values["max_prompt_tokens"])
         for value, variable in tg_vars.items():
             variable.set(value in values["tg_tokens"])

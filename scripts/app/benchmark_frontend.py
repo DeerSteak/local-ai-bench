@@ -250,11 +250,13 @@ def frontend_state_availability_errors(state: dict, engines: list[str],
                                        test_entries: list[MenuEntry],
                                        model_entries: list[MenuEntry]) -> list[str]:
     errors = []
-    selected_engines = parse_engine_selection(state["engine"])
-    missing_engines = [name for name in selected_engines if name not in engines]
-    if not selected_engines or missing_engines:
-        errors.append("Engine is not installed: "
-                      + (", ".join(missing_engines) or state["engine"]))
+    # Portable presets carry no engine — an absent key keeps the live selection.
+    if "engine" in state:
+        selected_engines = parse_engine_selection(state["engine"])
+        missing_engines = [name for name in selected_engines if name not in engines]
+        if not selected_engines or missing_engines:
+            errors.append("Engine is not installed: "
+                          + (", ".join(missing_engines) or state["engine"]))
     available_tests = {entry.value for entry in test_entries if entry.available}
     missing_tests = sorted(set(state["tests"]) - available_tests)
     if missing_tests:

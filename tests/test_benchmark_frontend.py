@@ -1418,3 +1418,22 @@ def test_a_fully_installed_multi_engine_state_is_accepted():
     state = {"engine": "llamacpp,vllm", "tests": ["llm"],
              "models": {"llm": ["a"], "embedding": [], "image": []}}
     assert frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models) == []
+
+
+def test_a_state_without_an_engine_key_skips_engine_validation():
+    """Portable presets carry no engine, so importing one must not fail validation
+    nor override the engines already selected on screen."""
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"tests": ["llm"], "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models) == []
+
+
+def test_an_empty_engine_string_is_still_rejected_when_the_key_is_present():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp"], tests, models)

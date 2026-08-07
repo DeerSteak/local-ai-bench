@@ -4,8 +4,8 @@ import pytest
 
 from scripts.app.benchmark_frontend import GUI_OPTION_DEFAULTS, MenuEntry, build_frontend_state
 from scripts.app.benchmark_presets import (
-    PORTABLE_GUI_KEYS, build_portable_preset, compare_portable_presets,
-    load_portable_preset, save_portable_preset, validate_portable_preset,
+    PORTABLE_GUI_KEYS, PRESET_SCHEMA_VERSION, build_portable_preset, compare_portable_presets,
+    load_portable_preset, migrate_portable_preset, save_portable_preset, validate_portable_preset,
 )
 
 
@@ -38,6 +38,34 @@ def test_compare_reports_changed_sections():
     changed = build_portable_preset("Changed", sample_state())
     changed["configuration"]["options"]["runs"] = 7
     assert compare_portable_presets(original, changed) == ["options"]
+
+
+def test_presets_carry_no_engine_so_importing_one_keeps_the_engine_selection():
+    preset = build_portable_preset("No engine", sample_state())
+    assert "engine" not in preset["configuration"]
+    assert preset["schema_version"] == PRESET_SCHEMA_VERSION
+
+
+def test_v1_preset_still_imports_with_its_engine_dropped(tmp_path):
+    legacy = build_portable_preset("Legacy v1", sample_state())
+    legacy["schema_version"] = 1
+    legacy["configuration"]["engine"] = "llamacpp"
+    assert validate_portable_preset(legacy) == []
+    migrated = migrate_portable_preset(legacy)
+    assert migrated["schema_version"] == PRESET_SCHEMA_VERSION
+    assert "engine" not in migrated["configuration"]
+    assert migrated["configuration"]["tests"] == legacy["configuration"]["tests"]
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    assert load_portable_preset(path) == migrated
+    # Migrating an already-current preset is a no-op.
+    assert migrate_portable_preset(migrated) == migrated
+
+
+def test_current_schema_rejects_a_preset_that_still_carries_an_engine():
+    preset = build_portable_preset("Stale engine", sample_state())
+    preset["configuration"]["engine"] = "llamacpp"
+    assert validate_portable_preset(preset)
 
 
 @pytest.mark.parametrize("mutation", [

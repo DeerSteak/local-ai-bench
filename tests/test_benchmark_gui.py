@@ -497,6 +497,8 @@ def test_named_preset_replaces_the_complete_control_configuration():
         "options": dict(GUI_OPTION_DEFAULTS),
     }
     values = preset_control_values("Quick run", {"llm", "emb", "img"}, defaults)
+    # A preset must not touch the engine selection — see apply_control_values.
+    assert "engine" not in values
     assert values["tests"] == {"llm": True, "emb": True, "img": False}
     assert values["max_prompt_tokens"] == "8192"
     assert values["options"]["runs"] == 1
