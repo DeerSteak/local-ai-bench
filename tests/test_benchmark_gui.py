@@ -22,6 +22,7 @@ from scripts.app.benchmark_gui import (
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
+    progress_event_engine,
     progress_summary_rows, recovery_executor_command, recovery_progress_entries,
     resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
@@ -551,3 +552,30 @@ def test_plan_preview_sections_group_the_review_for_scanning():
         "Scope and duration": ["Broad cases: 3 passes"],
         "Output and environment": ["Results: automatic", "Network use: none expected"],
     }
+
+
+# ── progress-row engine attribution ──
+
+def test_progress_event_engine_uses_the_name_the_event_carries():
+    from scripts.app.benchmark_gui import progress_event_engine
+    event = {"kind": "model", "stage": "llm", "engine": "vllm"}
+    assert progress_event_engine(event, ["llamacpp", "vllm"]) == "vllm"
+
+
+def test_progress_event_engine_assumes_the_only_engine_when_unnamed():
+    from scripts.app.benchmark_gui import progress_event_engine
+    assert progress_event_engine({"kind": "model", "stage": "llm"}, ["llamacpp"]) == "llamacpp"
+
+
+def test_progress_event_engine_refuses_to_guess_during_a_multi_engine_run():
+    """An unnamed event previously landed on the first engine's rows, crediting the
+    vLLM pass's progress to llamacpp while vLLM's rows stayed queued."""
+    from scripts.app.benchmark_gui import progress_event_engine
+    assert progress_event_engine({"kind": "model", "stage": "llm"}, ["llamacpp", "vllm"]) is None
+
+
+def test_progress_event_engine_rejects_an_engine_that_is_not_in_this_run():
+    from scripts.app.benchmark_gui import progress_event_engine
+    event = {"kind": "stage", "stage": "llm", "engine": "mlx"}
+    assert progress_event_engine(event, ["llamacpp", "vllm"]) is None
+    assert progress_event_engine({"engine": "", "kind": "stage"}, ["llamacpp"]) == "llamacpp"

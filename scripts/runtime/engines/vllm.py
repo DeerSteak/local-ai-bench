@@ -129,10 +129,8 @@ class VllmEngine(InferenceEngine):
 
     @staticmethod
     def prefill_seconds_from_delta(before, after) -> float | None:
-        """Prefill seconds for a single request, from readings taken around it.
-
-        Only attributable when the histogram advanced by exactly one request, so a
-        concurrent or retried call yields None rather than a blended number."""
+        """Prefill seconds for one request, from readings taken around it. Attributable
+        only when the histogram advanced by exactly one — see docs/engines.md#prefill-timing."""
         if before is None or after is None:
             return None
         if after[1] - before[1] != 1:

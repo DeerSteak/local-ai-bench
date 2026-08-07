@@ -19,6 +19,7 @@ from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.app.progress_events import set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
@@ -253,6 +254,9 @@ def main(argv=None) -> int:
         sys.stderr.write("Runner ownership token is required.\n")
         return 2
     plan = load_runner_plan(args.event_store, args.job_id)
+    # A runner is its own process, so it does not inherit the parent's progress
+    # engine; without this every event falls back to the first engine's rows.
+    set_progress_engine(plan.engine_name)
     config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()

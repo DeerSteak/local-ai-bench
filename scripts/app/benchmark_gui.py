@@ -465,6 +465,15 @@ def resolve_preset(name: str, available_tests: set[str]) -> dict:
     }
 
 
+def progress_event_engine(event: dict, progress_engines: list[str]) -> str | None:
+    """Which engine's rows an event belongs to. An unnamed event is assumed to be the
+    sole running engine, never guessed at — see docs/how-it-works.md."""
+    named = event.get("engine")
+    if named:
+        return named if named in progress_engines else None
+    return progress_engines[0] if len(progress_engines) == 1 else None
+
+
 def preset_control_values(name: str, available_tests: set[str], defaults: dict) -> dict:
     """No "engine" key: presets describe tests and run settings, so applying one
     must leave the live engine selection alone."""
@@ -2068,7 +2077,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_summary_vars[label].set(value)
         if event["kind"] == "measurement":
             return
-        engine_name = event.get("engine") or progress_engines[0]
+        engine_name = progress_event_engine(event, progress_engines)
+        if engine_name is None:
+            return
         if event["kind"] == "model":
             variable = model_progress_vars.get((engine_name, event["stage"], event["model"]))
         else:
