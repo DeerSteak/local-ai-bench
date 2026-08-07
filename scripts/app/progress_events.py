@@ -10,11 +10,23 @@ from scripts.results.result_store import model_counts
 PROGRESS_PREFIX = "::local-ai-bench-progress::"
 
 
+_current_engine: str | None = None
+
+
+def set_progress_engine(name: str | None) -> None:
+    """Name every later event with the engine now running, so a multi-engine run's
+    passes stay distinguishable instead of overwriting each other's rows."""
+    global _current_engine
+    _current_engine = name
+
+
 def emit_progress(kind: str, stage: str, status: str, model: str | None = None,
                   **details) -> None:
     if os.environ.get("LOCAL_AI_BENCH_PROGRESS") != "1":
         return
     payload = {"kind": kind, "stage": stage, "status": status}
+    if _current_engine is not None:
+        payload["engine"] = _current_engine
     if model is not None:
         payload["model"] = model
     payload.update(details)

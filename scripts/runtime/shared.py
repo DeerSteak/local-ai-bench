@@ -8,6 +8,7 @@ import os
 import platform
 import random
 import statistics
+import signal
 import subprocess
 import sys
 import tempfile
@@ -207,7 +208,15 @@ class Shared:
         for proc in Shared._managed_procs:
             if proc.poll() is None:
                 Shared.log(f"Stopping managed process (pid {proc.pid}) ...")
-                proc.terminate()
+                # A server started in its own group (vLLM, whose EngineCore child holds
+                # the weights) must be signalled as a group or the child is orphaned.
+                if getattr(proc, "own_process_group", False) and os.name != "nt":
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    except (OSError, ProcessLookupError):
+                        proc.terminate()
+                else:
+                    proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:

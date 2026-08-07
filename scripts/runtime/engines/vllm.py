@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 import platform
+import signal
 import subprocess
 import tempfile
 import threading
@@ -137,24 +138,42 @@ class VllmEngine(InferenceEngine):
                 subprocess.run(["taskkill", "/IM", "vllm.exe", "/F"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
-                subprocess.run(["pkill", "-f", "vllm serve"],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # EngineCore is a separate process whose command line is not "vllm serve",
+                # so an orphan from an earlier crash needs its own pattern.
+                for pattern in ("vllm serve", "VLLM::EngineCore", "from_engine_args"):
+                    subprocess.run(["pkill", "-f", pattern],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             pass
 
-    def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills a real process
+    def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
+        """Signal the whole process group, so the EngineCore child dies with the server."""
         if self._proc is not None and self._proc.poll() is None:
-            self._proc.terminate()
+            self._signal_group(signal.SIGTERM)
             try:
                 self._proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                self._proc.kill()
+                self._signal_group(signal.SIGKILL)
+                try:
+                    self._proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
         self._proc = None
         self._loaded_tag = None
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
+
+    def _signal_group(self, sig) -> None:  # pragma: no cover — signals real processes
+        """Signal the server's whole group, falling back to the process itself."""
+        try:
+            os.killpg(os.getpgid(self._proc.pid), sig)
+        except (AttributeError, OSError, ProcessLookupError):
+            try:
+                self._proc.send_signal(sig)
+            except (OSError, ProcessLookupError):
+                pass
 
     def is_connection_crash(self, e: Exception) -> bool:
         if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
@@ -336,12 +355,17 @@ class VllmEngine(InferenceEngine):
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-vllm-server.log", delete=False)
             self._log_path = Path(log_fh.name)
             try:
-                proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT,
-                                         env=self._spawn_env())
+                # Own process group: vLLM forks an EngineCore child that holds the
+                # weights and KV cache, and signalling only the API server orphans it.
+                proc = subprocess.Popen(
+                    args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
+                    **({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+                       if os.name == "nt" else {"start_new_session": True}))
             except FileNotFoundError:
                 log_fh.close()
                 raise RuntimeError(f"'{args[0]}' not found in PATH") from None
             log_fh.close()
+            proc.own_process_group = True   # see Shared.shutdown_managed
             self._proc = proc
             Shared._managed_procs.append(proc)
 

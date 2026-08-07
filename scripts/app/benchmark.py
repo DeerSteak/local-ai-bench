@@ -14,7 +14,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
-from scripts.app.progress_events import PROGRESS_PREFIX
+from scripts.app.progress_events import PROGRESS_PREFIX, set_progress_engine
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
@@ -695,6 +695,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
+        set_progress_engine(engine_name)
         if multi_engine:
             Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
             _base = Path(base_out_path)

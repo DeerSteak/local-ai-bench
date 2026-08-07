@@ -362,3 +362,69 @@ def test_the_tolerance_covers_the_reported_gemma_failure(engine, monkeypatch):
     monkeypatch.setattr(VllmEngine, "max_context_length", lambda self, tag, default=0: 32768)
     limit = engine.context_limit("gemma3:1b-it-q4_K_M", 1024)
     assert 513 + config.GENERATE_MAX_TOKENS <= limit
+
+
+# ── process teardown ──
+
+def test_server_is_spawned_in_its_own_process_group(engine, monkeypatch):
+    """vLLM forks an EngineCore child holding the weights; signalling only the API
+    server orphans it, and the memory it holds is never released."""
+    import os as _os
+    captured = {}
+
+    def popen(args, **kwargs):
+        captured.update(kwargs)
+        return type("P", (), {"poll": staticmethod(lambda: None), "returncode": 0, "pid": 4321})()
+
+    monkeypatch.setattr("subprocess.Popen", popen)
+    monkeypatch.setattr(VllmEngine, "stop", lambda self, **kw: None)
+    monkeypatch.setattr(VllmEngine, "model_pulled", lambda self, tag: True)
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    engine._ensure_model("qwen3.5:9b-q4_K_M", 1024)
+
+    if _os.name == "nt":
+        assert captured.get("creationflags")
+    else:
+        assert captured.get("start_new_session") is True
+
+
+def test_stop_signals_the_group_then_escalates(engine, monkeypatch):
+    signalled = []
+
+    class Proc:
+        pid = 4321
+        def __init__(self): self.waits = 0
+        def poll(self): return None
+        def wait(self, timeout=None):
+            self.waits += 1
+            if self.waits == 1:
+                raise __import__("subprocess").TimeoutExpired("vllm", timeout)
+        def kill(self): signalled.append("kill")
+        def send_signal(self, sig): signalled.append(("signal", sig))
+
+    engine._proc = Proc()
+    monkeypatch.setattr("os.getpgid", lambda pid: pid)
+    monkeypatch.setattr("os.killpg", lambda pgid, sig: signalled.append(("killpg", pgid, sig)))
+    engine._stop_process(timeout=0.01)
+
+    import signal as _signal
+    assert ("killpg", 4321, _signal.SIGTERM) in signalled
+    assert ("killpg", 4321, _signal.SIGKILL) in signalled, "a hung group must be forced"
+
+
+def test_stop_falls_back_when_the_group_is_gone(engine, monkeypatch):
+    """A process that already exited must not raise out of teardown."""
+    sent = []
+
+    class Proc:
+        pid = 4321
+        def poll(self): return None
+        def wait(self, timeout=None): return None
+        def kill(self): sent.append("kill")
+        def send_signal(self, sig): sent.append(sig)
+
+    engine._proc = Proc()
+    monkeypatch.setattr("os.getpgid", lambda pid: (_ for _ in ()).throw(ProcessLookupError()))
+    engine._stop_process(timeout=0.01)
+    assert sent, "falls back to signalling the process itself"
+    assert engine._loaded_tag is None

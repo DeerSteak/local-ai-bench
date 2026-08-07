@@ -1595,7 +1595,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         start_button.configure(state="disabled")
         stop_button.configure(state="normal")
         notebook.select(log_tab)
-        show_progress_window(plan.stage_order, recovery_progress_entries(plan))
+        show_progress_window(plan.stage_order, recovery_progress_entries(plan),
+                             engines=[plan.engine_name])
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def start_history_fork(source_path, report):
@@ -1653,7 +1654,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         start_button.configure(state="disabled")
         stop_button.configure(state="normal")
         notebook.select(log_tab)
-        show_progress_window(plan.stage_order, recovery_progress_entries(plan))
+        show_progress_window(plan.stage_order, recovery_progress_entries(plan),
+                             engines=[plan.engine_name])
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def choose_retry_cases(candidates):
@@ -1745,6 +1747,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(
             [selected[0]["stage"]],
             recovery_progress_entries(plan, {candidate["model"] for candidate in selected}),
+            engines=[plan.engine_name],
         )
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
@@ -1916,6 +1919,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_window = None
     stage_progress_vars = {}
     model_progress_vars = {}
+    progress_engines = [""]
     progress_summary_vars = {}
     progress_resource_vars = {}
     progress_remaining_var = tk.StringVar(value="Remaining time: calibrating")
@@ -1927,7 +1931,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     }
     system_memory_baseline = [0.0]
 
-    def show_progress_window(tests, entries):
+    def show_progress_window(tests, entries, engines=None):
         nonlocal progress_window, stage_progress_vars, model_progress_vars
         nonlocal progress_metrics, progress_started_at
         gpu_sample.update({
@@ -2013,29 +2017,40 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         progress_window.bind("<MouseWheel>", scroll_status)
         progress_window.bind("<Button-4>", scroll_status)
         progress_window.bind("<Button-5>", scroll_status)
-        for stage in (key for key in STAGE_ORDER if key in tests):
-            row = ttk.Frame(status_list)
-            row.pack(fill="x", pady=(6, 1))
-            ttk.Label(row, text=labels.get(stage, stage), font=("TkDefaultFont", 10, "bold")).pack(
-                side="left", anchor="w",
-            )
-            stage_progress_vars[stage] = tk.StringVar(value="○ Queued")
-            ttk.Label(row, textvariable=stage_progress_vars[stage]).pack(side="right", anchor="e")
-            if stage == "emb":
-                stage_models = [entry for entry in selected if entry.kind == "embedding"]
-            elif stage == "img":
-                stage_models = [entry for entry in selected if entry.kind == "image"]
-            elif stage in LLM_BACKED_TESTS:
-                stage_models = [entry for entry in selected if entry.kind in {"llm", "custom"}]
-            else:
-                stage_models = []
-            for entry in stage_models:
-                model_row = ttk.Frame(status_list)
-                model_row.pack(fill="x", padx=(14, 0), pady=1)
-                ttk.Label(model_row, text=entry.label, width=32).pack(side="left", anchor="w")
-                variable = tk.StringVar(value="○ Queued")
-                model_progress_vars[(stage, entry.label)] = variable
-                ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")
+        # One full section set per engine, in the order the run executes them.
+        run_engines = list(engines or parse_engine_selection(engine_var.get()))
+        progress_engines[:] = run_engines
+        for engine_index, engine_name in enumerate(run_engines):
+            for stage in (key for key in STAGE_ORDER if key in tests):
+                # Images don't depend on the engine — benchmark.py runs them on the first pass only.
+                if stage == "img" and engine_index > 0:
+                    continue
+                row = ttk.Frame(status_list)
+                row.pack(fill="x", pady=(6, 1))
+                heading = labels.get(stage, stage)
+                if len(run_engines) > 1:
+                    heading = f"{heading} — {engine_name}"
+                ttk.Label(row, text=heading, font=("TkDefaultFont", 10, "bold")).pack(
+                    side="left", anchor="w",
+                )
+                stage_progress_vars[(engine_name, stage)] = tk.StringVar(value="○ Queued")
+                ttk.Label(row, textvariable=stage_progress_vars[(engine_name, stage)]).pack(
+                    side="right", anchor="e")
+                if stage == "emb":
+                    stage_models = [entry for entry in selected if entry.kind == "embedding"]
+                elif stage == "img":
+                    stage_models = [entry for entry in selected if entry.kind == "image"]
+                elif stage in LLM_BACKED_TESTS:
+                    stage_models = [entry for entry in selected if entry.kind in {"llm", "custom"}]
+                else:
+                    stage_models = []
+                for entry in stage_models:
+                    model_row = ttk.Frame(status_list)
+                    model_row.pack(fill="x", padx=(14, 0), pady=1)
+                    ttk.Label(model_row, text=entry.label, width=32).pack(side="left", anchor="w")
+                    variable = tk.StringVar(value="○ Queued")
+                    model_progress_vars[(engine_name, stage, entry.label)] = variable
+                    ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")
         progress_window.lift()
 
     def update_progress(event):
@@ -2046,10 +2061,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_summary_vars[label].set(value)
         if event["kind"] == "measurement":
             return
+        engine_name = event.get("engine") or progress_engines[0]
         if event["kind"] == "model":
-            variable = model_progress_vars.get((event["stage"], event["model"]))
+            variable = model_progress_vars.get((engine_name, event["stage"], event["model"]))
         else:
-            variable = stage_progress_vars.get(event["stage"])
+            variable = stage_progress_vars.get((engine_name, event["stage"]))
         if variable is None:
             return
         variable.set({
@@ -2057,8 +2073,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             "failed": "✕ Failed", "interrupted": "■ Interrupted",
         }[event["status"]])
         if event["kind"] == "stage" and event["status"] in {"complete", "failed", "interrupted"}:
-            for (stage, _), model_var in model_progress_vars.items():
-                if stage == event["stage"] and model_var.get() in {"○ Queued", "▶ Running"}:
+            for (row_engine, stage, _), model_var in model_progress_vars.items():
+                if (row_engine == engine_name and stage == event["stage"]
+                        and model_var.get() in {"○ Queued", "▶ Running"}):
                     model_var.set("— Not run" if event["status"] != "interrupted" else "■ Interrupted")
 
     def append_log(text):
@@ -2281,7 +2298,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         start_button.configure(state="disabled")
         stop_button.configure(state="normal")
         notebook.select(log_tab)
-        show_progress_window(tests, entries)
+        show_progress_window(tests, entries, engines=parse_engine_selection(engine_var.get()))
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def stop_run():
