@@ -6,6 +6,20 @@ from scripts.runtime import config
 from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 
 
+def test_error_log_excerpt_keeps_short_output_unchanged():
+    assert VllmBenchBenchmark.error_log_excerpt("  root cause\ntraceback  ", 100) == (
+        "root cause\ntraceback"
+    )
+
+
+def test_error_log_excerpt_keeps_both_ends_of_long_output():
+    output = "ROOT" + ("x" * 20) + "TRACE"
+    excerpt = VllmBenchBenchmark.error_log_excerpt(output, 10)
+    assert excerpt.startswith("ROOTx")
+    assert excerpt.endswith("TRACE")
+    assert "19 characters omitted" in excerpt
+
+
 def test_latency_command_pins_iteration_counts_instead_of_vllm_defaults():
     command = VllmBenchBenchmark.build_latency_command(
         "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128,

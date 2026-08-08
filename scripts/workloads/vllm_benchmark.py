@@ -27,6 +27,19 @@ class VllmBenchModelResult(TypedDict):
 
 
 class VllmBenchBenchmark:
+    ERROR_LOG_CHARS = 20_000
+
+    @staticmethod
+    def error_log_excerpt(output: str | None, limit: int = ERROR_LOG_CHARS) -> str:
+        """Keep startup/root-cause output and the final traceback within a readable limit."""
+        text = (output or "").strip()
+        if len(text) <= limit:
+            return text
+        omitted = len(text) - limit
+        split = limit // 2
+        return (f"{text[:split]}\n\n... {omitted} characters omitted ...\n\n"
+                f"{text[-(limit - split):]}")
+
     @staticmethod
     def bench_command(executable: str, subcommand: str, repo: str, output_json: Path,
                       *, input_len: int, output_len: int, extra: list[str]) -> list[str]:
@@ -149,7 +162,8 @@ class VllmBenchBenchmark:
             if proc in Shared._managed_procs:
                 Shared._managed_procs.remove(proc)
         if proc.returncode != 0:
-            raise RuntimeError(f"vllm bench exited {proc.returncode}: {(output or '').strip()[-2000:]}")
+            excerpt = self.error_log_excerpt(output)
+            raise RuntimeError(f"vllm bench exited {proc.returncode}: {excerpt}")
         try:
             return json.loads(output_json.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
