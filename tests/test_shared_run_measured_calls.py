@@ -16,8 +16,10 @@ from scripts.runtime.engines.base import GenerationMeasurement
 
 
 class _FakeEngine:
-    """Minimal double for the three engine methods run_measured_calls calls;
+    """Minimal double for the engine methods run_measured_calls calls;
     `recovers` controls whether a crash is treated as recoverable."""
+
+    name = "fake"
 
     def __init__(self, recovers=True):
         self._recovers = recovers
@@ -212,8 +214,9 @@ def test_run_measured_calls_crash_retries_then_gives_up(tmp_path):
         3, call, "tag", crash_cache, cache_path, "testing", _engine())
     assert samples == []
     assert status == "crashed"
-    assert "tag" in crash_cache
-    assert Shared.load_crash_cache(cache_path)["tag"]["crashed_at"] == crash_cache["tag"]["crashed_at"]
+    assert "tag" in crash_cache["fake"]
+    assert (Shared.load_crash_cache(cache_path)["fake"]["tag"]["crashed_at"]
+            == crash_cache["fake"]["tag"]["crashed_at"])
 
 
 def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path):
@@ -244,7 +247,7 @@ def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path):
         3, call, "tag", crash_cache, cache_path, "testing", _engine(recovers=False))
     assert samples == []
     assert status == "crashed"
-    assert "tag" in crash_cache
+    assert "tag" in crash_cache["fake"]
 
 
 def test_slow_tps_early_exit_triggers_below_cutoff():
