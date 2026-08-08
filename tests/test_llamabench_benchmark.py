@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,42 @@ def test_run_one_streams_each_jsonl_result(monkeypatch):
     seen = []
     assert LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_result=seen.append) == rows
     assert seen == rows
+
+
+def test_run_one_delivers_results_on_the_calling_thread(monkeypatch):
+    """on_result writes to the SQLite journal, which rejects use from any thread but its
+    creator's — delivering from the stdout drain thread failed every llama-bench model."""
+    rows = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
+            {"n_prompt": 0, "n_gen": 128, "avg_ts": 2.0}]
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
+        ),
+    )
+    caller = threading.current_thread().ident
+    threads = []
+    LlamaBenchBenchmark.run_one(
+        ["llama-bench"], 60,
+        on_result=lambda _row: threads.append(threading.current_thread().ident),
+    )
+    assert threads and all(ident == caller for ident in threads)
+
+
+def test_run_one_delivers_every_row_even_when_the_process_exits_immediately(monkeypatch):
+    # A process that never polls as running must still flush its rows to on_result.
+    rows = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
+            {"n_prompt": 1024, "n_gen": 0, "avg_ts": 2.0},
+            {"n_prompt": 2048, "n_gen": 0, "avg_ts": 3.0}]
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
+        ),
+    )
+    seen = []
+    assert LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_result=seen.append) == rows
+    assert seen == rows, "rows delivered after exit must preserve order and completeness"
 
 
 def test_run_one_propagates_stream_callback_failure(monkeypatch):

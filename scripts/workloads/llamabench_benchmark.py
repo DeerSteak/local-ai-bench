@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
@@ -90,8 +91,23 @@ class LlamaBenchBenchmark:
         stdout_errors: list[str] = []
         callback_errors: list[BaseException] = []
         stderr_chunks: list[str] = []
+        pending: deque[dict] = deque()
         activity_lock = threading.Lock()
         last_activity = [time.monotonic()]
+
+        def _deliver_pending() -> bool:
+            """Run on_result on the calling (main) thread. False once a callback has raised."""
+            while True:
+                with activity_lock:
+                    row = pending.popleft() if pending else None
+                if row is None:
+                    return not callback_errors
+                if on_result:
+                    try:
+                        on_result(row)
+                    except BaseException as exc:
+                        callback_errors.append(exc)
+                        return False
 
         def _touch():
             with activity_lock:
@@ -113,12 +129,10 @@ class LlamaBenchBenchmark:
                     stdout_errors.append(stripped)
                     continue
                 rows.append(row)
-                if on_result:
-                    try:
-                        on_result(row)
-                    except BaseException as exc:
-                        callback_errors.append(exc)
-                        return
+                # Handed to the main thread rather than called here: on_result writes to the
+                # SQLite journal, which refuses use from a thread other than its creator.
+                with activity_lock:
+                    pending.append(row)
 
         def _drain_stderr():
             assert proc.stderr is not None
@@ -136,7 +150,7 @@ class LlamaBenchBenchmark:
 
         idle_timed_out = False
         while proc.poll() is None:
-            if callback_errors:
+            if not _deliver_pending():
                 proc.kill()
                 break
             with activity_lock:
@@ -152,6 +166,9 @@ class LlamaBenchBenchmark:
         stderr_thread.join()
         if proc in Shared._managed_procs:
             Shared._managed_procs.remove(proc)
+        # Rows can arrive between the last poll and process exit.
+        if not idle_timed_out:
+            _deliver_pending()
 
         if idle_timed_out:
             raise subprocess.TimeoutExpired(cmd, timeout)
@@ -300,7 +317,9 @@ class LlamaBenchBenchmark:
                         stopped = True
                         break
                 if stopped:
-                    Shared.err(f"{label}: native benchmark stopped with partial results")
+                    reason = model_result.get("error")
+                    Shared.err(f"{label}: native benchmark stopped with partial results"
+                               + (f" — {reason}" if reason else ""))
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running llama-bench — {exc} — "
                            "skipping remaining work for this model")
