@@ -140,7 +140,7 @@ Native Windows cannot run vLLM, but **WSL2 can, and needs no special support fro
 
 Treat it as a second machine. WSL2 gets its own clone, its own `bench-env/`, and its own HuggingFace cache — nothing is shared with a Windows-side installation, so the model set is downloaded again in full.
 
-**1. Configure memory before installing anything.** WSL2 defaults to about half the host's RAM, and setup's memory-fit estimate believes what the OS reports — so on a 64GB machine it will silently filter out models that actually fit. Create `%UserProfile%\.wslconfig`:
+**1. Configure memory before installing anything.** WSL2 defaults to about half the host's RAM, and setup's memory-fit estimate believes what the OS reports — so on a 64GB machine it will silently filter out models that actually fit. Setup warns when it detects WSL2, reporting the RAM it can see, but it cannot check that against the Windows host's total from inside the VM — only you can tell whether the number it prints is the whole machine. Create `%UserProfile%\.wslconfig`:
 
 ```ini
 [wsl2]
@@ -157,7 +157,7 @@ wsl --install
 
 **3. Install the NVIDIA driver on Windows only.** The host driver projects the GPU into WSL2 through `/dev/dxg`, and `nvidia-smi` works inside the distribution without any Linux driver. Installing an NVIDIA Linux driver inside WSL2 overwrites that passthrough and is the most common way this setup breaks.
 
-**4. Install the CUDA toolkit inside WSL2.** The Windows driver provides `libcuda.so` and a working `nvidia-smi`, but not `nvcc` — and llama.cpp is a source build on Linux, so without the toolkit setup configures a CPU-only build and says so. Use the **WSL-Ubuntu** repository, which ships the toolkit without a Linux driver:
+**4. Install the CUDA toolkit inside WSL2 — or let setup do it.** The Windows driver provides `libcuda.so` and a working `nvidia-smi`, but not `nvcc`, and llama.cpp is a source build on Linux. Without the toolkit the build is CPU-only. When setup detects WSL2 with an NVIDIA GPU and no `nvcc`, it offers to install this for you, printing the commands first and defaulting to no; declining just means a CPU-only llama.cpp. To do it yourself, use the **WSL-Ubuntu** repository, which ships the toolkit without a Linux driver:
 
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb

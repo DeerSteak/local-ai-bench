@@ -33,6 +33,8 @@ from scripts.runtime.comfyui_installation import (
     write_extra_model_paths,
 )
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
+from scripts.runtime.shared import Shared
+from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
     engine_download_size, engine_fit_report, find_non_catalog_vllm_repos,
@@ -548,6 +550,14 @@ if memory_ceiling_gb is not None:
 else:
     warn(memory_ceiling_note)
 
+# WSL2 caps the VM near half the host's RAM, and the host total isn't visible from in here.
+if Shared.detect_wsl(os_name, platform.release()):
+    _reported = f"{total_ram_gb:.0f} GB" if total_ram_gb else "an unknown amount"
+    warn(f"Running under WSL2, which reports {_reported} of RAM — if the Windows "
+         "host has more, models that would fit are being filtered out silently")
+    info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
+         "then run 'wsl --shutdown' — see docs/setup.md")
+
 def _find_llamacpp_exe(base_name):
     """Locate one llama.cpp tool using the runtime's system-first policy."""
     return find_llamacpp_tool(
@@ -786,6 +796,23 @@ header_command = next(
 ) if missing_python_header else None
 header_package = header_command[-1] if header_command else None
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
+_cuda_plan = cuda_toolkit_plan(
+    is_wsl=Shared.detect_wsl(os_name, platform.release()),
+    nvidia_ok=nvidia_ok, nvcc_found=find_nvcc() is not None,
+)
+if _cuda_plan:
+    section("CUDA Toolkit")
+    warn("An NVIDIA GPU is available under WSL2 but the CUDA toolkit (nvcc) is missing — "
+         "llama.cpp would build CPU-only")
+    info("Setup can install NVIDIA's WSL-Ubuntu CUDA toolkit. It contains no Linux GPU "
+         "driver, so the Windows driver's passthrough is left intact. Needs sudo.")
+    for _command in _cuda_plan:
+        print(f"      {' '.join(_command)}")
+    if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+        run_cuda_toolkit_install(_cuda_plan)
+    else:
+        info("Skipped — llama.cpp will build CPU-only")
+
 vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
              else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
              else f"found at {VLLM_BIN}" if VLLM_BIN else None)
