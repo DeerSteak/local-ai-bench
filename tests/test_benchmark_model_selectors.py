@@ -121,6 +121,7 @@ def test_image_selector_narrows_after_maxtier():
 
 def test_llamabench_shares_the_llm_test_scope():
     assert "llamabench" in LLM_TESTS
+    assert "vllmbench" in LLM_TESTS
 
 
 def test_engine_validation_rejects_empty_llamabench_scope():
@@ -242,6 +243,31 @@ def test_engine_prepass_aggregates_failure_from_any_engine():
     ]
 
 
+def test_native_selector_is_validated_only_by_its_own_engine():
+    engines = {
+        "llamacpp": FakeEngine("llamacpp", []),
+        "vllm": FakeEngine("vllm", ["my-custom-model"]),
+    }
+    scopes, errors = resolve_engine_scopes(
+        ["llamacpp", "vllm"], engines.get, LLM_MODELS, "all",
+        ["my-custom-model"], ["vllmbench"],
+    )
+    assert [model["tag"] for model in scopes[1]["llm_models"]] == ["my-custom-model"]
+    assert errors == []
+
+
+def test_vllmbench_rejects_an_empty_explicit_model_scope():
+    engine = FakeEngine("vllm", [])
+    _scopes, errors = resolve_engine_scopes(
+        ["vllm"], lambda _: engine, LLM_MODELS, "all",
+        ["missing-custom"], ["vllmbench"],
+    )
+    assert errors == [
+        "--llm-models missing-custom matched no LLM models in the selected tier "
+        "(all) or installed for vllm"
+    ]
+
+
 def test_out_of_tier_catalog_model_does_not_reappear_as_custom():
     selected_tier = LLM_MODELS[:1]
     out_of_tier = LLM_MODELS[-1]["tag"]
@@ -291,3 +317,9 @@ def test_plan_models_include_short_only_images_for_selected_image_workload():
         "llm": [], "concurrency": [], "embeddings": [],
         "images": [{"short": "sdxl"}],
     }
+
+
+def test_plan_records_models_for_vllmbench():
+    llm = [{"tag": "llm:4b", "short": "llm"}]
+    scoped = selected_plan_models(["vllmbench"], llm, [], [], [])
+    assert scoped["llm"] == llm

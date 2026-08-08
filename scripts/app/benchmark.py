@@ -293,7 +293,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 
 ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
-LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc"]
+LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc", "vllmbench"]
 
 # Tests that shell out to one engine's own native benchmark binary rather than going
 # through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
@@ -394,6 +394,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
     errors = []
     for engine_name in engine_names:
         engine = engine_factory(engine_name)
+        engine_tests = engine_pass_tests(tests, engine_name, include_images=True)
         installed_tags = (
             [model["tag"] for model in engine.list_installed_models()]
             if inventory_needed else []
@@ -408,7 +409,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             "concurrency_models": concurrency_models,
         })
         errors.extend(validate_engine_scopes(
-            tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
+            engine_tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
         ))
     return scopes, errors
 
