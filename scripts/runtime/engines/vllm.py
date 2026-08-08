@@ -496,11 +496,13 @@ class VllmEngine(InferenceEngine):
                 # weights and KV cache, and signalling only the API server orphans it.
                 if os.name == "nt":
                     proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
+                        args, stdout=log_fh, stderr=subprocess.STDOUT,
+                        env=self.runtime_environment(),
                         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
                 else:
                     proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
+                        args, stdout=log_fh, stderr=subprocess.STDOUT,
+                        env=self.runtime_environment(),
                         start_new_session=True)
             except FileNotFoundError:
                 log_fh.close()
@@ -532,8 +534,8 @@ class VllmEngine(InferenceEngine):
             self._stop_process()
             raise RuntimeError(f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
 
-    def _spawn_env(self) -> dict:
-        """Point the server at the cache setup filled, and pass a token when one exists."""
+    def runtime_environment(self) -> dict:
+        """Environment shared by serving and offline vLLM commands."""
         env = {**os.environ, "HF_HOME": str(self._cache_home)}
         # The venv's bin holds ninja, which FlashInfer shells out to when JIT-building kernels.
         venv_bin = config.VLLM_VENV / ("Scripts" if os.name == "nt" else "bin")

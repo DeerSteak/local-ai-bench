@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -92,6 +93,20 @@ def test_max_model_len_is_per_sequence_and_not_scaled_by_parallelism(engine):
 
 def test_context_is_omitted_when_unset(engine):
     assert "--max-model-len" not in engine.server_command("org/m", None)
+
+
+def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, tmp_path):
+    venv = tmp_path / "vllm-env"
+    bin_dir = venv / ("Scripts" if os.name == "nt" else "bin")
+    bin_dir.mkdir(parents=True)
+    monkeypatch.setattr(config, "VLLM_VENV", venv)
+    monkeypatch.setattr(config, "SCRIPT_DIR", tmp_path)
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    environment = engine.runtime_environment()
+
+    assert environment["PATH"].split(os.pathsep) == [str(bin_dir), "/usr/bin"]
+    assert environment["HF_HOME"] == str(engine.cache_home())
 
 
 def test_embedding_mode_uses_the_pooling_runner(engine):

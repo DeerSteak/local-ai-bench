@@ -2,7 +2,6 @@
 Talks to VllmEngine directly rather than the InferenceEngine interface, mirroring llamabench_benchmark."""
 
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -182,7 +181,7 @@ class VllmBenchBenchmark:
 
         # The offline subcommands load the weights themselves, so nothing else may hold the GPU.
         engine.stop()
-        env = {**os.environ, "HF_HOME": str(engine.cache_home())}
+        env = engine.runtime_environment()
 
         for model in models:
             tag, label, short = model["tag"], model["label"], model["short"]
