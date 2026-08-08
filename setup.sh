@@ -128,6 +128,18 @@ if [ "$OS" = "Linux" ]; then
                 warn "Header install failed — vLLM will not start until it succeeds"
         fi
     fi
+
+    # Debian/Ubuntu ship ensurepip separately, and without it `python -m venv` fails
+    # for an interpreter this script found rather than installed.
+    if ! "$PYTHON" -c "import ensurepip" &>/dev/null; then
+        if command -v apt-get &>/dev/null && apt-cache show "python${PYTHON_SERIES}-venv" &>/dev/null; then
+            info "Installing the Python venv module (python${PYTHON_SERIES}-venv)..."
+            sudo apt-get install -y "python${PYTHON_SERIES}-venv" || \
+                warn "venv install failed — creating $VENV_DIR will not succeed"
+        else
+            warn "Python's venv module is missing and no package was found to install it."
+        fi
+    fi
 fi
 
 GUI_SESSION=0
@@ -167,6 +179,11 @@ section "Virtual Environment"
 if [ -x "$VENV_DIR/bin/python" ]; then
     if ! "$VENV_DIR/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
         fail "$VENV_DIR uses Python older than 3.11. Move or remove it, then re-run setup."
+        exit 1
+    fi
+    # venv symlinks bin/python before running ensurepip, so pip is the real completeness test.
+    if [ ! -x "$VENV_DIR/bin/pip" ]; then
+        fail "$VENV_DIR is missing pip — an earlier setup run failed partway. Remove it, then re-run setup."
         exit 1
     fi
     ok "Venv already exists at $VENV_DIR"

@@ -156,7 +156,7 @@ sudo apt update && sudo apt install -y python3.12-venv python3.12-dev build-esse
 git clone <repo-url> ~/local-ai-bench && cd ~/local-ai-bench && bash setup.sh
 ```
 
-Clone into the WSL2 filesystem (`~/`), **not** a Windows drive under `/mnt/c`. That path crosses a 9p filesystem bridge slow enough to distort model-load timings, which matters when every benchmarked model is a multi-GB safetensors snapshot.
+Clone into the WSL2 filesystem (`~/`), **not** a Windows drive under `/mnt/c`. That path crosses a 9p filesystem bridge slow enough to distort model-load timings, which matters when every benchmarked model is a multi-GB safetensors snapshot. Reusing a Windows checkout that way also exposes it to Windows line endings — if `./setup.sh` fails with ``env: 'bash\r': No such file or directory``, that checkout has CRLF shebangs and needs `git checkout` re-run under the repo's `.gitattributes`, which pins `*.sh` to LF.
 
 Runs made this way record `wsl: true` in the results profile and are tagged `WSL2` in the dashboard. This is not cosmetic: GPU access under WSL2 is virtualized and carries real overhead, so a WSL2 result is not interchangeable with a bare-metal Linux result on identical hardware. See [Limitations](limitations.md).
 
