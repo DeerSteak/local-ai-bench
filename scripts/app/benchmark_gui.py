@@ -639,7 +639,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     options = effective_gui_options(saved)
     if options["gpu_split_mode"] not in gpu_split_modes:
         options["gpu_split_mode"] = "layer"
-    option_vars = {
+    option_vars: dict[str, tk.Variable] = {
         key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value)))
         for key, value in options.items()
     }
@@ -715,7 +715,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).pack(side="left", padx=(8, 8))
     project_row = ttk.Frame(configuration_frame)
     project_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-    active_project = {"value": None}
+    active_project: dict[str, dict | None] = {"value": None}
     project_status = tk.StringVar(value="No project loaded")
     ttk.Label(project_row, textvariable=project_status).pack(side="left", padx=(0, 12))
     advanced_toggle = ttk.Checkbutton(
@@ -1019,7 +1019,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             messagebox.showerror("Run-plan import failed", str(exc), parent=root)
 
     def choose_project_workflow():
-        selected = {"value": None}
+        selected: dict[str, str | None] = {"value": None}
         dialog = tk.Toplevel(root)
         dialog.title("Project workflow")
         dialog.transient(root)
@@ -1163,7 +1163,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         subprocess.Popen(open_path_command(folder, platform.system()))
 
     def review_outbound_metadata(result, purpose, *, allow_aliases=True):
-        decision = {"value": None}
+        decision: dict[str, dict | None] = {"value": None}
         dialog = tk.Toplevel(root)
         dialog.title(f"Review metadata for {purpose}")
         dialog.geometry("760x600")
@@ -1423,10 +1423,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 selected_history_items(), history_item_paths, maximum=6,
             )
             command = dashboard_launcher_command(paths, platform.system())
-            options = {"cwd": config.SCRIPT_DIR}
-            if platform.system() == "Windows":
-                options["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-            subprocess.Popen(command, **options)
+            subprocess.Popen(
+                command, cwd=config.SCRIPT_DIR,
+                creationflags=(getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+                               if platform.system() == "Windows" else 0))
             history_message.set(
                 f"Opening {len(paths)} selected result{'s' if len(paths) != 1 else ''} in the dashboard."
             )
@@ -1548,9 +1548,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     report, error = None, str(exc)
 
             def finish():
-                if error:
+                if error or report is None:
                     history_message.set("Recovery inspection failed.")
-                    messagebox.showerror("Recovery inspection failed", error, parent=root)
+                    messagebox.showerror("Recovery inspection failed",
+                                         error or "No recovery report was produced.", parent=root)
                     return
                 history_message.set(
                     f"Recovery decision for {result_path.name}: {report['action']}"
@@ -1596,7 +1597,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ):
             return
         command = recovery_executor_command(result_path)
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
@@ -1655,7 +1656,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             root.after(0, start_run)
             return
         command = fork_executor_command(source_path, output_path)
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
@@ -1745,7 +1746,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         command = retry_executor_command(
             result_path, [candidate["case_id"] for candidate in selected],
         )
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
@@ -2154,10 +2155,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 gpu_sample["running"] = True
                 gpu_sample["next_at"] = now + 2.0
                 generation = gpu_sample["generation"]
+                sampled_pid = process.pid
 
                 def sample_gpu():
                     value = query_gpu_usage()
-                    memory = query_gpu_process_memory(process.pid)
+                    memory = query_gpu_process_memory(sampled_pid)
                     if gpu_sample["generation"] == generation:
                         gpu_sample["usage"] = value
                         gpu_sample["memory"] = memory
@@ -2301,7 +2303,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if pending_fork_source is not None:
             command.extend(["--fork-plan", str(pending_fork_source)])
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
@@ -2333,7 +2335,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 pass
         run_status.set("Stopping benchmark safely…")
         if platform.system() == "Windows":
-            process.send_signal(signal.CTRL_BREAK_EVENT)
+            process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
         else:
             process.send_signal(signal.SIGINT)
 

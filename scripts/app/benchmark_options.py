@@ -91,5 +91,5 @@ def option_value_errors(values: dict[str, object]) -> list[str]:
             if spec.maximum is not None and value > spec.maximum:
                 errors.append(f"{flag} must be at most {spec.maximum}.")
         elif spec.value_type == "choice" and value not in spec.choices:
-            errors.append(f"{flag} must be one of: {', '.join(spec.choices)}.")
+            errors.append(f"{flag} must be one of: {', '.join(str(choice) for choice in spec.choices)}.")
     return errors

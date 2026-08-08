@@ -60,9 +60,9 @@ TEST_SHORTCUT_GROUPS = {
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
 MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
-MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
+MAX_PROMPT_TOKEN_OPTIONS: list[int] = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
-TG_TOKEN_OPTIONS = list(TG_TOKEN_CHOICES)
+TG_TOKEN_OPTIONS: list[int] = list(TG_TOKEN_CHOICES)
 FRONTEND_OPTION_INVENTORY = {
     flag: (spec.ui_status, spec.ui_location) for flag, spec in PUBLIC_OPTION_SCHEMA.items()
 }
@@ -553,7 +553,7 @@ def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
             checked[value] = not checked[value]
 
 
-def parse_engine_selection(value: str) -> list[str]:
+def parse_engine_selection(value: str | None) -> list[str]:
     """Engine names from a --engine value. One name, or several comma-separated;
     "all" is expanded later, against the registry."""
     return [name.strip() for name in str(value or "").split(",") if name.strip()]
