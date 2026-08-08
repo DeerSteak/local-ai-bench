@@ -222,6 +222,10 @@ class LlamaBenchConcurrencyBenchmark:
                     continue
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running llama-batched-bench — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

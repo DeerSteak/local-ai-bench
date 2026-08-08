@@ -356,6 +356,13 @@ class LLMConversationBenchmark:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the conversation benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

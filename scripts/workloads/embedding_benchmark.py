@@ -168,6 +168,10 @@ class EmbeddingBenchmark:
                         "skip_reason": "failed",
                         "skip_detail": "All embedding runs failed",
                     }
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the embedding benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

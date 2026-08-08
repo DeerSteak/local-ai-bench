@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 import platform
+import re
 import signal
 import subprocess
 import tempfile
@@ -109,20 +110,25 @@ class VllmEngine(InferenceEngine):
 
     @staticmethod
     def parse_prefill_metric(text: str, metric: str = PREFILL_METRIC) -> tuple[float, int] | None:
-        """The histogram's running (sum, count) from a Prometheus /metrics body."""
+        """The histogram's running (sum, count) from a Prometheus /metrics body, summed
+        across label sets — one model is ever served at a time, so this is one series."""
         totals = {}
+        patterns = {
+            suffix: re.compile(r"^" + re.escape(metric + suffix) + r"(?:\{[^}]*\})?\s+(\S+)$")
+            for suffix in ("_sum", "_count")
+        }
         for line in (text or "").splitlines():
             line = line.strip()
-            if line.startswith("#"):
+            if not line or line.startswith("#"):
                 continue
-            for suffix in ("_sum", "_count"):
-                prefix = metric + suffix
-                # A bare name or one carrying labels, e.g. metric_sum{model_name="x"} 1.5
-                if line.startswith(prefix) and line[len(prefix):len(prefix) + 1] in ("", " ", "{"):
+            for suffix, pattern in patterns.items():
+                match = pattern.match(line)
+                if match:
                     try:
-                        totals[suffix] = totals.get(suffix, 0.0) + float(line.rsplit(" ", 1)[-1])
+                        totals[suffix] = totals.get(suffix, 0.0) + float(match.group(1))
                     except ValueError:
                         return None
+                    break
         if "_sum" not in totals or "_count" not in totals:
             return None
         return totals["_sum"], int(totals["_count"])
@@ -532,7 +538,7 @@ class VllmEngine(InferenceEngine):
             generated_tokens=tokens,
             tokens_per_sec=tps,
             client_wall_sec=total,
-            decode_sec=decode_seconds if tps == raw_tps else (tokens / tps if tps else 0),
+            decode_sec=decode_seconds,
             server_prompt_sec=prefill_sec,
             prompt_tokens=prompt_tokens,
             response_text="".join(response_parts),
@@ -617,8 +623,6 @@ class VllmEngine(InferenceEngine):
         decode_seconds = max(total - ttft, 0)
         raw_tps = tokens / decode_seconds if decode_seconds else 0
         tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
-        if tps != raw_tps:
-            decode_seconds = tokens / tps if tps else 0
         return {
             "ttft": ttft,
             "server_prompt_sec": None,
@@ -692,10 +696,12 @@ class VllmEngine(InferenceEngine):
             tokens = first["tokens"] + second["tokens"]
             decode_seconds = first["decode_seconds"] + second["decode_seconds"]
             wall_seconds = first["wall_seconds"] + second["wall_seconds"]
+        raw_tps = tokens / decode_seconds if decode_seconds else 0
+        tps = openai_api.sanitize_tps(raw_tps, tokens, first["ttft"], wall_seconds)
         return ChatMeasurement(
             client_ttft_sec=first["ttft"],
             generated_tokens=tokens,
-            tokens_per_sec=tokens / decode_seconds if decode_seconds else 0,
+            tokens_per_sec=tps,
             client_wall_sec=wall_seconds,
             decode_sec=decode_seconds,
             server_prompt_sec=None,
@@ -705,7 +711,8 @@ class VllmEngine(InferenceEngine):
             tool_calls=graded["tool_calls"],
             budget_nudged=budget_nudged,
             model_load_sec=model_load_sec,
-            server_tps_implausible=(first.get("server_tps_implausible", False)
+            server_tps_implausible=(tps != raw_tps
+                                    or first.get("server_tps_implausible", False)
                                     or bool(second and second.get("server_tps_implausible", False))),
         )
 

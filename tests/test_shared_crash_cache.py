@@ -13,6 +13,24 @@ def test_load_crash_cache_missing_file_returns_empty(tmp_path):
     assert Shared.load_crash_cache(tmp_path / "does_not_exist.json") == {}
 
 
+def test_unexpected_model_failure_carries_the_label_and_exception_detail():
+    entry = Shared.unexpected_model_failure("Some Model", TypeError("missing 'x'"))
+    assert entry["label"] == "Some Model"
+    assert entry["crashed"] is True
+    assert entry["error"] == "TypeError: missing 'x'"
+    assert entry["crashed_at"]
+
+
+def test_unexpected_model_failure_never_raises_even_on_a_weird_exception():
+    """Building the crash entry must not itself raise — that would defeat the whole
+    point of the top-level guard this feeds into."""
+    class Weird(Exception):
+        def __str__(self):
+            raise RuntimeError("boom")
+    entry = Shared.unexpected_model_failure("m", Weird())
+    assert "could not be formatted" in entry["error"]
+
+
 def test_load_crash_cache_invalid_json_returns_empty(tmp_path):
     path = tmp_path / "crash.json"
     path.write_text("not json")

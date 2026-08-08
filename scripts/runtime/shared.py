@@ -210,11 +210,15 @@ class Shared:
                 Shared.log(f"Stopping managed process (pid {proc.pid}) ...")
                 # A server started in its own group (vLLM, whose EngineCore child holds
                 # the weights) must be signalled as a group or the child is orphaned.
-                if getattr(proc, "own_process_group", False) and os.name != "nt":
-                    try:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    except (OSError, ProcessLookupError):
-                        proc.terminate()
+                if getattr(proc, "own_process_group", False):
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except (OSError, ProcessLookupError):
+                            proc.terminate()
                 else:
                     proc.terminate()
                 try:
@@ -637,6 +641,22 @@ class Shared:
         }
 
     @staticmethod
+    def unexpected_model_failure(label: str, exc: BaseException) -> dict:
+        """A results entry for a model that raised outside the crash/timeout paths a
+        workload already understands (e.g. a bug in the runner itself) — every per-model
+        loop catches this at the top level so one model's failure can never abort the run."""
+        try:
+            detail = str(exc)
+        except Exception:
+            detail = "(exception could not be formatted)"
+        return {
+            "label": label,
+            "crashed": True,
+            "crashed_at": datetime.now().isoformat(timespec="seconds"),
+            "error": f"{type(exc).__name__}: {detail}",
+        }
+
+    @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
                       extra: dict | None = None, *, engine_name: str) -> str:
         """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
@@ -956,6 +976,10 @@ class Shared:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the {skip_label} benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

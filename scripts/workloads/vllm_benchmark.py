@@ -234,6 +234,10 @@ class VllmBenchBenchmark:
                             save_fn(results)
                     if model_result.get("error") or model_result.get("timed_out"):
                         break
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running vllm bench — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

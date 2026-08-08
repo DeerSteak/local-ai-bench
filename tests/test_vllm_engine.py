@@ -158,6 +158,16 @@ def test_generate_measurement_is_internally_consistent(engine, monkeypatch):
     assert measurement_validation_errors(engine.generate("qwen3.5:9b-q4_K_M", "hi", 30)) == []
 
 
+def test_generate_decode_sec_always_matches_the_measured_decode_window(engine, monkeypatch):
+    """decode_sec must reflect the actual wall-clock decode window regardless of whether
+    tps was sanitized — the two must never be derived from each other and drift apart."""
+    _patch_stream(monkeypatch, [_text_chunk("a"), _text_chunk("b", finish="stop"),
+                                {"choices": [], "usage": {"completion_tokens": 4}}])
+    result = engine.generate("qwen3.5:9b-q4_K_M", "hi", timeout=30)
+    assert result.decode_sec == pytest.approx(
+        max(result.client_wall_sec - result.client_ttft_sec, 0))
+
+
 def test_generate_times_out_with_a_gradeable_partial(engine, monkeypatch):
     _patch_stream(monkeypatch, [_text_chunk("partial answer")])
     with pytest.raises(EngineTimeout) as excinfo:
@@ -176,6 +186,27 @@ def test_chat_uses_usage_for_tokens_and_prompt_count(engine, monkeypatch):
     assert (result.generated_tokens, result.prompt_tokens) == (5, 12)
     assert result.response_text == "Yes indeed"
     assert captured["path"] == "/v1/chat/completions"
+
+
+def test_chat_measurement_routes_the_combined_tps_through_sanitize_tps(engine, monkeypatch):
+    """The combined tokens_per_sec across (first, second) must go through the same
+    implausible-tps guard as each individual request, not compute it inline unchecked."""
+    from scripts.runtime.engines import openai_api
+    calls = []
+    real_sanitize = openai_api.sanitize_tps
+
+    def spy(tps, tokens, ttft, total):
+        calls.append((tps, tokens, ttft, total))
+        return real_sanitize(tps, tokens, ttft, total)
+
+    monkeypatch.setattr(openai_api, "sanitize_tps", spy)
+    _patch_stream(monkeypatch, [_delta_chunk("Yes"), _delta_chunk(" indeed", finish="stop"),
+                                {"choices": [], "usage": {"completion_tokens": 5, "prompt_tokens": 12}}])
+    result = engine.chat("qwen3.5:9b-q4_K_M", [{"role": "user", "content": "hi"}], timeout=30)
+    assert len(calls) == 2, "one call for the per-request tps, one for the combined tps"
+    assert calls[-1][1] == result.generated_tokens
+    expected_tps = result.generated_tokens / result.decode_sec if result.decode_sec else 0
+    assert result.tokens_per_sec == pytest.approx(expected_tps)
 
 
 def test_chat_omits_max_tokens_when_unbounded(engine, monkeypatch):

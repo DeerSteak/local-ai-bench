@@ -301,6 +301,13 @@ class LlamaBenchBenchmark:
                         break
                 if stopped:
                     Shared.err(f"{label}: native benchmark stopped with partial results")
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running llama-bench — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
