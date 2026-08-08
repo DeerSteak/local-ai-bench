@@ -63,4 +63,4 @@ def apply_offline_mode() -> None:
             return super().sendmsg(buffers, ancdata, flags, address)
 
     socket.socket = LoopbackSocket
-    socket._local_ai_bench_offline = True
+    setattr(socket, "_local_ai_bench_offline", True)

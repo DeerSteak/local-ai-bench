@@ -269,6 +269,7 @@ def test_find_vllm_binary_uses_windows_paths():
         platform_name="Windows", venv_dir=Path("C:/proj/vllm-env"),
         exists_fn=lambda _: True, which_fn=lambda _: None,
     )
+    assert found is not None
     assert found.endswith("Scripts/vllm.exe") or found.endswith("Scripts\\vllm.exe")
 
 
@@ -452,9 +453,12 @@ def test_an_unknown_include_dir_is_not_reported_as_missing():
 
 def test_dev_package_commands_per_manager():
     which = lambda name: f"/usr/bin/{name}"
-    assert python_dev_package_command("apt-get", (3, 12), which_fn=which)[-1] == "python3.12-dev"
-    assert python_dev_package_command("dnf", (3, 12), which_fn=which)[-1] == "python3-devel"
-    assert python_dev_package_command("zypper", (3, 12), which_fn=which)[-1] == "python312-devel"
+    apt = python_dev_package_command("apt-get", (3, 12), which_fn=which)
+    dnf = python_dev_package_command("dnf", (3, 12), which_fn=which)
+    zypper = python_dev_package_command("zypper", (3, 12), which_fn=which)
+    assert apt is not None and apt[-1] == "python3.12-dev"
+    assert dnf is not None and dnf[-1] == "python3-devel"
+    assert zypper is not None and zypper[-1] == "python312-devel"
 
 
 def test_dev_package_command_is_none_without_that_manager():
@@ -468,6 +472,7 @@ def test_unknown_package_managers_are_declined():
 
 def test_dev_package_command_is_noninteractive():
     command = python_dev_package_command("apt-get", (3, 12), which_fn=lambda n: f"/usr/bin/{n}")
+    assert command is not None
     assert "-y" in command, "setup must not stall on an apt confirmation prompt"
 
 
@@ -476,8 +481,9 @@ def test_header_package_targets_the_venv_interpreter_not_setups_own():
     version, and installing headers for the wrong one fixes nothing."""
     version = python_version_from_include_dir("/usr/include/python3.12")
     assert version == (3, 12)
+    assert version is not None
     command = python_dev_package_command("apt-get", version, which_fn=lambda n: f"/usr/bin/{n}")
-    assert command[-1] == "python3.12-dev"
+    assert command is not None and command[-1] == "python3.12-dev"
 
 
 def test_include_dir_version_parsing_handles_other_layouts():
@@ -498,7 +504,7 @@ def test_ninja_is_reported_missing_from_a_bare_venv():
 def test_build_tools_install_into_the_venv_without_sudo():
     command = build_tools_command("/v/bin/python", ["ninja"])
     assert command == ["/v/bin/python", "-m", "pip", "install", "ninja"]
-    assert "sudo" not in command
+    assert command is not None and "sudo" not in command
     assert build_tools_command("/v/bin/python", []) is None
 
 

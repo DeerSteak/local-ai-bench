@@ -218,19 +218,22 @@ class VllmEngine(InferenceEngine):
 
     def _signal_group(self, sig) -> None:  # pragma: no cover — signals real processes
         """Signal the server's whole group, falling back to the process itself."""
+        proc = self._proc
+        if proc is None:
+            return
         try:
-            os.killpg(os.getpgid(self._proc.pid), sig)
+            os.killpg(os.getpgid(proc.pid), sig)
         except (AttributeError, OSError, ProcessLookupError):
             try:
-                self._proc.send_signal(sig)
+                proc.send_signal(sig)
             except (OSError, ProcessLookupError):
                 pass
 
-    def is_connection_crash(self, e: Exception) -> bool:
-        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
-                          http.client.IncompleteRead, ConnectionError)):
+    def is_connection_crash(self, exc: Exception) -> bool:
+        if isinstance(exc, (requests.exceptions.ConnectionError, urllib.error.URLError,
+                            http.client.IncompleteRead, ConnectionError)):
             return True
-        return "actively refused" in str(e).lower()
+        return "actively refused" in str(exc).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
         """Always True — recovery happens in _ensure_model on the next call."""
@@ -361,10 +364,10 @@ class VllmEngine(InferenceEngine):
         if tool_parser:
             # tool_calls stay empty unless the frontend parser is enabled explicitly.
             options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
-        if not self._launcher and not self._executable:
-            raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
         if self._launcher:
             return [self._launcher, "-p", str(config.VLLM_PORT), "-m", repo, *options]
+        if not self._executable:
+            raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
         return [self._executable, "serve", repo, "--host", "127.0.0.1",
                 "--port", str(config.VLLM_PORT), *options]
 
@@ -408,15 +411,19 @@ class VllmEngine(InferenceEngine):
             try:
                 # Own process group: vLLM forks an EngineCore child that holds the
                 # weights and KV cache, and signalling only the API server orphans it.
-                proc = subprocess.Popen(
-                    args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
-                    **({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-                       if os.name == "nt" else {"start_new_session": True}))
+                if os.name == "nt":
+                    proc = subprocess.Popen(
+                        args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
+                        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                else:
+                    proc = subprocess.Popen(
+                        args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._spawn_env(),
+                        start_new_session=True)
             except FileNotFoundError:
                 log_fh.close()
                 raise RuntimeError(f"'{args[0]}' not found in PATH") from None
             log_fh.close()
-            proc.own_process_group = True   # see Shared.shutdown_managed
+            setattr(proc, "own_process_group", True)   # see Shared.shutdown_managed
             self._proc = proc
             Shared._managed_procs.append(proc)
 

@@ -106,12 +106,13 @@ class LlamaCppEngine(InferenceEngine):
                 return paths
             if not paths or not all(matches):
                 return None
-            prefixes = {match.group(1) for match in matches}
-            totals = {int(match.group(3)) for match in matches}
+            parts = [match for match in matches if match is not None]
+            prefixes = {match.group(1) for match in parts}
+            totals = {int(match.group(3)) for match in parts}
             if len(prefixes) != 1 or len(totals) != 1:
                 return None
             total = totals.pop()
-            by_part = {int(match.group(2)): path for match, path in zip(matches, paths)}
+            by_part = {int(match.group(2)): path for match, path in zip(parts, paths)}
             expected_parts = set(range(1, total + 1))
             return [by_part[i] for i in range(1, total + 1)] if set(by_part) == expected_parts else None
         hf_files = entry["hf_file"]
@@ -207,12 +208,12 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
 
-    def is_connection_crash(self, e: Exception) -> bool:
+    def is_connection_crash(self, exc: Exception) -> bool:
         """True for the exception shapes a dead HTTP server surfaces as."""
-        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
-                          http.client.IncompleteRead, ConnectionError)):
+        if isinstance(exc, (requests.exceptions.ConnectionError, urllib.error.URLError,
+                            http.client.IncompleteRead, ConnectionError)):
             return True
-        return "actively refused" in str(e).lower()
+        return "actively refused" in str(exc).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
         """Always True — see docs/engines.md; recovery happens synchronously

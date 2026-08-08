@@ -261,8 +261,8 @@ class InferenceEngine(ABC):
         """Unload every model currently loaded."""
 
     @abstractmethod
-    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> None:
-        """Poll until `tag` is no longer loaded."""
+    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> bool:
+        """Poll until `tag` is no longer loaded. False if it is still loaded at `timeout`."""
 
     @abstractmethod
     def prepare_concurrency(self, tag: str, n_parallel: int, per_slot_ctx: int,

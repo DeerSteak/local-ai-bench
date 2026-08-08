@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from typing import Any, Callable
 
 from scripts.runtime import config
 from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark
@@ -55,7 +56,7 @@ def load_runner_plan(path, job_id):
 
 
 def execute_llm_job(path, job_id, *, engine_factory=get_engine,
-                    benchmark_factory=LLMPrefillBenchmark) -> None:
+                    benchmark_factory: Callable[[], Any] = LLMPrefillBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "llm" not in plan.tests:
@@ -65,7 +66,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
@@ -97,7 +98,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
-                             benchmark_factory=LLMConversationBenchmark) -> None:
+                             benchmark_factory: Callable[[], Any] = LLMConversationBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "conv" not in plan.tests:
@@ -106,7 +107,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
@@ -154,7 +155,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
-                           benchmark_factory=LlamaBenchBenchmark) -> None:
+                           benchmark_factory: Callable[[], Any] = LlamaBenchBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "llamabench" not in plan.tests:
@@ -164,7 +165,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
     config.LLAMABENCH_TG = settings["llamabench_tg"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
@@ -189,7 +190,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engine,
-                            benchmark_factory=ConcurrencyBenchmark) -> None:
+                            benchmark_factory: Callable[[], Any] = ConcurrencyBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if stage_name not in {"conc_tool", "conc_chat"} or stage_name not in plan.tests:
@@ -207,7 +208,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     label = "Concurrency (Tool)" if is_tool else "Concurrency (Chat)"
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["concurrency"]
     ]
     engine = engine_factory(plan.engine_name)
