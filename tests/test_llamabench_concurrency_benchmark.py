@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -249,6 +250,23 @@ def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60)
     assert len(entries) == 1
     assert not fake_proc.killed
+
+
+def test_run_one_delivers_callbacks_on_the_calling_thread(monkeypatch):
+    """Matches LlamaBenchBenchmark.run_one: callbacks persist results, and a journal's SQLite
+    connection rejects use from any thread but its creator's."""
+    lines = [json.dumps(_row(1)) + "\n", json.dumps(_row(2)) + "\n"]
+    monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen",
+                        _popen_factory(_FakePopen(0, stdout_lines=lines)))
+    caller = threading.current_thread().ident
+    seen = []
+    LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1, 2], 2048, 512, 999, 60,
+                on_entry=lambda _e: seen.append(("entry", threading.current_thread().ident)),
+                on_progress=lambda _m: seen.append(("progress", threading.current_thread().ident)))
+    assert seen, "callbacks must still fire"
+    assert all(ident == caller for _kind, ident in seen)
+    # on_progress still trails its own entry, as it did when both ran on the drain thread.
+    assert [kind for kind, _ in seen] == ["entry", "progress", "entry", "progress"]
 
 
 def test_run_one_propagates_entry_checkpoint_failure(monkeypatch):

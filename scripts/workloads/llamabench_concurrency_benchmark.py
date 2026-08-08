@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 from scripts.runtime import config
@@ -69,12 +70,29 @@ class LlamaBenchConcurrencyBenchmark:
         entries: list[dict] = []
         stderr_chunks: list[str] = []
         callback_errors: list[BaseException] = []
+        pending: deque[dict] = deque()
         activity_lock = threading.Lock()
         last_activity = [time.monotonic()]
 
         def _touch():
             with activity_lock:
                 last_activity[0] = time.monotonic()
+
+        def _deliver_pending() -> bool:
+            """Run the callbacks on the calling (main) thread. False once one has raised."""
+            while True:
+                with activity_lock:
+                    entry = pending.popleft() if pending else None
+                if entry is None:
+                    return not callback_errors
+                if on_entry:
+                    try:
+                        on_entry(entry)
+                    except BaseException as exc:
+                        callback_errors.append(exc)
+                        return False
+                if on_progress:
+                    on_progress(cls.format_entry(entry))
 
         def _drain_stdout():
             assert proc.stdout is not None
@@ -88,15 +106,10 @@ class LlamaBenchConcurrencyBenchmark:
                 except json.JSONDecodeError:
                     continue
                 entries.append(entry)
-                if on_entry:
-                    try:
-                        on_entry(entry)
-                    except BaseException as exc:
-                        callback_errors.append(exc)
-                        proc.kill()
-                        return
-                if on_progress:
-                    on_progress(cls.format_entry(entry))
+                # Delivered from the main thread: callbacks persist results, and the journal's
+                # SQLite connection rejects use from any thread but its creator's.
+                with activity_lock:
+                    pending.append(entry)
 
         def _drain_stderr():
             assert proc.stderr is not None
@@ -111,6 +124,9 @@ class LlamaBenchConcurrencyBenchmark:
 
         idle_timed_out = False
         while proc.poll() is None:
+            if not _deliver_pending():
+                proc.kill()
+                break
             with activity_lock:
                 idle = time.monotonic() - last_activity[0]
             if idle > timeout:
@@ -124,6 +140,9 @@ class LlamaBenchConcurrencyBenchmark:
         stderr_thread.join()
         if proc in Shared._managed_procs:
             Shared._managed_procs.remove(proc)
+        # Entries can arrive between the last poll and process exit.
+        if not idle_timed_out:
+            _deliver_pending()
 
         if callback_errors:
             raise callback_errors[0]
