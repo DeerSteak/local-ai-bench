@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { getAllLLMModels } from "../../utils/llm";
 import {
   llamaBenchConcTgValues, buildLlamaBenchConcLineData, llamaBenchConcPromptDepth,
@@ -5,11 +6,15 @@ import {
 import { buildFileLineConfigs, modelLabel } from "../../utils/shared";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // llama-batched-bench: one card per model, one chart per tg, X = concurrency level.
 // Line-only and group-by-agnostic, same reasoning as ConcurrencyPanel.
-export default function LlamaBenchConcPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }) {
+export default function LlamaBenchConcPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files)
     .filter(m => enabledModels.has(m) && files.some(f => f.data.llamabenchconc?.[m]));

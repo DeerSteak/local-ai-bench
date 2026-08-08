@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { getAllLLMModels } from "../../utils/llm";
 import {
   buildLlamaBenchDecodeLineConfigs,
@@ -9,9 +10,13 @@ import {
 import { modelLabel } from "../../utils/shared";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
-export default function LlamaBenchPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }) {
+export default function LlamaBenchPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files)
     .filter(model => enabledModels.has(model) && files.some(file => file.data.llamabench?.[model]));

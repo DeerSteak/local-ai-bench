@@ -1,8 +1,9 @@
 import { SECTIONS, SECTION_LABELS, FILE_COLORS, ACCURACY_TESTS, ACCURACY_TEST_LABELS } from "../constants";
 import {
   modelLabel, imageModelLabel, embedModelLabel,
-  getModelColor, getImageModelColor, getEmbedModelColor, sanitizeForFilename,
+  getModelColor, getImageModelColor, getEmbedModelColor, sanitizeForFilename, lookup,
 } from "../utils/shared";
+import type { DisplayFile } from "../types";
 import styles from "./Controls.module.css";
 
 export default function Controls({
@@ -20,6 +21,23 @@ export default function Controls({
   logoDragOver, onLogoDrop, onLogoDragOver, onLogoDragLeave,
   saving, onSaveChart,
   filenameSuffix, setFilenameSuffix,
+}: {
+  section: string, setSection: (s: string) => void,
+  accuracyTest: string, setAccuracyTest: (t: string) => void,
+  allModels: string[], enabledModels: Set<string>, onToggleModel: (m: string) => void,
+  allImageModels: string[], enabledImageModels: Set<string>, onToggleImageModel: (m: string) => void,
+  allEmbedModels: string[], enabledEmbedModels: Set<string>, onToggleEmbedModel: (m: string) => void,
+  chartStyle: string, setChartStyle: (s: string) => void,
+  groupBy: string, setGroupBy: (s: string) => void,
+  sizeSplit: string, setSizeSplit: (s: string) => void,
+  chartWidth: number, setChartWidth: (n: number) => void,
+  files: DisplayFile[], hostnameOverrides: Record<string, string>,
+  onUpdateHostnameOverride: (id: DisplayFile["id"], value: string) => void,
+  logoSrc: string | null, setLogoSrc: (s: string | null) => void,
+  logoDragOver: boolean, onLogoDrop: (e: React.DragEvent) => void,
+  onLogoDragOver: (e: React.DragEvent) => void, onLogoDragLeave: (e: React.DragEvent) => void,
+  saving: boolean, onSaveChart: () => void,
+  filenameSuffix: string, setFilenameSuffix: (s: string) => void,
 }) {
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
@@ -33,7 +51,7 @@ export default function Controls({
         <div style={{ display: "flex", gap: 6 }}>
           {SECTIONS.map(s => (
             <button key={s} className={`pill ${section === s ? "active" : "inactive"}`} onClick={() => setSection(s)}>
-              {SECTION_LABELS[s]}
+              {lookup(SECTION_LABELS, s)}
             </button>
           ))}
         </div>
@@ -45,7 +63,7 @@ export default function Controls({
           <div style={{ display: "flex", gap: 6 }}>
             {ACCURACY_TESTS.map(t => (
               <button key={t} className={`pill ${accuracyTest === t ? "active" : "inactive"}`} onClick={() => setAccuracyTest(t)}>
-                {ACCURACY_TEST_LABELS[t]}
+                {lookup(ACCURACY_TEST_LABELS, t)}
               </button>
             ))}
           </div>

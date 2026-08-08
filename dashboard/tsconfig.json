@@ -16,8 +16,10 @@
 
     // Loose-start conversion (see AGENTS.md's TypeScript section) — tighten
     // these incrementally, file by file, rather than all at once.
+    // noImplicitAny is fully on (every function/param is explicitly typed);
+    // strict/strictNullChecks are the next flags to earn, not yet enabled.
     "strict": false,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "strictNullChecks": false
   },
   "include": ["src", "vite.config.js"]

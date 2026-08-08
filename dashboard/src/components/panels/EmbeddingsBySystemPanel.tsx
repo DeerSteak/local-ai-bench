@@ -1,14 +1,19 @@
+import type { RefObject } from "react";
 import { buildEmbedBarDataByModel, buildEmbedBarConfigsByModel, getAllEmbedModels } from "../../utils/embeddings";
 import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile, ChartRow } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // Group By: System, Embeddings section — one card per system, a single
 // document-ingestion throughput bar per model. No line mode: there's no
 // batch-size axis left to plot a line across.
-export default function EmbeddingsBySystemPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }) {
+export default function EmbeddingsBySystemPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledEmbedModels: Set<string>,
+  chartWidth: number, logoSrc?: string,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
 
@@ -27,7 +32,9 @@ export default function EmbeddingsBySystemPanel({ containerRef, files, enabledEm
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {systemGroups.map(({ file: f, barData, barConfigs }) => (
+      {systemGroups.map(({ file: f, barData, barConfigs }: {
+        file: ResultsFile, barData: ChartRow[], barConfigs: { dataKey: string, name: string, fill: string }[],
+      }) => (
         <div key={f.id} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{f.hostname}</div>
           <GroupedBarCard

@@ -1,13 +1,18 @@
+import type { RefObject } from "react";
 import { getAllEmbedModels, buildEmbedGroupedBarData, buildEmbedGroupedBarConfigs } from "../../utils/embeddings";
 import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 
 // Group By: Model, Embeddings section — a single chart: one document-ingestion
 // throughput value per model, systems as bars. There's no batch-size sweep
 // (and so no line-mode axis) anymore — the test embeds one real document's
 // chunks in a single call, not an arbitrary batch dial.
-export default function EmbeddingsPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }) {
+export default function EmbeddingsPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledEmbedModels: Set<string>,
+  chartWidth: number, logoSrc?: string,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
 

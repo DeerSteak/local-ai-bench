@@ -1,7 +1,18 @@
 import { fmt } from "../utils/shared";
+import type { ChartRow } from "../types";
 import styles from "./CustomTooltip.module.css";
 
-export default function CustomTooltip({ active = false, payload = null, label = null, unit, xPrefix, orderedBarConfigs = null }) {
+interface PayloadEntry {
+  dataKey: string, name?: string, value?: number, color?: string, payload?: ChartRow,
+}
+interface BarConfig {
+  dataKey: string, name: string, fill: string,
+}
+
+export default function CustomTooltip({ active = false, payload = null, label = null, unit, xPrefix, orderedBarConfigs = null }: {
+  active?: boolean, payload?: PayloadEntry[] | null, label?: string | null, unit: string,
+  xPrefix: string, orderedBarConfigs?: BarConfig[] | null,
+}) {
   if (!active || !payload?.length) return null;
   const groupLabel = payload[0]?.payload?._groupLabel ?? label;
   const row = payload[0]?.payload;
@@ -18,6 +29,7 @@ export default function CustomTooltip({ active = false, payload = null, label = 
         name: p.payload?._seriesName ?? p.name,
         color: p.payload?._fill ?? p.color,
         value: p.value,
+        status: undefined as string | undefined,
       }));
   return (
     <div className={styles.tooltip}>

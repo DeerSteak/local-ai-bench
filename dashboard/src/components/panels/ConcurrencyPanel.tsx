@@ -1,8 +1,10 @@
+import type { RefObject } from "react";
 import { buildConcurrencyDataForModel, getAllConcurrencyModels, getConcurrencyStopInfo } from "../../utils/concurrency";
-import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit } from "../../utils/shared";
+import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit, lookup } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // Concurrency section — one card group per model, one line per file/system.
@@ -11,7 +13,10 @@ import styles from "../ChartPanel.module.css";
 // toggle (there's no per-model tier split like LLM's small/medium/large —
 // same precedent as AccuracyPanel). `section` is "concurrency_tool" or
 // "concurrency_chat" — same layout, different results key and level ladder.
-export default function ConcurrencyPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isMultiFile }) {
+export default function ConcurrencyPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllConcurrencyModels(files, section).filter(m => enabledModels.has(m));
   const lineConfigs = buildFileLineConfigs(files);
@@ -45,7 +50,7 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
   }).filter(Boolean);
 
   if (!modelGroups.length) {
-    return <EmptyState style={containerStyle}>No {SECTION_LABELS[section]} data in the loaded file(s)</EmptyState>;
+    return <EmptyState style={containerStyle}>No {lookup(SECTION_LABELS, section)} data in the loaded file(s)</EmptyState>;
   }
 
   return (

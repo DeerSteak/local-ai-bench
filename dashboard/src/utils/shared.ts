@@ -111,7 +111,7 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
 // disambiguate — e.g. two --engine runs off the same host (identical
 // profile.hostname) loaded side by side. With a single engine among the
 // loaded files, appending "(llamacpp)" to every label is just noise.
-export function applyEngineLabels(files: ResultsFile[]): ResultsFile[] {
+export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   if (!multiEngine) return files;
   return files.map(f => f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f);
@@ -152,8 +152,8 @@ function hashColor(key: string, palette: readonly string[]): string {
 
 // *_COLORS/*_LABELS/*_TIER constants have fixed literal keys; callers here
 // look up an arbitrary model string that may not be one of them.
-export function lookup(dict: object, key: string): string | undefined {
-  return (dict as Record<string, string>)[key];
+export function lookup<T>(dict: Record<string, T>, key: string): T | undefined {
+  return (dict as Record<string, T>)[key];
 }
 
 export function getModelColor(model: string): string {

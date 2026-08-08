@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import {
   buildImagesBarDataByModel, buildImagesBarConfigsByModel,
   buildImagesLineDataByRes, buildImagesLineConfigsByRes,
@@ -7,11 +8,15 @@ import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile, ChartRow } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // Group By: System, Images section — one card per system, models as
 // bars/lines within it.
-export default function ImagesBySystemPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar }) {
+export default function ImagesBySystemPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledImageModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isBar: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
 
@@ -34,7 +39,10 @@ export default function ImagesBySystemPanel({ containerRef, files, enabledImageM
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {systemGroups.map(({ file: f, barData, barConfigs, lineData, lineConfigs }) => (
+      {systemGroups.map(({ file: f, barData, barConfigs, lineData, lineConfigs }: {
+        file: ResultsFile, barData: ChartRow[], barConfigs: { dataKey: string, name: string, fill: string }[],
+        lineData: ChartRow[], lineConfigs: { dataKey: string, name: string, stroke?: string }[],
+      }) => (
         <div key={f.id} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{f.hostname}</div>
           {isBar ? (

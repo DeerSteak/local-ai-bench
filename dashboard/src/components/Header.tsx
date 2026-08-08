@@ -1,9 +1,11 @@
 import { useRef } from "react";
 import { BACKEND_COLORS, FILE_COLORS, MAX_FILES, SUITE_VERSION } from "../constants";
+import { lookup } from "../utils/shared";
+import type { DisplayFile } from "../types";
 import styles from "./Header.module.css";
 
-function BackendTag({ backend }) {
-  const style = BACKEND_COLORS[backend] || BACKEND_COLORS.cpu;
+function BackendTag({ backend }: { backend: string }) {
+  const style = lookup(BACKEND_COLORS, backend) || BACKEND_COLORS.cpu;
   return (
     <span className={`tag ${styles.tagBackend}`} style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}>
       {backend}
@@ -11,14 +13,19 @@ function BackendTag({ backend }) {
   );
 }
 
-function formatTimestamp(ts) {
+function formatTimestamp(ts: string | null): string | null {
   if (!ts) return null;
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeave, onRemoveFile, onFileInput, fileError }) {
+export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeave, onRemoveFile, onFileInput, fileError }: {
+  files: DisplayFile[], dragOver: boolean, onDrop: (e: React.DragEvent) => void,
+  onDragOver: (e: React.DragEvent) => void, onDragLeave: (e: React.DragEvent) => void,
+  onRemoveFile: (id: DisplayFile["id"]) => void, onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void,
+  fileError: string | null,
+}) {
   const fileInputRef = useRef(null);
 
   const atMax = files.length >= MAX_FILES;

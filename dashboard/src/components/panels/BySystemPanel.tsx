@@ -1,8 +1,22 @@
+import type { RefObject, ReactNode } from "react";
 import { Fragment } from "react";
 import { SIZE_TIER_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import { lookup } from "../../utils/shared";
+import type { ResultsFile, ChartRow } from "../../types";
 import styles from "../ChartPanel.module.css";
+
+interface Metric {
+  key: string, title: string, yLabel: string, unit: string, chartName: string, direction?: string,
+  barData?: ChartRow[], barConfigs?: { dataKey: string, name: string, fill: string }[],
+  lineData?: ChartRow[], lineConfigs?: { dataKey: string, name: string, stroke?: string }[],
+  xKey?: string, xLabel?: string,
+}
+interface SystemGroup {
+  file: ResultsFile, skipEntries: { key: string, label: string }[],
+  groups: { tier: string | null, metrics: Metric[] }[],
+}
 
 // Generic "Group By: System" renderer, shared by every section that offers by-system
 // tier splitting (LLMBySystemPanel, LlamaBenchBySystemPanel) — one card group per
@@ -11,7 +25,10 @@ import styles from "../ChartPanel.module.css";
 // shape (LLM's ctx-keyed results vs. llama-bench's dynamic pp/tg checkpoints) and hand
 // this component fully-resolved `systemGroups`; this component only lays them out and
 // flips Bar/Line — it has no opinion on where the data came from.
-export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar, emptyLabel, systemGroups }) {
+export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar, emptyLabel, systemGroups }: {
+  containerRef?: RefObject<HTMLDivElement | null>, chartWidth: number, logoSrc?: string, isBar: boolean,
+  emptyLabel: ReactNode, systemGroups: SystemGroup[],
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
 
   if (!systemGroups.length) {
@@ -29,7 +46,7 @@ export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar
             </div>
           )}
           {groups.map(({ tier, metrics }) => {
-            const tierSuffix = tier ? ` — ${SIZE_TIER_LABELS[tier]}` : "";
+            const tierSuffix = tier ? ` — ${lookup(SIZE_TIER_LABELS, tier)}` : "";
             const tierKey = tier ? `_${tier}` : "";
             return (
               <Fragment key={tier || "combined"}>

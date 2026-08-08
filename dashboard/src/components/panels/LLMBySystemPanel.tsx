@@ -3,15 +3,20 @@ import {
   buildLLMLineDataByCtx, buildLLMLineConfigsByCtx,
   getLLMModelsWithSectionResults,
 } from "../../utils/llm";
+import type { RefObject } from "react";
 import {
-  sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus,
+  sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus, lookup,
 } from "../../utils/shared";
 import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
+import type { ResultsFile } from "../../types";
 
 // Group By: System, LLM / LLM Conversation section — resolves this section's own
 // ctx-keyed data into BySystemPanel's generic { tier, metrics } shape.
-export default function LLMBySystemPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isSplit }) {
+export default function LLMBySystemPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isSplit }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isBar: boolean, isSplit: boolean,
+}) {
   const allModels = getLLMModelsWithSectionResults(files, section).filter(m => enabledModels.has(m));
   const isConv = section === "llm_conversation";
   const titleSuffix = isConv ? " (Conversation)" : "";
@@ -92,7 +97,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
   return (
     <BySystemPanel
       containerRef={containerRef} chartWidth={chartWidth} logoSrc={logoSrc}
-      isBar={isBar} emptyLabel={`No ${SECTION_LABELS[section]} data in the loaded file(s)`}
+      isBar={isBar} emptyLabel={`No ${lookup(SECTION_LABELS, section)} data in the loaded file(s)`}
       systemGroups={systemGroups}
     />
   );

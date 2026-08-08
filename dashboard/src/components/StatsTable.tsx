@@ -1,5 +1,8 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { sortRows, fmt, modelLabel } from "../utils/shared";
+import { sortRows, fmt, modelLabel, lookup } from "../utils/shared";
+import type { ResultsFile, SortConfig } from "../types";
+
+type CycleSort = (key: string) => void;
 import { flattenLLMData } from "../utils/llm";
 import { flattenEmbedData } from "../utils/embeddings";
 import { flattenImageData } from "../utils/images";
@@ -9,7 +12,9 @@ import { flattenLlamaBenchData } from "../utils/llamabench";
 import { flattenLlamaBenchConcData, llamaBenchConcSortValue } from "../utils/llamabenchconc";
 import styles from "./StatsTable.module.css";
 
-function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
+function SortTh({ label, sortKey, sortConfig, onCycleSort }: {
+  label: string, sortKey: string, sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
   const active = sortConfig.key === sortKey;
   const arrow = active ? (sortConfig.dir === 1 ? " ↑" : " ↓") : " ↕";
   return (
@@ -19,7 +24,7 @@ function SortTh({ label, sortKey, sortConfig, onCycleSort }) {
   );
 }
 
-function MachineTd({ fileId, files }) {
+function MachineTd({ fileId, files }: { fileId: ResultsFile["id"], files: ResultsFile[] }) {
   const idx = files.findIndex(f => f.id === fileId);
   if (idx === -1) return null;
   const color = FILE_COLORS[idx % FILE_COLORS.length];
@@ -30,7 +35,7 @@ function MachineTd({ fileId, files }) {
   );
 }
 
-function LLMTable({ files, section, sortConfig, onCycleSort }) {
+function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenLLMData(files, section), sortConfig);
 
@@ -74,7 +79,7 @@ function LLMTable({ files, section, sortConfig, onCycleSort }) {
   );
 }
 
-function EmbedTable({ files, sortConfig, onCycleSort }) {
+function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[], sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenEmbedData(files), sortConfig);
 
@@ -116,7 +121,7 @@ function EmbedTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
-function ImagesTable({ files, sortConfig, onCycleSort }) {
+function ImagesTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[], sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenImageData(files), sortConfig);
 
@@ -150,7 +155,7 @@ function ImagesTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
-function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
+function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenConcurrencyData(files, section), sortConfig, concurrencySortValue);
 
@@ -196,7 +201,7 @@ function ConcurrencyTable({ files, section, sortConfig, onCycleSort }) {
   );
 }
 
-function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
+function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[], sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenLlamaBenchData(files), sortConfig);
 
@@ -240,7 +245,7 @@ function LlamaBenchTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
-function LlamaBenchConcTable({ files, sortConfig, onCycleSort }) {
+function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[], sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenLlamaBenchConcData(files), sortConfig, llamaBenchConcSortValue);
 
@@ -282,7 +287,9 @@ function LlamaBenchConcTable({ files, sortConfig, onCycleSort }) {
   );
 }
 
-function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
+function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
+  files: ResultsFile[], testKey: string, sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenAccuracyData(files, testKey), sortConfig);
 
@@ -332,12 +339,14 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }) {
   );
 }
 
-export default function StatsTable({ files, section, accuracyTest, sortConfig, onCycleSort }) {
+export default function StatsTable({ files, section, accuracyTest, sortConfig, onCycleSort }: {
+  files: ResultsFile[], section: string, accuracyTest: string, sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
   if (!files.length) return null;
 
   const title = section === "accuracy"
-    ? `Raw Numbers — Accuracy (${ACCURACY_TEST_LABELS[accuracyTest]})`
-    : `Raw Numbers — ${SECTION_LABELS[section]}`;
+    ? `Raw Numbers — Accuracy (${lookup(ACCURACY_TEST_LABELS, accuracyTest)})`
+    : `Raw Numbers — ${lookup(SECTION_LABELS, section)}`;
 
   return (
     <div className={`card ${styles.wrapper}`}>

@@ -1,15 +1,20 @@
+import type { RefObject } from "react";
 import { buildLLMDataForModel, buildLLMBarConfigs, buildLLMBarData, getAllLLMModels } from "../../utils/llm";
 import {
-  buildFileLineConfigs, modelLabel, sortBarData, getSkipInfo, deriveTtftUnit, hasValueOrStatus,
+  buildFileLineConfigs, modelLabel, sortBarData, getSkipInfo, deriveTtftUnit, hasValueOrStatus, lookup,
 } from "../../utils/shared";
 import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // Group By: Model, LLM / LLM Conversation section — one card group per model,
 // systems as bars/lines within it.
-export default function LLMByModelPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isMultiFile }) {
+export default function LLMByModelPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isBar: boolean, isMultiFile: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
   const lineConfigs = buildFileLineConfigs(files);
@@ -28,7 +33,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const prefillLineConfigs = lineConfigs.filter(lc => prefillData.some(r => r[lc.dataKey] != null));
     const rawPrefillBarConfigs = buildLLMBarConfigs(files, model, section);
     const rawPrefillBarData = buildLLMBarData(files, model, "prefill", section);
-    const byCtxOrder = (a, b) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
+    const byCtxOrder = (a: { dataKey: string }, b: { dataKey: string }) => CTX_ORDER.indexOf(a.dataKey) - CTX_ORDER.indexOf(b.dataKey);
     const tpsBarConfigs = rawTpsBarConfigs.filter(bc => hasValueOrStatus(rawTpsBarData, bc.dataKey)).sort(byCtxOrder);
     const ttftBarConfigs = rawTtftBarConfigs.filter(bc => hasValueOrStatus(rawTtftBarData, bc.dataKey)).sort(byCtxOrder);
     const tpsBarData = sortBarData(rawTpsBarData, tpsBarConfigs.map(bc => bc.dataKey), "desc");
@@ -50,7 +55,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
   }).filter(Boolean);
 
   if (!modelGroups.length) {
-    return <EmptyState style={containerStyle}>No {SECTION_LABELS[section]} data in the loaded file(s)</EmptyState>;
+    return <EmptyState style={containerStyle}>No {lookup(SECTION_LABELS, section)} data in the loaded file(s)</EmptyState>;
   }
 
   const titleSuffix = isConv ? " (Conversation)" : "";

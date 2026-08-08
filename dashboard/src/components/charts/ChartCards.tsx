@@ -7,7 +7,19 @@ import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
 import styles from "../ChartPanel.module.css";
 
-function DirectionHint({ direction }) {
+interface LineConfig {
+  dataKey: string, name: string, stroke?: string, strokeDasharray?: string,
+}
+interface BarConfig {
+  dataKey: string, name: string, fill: string,
+}
+
+// The subset of recharts' own render-prop shape actually read here.
+interface BarRenderProps {
+  x?: number, y?: number, width?: number, height?: number, payload?: ChartRow, index?: number,
+}
+
+function DirectionHint({ direction }: { direction?: string }) {
   if (!direction) return null;
   return (
     <span className={styles.chartDirection}>
@@ -16,8 +28,12 @@ function DirectionHint({ direction }) {
   );
 }
 
-export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }) {
-  const yTickFormatter = v => fmt(v, unit);
+export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }: {
+  title: string, modelName?: string | null, data: ChartRow[], lineConfigs: LineConfig[], xKey: string,
+  xLabel: string, yLabel: string, unit: string, isMultiFile: boolean, chartName: string,
+  chartModel?: string | null, logoSrc?: string, direction?: string,
+}) {
+  const yTickFormatter = (v: number) => fmt(v, unit);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -68,7 +84,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
   );
 }
 
-function MultiLineTick({ x = 0, y = 0, payload = null }) {
+function MultiLineTick({ x = 0, y = 0, payload = null }: { x?: number, y?: number, payload?: { value: string } | null }) {
   const lines = String(payload?.value ?? '').split('\n');
   const lineH = 15;
   return (
@@ -103,7 +119,7 @@ function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, st
 
 function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload, barConfigs, formatter }: {
   x?: number, y?: number, width?: number, height?: number, payload?: ChartRow,
-  barConfigs: { dataKey: string, fill: string }[], formatter: (v: JsonRecord[string]) => string,
+  barConfigs: BarConfig[], formatter: (v: JsonRecord[string]) => string,
 }) {
   const slotHeight = height / barConfigs.length;
   const barHeight = Math.max(1, slotHeight - 4);
@@ -130,7 +146,7 @@ function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload, barConf
 }
 
 // Reserve enough Y-axis width for the longest category label (in a vertical-layout chart).
-function computeYAxisWidth(rows, key) {
+function computeYAxisWidth(rows: ChartRow[], key: string): number {
   const lines = rows.flatMap(row => String(row[key] ?? '').split('\n'));
   const maxLabelChars = Math.max(1, ...lines.map(l => l.length));
   return Math.min(260, Math.max(40, maxLabelChars * 7.2 + 26));
@@ -139,7 +155,7 @@ function computeYAxisWidth(rows, key) {
 // Reserve enough right margin for the longest bar-end label, including any
 // "Timed Out" / "Skipped - ..." status text (which runs longer than a
 // formatted value or "N/A").
-function computeRightMargin(rows, barConfigs) {
+function computeRightMargin(rows: ChartRow[], barConfigs: BarConfig[]): number {
   let maxChars = 4;
   for (const row of rows) {
     for (const bc of barConfigs) {
@@ -150,12 +166,16 @@ function computeRightMargin(rows, barConfigs) {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }) {
-  const valFormatter = v => fmt(v, unit);
+export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }: {
+  title: string, modelName?: string | null, data: ChartRow[], barConfigs: BarConfig[], xKey: string,
+  yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string,
+  direction?: string, orderedSeries?: boolean,
+}) {
+  const valFormatter = (v: number) => fmt(v, unit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.
   const groupedData = data.map(row => {
-    const r = { ...row };
+    const r: ChartRow = { ...row };
     for (const bc of barConfigs) {
       if (r[bc.dataKey] == null) { r[`_na_${bc.dataKey}`] = true; r[bc.dataKey] = 0; }
     }
@@ -208,7 +228,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
           {orderedSeries ? (
             <Bar
               dataKey="_groupMax" name="Value" fill="#57606a" radius={[0, 3, 3, 0]}
-              shape={(props) => <OrderedBarGroup {...props} barConfigs={barConfigs} formatter={valFormatter} />}
+              shape={(props: BarRenderProps) => <OrderedBarGroup {...props} barConfigs={barConfigs} formatter={valFormatter} />}
               isAnimationActive={false}
             />
           ) : barConfigs.map(bc => (
@@ -216,7 +236,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
               {barConfigs.length === 1 && processedData.map((_, i) => (
                 <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
               ))}
-              <LabelList dataKey={bc.dataKey} content={(props) => (
+              <LabelList dataKey={bc.dataKey} content={(props: BarRenderProps) => (
                 <BarLabel {...props} naKey={`_na_${bc.dataKey}`} statusKey={`_status_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
               )} />
             </Bar>

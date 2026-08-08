@@ -1,3 +1,5 @@
+import type { RefObject } from "react";
+import type { ResultsFile } from "../types";
 import LLMBySystemPanel from "./panels/LLMBySystemPanel";
 import ImagesBySystemPanel from "./panels/ImagesBySystemPanel";
 import EmbeddingsBySystemPanel from "./panels/EmbeddingsBySystemPanel";
@@ -19,6 +21,10 @@ import { EmptyState } from "./panels/shared";
 export default function ChartPanel({
   containerRef, files, section, accuracyTest,
   enabledModels, enabledImageModels, enabledEmbedModels, chartWidth, logoSrc, chartStyle, groupBy, sizeSplit,
+}: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, accuracyTest: string,
+  enabledModels: Set<string>, enabledImageModels: Set<string>, enabledEmbedModels: Set<string>,
+  chartWidth: number, logoSrc?: string, chartStyle: string, groupBy: string, sizeSplit: string,
 }) {
   const isBar = chartStyle === "bar";
   const isBySystem = groupBy === "system";

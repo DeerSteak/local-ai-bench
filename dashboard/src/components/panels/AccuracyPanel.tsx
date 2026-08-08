@@ -5,10 +5,12 @@ import {
   buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
 } from "../../utils/accuracy";
-import { modelLabel, sortBarData, findMostStrenuousKey } from "../../utils/shared";
+import { modelLabel, sortBarData, findMostStrenuousKey, lookup } from "../../utils/shared";
 import { ACCURACY_TEST_LABELS, ACCURACY_TIMEOUT_BAR_CONFIGS } from "../../constants";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { RefObject } from "react";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
 // Accuracy section (picked via accuracyTest): one overall
@@ -18,9 +20,12 @@ import styles from "../ChartPanel.module.css";
 // "Group By: System" or line-chart variant here, unlike LLM/Images/Embeddings —
 // accuracy is a single scalar per model rather than a metric swept across
 // context lengths or resolutions, so there's no second axis to pivot on.
-export default function AccuracyPanel({ containerRef, files, accuracyTest, enabledModels, chartWidth, logoSrc }) {
+export default function AccuracyPanel({ containerRef, files, accuracyTest, enabledModels, chartWidth, logoSrc }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], accuracyTest: string, enabledModels: Set<string>,
+  chartWidth: number, logoSrc?: string,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
-  const testLabel = ACCURACY_TEST_LABELS[accuracyTest];
+  const testLabel = lookup(ACCURACY_TEST_LABELS, accuracyTest);
   const allModels = getAllAccuracyModels(files, accuracyTest).filter(m => enabledModels.has(m));
 
   const overallConfigs = buildAccuracyGroupedBarConfigs(files, accuracyTest, enabledModels);

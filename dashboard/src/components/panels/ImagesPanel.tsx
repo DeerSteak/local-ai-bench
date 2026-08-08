@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import {
   getAllImageModels,
   buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
@@ -7,10 +8,14 @@ import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
 import { RES_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
+import type { ResultsFile } from "../../types";
 
 // Group By: Model, Images section — one card per resolution (bar) or a
 // single combined chart (line), systems/models as bars/lines within it.
-export default function ImagesPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar, isMultiFile }) {
+export default function ImagesPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledImageModels: Set<string>,
+  chartWidth: number, logoSrc?: string, isBar: boolean, isMultiFile: boolean,
+}) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
 

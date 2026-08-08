@@ -9,8 +9,9 @@ import {
   EMBED_BAR_COLORS, BACKEND_COLORS, ACCURACY_TIMEOUT_BAR_CONFIGS,
   ACCURACY_TESTS, ACCURACY_TEST_LABELS,
 } from "./constants";
+import { lookup } from "./utils/shared";
 
-function relativeLuminance(hex) {
+function relativeLuminance(hex: string): number {
   const channels = [1, 3, 5].map((offset) => {
     const channel = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
     return channel <= 0.04045
@@ -20,7 +21,7 @@ function relativeLuminance(hex) {
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
-function contrastAgainstWhite(hex) {
+function contrastAgainstWhite(hex: string): number {
   return 1.05 / (relativeLuminance(hex) + 0.05);
 }
 
@@ -40,25 +41,25 @@ describe("model registry consistency", () => {
 
   it("every LLM model in LLM_MODEL_ORDER has a label, a color, and a valid size tier", () => {
     for (const model of LLM_MODEL_ORDER) {
-      expect(LLM_MODEL_LABELS[model], `${model} missing a label`).toBeDefined();
-      expect(MODEL_COLORS[model], `${model} missing a color`).toBeDefined();
-      expect(MODEL_SIZE_TIER[model], `${model} missing a size tier`).toBeDefined();
-      expect(SIZE_TIER_ORDER, `${model}'s tier "${MODEL_SIZE_TIER[model]}" is not a recognized tier`)
-        .toContain(MODEL_SIZE_TIER[model]);
+      expect(lookup(LLM_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();
+      expect(lookup(MODEL_COLORS, model), `${model} missing a color`).toBeDefined();
+      expect(lookup(MODEL_SIZE_TIER, model), `${model} missing a size tier`).toBeDefined();
+      expect(SIZE_TIER_ORDER, `${model}'s tier "${lookup(MODEL_SIZE_TIER, model)}" is not a recognized tier`)
+        .toContain(lookup(MODEL_SIZE_TIER, model));
     }
   });
 
   it("every image model in IMAGE_MODEL_ORDER has a label and a color", () => {
     for (const model of IMAGE_MODEL_ORDER) {
-      expect(IMAGE_MODEL_LABELS[model], `${model} missing a label`).toBeDefined();
-      expect(IMAGE_MODEL_COLORS[model], `${model} missing a color`).toBeDefined();
+      expect(lookup(IMAGE_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();
+      expect(lookup(IMAGE_MODEL_COLORS, model), `${model} missing a color`).toBeDefined();
     }
   });
 
   it("every embedding model in EMBED_MODEL_ORDER has a label and a color", () => {
     for (const model of EMBED_MODEL_ORDER) {
-      expect(EMBED_MODEL_LABELS[model], `${model} missing a label`).toBeDefined();
-      expect(EMBED_MODEL_COLORS[model], `${model} missing a color`).toBeDefined();
+      expect(lookup(EMBED_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();
+      expect(lookup(EMBED_MODEL_COLORS, model), `${model} missing a color`).toBeDefined();
     }
   });
 
@@ -70,9 +71,9 @@ describe("model registry consistency", () => {
     expect(LLM_DISPLAY_ORDER).toEqual([...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER]);
     expect(new Set(LLM_DISPLAY_ORDER).size).toBe(LLM_DISPLAY_ORDER.length);
     for (const model of LEGACY_LLM_MODEL_ORDER) {
-      expect(LLM_MODEL_LABELS[model]).toBeDefined();
-      expect(MODEL_COLORS[model]).toBeDefined();
-      expect(MODEL_SIZE_TIER[model]).toBeDefined();
+      expect(lookup(LLM_MODEL_LABELS, model)).toBeDefined();
+      expect(lookup(MODEL_COLORS, model)).toBeDefined();
+      expect(lookup(MODEL_SIZE_TIER, model)).toBeDefined();
     }
   });
 
@@ -88,14 +89,14 @@ describe("image resolution registry", () => {
   });
 
   it("assigns a color to every ordered resolution", () => {
-    for (const resolution of RES_ORDER) expect(RES_COLORS[resolution]).toBeDefined();
+    for (const resolution of RES_ORDER) expect(lookup(RES_COLORS, resolution)).toBeDefined();
   });
 });
 
 describe("accuracy registry", () => {
   it("matches the benchmark workload order and labels every test", () => {
     expect(ACCURACY_TESTS).toEqual(["mcq", "math", "reasoning", "code", "tool"]);
-    for (const test of ACCURACY_TESTS) expect(ACCURACY_TEST_LABELS[test]).toBeTruthy();
+    for (const test of ACCURACY_TESTS) expect(lookup(ACCURACY_TEST_LABELS, test)).toBeTruthy();
   });
 });
 

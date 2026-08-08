@@ -7,6 +7,7 @@ import { getAllEmbedModels } from "./utils/embeddings";
 import { getAccuracySettingsWarning } from "./utils/accuracy";
 import { fetchSelectedResultFiles } from "./utils/autoload";
 import { MAX_FILES } from "./constants";
+import type { DisplayFile, SortConfig } from "./types";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
 import ChartPanel from "./components/ChartPanel";
@@ -15,21 +16,25 @@ import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 
+// The minimal shape both real File objects and autoload's staged-result
+// entries satisfy — this is all parseFile/processJsonFiles actually need.
+type NamedTextSource = { name: string, text: () => Promise<string> };
+
 export default function Dashboard() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<DisplayFile[]>([]);
   const [section, setSection] = useState("llm");
   const [accuracyTest, setAccuracyTest] = useState("mcq");
   const [enabledModels, setEnabledModels] = useState<Set<string>>(new Set());
   const [enabledImageModels, setEnabledImageModels] = useState<Set<string>>(new Set());
   const [enabledEmbedModels, setEnabledEmbedModels] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
   const [groupBy, setGroupBy] = useState("model");
   const [sizeSplit, setSizeSplit] = useState("tiers");
   const [chartWidth, setChartWidth] = useState(708);
-  const [hostnameOverrides, setHostnameOverrides] = useState({});
-  const [logoSrc, setLogoSrc] = useState(null);
+  const [hostnameOverrides, setHostnameOverrides] = useState<Record<string, string>>({});
+  const [logoSrc, setLogoSrc] = useState<string | null>(null);
   const [logoDragOver, setLogoDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filenameSuffix, setFilenameSuffix] = useState("");
@@ -75,7 +80,7 @@ export default function Dashboard() {
     }
   }, [allEmbedModels]);
 
-  const toggleModel = useCallback((m) => {
+  const toggleModel = useCallback((m: string) => {
     setEnabledModels(prev => {
       const n = new Set(prev);
       if (n.has(m)) n.delete(m); else n.add(m);
@@ -83,7 +88,7 @@ export default function Dashboard() {
     });
   }, []);
 
-  const toggleImageModel = useCallback((m) => {
+  const toggleImageModel = useCallback((m: string) => {
     setEnabledImageModels(prev => {
       const n = new Set(prev);
       if (n.has(m)) n.delete(m); else n.add(m);
@@ -91,7 +96,7 @@ export default function Dashboard() {
     });
   }, []);
 
-  const toggleEmbedModel = useCallback((m) => {
+  const toggleEmbedModel = useCallback((m: string) => {
     setEnabledEmbedModels(prev => {
       const n = new Set(prev);
       if (n.has(m)) n.delete(m); else n.add(m);
@@ -126,8 +131,8 @@ export default function Dashboard() {
     () => getCrossEngineWeightsWarning(effectiveFiles), [effectiveFiles],
   );
 
-  const updateHostnameOverride = useCallback((fileId, value) => {
-    setHostnameOverrides(prev => ({ ...prev, [fileId]: value }));
+  const updateHostnameOverride = useCallback((fileId: DisplayFile["id"], value: string) => {
+    setHostnameOverrides(prev => ({ ...prev, [fileId as string]: value }));
   }, []);
 
   const resetModelState = () => {
@@ -140,7 +145,7 @@ export default function Dashboard() {
     setHostnameOverrides({});
   };
 
-  const parseFile = async (file) => {
+  const parseFile = async (file: NamedTextSource): Promise<{ entry: DisplayFile | null, error: string | null }> => {
     let text;
     try {
       text = await file.text();
@@ -168,11 +173,11 @@ export default function Dashboard() {
     }, error: null };
   };
 
-  const processJsonFiles = useCallback(async (jsonFiles) => {
+  const processJsonFiles = useCallback(async (jsonFiles: NamedTextSource[]) => {
     const limited = jsonFiles.slice(0, MAX_FILES);
     if (!limited.length) return;
     const parsed = await Promise.all(limited.map(parseFile));
-    const entries = parsed.map(result => result.entry).filter(Boolean);
+    const entries = parsed.map(result => result.entry).filter((entry): entry is DisplayFile => Boolean(entry));
     setFileError(parsed.map(result => result.error).filter(Boolean).join(" "));
     if (!entries.length) return;
 
@@ -192,35 +197,35 @@ export default function Dashboard() {
       .catch(error => setFileError(error.message));
   }, [processJsonFiles]);
 
-  const handleDrop = useCallback(async (e) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const jsonFiles = [...e.dataTransfer.files].filter(f => f.name.endsWith(".json"));
     await processJsonFiles(jsonFiles);
   }, [processJsonFiles]);
 
-  const handleFileInput = useCallback(async (e) => {
-    const jsonFiles = [...e.target.files].filter(f => f.name.endsWith(".json"));
+  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const jsonFiles = [...(e.target.files || [])].filter(f => f.name.endsWith(".json"));
     e.target.value = "";
     await processJsonFiles(jsonFiles);
   }, [processJsonFiles]);
 
-  const removeFile = useCallback((fileId) => {
+  const removeFile = useCallback((fileId: DisplayFile["id"]) => {
     setFiles(prev => {
       const remaining = prev.filter(f => f.id !== fileId);
       if (remaining.length === 0) resetModelState();
       return remaining;
     });
-    setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId]; return n; });
+    setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId as string]; return n; });
   }, []);
 
-  const handleLogoDrop = useCallback((e) => {
+  const handleLogoDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setLogoDragOver(false);
     const file = e.dataTransfer.files[0];
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = (ev) => setLogoSrc(ev.target.result);
+    reader.onload = (ev) => setLogoSrc(ev.target?.result as string);
     reader.readAsDataURL(file);
   }, []);
 
@@ -250,13 +255,13 @@ export default function Dashboard() {
     }
   }, [saving, filenameSuffix]);
 
-  const cycleSort = (key) => {
-    setSortConfig(prev => prev.key === key ? { key, dir: prev.dir * -1 } : { key, dir: 1 });
+  const cycleSort = (key: string) => {
+    setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
   };
 
-  const handleDragOver = useCallback((e) => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setDragOver(false), []);
-  const handleLogoDragOver = useCallback((e) => { e.preventDefault(); setLogoDragOver(true); }, []);
+  const handleLogoDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setLogoDragOver(true); }, []);
   const handleLogoDragLeave = useCallback(() => setLogoDragOver(false), []);
 
   return (

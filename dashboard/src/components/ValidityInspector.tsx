@@ -3,11 +3,12 @@ import { modelLabel } from "../utils/shared";
 import {
   buildPauseSummaries, buildValidityRows, formatPausedDuration, validitySummary,
 } from "../utils/validity";
+import type { ResultsFile } from "../types";
 import styles from "./ValidityInspector.module.css";
 
 const MAX_VISIBLE_ROWS = 500;
 
-export default function ValidityInspector({ files, section }) {
+export default function ValidityInspector({ files, section }: { files: ResultsFile[], section: string }) {
   const [filter, setFilter] = useState("all");
   const [manualOpen, setManualOpen] = useState(false);
   const [dismissedSignal, setDismissedSignal] = useState("");
