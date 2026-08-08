@@ -260,11 +260,8 @@ def _cached_repo_weight_bytes(path: Path) -> int:
 
 def find_non_catalog_vllm_repos(cache_home: Path, llm_catalog: list[dict] | None = None,
                                 embed_catalog: list[dict] | None = None) -> list[dict]:
-    """Cached HuggingFace repos holding weights that the catalog does not own.
-
-    The cache is shared with anything else on the machine, so an entry is only
-    reported when it actually holds safetensors — the counterpart to the GGUF
-    check that guards llama.cpp cleanup. See docs/setup.md."""
+    """Cached HuggingFace repos holding weights that the catalog does not own —
+    only entries actually holding safetensors are reported. See docs/setup.md."""
     catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
     hub = Path(cache_home) / "hub"
     if not hub.is_dir():
