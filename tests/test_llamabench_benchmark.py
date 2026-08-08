@@ -76,7 +76,9 @@ def test_build_prefill_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "512,2048", "-n", "0", "-d", "0",
     ]
@@ -89,7 +91,9 @@ def test_build_decode_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
     ]
@@ -101,6 +105,8 @@ def test_native_commands_use_selected_tensor_split(monkeypatch):
         "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 1, 999,
     )
     assert command[command.index("--split-mode") + 1] == "tensor"
+    assert command[command.index("--cache-type-k") + 1] == "f16"
+    assert command[command.index("--cache-type-v") + 1] == "f16"
 
 
 def test_commands_suppress_llama_bench_unwanted_defaults():
@@ -132,6 +138,7 @@ def test_build_decode_command_cpu_only_ngl():
         "llama-bench", Path("/models/x.gguf"), [512], [128], 2048, 512, 3, 0,
     )
     assert cmd[cmd.index("-ngl") + 1] == "0"
+    assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
 
 
 class _FakePopen:

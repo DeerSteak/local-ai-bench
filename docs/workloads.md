@@ -383,6 +383,8 @@ Two subcommands run per size, both offline — they load the weights themselves 
 
 **These numbers are not comparable to `llamabench`, and the dashboard never puts them on the same chart.** Two independent reasons, either of which alone would be enough. The weights differ — llama.cpp runs Q4_K_M GGUFs while vLLM runs 4-bit AWQ/GPTQ safetensors of the same base model (see [Per-engine weights](#per-engine-weights)). And the metrics differ: `llama-bench` reports separate prefill and decode token rates, while `vllm bench latency` reports whole-batch seconds and `throughput` reports a combined rate over prompt *and* output tokens. This suite derives an output-only rate (`requests × output_len / elapsed`) rather than reporting vLLM's `tokens_per_second`, which counts prompt tokens too.
 
+KV-cache precision stays consistent within each engine so the server and native cross-checks do not silently test different cache formats. `llama-bench` and `llama-batched-bench` receive the same `q8_0` cache used by llama-server, falling back to `f16` for tensor split; `vllm bench latency` and `throughput` receive the same supported `fp8` or fallback `auto` selected for the managed vLLM server.
+
 Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
 
 Requires the benchmark extra, which the base vLLM package does not include — setup installs `vllm[bench]` (see [Setup](setup.md)). If `vllm bench` is unavailable the test prints the `pip install 'vllm[bench]'` hint and records nothing rather than failing the run.

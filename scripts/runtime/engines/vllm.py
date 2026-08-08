@@ -66,7 +66,24 @@ class VllmEngine(InferenceEngine):
         self._loaded_n_parallel: int = 1
         self._loaded_tool_parser: str | None = None
         self._gpu_visible = True
+        self._kv_cache_dtype = "auto"
         self._model_lock = threading.RLock()
+
+    @staticmethod
+    def supported_kv_cache_dtype(runtime_backend: str) -> str:
+        """Use FP8 only on accelerator backends where vLLM explicitly supports it."""
+        return "fp8" if runtime_backend in {"cuda", "rocm"} else "auto"
+
+    def configure_kv_cache(self, runtime_backend: str) -> str:
+        """Select one cache policy for every locally managed vLLM workload."""
+        self._kv_cache_dtype = (
+            "auto" if self._server_url else self.supported_kv_cache_dtype(runtime_backend)
+        )
+        return self._kv_cache_dtype
+
+    @property
+    def kv_cache_dtype(self) -> str:
+        return self._kv_cache_dtype
 
     # ── model resolution ──
 
@@ -419,6 +436,8 @@ class VllmEngine(InferenceEngine):
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(config.VLLM_GPU_MEMORY_UTILIZATION)]
+        if self._kv_cache_dtype != "auto":
+            options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
         if embedding:

@@ -43,6 +43,10 @@ class LlamaBenchConcurrencyBenchmark:
     def build_command(binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
                       npl: list[int], batch_size: int, ubatch_size: int, ngl: int) -> list[str]:
         """Builds the llama-batched-bench argv — see docs/workloads.md#llama-bench-concurrency."""
+        cache_type = (
+            "f16" if ngl != 0 and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+            else config.LLAMACPP_KV_CACHE_TYPE
+        )
         return [
             binary,
             "-m", str(model_path),
@@ -54,6 +58,8 @@ class LlamaBenchConcurrencyBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
+            "--cache-type-k", cache_type,
+            "--cache-type-v", cache_type,
             "--output-format", "jsonl",
         ]
 

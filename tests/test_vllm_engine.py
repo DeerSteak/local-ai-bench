@@ -84,6 +84,21 @@ def test_bare_serve_is_used_without_a_launcher(engine):
     assert "--port" in command
 
 
+def test_fp8_cache_is_selected_only_for_supported_accelerator_backends(engine):
+    assert engine.configure_kv_cache("cuda") == "fp8"
+    command = engine.server_command("org/m", 4096)
+    assert command[command.index("--kv-cache-dtype") + 1] == "fp8"
+
+    assert engine.configure_kv_cache("rocm") == "fp8"
+    assert engine.configure_kv_cache("cpu") == "auto"
+    assert "--kv-cache-dtype" not in engine.server_command("org/m", 4096)
+
+
+def test_external_server_cache_policy_remains_unmanaged(engine):
+    engine._server_url = "http://external:8000"
+    assert engine.configure_kv_cache("cuda") == "auto"
+
+
 def test_max_model_len_is_per_sequence_and_not_scaled_by_parallelism(engine):
     """Unlike llama-server's -c, --max-model-len is per sequence."""
     command = engine.server_command("org/m", 4096, n_parallel=8)

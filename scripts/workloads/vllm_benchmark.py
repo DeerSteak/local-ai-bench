@@ -41,24 +41,28 @@ class VllmBenchBenchmark:
 
     @staticmethod
     def bench_command(executable: str, subcommand: str, repo: str, output_json: Path,
-                      *, input_len: int, output_len: int, extra: list[str]) -> list[str]:
+                      *, input_len: int, output_len: int, extra: list[str],
+                      kv_cache_dtype: str = "auto") -> list[str]:
         """`vllm bench <subcommand>` for one size. The launcher is never used: it wraps
         `vllm serve`, and these subcommands load the weights themselves."""
-        return [
+        command = [
             executable, "bench", subcommand,
             "--model", repo,
             "--input-len", str(input_len),
             "--output-len", str(output_len),
-            *extra,
-            "--output-json", str(output_json),
         ]
+        if kv_cache_dtype != "auto":
+            command += ["--kv-cache-dtype", kv_cache_dtype]
+        return [*command, *extra, "--output-json", str(output_json)]
 
     @classmethod
     def build_latency_command(cls, executable: str, repo: str, output_json: Path,
-                              input_len: int, output_len: int) -> list[str]:
+                              input_len: int, output_len: int,
+                              kv_cache_dtype: str = "auto") -> list[str]:
         return cls.bench_command(
             executable, "latency", repo, output_json,
             input_len=input_len, output_len=output_len,
+            kv_cache_dtype=kv_cache_dtype,
             extra=[
                 "--batch-size", str(config.VLLMBENCH_BATCH_SIZE),
                 "--num-iters", str(config.VLLMBENCH_ITERS),
@@ -68,10 +72,12 @@ class VllmBenchBenchmark:
 
     @classmethod
     def build_throughput_command(cls, executable: str, repo: str, output_json: Path,
-                                 input_len: int, output_len: int) -> list[str]:
+                                 input_len: int, output_len: int,
+                                 kv_cache_dtype: str = "auto") -> list[str]:
         return cls.bench_command(
             executable, "throughput", repo, output_json,
             input_len=input_len, output_len=output_len,
+            kv_cache_dtype=kv_cache_dtype,
             extra=["--num-prompts", str(config.VLLMBENCH_NUM_PROMPTS)],
         )
 
@@ -220,7 +226,10 @@ class VllmBenchBenchmark:
                     ):
                         with tempfile.TemporaryDirectory() as workdir:
                             out = Path(workdir) / f"{kind}.json"
-                            command = builder(executable, repo, out, input_len, output_len)
+                            command = builder(
+                                executable, repo, out, input_len, output_len,
+                                engine.kv_cache_dtype,
+                            )
                             try:
                                 payload = self.run_one(
                                     command, out, config.VLLMBENCH_TIMEOUT, env,

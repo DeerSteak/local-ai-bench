@@ -46,6 +46,10 @@ class LlamaBenchBenchmark:
     @staticmethod
     def _base_command(binary: str, model_path: Path, batch_size: int, ubatch_size: int,
                       reps: int, ngl: int) -> list[str]:
+        cache_type = (
+            "f16" if ngl != 0 and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+            else config.LLAMACPP_KV_CACHE_TYPE
+        )
         return [
             binary,
             "-m", str(model_path),
@@ -53,6 +57,8 @@ class LlamaBenchBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
+            "--cache-type-k", cache_type,
+            "--cache-type-v", cache_type,
             "-r", str(reps),
             "-o", "jsonl",
             "--progress",

@@ -20,6 +20,7 @@ from scripts.runtime.comfyui_installation import find_comfyui_installation, norm
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
+from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
@@ -834,8 +835,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 sys.exit(interruption_exit_code(sig))
 
         stage_order = ordered_stage_keys(tuple(tests))
+        vllm_kv_cache_dtype = "auto"
+        if isinstance(engine, VllmEngine):
+            vllm_kv_cache_dtype = engine.configure_kv_cache(profile["backend"])
         methodology = resolve_methodology_profile(
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
+            vllm_kv_cache_dtype=vllm_kv_cache_dtype,
         )
         effective_config = {
             "runs": config.N_RUNS, "warmup_runs": args.warmup,

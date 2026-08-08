@@ -129,6 +129,7 @@ def test_build_command_shape():
         "-npp", "512", "-ntg", "128,512", "-npl", "1,2,4",
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
         "--output-format", "jsonl",
     ]
 
@@ -146,6 +147,17 @@ def test_build_command_cpu_only_ngl():
         "llama-batched-bench", Path("/models/x.gguf"), 4096, 512, [128], [1], 2048, 512, 0,
     )
     assert cmd[cmd.index("-ngl") + 1] == "0"
+    assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
+
+
+def test_build_command_uses_f16_cache_for_tensor_split(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 999,
+    )
+    assert cmd[cmd.index("--cache-type-k") + 1] == "f16"
+    assert cmd[cmd.index("--cache-type-v") + 1] == "f16"
 
 
 # ══════════════════════════════════════════════════════════════════════════

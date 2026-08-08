@@ -44,6 +44,24 @@ def test_throughput_command_uses_num_prompts_and_no_iteration_flags():
     assert command[command.index("--input-len") + 1] == "4096"
 
 
+@pytest.mark.parametrize("builder", [
+    VllmBenchBenchmark.build_latency_command,
+    VllmBenchBenchmark.build_throughput_command,
+])
+def test_native_commands_use_the_engine_cache_policy(builder):
+    command = builder(
+        "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128, "fp8",
+    )
+    assert command[command.index("--kv-cache-dtype") + 1] == "fp8"
+
+
+def test_native_command_leaves_auto_to_vllm():
+    command = VllmBenchBenchmark.build_latency_command(
+        "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128,
+    )
+    assert "--kv-cache-dtype" not in command
+
+
 def test_latency_result_parses_seconds_and_derives_an_output_rate():
     payload = {
         "avg_latency": 2.0,
