@@ -44,7 +44,8 @@ class LLMPrefillBenchmark:
                     Shared.warn("Download it with: python setup_check.py")
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:

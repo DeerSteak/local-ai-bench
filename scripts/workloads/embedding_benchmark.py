@@ -87,7 +87,8 @@ class EmbeddingBenchmark:
 
                 Shared.ok(f"Using model: {tag}")
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue

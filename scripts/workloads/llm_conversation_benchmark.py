@@ -122,7 +122,8 @@ class LLMConversationBenchmark:
                         })
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -344,7 +345,8 @@ class LLMConversationBenchmark:
                 if crashed:
                     results[short]["crashed"] = crashed_label or "0K"
                     results[short]["crashed_at"] = Shared.record_crash(
-                        tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
+                        tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}",
+                        engine_name=engine.name)
                     if journal:
                         journal.record_model_state(model, "failed", {
                             "crashed": results[short]["crashed"],

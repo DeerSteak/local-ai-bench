@@ -131,7 +131,8 @@ class ConcurrencyBenchmark:
                         })
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -181,7 +182,7 @@ class ConcurrencyBenchmark:
                                            f"concurrency — last server output:\n{engine.tail_log()}")
                                 results[short]["crashed_at"] = Shared.record_crash(
                                     tag, crash_cache, crash_cache_path,
-                                    f"warming up {level}-way concurrency")
+                                    f"warming up {level}-way concurrency", engine_name=engine.name)
                                 stopped_at = "crashed"
                             else:
                                 Shared.err(f"{label}: {level}-way concurrency warmup failed: {error}")
@@ -206,7 +207,7 @@ class ConcurrencyBenchmark:
                                        f"last server output:\n{engine.tail_log()}")
                             results[short]["crashed_at"] = Shared.record_crash(
                                 tag, crash_cache, crash_cache_path,
-                                f"running {level}-way concurrency")
+                                f"running {level}-way concurrency", engine_name=engine.name)
                             stopped_at = "crashed"
                         else:
                             Shared.err(f"{label}: {level}-way concurrency batch failed: {error}")
