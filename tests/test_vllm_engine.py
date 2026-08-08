@@ -257,7 +257,16 @@ def test_model_pulled_reads_the_hf_cache(engine):
 
 def test_an_unknown_tag_has_no_repo(engine):
     assert engine._repo("not-a-model") is None
-    assert engine.model_pulled("not-a-model") is False
+
+
+def test_list_installed_models_skips_a_pulled_entry_missing_its_vllm_repo(engine, monkeypatch):
+    """model_pulled() only checks the HF cache, so a catalog entry with no vllm_repo
+    (a llamacpp-only model) must be skipped rather than raising KeyError."""
+    fake_model = {"tag": "no-repo:1b", "vllm_repo": None}
+    monkeypatch.setattr(VllmEngine, "model_pulled", lambda self, tag: True)
+    monkeypatch.setattr("scripts.runtime.engines.vllm.LLM_MODELS", [fake_model])
+    monkeypatch.setattr("scripts.runtime.engines.vllm.EMBED_MODELS", [])
+    assert engine.list_installed_models() == []
 
 
 def test_max_context_length_reads_the_snapshot_config(engine):
@@ -395,6 +404,13 @@ def test_context_limit_never_exceeds_the_models_real_maximum(engine, monkeypatch
 
 def test_context_limit_passes_through_none(engine):
     assert engine.context_limit("qwen3.5:9b-q4_K_M", None) is None
+
+
+def test_context_limit_keeps_tolerance_when_the_snapshot_config_is_unreadable(engine, monkeypatch):
+    """max_context_length falling back to its own default must not collapse the
+    tolerance padding back to exactly num_ctx — that would defeat VLLM_CTX_TOLERANCE."""
+    monkeypatch.setattr(VllmEngine, "max_context_length", lambda self, tag, default=131072: default)
+    assert engine.context_limit("qwen3.5:9b-q4_K_M", 1024) == 1024 + config.VLLM_CTX_TOLERANCE
 
 
 def test_the_tolerance_covers_the_reported_gemma_failure(engine, monkeypatch):

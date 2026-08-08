@@ -28,7 +28,7 @@ def engine_download_size(model: dict, engine: str) -> str | None:
     """Download size under `engine`, or None for entries with no engine weights
     (image checkpoints). Engines carry different weights for the same model."""
     if engine == "vllm":
-        return model.get("vllm_download_size") or model.get("download_size")
+        return model.get("vllm_download_size")
     return model.get("download_size")
 
 

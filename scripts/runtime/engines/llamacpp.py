@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 import gguf
 import requests
@@ -107,13 +108,13 @@ class LlamaCppEngine(InferenceEngine):
                 return paths
             if not paths or not all(matches):
                 return None
-            parts = [match for match in matches if match is not None]
-            prefixes = {match.group(1) for match in parts}
-            totals = {int(match.group(3)) for match in parts}
+            confirmed = cast(list[re.Match], matches)
+            prefixes = {match.group(1) for match in confirmed}
+            totals = {int(match.group(3)) for match in confirmed}
             if len(prefixes) != 1 or len(totals) != 1:
                 return None
             total = totals.pop()
-            by_part = {int(match.group(2)): path for match, path in zip(parts, paths)}
+            by_part = {int(match.group(2)): path for match, path in zip(confirmed, paths)}
             expected_parts = set(range(1, total + 1))
             return [by_part[i] for i in range(1, total + 1)] if set(by_part) == expected_parts else None
         hf_files = entry["hf_file"]

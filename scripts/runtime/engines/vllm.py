@@ -280,7 +280,10 @@ class VllmEngine(InferenceEngine):
         for model in LLM_MODELS + EMBED_MODELS:
             if not self.model_pulled(model["tag"]):
                 continue
-            blobs = hf_cache_model_dir(self._cache_home, model["vllm_repo"]) / "blobs"
+            repo = model.get("vllm_repo")
+            if repo is None:
+                continue
+            blobs = hf_cache_model_dir(self._cache_home, repo) / "blobs"
             size = sum(path.stat().st_size for path in blobs.glob("*")) if blobs.is_dir() else None
             installed.append({"tag": model["tag"], "size": size})
         return installed
@@ -354,7 +357,7 @@ class VllmEngine(InferenceEngine):
         overshoot, and vLLM rejects prompt+max_tokens over the limit outright."""
         if num_ctx is None:
             return None
-        return min(num_ctx + config.VLLM_CTX_TOLERANCE, self.max_context_length(tag, num_ctx))
+        return min(num_ctx + config.VLLM_CTX_TOLERANCE, self.max_context_length(tag))
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None) -> list[str]:

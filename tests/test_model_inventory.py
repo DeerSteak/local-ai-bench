@@ -265,8 +265,10 @@ def test_engine_download_size_prefers_the_engines_own_weights():
     assert engine_download_size(model, "vllm") == "~12.4 GB"
 
 
-def test_engine_download_size_falls_back_when_no_vllm_size_is_listed():
-    assert engine_download_size({"download_size": "~5.5 GB"}, "vllm") == "~5.5 GB"
+def test_engine_download_size_is_unknown_when_no_vllm_size_is_listed():
+    """A missing vllm_download_size must report unknown, not the GGUF's own size —
+    vLLM downloads a different weight format so the two sizes aren't interchangeable."""
+    assert engine_download_size({"download_size": "~5.5 GB"}, "vllm") is None
 
 
 def test_llamacpp_completeness_needs_every_listed_gguf(tmp_path):
