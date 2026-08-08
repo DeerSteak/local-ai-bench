@@ -157,7 +157,20 @@ wsl --install
 
 **3. Install the NVIDIA driver on Windows only.** The host driver projects the GPU into WSL2 through `/dev/dxg`, and `nvidia-smi` works inside the distribution without any Linux driver. Installing an NVIDIA Linux driver inside WSL2 overwrites that passthrough and is the most common way this setup breaks.
 
-**4. Inside the WSL2 shell**, install the prerequisites, clone into the WSL2 filesystem, and run setup as normal:
+**4. Install the CUDA toolkit inside WSL2.** The Windows driver provides `libcuda.so` and a working `nvidia-smi`, but not `nvcc` — and llama.cpp is a source build on Linux, so without the toolkit setup configures a CPU-only build and says so. Use the **WSL-Ubuntu** repository, which ships the toolkit without a Linux driver:
+
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb && sudo apt update && sudo apt install -y cuda-toolkit
+```
+
+Install `cuda-toolkit`, never the `cuda`, `cuda-12-x`, or `cuda-drivers` meta-packages — each of those pulls in the Linux driver and breaks the passthrough described in step 3. See NVIDIA's [CUDA on WSL user guide](https://docs.nvidia.com/cuda/wsl-user-guide/index.html).
+
+The toolkit installs to `/usr/local/cuda/bin`, which is not on `PATH` by default. Setup looks there directly, so a CUDA build works either way, but adding it (`export PATH=/usr/local/cuda/bin:$PATH`) makes `nvcc --version` work in your own shell and is the quickest way to confirm the install.
+
+Setup passes the GPU's compute capability to cmake explicitly rather than letting it use `CMAKE_CUDA_ARCHITECTURES=native`. That default compiles and runs a small probe to detect the local GPU, and under WSL2 the probe reports "No CUDA devices found" even when `nvidia-smi` works, because `libcuda.so` lives in `/usr/lib/wsl/lib` outside the probe's link path. The resulting build reports a CUDA backend but carries no kernels for the card, which shows up as CPU-speed results from a run that looked like it configured correctly.
+
+**5. Inside the WSL2 shell**, install the prerequisites, clone into the WSL2 filesystem, and run setup as normal:
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv python3-dev build-essential git cmake

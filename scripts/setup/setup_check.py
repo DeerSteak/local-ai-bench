@@ -32,7 +32,7 @@ from scripts.runtime.comfyui_installation import (
     resolve_comfyui_setup_choice,
     write_extra_model_paths,
 )
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
     engine_download_size, engine_fit_report, find_non_catalog_vllm_repos,
@@ -658,12 +658,20 @@ def install_llamacpp():
 
         cmake_flags = []
         if nvidia_ok:
-            if not shutil.which("nvcc"):
+            nvcc_path = find_nvcc()
+            if not nvcc_path:
                 warn("NVIDIA GPU detected but the CUDA toolkit (nvcc) isn't installed — "
                      "building CPU-only. Install the CUDA toolkit and re-run for GPU support.")
             else:
-                info("Building with CUDA support ...")
-                cmake_flags.append("-DGGML_CUDA=ON")
+                info(f"Building with CUDA support ({nvcc_path}) ...")
+                # Named explicitly so a toolkit that is off PATH still configures.
+                cmake_flags += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc_path}"]
+                cuda_arch = cuda_architecture(nvidia_compute_cap)
+                if cuda_arch:
+                    cmake_flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={cuda_arch}")
+                else:
+                    warn("Could not read this GPU's compute capability — cmake will probe for it, "
+                         "which fails under WSL2 and yields a CUDA build with no usable kernels")
         elif rocm_ok:
             info("Building with ROCm/HIP support ...")
             cmake_flags += ["-DGGML_HIP=ON"]
