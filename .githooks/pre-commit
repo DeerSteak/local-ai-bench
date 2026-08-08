@@ -14,3 +14,16 @@ else
 fi
 
 "$python" -m scripts.release.version_sync || exit 1
+
+# Type-check staged Python — see docs/release-policy.md#pyright-hook.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '\.py$'; then
+  if command -v pyright >/dev/null 2>&1; then
+    pyright_cmd="pyright"
+  else
+    pyright_cmd="npx --yes pyright@latest"
+  fi
+  if ! $pyright_cmd; then
+    echo "pyright found type errors — fix them or, for a false positive only, commit with --no-verify." >&2
+    exit 1
+  fi
+fi

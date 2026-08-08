@@ -48,6 +48,10 @@ git config core.hooksPath .githooks
 
 To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing whitespace as groups 1–3.
 
+## Pyright hook
+
+The same `.githooks/pre-commit` also type-checks the project with [pyright](https://microsoft.github.io/pyright/) whenever the commit stages at least one `.py` file, and refuses the commit if it reports any error. It prefers a `pyright` already on `PATH`; otherwise it falls back to `npx --yes pyright@latest`, so nothing needs installing to use it. `pyrightconfig.json` at the repo root (`typeCheckingMode: "standard"`, `scripts/`+`tests/`) is the config both this hook and an editor's Pyright/Pylance extension pick up automatically. A commit with no staged Python files skips the check entirely, so doc-only or dashboard-only commits stay fast. `git commit --no-verify` bypasses both this and the version-sync check above — reserve it for a confirmed pyright false positive, not for an inconvenient real error.
+
 ## Release channels and notes
 
 Preview builds are opt-in and may be promoted only after a staged cohort shows acceptable install, valid-run, recovery, and support outcomes. Stable rollout is staged with a halt condition and a tested route back to the last signed stable release. Automatic updates are not enabled until signature verification, downgrade protection, recovery, and rollback are implemented and qualified.
