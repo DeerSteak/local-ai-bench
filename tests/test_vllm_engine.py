@@ -708,6 +708,32 @@ def test_external_server_preserves_served_model_name_for_requests(engine, monkey
     assert engine._loaded_model_id == TEST_TAG
 
 
+def test_external_embedding_request_uses_the_server_advertised_model_id(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    engine._proc = None
+    engine._loaded_tag = None
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {TEST_TAG})
+    captured = {}
+
+    class Response:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {"data": [{"index": 0, "embedding": [1.0, 2.0]}]}
+
+    def post(_url, *, json, timeout):
+        captured.update(json)
+        return Response()
+
+    monkeypatch.setattr("scripts.runtime.engines.vllm.requests.post", post)
+    measurement = engine.embed(TEST_TAG, ["hello"])
+
+    assert captured["model"] == TEST_TAG
+    assert measurement.embeddings == [[1.0, 2.0]]
+
+
 def test_ensure_model_against_a_server_url_raises_when_unreachable(engine, monkeypatch):
     engine._launcher = None
     engine._executable = None

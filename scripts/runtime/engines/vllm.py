@@ -836,7 +836,8 @@ class VllmEngine(InferenceEngine):
 
         t0 = time.perf_counter()
         resp = requests.post(f"{self.base_url}/v1/embeddings",
-                              json={"model": self._repo(tag), "input": inputs}, timeout=timeout)
+                              json={"model": self._loaded_model_id or self._repo(tag),
+                                    "input": inputs}, timeout=timeout)
         if not resp.ok:
             try:
                 detail = resp.json()
