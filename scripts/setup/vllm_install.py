@@ -178,15 +178,20 @@ def python_bootstrap_plan(*, python_version: tuple[int, int],
 def run_python_bootstrap(plan: list[list[str]], *, log=print,
                          run=subprocess.run) -> bool:  # pragma: no cover
     """Execute a `python_bootstrap_plan`. Real network and filesystem side effects."""
-    for command in plan:
-        log(f"  Running: {shlex.join(command)}")
-        if run(command).returncode != 0:
-            log("  Bootstrap failed — continuing without vLLM")
-            return False
-    # uv drops its shims here, and this process inherited a PATH from before they existed.
+    # uv installs its shims here, so PATH has to admit them before the next command runs.
     local_bin = str(Path.home() / ".local" / "bin")
     if local_bin not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+    for command in plan:
+        log(f"  Running: {shlex.join(command)}")
+        try:
+            failed = run(command).returncode != 0
+        except OSError as exc:
+            log(f"  Could not run {command[0]}: {exc}")
+            failed = True
+        if failed:
+            log("  Bootstrap failed — continuing without vLLM")
+            return False
     return True
 
 
