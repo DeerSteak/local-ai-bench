@@ -160,7 +160,7 @@ wsl --install
 **4. Inside the WSL2 shell**, install the prerequisites, clone into the WSL2 filesystem, and run setup as normal:
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv python3-dev build-essential git
+sudo apt update && sudo apt install -y python3-venv python3-dev build-essential git cmake
 git clone <repo-url> ~/local-ai-bench && cd ~/local-ai-bench && bash setup.sh
 ```
 
@@ -214,7 +214,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **macOS** — Plug in power and disable sleep (System Settings → Battery) before a long run. For 70B models, watch Activity Monitor → Memory: if pressure turns red and TPS drops between runs, the system is swapping — use `--timeout 600` or `--maxtier medium`.
 
-**Linux (NVIDIA)** — Python 3.11 is installed with apt when missing on Debian-family systems, after confirmation; other distributions need a manual Python install. llama.cpp is built from source with CUDA when an NVIDIA GPU is detected.
+**Linux (NVIDIA)** — Python 3.11 is installed with apt when missing on Debian-family systems, after confirmation; other distributions need a manual Python install. llama.cpp is built from source with CUDA when an NVIDIA GPU is detected. Because that is a source build, `git` and `cmake` are installed up front alongside the other prerequisites when an existing llama.cpp binary is not already on `PATH` — the build itself runs in the unattended phase, so a tool discovered missing there would strand the run after its last approval prompt.
 
 **Linux (AMD/Strix Halo, Ryzen AI Max+ 395) — vLLM is experimental here** — llama.cpp is unaffected and uses its normal HIP build. For vLLM, setup reads the GPU's gfx target from `rocminfo` and compares it against the targets vLLM's prebuilt ROCm wheels actually ship kernels for (`gfx90a`, `gfx942`, `gfx950`, `gfx1100`, `gfx1200`, `gfx1201`). Strix Halo reports `gfx1151`, which is not among them, so vLLM is offered as experimental with the reason shown rather than as a plain supported option — **unless a vLLM is already present**, which on AMD's own Strix Halo image it is, in which case none of this applies and the engine is simply selectable. It is still installable — people do run vLLM on this hardware — but the known-working route is a TheRock-based container rather than the stock wheel index this script uses. The most actively maintained one is [kyuz0/amd-strix-halo-vllm-toolboxes](https://github.com/kyuz0/amd-strix-halo-vllm-toolboxes), a Fedora Toolbx/Podman image built on TheRock ROCm nightlies, whose own tested-model list includes `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` — the same weights this project's catalog selects for Qwen3.6 35B-A3B.
 

@@ -140,6 +140,28 @@ if [ "$OS" = "Linux" ]; then
             warn "Python's venv module is missing and no package was found to install it."
         fi
     fi
+
+    # llama.cpp builds from source on Linux; discovering a missing tool mid-install would
+    # strand the run after its last approval prompt.
+    if ! command -v llama-cli &>/dev/null && ! command -v llama-server &>/dev/null; then
+        BUILD_TOOLS=()
+        for _tool in git cmake; do
+            command -v "$_tool" &>/dev/null || BUILD_TOOLS+=("$_tool")
+        done
+        if [ ${#BUILD_TOOLS[@]} -gt 0 ]; then
+            if command -v apt-get &>/dev/null; then
+                info "Installing llama.cpp build prerequisites (${BUILD_TOOLS[*]} build-essential) ..."
+                sudo apt-get install -y "${BUILD_TOOLS[@]}" build-essential || \
+                    warn "Install failed — llama.cpp cannot build without ${BUILD_TOOLS[*]}"
+            elif command -v dnf &>/dev/null; then
+                info "Installing llama.cpp build prerequisites (${BUILD_TOOLS[*]}) ..."
+                sudo dnf install -y "${BUILD_TOOLS[@]}" gcc-c++ make || \
+                    warn "Install failed — llama.cpp cannot build without ${BUILD_TOOLS[*]}"
+            else
+                warn "llama.cpp needs ${BUILD_TOOLS[*]} to build — install them and re-run"
+            fi
+        fi
+    fi
 fi
 
 GUI_SESSION=0
