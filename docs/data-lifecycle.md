@@ -12,7 +12,7 @@ Local AI Bench stores benchmark state locally by default and does not upload res
 | Single-shot event journal | Beside the result as `*.events.sqlite3` | Retained with the result; deleting the run from Result History removes it with the JSON | Local transactional source; portable JSON/bundle remains the interchange format |
 | Accuracy answer sidecars | Beside the selected result | Retained with the result; deleting the run from Result History removes its exact sidecars | Optional content-addressed bundle artifacts |
 | Generated images | Result-specific image directory | Retained with the result; deleting the run from Result History removes the directory | Optional content-addressed bundle artifacts |
-| Crash caches | Gitignored repository files | Retained to avoid repeat crashes; safe for the user to delete to force a retry | Not exported by default |
+| Crash caches | Gitignored `.*_crash_cache.json` repository files | Retained to avoid repeat crashes; **Clear Crash Caches** on the Configuration tab confirms and deletes every workload type together | Not exported by default |
 | Portable presets | User-selected path | Retained until user deletion | Versioned JSON without credentials or private paths |
 | Support bundles | User-selected `.labsupport` path | Created only after field/file review; retained until user deletion | Redacted diagnostics only; not a result substitute |
 

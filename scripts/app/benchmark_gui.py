@@ -863,6 +863,35 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Label(engine_box, textvariable=engine_note).grid(
         row=1, column=0, columnspan=len(available_engines) + 2, sticky="w", pady=(8, 0))
 
+    def clear_all_crash_caches():
+        if process is not None and process.poll() is None:
+            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
+            return
+        caches = Shared.crash_cache_paths(config.SCRIPT_DIR)
+        if not caches:
+            messagebox.showinfo("Clear crash caches", "No crash caches were found.", parent=root)
+            return
+        names = "\n".join(f"  • {path.name}" for path in caches)
+        if not messagebox.askyesno(
+            "Clear crash caches",
+            f"Delete all {len(caches)} crash cache file(s)?\n\n{names}\n\n"
+            "Previously crashing models will be tried again on future runs. This cannot be undone.",
+            parent=root,
+        ):
+            return
+        removed, failures = Shared.clear_crash_caches(config.SCRIPT_DIR)
+        if failures:
+            detail = "\n".join(f"{path.name}: {reason}" for path, reason in failures.items())
+            messagebox.showerror(
+                "Crash-cache cleanup incomplete",
+                f"Deleted {len(removed)} cache(s), but some could not be removed:\n\n{detail}",
+                parent=root,
+            )
+            return
+        messagebox.showinfo(
+            "Crash caches cleared", f"Deleted {len(removed)} crash cache file(s).", parent=root,
+        )
+
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     split_label = "Multi-GPU mode (tensor is experimental)" if "tensor" in gpu_split_modes else "Multi-GPU mode"
@@ -899,6 +928,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
     ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ttk.Button(
+        execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
+    ).grid(row=13, column=0, sticky="w", pady=(10, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))

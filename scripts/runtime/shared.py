@@ -611,6 +611,26 @@ class Shared:
             Shared.warn(f"Failed to save crash cache to {path}: {e}")
 
     @staticmethod
+    def crash_cache_paths(root: Path) -> list[Path]:
+        """All current and future workload crash caches in the repository root."""
+        return sorted(
+            path for path in Path(root).glob(".*_crash_cache.json")
+            if path.is_file() or path.is_symlink()
+        )
+
+    @staticmethod
+    def clear_crash_caches(root: Path) -> tuple[list[Path], dict[Path, str]]:
+        removed = []
+        failures = {}
+        for path in Shared.crash_cache_paths(root):
+            try:
+                path.unlink()
+                removed.append(path)
+            except OSError as exc:
+                failures[path] = str(exc)
+        return removed, failures
+
+    @staticmethod
     def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
                            expected_bank_hash: str | None = None, *,
                            engine_name: str) -> dict | None:

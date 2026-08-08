@@ -69,6 +69,69 @@ def test_save_and_load_crash_cache_roundtrip(tmp_path):
     assert Shared.load_crash_cache(path) == cache
 
 
+def test_crash_cache_paths_discovers_every_cache_type_only(tmp_path):
+    llm = tmp_path / ".llm_crash_cache.json"
+    future = tmp_path / ".future_workload_crash_cache.json"
+    unrelated = tmp_path / ".llm_cache.json"
+    directory = tmp_path / ".directory_crash_cache.json"
+    for path in (llm, future, unrelated):
+        path.write_text("{}", encoding="utf-8")
+    directory.mkdir()
+
+    assert Shared.crash_cache_paths(tmp_path) == [future, llm]
+
+
+def test_clear_crash_caches_removes_all_types_and_preserves_unrelated_files(tmp_path):
+    caches = [tmp_path / ".llm_crash_cache.json", tmp_path / ".tool_crash_cache.json"]
+    for path in caches:
+        path.write_text("{}", encoding="utf-8")
+    unrelated = tmp_path / ".benchmark_frontend_state.json"
+    unrelated.write_text("{}", encoding="utf-8")
+
+    removed, failures = Shared.clear_crash_caches(tmp_path)
+
+    assert removed == caches
+    assert failures == {}
+    assert unrelated.is_file()
+
+
+def test_clear_crash_caches_unlinks_symlink_without_touching_target(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text("{}", encoding="utf-8")
+    link = tmp_path / ".llm_crash_cache.json"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+
+    removed, failures = Shared.clear_crash_caches(tmp_path)
+
+    assert removed == [link]
+    assert failures == {}
+    assert target.is_file()
+
+
+def test_clear_crash_caches_continues_after_one_file_fails(tmp_path, monkeypatch):
+    blocked = tmp_path / ".llm_crash_cache.json"
+    removable = tmp_path / ".tool_crash_cache.json"
+    for path in (blocked, removable):
+        path.write_text("{}", encoding="utf-8")
+    unlink = type(blocked).unlink
+
+    def selective_unlink(path):
+        if path == blocked:
+            raise OSError("locked")
+        unlink(path)
+
+    monkeypatch.setattr(type(blocked), "unlink", selective_unlink)
+
+    removed, failures = Shared.clear_crash_caches(tmp_path)
+
+    assert removed == [removable]
+    assert failures == {blocked: "locked"}
+    assert blocked.is_file() and not removable.exists()
+
+
 def test_save_crash_cache_swallows_write_failures(tmp_path):
     # Directory as the target path makes write_text() raise — save_crash_cache
     # should warn and not propagate the exception.
