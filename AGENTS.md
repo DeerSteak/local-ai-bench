@@ -171,3 +171,4 @@ This project's docs have accumulated real staleness before — broken relative l
 4. Check for now-broken relative links and stale references to renamed/removed files in anything you touched or that references what you touched.
 5. Don't run `setup.sh`, `setup.bat`, or a real `run_bench.sh` invocation (including `--tests llamabench`) to "verify" — see Critical safety rules.
 6. Don't leave any pyright errors. There is a githook that looks for errors and stops, so you need to ensure that any lingering issues are resolved.
+7. Before calling it done, review your own diff adversarially rather than just confirming it does what you intended — see "Test adversarially, not just confirmatorily" above — and fix whatever that review turns up rather than leaving it noted for later.
