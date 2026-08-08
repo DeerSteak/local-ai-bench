@@ -384,3 +384,21 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cuda"
     assert configure_runner_engine(engine, "cuda", True) == "auto"
     assert engine.configured == "cpu"
+
+
+def test_runner_restores_recorded_gpu_split_mode(monkeypatch):
+    from scripts.runtime import config
+    from scripts.runtime.workload_runner import apply_runner_settings
+
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    apply_runner_settings({"gpu_split_mode": "tensor"})
+    assert config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+
+
+def test_legacy_runner_plan_defaults_gpu_split_to_layer(monkeypatch):
+    from scripts.runtime import config
+    from scripts.runtime.workload_runner import apply_runner_settings
+
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    apply_runner_settings({})
+    assert config.LLAMACPP_GPU_SPLIT_MODE == "layer"

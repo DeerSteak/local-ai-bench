@@ -36,6 +36,11 @@ def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> st
     return configure(runtime_backend) if configure else "auto"
 
 
+def apply_runner_settings(settings: dict) -> None:
+    """Restore mutable CLI-overridden settings inside the supervised child process."""
+    config.LLAMACPP_GPU_SPLIT_MODE = settings.get("gpu_split_mode", "layer")
+
+
 def emit(kind: str, **details) -> None:
     payload = {
         "ownership_token": os.environ.get("LOCAL_AI_BENCH_RUNNER_TOKEN"),
@@ -69,6 +74,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     if "llm" not in plan.tests:
         raise ValueError("runner job does not include the LLM stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
@@ -112,6 +118,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     if "conv" not in plan.tests:
         raise ValueError("runner job does not include the conversation stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
@@ -171,6 +178,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
     if "llamabench" not in plan.tests:
         raise ValueError("runner job does not include the native llama-bench stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.LLAMABENCH_PP = settings["llamabench_pp"]
     config.LLAMABENCH_TG = settings["llamabench_tg"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
@@ -207,6 +215,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     if stage_name not in {"conc_tool", "conc_chat"} or stage_name not in plan.tests:
         raise ValueError("runner job does not include the requested concurrency stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     is_tool = stage_name == "conc_tool"
     levels = settings["concurrency_tool_levels" if is_tool else "concurrency_chat_levels"]
