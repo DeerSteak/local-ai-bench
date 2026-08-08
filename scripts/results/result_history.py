@@ -2,6 +2,7 @@
 
 import json
 import math
+import shutil
 from pathlib import Path
 
 from scripts.results.result_store import as_dict, validate_json_data
@@ -14,6 +15,64 @@ PERFORMANCE_METRICS = {
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }
 ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
+
+
+def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]:
+    """Exact repository-owned artifacts derived from one history result."""
+    result_path, results_dir = Path(result_path), Path(results_dir)
+    if result_path.parent.resolve() != results_dir.resolve():
+        raise ValueError("history result is outside the results directory")
+    stem = result_path.stem
+    regraded_standard = stem.startswith("regraded_results_")
+    regraded_custom = (
+        stem.startswith("regraded_")
+        and (results_dir / result_path.name[len("regraded_"):]).is_file()
+    )
+    regraded = regraded_standard or regraded_custom
+    if regraded_standard:
+        suffix = stem[len("regraded_results_"):]
+    elif regraded_custom:
+        suffix = stem[len("regraded_"):]
+    else:
+        suffix = stem[len("results_"):] if stem.startswith("results_") else stem
+    prefix = "regraded_" if regraded else ""
+    artifacts = [
+        *(results_dir / f"{prefix}answers_{workload}_{suffix}.json"
+          for workload in ACCURACY_SECTIONS),
+    ]
+    if not regraded:
+        artifacts.extend([
+            results_dir / f"images_{suffix}",
+            result_path.with_suffix(".events.sqlite3"),
+            *(results_dir / f"regraded_answers_{workload}_{suffix}.json"
+              for workload in ACCURACY_SECTIONS),
+            results_dir / f"regraded_{result_path.name}",
+        ])
+    artifacts.append(result_path)
+    return tuple(dict.fromkeys(artifacts))
+
+
+def existing_run_artifacts(result_path: Path, results_dir: Path) -> list[Path]:
+    return [path for path in run_artifact_paths(result_path, results_dir)
+            if path.exists() or path.is_symlink()]
+
+
+def delete_run_artifacts(result_path: Path, results_dir: Path) -> tuple[list[Path], dict[Path, str]]:
+    """Delete one run's exact artifacts, leaving the main JSON until last for retry."""
+    removed = []
+    failures = {}
+    for path in existing_run_artifacts(result_path, results_dir):
+        if path == result_path and failures:
+            break
+        try:
+            if path.is_symlink() or not path.is_dir():
+                path.unlink()
+            else:
+                shutil.rmtree(path)
+            removed.append(path)
+        except OSError as exc:
+            failures[path] = str(exc)
+    return removed, failures
 
 
 def _run_settings(result: dict) -> dict:

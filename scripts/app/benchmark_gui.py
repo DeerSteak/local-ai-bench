@@ -59,7 +59,10 @@ from scripts.runtime.engines import engine_names, get_engine, installed_engine_n
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.run_plan import load_run_plan
 from scripts.results.result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
-from scripts.results.result_history import discover_results, filter_results, load_result as load_history_result
+from scripts.results.result_history import (
+    delete_run_artifacts, discover_results, existing_run_artifacts, filter_results,
+    load_result as load_history_result,
+)
 from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
@@ -1488,6 +1491,42 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, ValueError) as exc:
             messagebox.showerror("Dashboard launch failed", str(exc), parent=root)
 
+    def delete_history_selection():
+        if process is not None and process.poll() is None:
+            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
+            return
+        try:
+            result_path = selected_history_path()
+            artifacts = existing_run_artifacts(result_path, config.RESULTS_DIR)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Delete run", str(exc), parent=root)
+            return
+        if not artifacts:
+            refresh_history()
+            messagebox.showinfo("Delete run", "The selected run no longer exists.", parent=root)
+            return
+        names = "\n".join(f"  • {path.name}" for path in artifacts)
+        if not messagebox.askyesno(
+            "Delete benchmark run",
+            f"Permanently delete {result_path.name} and all {len(artifacts) - 1} "
+            f"associated artifact(s)?\n\n{names}\n\nThis cannot be undone. Separately "
+            "exported bundles and reports are not deleted.",
+            parent=root,
+        ):
+            return
+        removed, failures = delete_run_artifacts(result_path, config.RESULTS_DIR)
+        refresh_history()
+        if failures:
+            detail = "\n".join(f"{path.name}: {reason}" for path, reason in failures.items())
+            messagebox.showerror(
+                "Run deletion incomplete",
+                f"Deleted {len(removed)} artifact(s), but some could not be removed. "
+                f"The main result was retained when possible so deletion can be retried.\n\n{detail}",
+                parent=root,
+            )
+            return
+        history_message.set(f"Deleted {result_path.name} and {len(removed) - 1} associated artifact(s).")
+
     def show_history_details(title, content):
         dialog = tk.Toplevel(root)
         dialog.title(title)
@@ -1829,6 +1868,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(
         history_review_actions, text="Open in Dashboard", command=open_history_in_dashboard,
     ).pack(side="left")
+    ttk.Button(
+        history_review_actions, text="Delete", command=delete_history_selection,
+    ).pack(side="left", padx=(8, 0))
     ttk.Button(history_review_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
         side="left", padx=(8, 0),
     )
