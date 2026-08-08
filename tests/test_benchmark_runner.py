@@ -363,3 +363,24 @@ def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_
     ) == 0
     assert recorded == ["vllm"]
     assert progress_events is not None
+
+
+def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
+    from scripts.runtime.workload_runner import configure_runner_engine
+
+    class Engine:
+        configured = None
+
+        @staticmethod
+        def runtime_backend(hardware_backend, *, cpu_only=False):
+            return "cpu" if cpu_only else hardware_backend
+
+        def configure_kv_cache(self, runtime_backend):
+            self.configured = runtime_backend
+            return "fp8" if runtime_backend == "cuda" else "auto"
+
+    engine = Engine()
+    assert configure_runner_engine(engine, "cuda", False) == "fp8"
+    assert engine.configured == "cuda"
+    assert configure_runner_engine(engine, "cuda", True) == "auto"
+    assert engine.configured == "cpu"

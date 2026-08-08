@@ -29,6 +29,13 @@ from scripts.runtime.shared import Shared
 _emit_lock = threading.Lock()
 
 
+def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
+    """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
+    configure = getattr(engine, "configure_kv_cache", None)
+    return configure(runtime_backend) if configure else "auto"
+
+
 def emit(kind: str, **details) -> None:
     payload = {
         "ownership_token": os.environ.get("LOCAL_AI_BENCH_RUNNER_TOKEN"),
@@ -70,6 +77,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -111,6 +119,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -170,6 +179,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
 
     def notify(_section):
         store = EventStore(path)
@@ -213,6 +223,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
         for identity in plan.models["concurrency"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
