@@ -606,6 +606,45 @@ def test_ensure_running_fails_when_the_configured_server_is_unreachable(engine, 
     assert engine.ensure_running() is False
 
 
+def test_external_server_model_is_available_without_local_cache(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {TEST_REPO})
+
+    assert engine.model_pulled(TEST_TAG) is True
+    assert engine.list_installed_models() == [{"tag": TEST_TAG, "size": None}]
+
+
+def test_external_server_accepts_catalog_tag_as_served_model_name(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {TEST_TAG})
+
+    assert engine.model_pulled(TEST_TAG) is True
+
+
+def test_external_server_does_not_expose_other_catalog_models(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {"org/other-model"})
+
+    assert engine.model_pulled(TEST_TAG) is False
+    assert engine.list_installed_models() == []
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"data": "bad"}, {"data": [{"id": 4}]}])
+def test_external_server_model_discovery_rejects_unusable_responses(engine, monkeypatch, payload):
+    engine._server_url = "http://gpu-box:8000"
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return payload
+
+    monkeypatch.setattr("scripts.runtime.engines.vllm.requests.get", lambda *a, **k: Response())
+    expected = set() if payload == {"data": [{"id": 4}]} else None
+    assert engine._served_model_ids() == expected
+
+
 def test_ensure_model_against_a_server_url_never_spawns_a_process(engine, monkeypatch):
     """A tag switch against an externally-managed server must not try to launch/replace
     the process we never started — just confirm reachability and update our bookkeeping."""
@@ -615,6 +654,7 @@ def test_ensure_model_against_a_server_url_never_spawns_a_process(engine, monkey
     engine._proc = None
     engine._loaded_tag = None
     monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {TEST_REPO})
 
     def fail_popen(*a, **k):
         raise AssertionError("must not spawn a process for an externally-managed server")
@@ -622,7 +662,20 @@ def test_ensure_model_against_a_server_url_never_spawns_a_process(engine, monkey
 
     engine._ensure_model("qwen3.5:9b-q4_K_M", 1024)
     assert engine._loaded_tag == "qwen3.5:9b-q4_K_M"
+    assert engine._loaded_model_id == TEST_REPO
     assert engine._proc is None
+
+
+def test_external_server_preserves_served_model_name_for_requests(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    engine._proc = None
+    engine._loaded_tag = None
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {TEST_TAG})
+
+    engine._ensure_model(TEST_TAG, 1024)
+
+    assert engine._loaded_model_id == TEST_TAG
 
 
 def test_ensure_model_against_a_server_url_raises_when_unreachable(engine, monkeypatch):
@@ -634,3 +687,14 @@ def test_ensure_model_against_a_server_url_raises_when_unreachable(engine, monke
     monkeypatch.setattr(VllmEngine, "available", lambda self: False)
     with pytest.raises(RuntimeError, match="not reachable"):
         engine._ensure_model("qwen3.5:9b-q4_K_M", 1024)
+
+
+def test_ensure_model_against_a_server_url_rejects_mismatched_model(engine, monkeypatch):
+    engine._server_url = "http://gpu-box:8000"
+    engine._proc = None
+    engine._loaded_tag = None
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {"org/other-model"})
+
+    with pytest.raises(RuntimeError, match=f"serves org/other-model, not {TEST_TAG}"):
+        engine._ensure_model(TEST_TAG, 1024)

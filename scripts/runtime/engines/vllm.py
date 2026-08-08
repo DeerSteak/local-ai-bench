@@ -60,6 +60,7 @@ class VllmEngine(InferenceEngine):
         self._proc: subprocess.Popen | None = None
         self._log_path: Path | None = None
         self._loaded_tag: str | None = None
+        self._loaded_model_id: str | None = None
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
@@ -167,6 +168,34 @@ class VllmEngine(InferenceEngine):
         except Exception:
             return False
 
+    def _served_model_ids(self) -> set[str] | None:
+        """Model IDs advertised by an external server, or None when unavailable."""
+        if not self._server_url:
+            return None
+        try:
+            response = requests.get(f"{self.base_url}/v1/models", timeout=5)
+            payload = response.json() if response.status_code == 200 else None
+        except Exception:
+            return None
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+            return None
+        return {
+            entry["id"] for entry in payload["data"]
+            if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+        }
+
+    def _external_model_id(self, tag: str, model_ids: set[str] | None = None) -> str | None:
+        repo = self._repo(tag)
+        if repo is None:
+            return None
+        served = self._served_model_ids() if model_ids is None else model_ids
+        if served is None:
+            return None
+        return next((model_id for model_id in (repo, tag) if model_id in served), None)
+
+    def _external_server_has_tag(self, tag: str, model_ids: set[str] | None = None) -> bool:
+        return self._external_model_id(tag, model_ids) is not None
+
     def is_installed(self) -> bool:
         return (self._launcher or self._executable or self._server_url) is not None
 
@@ -231,6 +260,7 @@ class VllmEngine(InferenceEngine):
                     self._proc.kill()
         self._proc = None
         self._loaded_tag = None
+        self._loaded_model_id = None
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
@@ -284,14 +314,23 @@ class VllmEngine(InferenceEngine):
         return {"vllm": Path(runtime).resolve()}
 
     def model_pulled(self, tag: str) -> bool:
+        if self._server_url:
+            return self._external_server_has_tag(tag)
         repo = self._repo(tag)
         return repo is not None and hf_cache_model_complete(self._cache_home, repo)
 
     def list_installed_models(self) -> list[dict]:
-        """Catalog tags whose vLLM weights are cached. Non-catalog tags are not
-        discoverable here: a cached repo carries no tag of its own."""
+        """Catalog tags available from the configured server or local cache."""
+        served = self._served_model_ids() if self._server_url else None
+        if self._server_url and served is None:
+            return []
         installed = []
         for model in LLM_MODELS + EMBED_MODELS:
+            if self._server_url:
+                if not self._external_server_has_tag(model["tag"], served):
+                    continue
+                installed.append({"tag": model["tag"], "size": None})
+                continue
             if not self.model_pulled(model["tag"]):
                 continue
             repo = model.get("vllm_repo")
@@ -417,10 +456,20 @@ class VllmEngine(InferenceEngine):
 
             if self._server_url:
                 # We never spawn or reconfigure an externally-managed server — it already
-                # serves whatever model it was started with; just confirm it's reachable.
+                # serves one fixed model, so reject requests that would mislabel its results.
                 if not self.available():
                     raise RuntimeError(f"vLLM server at {self._server_url} is not reachable")
+                model_ids = self._served_model_ids()
+                if model_ids is None:
+                    raise RuntimeError(
+                        f"vLLM server at {self._server_url} did not report its loaded model")
+                model_id = self._external_model_id(tag, model_ids)
+                if model_id is None:
+                    served = ", ".join(sorted(model_ids)) or "(none)"
+                    raise RuntimeError(
+                        f"vLLM server at {self._server_url} serves {served}, not {tag}")
                 self._loaded_tag, self._loaded_num_ctx = tag, num_ctx
+                self._loaded_model_id = model_id
                 self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
                 self._loaded_tool_parser = tool_parser
                 return
@@ -468,6 +517,7 @@ class VllmEngine(InferenceEngine):
                     raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
                 if self.available():
                     self._loaded_tag = tag
+                    self._loaded_model_id = repo
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
@@ -519,7 +569,7 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
-            "model": self._repo(tag),
+            "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
             "temperature": 0.0,
@@ -578,7 +628,7 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
-            "model": self._repo(tag),
+            "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
             "temperature": 0.0,
             "stream": True,
