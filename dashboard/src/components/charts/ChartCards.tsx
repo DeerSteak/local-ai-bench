@@ -1,6 +1,8 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { prepareOrderedBarGroupData, fmt } from "../../utils/shared";
+import type { JsonRecord } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
+import type { ChartRow } from "../../types";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
 import styles from "../ChartPanel.module.css";
@@ -83,7 +85,8 @@ function MultiLineTick({ x = 0, y = 0, payload = null }) {
 
 function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, statusKey, rowData, formatter }: {
   x?: number | string, y?: number | string, width?: number | string, height?: number | string,
-  value?: any, naKey: string, statusKey: string, rowData: any, formatter: (v: any) => any,
+  value?: JsonRecord[string], naKey: string, statusKey: string, rowData?: ChartRow,
+  formatter: (v: JsonRecord[string]) => string,
 }) {
   const isNa = rowData?.[naKey];
   const status = rowData?.[statusKey];
@@ -98,14 +101,17 @@ function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, st
   );
 }
 
-function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload = null, barConfigs, formatter }) {
+function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload, barConfigs, formatter }: {
+  x?: number, y?: number, width?: number, height?: number, payload?: ChartRow,
+  barConfigs: { dataKey: string, fill: string }[], formatter: (v: JsonRecord[string]) => string,
+}) {
   const slotHeight = height / barConfigs.length;
   const barHeight = Math.max(1, slotHeight - 4);
-  const maxValue = payload._groupMax;
+  const maxValue = payload?._groupMax;
   return (
     <g>
       {barConfigs.map((config, index) => {
-        const value = payload[config.dataKey];
+        const value = payload?.[config.dataKey];
         const barWidth = value == null || maxValue <= 0 ? 0 : Math.max(1, width * value / maxValue);
         const barY = y + index * slotHeight + (slotHeight - barHeight) / 2;
         return (

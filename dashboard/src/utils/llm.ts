@@ -3,6 +3,7 @@ import {
   CTX_COLORS, ACCURACY_TESTS,
 } from "../constants";
 import { getModelColor, modelLabel, getSkipInfo, entriesOf } from "./shared";
+import type { ChartRow } from "../types";
 
 const SKIP_REASON_LABELS = {
   timed_out: "Skipped - LLM Timed Out",
@@ -109,7 +110,7 @@ export function buildLLMDataForModel(files, model, metric, section = "llm") {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
   return ctxLabels.map(ctx => {
-    const row: Record<string, any> = { ctxLabel: ctx };
+    const row: ChartRow = { ctxLabel: ctx };
     files.forEach((f, fi) => {
       const s = f.data[section]?.[model]?.[ctx];
       if (s) row[`f${fi}`] = llmMetricValue(s, metric);
@@ -261,7 +262,7 @@ export function buildLLMLineConfigsByCtx(models, data) {
 
 export function flattenLLMData(files, section = "llm") {
   return files.flatMap(f =>
-    entriesOf(f.data[section]).flatMap(([model, ctxData]): any[] => {
+    entriesOf(f.data[section]).flatMap(([model, ctxData]): ChartRow[] => {
       if (ctxData?.skipped) {
         return [{
           _fileId: f.id, model, ctx: "—", skipped: true,

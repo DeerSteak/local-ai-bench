@@ -165,35 +165,35 @@ describe("sanitizeForFilename", () => {
 describe("applyEngineLabels", () => {
   it("leaves hostnames untouched when only one engine is present", () => {
     const files = [
-      { id: 1, hostname: "host-a", engine: "llamacpp" },
-      { id: 2, hostname: "host-b", engine: "llamacpp" },
+      { id: 1, hostname: "host-a", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-b", engine: "llamacpp", data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual(files);
   });
   it("leaves hostnames untouched when no file has an engine field", () => {
-    const files = [{ id: 1, hostname: "host-a", engine: null }];
+    const files = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
     expect(applyEngineLabels(files)).toEqual(files);
   });
   it("appends the engine when two distinct engines are loaded together", () => {
     const files = [
-      { id: 1, hostname: "host-a", engine: "llamacpp" },
-      { id: 2, hostname: "host-a", engine: "mlx" },
+      { id: 1, hostname: "host-a", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-a", engine: "mlx", data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp" },
-      { id: 2, hostname: "host-a (mlx)", engine: "mlx" },
+      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-a (mlx)", engine: "mlx", data: {} },
     ]);
   });
   it("skips labeling a file with no engine even when others disagree", () => {
     const files = [
-      { id: 1, hostname: "host-a", engine: "llamacpp" },
-      { id: 2, hostname: "host-b", engine: "mlx" },
-      { id: 3, hostname: "host-c", engine: null },
+      { id: 1, hostname: "host-a", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-b", engine: "mlx", data: {} },
+      { id: 3, hostname: "host-c", engine: null, data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp" },
-      { id: 2, hostname: "host-b (mlx)", engine: "mlx" },
-      { id: 3, hostname: "host-c", engine: null },
+      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-b (mlx)", engine: "mlx", data: {} },
+      { id: 3, hostname: "host-c", engine: null, data: {} },
     ]);
   });
 });

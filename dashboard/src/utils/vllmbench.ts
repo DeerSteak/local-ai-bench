@@ -1,4 +1,5 @@
 import { buildFileLineConfigs, modelLabel, entriesOf } from "./shared";
+import type { ChartRow } from "../types";
 
 // `vllm bench` results. Deliberately never share a chart with llamabench: different
 // weights (AWQ/GPTQ vs GGUF) and different metric definitions — see docs/workloads.md#vllm-bench.
@@ -27,7 +28,7 @@ function orderedInputs(entryGroups) {
 function buildLineData(files, model, pick, metric) {
   const groups = files.map(file => pick(file.data.vllmbench?.[model]));
   return orderedInputs(groups).map(size => {
-    const row: Record<string, any> = { promptLabel: vllmBenchSizeLabel(size) };
+    const row: ChartRow = { promptLabel: vllmBenchSizeLabel(size) };
     groups.forEach((entries, fi) => {
       for (const entry of entries) {
         if (entry.input_len === size && entry[metric] != null)

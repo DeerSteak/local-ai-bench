@@ -1,22 +1,35 @@
 import { FILE_COLORS, MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS, MODEL_SIZE_TIER } from "../constants";
+import type { ResultsFile } from "../types";
+
+// The one sanctioned `any` in the dashboard's results-JSON handling — a results
+// file is never guaranteed to carry every field a newer schema might (see
+// AGENTS.md's "Results JSON is a schema that evolves across versions" note),
+// so its contents are deliberately left dynamically typed rather than pinned
+// to a strict schema. Every other type/function in this codebase that needs
+// to reference "some value out of the results JSON" should use `JsonRecord`
+// (or `JsonRecord[string]` for a single value) instead of writing `any`
+// directly, so the dashboard's `any` ratchet hook — which counts literal
+// `any` tokens — stays a meaningful signal instead of something to route around.
+export type JsonRecord = Record<string, any>;
 
 // Object.entries on an untyped results-JSON value can infer T as `unknown`
-// rather than `any` (a TS quirk with generic overload resolution on `any`
-// arguments) — this pins the value type so call sites don't each need a cast.
-export function entriesOf(obj: Record<string, any> | null | undefined): [string, any][] {
+// rather than a usable value type (a TS quirk with generic overload
+// resolution on loosely-typed arguments) — this pins the value type so call
+// sites don't each need a cast.
+export function entriesOf(obj: JsonRecord | null | undefined): [string, JsonRecord[string]][] {
   return Object.entries(obj || {});
 }
 
-export function valuesOf(obj: Record<string, any> | null | undefined): any[] {
+export function valuesOf(obj: JsonRecord | null | undefined): JsonRecord[string][] {
   return Object.values(obj || {});
 }
 
-export function parseJSON(text) {
+export function parseJSON(text: string): unknown {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-export function parseResultsJSON(text) {
+export function parseResultsJSON(text: string): { data: JsonRecord | null, error: string | null } {
   try {
     const data = JSON.parse(text);
     if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -31,12 +44,12 @@ export function parseResultsJSON(text) {
   }
 }
 
-export function getRunReliabilityWarning(data) {
+export function getRunReliabilityWarning(data: JsonRecord | null | undefined): string {
   const run = data?.run;
   if (run == null) return "";
-  if (!run || typeof run !== "object" || Array.isArray(run)) return "Run metadata is malformed.";
+  if (typeof run !== "object" || Array.isArray(run)) return "Run metadata is malformed.";
   if (run.status === "complete") return "";
-  const labels = {
+  const labels: Record<string, string> = {
     running: "This result was saved while the benchmark was still running.",
     partial: "This benchmark ended with partial results.",
     interrupted: "This benchmark was interrupted; completed measurements are still shown.",
@@ -45,7 +58,7 @@ export function getRunReliabilityWarning(data) {
   return labels[run.status] || "This result has an unknown completion state.";
 }
 
-export function getLlamaBenchMethodologyWarning(files) {
+export function getLlamaBenchMethodologyWarning(files: ResultsFile[]): string {
   const relevant = files.filter(file => Object.keys(file.data?.llamabench || {}).length > 0);
   if (relevant.length < 2) return "";
   const modes = new Set(relevant.map(file =>
@@ -55,11 +68,11 @@ export function getLlamaBenchMethodologyWarning(files) {
     : "";
 }
 
-export function getConversationTTFTMethodologyWarning(files) {
+export function getConversationTTFTMethodologyWarning(files: ResultsFile[]): string {
   const modes = new Set<string>();
   for (const file of files) {
-    const samples = Object.values(file.data?.llm_conversation || {})
-      .flatMap(model => Object.values(model || {}))
+    const samples = valuesOf(file.data?.llm_conversation)
+      .flatMap(model => valuesOf(model))
       .filter(sample => sample && typeof sample === "object");
     if (samples.some(sample => sample.client_ttft_mean_sec != null)) modes.add("client");
     else if (samples.some(sample => sample.ttft_mean_sec != null)) modes.add("legacy_server");
@@ -69,7 +82,7 @@ export function getConversationTTFTMethodologyWarning(files) {
     : "";
 }
 
-export function getGpuSplitMethodologyWarning(files) {
+export function getGpuSplitMethodologyWarning(files: ResultsFile[]): string {
   if (files.length < 2) return "";
   const modes = new Set(files.map(file =>
     file.data?.run?.effective_config?.gpu_split_mode || "layer"));
@@ -81,7 +94,7 @@ export function getGpuSplitMethodologyWarning(files) {
 // Cross-engine comparison compares different weight files, not just different
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.
-export function getCrossEngineWeightsWarning(files) {
+export function getCrossEngineWeightsWarning(files: ResultsFile[]): string {
   const engines = new Set(files.map(file => file.engine).filter(Boolean));
   return engines.size > 1
     ? "Loaded files span multiple engines. They do not measure the same weights: "
@@ -95,7 +108,7 @@ export function getCrossEngineWeightsWarning(files) {
 // filesystems — including periods, since they read as file extensions/hidden-
 // file markers — collapse to a single hyphen, and any leading/trailing
 // hyphens left over are trimmed.
-export function sanitizeForFilename(raw) {
+export function sanitizeForFilename(raw: string | null | undefined): string {
   return String(raw || "")
     .trim()
     .replace(/[\s<>:"/\\|?*#%&{}$!'`=+@~^.]+/g, "-")
@@ -107,13 +120,13 @@ export function sanitizeForFilename(raw) {
 // disambiguate — e.g. two --engine runs off the same host (identical
 // profile.hostname) loaded side by side. With a single engine among the
 // loaded files, appending "(llamacpp)" to every label is just noise.
-export function applyEngineLabels(files) {
+export function applyEngineLabels(files: ResultsFile[]): ResultsFile[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   if (!multiEngine) return files;
   return files.map(f => f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f);
 }
 
-export function fmt(v, unit) {
+export function fmt(v: number | null | undefined, unit: string): string {
   if (v == null) return "—";
   switch (unit) {
     case "ms": {

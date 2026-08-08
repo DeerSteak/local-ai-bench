@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 
 function git(args) {
   try {
-    return execFileSync("git", args, { encoding: "utf8" });
+    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return null;
   }

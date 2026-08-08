@@ -1,8 +1,17 @@
 import { MAX_FILES } from "../constants";
 
+// The staged-results manifest this reads — see dashboard/stage_selected_results.mjs.
+interface SelectedResultsManifest {
+  files: { name: string, url: string }[];
+}
+
 // Only the subset of Response/fetch this actually calls — narrower than the real
 // DOM `fetch` type so tests can pass minimal mock responses without a full Response shape.
-type MinimalResponse = { ok: boolean, json?: () => Promise<any>, text?: () => Promise<string> };
+type MinimalResponse = {
+  ok: boolean,
+  json?: () => Promise<SelectedResultsManifest>,
+  text?: () => Promise<string>,
+};
 type MinimalFetch = (url: string, init?: RequestInit) => Promise<MinimalResponse>;
 
 export async function fetchSelectedResultFiles(search: string, fetchFn: MinimalFetch = fetch) {

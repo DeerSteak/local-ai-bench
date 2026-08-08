@@ -25,7 +25,7 @@ describe("buildConcurrencyDataForModel", () => {
     data: {
       concurrency_chat: {
         m: {
-          "1": { tps_mean: 28.3, ttft_mean_sec: 31.35, aggregate_tps: 7.79 },
+          "1": { tps_mean: 28.3, ttft_mean_sec: 31.35, aggregate_tps: 7.79, client_ttft_mean_sec: undefined as number | undefined },
           "2": { tps_mean: 11.4, ttft_mean_sec: 36.29, aggregate_tps: 7.53 },
           "4": { tps_mean: 3.9, ttft_mean_sec: 45.29, aggregate_tps: 6.13 },
           stopped_at: "failed",
@@ -43,7 +43,7 @@ describe("buildConcurrencyDataForModel", () => {
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "aggregate")[0].f0).toBe(7.79);
   });
   it("prefers explicit client TTFT over the legacy field", () => {
-    const explicit: any = structuredClone(files);
+    const explicit = structuredClone(files);
     explicit[0].data.concurrency_chat.m["1"].client_ttft_mean_sec = 12.5;
     expect(buildConcurrencyDataForModel(explicit, "concurrency_chat", "m", "ttft")[0].f0).toBe(12.5);
   });
