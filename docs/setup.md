@@ -103,7 +103,7 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 
 | Platform | Offered as | Install path |
 |---|---|---|
-| Linux + NVIDIA CUDA | Supported | Prebuilt CUDA wheels; needs compute capability 7.5+ and Python 3.10–3.13 |
+| Linux + NVIDIA CUDA | Supported | Prebuilt CUDA wheels; needs compute capability 7.5+ and a Python 3.10–3.13 on `PATH`, which setup offers to provide when the system has none |
 | Linux + AMD ROCm (gfx90a/942/950, RX 7900/9000) | Supported | Prebuilt wheels from `wheels.vllm.ai/rocm`; needs ROCm 6.3+ and a CPython 3.12 interpreter, which is the only version those wheels are published for |
 | Linux + AMD ROCm, any other gfx target (e.g. gfx1151 / Strix Halo) | Experimental | Same wheels, but they ship no kernels for that target — see the Strix Halo platform note below |
 | DGX Spark (GB10) | Experimental | CUDA 13 nightly wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
@@ -113,6 +113,14 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | CPU-only | Not offered | This benchmark measures accelerated inference |
 
 Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`: the terminal names it in the setup plan, and the wizard warns on both the engines page and the final review that you may be prompted for your password in the terminal behind it. On Linux the bootstrap installs these headers up front, alongside any other prerequisite, for both the interpreter it will use and CPython 3.12 (the version vLLM's ROCm and DGX Spark wheels require) — so the password prompt happens once, early, rather than midway through an unattended install. `setup_check.py` then finds them present and does nothing. Its own header install remains as a fallback for a system whose interpreter arrived some other way. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead.
+
+### When the system Python is too new
+
+vLLM's CUDA wheels stop at Python 3.13, and some distributions now ship something newer as their only `python3` — Ubuntu resolute, for instance, offers 3.14 and nothing else, so there is no in-range interpreter to install from apt at all. `bench-env` itself is unaffected by this, because vLLM builds its own separate virtual environment; the only requirement is that *some* interpreter in 3.10–3.13 exists on `PATH` for that environment to be created from.
+
+Setup therefore looks for one before declaring vLLM unavailable, and treats the running interpreter as just one candidate among `python3.13` through `python3.10`. If none is found, it offers to install a private CPython 3.12 using [uv](https://astral.sh/uv), printing the exact commands first and defaulting to no. Declining leaves vLLM reported as unsupported, exactly as before. Accepting downloads uv from `astral.sh` into `~/.local/bin` and fetches a standalone interpreter — it does not touch your system Python, your distribution's packages, or `bench-env`.
+
+This is the one place setup reaches outside your distribution's package manager, which is why it asks rather than assuming. If you would rather do it yourself, `uv python install 3.12` before running setup has the same effect, as does any other means of putting a 3.10–3.13 interpreter on `PATH`.
 
 The two experimental paths are unverified by this project's maintainers and are labelled as such in both the wizard and the terminal picker. Setup never installs the third-party native Windows fork of vLLM on your behalf.
 
@@ -152,9 +160,11 @@ wsl --install
 **4. Inside the WSL2 shell**, install the prerequisites, clone into the WSL2 filesystem, and run setup as normal:
 
 ```bash
-sudo apt update && sudo apt install -y python3.12-venv python3.12-dev build-essential git
+sudo apt update && sudo apt install -y python3-venv python3-dev build-essential git
 git clone <repo-url> ~/local-ai-bench && cd ~/local-ai-bench && bash setup.sh
 ```
+
+Install the unversioned `python3-venv`/`python3-dev` rather than naming a series: recent Ubuntu releases carry exactly one Python, and asking for a version they do not ship fails outright. If your distribution's Python is newer than 3.13, setup handles vLLM's interpreter separately — see [When the system Python is too new](#when-the-system-python-is-too-new).
 
 Clone into the WSL2 filesystem (`~/`), **not** a Windows drive under `/mnt/c`. That path crosses a 9p filesystem bridge slow enough to distort model-load timings, which matters when every benchmarked model is a multi-GB safetensors snapshot. Reusing a Windows checkout that way also exposes it to Windows line endings — if `./setup.sh` fails with ``env: 'bash\r': No such file or directory``, that checkout has CRLF shebangs and needs `git checkout` re-run under the repo's `.gitattributes`, which pins `*.sh` to LF.
 

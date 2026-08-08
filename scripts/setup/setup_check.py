@@ -1484,10 +1484,7 @@ for engine in selected_engines:
 
 # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 
-if not selected_images:
-    section("ComfyUI")
-    info("No image models selected — skipping ComfyUI/image setup")
-else:
+if selected_images:
     section("ComfyUI")
 
     PORTABLE_PYTHON = COMFYUI_DIR.parent / "python_embeded" / "python.exe"

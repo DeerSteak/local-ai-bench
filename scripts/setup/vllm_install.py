@@ -176,8 +176,8 @@ def python_bootstrap_plan(*, python_version: tuple[int, int],
 
 
 def run_python_bootstrap(plan: list[list[str]], *, log=print,
-                         run=subprocess.run) -> bool:  # pragma: no cover
-    """Execute a `python_bootstrap_plan`. Real network and filesystem side effects."""
+                         run=subprocess.run) -> bool:
+    """Execute a `python_bootstrap_plan`, returning whether every command succeeded."""
     # uv installs its shims here, so PATH has to admit them before the next command runs.
     local_bin = str(Path.home() / ".local" / "bin")
     if local_bin not in os.environ.get("PATH", "").split(os.pathsep):

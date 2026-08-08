@@ -1,5 +1,7 @@
+import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from scripts.setup.vllm_install import (
     ROCM_WHEEL_INDEX,
@@ -22,6 +24,7 @@ from scripts.setup.vllm_install import (
     is_dgx_spark,
     parse_compute_capability,
     python_bootstrap_plan,
+    run_python_bootstrap,
     python_candidates,
     resolve_python,
     vllm_install_command,
@@ -91,6 +94,61 @@ def test_bootstrap_plan_installs_uv_only_when_it_is_missing():
     with_uv = python_bootstrap_plan(python_version=(3, 14),
                                     which_fn=lambda name: name if name == "uv" else None)
     assert with_uv == [["uv", "python", "install", "3.12"]]
+
+
+class FakeRun:
+    def __init__(self, codes=None):
+        self.codes = list(codes or [])
+        self.paths_seen = []
+        self.commands = []
+
+    def __call__(self, command):
+        self.commands.append(command)
+        self.paths_seen.append(os.environ.get("PATH", ""))
+        code = self.codes.pop(0) if self.codes else 0
+        if isinstance(code, Exception):
+            raise code
+        return SimpleNamespace(returncode=code)
+
+
+def test_bootstrap_puts_uvs_install_dir_on_path_before_running_anything(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    runner = FakeRun()
+
+    assert run_python_bootstrap([["sh", "-c", "install-uv"], ["uv", "python", "install", "3.12"]],
+                                log=lambda _m: None, run=runner)
+    # The uv shim dir must already be visible to the first command, not added afterwards.
+    expected = str(tmp_path / ".local" / "bin")
+    assert all(expected in seen.split(os.pathsep) for seen in runner.paths_seen)
+
+
+def test_bootstrap_does_not_duplicate_an_entry_already_on_path(monkeypatch, tmp_path):
+    local_bin = str(tmp_path / ".local" / "bin")
+    monkeypatch.setenv("PATH", os.pathsep.join([local_bin, "/usr/bin"]))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+
+    run_python_bootstrap([["uv", "--version"]], log=lambda _m: None, run=FakeRun())
+    assert os.environ["PATH"].split(os.pathsep).count(local_bin) == 1
+
+
+def test_bootstrap_stops_at_the_first_failure(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    runner = FakeRun(codes=[1])
+
+    assert not run_python_bootstrap([["a"], ["b"]], log=lambda _m: None, run=runner)
+    assert runner.commands == [["a"]]
+
+
+def test_bootstrap_reports_a_missing_binary_instead_of_raising(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    messages = []
+    runner = FakeRun(codes=[FileNotFoundError(2, "No such file or directory", "uv")])
+
+    assert not run_python_bootstrap([["uv"]], log=messages.append, run=runner)
+    assert any("uv" in message for message in messages)
 
 
 def test_pinned_platform_ignores_an_unrelated_interpreter_on_path():
