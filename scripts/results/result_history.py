@@ -23,7 +23,7 @@ def _run_settings(result: dict) -> dict:
     return settings
 
 
-def summarize_result(result: dict, path: Path) -> dict:
+def summarize_result(result: dict, path: Path | str) -> dict:
     if not isinstance(result, dict) or not isinstance(result.get("profile"), dict):
         raise ValueError("not a benchmark result")
     validate_json_data(result)

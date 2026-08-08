@@ -72,7 +72,7 @@ def rocminfo_gfx_targets(output: str) -> list[str]:
     return targets
 
 
-def parse_rocm_version(output: str) -> tuple[int, int] | None:
+def parse_rocm_version(output: str | None) -> tuple[int, int] | None:
     """Major/minor ROCm version from `hipconfig --version` or /opt/rocm/.info/version."""
     m = re.search(r"(\d+)\.(\d+)", output or "")
     return (int(m.group(1)), int(m.group(2))) if m else None
@@ -81,7 +81,7 @@ def parse_rocm_version(output: str) -> tuple[int, int] | None:
 _VRAM_UNITS_GB = {"MIB": 1 / 1024, "GIB": 1.0, "MB": 1000 / 1024**2, "GB": 1000**3 / 1024**3}
 
 
-def parse_nvidia_vram_gb(value: str) -> float | None:
+def parse_nvidia_vram_gb(value: str | None) -> float | None:
     """VRAM in GB from an nvidia-smi memory field, or None when it reports no figure —
     unified-memory parts (GB10) have no dedicated VRAM to report."""
     match = re.fullmatch(r"([\d.]+)\s*(MiB|GiB|MB|GB)", (value or "").strip(), re.IGNORECASE)

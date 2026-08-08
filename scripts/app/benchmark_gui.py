@@ -14,6 +14,7 @@ import threading
 import time
 from types import SimpleNamespace
 from pathlib import Path
+from typing import Any, Protocol, Sequence
 
 from scripts.runtime import config
 import psutil
@@ -215,7 +216,31 @@ def estimate_remaining_seconds(elapsed: float, completed: int, total: int) -> in
     return round((elapsed / completed) * (total - completed))
 
 
-def process_resource_usage(pid: int, psutil_module=psutil) -> tuple[float, float] | None:
+class _PsutilProcess(Protocol):
+    @property
+    def pid(self) -> int: ...
+    def children(self, recursive: bool = False) -> Sequence["_PsutilProcess"]: ...
+    def cpu_percent(self, interval: float | None = None) -> float: ...
+    def memory_info(self) -> Any: ...
+
+
+class _PsutilMemory(Protocol):
+    @property
+    def used(self) -> int: ...
+    @property
+    def total(self) -> int: ...
+
+
+class PsutilLike(Protocol):
+    """The subset of the psutil module this file actually calls. Read-only property
+    declarations, not plain attributes — psutil's real return types are immutable
+    namedtuple-style objects, which Protocol's mutable-attribute matching rejects."""
+    Error: Any
+    def Process(self, pid: int, /) -> _PsutilProcess: ...
+    def virtual_memory(self) -> _PsutilMemory: ...
+
+
+def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
     try:
         parent = psutil_module.Process(pid)
         processes = [parent, *parent.children(recursive=True)]
@@ -226,7 +251,7 @@ def process_resource_usage(pid: int, psutil_module=psutil) -> tuple[float, float
         return None
 
 
-def system_memory_usage(psutil_module=psutil) -> tuple[float, float]:
+def system_memory_usage(psutil_module: PsutilLike = psutil) -> tuple[float, float]:
     memory = psutil_module.virtual_memory()
     return memory.used / (1024 ** 3), memory.total / (1024 ** 3)
 
@@ -280,7 +305,7 @@ def parse_gpu_process_memory(output: str, process_ids: set[int]) -> float | None
 
 
 def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.which,
-                             psutil_module=psutil) -> float | None:
+                             psutil_module: PsutilLike = psutil) -> float | None:
     executable = which_fn("nvidia-smi")
     if not executable:
         return None

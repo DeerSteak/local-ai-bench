@@ -58,7 +58,7 @@ class LlamaBenchConcurrencyBenchmark:
 
     @classmethod
     def run_one(cls, binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
-                npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int,
+                npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int | float,
                 on_progress=None, on_entry=None) -> list[dict]:
         """Parses each stdout JSONL row as it arrives (this build is silent on stderr, so
         that's the only progress signal). `timeout` is an idle timeout, not a wall-clock cap."""
