@@ -130,7 +130,7 @@ class LlamaBenchConcurrencyBenchmark:
 
         if idle_timed_out:
             error = subprocess.TimeoutExpired(cmd, timeout)
-            error.partial_entries = list(entries)
+            setattr(error, "partial_entries", list(entries))
             raise error
 
         if proc.returncode != 0:

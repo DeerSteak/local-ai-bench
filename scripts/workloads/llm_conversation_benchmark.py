@@ -195,6 +195,7 @@ class LLMConversationBenchmark:
 
                     try:
                         out_of_room = False
+                        measurement = None
                         for idx, target in enumerate(checkpoints):
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
                             attempt_number = journal.next_context_attempt(model, target) if journal else 1
@@ -227,6 +228,8 @@ class LLMConversationBenchmark:
 
                             # ttft/tps here are from the turn that just crossed `target`
                             # (or the opening turn for target == 0).
+                            if measurement is None:
+                                continue
                             if attempt_number is not None:
                                 samples_by_label.setdefault(label_ctx, []).append(
                                     (measurement, cumulative_tokens))

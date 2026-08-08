@@ -6,12 +6,24 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.runtime.shared import Shared
 from scripts.app.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+
+
+class VllmBenchModelResult(TypedDict):
+    """One model's `vllm bench` payload in the results JSON."""
+    latency_entries: list
+    throughput_entries: list
+    requested_cases: int
+    completed_cases: int
+    error: NotRequired[str]
+    timed_out: NotRequired[bool]
+    timed_out_at: NotRequired[str]
 
 
 class VllmBenchBenchmark:
@@ -173,17 +185,17 @@ class VllmBenchBenchmark:
                     continue
 
                 latency_entries, throughput_entries = [], []
-                model_result = {
-                    "latency_entries": latency_entries,
-                    "throughput_entries": throughput_entries,
-                }
-                results[short] = model_result
                 sizes = self.sweep_sizes(
                     config.VLLMBENCH_INPUT, config.VLLMBENCH_OUTPUT,
                     engine.max_context_length(tag),
                 )
-                model_result["requested_cases"] = len(sizes) * 2
-                model_result["completed_cases"] = 0
+                model_result: VllmBenchModelResult = {
+                    "latency_entries": latency_entries,
+                    "throughput_entries": throughput_entries,
+                    "requested_cases": len(sizes) * 2,
+                    "completed_cases": 0,
+                }
+                results[short] = model_result
 
                 for input_len, output_len in sizes:
                     wait_if_paused()
