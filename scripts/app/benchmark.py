@@ -313,6 +313,15 @@ def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
     return [t for t in tests if t in other_engines_native and t not in native_here]
 
 
+def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
+    """Workloads that produce results in one engine pass."""
+    incompatible = set(engine_incompatible_tests(tests, engine_name))
+    return [
+        test for test in tests
+        if test not in incompatible and (include_images or test != "img")
+    ]
+
+
 def selected_plan_models(tests: list[str], llm_models: list[dict],
                          concurrency_models: list[dict], embedding_models: list[dict],
                          image_models: list[dict]) -> dict[str, list[dict]]:
@@ -732,17 +741,21 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             out_path = base_out_path
 
         # Image generation doesn't depend on --engine (separate ComfyUI call) — run it once, first pass only.
-        tests = args.tests
-        if multi_engine and run_idx > 0 and "img" in tests:
+        include_images = not multi_engine or run_idx == 0
+        if not include_images and "img" in args.tests:
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
-            tests = [t for t in tests if t != "img"]
 
-        native_elsewhere = engine_incompatible_tests(tests, engine_name)
+        native_elsewhere = engine_incompatible_tests(args.tests, engine_name)
         if native_elsewhere:
-            Shared.log(f"{', '.join(native_elsewhere)} only run under their native engine "
-                       f"— skipping for {engine_name}")
-            tests = [t for t in tests if t not in native_elsewhere]
+            scope = ("runs only under its native engine" if len(native_elsewhere) == 1
+                     else "run only under their native engines")
+            Shared.log(f"{', '.join(native_elsewhere)} {scope} — skipping for {engine_name}")
+
+        tests = engine_pass_tests(args.tests, engine_name, include_images=include_images)
+        if not tests:
+            Shared.log(f"No selected workloads apply to {engine_name} — skipping this engine pass")
+            continue
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",

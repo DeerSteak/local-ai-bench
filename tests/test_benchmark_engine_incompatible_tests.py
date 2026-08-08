@@ -1,4 +1,4 @@
-from scripts.app.benchmark import engine_incompatible_tests
+from scripts.app.benchmark import engine_incompatible_tests, engine_pass_tests
 
 
 def test_llamacpp_pass_drops_vllmbench_only():
@@ -32,3 +32,14 @@ def test_unknown_engine_drops_every_others_native_test():
 def test_preserves_selection_order():
     dropped = engine_incompatible_tests(["vllmbench", "llm", "llamabench"], "vllm")
     assert dropped == ["llamabench"]
+
+
+def test_vllm_only_selection_omits_the_empty_llamacpp_pass():
+    assert engine_pass_tests(["vllmbench"], "llamacpp", include_images=True) == []
+    assert engine_pass_tests(["vllmbench"], "vllm", include_images=False) == ["vllmbench"]
+
+
+def test_later_engine_pass_omits_images_and_foreign_native_workloads():
+    assert engine_pass_tests(
+        ["img", "llamabench", "llamabenchconc", "llm"], "vllm", include_images=False,
+    ) == ["llm"]
