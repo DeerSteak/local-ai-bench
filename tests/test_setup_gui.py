@@ -17,6 +17,7 @@ from scripts.setup.setup_gui import (
     selected_gui_token,
     should_save_gui_token,
     token_controls_enabled,
+    next_page_index,
     validate_gui_plan,
 )
 
@@ -28,16 +29,39 @@ def test_default_selection_keeps_embeddings_and_respects_memory_limit():
 
 
 def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
-    assert validate_gui_plan({"comfyui_mode": "download"}) == []
+    assert validate_gui_plan({"comfyui_mode": "download", "image_shorts": ["flux"]}) == []
     assert validate_gui_plan({
         "comfyui_mode": "existing", "comfyui_path": str(tmp_path / "missing"),
+        "image_shorts": ["flux"],
     }) == ["The existing ComfyUI path is not usable."]
     comfyui = tmp_path / "ComfyUI"
     comfyui.mkdir()
     (comfyui / "main.py").touch()
     assert validate_gui_plan({
-        "comfyui_mode": "existing", "comfyui_path": str(comfyui),
+        "comfyui_mode": "existing", "comfyui_path": str(comfyui), "image_shorts": ["flux"],
     }) == []
+
+
+def test_gui_plan_ignores_comfyui_when_no_image_models_are_selected(tmp_path):
+    unusable = {"comfyui_mode": "existing", "comfyui_path": str(tmp_path / "missing")}
+    assert validate_gui_plan({**unusable, "image_shorts": []}) == []
+    assert validate_gui_plan(unusable) == []
+    # An unrelated error still surfaces, so the gate is scoped to the ComfyUI check alone.
+    assert validate_gui_plan({**unusable, "image_shorts": [], "engines": []}) == [
+        "Select at least one inference engine."]
+
+
+def test_page_navigation_skips_pages_that_do_not_apply():
+    enabled = [True, True, True, False, True]
+    assert next_page_index(2, 1, enabled) == 4
+    assert next_page_index(4, -1, enabled) == 2
+    assert next_page_index(2, 1, [True] * 5) == 3
+
+
+def test_page_navigation_holds_position_when_nothing_remains():
+    assert next_page_index(0, -1, [True, True]) == 0
+    assert next_page_index(1, 1, [True, True]) == 1
+    assert next_page_index(0, 1, [True, False, False]) == 0
 
 
 @pytest.mark.parametrize(

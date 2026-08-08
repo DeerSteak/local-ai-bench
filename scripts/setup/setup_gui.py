@@ -66,13 +66,24 @@ def default_model_selection(memory_ceiling_gb: float | None,
 def validate_gui_plan(plan: dict) -> list[str]:
     """Return user-facing validation errors for a completed wizard plan."""
     errors = []
-    if plan.get("comfyui_mode") == "existing":
+    # Where image checkpoints come from is moot when none were picked.
+    if plan.get("image_shorts") and plan.get("comfyui_mode") == "existing":
         entered = str(plan.get("comfyui_path", "")).strip()
         if not entered or not normalize_comfyui_dir(Path(entered)):
             errors.append("The existing ComfyUI path is not usable.")
     if "engines" in plan and not plan["engines"]:
         errors.append("Select at least one inference engine.")
     return errors
+
+
+def next_page_index(current: int, step: int, enabled: list[bool]) -> int:
+    """Nearest page in the `step` direction that applies, or `current` when there is none."""
+    index = current + step
+    while 0 <= index < len(enabled):
+        if enabled[index]:
+            return index
+        index += step
+    return current
 
 
 def hf_token_review_label(plan: dict) -> str:
@@ -482,14 +493,15 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
             f"Delete cached vLLM weights: {len(plan['vllm_cleanup_names'])}",
             f"Hugging Face token: {hf_token_review_label(plan)}",
-            f"ComfyUI: {plan['comfyui_mode']}",
         ]
+        if plan["image_shorts"]:
+            lines.append(f"ComfyUI: {plan['comfyui_mode']}")
         if engine_entries:
             lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
         notice = sudo_notice(plan["engines"], sudo_package)
         if notice:
             lines.extend(["", notice])
-        if plan["comfyui_path"]:
+        if plan["image_shorts"] and plan["comfyui_path"]:
             lines.append(f"ComfyUI path: {plan['comfyui_path']}")
         lines.extend(["", "Nothing will be downloaded until you click Install."])
         review_text.configure(state="normal")
@@ -527,9 +539,12 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             refresh_review()
         refresh_tk_layout(root)
 
+    def page_enabled() -> list[bool]:
+        image_selected = any(model_vars[model["short"]].get() for model in IMAGE_MODELS)
+        return [page is not comfy or image_selected for page in pages]
+
     def go_back() -> None:
-        if page_index:
-            show_page(page_index - 1)
+        show_page(next_page_index(page_index, -1, page_enabled()))
 
     def go_next() -> None:
         nonlocal result
@@ -539,7 +554,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 if errors:
                     messagebox.showerror("Check ComfyUI", "\n".join(errors))
                     return
-            show_page(page_index + 1)
+            show_page(next_page_index(page_index, 1, page_enabled()))
             return
         plan = build_plan()
         errors = validate_gui_plan(plan)
