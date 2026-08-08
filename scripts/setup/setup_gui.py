@@ -300,7 +300,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         )
         row += 1
         for model in models:
-            key = model.get("tag", model.get("short"))
+            key = model.get("tag") or model["short"]
             checkbutton = ttk.Checkbutton(
                 model_list, text=model_row_label(model, initial_engines, memory_ceiling_gb),
                 variable=model_vars[key],
@@ -361,6 +361,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
               "It is never written to the setup configuration."),
         wraplength=740,
     ).grid(sticky="w", pady=(6, 14))
+    override_token_check = None
     if existing_hf_token:
         ttk.Label(
             credentials, text="A token is already available from HF_TOKEN or hf.txt.",
@@ -405,7 +406,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             token_help.grid_remove()
         refresh_tk_layout(credentials)
 
-    if existing_hf_token:
+    if override_token_check is not None:
         override_token_check.configure(command=update_token_controls)
     update_token_controls()
 

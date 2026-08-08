@@ -72,7 +72,7 @@ _detected_comfyui = find_comfyui_installation(
     saved_path=configured_comfyui_dir(_saved_setup),
     managed_dir=config.COMFYUI_DIR,
 )
-COMFYUI_DIR = _detected_comfyui or config.COMFYUI_DIR
+COMFYUI_DIR: Path = _detected_comfyui or config.COMFYUI_DIR
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -1106,7 +1106,7 @@ if vllm_cleanup_names:
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
-_hf_token_cache = [None]
+_hf_token_cache: list[str | None] = [None]
 
 def load_token():
     """Load HF token from env var, hf.txt, or prompt — cached after first load."""
@@ -1177,8 +1177,9 @@ elif selected_llm or selected_embed or selected_images:
 if _gui_plan is not None and selected_images:
     _gui_comfy_mode = _gui_plan["comfyui_mode"]
     if _gui_comfy_mode == "existing":
-        COMFYUI_DIR = normalize_comfyui_dir(Path(_gui_plan["comfyui_path"]))
-        _detected_comfyui = COMFYUI_DIR
+        _normalized_comfyui = normalize_comfyui_dir(Path(_gui_plan["comfyui_path"]))
+        COMFYUI_DIR = _normalized_comfyui or config.COMFYUI_DIR
+        _detected_comfyui = _normalized_comfyui
     elif _gui_comfy_mode == "detected" and _detected_comfyui:
         COMFYUI_DIR = _detected_comfyui
     else:
@@ -1202,7 +1203,7 @@ elif selected_images and not _detected_comfyui:
         except EOFError:
             entered_path = ""
     choice_status, chosen_comfyui = resolve_comfyui_setup_choice(comfyui_choice, entered_path)
-    if choice_status == "existing":
+    if choice_status == "existing" and chosen_comfyui:
         COMFYUI_DIR = chosen_comfyui
         _detected_comfyui = chosen_comfyui
         ok(f"Using existing ComfyUI at {COMFYUI_DIR}")
@@ -1216,13 +1217,14 @@ elif selected_images and not _detected_comfyui:
 
 INSTALL_STARTED = True
 
-_gui_progress_path = None
+_gui_progress_path: Path | None = None
 _gui_progress_status = ["stopped"]
 if _gui_plan is not None:
     try:
         _gui_progress_process, _gui_progress_path = start_setup_progress()
+        _started_progress_path = _gui_progress_path
         atexit.register(
-            lambda: finish_setup_progress(_gui_progress_path, _gui_progress_status[0]),
+            lambda: finish_setup_progress(_started_progress_path, _gui_progress_status[0]),
         )
     except OSError as exc:
         warn(f"Could not open the graphical progress window: {exc}")
@@ -1300,7 +1302,8 @@ if VLLM in selected_engines:
     if _missing_tools:
         info(f"Installing vLLM build tools ({', '.join(_missing_tools)}) — "
              "FlashInfer compiles kernels on first use ...")
-        if subprocess.run(build_tools_command(str(_vllm_venv_python), _missing_tools)).returncode == 0:
+        _tools_command = build_tools_command(str(_vllm_venv_python), _missing_tools)
+        if _tools_command and subprocess.run(_tools_command).returncode == 0:
             ok("vLLM build tools installed")
         else:
             fail("vLLM build tool install failed — kernel compilation will fail at run time")
@@ -1332,7 +1335,7 @@ all_llm = selected_embed + selected_llm
 for engine in selected_engines:
     for m in all_llm:
         if not model_downloaded(m, engine):
-            remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine))
+            remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
 
 sd35_selected  = "sd35-large" in selected_image_shorts
 flux1_selected = "flux-dev" in selected_image_shorts
@@ -1496,7 +1499,7 @@ else:
             text=True, bufsize=1,
         )
         tail = []
-        for line in proc.stdout:
+        for line in proc.stdout or ():
             line = line.rstrip("\n")
             if not line:
                 continue

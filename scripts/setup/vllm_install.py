@@ -112,7 +112,7 @@ def vllm_platform_support(*, os_name: str, machine: str,
         untargeted = [target for target in (rocm_gfx_targets or [])
                       if target not in VLLM_ROCM_WHEEL_TARGETS]
         if untargeted and not any(target in VLLM_ROCM_WHEEL_TARGETS
-                                  for target in rocm_gfx_targets):
+                                  for target in (rocm_gfx_targets or [])):
             return VllmSupport("experimental", "rocm_wheel",
                                f"vLLM's prebuilt ROCm wheels ship no kernels for "
                                f"{', '.join(untargeted)} — they target "
@@ -173,7 +173,7 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool) -> li
     return [python_exe, "-m", "pip", "install"] + extra
 
 
-def find_vllm_binary(*, platform_name: str, venv_dir: Path = None,
+def find_vllm_binary(*, platform_name: str, venv_dir: Path | None = None,
                      which_fn=shutil.which, exists_fn=None) -> str | None:
     """Locate a `vllm`, system-first — matching the llama.cpp policy."""
     on_path = which_fn("vllm")
@@ -238,7 +238,7 @@ def hf_cache_model_complete(cache_home: Path, repo: str) -> bool:
                for snapshot in snapshots.iterdir() if snapshot.is_dir())
 
 
-def parse_launcher_extra_args(text: str) -> list[str]:
+def parse_launcher_extra_args(text: str | None) -> list[str]:
     """`VLLM_EXTRA_ARGS=(...)`/`+=(...)` args a launcher conf injects into every run."""
     args = []
     for match in re.finditer(r"^\s*VLLM_EXTRA_ARGS\+?=\(([^)]*)\)", text or "", re.MULTILINE):
@@ -246,7 +246,7 @@ def parse_launcher_extra_args(text: str) -> list[str]:
     return args
 
 
-def read_launcher_extra_args(path: Path = None) -> list[str]:
+def read_launcher_extra_args(path: Path | None = None) -> list[str]:
     path = Path(path or LAUNCHER_CONF).expanduser()
     try:
         return parse_launcher_extra_args(path.read_text(encoding="utf-8"))
@@ -315,7 +315,7 @@ def build_tools_command(python_exe: str, tools) -> list[str] | None:
     return [python_exe, "-m", "pip", "install", *tools] if tools else None
 
 
-def vllm_server_reachable(url: str = None, timeout: float = 2.0, open_fn=None) -> bool:
+def vllm_server_reachable(url: str | None = None, timeout: float = 2.0, open_fn=None) -> bool:
     """True if an OpenAI-compatible vLLM server answers at `url`."""
     url = url or config.VLLM_URL
     if open_fn is None:  # pragma: no cover — real socket
@@ -338,9 +338,9 @@ def find_vllm_server(ports=None, timeout: float = 2.0, open_fn=None) -> str | No
 
 
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
-                 venv_dir: Path = None) -> bool:  # pragma: no cover
+                 venv_dir: Path | None = None) -> bool:  # pragma: no cover
     """Install vLLM per `support.method`. Real network/venv side effects."""
-    if not support.installable:
+    if support.method is None:
         return False
     if support.method == "metal_plugin":
         result = run(["bash", "-c", f"curl -fsSL {METAL_INSTALL_URL} | bash"])
@@ -350,8 +350,8 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
     python_exe = resolve_python(support.requires_python, sys.version_info[:2])
     if python_exe is None:
         pinned = support.requires_python
-        log(f"No Python {pinned[0]}.{pinned[1]} interpreter found — vLLM's "
-            f"{support.method} wheels require it")
+        wanted = f"Python {pinned[0]}.{pinned[1]}" if pinned else "a suitable Python"
+        log(f"No {wanted} interpreter found — vLLM's {support.method} wheels require it")
         return False
 
     if not venv_dir.exists():
