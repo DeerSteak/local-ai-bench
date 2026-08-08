@@ -1,4 +1,5 @@
 import os
+import pytest
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from scripts.setup.vllm_install import (
     missing_build_tools,
     missing_python_headers,
     python_dev_package_command,
+    running_as_root,
     python_version_from_include_dir,
     find_vllm_binary,
     find_vllm_launcher,
@@ -66,6 +68,28 @@ def test_out_of_range_python_falls_back_to_an_in_range_interpreter_on_path():
                          which_fn=lambda name, target=found: name if name == target else None)
         assert (result.status, result.method) == ("supported", "cuda_wheel")
         assert result.requires_python is None
+
+
+def test_root_detection_handles_a_platform_without_geteuid(monkeypatch):
+    # Windows has no os.geteuid; treating that as "not root" keeps the sudo prefix.
+    monkeypatch.delattr(os, "geteuid", raising=False)
+    assert running_as_root() is False
+
+
+@pytest.mark.parametrize(("euid", "expected"), [(0, True), (1000, False)])
+def test_root_detection_reads_the_effective_uid(monkeypatch, euid, expected):
+    monkeypatch.setattr(os, "geteuid", lambda: euid, raising=False)
+    assert running_as_root() is expected
+
+
+def test_dev_package_command_drops_sudo_when_already_root(monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    command = python_dev_package_command("apt-get", (3, 12), which_fn=lambda name: name)
+    assert command is not None and command[0] == "apt-get"
+
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    command = python_dev_package_command("apt-get", (3, 12), which_fn=lambda name: name)
+    assert command is not None and command[0] == "sudo"
 
 
 def test_bootstrap_is_flagged_only_when_the_interpreter_is_the_sole_obstacle():

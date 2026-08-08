@@ -318,6 +318,13 @@ def python_version_from_include_dir(include_dir: str | None) -> tuple[int, int] 
     return (int(match.group(1)), int(match.group(2))) if match else None
 
 
+def running_as_root() -> bool:
+    """Windows has no geteuid, and the package managers this gates are POSIX-only —
+    treating its absence as "not root" keeps the sudo prefix correct everywhere."""
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is not None and geteuid() == 0
+
+
 def python_dev_package_command(package_manager: str, python_version: tuple[int, int],
                                which_fn=shutil.which) -> list[str] | None:
     """Command installing the Python headers Triton needs, for a known package manager."""
@@ -332,7 +339,7 @@ def python_dev_package_command(package_manager: str, python_version: tuple[int, 
         return None
     if not which_fn(package_manager):
         return None
-    prefix = [] if os.geteuid() == 0 else ["sudo"]
+    prefix = [] if running_as_root() else ["sudo"]
     yes = ["-y"] if package_manager != "zypper" else ["--non-interactive"]
     return prefix + [package_manager, "install", *yes, package]
 
