@@ -21,6 +21,7 @@ from scripts.setup.vllm_install import (
     vllm_server_reachable,
     is_dgx_spark,
     parse_compute_capability,
+    python_bootstrap_plan,
     python_candidates,
     resolve_python,
     vllm_install_command,
@@ -62,6 +63,34 @@ def test_out_of_range_python_falls_back_to_an_in_range_interpreter_on_path():
                          which_fn=lambda name, target=found: name if name == target else None)
         assert (result.status, result.method) == ("supported", "cuda_wheel")
         assert result.requires_python is None
+
+
+def test_bootstrap_is_flagged_only_when_the_interpreter_is_the_sole_obstacle():
+    assert support(nvidia_ok=True, python_version=(3, 14)).needs_python_bootstrap
+    assert not support(nvidia_ok=True, python_version=(3, 12)).needs_python_bootstrap
+    # A GPU too old to run vLLM at all is not something a new interpreter can fix.
+    assert not support(nvidia_ok=True, python_version=(3, 14),
+                       compute_cap="7.0").needs_python_bootstrap
+    assert not support(os_name="Windows", python_version=(3, 14)).needs_python_bootstrap
+
+
+def test_bootstrap_plan_is_empty_when_an_in_range_interpreter_exists():
+    assert python_bootstrap_plan(
+        python_version=(3, 14),
+        which_fn=lambda name: name if name == "python3.11" else None) == []
+    assert python_bootstrap_plan(
+        python_version=(3, 12), which_fn=lambda _name: None) == []
+
+
+def test_bootstrap_plan_installs_uv_only_when_it_is_missing():
+    without_uv = python_bootstrap_plan(python_version=(3, 14), which_fn=lambda _name: None)
+    assert len(without_uv) == 2
+    assert "astral.sh" in without_uv[0][-1]
+    assert without_uv[-1] == ["uv", "python", "install", "3.12"]
+
+    with_uv = python_bootstrap_plan(python_version=(3, 14),
+                                    which_fn=lambda name: name if name == "uv" else None)
+    assert with_uv == [["uv", "python", "install", "3.12"]]
 
 
 def test_pinned_platform_ignores_an_unrelated_interpreter_on_path():

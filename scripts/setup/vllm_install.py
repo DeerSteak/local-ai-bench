@@ -34,6 +34,8 @@ class VllmSupport:
     method: str | None     # "cuda_wheel" | "rocm_wheel" | "nightly_cu130"
     reason: str
     requires_python: tuple[int, int] | None = None
+    # Set only when the sole obstacle is the interpreter, so setup knows an offer can clear it.
+    needs_python_bootstrap: bool = False
 
     @property
     def installable(self) -> bool:
@@ -98,7 +100,8 @@ def vllm_platform_support(*, os_name: str, machine: str,
                 and resolve_python(None, python_version, which_fn) is None):
             return VllmSupport("unsupported", None,
                                "vLLM's CUDA wheels need Python 3.10–3.13 and no matching "
-                               "interpreter was found")
+                               "interpreter was found",
+                               needs_python_bootstrap=True)
         return VllmSupport("supported", "cuda_wheel",
                            "Linux + NVIDIA CUDA is vLLM's primary platform, with prebuilt wheels",
                            requires_python=None)
@@ -154,6 +157,37 @@ def resolve_python(requires_python: tuple[int, int] | None,
         if candidate == sys.executable or which_fn(candidate):
             return candidate
     return None
+
+
+UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
+
+
+def python_bootstrap_plan(*, python_version: tuple[int, int],
+                          which_fn=shutil.which) -> list[list[str]]:
+    """Commands that put a vLLM-compatible interpreter on PATH, empty when one already is.
+    Needed on distros whose only system Python is newer than vLLM's wheels — see docs/setup.md."""
+    if resolve_python(None, python_version, which_fn) is not None:
+        return []
+    plan = []
+    if which_fn("uv") is None:
+        plan.append(["sh", "-c", f"curl -LsSf {UV_INSTALLER_URL} | sh"])
+    plan.append(["uv", "python", "install", f"{PINNED_PYTHON[0]}.{PINNED_PYTHON[1]}"])
+    return plan
+
+
+def run_python_bootstrap(plan: list[list[str]], *, log=print,
+                         run=subprocess.run) -> bool:  # pragma: no cover
+    """Execute a `python_bootstrap_plan`. Real network and filesystem side effects."""
+    for command in plan:
+        log(f"  Running: {shlex.join(command)}")
+        if run(command).returncode != 0:
+            log("  Bootstrap failed — continuing without vLLM")
+            return False
+    # uv drops its shims here, and this process inherited a PATH from before they existed.
+    local_bin = str(Path.home() / ".local" / "bin")
+    if local_bin not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
+    return True
 
 
 # `vllm bench` deps are not in the base package — see docs/workloads.md#vllm-bench.

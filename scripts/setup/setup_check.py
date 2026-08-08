@@ -7,6 +7,7 @@ import sys
 import os
 import platform
 import re
+import shlex
 import signal
 import subprocess
 import json
@@ -53,6 +54,7 @@ from scripts.setup.vllm_install import (
     build_tools_command, install_vllm, missing_build_tools, missing_python_headers,
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
     read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
+    PINNED_PYTHON, python_bootstrap_plan, run_python_bootstrap,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -786,6 +788,31 @@ vllm_support = vllm_platform_support(
     compute_cap=nvidia_compute_cap, rocm_version=get_rocm_version() if rocm_ok else None,
     rocm_gfx_targets=rocm_gfx,
 )
+if not vllm_found and vllm_support.needs_python_bootstrap:
+    bootstrap_plan = python_bootstrap_plan(python_version=sys.version_info[:2])
+    if bootstrap_plan:
+        warn(f"vLLM needs Python 3.10–3.13 and this system only has "
+             f"{sys.version_info.major}.{sys.version_info.minor}")
+        info("Setup can install a private CPython "
+             f"{PINNED_PYTHON[0]}.{PINNED_PYTHON[1]} for vLLM to build its venv from. "
+             "This downloads uv from astral.sh and does not change your system Python.")
+        for command in bootstrap_plan:
+            print(f"      {shlex.join(command)}")
+        if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+            if run_python_bootstrap(bootstrap_plan):
+                vllm_support = vllm_platform_support(
+                    os_name=os_name, machine=platform.machine(),
+                    python_version=sys.version_info[:2],
+                    nvidia_ok=nvidia_ok, rocm_ok=rocm_ok,
+                    intel_gpu=intel_linux or intel_windows,
+                    gpu_names=[device["name"] for device in nvidia_gpus],
+                    compute_cap=nvidia_compute_cap,
+                    rocm_version=get_rocm_version() if rocm_ok else None,
+                    rocm_gfx_targets=rocm_gfx,
+                )
+        else:
+            info("Skipped — continuing without vLLM")
+
 if VLLM_SERVER_URL:
     ok(f"vLLM server already running at {VLLM_SERVER_URL} — nothing to install")
 elif VLLM_BIN or VLLM_LAUNCHER:
