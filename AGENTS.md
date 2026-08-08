@@ -168,3 +168,4 @@ This project's docs have accumulated real staleness before — broken relative l
 3. Ask explicitly: does this change alter the results JSON shape, a CLI flag, a default, model/tier definitions, or documented behavior? If yes, update the dashboard and/or the relevant doc(s) per "Keeping docs and the dashboard in sync" above — don't wait to be asked.
 4. Check for now-broken relative links and stale references to renamed/removed files in anything you touched or that references what you touched.
 5. Don't run `setup.sh`, `setup.bat`, or a real `run_bench.sh` invocation (including `--tests llamabench`) to "verify" — see Critical safety rules.
+6. Don't leave any pyright errors. There is a githook that looks for errors and stops, so you need to ensure that any lingering issues are resolved.
