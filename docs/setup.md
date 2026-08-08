@@ -46,6 +46,13 @@ The setup wizard collects every decision before installation: an engine checklis
 
 Setup checks the system installation before planning any llama.cpp install. When `llama-server` is available through `PATH` or a standard macOS Homebrew location, setup does not install or build another llama.cpp copy. It independently detects `llama-bench` and `llama-batched-bench`; when all three system tools are present, benchmark runs use those exact system tools. Models remain managed by Local AI Bench under `models/llamacpp/`, and the selected system binary receives the downloaded GGUF's explicit path, so system installation and project model storage do not need to share a directory. If `llama-server` exists but either optional native benchmark tool is absent, setup leaves the existing installation untouched and reports that the corresponding opt-in test is unavailable rather than installing a second distribution behind the user's back.
 
+Note that if you're using an AMD Ryzen AI Halo running the default Linux image, llama.cpp and llama-bench are installed by default, but the llama-batched-bench utility is not. Installation just requires running the following two-line script:
+
+```
+sudo apt update
+sudo apt install llama.cpp-tools-extra
+```
+
 Downloaded llama.cpp ZIP and ComfyUI 7z archives are fully inspected before extraction. Setup rejects absolute paths, drive-qualified paths, parent traversal, ambiguous or duplicate normalized paths, and ZIP symbolic links, then stops with the extraction error instead of writing an unsafe or only partially validated archive.
 
 Direct runtime downloads use a sibling `.part` file, resume with an HTTPS Range request after interruption, validate the returned range and expected release-asset size, flush before atomically publishing the completed file, and retain an incomplete part for retry without replacing a known-good destination. If a server ignores the range, setup safely restarts that file instead of appending duplicate bytes. Python's standard proxy environment settings apply automatically. Hugging Face model downloads retain `huggingface_hub`'s own cache/resume behavior.
