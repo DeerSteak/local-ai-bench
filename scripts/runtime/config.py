@@ -3,6 +3,8 @@ need `config.NAME` access — `from config import NAME` binds a stale copy befor
 
 from pathlib import Path
 
+VERSION        = "5.0"
+
 COMFYUI_URL  = "http://localhost:8188"
 
 # llama-server's default port. LlamaCppEngine launches its own server on
@@ -68,7 +70,6 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
-VERSION        = "4.1"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
 RETRY_CRASHED_MODELS = False
