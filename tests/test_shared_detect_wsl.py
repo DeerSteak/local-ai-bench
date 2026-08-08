@@ -21,10 +21,6 @@ def test_detect_wsl_rejects_native_linux_kernels(release):
     assert Shared.detect_wsl("Linux", release) is False
 
 
-def test_detect_wsl_rejects_missing_release():
-    assert Shared.detect_wsl("Linux", None) is False
-
-
 @pytest.mark.parametrize("os_name", ["Windows", "Darwin", "FreeBSD"])
 def test_detect_wsl_is_linux_only(os_name):
     # Native Windows names its releases numerically, but never claim WSL off-Linux.

@@ -937,7 +937,8 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
         ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm",   "l"),
         ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
         ("Image generation models",           IMAGE_MODELS,      "image", "img"),
-        ("Optional cleanup",                   cleanup_items,     "cleanup", "clean"),
+        ("Optional cleanup — downloaded llama.cpp models not in the catalog",
+         cleanup_items, "cleanup", "clean"),
         ("Optional cleanup — cached vLLM weights not in the catalog",
          vllm_cleanup_items, "vllm_cleanup", "vclean"),
     ]

@@ -316,11 +316,22 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 ).grid(row=row, column=1, sticky="w", padx=(12, 0))
             row += 1
     if cleanup_names:
+        ttk.Label(
+            model_list, font=("TkDefaultFont", 11, "bold"),
+            text="Downloaded llama.cpp models not in the catalog",
+        ).grid(row=row, column=0, sticky="w", pady=(14, 0))
+        row += 1
+        ttk.Label(
+            model_list, wraplength=520,
+            text=("These folders are in this project's own models directory, usually left "
+                  "behind by an earlier catalog. Nothing outside it is touched."),
+        ).grid(row=row, column=0, sticky="w", pady=(0, 4))
+        row += 1
         ttk.Checkbutton(
             model_list,
-            text=f"Delete {len(cleanup_names)} non-catalog model folder(s): {', '.join(cleanup_names)}",
+            text=f"Delete {len(cleanup_names)} model folder(s): {', '.join(cleanup_names)}",
             variable=cleanup_var,
-        ).grid(row=row, column=0, sticky="w", pady=(14, 4))
+        ).grid(row=row, column=0, sticky="w")
         row += 1
     if vllm_cleanup:
         ttk.Label(
