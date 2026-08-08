@@ -168,6 +168,7 @@ LLM_MODELS_SMALL = sorted([
         "hf_file":        "gemma-4-12B-it-Q4_K_M.gguf",
         "vllm_repo":      "mattbucci/gemma-4-12B-AWQ",
         "vllm_download_size": "~7.8 GB",
+        "vllm_tool_parser": "gemma4",
     },
 ], key=lambda m: m["params_b"])
 

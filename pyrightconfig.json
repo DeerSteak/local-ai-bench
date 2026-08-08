@@ -4,5 +4,6 @@
   "extraPaths": ["scripts"],
   "venvPath": ".",
   "venv": "bench-env",
+  "pythonVersion": "3.11",
   "typeCheckingMode": "standard"
 }

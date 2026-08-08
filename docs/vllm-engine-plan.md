@@ -16,9 +16,11 @@
 
 ## Status
 
-**The setup half is complete** — [`scripts/setup/vllm_install.py`](../scripts/setup/vllm_install.py) plus detection, the opt-in prompt/checkbox, and the installer in `setup_check.py`/`setup_gui.py`; see [Setup](setup.md#optional-vllm-install). Scope as agreed: Linux CUDA and ROCm as supported, DGX Spark (nightly cu130) and macOS Apple Silicon (vllm-metal) as experimental, Windows/XPU/CPU-only reported unsupported with a reason. Model weights are included: setup now asks which engines to install up front (llama.cpp on by default, vLLM off and disabled where unsupported), and downloads the selected models for every selected engine. The quantization question below is answered — vLLM uses 4-bit AWQ/GPTQ/W4A16 safetensors as the closest analogue to this project's `Q4_K_M` GGUFs.
+**Setup, the engine, the catalog, and the docs are all implemented.** [`scripts/setup/vllm_install.py`](../scripts/setup/vllm_install.py) plus detection, the opt-in prompt/checkbox, and the installer in `setup_check.py`/`setup_gui.py`; see [Setup](setup.md#optional-vllm-install). Scope as agreed: Linux CUDA and ROCm as supported, DGX Spark (nightly cu130) and macOS Apple Silicon (vllm-metal) as experimental (macOS since deliberately deprioritized — see the open questions below), Windows/XPU/CPU-only reported unsupported with a reason, WSL2 documented as the Windows route. Model weights are included: setup asks which engines to install up front and downloads the selected models for every selected engine. The quantization question is answered — vLLM uses 4-bit AWQ/GPTQ/W4A16 safetensors as the closest analogue to this project's `Q4_K_M` GGUFs. [`scripts/runtime/engines/vllm.py`](../scripts/runtime/engines/vllm.py) (`VllmEngine`) implements the full `InferenceEngine` interface, including embeddings via `--runner pooling` and tool calling via `--tool-call-parser`; it's documented in [`engines.md`](engines.md#vllmengine). `vllm bench` has its own workload module and dashboard tab. The crash cache is engine-scoped (a llama.cpp crash no longer skips the same tag under vLLM). `docs/limitations.md`, `cli-reference.md`, and `workloads.md` all cover vLLM.
 
-Everything else here — the engine, the catalog, the results/dashboard changes — is still plan only. Written August 2026 against vLLM's stable docs at the time; vLLM's install matrix moves fast, so every command below should be re-checked against [docs.vllm.ai](https://docs.vllm.ai/en/stable/getting_started/installation/) at implementation time rather than trusted as pinned truth.
+**What's not done — see [Open questions](#open-questions-for-the-user) for detail:** most of the catalog still lacks a `vllm_tool_parser`, so the tool-accuracy test is unavailable on vLLM for those models; and no model has been documented as verified to actually load under vLLM at these quantizations, on any backend. The dashboard's cross-engine weight-artifact warning (`getCrossEngineWeightsWarning` in `dashboard/src/utils/shared.js`) is already implemented and tested — it fires whenever loaded files span more than one engine.
+
+Written August 2026 against vLLM's stable docs at the time; vLLM's install matrix moves fast, so every command below should be re-checked against [docs.vllm.ai](https://docs.vllm.ai/en/stable/getting_started/installation/) rather than trusted as pinned truth this far out.
 
 ## Platform support research
 
@@ -138,13 +140,13 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 
 ## Suggested order of work
 
-1. `vllm_platform_support()` + its tests — no installs, no downloads, fully verifiable.
-2. `config.py` entries, catalog `vllm_repo` fields, `models/vllm/` namespacing.
-3. `VllmEngine` against a manually installed vLLM (user-driven), with mocked unit tests.
-4. `install_vllm()` + setup detection and the CLI/GUI opt-in.
-5. Snapshot downloads and model-inventory engine awareness.
-6. Dashboard engine dimension.
-7. Docs.
+1. ~~`vllm_platform_support()` + its tests.~~ Done.
+2. ~~`config.py` entries, catalog `vllm_repo` fields, `models/vllm/` namespacing.~~ Done.
+3. ~~`VllmEngine` against a manually installed vLLM, with mocked unit tests.~~ Done, but never run against a real install — see open question 4.
+4. ~~`install_vllm()` + setup detection and the CLI/GUI opt-in.~~ Done.
+5. ~~Snapshot downloads and model-inventory engine awareness.~~ Done.
+6. ~~Dashboard engine dimension.~~ Done — `getCrossEngineWeightsWarning` warns whenever loaded files span more than one engine.
+7. ~~Docs.~~ Done, this file included.
 
 ## Verified against vLLM's current CLI
 
@@ -160,8 +162,9 @@ Still outstanding from this: **no catalog entry carries `vllm_tool_parser` yet.*
 
 1. ~~Which quantization for vLLM weights?~~ **Answered: 4-bit AWQ/GPTQ/W4A16**, to match `Q4_K_M`'s bit width. Every catalog entry now carries a verified `vllm_repo`. Two consequences to watch: AWQ/GPTQ Marlin kernels are CUDA-centric, so some of these will not run on ROCm or Metal, and `google/gemma-4-12B-it-qat-w4a16-ct` is a compressed-tensors QAT checkpoint rather than AWQ — the one entry that differs in kind from the rest.
 2. ~~Which platforms are in scope?~~ **Answered: Linux CUDA + ROCm supported, DGX Spark and macOS Metal experimental**, Windows/XPU/CPU-only declined with a reason.
-3. **Embeddings under vLLM** — the two embedding models now download their upstream fp16 repos, but serving them needs a separate `--task embed` server per model. Still open whether `VllmEngine` supports the embeddings workload in v1.
-4. **Which models actually load under vLLM at these quantizations** is unverified — the repos exist and are ungated, but nothing has been served yet. Expect some to need `--max-model-len` capping or to fail on a given backend.
+3. ~~Embeddings under vLLM.~~ **Answered: yes** — `VllmEngine._ensure_model(embedding=True)` respawns with `--runner pooling` (the current name for what was `--task embed`), reusing the same lazy per-`(tag, num_ctx, n_parallel)` swap the chat/generate path uses.
+4. **Which models actually load under vLLM at these quantizations remains unverified.** The repos exist and are ungated, but nothing has been served yet — this needs a real run on real hardware, which this project's safety rules keep out of an agent's hands. Expect some to need `--max-model-len` capping, and expect the AWQ/GPTQ Marlin-kernel ROCm risk flagged in the platform table above to bite on at least one model.
+5. **Most catalog models still lack a `vllm_tool_parser`.** vLLM's tool-call parsers are model-family-specific; filling one in wrong produces silently unparsed calls, so each addition needs to be checked against vLLM's own registered-parser list (`vllm/tool_parsers/__init__.py`), not guessed from the model name. `gemma4` was added this way — confirmed present in the pinned stable release (v0.26.0), not just `main`. The rest of the gap is real, not laziness: as of that release there is no dedicated parser for plain Gemma 3, plain Qwen3(.5/.6) chat (`qwen3_coder`/`qwen3_xml` are Coder-output-specific, not general Qwen3 chat), or any Nemotron variant — `hermes` is the closest general-purpose fallback several of these families use in community practice, but it isn't documented as the *correct* parser for any of them, so adding it without a real run would repeat the exact silent-wrong-parser failure this section already warns about.
 
 ---
 
