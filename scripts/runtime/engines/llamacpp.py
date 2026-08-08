@@ -36,8 +36,9 @@ class LlamaCppEngine(InferenceEngine):
 
     BINARY = "llama-server"
 
-    # Model *load* time (disk read + VRAM placement), not inference time — generous since large models can take a while.
-    LOAD_TIMEOUT = 300
+    # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
+    # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
+    LOAD_TIMEOUT = 900
 
     @staticmethod
     def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
