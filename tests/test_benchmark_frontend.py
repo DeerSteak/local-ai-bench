@@ -197,7 +197,8 @@ def test_frontend_state_round_trip_preserves_optional_preset_selection(tmp_path)
     path = tmp_path / "state.json"
     state = saved_state(selected_preset="Quick run")
     assert save_frontend_state(state, path)
-    assert load_frontend_state(path)["selected_preset"] == "Quick run"
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["selected_preset"] == "Quick run"
 
 
 def test_frontend_state_rejects_invalid_preset_selection(tmp_path):
@@ -211,7 +212,8 @@ def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS)
     del options["offline"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["offline"] is False
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["offline"] is False
 
 
 def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
@@ -219,7 +221,8 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS)
     del options["gpu_split_mode"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["gpu_split_mode"] == "layer"
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["gpu_split_mode"] == "layer"
 
 
 def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
@@ -227,7 +230,8 @@ def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path
     options = dict(GUI_OPTION_DEFAULTS)
     del options["retry_crashed_models"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["retry_crashed_models"] is False
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["retry_crashed_models"] is False
 
 
 @pytest.mark.parametrize("contents", [
@@ -705,9 +709,12 @@ def test_choose_models_clears_each_redraw_and_keeps_feedback_visible():
 
 
 def test_model_selection_error_covers_each_required_family():
-    assert "LLM" in model_selection_error([], ["conv"])
-    assert "embedding" in model_selection_error([], ["emb"])
-    assert "image" in model_selection_error([], ["img"])
+    llm_error = model_selection_error([], ["conv"])
+    embedding_error = model_selection_error([], ["emb"])
+    image_error = model_selection_error([], ["img"])
+    assert llm_error is not None and "LLM" in llm_error
+    assert embedding_error is not None and "embedding" in embedding_error
+    assert image_error is not None and "image" in image_error
     assert model_selection_error(
         [MenuEntry("x", "X", "custom", "Custom", True)], ["tool", "conc_chat"],
     ) is None
@@ -725,6 +732,7 @@ def test_render_model_menu_has_one_shared_llm_list_and_cross_family_help():
 def test_missing_catalog_hint_counts_families_and_ignores_custom_models():
     inventory = sample_inventory()
     hint = missing_catalog_hint(inventory, "Linux")
+    assert hint is not None
     assert f"{len(LLM_MODELS) - 2} LLM" in hint
     assert f"{len(IMAGE_MODELS) - 2} image" in hint
     assert "custom" not in hint
@@ -732,7 +740,8 @@ def test_missing_catalog_hint_counts_families_and_ignores_custom_models():
 
 
 def test_missing_catalog_hint_uses_windows_command():
-    assert "`setup.bat`" in missing_catalog_hint(empty_inventory(), "Windows")
+    windows_hint = missing_catalog_hint(empty_inventory(), "Windows")
+    assert windows_hint is not None and "`setup.bat`" in windows_hint
 
 
 def test_missing_catalog_hint_omitted_when_every_catalog_model_installed():
@@ -1012,6 +1021,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     assert any("Launching benchmark.py" in message for message in messages)
     assert "Start this benchmark? [Y/n]" in messages
     state = load_frontend_state(tmp_path / ".benchmark_frontend_state.json")
+    assert state is not None
     assert state["engine"] == "fake"
     assert state["tests"] == ["llm", "conv", "emb", "img"]
 
@@ -1166,6 +1176,7 @@ def test_run_frontend_restores_max_prompt_tokens_and_tg_tokens(tmp_path):
     assert command[index + 1:index + 3] == ["128", "1024"]
 
     restored_state = load_frontend_state(state_path)
+    assert restored_state is not None
     assert restored_state["max_prompt_tokens"] == 16384
     assert restored_state["tg_tokens"] == [128, 1024]
 

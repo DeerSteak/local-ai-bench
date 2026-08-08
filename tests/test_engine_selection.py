@@ -5,11 +5,18 @@ from scripts.setup.engine_selection import (
     engine_summary_line,
     engines_needing_install,
     needs_python_headers,
-    find_entry,
+    find_entry as _find_entry,
     selected_engine_names,
     toggle_engine,
 )
 from scripts.setup.vllm_install import VllmSupport
+
+
+def find_entry(entries: list[dict], name: str) -> dict:
+    """Test-only strict wrapper: every test call expects the entry to exist."""
+    entry = _find_entry(entries, name)
+    assert entry is not None, f"no engine entry named {name!r}"
+    return entry
 
 
 SUPPORTED = VllmSupport("supported", "cuda_wheel", "CUDA wheels available")

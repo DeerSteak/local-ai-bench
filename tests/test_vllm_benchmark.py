@@ -37,6 +37,7 @@ def test_latency_result_parses_seconds_and_derives_an_output_rate():
         "percentiles": {"50": 2.0, "99": 2.1},
     }
     entry = VllmBenchBenchmark.parse_latency_result(payload, 2048, 128)
+    assert entry is not None
     assert entry["avg_latency_sec"] == 2.0
     assert entry["latency_runs_sec"] == [1.9, 2.0, 2.1]
     assert entry["completed_iters"] == 3
@@ -47,6 +48,7 @@ def test_latency_result_parses_seconds_and_derives_an_output_rate():
 
 def test_latency_result_survives_a_payload_without_samples_or_percentiles():
     entry = VllmBenchBenchmark.parse_latency_result({"avg_latency": 1.5}, 512, 128)
+    assert entry is not None
     assert entry["latency_runs_sec"] == []
     assert entry["completed_iters"] == 0
     assert entry["percentiles_sec"] == {}
@@ -63,6 +65,7 @@ def test_latency_result_is_none_when_no_usable_average_was_reported(payload):
 def test_latency_result_drops_non_numeric_samples_rather_than_failing():
     payload = {"avg_latency": 2.0, "latencies": [1.9, None, "x", True, 2.1]}
     entry = VllmBenchBenchmark.parse_latency_result(payload, 512, 128)
+    assert entry is not None
     assert entry["latency_runs_sec"] == [1.9, 2.1]
 
 
@@ -72,6 +75,7 @@ def test_throughput_result_derives_an_output_only_rate_from_request_count():
         "requests_per_second": 8.0, "tokens_per_second": 2000.0,
     }
     entry = VllmBenchBenchmark.parse_throughput_result(payload, 2048, 128)
+    assert entry is not None
     assert entry["elapsed_sec"] == 4.0
     assert entry["num_requests"] == 32
     assert entry["requests_per_sec"] == 8.0
@@ -83,6 +87,7 @@ def test_throughput_result_derives_an_output_only_rate_from_request_count():
 def test_throughput_result_computes_rates_when_vllm_omits_them():
     payload = {"elapsed_time": 2.0, "num_requests": 10}
     entry = VllmBenchBenchmark.parse_throughput_result(payload, 512, 128)
+    assert entry is not None
     assert entry["requests_per_sec"] == 5.0
     assert "total_tps" not in entry and "total_num_tokens" not in entry
 
@@ -118,9 +123,11 @@ def test_sweep_sizes_drops_pairs_that_would_exceed_the_model_context():
 
 def test_format_entry_labels_each_kind_with_its_own_headline_number():
     latency = VllmBenchBenchmark.parse_latency_result({"avg_latency": 2.0}, 2048, 128)
+    assert latency is not None
     assert "in2048/out128" in VllmBenchBenchmark.format_entry("latency", latency)
     assert "s per batch" in VllmBenchBenchmark.format_entry("latency", latency)
     throughput = VllmBenchBenchmark.parse_throughput_result(
         {"elapsed_time": 4.0, "num_requests": 32}, 2048, 128,
     )
+    assert throughput is not None
     assert "req/s" in VllmBenchBenchmark.format_entry("throughput", throughput)

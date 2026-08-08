@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING, cast
+
 import requests
 import pytest
 from scripts.runtime import shared
@@ -28,6 +30,16 @@ class _FakeEngine:
 
     def wait_for_recovery(self, timeout=30):
         return self._recovers
+
+
+if TYPE_CHECKING:
+    from scripts.runtime.engines.base import InferenceEngine
+
+
+def _engine(recovers=True) -> "InferenceEngine":
+    """cast, not a subclass: the fake implements only the 3 methods this module's
+    functions actually call on an engine, not the full InferenceEngine ABC."""
+    return cast("InferenceEngine", _FakeEngine(recovers=recovers))
 
 
 @pytest.mark.parametrize(("total", "expected"), [
@@ -63,7 +75,7 @@ def test_run_measured_calls_all_succeed(tmp_path):
         return run_i * 2
 
     samples, status, partial_text, metadata = Shared.run_measured_calls(
-        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        3, call, "tag", {}, cache_path, "testing", _engine())
     assert samples == [0, 2, 4]
     assert status == "ok"
     assert partial_text == ""
@@ -75,7 +87,7 @@ def test_run_measured_calls_observes_pause_before_every_attempt(tmp_path, monkey
     pauses = []
     monkeypatch.setattr(shared, "wait_if_paused", lambda: pauses.append("boundary"))
     Shared.run_measured_calls(
-        3, lambda run_i: run_i, "tag", {}, tmp_path / "crash.json", "testing", _FakeEngine(),
+        3, lambda run_i: run_i, "tag", {}, tmp_path / "crash.json", "testing", _engine(),
     )
     assert pauses == ["boundary", "boundary", "boundary"]
 
@@ -123,7 +135,7 @@ def test_run_measured_calls_timeout_stops_immediately(tmp_path):
         return run_i
 
     samples, status, partial_text, metadata = Shared.run_measured_calls(
-        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        3, call, "tag", {}, cache_path, "testing", _engine())
     assert samples == [0]
     assert status == "timed_out"
     assert partial_text == ""
@@ -138,7 +150,7 @@ def test_run_measured_calls_timeout_captures_partial_text(tmp_path):
         raise EngineTimeout("timed out", partial_text="The answer is B")
 
     samples, status, partial_text, metadata = Shared.run_measured_calls(
-        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        3, call, "tag", {}, cache_path, "testing", _engine())
     assert samples == []
     assert status == "timed_out"
     assert partial_text == "The answer is B"
@@ -153,7 +165,7 @@ def test_run_measured_calls_loop_detected_is_a_distinct_status(tmp_path):
         raise EngineLoopDetected("detected a generation loop after 8s", partial_text="wait, wait, wait,")
 
     samples, status, partial_text, metadata = Shared.run_measured_calls(
-        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        3, call, "tag", {}, cache_path, "testing", _engine())
     assert samples == []
     assert status == "loop_detected"
     assert partial_text == "wait, wait, wait,"
@@ -165,7 +177,7 @@ def test_run_measured_calls_budget_exhaustion_is_distinct_and_preserves_metadata
         raise EngineBudgetExceeded("budget exhausted", partial_text="Answer: C")
 
     samples, status, partial_text, metadata = Shared.run_measured_calls(
-        1, call, "tag", {}, tmp_path / "crash.json", "testing", _FakeEngine())
+        1, call, "tag", {}, tmp_path / "crash.json", "testing", _engine())
     assert samples == []
     assert status == "budget_exceeded"
     assert partial_text == "Answer: C"
@@ -181,7 +193,7 @@ def test_run_measured_calls_ordinary_failure_skips_and_continues(tmp_path):
         return run_i
 
     samples, status, _, _metadata = Shared.run_measured_calls(
-        3, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        3, call, "tag", {}, cache_path, "testing", _engine())
     # run_i=1 fails but still counts as attempted (advances), so only 2 samples collected
     assert samples == [0, 2]
     assert status == "ok"
@@ -197,7 +209,7 @@ def test_run_measured_calls_crash_retries_then_gives_up(tmp_path):
         raise requests.exceptions.ConnectionError("actively refused")
 
     samples, status, _, _metadata = Shared.run_measured_calls(
-        3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine())
+        3, call, "tag", crash_cache, cache_path, "testing", _engine())
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
@@ -216,7 +228,7 @@ def test_run_measured_calls_crash_recovers_and_retries_same_run(tmp_path):
         return run_i
 
     samples, status, _, _metadata = Shared.run_measured_calls(
-        2, call, "tag", {}, cache_path, "testing", _FakeEngine())
+        2, call, "tag", {}, cache_path, "testing", _engine())
     assert samples == [0, 1]
     assert status == "ok"
 
@@ -229,7 +241,7 @@ def test_run_measured_calls_crash_gives_up_if_recovery_fails(tmp_path):
         raise requests.exceptions.ConnectionError("actively refused")
 
     samples, status, _, _metadata = Shared.run_measured_calls(
-        3, call, "tag", crash_cache, cache_path, "testing", _FakeEngine(recovers=False))
+        3, call, "tag", crash_cache, cache_path, "testing", _engine(recovers=False))
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache
