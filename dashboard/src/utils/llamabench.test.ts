@@ -15,10 +15,10 @@ import {
   flattenLlamaBenchData,
 } from "./llamabench";
 
-const prefill = (pp, speed) => ({
+const prefill = (pp: number, speed: number) => ({
   n_prompt: pp, n_gen: 0, n_depth: 0, avg_ts: speed, stddev_ts: 2, n_gpu_layers: 999,
 });
-const decode = (pp, tg, speed) => ({
+const decode = (pp: number, tg: number, speed: number) => ({
   n_prompt: 0, n_gen: tg, n_depth: pp, avg_ts: speed, stddev_ts: 1, n_gpu_layers: 999,
 });
 

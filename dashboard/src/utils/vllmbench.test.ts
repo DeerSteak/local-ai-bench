@@ -6,7 +6,7 @@ import {
   getVllmBenchModels, flattenVllmBenchData,
 } from "./vllmbench";
 
-const file = (id, hostname, modelData) => ({
+const file = (id: string, hostname: string, modelData: object) => ({
   id, hostname, data: { vllmbench: { "gemma3-1b": modelData } },
 });
 

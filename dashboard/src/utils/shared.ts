@@ -1,22 +1,13 @@
 import { FILE_COLORS, MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS, MODEL_SIZE_TIER } from "../constants";
-import type { ResultsFile } from "../types";
+import type { ResultsFile, ChartRow } from "../types";
 
-// The one sanctioned `any` in the dashboard's results-JSON handling — a results
-// file is never guaranteed to carry every field a newer schema might (see
-// AGENTS.md's "Results JSON is a schema that evolves across versions" note),
-// so its contents are deliberately left dynamically typed rather than pinned
-// to a strict schema. Every other type/function in this codebase that needs
-// to reference "some value out of the results JSON" should use `JsonRecord`
-// (or `JsonRecord[string]` for a single value) instead of writing `any`
-// directly, so the dashboard's `any` ratchet hook — which counts literal
-// `any` tokens — stays a meaningful signal instead of something to route around.
+// The one sanctioned `any` in the dashboard — see AGENTS.md's TypeScript section.
+// Reference `JsonRecord`/`JsonRecord[string]` instead of writing `any` directly.
 export type JsonRecord = Record<string, any>;
 
-// Object.entries on an untyped results-JSON value can infer T as `unknown`
-// rather than a usable value type (a TS quirk with generic overload
-// resolution on loosely-typed arguments) — this pins the value type so call
-// sites don't each need a cast.
+// Object.entries on an `any`-typed value can infer T as `unknown` rather than
+// a usable type (a TS overload-resolution quirk) — this pins the value type.
 export function entriesOf(obj: JsonRecord | null | undefined): [string, JsonRecord[string]][] {
   return Object.entries(obj || {});
 }
@@ -154,41 +145,48 @@ export function fmt(v: number | null | undefined, unit: string): string {
 }
 
 // Deterministic color for an unknown model based on its name
-function hashColor(key, palette) {
+function hashColor(key: string, palette: readonly string[]): string {
   const h = [...key].reduce((acc, c) => acc + c.charCodeAt(0), 0);
   return palette[h % palette.length];
 }
 
-export function getModelColor(model) {
-  return MODEL_COLORS[model] || hashColor(model, FALLBACK_COLORS);
+// *_COLORS/*_LABELS/*_TIER constants have fixed literal keys; callers here
+// look up an arbitrary model string that may not be one of them.
+export function lookup(dict: object, key: string): string | undefined {
+  return (dict as Record<string, string>)[key];
 }
 
-export function getImageModelColor(model) {
-  return IMAGE_MODEL_COLORS[model] || hashColor(model, FALLBACK_COLORS);
+export function getModelColor(model: string): string {
+  return lookup(MODEL_COLORS, model) || hashColor(model, FALLBACK_COLORS);
 }
 
-export function getEmbedModelColor(model) {
-  return EMBED_MODEL_COLORS[model] || hashColor(model, FALLBACK_COLORS);
+export function getImageModelColor(model: string): string {
+  return lookup(IMAGE_MODEL_COLORS, model) || hashColor(model, FALLBACK_COLORS);
 }
 
-export function modelLabel(model) {
-  return LLM_MODEL_LABELS[model] || model;
+export function getEmbedModelColor(model: string): string {
+  return lookup(EMBED_MODEL_COLORS, model) || hashColor(model, FALLBACK_COLORS);
 }
 
-export function imageModelLabel(model) {
-  return IMAGE_MODEL_LABELS[model] || model;
+export function modelLabel(model: string): string {
+  return lookup(LLM_MODEL_LABELS, model) || model;
 }
 
-export function embedModelLabel(model) {
-  return EMBED_MODEL_LABELS[model] || model;
+export function imageModelLabel(model: string): string {
+  return lookup(IMAGE_MODEL_LABELS, model) || model;
+}
+
+export function embedModelLabel(model: string): string {
+  return lookup(EMBED_MODEL_LABELS, model) || model;
 }
 
 // Bucket an LLM model key into a size tier. Known models use MODEL_SIZE_TIER
 // (parameter-count-based, matching models.py/README.md exactly). Unknown
 // models (not in the standard roster) fall back to a param-count heuristic
 // parsed from the key (e.g. "some-new-model-70b" -> 70 -> "large").
-export function getModelSizeTier(model) {
-  if (MODEL_SIZE_TIER[model]) return MODEL_SIZE_TIER[model];
+export function getModelSizeTier(model: string): string {
+  const tier = lookup(MODEL_SIZE_TIER, model);
+  if (tier) return tier;
   const match = model.match(/(\d+)b/i);
   if (!match) return "medium";
   const billions = parseInt(match[1], 10);
@@ -203,14 +201,15 @@ export function getModelSizeTier(model) {
 // known repeat-crasher skipped via the crash cache). Defaults to
 // "llm_conversation" for existing call sites that predate the "llm" section
 // also being able to produce a whole-model skip (via Shared.check_crash_cache).
-export function getSkipInfo(file, model, section = "llm_conversation") {
+export function getSkipInfo(file: ResultsFile, model: string, section = "llm_conversation")
+  : { reason: string, detail: string } | null {
   const d = file.data[section]?.[model];
   if (!d?.skipped) return null;
   return { reason: d.skip_reason, detail: d.skip_detail };
 }
 
 // Per-file line configs: one line per file, color by file index. Used for all sections.
-export function buildFileLineConfigs(files) {
+export function buildFileLineConfigs(files: ResultsFile[]) {
   return files.map((f, fi) => ({
     dataKey: `f${fi}`,
     stroke: FILE_COLORS[fi % FILE_COLORS.length],
@@ -218,7 +217,7 @@ export function buildFileLineConfigs(files) {
   }));
 }
 
-export function prepareOrderedBarGroupData(data, barConfigs) {
+export function prepareOrderedBarGroupData(data: ChartRow[], barConfigs: { dataKey: string }[]): ChartRow[] {
   return data.map(row => ({
     ...row,
     _groupMax: Math.max(0, ...barConfigs.map(config => row[config.dataKey] ?? 0)),
@@ -229,8 +228,8 @@ export function prepareOrderedBarGroupData(data, barConfigs) {
 // preferredKeys: ordered array of candidate sort keys; the last one present in
 // the data is used (most strenuous). direction: "desc" = higher is better,
 // "asc" = lower is better.
-export function sortBarData(data, preferredKeys, direction) {
-  let sortKey = null;
+export function sortBarData(data: ChartRow[], preferredKeys: string[], direction: "desc" | "asc"): ChartRow[] {
+  let sortKey: string | null = null;
   for (let i = preferredKeys.length - 1; i >= 0; i--) {
     if (data.some(row => row[preferredKeys[i]] != null)) {
       sortKey = preferredKeys[i];
@@ -238,9 +237,10 @@ export function sortBarData(data, preferredKeys, direction) {
     }
   }
   if (!sortKey) return data;
+  const key = sortKey;
   return [...data].sort((a, b) => {
-    const av = a[sortKey] ?? (direction === "desc" ? -Infinity : Infinity);
-    const bv = b[sortKey] ?? (direction === "desc" ? -Infinity : Infinity);
+    const av = a[key] ?? (direction === "desc" ? -Infinity : Infinity);
+    const bv = b[key] ?? (direction === "desc" ? -Infinity : Infinity);
     return direction === "desc" ? bv - av : av - bv;
   });
 }
@@ -248,7 +248,7 @@ export function sortBarData(data, preferredKeys, direction) {
 // TTFT switches units by scale (values are wildly different at 2K vs 96K context)
 // — all-sub-second data reads better in ms, minutes-long prefills read better as
 // plain seconds with no decimals.
-export function deriveTtftUnit(values) {
+export function deriveTtftUnit(values: number[]): { ttftUnit: string, ttftYLabel: string } {
   const ttftUnit = values.some(v => v >= 60) ? "sec-plain"
     : values.length && values.every(v => v < 1) ? "ms"
     : "sec";
@@ -257,14 +257,14 @@ export function deriveTtftUnit(values) {
 
 // A bar-chart series counts as present if it has either a real value or a
 // skip-status placeholder (`_status_<key>`) to render instead.
-export function hasValueOrStatus(rows, key) {
+export function hasValueOrStatus(rows: ChartRow[], key: string): boolean {
   return rows.some(r => r[key] != null || r[`_status_${key}`] != null);
 }
 
 // Return the key from `keys` whose maximum value across all rows is highest
 // (i.e. the most strenuous setting).
-export function findMostStrenuousKey(data, keys) {
-  let best = null;
+export function findMostStrenuousKey(data: ChartRow[], keys: string[]): string | null {
+  let best: string | null = null;
   let bestMax = -Infinity;
   for (const key of keys) {
     const vals = data.map(r => r[key]).filter(v => v != null);
@@ -277,7 +277,10 @@ export function findMostStrenuousKey(data, keys) {
 
 // Shared comparator behind every StatsTable variant's column sort — `valueFn`
 // lets concurrency's numeric level column override the default row[key] lookup.
-export function sortRows(rows, sortConfig, valueFn = (row, key) => row[key] ?? "") {
+export function sortRows<T extends ChartRow>(
+  rows: T[], sortConfig: { key: string, dir: 1 | -1 },
+  valueFn: (row: T, key: string) => JsonRecord[string] = (row, key) => row[key] ?? "",
+): T[] {
   return [...rows].sort((a, b) => {
     const av = valueFn(a, sortConfig.key);
     const bv = valueFn(b, sortConfig.key);

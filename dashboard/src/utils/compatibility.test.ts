@@ -9,7 +9,7 @@ import {
 import { getRunReliabilityWarning, parseResultsJSON } from "./shared";
 
 
-function loadGolden(name) {
+function loadGolden(name: string) {
   const url = new URL(`../../../tests/fixtures/${name}`, import.meta.url);
   const parsed = parseResultsJSON(readFileSync(url, "utf8"));
   expect(parsed.error).toBeNull();

@@ -4,7 +4,7 @@ import {
   llamaBenchConcPromptDepth, flattenLlamaBenchConcData, llamaBenchConcSortValue,
 } from "./llamabenchconc";
 
-const entry = (pl, tg, speed_tg) => ({ pp: 8192, tg, pl, speed_tg, speed_pp: 400, speed: 500 });
+const entry = (pl: number, tg: number, speed_tg: number | null) => ({ pp: 8192, tg, pl, speed_tg, speed_pp: 400, speed: 500 });
 
 const fileA = {
   id: "a", hostname: "alpha",
@@ -75,7 +75,7 @@ describe("buildLlamaBenchConcLineData", () => {
   });
 
   it("omits a file's series entirely when speed_tg is null", () => {
-    const f = { id: "x", hostname: "x", data: { llamabenchconc: { m1: { entries: [{ tg: 128, pl: 1, speed_tg: null }] } } } };
+    const f = { id: "x", hostname: "x", data: { llamabenchconc: { m1: { entries: [{ tg: 128, pl: 1, speed_tg: null as number | null }] } } } };
     expect(buildLlamaBenchConcLineData([f], "m1", 128)).toEqual([{ levelLabel: "1-way" }]);
   });
 

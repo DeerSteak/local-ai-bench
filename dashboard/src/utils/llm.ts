@@ -2,10 +2,11 @@ import {
   CTX_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS, LLM_DISPLAY_ORDER,
   CTX_COLORS, ACCURACY_TESTS,
 } from "../constants";
-import { getModelColor, modelLabel, getSkipInfo, entriesOf } from "./shared";
-import type { ChartRow } from "../types";
+import { getModelColor, modelLabel, getSkipInfo, entriesOf, valuesOf, lookup } from "./shared";
+import type { JsonRecord } from "./shared";
+import type { ResultsFile, ChartRow } from "../types";
 
-const SKIP_REASON_LABELS = {
+const SKIP_REASON_LABELS: Record<string, string> = {
   timed_out: "Skipped - LLM Timed Out",
   slow_tps: "Skipped - LLM Too Slow",
   no_llm_data: "Skipped - No LLM Data",
@@ -13,17 +14,17 @@ const SKIP_REASON_LABELS = {
   tool_calls_unsupported: "Skipped - No Tool Parser",
 };
 
-export const llmTTFTMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
+export const llmTTFTMean = (sample: JsonRecord[string]) => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
 // Prompt-processing throughput. Absent on results from before it was recorded, and
 // on any run whose engine reported no prompt duration — see docs/engines.md#prefill-timing.
-export const llmPrefillTPS = sample => sample?.prefill_tps_mean;
+export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps_mean;
 
-export function llmMetricValue(sample, metric) {
+export function llmMetricValue(sample: JsonRecord[string], metric: string) {
   if (metric === "tps") return sample?.tps_mean;
   if (metric === "prefill") return llmPrefillTPS(sample);
   return llmTTFTMean(sample);
 }
-export const llmValidRuns = sample => sample?.valid_runs ?? sample?.n_runs;
+export const llmValidRuns = (sample: JsonRecord[string]) => sample?.valid_runs ?? sample?.n_runs;
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
@@ -40,7 +41,7 @@ export const llmValidRuns = sample => sample?.valid_runs ?? sample?.n_runs;
 // triggered the cutoff), so it returns null there — its actual value is shown
 // rather than a status label. Returns null for cells with real data, or
 // earlier contexts that simply weren't reached for unrelated reasons.
-export function getBarStatusLabel(file, model, ctx, section) {
+export function getBarStatusLabel(file: ResultsFile, model: string, ctx: string, section: string): string | null {
   const skip = getSkipInfo(file, model, section);
   if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
   const sectionData = file.data[section]?.[model];
@@ -74,7 +75,7 @@ export function getBarStatusLabel(file, model, ctx, section) {
 // one section (e.g. a file that only ran `--tests acc`, leaving
 // llm/llm_conversation empty) should still show up rather than leaving the
 // filter (and every section that depends on it) empty.
-export function getAllLLMModels(files) {
+export function getAllLLMModels(files: ResultsFile[]): string[] {
   const s = new Set<string>();
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
@@ -91,7 +92,7 @@ export function getAllLLMModels(files) {
   return [...known, ...unknown];
 }
 
-export function getLLMModelsWithSectionResults(files, section) {
+export function getLLMModelsWithSectionResults(files: ResultsFile[], section: string): string[] {
   return getAllLLMModels(files).filter(model => files.some(file => {
     const result = file.data[section]?.[model];
     if (!result) return false;
@@ -104,7 +105,7 @@ export function getLLMModelsWithSectionResults(files, section) {
 }
 
 // LLM: one chart per model. X = context length, lines = files.
-export function buildLLMDataForModel(files, model, metric, section = "llm") {
+export function buildLLMDataForModel(files: ResultsFile[], model: string, metric: string, section = "llm"): ChartRow[] {
   const ctxSet = new Set<string>();
   for (const f of files)
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
@@ -120,16 +121,16 @@ export function buildLLMDataForModel(files, model, metric, section = "llm") {
 }
 
 // Legacy: X = context length, lines = models (+ file distinction if multi)
-export function buildLLMData(files, metric, enabledModels) {
+export function buildLLMData(files: ResultsFile[], metric: string, enabledModels: Set<string>): ChartRow[] {
   const isSingle = files.length === 1;
   const ctxSet = new Set<string>();
   for (const f of files)
-    for (const md of Object.values(f.data.llm || {}))
+    for (const md of valuesOf(f.data.llm))
       for (const ctx of Object.keys(md)) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
 
   return ctxLabels.map(ctx => {
-    const row = { ctxLabel: ctx };
+    const row: ChartRow = { ctxLabel: ctx };
     files.forEach((f, fi) => {
       for (const [model, md] of entriesOf(f.data.llm)) {
         if (!enabledModels.has(model) || !md[ctx]) continue;
@@ -141,7 +142,7 @@ export function buildLLMData(files, metric, enabledModels) {
   });
 }
 
-export function buildLLMLineConfigs(files, data, enabledModels) {
+export function buildLLMLineConfigs(files: ResultsFile[], data: ChartRow[], enabledModels: Set<string>) {
   const isSingle = files.length === 1;
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
   const configs = [];
@@ -169,9 +170,9 @@ export function buildLLMLineConfigs(files, data, enabledModels) {
 }
 
 // LLM bar chart: rows = files/systems, cols = context lengths
-export function buildLLMBarData(files, model, metric, section = "llm") {
+export function buildLLMBarData(files: ResultsFile[], model: string, metric: string, section = "llm"): ChartRow[] {
   return files.map(f => {
-    const row = { systemLabel: f.hostname };
+    const row: ChartRow = { systemLabel: f.hostname };
     const ctxData = f.data[section]?.[model] || {};
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
@@ -183,7 +184,7 @@ export function buildLLMBarData(files, model, metric, section = "llm") {
   });
 }
 
-export function buildLLMBarConfigs(files, model, section = "llm") {
+export function buildLLMBarConfigs(files: ResultsFile[], model: string, section = "llm") {
   const ctxSet = new Set<string>();
   for (const f of files) {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
@@ -199,14 +200,14 @@ export function buildLLMBarConfigs(files, model, section = "llm") {
     .map((ctx, i) => ({
       dataKey: ctx,
       name: ctx,
-      fill: CTX_COLORS[ctx] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+      fill: lookup(CTX_COLORS, ctx) || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
     }));
 }
 
 // LLM bar chart by system: rows = models, cols = context lengths, for one file
-export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
+export function buildLLMBarDataByModel(file: ResultsFile, models: string[], metric: string, section = "llm"): ChartRow[] {
   return models.map(model => {
-    const row = { modelLabel: modelLabel(model) };
+    const row: ChartRow = { modelLabel: modelLabel(model) };
     const ctxData = file.data[section]?.[model] || {};
     for (const ctx of CTX_ORDER) {
       const s = ctxData[ctx];
@@ -218,7 +219,7 @@ export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
   });
 }
 
-export function buildLLMBarConfigsByModel(file, models, section = "llm") {
+export function buildLLMBarConfigsByModel(file: ResultsFile, models: string[], section = "llm") {
   const ctxSet = new Set<string>();
   for (const model of models) {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
@@ -234,18 +235,18 @@ export function buildLLMBarConfigsByModel(file, models, section = "llm") {
     .map((ctx, i) => ({
       dataKey: ctx,
       name: ctx,
-      fill: CTX_COLORS[ctx] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+      fill: lookup(CTX_COLORS, ctx) || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
     }));
 }
 
 // LLM line chart by system: rows = context lengths, one line per model, for one file
-export function buildLLMLineDataByCtx(file, models, metric, section = "llm") {
+export function buildLLMLineDataByCtx(file: ResultsFile, models: string[], metric: string, section = "llm"): ChartRow[] {
   const ctxSet = new Set<string>();
   for (const model of models)
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
   return ctxLabels.map(ctx => {
-    const row = { ctxLabel: ctx };
+    const row: ChartRow = { ctxLabel: ctx };
     for (const model of models) {
       const s = file.data[section]?.[model]?.[ctx];
       if (s) row[model] = llmMetricValue(s, metric);
@@ -254,13 +255,13 @@ export function buildLLMLineDataByCtx(file, models, metric, section = "llm") {
   });
 }
 
-export function buildLLMLineConfigsByCtx(models, data) {
+export function buildLLMLineConfigsByCtx(models: string[], data: ChartRow[]) {
   return models
     .filter(m => data.some(row => row[m] != null))
     .map(m => ({ dataKey: m, stroke: getModelColor(m), name: modelLabel(m) }));
 }
 
-export function flattenLLMData(files, section = "llm") {
+export function flattenLLMData(files: ResultsFile[], section = "llm") {
   return files.flatMap(f =>
     entriesOf(f.data[section]).flatMap(([model, ctxData]): ChartRow[] => {
       if (ctxData?.skipped) {

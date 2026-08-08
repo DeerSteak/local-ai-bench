@@ -9,6 +9,7 @@ import {
   entriesOf, valuesOf,
 } from "./shared";
 import { buildLLMBarData, buildLLMBarConfigs } from "./llm";
+import type { ResultsFile, ChartRow } from "../types";
 
 describe("entriesOf", () => {
   it("returns Object.entries for a populated object", () => {
@@ -51,7 +52,7 @@ describe("parseResultsJSON", () => {
     });
   });
   it("explains invalid JSON including Python's non-standard Infinity token", () => {
-    const expected = {
+    const expected: { data: null, error: string } = {
       data: null,
       error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
     };
@@ -171,7 +172,7 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files)).toEqual(files);
   });
   it("leaves hostnames untouched when no file has an engine field", () => {
-    const files = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
+    const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
     expect(applyEngineLabels(files)).toEqual(files);
   });
   it("appends the engine when two distinct engines are loaded together", () => {
@@ -316,7 +317,7 @@ describe("prepareOrderedBarGroupData", () => {
   );
 
   it("ignores missing values while preserving status metadata", () => {
-    const rows = [{ systemLabel: "System", "2K": null, "8K": 9, _status_2K: "Skipped" }];
+    const rows: ChartRow[] = [{ systemLabel: "System", "2K": null, "8K": 9, _status_2K: "Skipped" }];
     const configs = [
       { dataKey: "2K", name: "2K", fill: "red" },
       { dataKey: "8K", name: "8K", fill: "blue" },
@@ -407,7 +408,7 @@ describe("findMostStrenuousKey", () => {
 });
 
 describe("getCrossEngineWeightsWarning", () => {
-  const file = (engine) => ({ id: engine, engine, data: {} });
+  const file = (engine: string): ResultsFile => ({ id: engine, engine, data: {} });
 
   it("warns when files span more than one engine", () => {
     const warning = getCrossEngineWeightsWarning([file("llamacpp"), file("vllm")]);

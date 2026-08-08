@@ -189,7 +189,7 @@ describe("tool_calls_unsupported skip label", () => {
 });
 
 describe("prefill throughput", () => {
-  const file = (prefill) => ({
+  const file = (prefill: Record<string, number>) => ({
     id: "f0", hostname: "host",
     data: { llm: { "gemma3-1b": { "2K": { tps_mean: 50, ttft_mean_sec: 0.5, ...prefill } } } },
   });

@@ -1,33 +1,41 @@
 import { entriesOf } from "./shared";
+import type { JsonRecord } from "./shared";
+import type { ResultsFile } from "../types";
 
 const GENERATION_SECTIONS = new Set([
   "llm", "llm_conversation", "concurrency_tool", "concurrency_chat",
 ]);
 
-const caseKeys = (modelData, section) => Object.keys(modelData || {}).filter(key => {
-  const value = modelData[key];
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  if (section.startsWith("concurrency_")) return /^\d+$/.test(key);
-  return key.endsWith("K");
-});
+interface ValidityRow {
+  fileId: ResultsFile["id"], system: ResultsFile["hostname"], model: string, caseLabel: string,
+  sample: number | string, status: "valid" | "invalid" | "legacy", summary: string, errors: string[],
+}
 
-const measurementSummary = sample => [
+const caseKeys = (modelData: JsonRecord[string], section: string): string[] =>
+  Object.keys(modelData || {}).filter(key => {
+    const value = modelData[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    if (section.startsWith("concurrency_")) return /^\d+$/.test(key);
+    return key.endsWith("K");
+  });
+
+const measurementSummary = (sample: JsonRecord[string]): string => [
   sample?.tokens_per_sec != null ? `${sample.tokens_per_sec} tok/s` : null,
   sample?.client_ttft_sec != null ? `${sample.client_ttft_sec}s TTFT` : null,
   sample?.client_wall_sec != null ? `${sample.client_wall_sec}s wall` : null,
   sample?.generated_tokens != null ? `${sample.generated_tokens} tokens` : null,
 ].filter(Boolean).join(" · ") || "Recorded sample";
 
-function generationRows(file, section) {
-  const rows = [];
+function generationRows(file: ResultsFile, section: string) {
+  const rows: ValidityRow[] = [];
   for (const [model, modelData] of entriesOf(file.data[section])) {
     for (const caseLabel of caseKeys(modelData, section)) {
       const result = modelData[caseLabel];
-      (result.valid_samples || []).forEach((sample, index) => rows.push({
+      (result.valid_samples || []).forEach((sample: JsonRecord[string], index: number) => rows.push({
         fileId: file.id, system: file.hostname, model, caseLabel,
         sample: index + 1, status: "valid", summary: measurementSummary(sample), errors: [],
       }));
-      (result.invalid_runs || []).forEach(invalid => rows.push({
+      (result.invalid_runs || []).forEach((invalid: JsonRecord[string]) => rows.push({
         fileId: file.id, system: file.hostname, model, caseLabel,
         sample: invalid.run, status: "invalid", summary: "Excluded from aggregates",
         errors: Array.isArray(invalid.errors) ? invalid.errors : ["invalid_measurement"],
@@ -45,15 +53,15 @@ function generationRows(file, section) {
   return rows;
 }
 
-function llamaBenchRows(file) {
-  const rows = [];
+function llamaBenchRows(file: ResultsFile) {
+  const rows: ValidityRow[] = [];
   for (const [model, modelData] of entriesOf(file.data.llamabench)) {
     for (const entry of [...(modelData.prefill_entries || []), ...(modelData.decode_entries || [])]) {
       const caseLabel = entry.n_gen
         ? `tg${entry.n_gen} @ pp${entry.n_depth || entry.n_prompt || 0}`
         : `pp${entry.n_prompt || 0}`;
       const samples = entry.ts_runs || entry.samples_ts || [];
-      samples.forEach((value, index) => rows.push({
+      samples.forEach((value: number, index: number) => rows.push({
         fileId: file.id, system: file.hostname, model, caseLabel,
         sample: index + 1, status: "valid", summary: `${value} tok/s`, errors: [],
       }));
@@ -67,18 +75,18 @@ function llamaBenchRows(file) {
   return rows;
 }
 
-function scalarRunRows(file, section) {
-  const rows = [];
+function scalarRunRows(file: ResultsFile, section: string) {
+  const rows: ValidityRow[] = [];
   const sectionData = file.data[section] || {};
   for (const [model, modelData] of entriesOf(sectionData)) {
     if (section === "embeddings") {
-      (modelData.runs || []).forEach((value, index) => rows.push({
+      (modelData.runs || []).forEach((value: number, index: number) => rows.push({
         fileId: file.id, system: file.hostname, model, caseLabel: "document",
         sample: index + 1, status: "valid", summary: `${value} chunks/s`, errors: [],
       }));
     } else if (section === "images") {
       for (const [resolution, result] of entriesOf(modelData.resolutions)) {
-        (result.runs || []).forEach((value, index) => rows.push({
+        (result.runs || []).forEach((value: number, index: number) => rows.push({
           fileId: file.id, system: file.hostname, model, caseLabel: resolution,
           sample: index + 1, status: "valid", summary: `${value}s/image`, errors: [],
         }));
@@ -88,7 +96,7 @@ function scalarRunRows(file, section) {
   return rows;
 }
 
-export function buildValidityRows(files, section) {
+export function buildValidityRows(files: ResultsFile[], section: string) {
   if (!Array.isArray(files)) return [];
   if (GENERATION_SECTIONS.has(section)) {
     return files.flatMap(file => generationRows(file, section));
@@ -100,26 +108,26 @@ export function buildValidityRows(files, section) {
   return [];
 }
 
-export function validitySummary(rows) {
+export function validitySummary(rows: { status: string }[]) {
   return rows.reduce((summary, row) => {
     summary.total += 1;
     summary[row.status] = (summary[row.status] || 0) + 1;
     return summary;
-  }, { total: 0, valid: 0, invalid: 0, legacy: 0 });
+  }, { total: 0, valid: 0, invalid: 0, legacy: 0 } as Record<string, number>);
 }
 
-const timestampMs = value => {
+const timestampMs = (value: unknown): number | null => {
   const parsed = typeof value === "string" ? Date.parse(value) : NaN;
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export function buildPauseSummaries(files) {
+export function buildPauseSummaries(files: ResultsFile[]) {
   if (!Array.isArray(files)) return [];
   return files.flatMap(file => {
     const run = file?.data?.run;
     const transitions = Array.isArray(run?.pause?.control_transitions)
       ? run.pause.control_transitions : [];
-    let pausedAt = null;
+    let pausedAt: number | null = null;
     let totalMs = 0;
     let incomplete = false;
     let count = 0;
@@ -148,7 +156,7 @@ export function buildPauseSummaries(files) {
   });
 }
 
-export function formatPausedDuration(seconds) {
+export function formatPausedDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "unknown duration";
   const rounded = Math.round(seconds);
   const hours = Math.floor(rounded / 3600);

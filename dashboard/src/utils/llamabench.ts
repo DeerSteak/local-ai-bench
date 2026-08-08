@@ -1,31 +1,33 @@
 import { FILE_COLORS, MODEL_DASH_PATTERNS } from "../constants";
 import { buildFileLineConfigs, getModelColor, modelLabel, entriesOf } from "./shared";
+import type { JsonRecord } from "./shared";
+import type { ResultsFile, ChartRow } from "../types";
 
-export function llamaBenchPromptLabel(tokens) {
+export function llamaBenchPromptLabel(tokens: number): string {
   const k = (tokens ?? 0) / 1024;
   return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
 }
 
-export function llamaBenchPrefillEntries(modelData) {
+export function llamaBenchPrefillEntries(modelData: JsonRecord[string]): JsonRecord[string][] {
   if (Array.isArray(modelData?.prefill_entries)) return modelData.prefill_entries;
-  return (modelData?.entries || []).filter(entry =>
+  return (modelData?.entries || []).filter((entry: JsonRecord[string]) =>
     (entry.n_prompt ?? 0) > 0 && (entry.n_gen ?? 0) === 0);
 }
 
-export function llamaBenchDecodeEntries(modelData) {
+export function llamaBenchDecodeEntries(modelData: JsonRecord[string]): JsonRecord[string][] {
   if (Array.isArray(modelData?.decode_entries)) return modelData.decode_entries;
-  return (modelData?.entries || []).filter(entry =>
+  return (modelData?.entries || []).filter((entry: JsonRecord[string]) =>
     (entry.n_prompt ?? 0) === 0 && (entry.n_gen ?? 0) > 0 && (entry.n_depth ?? 0) > 0);
 }
 
-export function llamaBenchHasCombinedOnly(modelData) {
+export function llamaBenchHasCombinedOnly(modelData: JsonRecord[string]): boolean {
   return llamaBenchPrefillEntries(modelData).length === 0
     && llamaBenchDecodeEntries(modelData).length === 0
-    && (modelData?.entries || []).some(entry =>
+    && (modelData?.entries || []).some((entry: JsonRecord[string]) =>
       (entry.n_prompt ?? 0) > 0 && (entry.n_gen ?? 0) > 0);
 }
 
-function orderedDepths(entryGroups, depthKey) {
+function orderedDepths(entryGroups: JsonRecord[string][][], depthKey: string): number[] {
   const depths = new Set<number>();
   for (const entries of entryGroups)
     for (const entry of entries)
@@ -33,10 +35,10 @@ function orderedDepths(entryGroups, depthKey) {
   return [...depths].sort((a, b) => a - b);
 }
 
-export function buildLlamaBenchPrefillLineData(files, model) {
+export function buildLlamaBenchPrefillLineData(files: ResultsFile[], model: string): ChartRow[] {
   const groups = files.map(file => llamaBenchPrefillEntries(file.data.llamabench?.[model]));
   return orderedDepths(groups, "n_prompt").map(depth => {
-    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    const row: ChartRow = { promptLabel: llamaBenchPromptLabel(depth) };
     groups.forEach((entries, fi) => {
       const entry = entries.find(candidate => candidate.n_prompt === depth);
       if (entry?.avg_ts != null) row[`f${fi}`] = entry.avg_ts;
@@ -45,10 +47,10 @@ export function buildLlamaBenchPrefillLineData(files, model) {
   });
 }
 
-export function buildLlamaBenchDecodeLineData(files, model) {
+export function buildLlamaBenchDecodeLineData(files: ResultsFile[], model: string): ChartRow[] {
   const groups = files.map(file => llamaBenchDecodeEntries(file.data.llamabench?.[model]));
   return orderedDepths(groups, "n_depth").map(depth => {
-    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    const row: ChartRow = { promptLabel: llamaBenchPromptLabel(depth) };
     groups.forEach((entries, fi) => {
       for (const entry of entries) {
         if (entry.n_depth === depth && entry.n_gen != null && entry.avg_ts != null)
@@ -59,8 +61,8 @@ export function buildLlamaBenchDecodeLineData(files, model) {
   });
 }
 
-export function buildLlamaBenchDecodeLineConfigs(files, model, data) {
-  const configs = [];
+export function buildLlamaBenchDecodeLineConfigs(files: ResultsFile[], model: string, data: ChartRow[]) {
+  const configs: { dataKey: string, stroke: string, strokeDasharray: string, name: string }[] = [];
   files.forEach((file, fi) => {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
@@ -79,10 +81,10 @@ export function buildLlamaBenchDecodeLineConfigs(files, model, data) {
   return configs;
 }
 
-export function buildLlamaBenchPrefillLineDataByModel(file, models) {
+export function buildLlamaBenchPrefillLineDataByModel(file: ResultsFile, models: string[]): ChartRow[] {
   const groups = models.map(model => llamaBenchPrefillEntries(file.data.llamabench?.[model]));
   return orderedDepths(groups, "n_prompt").map(depth => {
-    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    const row: ChartRow = { promptLabel: llamaBenchPromptLabel(depth) };
     groups.forEach((entries, mi) => {
       const entry = entries.find(candidate => candidate.n_prompt === depth);
       if (entry?.avg_ts != null) row[models[mi]] = entry.avg_ts;
@@ -91,10 +93,10 @@ export function buildLlamaBenchPrefillLineDataByModel(file, models) {
   });
 }
 
-export function buildLlamaBenchDecodeLineDataByModel(file, models) {
+export function buildLlamaBenchDecodeLineDataByModel(file: ResultsFile, models: string[]): ChartRow[] {
   const groups = models.map(model => llamaBenchDecodeEntries(file.data.llamabench?.[model]));
   return orderedDepths(groups, "n_depth").map(depth => {
-    const row = { promptLabel: llamaBenchPromptLabel(depth) };
+    const row: ChartRow = { promptLabel: llamaBenchPromptLabel(depth) };
     groups.forEach((entries, mi) => {
       for (const entry of entries) {
         if (entry.n_depth === depth && entry.n_gen != null && entry.avg_ts != null)
@@ -105,14 +107,14 @@ export function buildLlamaBenchDecodeLineDataByModel(file, models) {
   });
 }
 
-export function buildLlamaBenchPrefillLineConfigsByModel(models, data) {
+export function buildLlamaBenchPrefillLineConfigsByModel(models: string[], data: ChartRow[]) {
   return models
     .filter(model => data.some(row => row[model] != null))
     .map(model => ({ dataKey: model, stroke: getModelColor(model), name: modelLabel(model) }));
 }
 
-export function buildLlamaBenchDecodeLineConfigsByModel(file, models, data) {
-  const configs = [];
+export function buildLlamaBenchDecodeLineConfigsByModel(file: ResultsFile, models: string[], data: ChartRow[]) {
+  const configs: { dataKey: string, stroke: string, strokeDasharray: string, name: string }[] = [];
   for (const model of models) {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
@@ -131,18 +133,18 @@ export function buildLlamaBenchDecodeLineConfigsByModel(file, models, data) {
   return configs;
 }
 
-export function buildLlamaBenchPrefillLineConfigs(files, data) {
+export function buildLlamaBenchPrefillLineConfigs(files: ResultsFile[], data: ChartRow[]) {
   return buildFileLineConfigs(files).filter(config => data.some(row => row[config.dataKey] != null));
 }
 
-export function flattenLlamaBenchData(files) {
+export function flattenLlamaBenchData(files: ResultsFile[]) {
   return files.flatMap(file =>
     entriesOf(file.data.llamabench).flatMap(([model, modelData]) => {
       if (modelData?.error) {
         return [{ _fileId: file.id, model, metric: "—", skipped: true, skip_detail: modelData.error }];
       }
       const prefill = llamaBenchPrefillEntries(modelData).map(entry => ({
-        _fileId: file.id, model, metric: "Prefill", pp: entry.n_prompt ?? null, tg: null,
+        _fileId: file.id, model, metric: "Prefill", pp: entry.n_prompt ?? null, tg: null as number | null,
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
       }));
       const decode = llamaBenchDecodeEntries(modelData).map(entry => ({
@@ -150,7 +152,7 @@ export function flattenLlamaBenchData(files) {
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
       }));
       if (prefill.length || decode.length) return [...prefill, ...decode];
-      return (modelData?.entries || []).map(entry => ({
+      return (modelData?.entries || []).map((entry: JsonRecord[string]) => ({
         _fileId: file.id, model, metric: "Combined",
         pp: entry.n_prompt ?? null, tg: entry.n_gen ?? null,
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
