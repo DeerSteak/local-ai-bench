@@ -14,7 +14,7 @@
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench and llama-batched-bench), ComfyUI, optionally vLLM via the vllm-metal plugin (experimental) |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
 | Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
@@ -85,7 +85,7 @@ Setup asks which inference engines to install before anything is downloaded, on 
 
 Setup also looks for a platform launcher — AMD's Strix Halo image ships `vllm-launch`, which wraps `vllm serve` with the ROCm environment that hardware needs — and records its path alongside any `VLLM_EXTRA_ARGS` from `~/.local/share/vLLM/vllm-launch.conf`. Those injected arguments are printed as a warning during setup and stored in the configuration, because a flag that alters a run without appearing in the results file breaks the comparability the results format exists to provide.
 
-Both engines follow the same system-first policy: if a working `vllm` is already on `PATH` (or in `~/.venv-vllm-metal` from the Metal plugin's own installer), setup uses it and installs nothing, exactly as it does for an existing `llama-server`. Setup also probes `http://localhost:8000/v1/models`, so a vLLM server that is already running — AMD's Strix Halo image ships one preconfigured, and a container or remote server looks the same from here — counts as present even when no host-side `vllm` executable exists.
+Both engines follow the same system-first policy: if a working `vllm` is already on `PATH`, setup uses it and installs nothing, exactly as it does for an existing `llama-server`. Setup also probes `http://localhost:8000/v1/models`, so a vLLM server that is already running — AMD's Strix Halo image ships one preconfigured, and a container or remote server looks the same from here — counts as present even when no host-side `vllm` executable exists.
 
 **An already-present vLLM overrides the platform support gate entirely.** That gate only decides whether setup can *install* vLLM; when there is nothing to install, an "unsupported" or "experimental" verdict is irrelevant and the engine is offered as a normal, selectable option.
 
@@ -107,14 +107,16 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | Linux + AMD ROCm (gfx90a/942/950, RX 7900/9000) | Supported | Prebuilt wheels from `wheels.vllm.ai/rocm`; needs ROCm 6.3+ and a CPython 3.12 interpreter, which is the only version those wheels are published for |
 | Linux + AMD ROCm, any other gfx target (e.g. gfx1151 / Strix Halo) | Experimental | Same wheels, but they ship no kernels for that target — see the Strix Halo platform note below |
 | DGX Spark (GB10) | Experimental | CUDA 13 nightly wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
-| macOS (Apple Silicon) | Experimental | The community-maintained `vllm-metal` plugin, via its own installer into `~/.venv-vllm-metal` |
+| macOS | Not offered | Out of scope for this project — see the design note below |
 | Windows (native) | Not offered | vLLM has no upstream Windows support — see [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2) |
 | Linux + Intel XPU | Not offered | No prebuilt wheels exist; the source build is out of scope for this script |
 | CPU-only | Not offered | This benchmark measures accelerated inference |
 
-Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`: the terminal names it in the setup plan, and the wizard warns on both the engines page and the final review that you may be prompted for your password in the terminal behind it. On Linux the bootstrap installs these headers up front, alongside any other prerequisite, for both the interpreter it will use and CPython 3.12 (the version vLLM's ROCm, Metal, and DGX Spark wheels require) — so the password prompt happens once, early, rather than midway through an unattended install. `setup_check.py` then finds them present and does nothing. Its own header install remains as a fallback for a system whose interpreter arrived some other way. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead.
+Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`: the terminal names it in the setup plan, and the wizard warns on both the engines page and the final review that you may be prompted for your password in the terminal behind it. On Linux the bootstrap installs these headers up front, alongside any other prerequisite, for both the interpreter it will use and CPython 3.12 (the version vLLM's ROCm and DGX Spark wheels require) — so the password prompt happens once, early, rather than midway through an unattended install. `setup_check.py` then finds them present and does nothing. Its own header install remains as a fallback for a system whose interpreter arrived some other way. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead.
 
 The two experimental paths are unverified by this project's maintainers and are labelled as such in both the wizard and the terminal picker. Setup never installs the third-party native Windows fork of vLLM on your behalf.
+
+**macOS was briefly experimental via the community `vllm-metal` plugin, then deliberately dropped.** That plugin uses MLX rather than vLLM's normal AWQ/GPTQ kernels, so this project's catalog weights aren't loadable by it — supporting it would mean a third per-model repo and a per-backend catalog schema for one experimental platform. macOS setup now reports vLLM unsupported unconditionally; llama.cpp and ComfyUI are unaffected.
 
 ### vLLM weights are not the same files
 

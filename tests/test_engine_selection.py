@@ -20,7 +20,7 @@ def find_entry(entries: list[dict], name: str) -> dict:
 
 
 SUPPORTED = VllmSupport("supported", "cuda_wheel", "CUDA wheels available")
-EXPERIMENTAL = VllmSupport("experimental", "metal_plugin", "Apple Silicon plugin")
+EXPERIMENTAL = VllmSupport("experimental", "nightly_cu130", "DGX Spark nightly wheels")
 UNSUPPORTED = VllmSupport("unsupported", None, "no upstream Windows support")
 
 

@@ -100,7 +100,7 @@ fi
 
 # Triton (a vLLM dependency) compiles a CUDA helper at import time and needs Python.h.
 # Installed here, with any other prerequisite, so vLLM never triggers a later sudo prompt.
-# 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/Metal/DGX-Spark wheels require.
+# 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/DGX-Spark wheels require.
 if [ "$OS" = "Linux" ]; then
     PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
     MISSING_HEADERS=()

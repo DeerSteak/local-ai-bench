@@ -11,7 +11,6 @@ import sys
 
 from scripts.runtime import config
 
-METAL_INSTALL_URL = "https://raw.githubusercontent.com/vllm-project/vllm-metal/main/install.sh"
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
 NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
 # Pointed at, never pulled — see docs/setup.md's Strix Halo note.
@@ -32,7 +31,7 @@ PINNED_PYTHON = (3, 12)
 @dataclass(frozen=True)
 class VllmSupport:
     status: str            # "supported" | "experimental" | "unsupported"
-    method: str | None     # "cuda_wheel" | "rocm_wheel" | "nightly_cu130" | "metal_plugin"
+    method: str | None     # "cuda_wheel" | "rocm_wheel" | "nightly_cu130"
     reason: str
     requires_python: tuple[int, int] | None = None
 
@@ -72,13 +71,10 @@ def vllm_platform_support(*, os_name: str, machine: str,
                            "See docs/setup.md#vllm-on-windows-via-wsl2")
 
     if os_name == "Darwin":
-        if str(machine).lower() not in ("arm64", "aarch64"):
-            return VllmSupport("unsupported", None,
-                               "vLLM on macOS requires Apple Silicon — there is no Intel Mac build")
-        return VllmSupport("experimental", "metal_plugin",
-                           "Apple Silicon uses the community-maintained vllm-metal plugin, "
-                           "which installs into its own ~/.venv-vllm-metal environment",
-                           requires_python=PINNED_PYTHON)
+        return VllmSupport("unsupported", None,
+                           "vLLM on macOS is out of scope for this project — its catalog's "
+                           "AWQ/GPTQ weights aren't loadable by the community vllm-metal "
+                           "plugin's MLX backend")
 
     if os_name != "Linux":
         return VllmSupport("unsupported", None, f"vLLM has no build for {os_name}")
@@ -184,8 +180,6 @@ def find_vllm_binary(*, platform_name: str, venv_dir: Path | None = None,
     subdir = "Scripts" if platform_name == "Windows" else "bin"
     suffix = ".exe" if platform_name == "Windows" else ""
     candidates = []
-    if platform_name == "Darwin":
-        candidates.append(Path.home() / ".venv-vllm-metal" / "bin" / "vllm")
     candidates.append(Path(venv_dir) / subdir / f"vllm{suffix}")
     for candidate in candidates:
         if exists_fn(candidate):
@@ -342,9 +336,6 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
     """Install vLLM per `support.method`. Real network/venv side effects."""
     if support.method is None:
         return False
-    if support.method == "metal_plugin":
-        result = run(["bash", "-c", f"curl -fsSL {METAL_INSTALL_URL} | bash"])
-        return result.returncode == 0
 
     venv_dir = Path(venv_dir or config.VLLM_VENV)
     python_exe = resolve_python(support.requires_python, sys.version_info[:2])

@@ -139,15 +139,14 @@ def test_nvidia_wins_over_rocm_when_both_are_reported():
     assert support(nvidia_ok=True, rocm_ok=True, rocm_version=(6, 0)).method == "cuda_wheel"
 
 
-def test_apple_silicon_uses_the_metal_plugin():
+def test_apple_silicon_is_unsupported():
     result = support(os_name="Darwin", machine="arm64")
-    assert (result.status, result.method) == ("experimental", "metal_plugin")
+    assert (result.status, result.method) == ("unsupported", None)
 
 
 def test_intel_mac_is_unsupported():
     result = support(os_name="Darwin", machine="x86_64")
-    assert result.status == "unsupported"
-    assert "Apple Silicon" in result.reason
+    assert (result.status, result.method) == ("unsupported", None)
 
 
 def test_windows_is_unsupported_even_with_an_nvidia_gpu():
@@ -251,14 +250,6 @@ def test_find_vllm_binary_falls_back_to_the_project_venv():
     ) == str(venv / "bin" / "vllm")
 
 
-def test_find_vllm_binary_prefers_the_metal_venv_over_the_project_venv_on_macos():
-    metal = str(Path.home() / ".venv-vllm-metal" / "bin" / "vllm")
-    assert find_vllm_binary(
-        platform_name="Darwin", venv_dir=Path("/proj/vllm-env"),
-        exists_fn=lambda _: True, which_fn=lambda _: None,
-    ) == metal
-
-
 def test_find_vllm_binary_returns_none_when_nothing_is_installed():
     assert find_vllm_binary(platform_name="Linux", venv_dir=Path("/proj/vllm-env"),
                             exists_fn=lambda _: False, which_fn=lambda _: None) is None
@@ -271,14 +262,6 @@ def test_find_vllm_binary_uses_windows_paths():
     )
     assert found is not None
     assert found.endswith("Scripts/vllm.exe") or found.endswith("Scripts\\vllm.exe")
-
-
-def test_find_vllm_binary_does_not_look_for_a_metal_venv_off_macos():
-    probed = []
-    find_vllm_binary(platform_name="Linux", venv_dir=Path("/proj/vllm-env"),
-                     exists_fn=lambda path: probed.append(str(path)) or False,
-                     which_fn=lambda _: None)
-    assert not any(".venv-vllm-metal" in path for path in probed)
 
 
 # ── already-running server ──
