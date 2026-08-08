@@ -2,6 +2,7 @@
 see docs/testing.md for the coverage breakdown."""
 
 import json
+from typing import cast
 
 import pytest
 
@@ -51,7 +52,7 @@ class FakeEngine(InferenceEngine):
         return True
     def unload(self, tag: str) -> None: self.unloaded.append(tag)
     def unload_all(self) -> None: pass
-    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> None: pass
+    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> bool: return True
     def prepare_concurrency(self, tag, n_parallel, per_slot_ctx, warmup_runs=1, timeout=300) -> bool:
         return True
 
@@ -429,7 +430,7 @@ def test_tool_workload_skips_a_model_the_engine_cannot_parse(monkeypatch, tmp_pa
         section_label="Tool", skip_label="tool", question_noun="tool question",
         data_path=bank, crash_cache_path=tmp_path / "crash.json",
         models=[{"tag": "qwen3.5:9b-q4_K_M", "label": "Qwen", "short": "qwen"}],
-        questions=[{"id": "q1"}], warmup_runs=0, engine=Engine(),
+        questions=[{"id": "q1"}], warmup_runs=0, engine=cast(InferenceEngine, Engine()),
         ask_fn=lambda *a: None, rescore_partial_fn=lambda *a: None, score_fn=lambda *a: {},
         requires_tool_calls=True,
     )

@@ -48,9 +48,10 @@ def test_measurement_validation_rejects_implausible_server_timing_marker():
 
 
 def test_embedding_validation_rejects_zero_wall_time_and_bad_payload():
-    assert embedding_validation_errors(EmbeddingMeasurement(None, 0)) == [
-        "client_wall_sec", "embeddings",
-    ]
+    # Deliberately violates EmbeddingMeasurement's own field type — this is the
+    # malformed-payload shape embedding_validation_errors exists to catch.
+    bad = EmbeddingMeasurement(None, 0)  # type: ignore[arg-type]
+    assert embedding_validation_errors(bad) == ["client_wall_sec", "embeddings"]
 
 
 def test_aggregate_excludes_invalid_samples_but_keeps_completed_count_and_diagnostics():

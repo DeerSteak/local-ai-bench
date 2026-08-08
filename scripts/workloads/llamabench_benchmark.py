@@ -80,7 +80,7 @@ class LlamaBenchBenchmark:
         ]
 
     @classmethod
-    def run_one(cls, cmd: list[str], timeout: int, on_progress=None, on_result=None) -> list[dict]:
+    def run_one(cls, cmd: list[str], timeout: int | float, on_progress=None, on_result=None) -> list[dict]:
         """Streams progress and parses one llama-bench JSONL pass; timeout measures idle output,
         not total wall-clock duration."""
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

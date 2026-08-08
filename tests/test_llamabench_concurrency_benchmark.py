@@ -240,7 +240,7 @@ def test_run_one_propagates_timeout(monkeypatch):
     with pytest.raises(subprocess.TimeoutExpired) as caught:
         LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 0.01)
     assert fake_proc.killed
-    assert caught.value.partial_entries == [_row(1)]
+    assert getattr(caught.value, "partial_entries") == [_row(1)]
 
 
 def test_run_one_no_timeout_when_output_keeps_arriving(monkeypatch):

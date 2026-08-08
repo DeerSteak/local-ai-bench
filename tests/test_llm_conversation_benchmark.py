@@ -65,7 +65,7 @@ def test_growth_step_never_exceeds_step_max_far():
     step, out_of_room = Conv.compute_growth_step(
         cumulative_tokens=0, target=1_000_000, num_ctx=2_000_000, is_last_checkpoint=False)
     assert out_of_room is False
-    assert step <= Conv.CONV_STEP_MAX_FAR
+    assert step is not None and step <= Conv.CONV_STEP_MAX_FAR
 
 
 def test_growth_step_uses_smaller_step_max_when_close_to_target():
@@ -83,7 +83,7 @@ def test_growth_step_never_below_step_min_when_room_allows():
     step, out_of_room = Conv.compute_growth_step(
         cumulative_tokens=2040, target=2048, num_ctx=100_000, is_last_checkpoint=False)
     assert out_of_room is False
-    assert step >= Conv.CONV_STEP_MIN
+    assert step is not None and step >= Conv.CONV_STEP_MIN
 
 
 def test_growth_step_holds_back_safety_margin_for_non_final_checkpoint():
@@ -148,6 +148,7 @@ def test_growth_sequence_at_the_ceiling_never_exceeds_num_ctx():
         step, out_of_room = Conv.compute_growth_step(
             effective, target_threshold, num_ctx, is_last_checkpoint=True)
         assert out_of_room is False, "should never run out of room in this scenario"
+        assert step is not None
 
         this_request_tokens = cumulative_tokens + pending_response_tokens + followup_tokens
         assert this_request_tokens <= num_ctx, (

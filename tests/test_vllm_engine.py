@@ -1,5 +1,7 @@
 import json
+import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -21,7 +23,7 @@ def engine(monkeypatch, tmp_path):
     instance._loaded_num_ctx = None
     instance._loaded_embedding = False
     instance._loaded_n_parallel = 1
-    instance._proc = type("P", (), {"poll": staticmethod(lambda: None)})()
+    instance._proc = cast(subprocess.Popen, type("P", (), {"poll": staticmethod(lambda: None)})())
     return instance
 
 

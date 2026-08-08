@@ -1,6 +1,8 @@
 """Tests for LlamaCppEngine — see docs/testing.md for the full coverage breakdown."""
 
 import json
+import subprocess
+from typing import cast
 
 import gguf
 import pytest
@@ -1074,7 +1076,7 @@ def test_ensure_model_fast_path_does_not_probe_health(monkeypatch):
     engine._loaded_num_ctx = 2048
     engine._loaded_embedding = False
     engine._loaded_n_parallel = 4
-    engine._proc = type("Proc", (), {"poll": lambda self: None})()
+    engine._proc = cast(subprocess.Popen, type("Proc", (), {"poll": lambda self: None})())
     monkeypatch.setattr(engine, "available", lambda: pytest.fail("health probe should not run"))
     engine._ensure_model("tag", 2048, n_parallel=4)
 

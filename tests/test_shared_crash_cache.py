@@ -21,7 +21,7 @@ def test_load_crash_cache_invalid_json_returns_empty(tmp_path):
 
 def test_save_and_load_crash_cache_roundtrip(tmp_path):
     path = tmp_path / "crash.json"
-    cache = {"llama3.2:3b": {"crashed_at": "2026-01-01T00:00:00"}}
+    cache = {"llamacpp": {"llama3.2:3b": {"crashed_at": "2026-01-01T00:00:00"}}}
     Shared.save_crash_cache(path, cache)
     assert Shared.load_crash_cache(path) == cache
 
@@ -36,13 +36,14 @@ def test_save_crash_cache_swallows_write_failures(tmp_path):
 
 def test_check_crash_cache_returns_none_when_not_present(tmp_path):
     path = tmp_path / "crash.json"
-    assert Shared.check_crash_cache("some-tag", "Some Model", {}, path) is None
+    assert Shared.check_crash_cache("some-tag", "Some Model", {}, path, engine_name="llamacpp") is None
 
 
 def test_check_crash_cache_returns_skip_entry_when_present(tmp_path):
     path = tmp_path / "crash.json"
-    cache = {"some-tag": {"crashed_at": "2026-01-01T00:00:00"}}
-    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path)
+    cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00"}}}
+    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp")
+    assert entry is not None
     assert entry["skipped"] is True
     assert entry["skip_reason"] == "known_crash"
     assert entry["label"] == "Some Model"
@@ -50,16 +51,17 @@ def test_check_crash_cache_returns_skip_entry_when_present(tmp_path):
 
 def test_check_crash_cache_can_be_bypassed_for_current_run(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RETRY_CRASHED_MODELS", True)
-    cache = {"some-tag": {"crashed_at": "yesterday"}}
-    assert Shared.check_crash_cache("some-tag", "Some Model", cache, tmp_path / "cache") is None
+    cache = {"llamacpp": {"some-tag": {"crashed_at": "yesterday"}}}
+    assert Shared.check_crash_cache(
+        "some-tag", "Some Model", cache, tmp_path / "cache", engine_name="llamacpp") is None
 
 
 def test_record_crash_persists_to_cache(tmp_path):
     path = tmp_path / "crash.json"
     cache = {}
-    crashed_at = Shared.record_crash("some-tag", cache, path, "running Some Model")
-    assert cache["some-tag"]["crashed_at"] == crashed_at
-    assert Shared.load_crash_cache(path)["some-tag"]["crashed_at"] == crashed_at
+    crashed_at = Shared.record_crash("some-tag", cache, path, "running Some Model", engine_name="llamacpp")
+    assert cache["llamacpp"]["some-tag"]["crashed_at"] == crashed_at
+    assert Shared.load_crash_cache(path)["llamacpp"]["some-tag"]["crashed_at"] == crashed_at
 
 
 @pytest.mark.parametrize("exc", [

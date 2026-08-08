@@ -50,11 +50,12 @@ def test_events_carry_the_running_engine(monkeypatch, capsys):
     try:
         set_progress_engine("vllm")
         payload = _emit(capsys, kind="model", stage="llm", status="running", model="Gemma 3 1B")
-        assert payload["engine"] == "vllm"
+        assert payload is not None and payload["engine"] == "vllm"
         assert (payload["stage"], payload["model"]) == ("llm", "Gemma 3 1B")
 
         set_progress_engine("llamacpp")
-        assert _emit(capsys, kind="stage", stage="llm", status="complete")["engine"] == "llamacpp"
+        stage_payload = _emit(capsys, kind="stage", stage="llm", status="complete")
+        assert stage_payload is not None and stage_payload["engine"] == "llamacpp"
     finally:
         set_progress_engine(None)
 
@@ -63,4 +64,5 @@ def test_engine_is_omitted_when_unset(monkeypatch, capsys):
     """Single-engine callers and older consumers see the original payload shape."""
     monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
     set_progress_engine(None)
-    assert "engine" not in _emit(capsys, kind="stage", stage="llm", status="running")
+    payload = _emit(capsys, kind="stage", stage="llm", status="running")
+    assert payload is not None and "engine" not in payload

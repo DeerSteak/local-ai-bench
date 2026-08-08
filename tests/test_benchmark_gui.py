@@ -1,5 +1,7 @@
 import json
+import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -14,7 +16,7 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
-    BENCHMARK_PRESETS, CUSTOM_PRESET, apply_hardware_model_defaults,
+    BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
@@ -70,7 +72,8 @@ def test_gui_options_round_trip_in_frontend_state(tmp_path):
     )
     from scripts.app.benchmark_frontend import save_frontend_state
     assert save_frontend_state(state, path)
-    assert load_frontend_state(path)["gui_options"] == options
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"] == options
 
 
 def test_validate_gui_options_rejects_bounds_types_and_missing_keys():
@@ -120,7 +123,8 @@ def test_launch_controlled_process_supplies_progress_environment(tmp_path):
 
     process, path = launch_controlled_process(
         ["python", "benchmark.py"], creationflags=7,
-        pause_path_factory=lambda: control_path, popen=fake_popen,
+        pause_path_factory=lambda: control_path,
+        popen=cast("type[subprocess.Popen]", fake_popen),
     )
 
     assert process is not None and path == control_path
@@ -139,7 +143,8 @@ def test_launch_controlled_process_removes_control_file_when_launch_fails(tmp_pa
 
     with pytest.raises(OSError, match="executable missing"):
         launch_controlled_process(
-            ["missing"], pause_path_factory=lambda: control_path, popen=fail_popen,
+            ["missing"], pause_path_factory=lambda: control_path,
+            popen=cast("type[subprocess.Popen]", fail_popen),
         )
     assert not control_path.exists()
 
@@ -256,10 +261,11 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
     ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
     assert parse_progress_line("ordinary benchmark output") is None
     assert parse_progress_line("::local-ai-bench-progress::{bad json") is None
-    assert parse_progress_line(
+    retrying_event = parse_progress_line(
         '::local-ai-bench-progress::{"kind":"measurement","stage":"llm",'
         '"status":"retrying","model":"Qwen 2K run 1"}\n'
-    )["status"] == "retrying"
+    )
+    assert retrying_event is not None and retrying_event["status"] == "retrying"
 
 
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
@@ -301,10 +307,11 @@ def test_process_resource_usage_includes_child_processes():
             self.rss = rss
 
     class Process:
-        def __init__(self, cpu, rss, children=()):
+        def __init__(self, cpu, rss, children=(), pid=0):
             self.cpu = cpu
             self.rss = rss
             self._children = children
+            self.pid = pid
 
         def children(self, recursive):
             assert recursive
@@ -328,12 +335,13 @@ def test_process_resource_usage_includes_child_processes():
             assert pid == 42
             return parent
 
-    assert process_resource_usage(42, Psutil) == (50, 3.0)
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
 
 
 def test_system_memory_usage_reports_used_and_total_gibibytes():
     memory = type("Memory", (), {"used": 32 * 1024 ** 3, "total": 128 * 1024 ** 3})()
-    psutil_module = type("Psutil", (), {"virtual_memory": staticmethod(lambda: memory)})
+    psutil_module = cast(PsutilLike,
+        type("Psutil", (), {"virtual_memory": staticmethod(lambda: memory)}))
     assert system_memory_usage(psutil_module) == (32.0, 128.0)
 
 
@@ -381,7 +389,7 @@ def test_query_gpu_process_memory_uses_nvidia_process_accounting():
 
     assert query_gpu_process_memory(
         42, run_fn=lambda *args, **kwargs: result,
-        which_fn=lambda name: "/usr/bin/nvidia-smi", psutil_module=psutil_module,
+        which_fn=lambda name: "/usr/bin/nvidia-smi", psutil_module=cast(PsutilLike, psutil_module),
     ) == 2.0
 
 

@@ -587,7 +587,7 @@ class Shared:
         return picked
 
     @staticmethod
-    def file_hash(path: Path) -> str:
+    def file_hash(path: Path | str) -> str:
         """First 12 hex chars of `path`'s sha256 — a bank-version fingerprint
         that catches whitespace/key-order changes a question count wouldn't."""
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]

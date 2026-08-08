@@ -148,8 +148,9 @@ REAL_SHAPED_ASSETS = [
 
 
 def test_select_cuda_release_assets_picks_exact_match():
-    bin_asset, cudart_asset, version = hardware.select_cuda_release_assets(
-        REAL_SHAPED_ASSETS, "13.3")
+    result = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "13.3")
+    assert result is not None
+    bin_asset, cudart_asset, version = result
     assert version == "13.3"
     assert bin_asset["name"] == "llama-b10106-bin-win-cuda-13.3-x64.zip"
     assert cudart_asset["name"] == "cudart-llama-bin-win-cuda-13.3-x64.zip"
@@ -157,7 +158,9 @@ def test_select_cuda_release_assets_picks_exact_match():
 
 def test_select_cuda_release_assets_picks_highest_not_exceeding_driver():
     """A driver that only supports up to 12.9 must not get the 13.3 build."""
-    _, _, version = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "12.9")
+    result = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "12.9")
+    assert result is not None
+    _, _, version = result
     assert version == "12.4"
 
 

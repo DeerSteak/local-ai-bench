@@ -5,10 +5,10 @@ from scripts.workloads.image_benchmark import ImageBenchmark
 from scripts.runtime.shared import Shared
 
 
-def _build_kwargs(**overrides):
-    kwargs = dict(checkpoint="ckpt.safetensors", width=1024, height=1024,
-                  steps=20, cfg=1.0, sampler="euler", scheduler="simple",
-                  seed=42, prompt="a cat", filename_prefix="prefix")
+def _build_kwargs(**overrides) -> dict:
+    kwargs: dict = dict(checkpoint="ckpt.safetensors", width=1024, height=1024,
+                        steps=20, cfg=1.0, sampler="euler", scheduler="simple",
+                        seed=42, prompt="a cat", filename_prefix="prefix")
     kwargs.update(overrides)
     return kwargs
 

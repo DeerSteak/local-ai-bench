@@ -73,7 +73,7 @@ class CodeBenchmark:
         )
 
     @staticmethod
-    def extract_code(response_text: str) -> str:
+    def extract_code(response_text: str | None) -> str:
         """Pull code from the *last* fenced block, not the first (a reasoning
         model drafts/revises), falling back to the whole stripped reply."""
         if not response_text:
