@@ -22,7 +22,9 @@ from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.base import (
     ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine,
 )
-from scripts.setup.setup_config import configured_vllm_path, load_setup_config
+from scripts.setup.setup_config import (
+    configured_vllm_launcher_args, configured_vllm_path, load_setup_config,
+)
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, hf_cache_model_complete, hf_cache_model_dir,
     vllm_cache_home,
@@ -54,6 +56,7 @@ class VllmEngine(InferenceEngine):
         # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
         # an externally-managed server we talk to but never spawn or stop ourselves.
         self._server_url = configured_vllm_path(setup, "server_url")
+        self._launcher_extra_args = configured_vllm_launcher_args(setup)
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -84,6 +87,10 @@ class VllmEngine(InferenceEngine):
     @property
     def kv_cache_dtype(self) -> str:
         return self._kv_cache_dtype
+
+    @property
+    def launcher_extra_args(self) -> list[str]:
+        return list(self._launcher_extra_args)
 
     # ── model resolution ──
 

@@ -837,11 +837,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         stage_order = ordered_stage_keys(tuple(tests))
         vllm_kv_cache_dtype = "auto"
+        vllm_launcher_args = []
         if isinstance(engine, VllmEngine):
             vllm_kv_cache_dtype = engine.configure_kv_cache(profile["backend"])
+            vllm_launcher_args = engine.launcher_extra_args
         methodology = resolve_methodology_profile(
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
+            vllm_launcher_args=vllm_launcher_args,
         )
         effective_config = {
             "runs": config.N_RUNS, "warmup_runs": args.warmup,

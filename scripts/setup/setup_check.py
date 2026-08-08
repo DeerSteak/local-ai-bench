@@ -54,7 +54,7 @@ from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
     build_tools_command, install_vllm, missing_build_tools, missing_python_headers,
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
-    read_launcher_extra_args, vllm_cache_home, vllm_platform_support,
+    read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
     PINNED_PYTHON, python_bootstrap_plan, run_python_bootstrap,
 )
 from scripts.app.interface_mode import select_interface_mode
@@ -780,7 +780,9 @@ VLLM_BIN = find_vllm_binary(platform_name=os_name)
 # image ships one preconfigured, and a container/remote server looks the same from here.
 VLLM_LAUNCHER = find_vllm_launcher()
 VLLM_SERVER_URL = find_vllm_server()
-VLLM_LAUNCHER_ARGS = read_launcher_extra_args() if VLLM_LAUNCHER else []
+VLLM_LAUNCHER_ARGS = (
+    redact_launcher_extra_args(read_launcher_extra_args()) if VLLM_LAUNCHER else []
+)
 VLLM_CACHE_HOME = vllm_cache_home(VLLM_LAUNCHER)
 # Triton JIT-compiles a CUDA helper on import, so vLLM cannot start without these.
 _vllm_python = config.VLLM_VENV / "bin" / "python"

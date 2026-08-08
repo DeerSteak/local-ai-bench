@@ -54,3 +54,22 @@ def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads()
     )
     assert f"vllm:bench_iters={config.VLLMBENCH_ITERS}" in profile["effective_optimizations"]
     assert "vllm:kv_cache=fp8" in profile["effective_optimizations"]
+
+
+def test_vllm_profile_records_redacted_platform_launcher_overrides():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["conv"], cpu_only=False,
+        vllm_kv_cache_dtype="fp8",
+        vllm_launcher_args=["--gpu-memory-utilization", "0.85", "--api-key", "<secret>"],
+    )
+    assert profile["effective_optimizations"][-1] == (
+        "vllm:launcher_args=--gpu-memory-utilization 0.85 --api-key <secret>"
+    )
+
+
+def test_native_vllmbench_does_not_claim_platform_launcher_overrides():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["vllmbench"], cpu_only=False,
+        vllm_launcher_args=["--gpu-memory-utilization", "0.85"],
+    )
+    assert all("launcher_args" not in value for value in profile["effective_optimizations"])

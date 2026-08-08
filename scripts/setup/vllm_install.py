@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from scripts.runtime import config
+from scripts.runtime.log_redaction import redact_log_text
 
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
 NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
@@ -289,6 +290,30 @@ def read_launcher_extra_args(path: Path | None = None) -> list[str]:
         return parse_launcher_extra_args(path.read_text(encoding="utf-8"))
     except OSError:
         return []
+
+
+SENSITIVE_LAUNCHER_FLAGS = {"--api-key", "--token", "--hf-token", "--password"}
+
+
+def redact_launcher_extra_args(args: list[str]) -> list[str]:
+    """Sanitize launcher flags before setup logs or persists them."""
+    redacted = []
+    hide_next = False
+    for arg in args:
+        if hide_next:
+            redacted.append("<secret>")
+            hide_next = False
+            continue
+        flag = arg.split("=", 1)[0].lower()
+        if flag in SENSITIVE_LAUNCHER_FLAGS:
+            if "=" in arg:
+                redacted.append(f"{arg.split('=', 1)[0]}=<secret>")
+            else:
+                redacted.append(arg)
+                hide_next = True
+            continue
+        redacted.append(redact_log_text(arg))
+    return redacted
 
 
 def missing_python_headers(include_dir: str | None, exists_fn=None) -> str | None:

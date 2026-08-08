@@ -25,6 +25,7 @@ from scripts.setup.vllm_install import (
     vllm_server_reachable,
     is_dgx_spark,
     parse_compute_capability,
+    redact_launcher_extra_args,
     python_bootstrap_plan,
     run_python_bootstrap,
     python_candidates,
@@ -487,6 +488,17 @@ def test_reading_a_real_launcher_conf(tmp_path):
     conf = tmp_path / "vllm-launch.conf"
     conf.write_text("VLLM_EXTRA_ARGS=(--max-model-len 8192)\n")
     assert read_launcher_extra_args(conf) == ["--max-model-len", "8192"]
+
+
+def test_launcher_args_redact_separate_and_inline_secrets():
+    args = [
+        "--gpu-memory-utilization", "0.85", "--api-key", "plain-secret",
+        "--token=another-secret", "hf_abcdefghijklmnopqrstuvwxyz",
+    ]
+    assert redact_launcher_extra_args(args) == [
+        "--gpu-memory-utilization", "0.85", "--api-key", "<secret>",
+        "--token=<secret>", "<secret>",
+    ]
 
 
 # ── model cache location ──

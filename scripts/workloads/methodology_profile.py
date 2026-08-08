@@ -10,7 +10,8 @@ ENGINE_STAGES = {
 
 
 def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
-                                vllm_kv_cache_dtype: str = "auto") -> dict:
+                                vllm_kv_cache_dtype: str = "auto",
+                                vllm_launcher_args: list[str] | None = None) -> dict:
     optimizations = []
     selected = set(tests)
     if engine_name == "llamacpp" and selected & ENGINE_STAGES:
@@ -29,6 +30,8 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
     if engine_name == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
         optimizations.append(f"vllm:kv_cache={vllm_kv_cache_dtype}")
+        if vllm_launcher_args and selected & ENGINE_STAGES:
+            optimizations.append(f"vllm:launcher_args={' '.join(vllm_launcher_args)}")
     if selected & {"llamabench", "llamabenchconc"}:
         native_cache = (
             "f16" if not cpu_only and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
