@@ -38,6 +38,8 @@ The scripts tree is a package rather than a flat import directory. A structural 
 
 [tests/conftest.py](../tests/conftest.py) prevents llama.cpp discovery tests from reading the machine's real saved setup configuration, so running setup cannot change mocked discovery outcomes. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
+`conftest.py` also provides the `symlink_or_skip` fixture. Tests covering symlink-escape defenses need a real symlink, which Windows refuses without Developer Mode or administrator rights, so the fixture creates one and skips the test when the platform will not. Use it instead of calling `Path.symlink_to` directly. The skip is limited to platforms that cannot create the link: on Linux and macOS these tests always run, and a Windows skip is not a silent hole because the behavior under test is POSIX symlink semantics, which Windows junctions do not reproduce faithfully.
+
 ## Coverage and safety boundaries
 
 Install `pytest-cov` into `bench-env/`, then run:

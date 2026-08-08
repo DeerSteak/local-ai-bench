@@ -54,11 +54,11 @@ def test_uninstall_rejects_wrong_confirmation_and_injected_target(tmp_path):
         execute_uninstall_plan(root, injected, "REMOVE LOCAL AI BENCH COMPONENTS")
 
 
-def test_uninstall_rejects_symlinked_managed_directory(tmp_path):
+def test_uninstall_rejects_symlinked_managed_directory(tmp_path, symlink_or_skip):
     root = repo(tmp_path)
     outside = tmp_path / "outside-models"
     outside.mkdir()
-    (root / "models").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(root / "models", outside, directory=True)
     plan = build_uninstall_plan(root, remove_models=True)
     with pytest.raises(ValueError, match="symbolic link"):
         execute_uninstall_plan(root, plan, "REMOVE LOCAL AI BENCH COMPONENTS")

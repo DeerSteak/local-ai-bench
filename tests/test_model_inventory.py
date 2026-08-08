@@ -1,5 +1,3 @@
-import pytest
-
 from scripts.setup.model_inventory import (
     build_model_inventory,
     classify_engine_models,
@@ -200,15 +198,12 @@ def test_delete_non_catalog_model_dirs_removes_only_explicit_safe_names(tmp_path
     assert outside.is_dir()
 
 
-def test_delete_non_catalog_model_dirs_unlinks_symlink_without_touching_target(tmp_path):
+def test_delete_non_catalog_model_dirs_unlinks_symlink_without_touching_target(
+        tmp_path, symlink_or_skip):
     outside = tmp_path.parent / f"{tmp_path.name}-linked-target"
     outside.mkdir()
     (outside / "model.gguf").write_bytes(b"model")
-    link = tmp_path / "custom-link"
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("directory symlinks are unavailable on this platform")
+    link = symlink_or_skip(tmp_path / "custom-link", outside, directory=True)
 
     removed, failures = delete_non_catalog_model_dirs(
         tmp_path, [link.name], llm_catalog=[], embed_catalog=[],

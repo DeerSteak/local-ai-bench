@@ -317,7 +317,7 @@ def test_changing_the_tool_parser_forces_a_respawn(engine, monkeypatch):
 
 # ── resume identity ──
 
-def _cache_snapshot(engine, repo=None, files=("model.safetensors", "config.json")):
+def _cache_snapshot(engine, symlink, repo=None, files=("model.safetensors", "config.json")):
     repo = repo or TEST_REPO_DIR.removeprefix("models--")
     repo_dir = engine._cache_home / "hub" / f"models--{repo}"
     blobs, snapshot = repo_dir / "blobs", repo_dir / "snapshots" / "abc"
@@ -325,12 +325,12 @@ def _cache_snapshot(engine, repo=None, files=("model.safetensors", "config.json"
     for index, name in enumerate(files):
         blob = blobs / f"b{index}"
         blob.write_text("weights")
-        (snapshot / name).symlink_to(blob)
+        symlink(snapshot / name, blob)
     return snapshot
 
 
-def test_resume_artifacts_resolve_through_the_cache_symlinks(engine):
-    _cache_snapshot(engine, files=("model-00001.safetensors", "model-00002.safetensors", "config.json"))
+def test_resume_artifacts_resolve_through_the_cache_symlinks(engine, symlink_or_skip):
+    _cache_snapshot(engine, symlink_or_skip, files=("model-00001.safetensors", "model-00002.safetensors", "config.json"))
     paths = engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
     assert len(paths) == 3
     assert all(path.parent.name == "blobs" for path in paths), "identity follows the blob, not the link"
@@ -354,10 +354,10 @@ def test_resume_runtime_raises_without_any_vllm(engine):
         engine.resume_runtime_paths()
 
 
-def test_resume_identity_builds_for_a_cached_model(engine):
+def test_resume_identity_builds_for_a_cached_model(engine, symlink_or_skip):
     """The failure that stopped the first real run: the base class raised NotImplementedError."""
     from scripts.results.resume_policy import cached_file_identity
-    _cache_snapshot(engine)
+    _cache_snapshot(engine, symlink_or_skip)
     cache = {}
     for path in engine.resume_artifact_paths("qwen3.5:9b-q4_K_M"):
         assert cached_file_identity(path, cache)["sha256"]

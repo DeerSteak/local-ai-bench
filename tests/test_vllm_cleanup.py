@@ -96,12 +96,12 @@ def test_deletion_refuses_an_entry_that_lost_its_weights(tmp_path):
     assert empty.exists()
 
 
-def test_deletion_does_not_follow_a_symlinked_cache_entry(tmp_path):
+def test_deletion_does_not_follow_a_symlinked_cache_entry(tmp_path, symlink_or_skip):
     """A symlink could point outside the cache; unlinking the name is not enough
     of a guarantee, so it is refused outright."""
     real = make_cached_repo(tmp_path, "elsewhere/Real")
     link = tmp_path / "hub" / "models--someone--Linked"
-    link.symlink_to(real, target_is_directory=True)
+    symlink_or_skip(link, real, directory=True)
     removed, failures = delete_non_catalog_vllm_repos(tmp_path, [link.name])
     assert removed == [] and link.name in failures
     assert real.exists() and link.is_symlink()
