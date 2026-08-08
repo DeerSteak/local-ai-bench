@@ -16,7 +16,8 @@ interface BarConfig {
 
 // The subset of recharts' own render-prop shape actually read here.
 interface BarRenderProps {
-  x?: number, y?: number, width?: number, height?: number, payload?: ChartRow, index?: number,
+  x?: number | string, y?: number | string, width?: number | string, height?: number | string,
+  payload?: ChartRow, index?: number,
 }
 
 function DirectionHint({ direction }: { direction?: string }) {
@@ -31,7 +32,7 @@ function DirectionHint({ direction }: { direction?: string }) {
 export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }: {
   title: string, modelName?: string | null, data: ChartRow[], lineConfigs: LineConfig[], xKey: string,
   xLabel: string, yLabel: string, unit: string, isMultiFile: boolean, chartName: string,
-  chartModel?: string | null, logoSrc?: string, direction?: string,
+  chartModel?: string | null, logoSrc?: string | null, direction?: string,
 }) {
   const yTickFormatter = (v: number) => fmt(v, unit);
   return (
@@ -118,21 +119,22 @@ function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, st
 }
 
 function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload, barConfigs, formatter }: {
-  x?: number, y?: number, width?: number, height?: number, payload?: ChartRow,
+  x?: number | string, y?: number | string, width?: number | string, height?: number | string, payload?: ChartRow,
   barConfigs: BarConfig[], formatter: (v: JsonRecord[string]) => string,
 }) {
-  const slotHeight = height / barConfigs.length;
+  const numX = Number(x), numY = Number(y), numWidth = Number(width), numHeight = Number(height);
+  const slotHeight = numHeight / barConfigs.length;
   const barHeight = Math.max(1, slotHeight - 4);
   const maxValue = payload?._groupMax;
   return (
     <g>
       {barConfigs.map((config, index) => {
         const value = payload?.[config.dataKey];
-        const barWidth = value == null || maxValue <= 0 ? 0 : Math.max(1, width * value / maxValue);
-        const barY = y + index * slotHeight + (slotHeight - barHeight) / 2;
+        const barWidth = value == null || maxValue <= 0 ? 0 : Math.max(1, numWidth * value / maxValue);
+        const barY = numY + index * slotHeight + (slotHeight - barHeight) / 2;
         return (
           <g key={config.dataKey}>
-            <Rectangle x={x} y={barY} width={barWidth} height={barHeight} fill={config.fill} radius={[0, 3, 3, 0]} />
+            <Rectangle x={numX} y={barY} width={barWidth} height={barHeight} fill={config.fill} radius={[0, 3, 3, 0]} />
             <BarLabel
               x={x} y={barY} width={barWidth} height={barHeight} value={value}
               naKey={`_na_${config.dataKey}`} statusKey={`_status_${config.dataKey}`}
@@ -168,7 +170,7 @@ function computeRightMargin(rows: ChartRow[], barConfigs: BarConfig[]): number {
 
 export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }: {
   title: string, modelName?: string | null, data: ChartRow[], barConfigs: BarConfig[], xKey: string,
-  yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string,
+  yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
   direction?: string, orderedSeries?: boolean,
 }) {
   const valFormatter = (v: number) => fmt(v, unit);
@@ -237,7 +239,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
                 <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
               ))}
               <LabelList dataKey={bc.dataKey} content={(props: BarRenderProps) => (
-                <BarLabel {...props} naKey={`_na_${bc.dataKey}`} statusKey={`_status_${bc.dataKey}`} rowData={processedData[props.index]} formatter={valFormatter} />
+                <BarLabel {...props} naKey={`_na_${bc.dataKey}`} statusKey={`_status_${bc.dataKey}`} rowData={props.index != null ? processedData[props.index] : undefined} formatter={valFormatter} />
               )} />
             </Bar>
           ))}

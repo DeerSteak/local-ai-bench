@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { buildConcurrencyDataForModel, getAllConcurrencyModels, getConcurrencyStopInfo } from "../../utils/concurrency";
-import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit, lookup } from "../../utils/shared";
+import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit, lookup, isNotNull } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
@@ -15,7 +15,7 @@ import styles from "../ChartPanel.module.css";
 // "concurrency_chat" — same layout, different results key and level ladder.
 export default function ConcurrencyPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isMultiFile }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllConcurrencyModels(files, section).filter(m => enabledModels.has(m));
@@ -35,10 +35,10 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
 
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
-      .filter(e => e.info);
+      .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
     const stopEntries = files
       .map(f => ({ hostname: f.hostname, info: getConcurrencyStopInfo(f, section, model) }))
-      .filter(e => e.info);
+      .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
 
     const hasAny = tpsLineConfigs.length > 0 || aggLineConfigs.length > 0 || ttftLineConfigs.length > 0;
     if (!hasAny && !skipEntries.length && !stopEntries.length) return null;
@@ -47,7 +47,7 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
       tpsLineConfigs, aggLineConfigs, ttftLineConfigs,
       ttftUnit, ttftYLabel, skipEntries, stopEntries,
     };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!modelGroups.length) {
     return <EmptyState style={containerStyle}>No {lookup(SECTION_LABELS, section)} data in the loaded file(s)</EmptyState>;

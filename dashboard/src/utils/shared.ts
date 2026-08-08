@@ -150,6 +150,12 @@ function hashColor(key: string, palette: readonly string[]): string {
   return palette[h % palette.length];
 }
 
+// A type-guard for `.filter(Boolean)` after a `.map()` that returns `T | null`
+// — `Boolean` itself narrows nothing, so TS still sees `(T | null)[]` after it.
+export function isNotNull<T>(x: T | null | undefined): x is T {
+  return x != null;
+}
+
 // *_COLORS/*_LABELS/*_TIER constants have fixed literal keys; callers here
 // look up an arbitrary model string that may not be one of them.
 export function lookup<T>(dict: Record<string, T>, key: string): T | undefined {
@@ -213,7 +219,7 @@ export function buildFileLineConfigs(files: ResultsFile[]) {
   return files.map((f, fi) => ({
     dataKey: `f${fi}`,
     stroke: FILE_COLORS[fi % FILE_COLORS.length],
-    name: f.hostname,
+    name: f.hostname ?? "Unknown",
   }));
 }
 

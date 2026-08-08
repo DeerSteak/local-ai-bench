@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { buildEmbedBarDataByModel, buildEmbedBarConfigsByModel, getAllEmbedModels } from "../../utils/embeddings";
-import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
+import { sortBarData, findMostStrenuousKey, isNotNull } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
@@ -12,7 +12,7 @@ import styles from "../ChartPanel.module.css";
 // batch-size axis left to plot a line across.
 export default function EmbeddingsBySystemPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledEmbedModels: Set<string>,
-  chartWidth: number, logoSrc?: string,
+  chartWidth: number, logoSrc?: string | null,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
@@ -24,7 +24,7 @@ export default function EmbeddingsBySystemPanel({ containerRef, files, enabledEm
     const strenuousKey = findMostStrenuousKey(rawBarData, barConfigs.map(bc => bc.dataKey));
     const barData = strenuousKey ? sortBarData(rawBarData, [strenuousKey], "desc") : rawBarData;
     return { file: f, barData, barConfigs };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!systemGroups.length) {
     return <EmptyState style={containerStyle}>No {SECTION_LABELS.embeddings} data in the loaded file(s)</EmptyState>;

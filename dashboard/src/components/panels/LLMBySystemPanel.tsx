@@ -5,7 +5,7 @@ import {
 } from "../../utils/llm";
 import type { RefObject } from "react";
 import {
-  sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus, lookup,
+  sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus, lookup, isNotNull,
 } from "../../utils/shared";
 import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
@@ -15,7 +15,7 @@ import type { ResultsFile } from "../../types";
 // ctx-keyed data into BySystemPanel's generic { tier, metrics } shape.
 export default function LLMBySystemPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isSplit }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isBar: boolean, isSplit: boolean,
+  chartWidth: number, logoSrc?: string | null, isBar: boolean, isSplit: boolean,
 }) {
   const allModels = getLLMModelsWithSectionResults(files, section).filter(m => enabledModels.has(m));
   const isConv = section === "llm_conversation";
@@ -84,15 +84,15 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       });
       if (!metrics.length) return null;
       return { tier, metrics };
-    }).filter(Boolean);
+    }).filter(isNotNull);
 
     const skipEntries = allModels
       .map(m => ({ model: m, info: getSkipInfo(f, m, section) }))
-      .filter(e => e.info)
+      .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null)
       .map(e => ({ key: e.model, label: `${modelLabel(e.model)}: Skipped — ${e.info.detail}` }));
     if (!groups.length && !skipEntries.length) return null;
     return { file: f, groups, skipEntries };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   return (
     <BySystemPanel

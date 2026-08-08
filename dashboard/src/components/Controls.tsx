@@ -125,7 +125,7 @@ export default function Controls({
                 </div>
                 <textarea
                   className={styles.labelTextarea}
-                  value={hostnameOverrides[f.id] ?? f.hostname}
+                  value={(f.id != null ? hostnameOverrides[f.id] : undefined) ?? f.hostname}
                   onChange={e => onUpdateHostnameOverride(f.id, e.target.value)}
                   rows={4}
                   spellCheck={false}

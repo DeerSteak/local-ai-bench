@@ -24,7 +24,7 @@ export default function ChartPanel({
 }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, accuracyTest: string,
   enabledModels: Set<string>, enabledImageModels: Set<string>, enabledEmbedModels: Set<string>,
-  chartWidth: number, logoSrc?: string, chartStyle: string, groupBy: string, sizeSplit: string,
+  chartWidth: number, logoSrc?: string | null, chartStyle: string, groupBy: string, sizeSplit: string,
 }) {
   const isBar = chartStyle === "bar";
   const isBySystem = groupBy === "system";

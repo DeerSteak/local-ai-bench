@@ -22,7 +22,7 @@ import styles from "../ChartPanel.module.css";
 // context lengths or resolutions, so there's no second axis to pivot on.
 export default function AccuracyPanel({ containerRef, files, accuracyTest, enabledModels, chartWidth, logoSrc }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], accuracyTest: string, enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string,
+  chartWidth: number, logoSrc?: string | null,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const testLabel = lookup(ACCURACY_TEST_LABELS, accuracyTest);

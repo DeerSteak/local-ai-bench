@@ -72,19 +72,19 @@ describe("getConcurrencyStopInfo", () => {
   it("has no next level for a slow stop, since the triggering level's real data was already recorded", () => {
     const file = { data: { concurrency_chat: { m: { "1": {}, "2": {}, "4": {}, "8": {}, stopped_at: "slow" } } } };
     const info = getConcurrencyStopInfo(file, "concurrency_chat", "m");
-    expect(info.lastLevel).toBe("8");
-    expect(info.nextLevel).toBeNull();
+    expect(info?.lastLevel).toBe("8");
+    expect(info?.nextLevel).toBeNull();
   });
   it("has no next level when the failure happened at the very first level (no data recorded yet)", () => {
     const file = { data: { concurrency_chat: { m: { stopped_at: "load_failed" } } } };
     const info = getConcurrencyStopInfo(file, "concurrency_chat", "m");
-    expect(info.lastLevel).toBeNull();
-    expect(info.nextLevel).toBe("1");
+    expect(info?.lastLevel).toBeNull();
+    expect(info?.nextLevel).toBe("1");
   });
   it("renders a human-readable label when every completed measurement was invalid", () => {
     const file = { data: { concurrency_chat: { m: { "1": {}, stopped_at: "invalid" } } } };
     const info = getConcurrencyStopInfo(file, "concurrency_chat", "m");
-    expect(info.label).toContain("no valid measurements");
+    expect(info?.label).toContain("no valid measurements");
   });
 });
 

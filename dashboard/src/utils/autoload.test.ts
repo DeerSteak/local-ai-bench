@@ -17,7 +17,7 @@ describe("fetchSelectedResultFiles", () => {
       { ok: true, text: async () => "{\"one\":1}" },
       { ok: true, text: async () => "{\"two\":2}" },
     ];
-    const files = await fetchSelectedResultFiles("?autoload=1", vi.fn(async () => responses.shift()));
+    const files = await fetchSelectedResultFiles("?autoload=1", vi.fn(async () => responses.shift()!));
     expect(files.map(file => file.name)).toEqual(["one.json", "two.json"]);
     expect(await files[1].text()).toBe('{"two":2}');
   });

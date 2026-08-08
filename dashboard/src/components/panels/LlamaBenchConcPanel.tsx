@@ -3,7 +3,7 @@ import { getAllLLMModels } from "../../utils/llm";
 import {
   llamaBenchConcTgValues, buildLlamaBenchConcLineData, llamaBenchConcPromptDepth,
 } from "../../utils/llamabenchconc";
-import { buildFileLineConfigs, modelLabel } from "../../utils/shared";
+import { buildFileLineConfigs, modelLabel, isNotNull } from "../../utils/shared";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
@@ -13,7 +13,7 @@ import styles from "../ChartPanel.module.css";
 // Line-only and group-by-agnostic, same reasoning as ConcurrencyPanel.
 export default function LlamaBenchConcPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files)
@@ -26,7 +26,7 @@ export default function LlamaBenchConcPanel({ containerRef, files, enabledModels
       const tgLineConfigs = lineConfigs.filter(lc => data.some(r => r[lc.dataKey] != null));
       if (!tgLineConfigs.length) return null;
       return { tg, data, lineConfigs: tgLineConfigs };
-    }).filter(Boolean);
+    }).filter(isNotNull);
 
     const depths = [...new Set(
       files.map(f => llamaBenchConcPromptDepth(f, model)).filter(d => d != null),
@@ -36,7 +36,7 @@ export default function LlamaBenchConcPanel({ containerRef, files, enabledModels
       .filter(e => e.error);
     if (!charts.length && !errorEntries.length) return null;
     return { model, charts, errorEntries, depths };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!modelGroups.length) {
     return <EmptyState style={containerStyle}>No llama-batched-bench data in the loaded file(s)</EmptyState>;

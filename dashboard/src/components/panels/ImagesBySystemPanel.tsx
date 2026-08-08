@@ -4,7 +4,7 @@ import {
   buildImagesLineDataByRes, buildImagesLineConfigsByRes,
   getAllImageModels,
 } from "../../utils/images";
-import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
+import { sortBarData, findMostStrenuousKey, isNotNull } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
@@ -15,7 +15,7 @@ import styles from "../ChartPanel.module.css";
 // bars/lines within it.
 export default function ImagesBySystemPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledImageModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isBar: boolean,
+  chartWidth: number, logoSrc?: string | null, isBar: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
@@ -31,7 +31,7 @@ export default function ImagesBySystemPanel({ containerRef, files, enabledImageM
     const strenuousKey = findMostStrenuousKey(rawBarData, barConfigs.map(bc => bc.dataKey));
     const barData = strenuousKey ? sortBarData(rawBarData, [strenuousKey], "asc") : rawBarData;
     return { file: f, barData, barConfigs, lineData, lineConfigs };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!systemGroups.length) {
     return <EmptyState style={containerStyle}>No {SECTION_LABELS.images} data in the loaded file(s)</EmptyState>;

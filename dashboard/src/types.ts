@@ -5,7 +5,7 @@ import type { JsonRecord } from "./utils/shared";
 export interface ResultsFile {
   id?: string | number;
   hostname?: string;
-  engine?: string;
+  engine?: string | null;
   data: JsonRecord;
 }
 

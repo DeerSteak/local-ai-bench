@@ -7,14 +7,14 @@ import {
 } from "../../utils/llamabench";
 import type { RefObject } from "react";
 import { getAllLLMModels } from "../../utils/llm";
-import { getModelSizeTier, modelLabel } from "../../utils/shared";
+import { getModelSizeTier, modelLabel, isNotNull } from "../../utils/shared";
 import { SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
 import type { ResultsFile } from "../../types";
 
 export default function LlamaBenchBySystemPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isSplit }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isSplit: boolean,
+  chartWidth: number, logoSrc?: string | null, isSplit: boolean,
 }) {
   const allModels = getAllLLMModels(files)
     .filter(model => enabledModels.has(model) && files.some(file => file.data.llamabench?.[model]));
@@ -50,7 +50,7 @@ export default function LlamaBenchBySystemPanel({ containerRef, files, enabledMo
       }
       if (!metrics.length) return null;
       return { tier, metrics };
-    }).filter(Boolean);
+    }).filter(isNotNull);
 
     const skipEntries = allModels.flatMap(model => {
       const modelData = file.data.llamabench?.[model];
@@ -62,7 +62,7 @@ export default function LlamaBenchBySystemPanel({ containerRef, files, enabledMo
     });
     if (!groups.length && !skipEntries.length) return null;
     return { file, groups, skipEntries };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   return (
     <BySystemPanel

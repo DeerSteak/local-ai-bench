@@ -14,7 +14,7 @@ import type { ResultsFile } from "../../types";
 // single combined chart (line), systems/models as bars/lines within it.
 export default function ImagesPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar, isMultiFile }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledImageModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isBar: boolean, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isBar: boolean, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));

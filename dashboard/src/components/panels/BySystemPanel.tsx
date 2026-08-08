@@ -26,7 +26,7 @@ interface SystemGroup {
 // this component fully-resolved `systemGroups`; this component only lays them out and
 // flips Bar/Line — it has no opinion on where the data came from.
 export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar, emptyLabel, systemGroups }: {
-  containerRef?: RefObject<HTMLDivElement | null>, chartWidth: number, logoSrc?: string, isBar: boolean,
+  containerRef?: RefObject<HTMLDivElement | null>, chartWidth: number, logoSrc?: string | null, isBar: boolean,
   emptyLabel: ReactNode, systemGroups: SystemGroup[],
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
@@ -55,8 +55,8 @@ export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar
                     key={m.key}
                     title={`${m.title}${tierSuffix}`}
                     modelName={f.hostname}
-                    data={m.barData}
-                    barConfigs={m.barConfigs}
+                    data={m.barData ?? []}
+                    barConfigs={m.barConfigs ?? []}
                     xKey="modelLabel" yLabel={m.yLabel} unit={m.unit}
                     chartName={`${m.chartName}_by_system${tierKey}`} chartModel={f.hostname}
                     logoSrc={logoSrc} direction={m.direction}
@@ -66,8 +66,8 @@ export default function BySystemPanel({ containerRef, chartWidth, logoSrc, isBar
                     key={m.key}
                     title={`${m.title}${tierSuffix}`}
                     modelName={f.hostname}
-                    data={m.lineData} lineConfigs={m.lineConfigs}
-                    xKey={m.xKey} xLabel={m.xLabel} yLabel={m.yLabel} unit={m.unit}
+                    data={m.lineData ?? []} lineConfigs={m.lineConfigs ?? []}
+                    xKey={m.xKey ?? ""} xLabel={m.xLabel ?? ""} yLabel={m.yLabel} unit={m.unit}
                     isMultiFile={false}
                     chartName={`${m.chartName}_by_system${tierKey}`} chartModel={f.hostname}
                     logoSrc={logoSrc} direction={m.direction}

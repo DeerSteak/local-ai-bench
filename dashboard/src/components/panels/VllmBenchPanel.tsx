@@ -6,7 +6,7 @@ import {
   buildVllmBenchThroughputConfigs,
   buildVllmBenchThroughputData,
 } from "../../utils/vllmbench";
-import { modelLabel } from "../../utils/shared";
+import { modelLabel, isNotNull } from "../../utils/shared";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
@@ -14,7 +14,7 @@ import styles from "../ChartPanel.module.css";
 
 export default function VllmBenchPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files)
@@ -34,7 +34,7 @@ export default function VllmBenchPanel({ containerRef, files, enabledModels, cha
     });
     if (!latencyConfigs.length && !throughputConfigs.length && !notes.length) return null;
     return { model, latencyData, latencyConfigs, throughputData, throughputConfigs, notes };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!modelGroups.length) {
     return <EmptyState style={containerStyle}>No vllm bench data in the loaded file(s)</EmptyState>;

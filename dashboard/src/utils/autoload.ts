@@ -18,7 +18,7 @@ export async function fetchSelectedResultFiles(search: string, fetchFn: MinimalF
   if (new URLSearchParams(search).get("autoload") !== "1") return [];
   const manifestResponse = await fetchFn("/__selected_results__.json", { cache: "no-store" });
   if (!manifestResponse.ok) throw new Error("Selected results are no longer available.");
-  const manifest = await manifestResponse.json();
+  const manifest = await manifestResponse.json!();
   if (!Array.isArray(manifest.files) || manifest.files.length > MAX_FILES) {
     throw new Error("Selected result manifest is invalid.");
   }
@@ -28,7 +28,7 @@ export async function fetchSelectedResultFiles(search: string, fetchFn: MinimalF
     }
     const response = await fetchFn(entry.url, { cache: "no-store" });
     if (!response.ok) throw new Error(`${entry.name}: Could not read this file.`);
-    const text = await response.text();
+    const text = await response.text!();
     return { name: entry.name, text: async () => text };
   }));
 }

@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { buildLLMDataForModel, buildLLMBarConfigs, buildLLMBarData, getAllLLMModels } from "../../utils/llm";
 import {
-  buildFileLineConfigs, modelLabel, sortBarData, getSkipInfo, deriveTtftUnit, hasValueOrStatus, lookup,
+  buildFileLineConfigs, modelLabel, sortBarData, getSkipInfo, deriveTtftUnit, hasValueOrStatus, lookup, isNotNull,
 } from "../../utils/shared";
 import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
@@ -13,7 +13,7 @@ import styles from "../ChartPanel.module.css";
 // systems as bars/lines within it.
 export default function LLMByModelPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isBar, isMultiFile }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string, isBar: boolean, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isBar: boolean, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
@@ -49,10 +49,10 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
-      .filter(e => e.info);
+      .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
     if (!hasTps && !hasTtft && !hasPrefill && !skipEntries.length) return null;
     return { model, tpsData, ttftData, prefillData, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries };
-  }).filter(Boolean);
+  }).filter(isNotNull);
 
   if (!modelGroups.length) {
     return <EmptyState style={containerStyle}>No {lookup(SECTION_LABELS, section)} data in the loaded file(s)</EmptyState>;

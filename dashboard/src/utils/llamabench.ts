@@ -62,7 +62,7 @@ export function buildLlamaBenchDecodeLineData(files: ResultsFile[], model: strin
 }
 
 export function buildLlamaBenchDecodeLineConfigs(files: ResultsFile[], model: string, data: ChartRow[]) {
-  const configs: { dataKey: string, stroke: string, strokeDasharray: string, name: string }[] = [];
+  const configs: { dataKey: string, stroke: string, strokeDasharray?: string, name: string }[] = [];
   files.forEach((file, fi) => {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
@@ -114,7 +114,7 @@ export function buildLlamaBenchPrefillLineConfigsByModel(models: string[], data:
 }
 
 export function buildLlamaBenchDecodeLineConfigsByModel(file: ResultsFile, models: string[], data: ChartRow[]) {
-  const configs: { dataKey: string, stroke: string, strokeDasharray: string, name: string }[] = [];
+  const configs: { dataKey: string, stroke: string, strokeDasharray?: string, name: string }[] = [];
   for (const model of models) {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),

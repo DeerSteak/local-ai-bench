@@ -46,7 +46,7 @@ export default function Dashboard() {
   useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { sectionRef.current = section; }, [section]);
 
-  const chartRef = useRef(null);
+  const chartRef = useRef<HTMLDivElement>(null);
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
@@ -108,7 +108,7 @@ export default function Dashboard() {
 
   const effectiveFiles = useMemo(() =>
     displayFiles.map(f => {
-      const ov = hostnameOverrides[f.id];
+      const ov = f.id == null ? undefined : hostnameOverrides[f.id];
       return (ov != null && ov !== '') ? { ...f, hostname: ov } : f;
     }), [displayFiles, hostnameOverrides]);
 
@@ -153,7 +153,7 @@ export default function Dashboard() {
       return { entry: null, error: `${file.name}: Could not read this file.` };
     }
     const parsed = parseResultsJSON(text);
-    if (parsed.error) return { entry: null, error: `${file.name}: ${parsed.error}` };
+    if (parsed.error || !parsed.data) return { entry: null, error: `${file.name}: ${parsed.error}` };
     const data = parsed.data;
     const p = data.profile || {};
     const baseHostname = p.hostname || file.name.replace(".json", "");
@@ -234,7 +234,7 @@ export default function Dashboard() {
     setSaving(true);
     try {
       await document.fonts.ready;
-      const cards = [...chartRef.current.querySelectorAll("[data-chart-name]")];
+      const cards = [...chartRef.current.querySelectorAll<HTMLElement>("[data-chart-name]")];
       if (!cards.length) return;
 
       for (let i = 0; i < cards.length; i++) {

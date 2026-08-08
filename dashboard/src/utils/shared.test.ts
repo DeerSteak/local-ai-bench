@@ -6,7 +6,7 @@ import {
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
-  entriesOf, valuesOf,
+  entriesOf, valuesOf, isNotNull,
 } from "./shared";
 import { buildLLMBarData, buildLLMBarConfigs } from "./llm";
 import type { ResultsFile, ChartRow } from "../types";
@@ -18,6 +18,12 @@ describe("entriesOf", () => {
   it("returns an empty array for null or undefined", () => {
     expect(entriesOf(null)).toEqual([]);
     expect(entriesOf(undefined)).toEqual([]);
+  });
+});
+
+describe("isNotNull", () => {
+  it("keeps non-null, non-undefined values and drops the rest", () => {
+    expect([1, null, 2, undefined, 0, ""].filter(isNotNull)).toEqual([1, 2, 0, ""]);
   });
 });
 

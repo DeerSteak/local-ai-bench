@@ -11,7 +11,7 @@ import type { ResultsFile } from "../../types";
 // chunks in a single call, not an arbitrary batch dial.
 export default function EmbeddingsPanel({ containerRef, files, enabledEmbedModels, chartWidth, logoSrc }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledEmbedModels: Set<string>,
-  chartWidth: number, logoSrc?: string,
+  chartWidth: number, logoSrc?: string | null,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));

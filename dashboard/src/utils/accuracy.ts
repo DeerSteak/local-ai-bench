@@ -70,7 +70,7 @@ export function buildAccuracyCategoryData(files: ResultsFile[], testKey: string,
 export function buildAccuracyCategoryConfigs(files: ResultsFile[]) {
   return files.map((f, fi) => ({
     dataKey: `f${fi}`,
-    name: f.hostname,
+    name: f.hostname ?? "Unknown",
     fill: FILE_COLORS[fi % FILE_COLORS.length],
   }));
 }

@@ -26,7 +26,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
   onRemoveFile: (id: DisplayFile["id"]) => void, onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void,
   fileError: string | null,
 }) {
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const atMax = files.length >= MAX_FILES;
   const dropText = dragOver
@@ -96,7 +96,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
           onDrop={onDrop}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
-          onClick={() => fileInputRef.current.click()}
+          onClick={() => fileInputRef.current?.click()}
           className={`${styles.dropZone} ${dragOver ? styles.over : ""}`}
         >
           <div className={styles.dropZoneText}>{dropText}</div>

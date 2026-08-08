@@ -13,6 +13,7 @@ function loadGolden(name: string) {
   const url = new URL(`../../../tests/fixtures/${name}`, import.meta.url);
   const parsed = parseResultsJSON(readFileSync(url, "utf8"));
   expect(parsed.error).toBeNull();
+  if (!parsed.data) throw new Error(`${name}: no data despite no error`);
   return parsed.data;
 }
 

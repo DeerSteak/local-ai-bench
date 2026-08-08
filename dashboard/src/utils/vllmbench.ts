@@ -5,7 +5,7 @@ import type { ResultsFile, ChartRow } from "../types";
 // `vllm bench` results. Deliberately never share a chart with llamabench: different
 // weights (AWQ/GPTQ vs GGUF) and different metric definitions — see docs/workloads.md#vllm-bench.
 
-export function vllmBenchSizeLabel(tokens: number): string {
+export function vllmBenchSizeLabel(tokens: number | undefined): string {
   const k = (tokens ?? 0) / 1024;
   return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
 }
