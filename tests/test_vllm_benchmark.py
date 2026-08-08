@@ -3,13 +3,46 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime import config
-from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
+from scripts.workloads.vllm_benchmark import (
+    VllmBenchBenchmark, kill_vllm_bench_tree, vllm_bench_process_options,
+)
 
 
 def test_error_log_excerpt_keeps_short_output_unchanged():
     assert VllmBenchBenchmark.error_log_excerpt("  root cause\ntraceback  ", 100) == (
         "root cause\ntraceback"
     )
+
+
+def test_offline_bench_gets_its_own_process_group(monkeypatch):
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.subprocess.CREATE_NEW_PROCESS_GROUP", 512,
+                        raising=False)
+    assert vllm_bench_process_options("posix") == {"start_new_session": True}
+    assert vllm_bench_process_options("nt") == {"creationflags": 512}
+
+
+def test_posix_timeout_kills_the_whole_offline_bench_group(monkeypatch):
+    killed = []
+    proc = type("Proc", (), {"pid": 41, "kill": lambda self: killed.append("fallback")})()
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.os.getpgid", lambda pid: pid + 1)
+    monkeypatch.setattr(
+        "scripts.workloads.vllm_benchmark.os.killpg",
+        lambda pgid, sig: killed.append((pgid, sig)),
+    )
+    kill_vllm_bench_tree(proc, "posix")
+    assert killed == [(42, __import__("signal").SIGKILL)]
+
+
+def test_posix_timeout_falls_back_when_the_group_is_already_gone(monkeypatch):
+    killed = []
+    proc = type("Proc", (), {"pid": 41, "kill": lambda self: killed.append("fallback")})()
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.os.getpgid", lambda _pid: 42)
+    monkeypatch.setattr(
+        "scripts.workloads.vllm_benchmark.os.killpg",
+        lambda _pgid, _sig: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+    kill_vllm_bench_tree(proc, "posix")
+    assert killed == ["fallback"]
 
 
 def test_error_log_excerpt_keeps_both_ends_of_long_output():

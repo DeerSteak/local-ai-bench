@@ -2,6 +2,8 @@
 Talks to VllmEngine directly rather than the InferenceEngine interface, mirroring llamabench_benchmark."""
 
 import json
+import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +14,27 @@ from scripts.runtime.engines.vllm import VllmEngine
 from scripts.runtime.shared import Shared
 from scripts.app.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+
+
+def vllm_bench_process_options(os_name: str) -> dict:
+    """Launch offline vLLM in its own process group so EngineCore cannot outlive it."""
+    if os_name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def kill_vllm_bench_tree(proc, os_name: str) -> None:
+    """Force-stop a timed-out offline benchmark and its EngineCore descendants."""
+    if os_name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        proc.kill()
 
 
 class VllmBenchModelResult(TypedDict):
@@ -155,12 +178,12 @@ class VllmBenchBenchmark:
     def run_one(self, command: list[str], output_json: Path, timeout: int,
                 env: dict) -> dict | None:  # pragma: no cover — spawns a real subprocess
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, env=env)
+                                text=True, env=env, **vllm_bench_process_options(os.name))
         Shared._managed_procs.append(proc)
         try:
             output, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            kill_vllm_bench_tree(proc, os.name)
             proc.communicate()
             raise
         finally:
