@@ -359,9 +359,7 @@ class Shared:
     @staticmethod
     def detect_wsl(os_name: str, release: str) -> bool:
         """WSL reports itself as Linux; only the kernel release distinguishes it."""
-        if os_name != "Linux":
-            return False
-        return "microsoft" in release.lower()
+        return hardware.detect_wsl(os_name, release)
 
     @staticmethod
     def get_hostname():  # pragma: no cover — shells out to OS-specific hardware profiling tools

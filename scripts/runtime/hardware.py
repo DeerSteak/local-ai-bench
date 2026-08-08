@@ -9,6 +9,14 @@ VRAM_RESERVE_GB = 1.0
 RAM_RESERVE_GB  = 8.0
 
 
+def detect_wsl(os_name: str, release: str) -> bool:
+    """WSL reports itself as Linux; only the kernel release distinguishes it.
+    Lives here, not in shared.py, so setup can call it before requirements are installed."""
+    if os_name != "Linux":
+        return False
+    return "microsoft" in release.lower()
+
+
 def parse_size_gb(s: str) -> float:
     """Parse a size string like '~4.9 GB' or '~274 MB' to float GB, 0.0 if unparsable."""
     s = s.strip().lstrip("~≈")

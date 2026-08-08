@@ -33,7 +33,6 @@ from scripts.runtime.comfyui_installation import (
     write_extra_model_paths,
 )
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
-from scripts.runtime.shared import Shared
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -551,7 +550,7 @@ else:
     warn(memory_ceiling_note)
 
 # WSL2 caps the VM near half the host's RAM, and the host total isn't visible from in here.
-if Shared.detect_wsl(os_name, platform.release()):
+if hardware.detect_wsl(os_name, platform.release()):
     _reported = f"{total_ram_gb:.0f} GB" if total_ram_gb else "an unknown amount"
     warn(f"Running under WSL2, which reports {_reported} of RAM — if the Windows "
          "host has more, models that would fit are being filtered out silently")
@@ -797,7 +796,7 @@ header_command = next(
 header_package = header_command[-1] if header_command else None
 vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
 _cuda_plan = cuda_toolkit_plan(
-    is_wsl=Shared.detect_wsl(os_name, platform.release()),
+    is_wsl=hardware.detect_wsl(os_name, platform.release()),
     nvidia_ok=nvidia_ok, nvcc_found=find_nvcc() is not None,
 )
 if _cuda_plan:
