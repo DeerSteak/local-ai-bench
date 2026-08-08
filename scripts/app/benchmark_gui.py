@@ -860,7 +860,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=1, column=0, columnspan=len(available_engines) + 2, sticky="w", pady=(8, 0))
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
-    execution_box.grid(row=5, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
+    execution_box.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     split_label = "Multi-GPU mode (tensor is experimental)" if "tensor" in gpu_split_modes else "Multi-GPU mode"
     ttk.Label(execution_box, text=split_label).grid(row=1, column=0, sticky="w", pady=2)
     ttk.Combobox(
@@ -897,7 +897,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
-    paths_box.grid(row=5, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
+    paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
     paths_box.columnconfigure(1, weight=1)
     ttk.Label(paths_box, text="Results JSON (blank = automatic)").grid(row=0, column=0, sticky="w")
     ttk.Entry(paths_box, textvariable=option_vars["out"]).grid(row=0, column=1, sticky="ew", padx=10)
@@ -1172,7 +1172,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=12, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
@@ -1456,6 +1456,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_scroll.grid(row=2, column=1, sticky="ns")
     history_actions = ttk.Frame(history_tab)
     history_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+    history_review_actions = ttk.Frame(history_actions)
+    history_review_actions.pack(fill="x")
+    history_recovery_actions = ttk.Frame(history_actions)
+    history_recovery_actions.pack(fill="x", pady=(8, 0))
     history_message = tk.StringVar(value="History has not been loaded.")
     ttk.Label(history_tab, textvariable=history_message).grid(row=4, column=0, sticky="w", pady=(8, 0))
     history_entries = {"all": [], "visible": []}
@@ -1822,26 +1826,26 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
     ttk.Button(
-        history_actions, text="Open in Dashboard", command=open_history_in_dashboard,
+        history_review_actions, text="Open in Dashboard", command=open_history_in_dashboard,
     ).pack(side="left")
-    ttk.Button(history_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
+    ttk.Button(history_review_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
         side="left", padx=(8, 0),
     )
-    ttk.Button(history_actions, text="Export Diagnostic", command=export_history_diagnostic).pack(
+    ttk.Button(history_review_actions, text="Export Diagnostic", command=export_history_diagnostic).pack(
         side="left", padx=(8, 0),
     )
     ttk.Button(
-        history_actions, text="Inspect Recovery",
+        history_recovery_actions, text="Inspect Recovery",
         command=lambda: inspect_history_recovery("inspect"),
+    ).pack(side="left")
+    ttk.Button(
+        history_recovery_actions, text="Resume", command=lambda: inspect_history_recovery("resume"),
     ).pack(side="left", padx=(8, 0))
     ttk.Button(
-        history_actions, text="Resume", command=lambda: inspect_history_recovery("resume"),
+        history_recovery_actions, text="Retry Cases", command=lambda: inspect_history_recovery("retry"),
     ).pack(side="left", padx=(8, 0))
     ttk.Button(
-        history_actions, text="Retry Cases", command=lambda: inspect_history_recovery("retry"),
-    ).pack(side="left", padx=(8, 0))
-    ttk.Button(
-        history_actions, text="Fork", command=lambda: inspect_history_recovery("fork"),
+        history_recovery_actions, text="Fork", command=lambda: inspect_history_recovery("fork"),
     ).pack(side="left", padx=(8, 0))
     history_query.trace_add("write", apply_history_filters)
     history_status_filter.trace_add("write", apply_history_filters)
