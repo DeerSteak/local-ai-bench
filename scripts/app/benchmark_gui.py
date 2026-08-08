@@ -40,6 +40,7 @@ from scripts.app.benchmark_frontend import (
     frontend_state_availability_errors,
     build_model_entries,
     build_test_entries,
+    engine_incompatible_tests,
     load_frontend_state,
     model_selection_error,
     save_frontend_state,
@@ -2066,9 +2067,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
         progress_engines[:] = run_engines
         for engine_index, engine_name in enumerate(run_engines):
+            skipped_here = set(engine_incompatible_tests(tests, engine_name))
             for stage in (key for key in STAGE_ORDER if key in tests):
                 # Images don't depend on the engine — benchmark.py runs them on the first pass only.
                 if stage == "img" and engine_index > 0:
+                    continue
+                # llamabench/vllmbench shell out to one specific engine's own binary.
+                if stage in skipped_here:
                     continue
                 row = ttk.Frame(status_list)
                 row.pack(fill="x", pady=(6, 1))

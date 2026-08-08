@@ -294,6 +294,24 @@ ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc"]
 
+# Tests that shell out to one engine's own native benchmark binary rather than going
+# through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
+ENGINE_NATIVE_TESTS = {
+    "llamacpp": ("llamabench", "llamabenchconc"),
+    "vllm": ("vllmbench",),
+}
+
+
+def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
+    """Selected tests that are native to a *different* engine than `engine_name` and
+    would just warn and produce nothing if scheduled — see ENGINE_NATIVE_TESTS."""
+    native_here = set(ENGINE_NATIVE_TESTS.get(engine_name, ()))
+    other_engines_native = {
+        test for name, native_tests in ENGINE_NATIVE_TESTS.items()
+        if name != engine_name for test in native_tests
+    }
+    return [t for t in tests if t in other_engines_native and t not in native_here]
+
 
 def selected_plan_models(tests: list[str], llm_models: list[dict],
                          concurrency_models: list[dict], embedding_models: list[dict],
@@ -719,6 +737,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
+
+        native_elsewhere = engine_incompatible_tests(tests, engine_name)
+        if native_elsewhere:
+            Shared.log(f"{', '.join(native_elsewhere)} only run under their native engine "
+                       f"— skipping for {engine_name}")
+            tests = [t for t in tests if t not in native_elsewhere]
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",

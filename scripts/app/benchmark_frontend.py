@@ -17,7 +17,7 @@ from scripts.app.benchmark_options import (
 
 from scripts.runtime import config
 from scripts.runtime.comfyui_installation import find_comfyui_installation
-from scripts.app.benchmark import CONCURRENCY_TESTS, LLM_TESTS
+from scripts.app.benchmark import CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
