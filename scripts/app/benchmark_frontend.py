@@ -58,7 +58,7 @@ TEST_SHORTCUT_GROUPS = {
     "i": {"img"},
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
-LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
+LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS + ["vllmbench"])
 MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
 MAX_PROMPT_TOKEN_OPTIONS: list[int] = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}

@@ -96,7 +96,7 @@ def hf_token_review_label(plan: dict) -> str:
 
 
 def license_button_label(url: str) -> str:
-    return f"Accept license: {url}"
+    return "Review license…"
 
 
 def selected_gui_token(existing_available: bool, override: bool, entered: str) -> str:
@@ -279,11 +279,15 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     scrollbar = ttk.Scrollbar(models_page, orient="vertical", command=canvas.yview)
     model_list = ttk.Frame(canvas)
     model_list.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=model_list, anchor="nw")
+    model_window = canvas.create_window((0, 0), window=model_list, anchor="nw")
+    canvas.bind(
+        "<Configure>", lambda event: canvas.itemconfigure(model_window, width=event.width),
+    )
     canvas.configure(yscrollcommand=scrollbar.set)
     canvas.grid(row=2, column=0, sticky="nsew")
     scrollbar.grid(row=2, column=1, sticky="ns")
     models_page.rowconfigure(2, weight=1)
+    model_list.columnconfigure(0, weight=1)
 
     def scroll_models(event):
         widget = root.winfo_containing(root.winfo_pointerx(), root.winfo_pointery())
@@ -312,19 +316,25 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         row += 1
         for model in models:
             key = model.get("tag") or model["short"]
-            checkbutton = ttk.Checkbutton(
-                model_list, text=model_row_label(model, initial_engines, memory_ceiling_gb),
-                variable=model_vars[key],
+            option_row = ttk.Frame(model_list)
+            option_row.grid(row=row, column=0, sticky="ew", padx=(16, 12), pady=2)
+            option_row.columnconfigure(1, weight=1)
+            checkbutton = ttk.Checkbutton(option_row, variable=model_vars[key])
+            checkbutton.grid(row=0, column=0, sticky="nw")
+            label = ttk.Label(
+                option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                wraplength=520,
             )
-            checkbutton.grid(row=row, column=0, sticky="w", padx=(16, 0))
+            label.grid(row=0, column=1, sticky="w", padx=(2, 0))
+            label.bind("<Button-1>", lambda _event, control=checkbutton: control.invoke())
             if "download_size" in model:
-                labelled_models[key] = (checkbutton, model)
+                labelled_models[key] = (label, model)
             license_url = model.get("license_url")
             if license_url:
                 ttk.Button(
                     model_list, text=license_button_label(license_url),
                     command=lambda url=license_url: webbrowser.open(url),
-                ).grid(row=row, column=1, sticky="w", padx=(12, 0))
+                ).grid(row=row, column=1, sticky="e", pady=2)
             row += 1
     if cleanup_names:
         ttk.Label(

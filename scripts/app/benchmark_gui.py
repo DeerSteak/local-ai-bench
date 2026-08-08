@@ -756,8 +756,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
         text = label if entry.available else f"{label} (model not installed)"
-        widget = ttk.Checkbutton(tests_box, text=text, variable=test_vars[name])
-        widget.grid(row=row, column=0, sticky="w")
+        option_row = ttk.Frame(tests_box)
+        option_row.grid(row=row, column=0, sticky="ew", pady=2)
+        option_row.columnconfigure(1, weight=1)
+        widget = ttk.Checkbutton(option_row, variable=test_vars[name])
+        widget.grid(row=0, column=0, sticky="nw")
+        option_label = ttk.Label(option_row, text=text, wraplength=280)
+        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
+        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
         ttk.Button(
             tests_box, text="Reset", width=6,
             command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
@@ -779,8 +785,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             ttk.Label(models_box, text=entry.section, style="Section.TLabel").grid(row=row, column=0, sticky="w", pady=(7, 2))
             row += 1
             previous = entry.section
-        widget = ttk.Checkbutton(models_box, text=entry.label, variable=model_vars[entry.value])
-        widget.grid(row=row, column=0, sticky="w", padx=(12, 0))
+        option_row = ttk.Frame(models_box)
+        option_row.grid(row=row, column=0, sticky="ew", padx=(12, 0), pady=2)
+        option_row.columnconfigure(1, weight=1)
+        widget = ttk.Checkbutton(option_row, variable=model_vars[entry.value])
+        widget.grid(row=0, column=0, sticky="nw")
+        option_label = ttk.Label(option_row, text=entry.label, wraplength=280)
+        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
+        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
         ttk.Button(
             models_box, text="Reset", width=6,
             command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
@@ -1186,11 +1198,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     log_scroll.grid(row=2, column=1, sticky="ns")
     log_actions = ttk.Frame(log_tab)
     log_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-    stop_button = ttk.Button(log_actions, text="Stop Benchmark", state="disabled")
+    log_run_actions = ttk.Frame(log_actions)
+    log_run_actions.pack(fill="x")
+    log_result_actions = ttk.Frame(log_actions)
+    log_result_actions.pack(fill="x", pady=(8, 0))
+    stop_button = ttk.Button(log_run_actions, text="Stop Benchmark", state="disabled")
     stop_button.pack(side="right")
-    pause_button = ttk.Button(log_actions, text="Pause", state="disabled")
+    pause_button = ttk.Button(log_run_actions, text="Pause", state="disabled")
     pause_button.pack(side="right", padx=(0, 8))
-    ttk.Button(log_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
+    ttk.Button(log_run_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
     def open_results_folder():
         output = option_vars["out"].get().strip()
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
@@ -1393,13 +1409,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             messagebox.showerror("Support bundle failed", str(exc), parent=root)
 
-    ttk.Button(log_actions, text="Open Results Folder", command=open_results_folder).pack(
-        side="left", padx=(10, 0),
+    ttk.Button(log_result_actions, text="Open Results Folder", command=open_results_folder).pack(
+        side="left",
     )
-    ttk.Button(log_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(10, 0))
-    ttk.Button(log_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(10, 0))
-    ttk.Button(log_actions, text="Create Report", command=create_report).pack(side="left", padx=(10, 0))
-    ttk.Button(log_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(10, 0))
+    ttk.Button(log_result_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(8, 0))
+    ttk.Button(log_result_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(8, 0))
+    ttk.Button(log_result_actions, text="Create Report", command=create_report).pack(side="left", padx=(8, 0))
+    ttk.Button(log_result_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(8, 0))
 
     history_tab.columnconfigure(0, weight=1)
     history_tab.rowconfigure(2, weight=1)
@@ -2026,7 +2042,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         }
         progress_started_at = time.monotonic()
         summary_box = ttk.LabelFrame(shell, text="Run summary", padding=(10, 6))
-        summary_box.pack(fill="x", pady=(0, 2))
+        summary_box.pack(fill="x", pady=(0, 8))
         summary_box.columnconfigure(1, weight=1)
         progress_summary_vars.clear()
         for row, (label, value) in enumerate(progress_summary_rows(progress_metrics).items()):
@@ -2035,7 +2051,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_summary_vars[label] = variable
             ttk.Label(summary_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
         resource_box = ttk.LabelFrame(shell, text="Resources", padding=(10, 6))
-        resource_box.pack(fill="x", pady=(6, 2))
+        resource_box.pack(fill="x", pady=(0, 8))
         resource_box.columnconfigure(1, weight=1)
         progress_resource_vars.clear()
         for row, label in enumerate(("CPU", "Process RAM", "System RAM", "GPU")):
@@ -2044,7 +2060,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             progress_resource_vars[label] = variable
             ttk.Label(resource_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
         progress_remaining_var.set("Remaining time: calibrating")
-        ttk.Label(shell, textvariable=progress_remaining_var).pack(anchor="w", pady=(2, 6))
+        ttk.Label(shell, textvariable=progress_remaining_var).pack(anchor="w", pady=(0, 8))
         status_shell = ttk.Frame(shell)
         status_shell.pack(fill="both", expand=True)
         status_canvas = tk.Canvas(status_shell, highlightthickness=0)
@@ -2086,7 +2102,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 if stage in skipped_here:
                     continue
                 row = ttk.Frame(status_list)
-                row.pack(fill="x", pady=(6, 1))
+                row.pack(fill="x", pady=(10, 2))
                 heading = labels.get(stage, stage)
                 if len(run_engines) > 1:
                     heading = f"{heading} — {engine_name}"
@@ -2106,8 +2122,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     stage_models = []
                 for entry in stage_models:
                     model_row = ttk.Frame(status_list)
-                    model_row.pack(fill="x", padx=(14, 0), pady=1)
-                    ttk.Label(model_row, text=entry.label, width=32).pack(side="left", anchor="w")
+                    model_row.pack(fill="x", padx=(14, 0), pady=2)
+                    ttk.Label(model_row, text=entry.label, wraplength=270).pack(
+                        side="left", anchor="w", fill="x", expand=True,
+                    )
                     variable = tk.StringVar(value="○ Queued")
                     model_progress_vars[(engine_name, stage, entry.label)] = variable
                     ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")

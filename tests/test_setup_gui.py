@@ -79,7 +79,7 @@ def test_hf_token_review_label_reports_existing_and_new_credentials(plan, expect
 
 def test_license_button_label_explains_the_link_action():
     url = "https://huggingface.co/example/model"
-    assert license_button_label(url) == f"Accept license: {url}"
+    assert license_button_label(url) == "Review license…"
 
 
 @pytest.mark.parametrize(

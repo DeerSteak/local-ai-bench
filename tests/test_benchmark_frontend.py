@@ -13,6 +13,7 @@ from scripts.app.benchmark_frontend import (
     format_engine_selection,
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
+    LLM_BACKED_TESTS,
     FRONTEND_OPTION_CLASSIFICATION,
     FRONTEND_CONTROL_BINDINGS,
     FRONTEND_OPTION_INVENTORY,
@@ -440,6 +441,10 @@ def test_default_test_state_matches_documented_matrix():
     ))
     # llamabenchconc is folded into the llamabench toggle and is not its own entry.
     assert "llamabenchconc" not in entries
+
+
+def test_vllm_bench_builds_llm_model_progress_rows():
+    assert "vllmbench" in LLM_BACKED_TESTS
 
 
 def test_empty_inventory_makes_every_test_unavailable_and_unchecked():
