@@ -221,6 +221,17 @@ fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 
 # ── 3. Base Python dependencies ────────────────────────────────────────────────
+# setup_check.py imports third-party packages at module level, so a fresh venv needs
+# them before it can start; its own later install then refreshes them.
+section "Base Dependencies"
+info "Installing Python dependencies ..."
+if "$VENV_PYTHON" -m pip install -q -r requirements.txt; then
+    ok "Dependencies installed from requirements.txt"
+else
+    fail "pip install -r requirements.txt failed — setup cannot continue"
+    exit 1
+fi
+
 # ── 4. Run setup_check.py inside the venv ─────────────────────────────────────
 # (llama.cpp detection/install — including on Linux — happens inside
 # setup_check.py, gated behind its own approval prompt, so it isn't

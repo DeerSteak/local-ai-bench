@@ -96,6 +96,18 @@ if exist "%VENV_DIR%\Scripts\python.exe" (
 set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
 
 :: ── 3. Base Python dependencies ───────────────────────────────────────────────
+:: setup_check.py imports third-party packages at module level, so a fresh venv needs
+:: them before it can start; its own later install then refreshes them.
+echo.
+echo [Base Dependencies]
+echo.
+%VENV_PYTHON% -m pip install -q -r requirements.txt
+if %errorlevel% neq 0 (
+    echo   X  pip install -r requirements.txt failed - setup cannot continue
+    exit /b 1
+)
+echo   OK  Dependencies installed from requirements.txt
+
 :: ── 4. Run setup_check.py ─────────────────────────────────────────────────────
 :: (llama.cpp detection/install happens inside setup_check.py, gated behind its
 :: own approval prompt, so it isn't installed here without asking.)
