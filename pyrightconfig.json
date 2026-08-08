@@ -1,0 +1,8 @@
+{
+  "include": ["scripts", "tests"],
+  "exclude": ["**/__pycache__", "ComfyUI", "bench-env", "**/node_modules"],
+  "extraPaths": ["scripts"],
+  "venvPath": ".",
+  "venv": "bench-env",
+  "typeCheckingMode": "standard"
+}
