@@ -594,7 +594,8 @@ class Shared:
 
     @staticmethod
     def load_crash_cache(path: Path) -> dict:
-        """Load a benchmark's tag -> crash record cache — see docs/project-structure.md's *_crash_cache.json entries."""
+        """Load a benchmark's engine -> tag -> crash record cache — see
+        docs/project-structure.md's *_crash_cache.json entries."""
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
@@ -609,10 +610,13 @@ class Shared:
 
     @staticmethod
     def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
-                           expected_bank_hash: str | None = None) -> dict | None:
-        """Skip-result dict if `tag` is a known repeat-crasher, else None.
+                           expected_bank_hash: str | None = None, *,
+                           engine_name: str) -> dict | None:
+        """Skip-result dict if `tag` is a known repeat-crasher on `engine_name`, else None.
+        Scoped per engine — a llama.cpp crash says nothing about vLLM's different weights
+        and runtime for the same catalog tag, and vice versa.
         `expected_bank_hash` treats a crash cached against a stale bank version as not-crashed, without deleting it."""
-        detail = crash_cache.get(tag)
+        detail = crash_cache.get(engine_name, {}).get(tag)
         if detail is None:
             return None
         if config.RETRY_CRASHED_MODELS:
@@ -623,24 +627,24 @@ class Shared:
                         "— ignoring stale entry and retrying")
             return None
         crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed the engine's runner repeatedly on "
+        Shared.warn(f"{tag} previously crashed {engine_name}'s runner repeatedly on "
                     f"{crashed_at} — skipping (delete {cache_path} to retry)")
         return {
             "label": label,
             "skipped": True,
             "skip_reason": "known_crash",
-            "skip_detail": f"Crashed the engine's runner repeatedly on {crashed_at}",
+            "skip_detail": f"Crashed {engine_name}'s runner repeatedly on {crashed_at}",
         }
 
     @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
-                      extra: dict | None = None) -> str:
-        """Record a crash for `tag`; `extra` (e.g. {"bank_hash": ...}) lets
+                      extra: dict | None = None, *, engine_name: str) -> str:
+        """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
         check_crash_cache later tell a stale record from a current one."""
         crashed_at = datetime.now().isoformat(timespec="seconds")
-        crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
+        crash_cache.setdefault(engine_name, {})[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"The engine's runner crashed repeatedly {what} — recorded to {cache_path}")
+        Shared.err(f"{engine_name}'s runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
 
     @staticmethod
@@ -679,12 +683,14 @@ class Shared:
                            f"— last server output:\n{engine.tail_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
-                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
+                    Shared.record_crash(tag, crash_cache, cache_path, what,
+                                        extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not engine.wait_for_recovery():
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
-                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
+                    Shared.record_crash(tag, crash_cache, cache_path, what,
+                                        extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
@@ -842,7 +848,7 @@ class Shared:
                     continue
 
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
-                                                       expected_bank_hash=bank_hash)
+                                                       expected_bank_hash=bank_hash, engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
