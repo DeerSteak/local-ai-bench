@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 
-from scripts.results.result_store import validate_json_data
+from scripts.results.result_store import as_dict, validate_json_data
 
 
 PERFORMANCE_METRICS = {
@@ -17,9 +17,9 @@ ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
 
 
 def _run_settings(result: dict) -> dict:
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
-    plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
-    settings = plan.get("effective_config") if isinstance(plan.get("effective_config"), dict) else {}
+    run = as_dict(result.get("run"))
+    plan = as_dict(run.get("plan"))
+    settings = as_dict(plan.get("effective_config"))
     return settings
 
 
@@ -27,9 +27,9 @@ def summarize_result(result: dict, path: Path) -> dict:
     if not isinstance(result, dict) or not isinstance(result.get("profile"), dict):
         raise ValueError("not a benchmark result")
     validate_json_data(result)
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
+    run = as_dict(result.get("run"))
     profile = result["profile"]
-    stages = run.get("stages") if isinstance(run.get("stages"), dict) else {}
+    stages = as_dict(run.get("stages"))
     return {
         "path": str(Path(path).resolve()),
         "started_at": run.get("started_at") or "Not recorded",
@@ -144,7 +144,7 @@ def compare_results(baseline: dict, candidate: dict) -> dict:
         before = baseline_metrics.get(key)
         after = candidate_metrics.get(key)
         delta = after - before if before is not None and after is not None else None
-        percent = (delta / before * 100) if delta is not None and before != 0 else None
+        percent = (delta / before * 100) if delta is not None and before else None
         rows.append({"metric": key, "baseline": before, "candidate": after,
                      "delta": delta, "percent_change": percent})
     return {"compatible": not incompatible, "incompatible_fields": sorted(set(incompatible)),
