@@ -60,15 +60,15 @@
 | `.benchmark_frontend_state.json` | Gitignored GUI/terminal selection and execution settings plus the last GUI preset name; stale or invalid values fall back to current defaults |
 | `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
 | `.coveragerc` | Coverage config for the test suite — omits `setup/setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
-| `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
+| `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Keyed `{engine_name: {tag: detail}}`: a crash is scoped to the engine that produced it, since the same catalog tag is a different runtime and a different weight file per engine (see [Engines](engines.md)) |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
-| `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry |
+| `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Same per-engine keying as `.llm_crash_cache.json` |
 | `.mcq_crash_cache.json` | Same as above, for the MCQ accuracy test. Also records which question-bank version (a short content hash) the crash happened against, so a crash recorded on an old/smaller bank doesn't skip a model forever once the bank changes — see [bank versioning](workloads.md#bank-versioning) |
 | `.math_crash_cache.json` | Same as above, for the math accuracy test |
 | `.reasoning_crash_cache.json` | Same as above, for the reasoning accuracy test |
 | `.code_crash_cache.json` | Same as above, for the code accuracy test |
 | `.tool_crash_cache.json` | Same as above, for the tool-calling accuracy test |
-| `.concurrency_tool_crash_cache.json` | Records repeatable engine crashes from the tool-style concurrency sweep; safe to delete to retry |
+| `.concurrency_tool_crash_cache.json` | Records repeatable engine crashes from the tool-style concurrency sweep; safe to delete to retry. Same per-engine keying as `.llm_crash_cache.json` |
 | `.concurrency_chat_crash_cache.json` | Same as above, for the chat concurrency sweep |
 
 The old `compare.py` CLI tool has been dropped — it's been replaced by the [dashboard](dashboard.md).

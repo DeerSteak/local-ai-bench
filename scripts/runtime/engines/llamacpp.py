@@ -332,7 +332,8 @@ class LlamaCppEngine(InferenceEngine):
                     if self.is_connection_crash(e):
                         self.wait_for_recovery()
                     Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}", extra=crash_extra)
+                                         f"warming up at num_ctx={num_ctx}",
+                                         extra=crash_extra, engine_name=self.name)
                 return False
             Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
         return True
