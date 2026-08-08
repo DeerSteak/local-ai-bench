@@ -41,9 +41,11 @@ def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]
           for workload in ACCURACY_SECTIONS),
     ]
     if not regraded:
+        event_path = result_path.with_suffix(".events.sqlite3")
         artifacts.extend([
             results_dir / f"images_{suffix}",
-            result_path.with_suffix(".events.sqlite3"),
+            event_path,
+            *(Path(f"{event_path}{suffix}") for suffix in ("-wal", "-shm", "-journal")),
             *(results_dir / f"regraded_answers_{workload}_{suffix}.json"
               for workload in ACCURACY_SECTIONS),
             results_dir / f"regraded_{result_path.name}",
