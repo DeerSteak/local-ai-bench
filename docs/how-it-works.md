@@ -78,7 +78,7 @@ The frontend uses `Shared.plain_output`, native `cls` clearing on Windows, and A
 
 The detailed workload shapes, checkpoints, model lists, and metrics live in [Workloads](workloads.md). Public flags and their effective defaults live in the [CLI Reference](cli-reference.md). Keeping those facts in one place prevents this architecture guide from becoming a second, stale parameter reference.
 
-Runtime defaults are defined in `scripts/runtime/config.py`; model metadata is defined in `scripts/workloads/models.py`; the conversation checkpoint plan is defined by `LLMConversationBenchmark.CONV_CHECKPOINTS`; and dashboard context ordering is defined by `CTX_ORDER` in `dashboard/src/constants.js`. CLI-overridable values are read through `config.*` at use sites so an argument applied after import is still honored.
+Runtime defaults are defined in `scripts/runtime/config.py`; model metadata is defined in `scripts/workloads/models.py`; the conversation checkpoint plan is defined by `LLMConversationBenchmark.CONV_CHECKPOINTS`; and dashboard context ordering is defined by `CTX_ORDER` in `dashboard/src/constants.ts`. CLI-overridable values are read through `config.*` at use sites so an argument applied after import is still honored.
 
 Material architecture changes are reviewed against the [architecture decision log](architecture-decisions.md) before implementation. Its simplicity gate requires a current reliability or customer need, explicit live-state ownership, compatibility evidence, and a deletion condition for every temporary path; speculative frameworks and unneeded service boundaries are not accepted.
 

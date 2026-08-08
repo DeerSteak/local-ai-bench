@@ -14,7 +14,7 @@ function BackendTag({ backend }) {
 function formatTimestamp(ts) {
   if (!ts) return null;
   const d = new Date(ts);
-  if (isNaN(d)) return null;
+  if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 

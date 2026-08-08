@@ -1,9 +1,9 @@
 import { FALLBACK_COLORS, EMBED_MODEL_ORDER, EMBED_BAR_COLORS } from "../constants";
-import { embedModelLabel } from "./shared";
+import { embedModelLabel, entriesOf } from "./shared";
 
 // Return all embedding model keys from the loaded files, in canonical order
 export function getAllEmbedModels(files) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files) for (const m of Object.keys(f.data.embeddings || {})) s.add(m);
   const known   = EMBED_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !EMBED_MODEL_ORDER.includes(m));
@@ -47,7 +47,7 @@ export function buildEmbedBarDataByModel(file, models) {
   return models
     .map(model => {
       const s = file.data.embeddings?.[model];
-      const row = { modelLabel: getEmbedLabel([file], model) };
+      const row: { modelLabel: string, throughput?: number } = { modelLabel: getEmbedLabel([file], model) };
       if (s && !s.skipped) row.throughput = s.chunks_per_sec_mean;
       return row;
     })
@@ -61,7 +61,7 @@ export function buildEmbedBarConfigsByModel(file, models) {
 
 export function flattenEmbedData(files) {
   return files.flatMap(f =>
-    Object.entries(f.data.embeddings || {}).map(([model, s]) => {
+    entriesOf(f.data.embeddings).map(([model, s]) => {
       const modelLabel = s.label || model;
       if (s.skipped) {
         return {

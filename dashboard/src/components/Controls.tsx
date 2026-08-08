@@ -212,7 +212,7 @@ export default function Controls({
               min={400}
               max={2000}
               onBlur={e => setChartWidth(Math.min(2000, Math.max(400, parseInt(e.target.value) || 708)))}
-              onKeyDown={e => e.key === "Enter" && e.target.blur()}
+              onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
               className={styles.widthInput}
             />
             <span className={styles.widthUnit}>px</span>

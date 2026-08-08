@@ -14,7 +14,7 @@ export default function ImagesPanel({ containerRef, files, enabledImageModels, c
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
 
-  const resSet = new Set();
+  const resSet = new Set<string>();
   for (const f of files)
     for (const model of allModels) {
       for (const res of Object.keys(f.data.images?.[model]?.resolutions || {})) resSet.add(res);

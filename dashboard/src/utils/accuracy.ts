@@ -1,11 +1,11 @@
 import { LLM_DISPLAY_ORDER, CATEGORY_COLORS, FILE_COLORS } from "../constants";
-import { modelLabel } from "./shared";
+import { modelLabel, entriesOf } from "./shared";
 
 // Return all model keys present in a given accuracy test (mcq/math/code)
 // across files, in canonical order — the same LLM roster runs every
 // accuracy test, so the current-plus-legacy display order applies here too.
 export function getAllAccuracyModels(files, testKey) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files) for (const m of Object.keys(f.data[testKey] || {})) s.add(m);
   const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
@@ -47,7 +47,7 @@ export function buildAccuracyGroupedBarConfigs(files, testKey, enabledModels) {
 // derived from the data rather than a fixed list, sorted alphabetically for
 // a stable chart order.
 function getAccuracyCategories(files, testKey, model) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files)
     for (const cat of Object.keys(f.data[testKey]?.[model]?.by_category || {})) s.add(cat);
   return [...s].sort();
@@ -77,7 +77,7 @@ export function buildAccuracyCategoryConfigs(files) {
 const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very_hard"];
 
 export function buildAccuracyDifficultyData(files, testKey, model) {
-  const found = new Set();
+  const found = new Set<string>();
   for (const f of files)
     for (const difficulty of Object.keys(f.data[testKey]?.[model]?.by_difficulty || {}))
       found.add(difficulty);
@@ -128,7 +128,7 @@ export function buildAccuracyTimeoutData(files, testKey, enabledModels) {
 
 export function flattenAccuracyData(files, testKey) {
   return files.flatMap(f =>
-    Object.entries(f.data[testKey] || {}).map(([model, s]) => {
+    entriesOf(f.data[testKey]).map(([model, s]) => {
       if (s.skipped) {
         return {
           _fileId: f.id, model, skipped: true,

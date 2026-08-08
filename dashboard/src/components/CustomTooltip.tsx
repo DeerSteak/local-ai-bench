@@ -1,7 +1,7 @@
 import { fmt } from "../utils/shared";
 import styles from "./CustomTooltip.module.css";
 
-export default function CustomTooltip({ active, payload, label, unit, xPrefix, orderedBarConfigs }) {
+export default function CustomTooltip({ active = false, payload = null, label = null, unit, xPrefix, orderedBarConfigs = null }) {
   if (!active || !payload?.length) return null;
   const groupLabel = payload[0]?.payload?._groupLabel ?? label;
   const row = payload[0]?.payload;

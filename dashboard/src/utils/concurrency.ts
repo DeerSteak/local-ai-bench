@@ -1,4 +1,5 @@
 import { CONCURRENCY_LEVELS, CONCURRENCY_STOP_LABELS, LLM_DISPLAY_ORDER } from "../constants";
+import { entriesOf } from "./shared";
 
 const ttftMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
 
@@ -10,7 +11,7 @@ const ttftMean = sample => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec
 // Return all model keys present in a concurrency section across files, in
 // canonical order (same LLM roster as everything else).
 export function getAllConcurrencyModels(files, section) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files) for (const m of Object.keys(f.data[section] || {})) s.add(m);
   const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
@@ -22,7 +23,7 @@ export function getAllConcurrencyModels(files, section) {
 // tokens/sec across the whole concurrent batch).
 export function buildConcurrencyDataForModel(files, section, model, metric) {
   const allLevels = CONCURRENCY_LEVELS[section];
-  const levelSet = new Set();
+  const levelSet = new Set<string>();
   for (const f of files)
     for (const level of Object.keys(f.data[section]?.[model] || {}))
       if (allLevels.includes(level)) levelSet.add(level);
@@ -60,7 +61,7 @@ export function getConcurrencyStopInfo(file, section, model) {
 export function flattenConcurrencyData(files, section) {
   const allLevels = CONCURRENCY_LEVELS[section];
   return files.flatMap(f =>
-    Object.entries(f.data[section] || {}).flatMap(([model, d]) => {
+    entriesOf(f.data[section]).flatMap(([model, d]) => {
       if (d?.skipped) {
         return [{
           _fileId: f.id, model, level: "—", skipped: true,

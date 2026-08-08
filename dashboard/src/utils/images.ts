@@ -2,7 +2,7 @@ import {
   RES_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS,
   IMAGE_MODEL_ORDER, IMAGE_BAR_COLORS, RES_COLORS,
 } from "../constants";
-import { getImageModelColor, imageModelLabel } from "./shared";
+import { getImageModelColor, imageModelLabel, entriesOf, valuesOf } from "./shared";
 
 // Bar-chart status label for one (file, model, resolution) cell in the
 // Images charts, mirroring llm.js's getBarStatusLabel: "{res} - Timed Out" for
@@ -22,7 +22,7 @@ export function getImageBarStatusLabel(file, model, res) {
 
 // Return all image model keys from the loaded files, in canonical order
 export function getAllImageModels(files) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files) for (const m of Object.keys(f.data.images || {})) s.add(m);
   const known   = IMAGE_MODEL_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !IMAGE_MODEL_ORDER.includes(m));
@@ -39,7 +39,7 @@ export function getImageLabel(files, model) {
 
 // Images: one chart per model. X = resolution, lines = files.
 export function buildImagesDataForModel(files, model) {
-  const resSet = new Set();
+  const resSet = new Set<string>();
   for (const f of files)
     for (const r of Object.keys(f.data.images?.[model]?.resolutions || {})) resSet.add(r);
   const resLabels = RES_ORDER.filter(r => resSet.has(r));
@@ -71,9 +71,9 @@ export function buildImagesDataForResolution(files, resolution, enabledImageMode
 // Legacy: X = resolution, lines = image models (+ file distinction if multi)
 export function buildImagesData(files, enabledImageModels) {
   const isSingle = files.length === 1;
-  const resSet = new Set();
+  const resSet = new Set<string>();
   for (const f of files)
-    for (const md of Object.values(f.data.images || {}))
+    for (const md of valuesOf(f.data.images))
       for (const r of Object.keys(md.resolutions || {})) resSet.add(r);
   const resLabels = RES_ORDER.filter(r => resSet.has(r));
 
@@ -81,7 +81,7 @@ export function buildImagesData(files, enabledImageModels) {
     .map(res => {
       const row = { resLabel: res };
       files.forEach((f, fi) => {
-        for (const [model, md] of Object.entries(f.data.images || {})) {
+        for (const [model, md] of entriesOf(f.data.images)) {
           if (!enabledImageModels.has(model) || !md.resolutions?.[res]) continue;
           const key = isSingle ? model : `f${fi}_${model}`;
           row[key] = md.resolutions[res].sec_per_image_mean;
@@ -167,7 +167,7 @@ export function buildImagesBarDataByModel(file, models) {
 }
 
 export function buildImagesBarConfigsByModel(file, models) {
-  const resSet = new Set();
+  const resSet = new Set<string>();
   for (const model of models) {
     for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
     const timedOutRes = file.data.images?.[model]?.timed_out;
@@ -184,7 +184,7 @@ export function buildImagesBarConfigsByModel(file, models) {
 
 // Images line chart by system: rows = resolutions, one line per model, for one file
 export function buildImagesLineDataByRes(file, models) {
-  const resSet = new Set();
+  const resSet = new Set<string>();
   for (const model of models)
     for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
   const resLabels = RES_ORDER.filter(r => resSet.has(r));
@@ -206,8 +206,8 @@ export function buildImagesLineConfigsByRes(file, models, data) {
 
 export function flattenImageData(files) {
   return files.flatMap(f =>
-    Object.entries(f.data.images || {}).flatMap(([model, md]) =>
-      Object.entries(md.resolutions || {}).map(([res, s]) => ({
+    entriesOf(f.data.images).flatMap(([model, md]) =>
+      entriesOf(md.resolutions).map(([res, s]) => ({
         _fileId: f.id, model,
         modelLabel: md.label || model,
         steps: md.steps, res,

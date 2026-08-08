@@ -1,6 +1,6 @@
 import styles from "./CustomLegend.module.css";
 
-export default function CustomLegend({ payload, isMultiFile, sortOrder }) {
+export default function CustomLegend({ payload = null, isMultiFile, sortOrder }) {
   if (!payload?.length) return null;
   const useLineSwatches = isMultiFile || payload.some(p => p.payload?.strokeDasharray);
 

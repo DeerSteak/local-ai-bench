@@ -1,5 +1,5 @@
 import { FILE_COLORS, MODEL_DASH_PATTERNS } from "../constants";
-import { buildFileLineConfigs, getModelColor, modelLabel } from "./shared";
+import { buildFileLineConfigs, getModelColor, modelLabel, entriesOf } from "./shared";
 
 export function llamaBenchPromptLabel(tokens) {
   const k = (tokens ?? 0) / 1024;
@@ -26,7 +26,7 @@ export function llamaBenchHasCombinedOnly(modelData) {
 }
 
 function orderedDepths(entryGroups, depthKey) {
-  const depths = new Set();
+  const depths = new Set<number>();
   for (const entries of entryGroups)
     for (const entry of entries)
       if (entry[depthKey] != null) depths.add(entry[depthKey]);
@@ -62,7 +62,7 @@ export function buildLlamaBenchDecodeLineData(files, model) {
 export function buildLlamaBenchDecodeLineConfigs(files, model, data) {
   const configs = [];
   files.forEach((file, fi) => {
-    const tgValues = [...new Set(
+    const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
     )].filter(value => value != null).sort((a, b) => a - b);
     tgValues.forEach((tg, ti) => {
@@ -114,7 +114,7 @@ export function buildLlamaBenchPrefillLineConfigsByModel(models, data) {
 export function buildLlamaBenchDecodeLineConfigsByModel(file, models, data) {
   const configs = [];
   for (const model of models) {
-    const tgValues = [...new Set(
+    const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
     )].filter(value => value != null).sort((a, b) => a - b);
     tgValues.forEach((tg, ti) => {
@@ -137,7 +137,7 @@ export function buildLlamaBenchPrefillLineConfigs(files, data) {
 
 export function flattenLlamaBenchData(files) {
   return files.flatMap(file =>
-    Object.entries(file.data.llamabench || {}).flatMap(([model, modelData]) => {
+    entriesOf(file.data.llamabench).flatMap(([model, modelData]) => {
       if (modelData?.error) {
         return [{ _fileId: file.id, model, metric: "—", skipped: true, skip_detail: modelData.error }];
       }

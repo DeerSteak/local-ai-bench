@@ -147,16 +147,17 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 ## Dashboard tests
 
-The dashboard uses Vitest and ESLint from its own `node_modules`:
+The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:
 
 ```bash
 cd dashboard
 npm test
 npx vitest -t "getBarStatusLabel"
 npm run lint
+npx tsc --noEmit
 ```
 
-The Vitest suite covers pure transformations in `dashboard/src/utils/*.js`, selected-result staging, and registry invariants in `dashboard/src/constants.js`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
+The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
 
 ## What to run before submitting
 
@@ -165,6 +166,7 @@ bash tests.sh
 cd dashboard
 npm test
 npm run lint
+npx tsc --noEmit
 ```
 
 Run the dashboard commands whenever `dashboard/src` changed. For a Python-only change, the pytest suite is sufficient unless the results schema or documented dashboard behavior also changed.

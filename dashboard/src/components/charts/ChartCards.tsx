@@ -14,7 +14,7 @@ function DirectionHint({ direction }) {
   );
 }
 
-export function ChartCard({ title, modelName, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel, logoSrc, direction }) {
+export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }) {
   const yTickFormatter = v => fmt(v, unit);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
@@ -66,7 +66,7 @@ export function ChartCard({ title, modelName, data, lineConfigs, xKey, xLabel, y
   );
 }
 
-function MultiLineTick({ x, y, payload }) {
+function MultiLineTick({ x = 0, y = 0, payload = null }) {
   const lines = String(payload?.value ?? '').split('\n');
   const lineH = 15;
   return (
@@ -81,12 +81,15 @@ function MultiLineTick({ x, y, payload }) {
   );
 }
 
-function BarLabel({ x, y, width, height, value, naKey, statusKey, rowData, formatter }) {
+function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, statusKey, rowData, formatter }: {
+  x?: number | string, y?: number | string, width?: number | string, height?: number | string,
+  value?: any, naKey: string, statusKey: string, rowData: any, formatter: (v: any) => any,
+}) {
   const isNa = rowData?.[naKey];
   const status = rowData?.[statusKey];
   const label = status || (isNa ? "N/A" : formatter(value));
-  const lx = (status || isNa) ? (x ?? 0) + 8 : (x ?? 0) + (width ?? 0) + 6;
-  const ly = (y ?? 0) + (height ?? 0) / 2;
+  const lx = (status || isNa) ? Number(x ?? 0) + 8 : Number(x ?? 0) + Number(width ?? 0) + 6;
+  const ly = Number(y ?? 0) + Number(height ?? 0) / 2;
   return (
     <text x={lx} y={ly} dy="0.35em" fontSize={12} fontFamily="'IBM Plex Mono', monospace"
       fill={status ? "#e36209" : isNa ? "#8c959f" : "#57606a"} fontStyle={(status || isNa) ? "italic" : "normal"}>
@@ -95,7 +98,7 @@ function BarLabel({ x, y, width, height, value, naKey, statusKey, rowData, forma
   );
 }
 
-function OrderedBarGroup({ x, y, width, height, payload, barConfigs, formatter }) {
+function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload = null, barConfigs, formatter }) {
   const slotHeight = height / barConfigs.length;
   const barHeight = Math.max(1, slotHeight - 4);
   const maxValue = payload._groupMax;
@@ -141,7 +144,7 @@ function computeRightMargin(rows, barConfigs) {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName, data, barConfigs, xKey, yLabel, unit, chartName, chartModel, logoSrc, direction, orderedSeries = false }) {
+export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }) {
   const valFormatter = v => fmt(v, unit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.

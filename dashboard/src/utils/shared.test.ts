@@ -6,8 +6,29 @@ import {
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
+  entriesOf, valuesOf,
 } from "./shared";
 import { buildLLMBarData, buildLLMBarConfigs } from "./llm";
+
+describe("entriesOf", () => {
+  it("returns Object.entries for a populated object", () => {
+    expect(entriesOf({ a: 1, b: 2 })).toEqual([["a", 1], ["b", 2]]);
+  });
+  it("returns an empty array for null or undefined", () => {
+    expect(entriesOf(null)).toEqual([]);
+    expect(entriesOf(undefined)).toEqual([]);
+  });
+});
+
+describe("valuesOf", () => {
+  it("returns Object.values for a populated object", () => {
+    expect(valuesOf({ a: 1, b: 2 })).toEqual([1, 2]);
+  });
+  it("returns an empty array for null or undefined", () => {
+    expect(valuesOf(null)).toEqual([]);
+    expect(valuesOf(undefined)).toEqual([]);
+  });
+});
 
 describe("parseJSON", () => {
   it("parses valid JSON", () => {

@@ -43,7 +43,7 @@ describe("buildConcurrencyDataForModel", () => {
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "aggregate")[0].f0).toBe(7.79);
   });
   it("prefers explicit client TTFT over the legacy field", () => {
-    const explicit = structuredClone(files);
+    const explicit: any = structuredClone(files);
     explicit[0].data.concurrency_chat.m["1"].client_ttft_mean_sec = 12.5;
     expect(buildConcurrencyDataForModel(explicit, "concurrency_chat", "m", "ttft")[0].f0).toBe(12.5);
   });

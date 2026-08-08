@@ -1,10 +1,11 @@
 // llama-batched-bench: aggregate decode throughput (speed_tg) vs. parallel-sequence count (pl).
 // Levels come from each entry's own pl, not a constants list — fit_npl drops levels per-model.
+import { entriesOf } from "./shared";
 
 // Distinct generation sizes (tg) present for `model` across files, sorted ascending —
 // one chart per tg keeps concurrency level as the chart's only axis dimension.
 export function llamaBenchConcTgValues(files, model) {
-  const set = new Set();
+  const set = new Set<number>();
   for (const f of files)
     for (const entry of f.data.llamabenchconc?.[model]?.entries || [])
       set.add(entry.tg ?? 0);
@@ -12,7 +13,7 @@ export function llamaBenchConcTgValues(files, model) {
 }
 
 export function llamaBenchConcLevels(files, model, tg) {
-  const set = new Set();
+  const set = new Set<number>();
   for (const f of files)
     for (const entry of f.data.llamabenchconc?.[model]?.entries || [])
       if ((entry.tg ?? 0) === tg && entry.pl != null) set.add(entry.pl);
@@ -41,7 +42,7 @@ export function llamaBenchConcPromptDepth(file, model) {
 
 export function flattenLlamaBenchConcData(files) {
   return files.flatMap(f =>
-    Object.entries(f.data.llamabenchconc || {}).flatMap(([model, modelData]) => {
+    entriesOf(f.data.llamabenchconc).flatMap(([model, modelData]) => {
       if (modelData?.error) {
         return [{ _fileId: f.id, model, level: "—", skipped: true, skip_detail: modelData.error }];
       }

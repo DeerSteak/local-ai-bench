@@ -1,4 +1,4 @@
-import { buildFileLineConfigs, modelLabel } from "./shared";
+import { buildFileLineConfigs, modelLabel, entriesOf } from "./shared";
 
 // `vllm bench` results. Deliberately never share a chart with llamabench: different
 // weights (AWQ/GPTQ vs GGUF) and different metric definitions — see docs/workloads.md#vllm-bench.
@@ -17,7 +17,7 @@ export function vllmBenchThroughputEntries(modelData) {
 }
 
 function orderedInputs(entryGroups) {
-  const sizes = new Set();
+  const sizes = new Set<number>();
   for (const entries of entryGroups)
     for (const entry of entries)
       if (entry?.input_len != null) sizes.add(entry.input_len);
@@ -27,7 +27,7 @@ function orderedInputs(entryGroups) {
 function buildLineData(files, model, pick, metric) {
   const groups = files.map(file => pick(file.data.vllmbench?.[model]));
   return orderedInputs(groups).map(size => {
-    const row = { promptLabel: vllmBenchSizeLabel(size) };
+    const row: Record<string, any> = { promptLabel: vllmBenchSizeLabel(size) };
     groups.forEach((entries, fi) => {
       for (const entry of entries) {
         if (entry.input_len === size && entry[metric] != null)
@@ -51,7 +51,7 @@ function buildLineConfigs(files, model, data, pick) {
   const configs = [];
   const fileConfigs = buildFileLineConfigs(files);
   files.forEach((file, fi) => {
-    const outputs = new Set(
+    const outputs = new Set<number>(
       pick(file.data.vllmbench?.[model]).map(entry => entry.output_len).filter(v => v != null),
     );
     [...outputs].sort((a, b) => a - b).forEach(output => {
@@ -78,7 +78,7 @@ export function buildVllmBenchThroughputConfigs(files, model, data) {
 }
 
 export function getVllmBenchModels(files) {
-  const models = new Set();
+  const models = new Set<string>();
   for (const file of files)
     for (const model of Object.keys(file.data.vllmbench || {})) models.add(model);
   return [...models];
@@ -86,7 +86,7 @@ export function getVllmBenchModels(files) {
 
 export function flattenVllmBenchData(files) {
   return files.flatMap(file =>
-    Object.entries(file.data.vllmbench || {}).flatMap(([model, modelData]) => {
+    entriesOf(file.data.vllmbench).flatMap(([model, modelData]) => {
       const byShape = new Map();
       for (const entry of vllmBenchLatencyEntries(modelData)) {
         byShape.set(`${entry.input_len}/${entry.output_len}`, {

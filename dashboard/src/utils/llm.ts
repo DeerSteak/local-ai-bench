@@ -2,7 +2,7 @@ import {
   CTX_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS, LLM_DISPLAY_ORDER,
   CTX_COLORS, ACCURACY_TESTS,
 } from "../constants";
-import { getModelColor, modelLabel, getSkipInfo } from "./shared";
+import { getModelColor, modelLabel, getSkipInfo, entriesOf } from "./shared";
 
 const SKIP_REASON_LABELS = {
   timed_out: "Skipped - LLM Timed Out",
@@ -74,7 +74,7 @@ export function getBarStatusLabel(file, model, ctx, section) {
 // llm/llm_conversation empty) should still show up rather than leaving the
 // filter (and every section that depends on it) empty.
 export function getAllLLMModels(files) {
-  const s = new Set();
+  const s = new Set<string>();
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
@@ -104,12 +104,12 @@ export function getLLMModelsWithSectionResults(files, section) {
 
 // LLM: one chart per model. X = context length, lines = files.
 export function buildLLMDataForModel(files, model, metric, section = "llm") {
-  const ctxSet = new Set();
+  const ctxSet = new Set<string>();
   for (const f of files)
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
   return ctxLabels.map(ctx => {
-    const row = { ctxLabel: ctx };
+    const row: Record<string, any> = { ctxLabel: ctx };
     files.forEach((f, fi) => {
       const s = f.data[section]?.[model]?.[ctx];
       if (s) row[`f${fi}`] = llmMetricValue(s, metric);
@@ -121,7 +121,7 @@ export function buildLLMDataForModel(files, model, metric, section = "llm") {
 // Legacy: X = context length, lines = models (+ file distinction if multi)
 export function buildLLMData(files, metric, enabledModels) {
   const isSingle = files.length === 1;
-  const ctxSet = new Set();
+  const ctxSet = new Set<string>();
   for (const f of files)
     for (const md of Object.values(f.data.llm || {}))
       for (const ctx of Object.keys(md)) ctxSet.add(ctx);
@@ -130,7 +130,7 @@ export function buildLLMData(files, metric, enabledModels) {
   return ctxLabels.map(ctx => {
     const row = { ctxLabel: ctx };
     files.forEach((f, fi) => {
-      for (const [model, md] of Object.entries(f.data.llm || {})) {
+      for (const [model, md] of entriesOf(f.data.llm)) {
         if (!enabledModels.has(model) || !md[ctx]) continue;
         const key = isSingle ? model : `f${fi}_${model}`;
         row[key] = llmMetricValue(md[ctx], metric);
@@ -183,7 +183,7 @@ export function buildLLMBarData(files, model, metric, section = "llm") {
 }
 
 export function buildLLMBarConfigs(files, model, section = "llm") {
-  const ctxSet = new Set();
+  const ctxSet = new Set<string>();
   for (const f of files) {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = f.data[section]?.[model]?.timed_out;
@@ -218,7 +218,7 @@ export function buildLLMBarDataByModel(file, models, metric, section = "llm") {
 }
 
 export function buildLLMBarConfigsByModel(file, models, section = "llm") {
-  const ctxSet = new Set();
+  const ctxSet = new Set<string>();
   for (const model of models) {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
     const timedOutCtx = file.data[section]?.[model]?.timed_out;
@@ -239,7 +239,7 @@ export function buildLLMBarConfigsByModel(file, models, section = "llm") {
 
 // LLM line chart by system: rows = context lengths, one line per model, for one file
 export function buildLLMLineDataByCtx(file, models, metric, section = "llm") {
-  const ctxSet = new Set();
+  const ctxSet = new Set<string>();
   for (const model of models)
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
   const ctxLabels = CTX_ORDER.filter(c => ctxSet.has(c));
@@ -261,14 +261,14 @@ export function buildLLMLineConfigsByCtx(models, data) {
 
 export function flattenLLMData(files, section = "llm") {
   return files.flatMap(f =>
-    Object.entries(f.data[section] || {}).flatMap(([model, ctxData]) => {
+    entriesOf(f.data[section]).flatMap(([model, ctxData]): any[] => {
       if (ctxData?.skipped) {
         return [{
           _fileId: f.id, model, ctx: "—", skipped: true,
           skip_reason: ctxData.skip_reason, skip_detail: ctxData.skip_detail,
         }];
       }
-      return Object.entries(ctxData)
+      return entriesOf(ctxData)
         .filter(([ctx]) => CTX_ORDER.includes(ctx))
         .map(([ctx, s]) => ({
           _fileId: f.id, model, ctx,

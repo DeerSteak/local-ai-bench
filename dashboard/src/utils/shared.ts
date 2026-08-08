@@ -1,6 +1,17 @@
 import { FILE_COLORS, MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS, MODEL_SIZE_TIER } from "../constants";
 
+// Object.entries on an untyped results-JSON value can infer T as `unknown`
+// rather than `any` (a TS quirk with generic overload resolution on `any`
+// arguments) — this pins the value type so call sites don't each need a cast.
+export function entriesOf(obj: Record<string, any> | null | undefined): [string, any][] {
+  return Object.entries(obj || {});
+}
+
+export function valuesOf(obj: Record<string, any> | null | undefined): any[] {
+  return Object.values(obj || {});
+}
+
 export function parseJSON(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
@@ -45,7 +56,7 @@ export function getLlamaBenchMethodologyWarning(files) {
 }
 
 export function getConversationTTFTMethodologyWarning(files) {
-  const modes = new Set();
+  const modes = new Set<string>();
   for (const file of files) {
     const samples = Object.values(file.data?.llm_conversation || {})
       .flatMap(model => Object.values(model || {}))

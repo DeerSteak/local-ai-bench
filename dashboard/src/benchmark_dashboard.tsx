@@ -19,9 +19,9 @@ export default function Dashboard() {
   const [files, setFiles] = useState([]);
   const [section, setSection] = useState("llm");
   const [accuracyTest, setAccuracyTest] = useState("mcq");
-  const [enabledModels, setEnabledModels] = useState(new Set());
-  const [enabledImageModels, setEnabledImageModels] = useState(new Set());
-  const [enabledEmbedModels, setEnabledEmbedModels] = useState(new Set());
+  const [enabledModels, setEnabledModels] = useState<Set<string>>(new Set());
+  const [enabledImageModels, setEnabledImageModels] = useState<Set<string>>(new Set());
+  const [enabledEmbedModels, setEnabledEmbedModels] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
@@ -48,7 +48,7 @@ export default function Dashboard() {
   const allEmbedModels = useMemo(() => getAllEmbedModels(files), [files]);
 
   // Auto-enable newly appearing models
-  const prevModelsRef = useRef(new Set());
+  const prevModelsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const newOnes = allModels.filter(m => !prevModelsRef.current.has(m));
     if (newOnes.length) {
@@ -57,7 +57,7 @@ export default function Dashboard() {
     }
   }, [allModels]);
 
-  const prevImageModelsRef = useRef(new Set());
+  const prevImageModelsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const newOnes = allImageModels.filter(m => !prevImageModelsRef.current.has(m));
     if (newOnes.length) {
@@ -66,7 +66,7 @@ export default function Dashboard() {
     }
   }, [allImageModels]);
 
-  const prevEmbedModelsRef = useRef(new Set());
+  const prevEmbedModelsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const newOnes = allEmbedModels.filter(m => !prevEmbedModelsRef.current.has(m));
     if (newOnes.length) {
@@ -76,15 +76,27 @@ export default function Dashboard() {
   }, [allEmbedModels]);
 
   const toggleModel = useCallback((m) => {
-    setEnabledModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
+    setEnabledModels(prev => {
+      const n = new Set(prev);
+      if (n.has(m)) n.delete(m); else n.add(m);
+      return n;
+    });
   }, []);
 
   const toggleImageModel = useCallback((m) => {
-    setEnabledImageModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
+    setEnabledImageModels(prev => {
+      const n = new Set(prev);
+      if (n.has(m)) n.delete(m); else n.add(m);
+      return n;
+    });
   }, []);
 
   const toggleEmbedModel = useCallback((m) => {
-    setEnabledEmbedModels(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
+    setEnabledEmbedModels(prev => {
+      const n = new Set(prev);
+      if (n.has(m)) n.delete(m); else n.add(m);
+      return n;
+    });
   }, []);
 
   const displayFiles = useMemo(() => applyEngineLabels(files), [files]);

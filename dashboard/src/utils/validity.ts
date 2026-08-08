@@ -1,3 +1,5 @@
+import { entriesOf } from "./shared";
+
 const GENERATION_SECTIONS = new Set([
   "llm", "llm_conversation", "concurrency_tool", "concurrency_chat",
 ]);
@@ -18,7 +20,7 @@ const measurementSummary = sample => [
 
 function generationRows(file, section) {
   const rows = [];
-  for (const [model, modelData] of Object.entries(file.data[section] || {})) {
+  for (const [model, modelData] of entriesOf(file.data[section])) {
     for (const caseLabel of caseKeys(modelData, section)) {
       const result = modelData[caseLabel];
       (result.valid_samples || []).forEach((sample, index) => rows.push({
@@ -45,7 +47,7 @@ function generationRows(file, section) {
 
 function llamaBenchRows(file) {
   const rows = [];
-  for (const [model, modelData] of Object.entries(file.data.llamabench || {})) {
+  for (const [model, modelData] of entriesOf(file.data.llamabench)) {
     for (const entry of [...(modelData.prefill_entries || []), ...(modelData.decode_entries || [])]) {
       const caseLabel = entry.n_gen
         ? `tg${entry.n_gen} @ pp${entry.n_depth || entry.n_prompt || 0}`
@@ -68,14 +70,14 @@ function llamaBenchRows(file) {
 function scalarRunRows(file, section) {
   const rows = [];
   const sectionData = file.data[section] || {};
-  for (const [model, modelData] of Object.entries(sectionData)) {
+  for (const [model, modelData] of entriesOf(sectionData)) {
     if (section === "embeddings") {
       (modelData.runs || []).forEach((value, index) => rows.push({
         fileId: file.id, system: file.hostname, model, caseLabel: "document",
         sample: index + 1, status: "valid", summary: `${value} chunks/s`, errors: [],
       }));
     } else if (section === "images") {
-      for (const [resolution, result] of Object.entries(modelData.resolutions || {})) {
+      for (const [resolution, result] of entriesOf(modelData.resolutions)) {
         (result.runs || []).forEach((value, index) => rows.push({
           fileId: file.id, system: file.hostname, model, caseLabel: resolution,
           sample: index + 1, status: "valid", summary: `${value}s/image`, errors: [],

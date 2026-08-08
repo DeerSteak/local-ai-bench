@@ -1,6 +1,11 @@
 import { MAX_FILES } from "../constants";
 
-export async function fetchSelectedResultFiles(search, fetchFn = fetch) {
+// Only the subset of Response/fetch this actually calls — narrower than the real
+// DOM `fetch` type so tests can pass minimal mock responses without a full Response shape.
+type MinimalResponse = { ok: boolean, json?: () => Promise<any>, text?: () => Promise<string> };
+type MinimalFetch = (url: string, init?: RequestInit) => Promise<MinimalResponse>;
+
+export async function fetchSelectedResultFiles(search: string, fetchFn: MinimalFetch = fetch) {
   if (new URLSearchParams(search).get("autoload") !== "1") return [];
   const manifestResponse = await fetchFn("/__selected_results__.json", { cache: "no-store" });
   if (!manifestResponse.ok) throw new Error("Selected results are no longer available.");
