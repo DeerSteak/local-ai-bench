@@ -641,20 +641,26 @@ class Shared:
         }
 
     @staticmethod
-    def unexpected_model_failure(label: str, exc: BaseException) -> dict:
+    def unexpected_model_failure(label: str, exc: BaseException, *, crashed: bool | None = None) -> dict:
         """A results entry for a model that raised outside the crash/timeout paths a
         workload already understands (e.g. a bug in the runner itself) — every per-model
-        loop catches this at the top level so one model's failure can never abort the run."""
+        loop catches this at the top level so one model's failure can never abort the run.
+        `crashed` is a boolean only in accuracy sections; leave it None elsewhere — llm/
+        llm_conversation read `crashed` as a context-label string (see dashboard/src/utils/
+        llm.ts), so a bool there would corrupt any real checkpoint data already recorded."""
         try:
             detail = str(exc)
         except Exception:
             detail = "(exception could not be formatted)"
-        return {
+        entry = {
             "label": label,
-            "crashed": True,
+            "unexpected_error": True,
             "crashed_at": datetime.now().isoformat(timespec="seconds"),
             "error": f"{type(exc).__name__}: {detail}",
         }
+        if crashed is not None:
+            entry["crashed"] = crashed
+        return entry
 
     @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
@@ -979,7 +985,8 @@ class Shared:
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running the {skip_label} benchmark — {exc} — "
                            "skipping remaining work for this model")
-                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
+                results.setdefault(short, {}).update(
+                    Shared.unexpected_model_failure(label, exc, crashed=True))
             finally:
                 if save_fn:
                     save_fn(results)

@@ -565,3 +565,72 @@ def test_prefill_delta_attributes_a_single_request():
 def test_prefill_delta_refuses_unattributable_readings(before, after):
     from scripts.runtime.engines.vllm import VllmEngine
     assert VllmEngine.prefill_seconds_from_delta(before, after) is None
+
+
+# ── externally-managed server (server_url) ──
+
+def test_is_installed_true_with_only_a_server_url(engine):
+    """setup_check.py records `server_url` when it finds a reachable vLLM with no
+    local binary/launcher — that alone must count as installed."""
+    engine._launcher = None
+    engine._executable = None
+    engine._server_url = "http://gpu-box:8000"
+    assert engine.is_installed() is True
+
+
+def test_base_url_prefers_the_configured_server(engine):
+    engine._server_url = "http://gpu-box:8000"
+    assert engine.base_url == "http://gpu-box:8000"
+
+
+def test_base_url_falls_back_to_the_local_port_when_unconfigured(engine):
+    engine._server_url = None
+    assert engine.base_url == config.VLLM_URL
+
+
+def test_ensure_running_succeeds_against_a_reachable_configured_server(engine, monkeypatch):
+    """The setup-confirmed external server must not require a local launcher/executable
+    or a populated model cache — both are irrelevant when we never spawn it ourselves."""
+    engine._launcher = None
+    engine._executable = None
+    engine._server_url = "http://gpu-box:8000"
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+    assert engine.ensure_running() is True
+
+
+def test_ensure_running_fails_when_the_configured_server_is_unreachable(engine, monkeypatch):
+    engine._launcher = None
+    engine._executable = None
+    engine._server_url = "http://gpu-box:8000"
+    monkeypatch.setattr(VllmEngine, "available", lambda self: False)
+    assert engine.ensure_running() is False
+
+
+def test_ensure_model_against_a_server_url_never_spawns_a_process(engine, monkeypatch):
+    """A tag switch against an externally-managed server must not try to launch/replace
+    the process we never started — just confirm reachability and update our bookkeeping."""
+    engine._launcher = None
+    engine._executable = None
+    engine._server_url = "http://gpu-box:8000"
+    engine._proc = None
+    engine._loaded_tag = None
+    monkeypatch.setattr(VllmEngine, "available", lambda self: True)
+
+    def fail_popen(*a, **k):
+        raise AssertionError("must not spawn a process for an externally-managed server")
+    monkeypatch.setattr("subprocess.Popen", fail_popen)
+
+    engine._ensure_model("qwen3.5:9b-q4_K_M", 1024)
+    assert engine._loaded_tag == "qwen3.5:9b-q4_K_M"
+    assert engine._proc is None
+
+
+def test_ensure_model_against_a_server_url_raises_when_unreachable(engine, monkeypatch):
+    engine._launcher = None
+    engine._executable = None
+    engine._server_url = "http://gpu-box:8000"
+    engine._proc = None
+    engine._loaded_tag = None
+    monkeypatch.setattr(VllmEngine, "available", lambda self: False)
+    with pytest.raises(RuntimeError, match="not reachable"):
+        engine._ensure_model("qwen3.5:9b-q4_K_M", 1024)

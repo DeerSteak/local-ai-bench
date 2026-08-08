@@ -117,6 +117,14 @@ describe("getLLMModelsWithSectionResults", () => {
 
     expect(getLLMModelsWithSectionResults(files, "llm")).toEqual(["phi4-mini"]);
   });
+
+  it("retains a model whose only outcome is an unexpected error with no checkpoint data", () => {
+    const files = [{ data: { llm: {
+      "phi4-mini": { label: "Phi4 Mini", unexpected_error: true, error: "RuntimeError: boom" },
+    } } }];
+
+    expect(getLLMModelsWithSectionResults(files, "llm")).toEqual(["phi4-mini"]);
+  });
 });
 
 describe("buildLLMBarData", () => {

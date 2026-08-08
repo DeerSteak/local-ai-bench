@@ -405,6 +405,13 @@ def test_vram_field_accepts_every_unit_nvidia_smi_uses():
         assert hardware.parse_nvidia_vram_gb(junk) is None
 
 
+def test_decimal_mb_and_gb_convert_using_the_same_1000_1024_ratio():
+    """MB/GB are decimal (1000-based) units; converting to GiB-equivalent must divide
+    by 1024**3, not 1024**2 — a factor-of-1024 slip understates VRAM by ~2.4%."""
+    assert hardware.parse_nvidia_vram_gb("24000 MB") == pytest.approx(24000 * 1000**2 / 1024**3)
+    assert hardware.parse_nvidia_vram_gb("24 GB") == pytest.approx(24 * 1000**3 / 1024**3)
+
+
 def test_rows_without_a_name_are_still_rejected():
     assert hardware.parse_nvidia_gpus(", 16384 MiB, 610.74") == []
     assert hardware.parse_nvidia_gpus("malformed") == []

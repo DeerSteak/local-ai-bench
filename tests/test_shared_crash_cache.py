@@ -16,9 +16,34 @@ def test_load_crash_cache_missing_file_returns_empty(tmp_path):
 def test_unexpected_model_failure_carries_the_label_and_exception_detail():
     entry = Shared.unexpected_model_failure("Some Model", TypeError("missing 'x'"))
     assert entry["label"] == "Some Model"
-    assert entry["crashed"] is True
+    assert entry["unexpected_error"] is True
     assert entry["error"] == "TypeError: missing 'x'"
     assert entry["crashed_at"]
+
+
+def test_unexpected_model_failure_omits_crashed_by_default():
+    """llm/llm_conversation read `crashed` as a context-label string (dashboard/src/utils/
+    llm.ts) — leaving it unset (rather than a bool) avoids corrupting any real checkpoint
+    data already merged into the same results entry."""
+    entry = Shared.unexpected_model_failure("Some Model", RuntimeError("boom"))
+    assert "crashed" not in entry
+
+
+def test_unexpected_model_failure_sets_crashed_bool_when_requested():
+    """The accuracy path's `crashed` field is a plain boolean (dashboard/src/utils/
+    accuracy.ts) — opt in explicitly rather than defaulting every caller to it."""
+    entry = Shared.unexpected_model_failure("Some Model", RuntimeError("boom"), crashed=True)
+    assert entry["crashed"] is True
+
+
+def test_unexpected_model_failure_never_corrupts_prior_checkpoint_data():
+    """Merging this entry into a results dict that already has real per-checkpoint data
+    must not introduce a boolean `crashed` that would make every checkpoint look skipped."""
+    results = {"m": {"2K": {"ttft_mean_sec": 0.5}, "8K": {"ttft_mean_sec": 1.2}}}
+    results["m"].update(Shared.unexpected_model_failure("m", RuntimeError("boom")))
+    assert results["m"]["2K"] == {"ttft_mean_sec": 0.5}
+    assert results["m"]["8K"] == {"ttft_mean_sec": 1.2}
+    assert "crashed" not in results["m"]
 
 
 def test_unexpected_model_failure_never_raises_even_on_a_weird_exception():

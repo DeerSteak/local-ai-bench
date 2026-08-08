@@ -51,6 +51,9 @@ class VllmEngine(InferenceEngine):
         self._launcher = configured_vllm_path(setup, "launcher") or find_vllm_launcher()
         self._executable = configured_vllm_path(setup, "executable") or find_vllm_binary(
             platform_name=platform.system())
+        # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
+        # an externally-managed server we talk to but never spawn or stop ourselves.
+        self._server_url = configured_vllm_path(setup, "server_url")
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -146,21 +149,26 @@ class VllmEngine(InferenceEngine):
 
     def _prefill_reading(self):  # pragma: no cover — real HTTP call
         try:
-            response = requests.get(f"{config.VLLM_URL}/metrics", timeout=5)
+            response = requests.get(f"{self.base_url}/metrics", timeout=5)
         except Exception:
             return None
         return self.parse_prefill_metric(response.text) if response.status_code == 200 else None
 
     # ── server/process lifecycle ──
 
+    @property
+    def base_url(self) -> str:
+        """`server_url` when talking to an externally-managed vLLM, else our own port."""
+        return self._server_url or config.VLLM_URL
+
     def available(self) -> bool:  # pragma: no cover — real HTTP call
         try:
-            return requests.get(f"{config.VLLM_URL}/health", timeout=5).status_code == 200
+            return requests.get(f"{self.base_url}/health", timeout=5).status_code == 200
         except Exception:
             return False
 
     def is_installed(self) -> bool:
-        return (self._launcher or self._executable) is not None
+        return (self._launcher or self._executable or self._server_url) is not None
 
     def cache_home(self) -> Path:
         return self._cache_home
@@ -171,6 +179,12 @@ class VllmEngine(InferenceEngine):
 
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
+        if self._server_url:
+            if not self.available():
+                Shared.err(f"vLLM server configured at {self._server_url} is not reachable")
+                return False
+            Shared.ok(f"vLLM server found at {self._server_url} — using whatever model it has loaded")
+            return True
         if self._launcher is None and self._executable is None:
             Shared.err("No 'vllm' or platform launcher found — run setup_check.py, or "
                        "install vLLM yourself: https://docs.vllm.ai/")
@@ -401,6 +415,16 @@ class VllmEngine(InferenceEngine):
             if deadline is not None and time.perf_counter() >= deadline:
                 raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
 
+            if self._server_url:
+                # We never spawn or reconfigure an externally-managed server — it already
+                # serves whatever model it was started with; just confirm it's reachable.
+                if not self.available():
+                    raise RuntimeError(f"vLLM server at {self._server_url} is not reachable")
+                self._loaded_tag, self._loaded_num_ctx = tag, num_ctx
+                self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
+                self._loaded_tool_parser = tool_parser
+                return
+
             if not self._gpu_visible:
                 # vLLM has no --device flag; CPU needs a separately built CPU wheel.
                 raise RuntimeError("vLLM has no CPU-only mode here — run --cpu-only against llama.cpp")
@@ -480,7 +504,7 @@ class VllmEngine(InferenceEngine):
 
     def _post(self, path: str, payload: dict, timeout: float):
         return self._urlopen(urllib.request.Request(
-            f"{config.VLLM_URL}{path}", data=json.dumps(payload).encode(),
+            f"{self.base_url}{path}", data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"}, method="POST",
         ), timeout)
 
@@ -740,7 +764,7 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - load_start
 
         t0 = time.perf_counter()
-        resp = requests.post(f"{config.VLLM_URL}/v1/embeddings",
+        resp = requests.post(f"{self.base_url}/v1/embeddings",
                               json={"model": self._repo(tag), "input": inputs}, timeout=timeout)
         if not resp.ok:
             try:

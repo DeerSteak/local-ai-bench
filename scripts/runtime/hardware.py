@@ -78,7 +78,7 @@ def parse_rocm_version(output: str | None) -> tuple[int, int] | None:
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-_VRAM_UNITS_GB = {"MIB": 1 / 1024, "GIB": 1.0, "MB": 1000 / 1024**2, "GB": 1000**3 / 1024**3}
+_VRAM_UNITS_GB = {"MIB": 1 / 1024, "GIB": 1.0, "MB": 1000**2 / 1024**3, "GB": 1000**3 / 1024**3}
 
 
 def parse_nvidia_vram_gb(value: str | None) -> float | None:

@@ -820,12 +820,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         for name in available_engines
     }
     engine_note = tk.StringVar()
+    # Guards apply_engine_availability's per-checkbox trace during a batch update — without
+    # it, setting checkboxes one at a time passes through a momentary all-unchecked state
+    # that trips the "never leave zero engines selected" safeguard and re-checks the wrong one.
+    restoring_engines = [False]
 
     def set_selected_engines(names) -> None:
         """Point the checkboxes at `names`, ignoring any engine that isn't installed."""
         wanted = [name for name in names if name in engine_check_vars] or [available_engines[0]]
-        for name, variable in engine_check_vars.items():
-            variable.set(name in wanted)
+        restoring_engines[0] = True
+        try:
+            for name, variable in engine_check_vars.items():
+                variable.set(name in wanted)
+        finally:
+            restoring_engines[0] = False
+        apply_engine_availability()
 
     for index, name in enumerate(available_engines):
         ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
@@ -974,8 +983,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             restored = [name for name in parse_engine_selection(state.get("engine", ""))
                         if name in available_engines]
             if restored:
-                for name, variable in engine_check_vars.items():
-                    variable.set(name in restored)
+                set_selected_engines(restored)
             selected_tests = set(state["tests"])
             for entry in custom_tests:
                 test_vars[entry.value].set(entry.available and entry.value in selected_tests)
@@ -1884,6 +1892,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def apply_engine_availability(*_) -> None:
         """Mirror the engine checkboxes into engine_var, then disable and uncheck any
         model none of the selected engines can run."""
+        if restoring_engines[0]:  # a batch update is mid-flight — set_selected_engines re-runs this once done
+            return
         chosen = [name for name in available_engines if engine_check_vars[name].get()]
         if not chosen:  # never leave a run with no engine at all
             chosen = [available_engines[0]]

@@ -100,7 +100,8 @@ export function getLLMModelsWithSectionResults(files: ResultsFile[], section: st
     return CTX_ORDER.some(ctx => result[ctx] != null)
       || result.crashed != null
       || result.timed_out != null
-      || result.slow_tps != null;
+      || result.slow_tps != null
+      || result.unexpected_error != null;
   }));
 }
 
