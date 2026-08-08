@@ -49,6 +49,8 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
+from typing import Callable, Protocol
+
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
@@ -82,8 +84,15 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
         checkpoint("run interrupted")
 
 
+class _RunnerLike(Protocol):
+    """The only two methods run_supervised_stage calls on a supervisor."""
+    def run(self, on_event) -> int | None: ...
+    def cancel(self) -> None: ...
+
+
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
-                         supervisor_factory=RunnerSupervisor, resume_identity=None,
+                         supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
+                         resume_identity=None,
                          resume=False, selected_case_ids=None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
@@ -125,7 +134,8 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 
 
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
-                       supervisor_factory=RunnerSupervisor, resume_identity=None) -> dict:
+                       supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
+                       resume_identity=None) -> dict:
     return run_supervised_stage(
         plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
     )
