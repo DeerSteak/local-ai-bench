@@ -29,7 +29,9 @@ from scripts.setup.vllm_install import (
 
 
 def support(**overrides):
-    kwargs = {"os_name": "Linux", "machine": "x86_64", "python_version": (3, 12)}
+    # which_fn defaults to "nothing on PATH" so the host's real interpreters can't sway a result.
+    kwargs = {"os_name": "Linux", "machine": "x86_64", "python_version": (3, 12),
+              "which_fn": lambda _name: None}
     kwargs.update(overrides)
     return vllm_platform_support(**kwargs)
 
@@ -47,11 +49,26 @@ def test_linux_nvidia_accepts_full_python_range():
         assert support(nvidia_ok=True, python_version=(3, minor)).method == "cuda_wheel"
 
 
-def test_python_outside_cuda_range_is_unsupported():
+def test_python_outside_cuda_range_is_unsupported_when_no_interpreter_on_path():
     for version in ((3, 9), (3, 14)):
         result = support(nvidia_ok=True, python_version=version)
         assert result.status == "unsupported"
         assert "3.10" in result.reason
+
+
+def test_out_of_range_python_falls_back_to_an_in_range_interpreter_on_path():
+    for found in ("python3.13", "python3.10"):
+        result = support(nvidia_ok=True, python_version=(3, 14),
+                         which_fn=lambda name, target=found: name if name == target else None)
+        assert (result.status, result.method) == ("supported", "cuda_wheel")
+        assert result.requires_python is None
+
+
+def test_pinned_platform_ignores_an_unrelated_interpreter_on_path():
+    result = support(rocm_ok=True, python_version=(3, 14), rocm_version=(6, 3),
+                     rocm_gfx_targets=["gfx942"],
+                     which_fn=lambda name: name if name == "python3.13" else None)
+    assert result.requires_python == (3, 12)
 
 
 def test_old_compute_capability_is_unsupported():

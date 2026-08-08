@@ -62,7 +62,8 @@ def vllm_platform_support(*, os_name: str, machine: str,
                           gpu_names=None,
                           compute_cap: str | None = None,
                           rocm_version: tuple[int, int] | None = None,
-                          rocm_gfx_targets=None) -> VllmSupport:
+                          rocm_gfx_targets=None,
+                          which_fn=shutil.which) -> VllmSupport:
     """Whether setup can install vLLM here, and how. See docs/setup.md's support table."""
     if os_name == "Windows":
         return VllmSupport("unsupported", None,
@@ -91,7 +92,10 @@ def vllm_platform_support(*, os_name: str, machine: str,
             return VllmSupport("unsupported", None,
                                f"vLLM needs CUDA compute capability {MIN_COMPUTE_CAPABILITY}+, "
                                f"this GPU reports {capability}")
-        if not (CUDA_PYTHON_RANGE[0] <= python_version <= CUDA_PYTHON_RANGE[1]):
+        # vLLM gets its own venv, so an out-of-range interpreter here is fine as long as
+        # an in-range one exists on PATH for that venv to be built from.
+        if (not (CUDA_PYTHON_RANGE[0] <= python_version <= CUDA_PYTHON_RANGE[1])
+                and resolve_python(None, python_version, which_fn) is None):
             return VllmSupport("unsupported", None,
                                "vLLM's CUDA wheels need Python 3.10–3.13 and no matching "
                                "interpreter was found")
