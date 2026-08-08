@@ -89,6 +89,10 @@ describe("getAllLLMModels", () => {
     const files = [{ data: { llm: {}, llm_conversation: {}, llamabench: { "phi4-mini": {} } } }];
     expect(getAllLLMModels(files)).toContain("phi4-mini");
   });
+  it("includes a model present only in vllmbench", () => {
+    const files = [{ data: { vllmbench: { "phi4-mini": {} } } }];
+    expect(getAllLLMModels(files)).toEqual(["phi4-mini"]);
+  });
 });
 
 describe("getLLMModelsWithSectionResults", () => {

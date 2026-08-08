@@ -86,6 +86,7 @@ export function getAllLLMModels(files: ResultsFile[]): string[] {
     for (const m of Object.keys(f.data.concurrency_chat || {})) s.add(m);
     for (const m of Object.keys(f.data.llamabench || {})) s.add(m);
     for (const m of Object.keys(f.data.llamabenchconc || {})) s.add(m);
+    for (const m of Object.keys(f.data.vllmbench || {})) s.add(m);
   }
   const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
