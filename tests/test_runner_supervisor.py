@@ -224,12 +224,16 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
     assert export_llm_section(path, plan.job_id)["fake"]["512"]["tps_mean"] == 50
 
 
-def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path):
+def test_conversation_runner_uses_llm_preflight_and_commits_projection(
+        tmp_path, monkeypatch, capsys):
     path = tmp_path / "events.sqlite3"
     plan = RunPlan.create(
         application_version="4.1", engine_name="fake", tests=["llm", "conv"],
         stage_order=["llm", "conv"], models={
-            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "llm": [
+                {"tag": "fake:model", "short": "fake"},
+                {"tag": "slow:model", "short": "slow"},
+            ],
             "concurrency": [], "embeddings": [], "images": [],
         }, effective_config={
             "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
@@ -246,6 +250,10 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
     llm = LLMEventStage(path, plan, lambda _: None)
     llm.record_case(
         model, 512, "0.5K", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+    )
+    llm.record_case(
+        {"tag": "slow:model", "short": "slow", "label": "Slow"}, 512, "0.5K",
+        [GenerationMeasurement(0.2, 100, 1, 100.2, 100.0)], "ok", 1,
     )
     llm.finish()
     llm.close()
@@ -275,14 +283,20 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
             kwargs["journal"].finish()
 
     old_timeout = config.RUN_TIMEOUT
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    workload_runner.set_progress_engine("fake")
     try:
         workload_runner.execute_conversation_job(
             path, plan.job_id, engine_factory=lambda _: Engine(), benchmark_factory=Benchmark,
         )
     finally:
         config.RUN_TIMEOUT = old_timeout
+        workload_runner.set_progress_engine(None)
     result = export_llm_section(path, plan.job_id, "conv")
     assert result["fake"]["0K"]["depth_tokens"] == 400
+    assert result["slow"]["skip_reason"] == "slow_tps"
+    progress = capsys.readouterr().out
+    assert '"stage":"conv","status":"skipped","engine":"fake","model":"slow:model"' in progress
 
 
 def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):

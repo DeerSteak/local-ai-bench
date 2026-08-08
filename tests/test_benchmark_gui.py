@@ -261,6 +261,9 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
     assert parse_progress_line(
         '::local-ai-bench-progress::{"kind":"model","stage":"llm","status":"complete","model":"Qwen: 4B"}\n'
     ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
+    assert parse_progress_line(
+        '::local-ai-bench-progress::{"kind":"model","stage":"conv","status":"skipped","model":"Slow"}\n'
+    ) == {"kind": "model", "stage": "conv", "status": "skipped", "model": "Slow"}
     assert parse_progress_line("ordinary benchmark output") is None
     assert parse_progress_line("::local-ai-bench-progress::{bad json") is None
     retrying_event = parse_progress_line(
@@ -286,10 +289,13 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     }
     metrics = update_progress_metrics(metrics, terminal)
     metrics = update_progress_metrics(metrics, terminal)
-    assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 1)
+    metrics = update_progress_metrics(
+        metrics, {"kind": "model", "stage": "conv", "status": "skipped", "model": "B"},
+    )
+    assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 2)
     assert metrics["usable_models"] == {("llm", "A")}
     assert progress_summary_rows(metrics) == {
-        "Finished models": "1 / 2",
+        "Finished models": "2 / 2",
         "Usable coverage": "1 / 2",
         "Invalid measurements": "1",
         "Retries": "1",

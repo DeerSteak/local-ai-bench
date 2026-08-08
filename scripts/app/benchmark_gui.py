@@ -172,7 +172,7 @@ def parse_progress_line(line: str) -> dict | None:
     if not isinstance(event, dict) or event.get("kind") not in {"stage", "model", "measurement"}:
         return None
     statuses = ({"retrying", "valid", "invalid"} if event.get("kind") == "measurement"
-                else {"running", "complete", "failed", "interrupted"})
+                else {"running", "complete", "skipped", "failed", "interrupted"})
     if event.get("status") not in statuses:
         return None
     if not isinstance(event.get("stage"), str):
@@ -189,7 +189,8 @@ def update_progress_metrics(metrics: dict, event: dict) -> dict:
     if event["kind"] == "measurement":
         key = {"retrying": "retries", "valid": "valid", "invalid": "invalid"}[event["status"]]
         updated[key] += 1
-    elif event["kind"] == "model" and event["status"] in {"complete", "failed", "interrupted"}:
+    elif event["kind"] == "model" and event["status"] in {
+            "complete", "skipped", "failed", "interrupted"}:
         identity = (event["stage"], event["model"])
         finished = set(updated["finished_models"])
         finished.add(identity)
@@ -2154,6 +2155,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         variable.set({
             "running": "▶ Running", "complete": "✓ Complete",
+            "skipped": "— Skipped",
             "failed": "✕ Failed", "interrupted": "■ Interrupted",
         }[event["status"]])
         if event["kind"] == "stage" and event["status"] in {"complete", "failed", "interrupted"}:
