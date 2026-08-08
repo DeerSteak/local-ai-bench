@@ -27,3 +27,10 @@ if git diff --cached --name-only --diff-filter=ACM | grep -q '\.py$'; then
     exit 1
   fi
 fi
+
+# Dashboard `any` ratchet — see docs/release-policy.md#any-ratchet-hook.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '^dashboard/src/.*\.tsx\?$'; then
+  if command -v node >/dev/null 2>&1; then
+    node "$root/dashboard/check_any_ratchet.mjs" || exit 1
+  fi
+fi
