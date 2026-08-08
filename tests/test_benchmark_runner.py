@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from scripts.app.benchmark import relay_runner_log, run_supervised_llm, run_supervised_stage
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
@@ -24,9 +26,30 @@ def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):
     assert capsys.readouterr().out == line
 
 
-def test_supervised_ordinary_log_still_uses_shared_formatting(capsys):
-    relay_runner_log("model output\n")
-    assert "model output" in capsys.readouterr().out
+def test_relayed_log_keeps_the_runners_own_timestamp(capsys):
+    """The runner stamps its own lines; a second stamp reports when the parent relayed
+    the line, not when it happened, and the two can differ by seconds under buffering."""
+    relay_runner_log("[13:48:18]   ->  Granite 4.1 3B: model supports 131072 ctx\n")
+    out = capsys.readouterr().out
+    assert out == "[13:48:18]   ->  Granite 4.1 3B: model supports 131072 ctx\n"
+    assert out.count("[13:") == 1
+
+
+def test_relayed_traceback_lines_are_not_stamped(capsys):
+    """A runner's multi-line output arrives one line at a time; stamping each line
+    turned a single warning into a column of timestamps."""
+    relay_runner_log("(EngineCore pid=1) FileNotFoundError: ninja\n")
+    assert capsys.readouterr().out == "(EngineCore pid=1) FileNotFoundError: ninja\n"
+
+
+def test_relayed_log_is_still_redacted(capsys):
+    from scripts.runtime.log_redaction import redact_log_text
+    secret = "hf_" + "a" * 34
+    relay_runner_log(f"downloading with token {secret}\n")
+    out = capsys.readouterr().out
+    assert out.rstrip() == redact_log_text(f"downloading with token {secret}")
+    if redact_log_text(secret) != secret:
+        assert secret not in out
 
 
 def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path):
@@ -318,3 +341,25 @@ def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
 
     result = run_supervised_stage(plan, path, "conc_tool", lambda _: None, Supervisor)
     assert result["fake"]["1"]["aggregate_tps"] == 45
+
+
+def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_path):
+    """A runner is a separate process, so it must set the progress engine itself —
+    otherwise a multi-engine run's rows all land on the first engine."""
+    from scripts.runtime import workload_runner
+    from scripts.app import progress_events
+
+    recorded = []
+    monkeypatch.setattr(workload_runner, "set_progress_engine", recorded.append)
+    monkeypatch.setattr(workload_runner, "load_runner_plan",
+                        lambda path, job_id: SimpleNamespace(
+                            engine_name="vllm", retry_crashed_models=False,
+                            effective_config={"offline": False}))
+    monkeypatch.setattr(workload_runner, "execute_llm_job", lambda *a, **k: None)
+    monkeypatch.setenv("LOCAL_AI_BENCH_RUNNER_TOKEN", "token")
+    store = tmp_path / "events.sqlite3"
+    assert workload_runner.main(
+        ["--job-id", "j1", "--stage", "llm", "--event-store", str(store)]
+    ) == 0
+    assert recorded == ["vllm"]
+    assert progress_events is not None

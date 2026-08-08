@@ -215,7 +215,9 @@ def test_regrade_workload_rejects_model_set_mismatch():
 
 def test_regrade_workload_requires_object_blocks():
     with pytest.raises(regrade.RegradeError, match="must be JSON objects"):
-        regrade.regrade_workload("math", [], [], {})
+        # Deliberately the wrong type — this is the malformed-input shape the
+        # isinstance guard exists to catch.
+        regrade.regrade_workload("math", [], [], {})  # type: ignore[arg-type]
     with pytest.raises(regrade.RegradeError, match="must be a JSON object"):
         regrade.regrade_workload("math", [], {"model": []}, {"model": {}})
 

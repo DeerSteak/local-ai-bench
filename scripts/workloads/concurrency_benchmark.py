@@ -131,7 +131,8 @@ class ConcurrencyBenchmark:
                         })
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -181,7 +182,7 @@ class ConcurrencyBenchmark:
                                            f"concurrency — last server output:\n{engine.tail_log()}")
                                 results[short]["crashed_at"] = Shared.record_crash(
                                     tag, crash_cache, crash_cache_path,
-                                    f"warming up {level}-way concurrency")
+                                    f"warming up {level}-way concurrency", engine_name=engine.name)
                                 stopped_at = "crashed"
                             else:
                                 Shared.err(f"{label}: {level}-way concurrency warmup failed: {error}")
@@ -206,7 +207,7 @@ class ConcurrencyBenchmark:
                                        f"last server output:\n{engine.tail_log()}")
                             results[short]["crashed_at"] = Shared.record_crash(
                                 tag, crash_cache, crash_cache_path,
-                                f"running {level}-way concurrency")
+                                f"running {level}-way concurrency", engine_name=engine.name)
                             stopped_at = "crashed"
                         else:
                             Shared.err(f"{label}: {level}-way concurrency batch failed: {error}")
@@ -282,6 +283,13 @@ class ConcurrencyBenchmark:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the {section_label} benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

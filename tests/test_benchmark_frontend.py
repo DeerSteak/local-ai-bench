@@ -7,6 +7,10 @@ import pytest
 from scripts.app import benchmark_frontend
 from scripts.runtime import config
 from scripts.app.benchmark_frontend import (
+    merge_model_inventories,
+    models_runnable_by,
+    parse_engine_selection,
+    format_engine_selection,
     FRONTEND_STATE_VERSION,
     GUI_OPTION_DEFAULTS,
     FRONTEND_OPTION_CLASSIFICATION,
@@ -193,7 +197,8 @@ def test_frontend_state_round_trip_preserves_optional_preset_selection(tmp_path)
     path = tmp_path / "state.json"
     state = saved_state(selected_preset="Quick run")
     assert save_frontend_state(state, path)
-    assert load_frontend_state(path)["selected_preset"] == "Quick run"
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["selected_preset"] == "Quick run"
 
 
 def test_frontend_state_rejects_invalid_preset_selection(tmp_path):
@@ -207,7 +212,8 @@ def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS)
     del options["offline"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["offline"] is False
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["offline"] is False
 
 
 def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
@@ -215,7 +221,8 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS)
     del options["gpu_split_mode"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["gpu_split_mode"] == "layer"
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["gpu_split_mode"] == "layer"
 
 
 def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
@@ -223,7 +230,8 @@ def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path
     options = dict(GUI_OPTION_DEFAULTS)
     del options["retry_crashed_models"]
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
-    assert load_frontend_state(path)["gui_options"]["retry_crashed_models"] is False
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["retry_crashed_models"] is False
 
 
 @pytest.mark.parametrize("contents", [
@@ -427,8 +435,11 @@ def test_default_test_state_matches_documented_matrix():
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
-        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "llamabench", "llamabenchconc",
+        "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
+        "llamabench", "vllmbench",
     ))
+    # llamabenchconc is folded into the llamabench toggle and is not its own entry.
+    assert "llamabenchconc" not in entries
 
 
 def test_empty_inventory_makes_every_test_unavailable_and_unchecked():
@@ -513,9 +524,9 @@ def test_test_shortcut_all_selects_every_available_test_only():
 @pytest.mark.parametrize(
     ("shortcut", "expected"),
     [
-        ("l", {"llm", "conv", "llamabench"}),
+        ("l", {"llm", "conv", "llamabench", "vllmbench"}),
         ("x", {"mcq", "math", "reasoning", "code", "tool"}),
-        ("c", {"conc_tool", "conc_chat", "llamabenchconc"}),
+        ("c", {"conc_tool", "conc_chat"}),
         ("e", {"emb"}),
         ("i", {"img"}),
     ],
@@ -584,10 +595,14 @@ def test_choose_engine_preserves_first_render_then_clears_each_redraw():
 
 def test_choose_tests_toggles_individual_entries_and_rejects_unavailable():
     entries = build_test_entries(sample_inventory())
-    entries[3].available = False  # emb
-    entries[3].checked = False
+    positions = {entry.value: i for i, entry in enumerate(entries, 1)}
+    emb = next(entry for entry in entries if entry.value == "emb")
+    emb.available = False
+    emb.checked = False
     messages, output = output_collector()
-    selected = choose_tests(entries, InputSequence(["5", "4", ""]), output)
+    selected = choose_tests(
+        entries, InputSequence([str(positions["mcq"]), str(positions["emb"]), ""]), output,
+    )
     assert "mcq" in selected
     assert "emb" not in selected
     assert any("cannot be selected" in message for message in messages)
@@ -601,7 +616,6 @@ def test_choose_tests_accepts_shortcuts_and_renders_legend():
     selected = choose_tests(entries, InputSequence(["x", "c", ""]), output)
     assert selected == [
         "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat",
-        "llamabenchconc",
     ]
     assert any("a all" in message and "x accuracy" in message for message in messages)
 
@@ -609,9 +623,10 @@ def test_choose_tests_accepts_shortcuts_and_renders_legend():
 def test_choose_tests_reprompts_when_everything_is_deselected():
     entries = build_test_entries(sample_inventory())
     messages, output = output_collector()
-    # 1/2/4/13 are the default-checked entries (llm, conv, emb, img); toggling them
-    # off leaves nothing selected without disturbing llamabench/llamabenchconc's own default-off state.
-    selected = choose_tests(entries, InputSequence(["1 2 4 13", "", "1", ""]), output)
+    # Toggle off exactly the default-checked entries by position, so inserting a new
+    # default-off test elsewhere in TEST_DEFINITIONS does not shift this selection.
+    checked = " ".join(str(i) for i, e in enumerate(entries, 1) if e.checked)
+    selected = choose_tests(entries, InputSequence([checked, "", "1", ""]), output)
     assert selected == ["llm"]
     assert any("Select at least one" in message for message in messages)
 
@@ -694,9 +709,12 @@ def test_choose_models_clears_each_redraw_and_keeps_feedback_visible():
 
 
 def test_model_selection_error_covers_each_required_family():
-    assert "LLM" in model_selection_error([], ["conv"])
-    assert "embedding" in model_selection_error([], ["emb"])
-    assert "image" in model_selection_error([], ["img"])
+    llm_error = model_selection_error([], ["conv"])
+    embedding_error = model_selection_error([], ["emb"])
+    image_error = model_selection_error([], ["img"])
+    assert llm_error is not None and "LLM" in llm_error
+    assert embedding_error is not None and "embedding" in embedding_error
+    assert image_error is not None and "image" in image_error
     assert model_selection_error(
         [MenuEntry("x", "X", "custom", "Custom", True)], ["tool", "conc_chat"],
     ) is None
@@ -714,6 +732,7 @@ def test_render_model_menu_has_one_shared_llm_list_and_cross_family_help():
 def test_missing_catalog_hint_counts_families_and_ignores_custom_models():
     inventory = sample_inventory()
     hint = missing_catalog_hint(inventory, "Linux")
+    assert hint is not None
     assert f"{len(LLM_MODELS) - 2} LLM" in hint
     assert f"{len(IMAGE_MODELS) - 2} image" in hint
     assert "custom" not in hint
@@ -721,7 +740,8 @@ def test_missing_catalog_hint_counts_families_and_ignores_custom_models():
 
 
 def test_missing_catalog_hint_uses_windows_command():
-    assert "`setup.bat`" in missing_catalog_hint(empty_inventory(), "Windows")
+    windows_hint = missing_catalog_hint(empty_inventory(), "Windows")
+    assert windows_hint is not None and "`setup.bat`" in windows_hint
 
 
 def test_missing_catalog_hint_omitted_when_every_catalog_model_installed():
@@ -758,13 +778,44 @@ def test_build_command_emits_every_applicable_explicit_selector(tmp_path):
     ],
 )
 def test_build_command_is_exact_for_each_isolated_workload_family(tests, entry, selector):
+    comfyui = ["--comfyui", str(Path("/comfy"))] if "img" in tests else []
     assert build_benchmark_command(
         "fake", Path("/comfy"), tests, [entry],
         python_executable="python", benchmark_path=Path("/benchmark.py"),
     ) == [
-        "python", "/benchmark.py", "--engine", "fake", "--comfyui", "/comfy",
+        "python", "/benchmark.py", "--engine", "fake", *comfyui,
         "--tests", *tests, selector, entry.value,
     ]
+
+
+def test_build_command_omits_comfyui_when_no_image_test_is_selected():
+    # A ComfyUI that was never installed fails --comfyui validation and aborts the run.
+    for tests in (["llm"], ["emb"], ["llm", "conv", "acc"]):
+        assert "--comfyui" not in build_benchmark_command(
+            "fake", Path("/not/installed"), tests,
+            [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+            python_executable="python", benchmark_path=Path("/benchmark.py"),
+        )
+
+
+def test_build_command_keeps_an_explicit_gui_comfyui_path_only_for_image_runs():
+    options = dict(GUI_OPTION_DEFAULTS, comfyui="/chosen/ComfyUI")
+    entries = [MenuEntry("sdxl", "SDXL", "image", "Images", True)]
+    with_images = build_benchmark_command(
+        "fake", Path("/comfy"), ["img"], entries,
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        gui_options=options,
+    )
+    assert with_images[with_images.index("--comfyui") + 1] == "/chosen/ComfyUI"
+
+    without_images = build_benchmark_command(
+        "fake", Path("/comfy"), ["llm"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        gui_options=options,
+    )
+    assert "--comfyui" not in without_images
+    assert "/chosen/ComfyUI" not in without_images
 
 
 def test_build_command_uses_one_llm_selection_for_accuracy_and_concurrency():
@@ -1001,6 +1052,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     assert any("Launching benchmark.py" in message for message in messages)
     assert "Start this benchmark? [Y/n]" in messages
     state = load_frontend_state(tmp_path / ".benchmark_frontend_state.json")
+    assert state is not None
     assert state["engine"] == "fake"
     assert state["tests"] == ["llm", "conv", "emb", "img"]
 
@@ -1155,6 +1207,7 @@ def test_run_frontend_restores_max_prompt_tokens_and_tg_tokens(tmp_path):
     assert command[index + 1:index + 3] == ["128", "1024"]
 
     restored_state = load_frontend_state(state_path)
+    assert restored_state is not None
     assert restored_state["max_prompt_tokens"] == 16384
     assert restored_state["tg_tokens"] == [128, 1024]
 
@@ -1336,3 +1389,156 @@ def test_run_frontend_returns_error_without_any_installed_models():
     )
     assert result == 1
     assert called == []
+
+
+# ── multi-engine model inventories ──
+
+def _inventory(llm_tags, image_shorts=()):
+    return {
+        "llm": [{"tag": tag, "label": tag.upper(), "tier": "small"} for tag in llm_tags],
+        "custom": [], "embedding": [],
+        "image": [{"short": s, "label": s.upper(), "tier": "small"} for s in image_shorts],
+    }
+
+
+def test_merged_inventory_is_the_union_with_owners():
+    merged, owners = merge_model_inventories({
+        "llamacpp": _inventory(["a", "b"]),
+        "vllm": _inventory(["a", "c"]),
+    })
+    assert [m["tag"] for m in merged["llm"]] == ["a", "b", "c"]
+    assert owners["a"] == {"llamacpp", "vllm"}
+    assert owners["b"] == {"llamacpp"} and owners["c"] == {"vllm"}
+
+
+def test_only_models_the_engine_holds_are_runnable():
+    merged, owners = merge_model_inventories({
+        "llamacpp": _inventory(["a", "b"]),
+        "vllm": _inventory(["a"]),
+    })
+    entries = build_model_entries(merged, ["llm"])
+    runnable = models_runnable_by(entries, "vllm", owners)
+    assert runnable["a"] is True
+    assert runnable["b"] is False, "llama.cpp-only model must not be offered under vLLM"
+    assert all(models_runnable_by(entries, "llamacpp", owners).values())
+
+
+def test_image_models_stay_runnable_under_every_engine():
+    """Image generation goes through ComfyUI, not the inference engine."""
+    merged, owners = merge_model_inventories({"llamacpp": _inventory([], ["sdxl"])})
+    entries = build_model_entries(merged, ["img"])
+    assert all(models_runnable_by(entries, "vllm", owners).values())
+
+
+def test_a_single_engine_inventory_is_unchanged():
+    merged, owners = merge_model_inventories({"llamacpp": _inventory(["a", "b"])})
+    entries = build_model_entries(merged, ["llm"])
+    assert all(models_runnable_by(entries, "llamacpp", owners).values())
+
+
+# ── multi-engine selection ──
+
+def test_engine_selection_parses_one_or_many():
+    assert parse_engine_selection("vllm") == ["vllm"]
+    assert parse_engine_selection("llamacpp,vllm") == ["llamacpp", "vllm"]
+    assert parse_engine_selection(" llamacpp , vllm ") == ["llamacpp", "vllm"]
+    assert parse_engine_selection("") == [] and parse_engine_selection(None) == []
+
+
+def test_engine_selection_round_trips():
+    for names in (["vllm"], ["llamacpp", "vllm"]):
+        assert parse_engine_selection(format_engine_selection(names)) == names
+
+
+def test_saved_state_naming_an_uninstalled_engine_is_reported():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "llamacpp,mlx", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    errors = frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models)
+    assert any("mlx" in e for e in errors)
+
+
+def test_a_fully_installed_multi_engine_state_is_accepted():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "llamacpp,vllm", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models) == []
+
+
+def test_a_state_without_an_engine_key_skips_engine_validation():
+    """Portable presets carry no engine, so importing one must not fail validation
+    nor override the engines already selected on screen."""
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"tests": ["llm"], "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp", "vllm"], tests, models) == []
+
+
+def test_an_empty_engine_string_is_still_rejected_when_the_key_is_present():
+    from scripts.app.benchmark_frontend import frontend_state_availability_errors, MenuEntry
+    tests = [MenuEntry("llm", "LLM", "test", "Tests", True)]
+    models = [MenuEntry("a", "A", "llm", "LLM", True)]
+    state = {"engine": "", "tests": ["llm"],
+             "models": {"llm": ["a"], "embedding": [], "image": []}}
+    assert frontend_state_availability_errors(state, ["llamacpp"], tests, models)
+
+
+# ── combined menu toggles ──
+
+def test_llamabench_toggle_expands_to_both_native_llama_cpp_tests():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests(["llm", "llamabench"]) == [
+        "llm", "llamabench", "llamabenchconc",
+    ]
+
+
+def test_expansion_preserves_order_and_does_not_duplicate():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests([]) == []
+    assert expand_selected_tests(["conv", "llm"]) == ["conv", "llm"]
+    # A CLI-shaped list already containing both must not gain a duplicate.
+    assert expand_selected_tests(["llamabench", "llamabenchconc"]) == [
+        "llamabench", "llamabenchconc",
+    ]
+
+
+def test_uncombined_tests_pass_through_expansion_untouched():
+    from scripts.app.benchmark_frontend import expand_selected_tests
+    assert expand_selected_tests(["vllmbench", "emb", "img"]) == ["vllmbench", "emb", "img"]
+
+
+def test_collapse_maps_either_native_test_back_to_the_single_toggle():
+    from scripts.app.benchmark_frontend import collapse_tests_to_entries
+    assert collapse_tests_to_entries(["llm", "llamabench"]) == {"llm", "llamabench"}
+    # A state saved before the toggles were combined recorded only the concurrency test.
+    assert collapse_tests_to_entries(["llamabenchconc"]) == {"llamabench"}
+    assert collapse_tests_to_entries(["llamabench", "llamabenchconc"]) == {"llamabench"}
+
+
+def test_collapse_leaves_every_other_test_as_its_own_entry():
+    from scripts.app.benchmark_frontend import collapse_tests_to_entries
+    assert collapse_tests_to_entries(["llm", "conv", "vllmbench", "img"]) == {
+        "llm", "conv", "vllmbench", "img",
+    }
+    assert collapse_tests_to_entries([]) == set()
+
+
+def test_a_legacy_saved_selection_restores_the_combined_toggle():
+    entries = build_test_entries(sample_inventory())
+    assert apply_saved_test_selection(entries, saved_state(tests=["llamabenchconc"]))
+    checked = {entry.value for entry in entries if entry.checked}
+    assert checked == {"llamabench"}
+
+
+def test_every_stage_a_toggle_can_produce_has_a_progress_label():
+    from scripts.app.benchmark_frontend import (
+        TEST_DEFINITIONS, TEST_STAGE_LABELS, expand_selected_tests,
+    )
+    produced = expand_selected_tests(name for name, *_ in TEST_DEFINITIONS)
+    assert set(produced) <= set(TEST_STAGE_LABELS)
+    assert all(TEST_STAGE_LABELS[name] for name in produced)

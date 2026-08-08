@@ -5,6 +5,9 @@ from scripts.setup.setup_config import (
     configured_gpu_devices,
     configured_comfyui_dir,
     configured_llamacpp_tool,
+    configured_vllm,
+    configured_vllm_launcher_args,
+    configured_vllm_path,
     load_setup_config,
     write_setup_config,
 )
@@ -63,3 +66,46 @@ def test_tensor_split_rejects_single_or_unrecorded_devices():
     assert available_gpu_split_modes(single, "rocm") == ("layer",)
     assert available_gpu_split_modes(legacy, "rocm") == ("layer",)
     assert available_gpu_split_modes({}, "cuda") == ("layer",)
+
+
+# ── vLLM runtime handoff ──
+
+def _write(path, **overrides):
+    kwargs = {"comfyui_dir": None, "llamacpp_tools": {}, **overrides}
+    write_setup_config(path, **kwargs)
+    return load_setup_config(path)
+
+
+def test_vllm_runtime_round_trips(tmp_path):
+    path = tmp_path / "config.json"
+    data = _write(path, vllm={
+        "executable": "/usr/bin/vllm",
+        "launcher": "/usr/bin/vllm-launch",
+        "server_url": "http://localhost:8001",
+        "launcher_extra_args": ["--gpu-memory-utilization", "0.85"],
+    })
+    assert configured_vllm_path(data, "launcher") == "/usr/bin/vllm-launch"
+    assert configured_vllm_path(data, "server_url") == "http://localhost:8001"
+    assert configured_vllm_launcher_args(data) == ["--gpu-memory-utilization", "0.85"]
+
+
+def test_absent_vllm_records_an_empty_block(tmp_path):
+    data = _write(tmp_path / "config.json")
+    assert configured_vllm(data) == {}
+    assert configured_vllm_path(data, "launcher") is None
+    assert configured_vllm_launcher_args(data) == []
+
+
+def test_vllm_accessors_tolerate_older_files_and_junk(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"schema_version": 2, "llama_cpp": {}}))
+    older = load_setup_config(path)
+    assert older, "a schema 2 file must still load"
+    assert configured_vllm(older) == {}
+    assert configured_vllm_launcher_args(older) == []
+
+    junk = {"vllm": {"launcher": 5, "server_url": "", "launcher_extra_args": ["--ok", 7]}}
+    assert configured_vllm_path(junk, "launcher") is None
+    assert configured_vllm_path(junk, "server_url") is None
+    assert configured_vllm_launcher_args(junk) == ["--ok"]
+    assert configured_vllm({"vllm": "nope"}) == {}

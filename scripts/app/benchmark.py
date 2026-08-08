@@ -14,7 +14,8 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
-from scripts.app.progress_events import PROGRESS_PREFIX
+from scripts.app.progress_events import PROGRESS_PREFIX, set_progress_engine
+from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
@@ -36,6 +37,7 @@ from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
+from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
@@ -47,6 +49,8 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
+from typing import Callable, Protocol
+
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
@@ -54,11 +58,14 @@ from scripts.setup.setup_config import (
 
 
 def relay_runner_log(text: str) -> None:
+    """Relay a runner's line as-is. The runner already stamped it; stamping again would
+    report when the parent got round to printing, not when the event happened."""
     if text.startswith(PROGRESS_PREFIX):
         sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
         sys.stdout.flush()
         return
-    Shared.output(text.rstrip())
+    sys.stdout.write(f"{redact_log_text(text.rstrip())}\n")
+    sys.stdout.flush()
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -77,8 +84,15 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
         checkpoint("run interrupted")
 
 
+class _RunnerLike(Protocol):
+    """The only two methods run_supervised_stage calls on a supervisor."""
+    def run(self, on_event, /) -> int | None: ...
+    def cancel(self) -> None: ...
+
+
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
-                         supervisor_factory=RunnerSupervisor, resume_identity=None,
+                         supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
+                         resume_identity=None,
                          resume=False, selected_case_ids=None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
@@ -120,7 +134,8 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 
 
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
-                       supervisor_factory=RunnerSupervisor, resume_identity=None) -> dict:
+                       supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
+                       resume_identity=None) -> dict:
     return run_supervised_stage(
         plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
     )
@@ -279,6 +294,24 @@ ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc"]
 
+# Tests that shell out to one engine's own native benchmark binary rather than going
+# through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
+ENGINE_NATIVE_TESTS = {
+    "llamacpp": ("llamabench", "llamabenchconc"),
+    "vllm": ("vllmbench",),
+}
+
+
+def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
+    """Selected tests that are native to a *different* engine than `engine_name` and
+    would just warn and produce nothing if scheduled — see ENGINE_NATIVE_TESTS."""
+    native_here = set(ENGINE_NATIVE_TESTS.get(engine_name, ()))
+    other_engines_native = {
+        test for name, native_tests in ENGINE_NATIVE_TESTS.items()
+        if name != engine_name for test in native_tests
+    }
+    return [t for t in tests if t in other_engines_native and t not in native_here]
+
 
 def selected_plan_models(tests: list[str], llm_models: list[dict],
                          concurrency_models: list[dict], embedding_models: list[dict],
@@ -395,9 +428,17 @@ def expand_tests(tests: list[str]) -> list[str]:
 
 
 def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
-    """Resolve --engine into an ordered engine-name list; "all" expands to
-    every registered engine, sorted for a deterministic run order."""
-    return list(available) if engine == "all" else [engine]
+    """Resolve --engine into an ordered engine-name list ("all", or comma-separated),
+    always in registry order so a multi-engine run is deterministic."""
+    if engine == "all":
+        return list(available)
+    requested = [name.strip() for name in engine.split(",") if name.strip()]
+    unknown = [name for name in requested if name not in available]
+    if unknown or not requested:
+        raise ValueError(
+            f"Unknown inference engine {', '.join(unknown) or engine!r} — "
+            f"known engines: {', '.join(available)}, or 'all'")
+    return [name for name in available if name in requested]
 
 
 def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
@@ -581,7 +622,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     _engines = registered_engine_names()
     parser.add_argument(
-        "--engine", type=str, default=_engines[0], choices=_engines + ["all"],
+        "--engine", type=str, default=_engines[0],
         help=f"Inference engine to benchmark against (default: {_engines[0]}). "
              "'all' runs the full --tests suite once per registered engine, back "
              "to back (sorted order), writing a separate results file for each "
@@ -613,7 +654,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         saved_path=configured_comfyui_dir(setup_config),
         managed_dir=config.COMFYUI_DIR,
     ) or config.COMFYUI_DIR
-    run_engine_names = resolve_engine_names(args.engine, _engines)
+    try:
+        run_engine_names = resolve_engine_names(args.engine, _engines)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.list_models:
         any_installed = False
@@ -679,6 +723,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
+        set_progress_engine(engine_name)
         if multi_engine:
             Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
             _base = Path(base_out_path)
@@ -692,6 +737,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
             tests = [t for t in tests if t != "img"]
+
+        native_elsewhere = engine_incompatible_tests(tests, engine_name)
+        if native_elsewhere:
+            Shared.log(f"{', '.join(native_elsewhere)} only run under their native engine "
+                       f"— skipping for {engine_name}")
+            tests = [t for t in tests if t not in native_elsewhere]
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
@@ -824,6 +875,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 model_families.append("concurrency")
             identity_model_count = len({
                 model["tag"] for family in model_families for model in plan.models[family]
+                if engine.model_pulled(model["tag"])
             })
             Shared.log(
                 f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
@@ -867,6 +919,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "concurrency_chat": {},
             "llamabench":      {},
             "llamabenchconc":  {},
+            "vllmbench":       {},
         }
 
         results["run"] = build_run_manifest(
@@ -912,7 +965,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 make_save("llm_conversation", "conv"), resume_identity=resume_identity,
             )
 
-        def stop_for_native(_context):
+        def release_port_for_runner(_context):
+            """A runner is a separate process and cannot stop this one's server, so a
+            server left up here would answer its requests instead — see docs/engines.md."""
             if engine.available():
                 engine.stop()
 
@@ -926,6 +981,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             return LlamaBenchConcurrencyBenchmark().run(
                 engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
                 save_fn=make_save("llamabenchconc"),
+            )
+
+        def run_vllmbench(_context):
+            return VllmBenchBenchmark().run(
+                engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
             )
 
         def run_embeddings(_context):
@@ -960,7 +1020,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     _context.plan, event_store_path(Path(out_path)), key,
                     make_save(section, key), resume_identity=resume_identity,
                 )
-            return StageDefinition(key, section, len(conc_models), runner)
+            return StageDefinition(key, section, len(conc_models), runner,
+                                   prepare=release_port_for_runner)
 
         def prepare_images(_context):
             lifecycle.restore_gpu()
@@ -982,23 +1043,23 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         registry = [
-            StageDefinition("llm", "llm", len(llm_models), run_llm),
+            StageDefinition("llm", "llm", len(llm_models), run_llm,
+                            prepare=release_port_for_runner),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
-                            requires_engine=False),
-            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench),
+                            requires_engine=False, prepare=release_port_for_runner),
+            StageDefinition("llamabench", "llamabench", len(llm_models), run_llamabench,
+                            prepare=release_port_for_runner),
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
-                            run_llamabench_concurrency, prepare=stop_for_native),
+                            run_llamabench_concurrency, prepare=release_port_for_runner),
+            StageDefinition("vllmbench", "vllmbench", len(llm_models), run_vllmbench,
+                            prepare=release_port_for_runner),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
                             requires_engine=True),
             accuracy_stage("mcq", MCQBenchmark), accuracy_stage("math", MathBenchmark),
             accuracy_stage("reasoning", ReasoningBenchmark),
             accuracy_stage("code", CodeBenchmark), accuracy_stage("tool", ToolBenchmark),
-            concurrency_stage(
-                "conc_tool", "concurrency_tool",
-            ),
-            concurrency_stage(
-                "conc_chat", "concurrency_chat",
-            ),
+            concurrency_stage("conc_tool", "concurrency_tool"),
+            concurrency_stage("conc_chat", "concurrency_chat"),
             StageDefinition("img", "images", len(image_models), run_images,
                             prepare=prepare_images, cleanup=lambda _: Shared.shutdown_managed()),
         ]

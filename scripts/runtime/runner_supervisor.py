@@ -12,12 +12,27 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Protocol
 
 from scripts.runtime import config
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
 SUPPORTED_RUNNER_STAGES = {"conc_chat", "conc_tool", "conv", "llamabench", "llm"}
+
+
+class SupervisedProcess(Protocol):
+    """What RunnerSupervisor actually calls on a spawned process — a subprocess.Popen
+    satisfies this, and so does a narrower test double."""
+    stdout: Any
+    returncode: int | None
+    pid: int
+
+    def poll(self) -> int | None: ...
+    def send_signal(self, sig: int) -> None: ...
+    def wait(self, timeout: float | None = None) -> int: ...
+    def terminate(self) -> None: ...
+    def kill(self) -> None: ...
 
 
 class RunnerHeartbeatTimeout(TimeoutError):
@@ -90,11 +105,11 @@ class RunnerSupervisor:
         self.clock = clock
         self.system = system or platform.system()
         self.ownership_token = uuid.uuid4().hex
-        self.process = None
+        self.process: SupervisedProcess | None = None
         self.last_heartbeat = None
         self.lines = queue.Queue()
 
-    def start(self):
+    def start(self) -> SupervisedProcess:
         if self.process is not None:
             raise RuntimeError("runner already started")
         environment = dict(os.environ)
@@ -104,7 +119,7 @@ class RunnerSupervisor:
             "text": True, "bufsize": 1, "env": environment,
         }
         if self.system == "Windows":
-            options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         else:
             options["start_new_session"] = True
         self.process = self.process_factory(build_runner_command(self.spec), **options)
@@ -114,7 +129,7 @@ class RunnerSupervisor:
 
     def _read_output(self):
         try:
-            for line in self.process.stdout:
+            for line in self.process.stdout if self.process and self.process.stdout else ():
                 self.lines.put(line)
         finally:
             self.lines.put(None)
@@ -135,11 +150,11 @@ class RunnerSupervisor:
                 f"runner heartbeat exceeded {self.heartbeat_timeout:g} seconds"
             )
 
-    def run(self, on_event) -> int:
-        self.start()
+    def run(self, on_event) -> int | None:
+        process = self.start()
         stream_closed = False
         try:
-            while self.process.poll() is None or not stream_closed:
+            while process.poll() is None or not stream_closed:
                 try:
                     line = self.lines.get(timeout=min(0.25, self.heartbeat_timeout / 4))
                 except queue.Empty:
@@ -150,7 +165,7 @@ class RunnerSupervisor:
                 else:
                     self.accept_line(line, on_event)
                 self.check_heartbeat()
-            return self.process.returncode
+            return process.returncode
         except BaseException:
             self.cancel()
             raise
@@ -159,7 +174,7 @@ class RunnerSupervisor:
         if self.process is None or self.process.poll() is not None:
             return
         if self.system == "Windows":
-            self.process.send_signal(signal.CTRL_BREAK_EVENT)
+            self.process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
         else:
             os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
         try:

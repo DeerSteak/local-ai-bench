@@ -1,4 +1,35 @@
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from pathlib import Path
+
+from scripts.runtime.llamacpp_tools import (
+    CUDA_BIN_DIRS, cuda_architecture, find_llamacpp_tool, find_nvcc,
+)
+
+
+def test_compute_capability_becomes_a_cmake_architecture():
+    assert cuda_architecture("8.9") == "89"
+    assert cuda_architecture("12.0") == "120"
+    assert cuda_architecture(" 7.5 ") == "75"
+
+
+def test_unreadable_compute_capability_yields_no_architecture():
+    for value in (None, "", "native", "No CUDA devices found.", "8", "8.9.1", "x.y"):
+        assert cuda_architecture(value) is None
+
+
+def test_nvcc_on_path_is_preferred_over_a_toolkit_directory():
+    assert find_nvcc(which_fn=lambda _name: "/usr/bin/nvcc",
+                     exists_fn=lambda _path: True) == "/usr/bin/nvcc"
+
+
+def test_nvcc_is_found_in_the_toolkit_directory_when_not_on_path():
+    expected = str(Path(CUDA_BIN_DIRS[0]) / "nvcc")
+    found = find_nvcc(which_fn=lambda _name: None,
+                      exists_fn=lambda path: str(path) == expected)
+    assert found == expected
+
+
+def test_nvcc_is_absent_when_neither_path_nor_toolkit_has_it():
+    assert find_nvcc(which_fn=lambda _name: None, exists_fn=lambda _path: False) is None
 
 
 def test_system_path_wins_over_project_vendored_binary(tmp_path):

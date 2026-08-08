@@ -52,7 +52,7 @@ class MathBenchmark:
         )
 
     @staticmethod
-    def parse_answer(response_text: str) -> float | None:
+    def parse_answer(response_text: str | None) -> float | None:
         """Extract a stated numeric result from free-form text, or None."""
         if not response_text:
             return None

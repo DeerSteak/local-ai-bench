@@ -4,6 +4,14 @@ from scripts.setup.model_inventory import (
     build_model_inventory,
     classify_engine_models,
     delete_non_catalog_model_dirs,
+    engine_download_size,
+    engine_fit_report,
+    engine_fit_warnings,
+    fits_any_engine,
+    format_engine_sizes,
+    engine_model_complete,
+    engine_model_dir,
+    models_missing_engine_support,
     find_non_catalog_model_dirs,
     format_model_inventory,
     installed_image_models,
@@ -242,3 +250,140 @@ def test_delete_non_catalog_model_dirs_rejects_non_model_directory(tmp_path):
     assert removed == []
     assert failures == {"notes": "directory does not contain a GGUF model"}
     assert (target / "keep.txt").read_text() == "important"
+
+
+# ── per-engine model storage ──
+
+def test_engine_model_dir_namespaces_by_engine(tmp_path):
+    assert engine_model_dir(tmp_path, "llamacpp", "qwen3.5:9b-q4_K_M") == tmp_path / "llamacpp" / "qwen3.5_9b-q4_K_M"
+    assert engine_model_dir(tmp_path, "vllm", "qwen3.5:9b-q4_K_M") == tmp_path / "vllm" / "qwen3.5_9b-q4_K_M"
+
+
+def test_engine_download_size_prefers_the_engines_own_weights():
+    model = {"download_size": "~5.5 GB", "vllm_download_size": "~12.4 GB"}
+    assert engine_download_size(model, "llamacpp") == "~5.5 GB"
+    assert engine_download_size(model, "vllm") == "~12.4 GB"
+
+
+def test_engine_download_size_is_unknown_when_no_vllm_size_is_listed():
+    """A missing vllm_download_size must report unknown, not the GGUF's own size —
+    vLLM downloads a different weight format so the two sizes aren't interchangeable."""
+    assert engine_download_size({"download_size": "~5.5 GB"}, "vllm") is None
+
+
+def test_llamacpp_completeness_needs_every_listed_gguf(tmp_path):
+    model_dir = tmp_path / "m"
+    model_dir.mkdir()
+    files = ["a-00001-of-00002.gguf", "a-00002-of-00002.gguf"]
+    (model_dir / files[0]).touch()
+    assert engine_model_complete(model_dir, "llamacpp", files) is False
+    (model_dir / files[1]).touch()
+    assert engine_model_complete(model_dir, "llamacpp", files) is True
+
+
+def test_completeness_is_false_for_a_missing_directory(tmp_path):
+    assert engine_model_complete(tmp_path / "nope", "llamacpp", ["a.gguf"]) is False
+
+
+def test_models_missing_engine_support_only_applies_to_vllm():
+    models = [{"tag": "a", "vllm_repo": "org/a"}, {"tag": "b"}]
+    assert models_missing_engine_support(models, "vllm") == ["b"]
+    assert models_missing_engine_support(models, "llamacpp") == []
+
+
+def test_every_catalog_model_has_vllm_weights_defined():
+    from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+    assert models_missing_engine_support(LLM_MODELS + EMBED_MODELS, "vllm") == []
+    for model in LLM_MODELS + EMBED_MODELS:
+        assert "/" in model["vllm_repo"], model["tag"]
+        assert model["vllm_download_size"].startswith("~")
+
+
+# ── per-engine size and memory fit ──
+
+MIXED = {"tag": "m", "download_size": "~6.2 GB", "vllm_download_size": "~12.4 GB",
+         "vllm_repo": "org/m-awq"}
+
+
+def test_fit_report_uses_each_engines_own_weights():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=100)
+    assert report["llamacpp"]["size"] == "~6.2 GB"
+    assert report["vllm"]["size"] == "~12.4 GB"
+    assert report["vllm"]["needed_gb"] > report["llamacpp"]["needed_gb"]
+
+
+def test_a_model_can_fit_one_engine_and_not_the_other():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=12.0)
+    assert report["llamacpp"]["fits"] is True
+    assert report["vllm"]["fits"] is False
+    assert fits_any_engine(report) is True, "still worth downloading for llama.cpp"
+
+
+def test_vllm_only_selection_reports_only_vllm():
+    report = engine_fit_report(MIXED, ["vllm"], ceiling_gb=12.0)
+    assert list(report) == ["vllm"]
+    assert fits_any_engine(report) is False
+    assert format_engine_sizes(report) == "~12.4 GB"
+
+
+def test_llamacpp_only_selection_is_unchanged():
+    report = engine_fit_report(MIXED, ["llamacpp"], ceiling_gb=12.0)
+    assert list(report) == ["llamacpp"]
+    assert format_engine_sizes(report) == "~6.2 GB"
+    assert engine_fit_warnings(report, 12.0) == []
+
+
+def test_both_engines_label_names_each_one():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=12.0)
+    assert format_engine_sizes(report) == "llama.cpp ~6.2 GB · vLLM ~12.4 GB"
+
+
+def test_warnings_name_the_engine_only_when_several_are_selected():
+    both = engine_fit_warnings(engine_fit_report(MIXED, ["llamacpp", "vllm"], 12.0), 12.0)
+    assert both == ["vLLM needs ~14.9 GB, ~12.0 GB available"]
+    single = engine_fit_warnings(engine_fit_report(MIXED, ["vllm"], 12.0), 12.0)
+    assert single == ["needs ~14.9 GB, ~12.0 GB available"]
+
+
+def test_unknown_ceiling_yields_no_verdict_and_no_warnings():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=None)
+    assert fits_any_engine(report) is None
+    assert engine_fit_warnings(report, None) == []
+
+
+def test_a_model_fitting_nothing_is_reported_as_unfit():
+    report = engine_fit_report(MIXED, ["llamacpp", "vllm"], ceiling_gb=1.0)
+    assert fits_any_engine(report) is False
+    assert len(engine_fit_warnings(report, 1.0)) == 2
+
+
+def test_a_model_without_vllm_weights_is_skipped_in_the_report():
+    model = {"tag": "m", "download_size": "~6.2 GB"}
+    report = engine_fit_report(model, ["llamacpp", "vllm"], ceiling_gb=100)
+    assert list(report) == ["llamacpp"]
+    assert format_engine_sizes(report) == "~6.2 GB"
+
+
+def test_empty_engine_selection_has_no_verdict():
+    assert fits_any_engine(engine_fit_report(MIXED, [], ceiling_gb=12.0)) is None
+
+
+def test_real_catalog_sizes_differ_between_engines():
+    from scripts.workloads.models import LLM_MODELS
+    differing = [m for m in LLM_MODELS
+                 if engine_download_size(m, "vllm") != engine_download_size(m, "llamacpp")]
+    assert len(differing) == len(LLM_MODELS), "every LLM should carry its own vLLM size"
+
+
+def test_image_checkpoints_have_no_engine_download_size():
+    image = {"label": "SDXL", "checkpoint": "sd_xl_base_1.0.safetensors", "short": "sdxl"}
+    assert engine_download_size(image, "llamacpp") is None
+    assert engine_download_size(image, "vllm") is None
+    assert engine_fit_report(image, ["llamacpp", "vllm"], 100) == {}
+    assert fits_any_engine(engine_fit_report(image, ["llamacpp"], 100)) is None
+
+
+def test_fit_report_skips_engines_without_a_size_but_keeps_the_others():
+    partial = {"tag": "m", "vllm_download_size": "~9 GB", "vllm_repo": "org/m"}
+    report = engine_fit_report(partial, ["llamacpp", "vllm"], 100)
+    assert list(report) == ["vllm"]

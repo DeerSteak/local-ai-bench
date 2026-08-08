@@ -87,7 +87,8 @@ class EmbeddingBenchmark:
 
                 Shared.ok(f"Using model: {tag}")
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
@@ -167,6 +168,10 @@ class EmbeddingBenchmark:
                         "skip_reason": "failed",
                         "skip_detail": "All embedding runs failed",
                     }
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the embedding benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

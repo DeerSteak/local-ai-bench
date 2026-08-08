@@ -1,5 +1,7 @@
 import json
+import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -14,7 +16,7 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
-    BENCHMARK_PRESETS, CUSTOM_PRESET, apply_hardware_model_defaults,
+    BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
@@ -22,6 +24,7 @@ from scripts.app.benchmark_gui import (
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
+    progress_event_engine,
     progress_summary_rows, recovery_executor_command, recovery_progress_entries,
     resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
@@ -69,7 +72,8 @@ def test_gui_options_round_trip_in_frontend_state(tmp_path):
     )
     from scripts.app.benchmark_frontend import save_frontend_state
     assert save_frontend_state(state, path)
-    assert load_frontend_state(path)["gui_options"] == options
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"] == options
 
 
 def test_validate_gui_options_rejects_bounds_types_and_missing_keys():
@@ -86,8 +90,10 @@ def test_build_command_includes_every_gui_execution_setting():
         out="chosen.json", comfyui="/chosen/ComfyUI",
     )
     command = build_benchmark_command(
-        "llamacpp", Path("/detected/ComfyUI"), ["llm"],
-        [MenuEntry("model", "Model", "llm", "LLM", True)],
+        # An image test is included so --comfyui is emitted at all; it is omitted without one.
+        "llamacpp", Path("/detected/ComfyUI"), ["llm", "img"],
+        [MenuEntry("model", "Model", "llm", "LLM", True),
+         MenuEntry("sdxl", "SDXL", "image", "Images", True)],
         python_executable="python", benchmark_path=Path("benchmark.py"), gui_options=options,
     )
     assert command[command.index("--comfyui") + 1] == "/chosen/ComfyUI"
@@ -119,7 +125,8 @@ def test_launch_controlled_process_supplies_progress_environment(tmp_path):
 
     process, path = launch_controlled_process(
         ["python", "benchmark.py"], creationflags=7,
-        pause_path_factory=lambda: control_path, popen=fake_popen,
+        pause_path_factory=lambda: control_path,
+        popen=cast("type[subprocess.Popen]", fake_popen),
     )
 
     assert process is not None and path == control_path
@@ -138,7 +145,8 @@ def test_launch_controlled_process_removes_control_file_when_launch_fails(tmp_pa
 
     with pytest.raises(OSError, match="executable missing"):
         launch_controlled_process(
-            ["missing"], pause_path_factory=lambda: control_path, popen=fail_popen,
+            ["missing"], pause_path_factory=lambda: control_path,
+            popen=cast("type[subprocess.Popen]", fail_popen),
         )
     assert not control_path.exists()
 
@@ -255,10 +263,11 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
     ) == {"kind": "model", "stage": "llm", "status": "complete", "model": "Qwen: 4B"}
     assert parse_progress_line("ordinary benchmark output") is None
     assert parse_progress_line("::local-ai-bench-progress::{bad json") is None
-    assert parse_progress_line(
+    retrying_event = parse_progress_line(
         '::local-ai-bench-progress::{"kind":"measurement","stage":"llm",'
         '"status":"retrying","model":"Qwen 2K run 1"}\n'
-    )["status"] == "retrying"
+    )
+    assert retrying_event is not None and retrying_event["status"] == "retrying"
 
 
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
@@ -300,10 +309,11 @@ def test_process_resource_usage_includes_child_processes():
             self.rss = rss
 
     class Process:
-        def __init__(self, cpu, rss, children=()):
+        def __init__(self, cpu, rss, children=(), pid=0):
             self.cpu = cpu
             self.rss = rss
             self._children = children
+            self.pid = pid
 
         def children(self, recursive):
             assert recursive
@@ -327,12 +337,13 @@ def test_process_resource_usage_includes_child_processes():
             assert pid == 42
             return parent
 
-    assert process_resource_usage(42, Psutil) == (50, 3.0)
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
 
 
 def test_system_memory_usage_reports_used_and_total_gibibytes():
     memory = type("Memory", (), {"used": 32 * 1024 ** 3, "total": 128 * 1024 ** 3})()
-    psutil_module = type("Psutil", (), {"virtual_memory": staticmethod(lambda: memory)})
+    psutil_module = cast(PsutilLike,
+        type("Psutil", (), {"virtual_memory": staticmethod(lambda: memory)}))
     assert system_memory_usage(psutil_module) == (32.0, 128.0)
 
 
@@ -380,7 +391,7 @@ def test_query_gpu_process_memory_uses_nvidia_process_accounting():
 
     assert query_gpu_process_memory(
         42, run_fn=lambda *args, **kwargs: result,
-        which_fn=lambda name: "/usr/bin/nvidia-smi", psutil_module=psutil_module,
+        which_fn=lambda name: "/usr/bin/nvidia-smi", psutil_module=cast(PsutilLike, psutil_module),
     ) == 2.0
 
 
@@ -497,6 +508,8 @@ def test_named_preset_replaces_the_complete_control_configuration():
         "options": dict(GUI_OPTION_DEFAULTS),
     }
     values = preset_control_values("Quick run", {"llm", "emb", "img"}, defaults)
+    # A preset must not touch the engine selection — see apply_control_values.
+    assert "engine" not in values
     assert values["tests"] == {"llm": True, "emb": True, "img": False}
     assert values["max_prompt_tokens"] == "8192"
     assert values["options"]["runs"] == 1
@@ -549,3 +562,30 @@ def test_plan_preview_sections_group_the_review_for_scanning():
         "Scope and duration": ["Broad cases: 3 passes"],
         "Output and environment": ["Results: automatic", "Network use: none expected"],
     }
+
+
+# ── progress-row engine attribution ──
+
+def test_progress_event_engine_uses_the_name_the_event_carries():
+    from scripts.app.benchmark_gui import progress_event_engine
+    event = {"kind": "model", "stage": "llm", "engine": "vllm"}
+    assert progress_event_engine(event, ["llamacpp", "vllm"]) == "vllm"
+
+
+def test_progress_event_engine_assumes_the_only_engine_when_unnamed():
+    from scripts.app.benchmark_gui import progress_event_engine
+    assert progress_event_engine({"kind": "model", "stage": "llm"}, ["llamacpp"]) == "llamacpp"
+
+
+def test_progress_event_engine_refuses_to_guess_during_a_multi_engine_run():
+    """An unnamed event previously landed on the first engine's rows, crediting the
+    vLLM pass's progress to llamacpp while vLLM's rows stayed queued."""
+    from scripts.app.benchmark_gui import progress_event_engine
+    assert progress_event_engine({"kind": "model", "stage": "llm"}, ["llamacpp", "vllm"]) is None
+
+
+def test_progress_event_engine_rejects_an_engine_that_is_not_in_this_run():
+    from scripts.app.benchmark_gui import progress_event_engine
+    event = {"kind": "stage", "stage": "llm", "engine": "mlx"}
+    assert progress_event_engine(event, ["llamacpp", "vllm"]) is None
+    assert progress_event_engine({"engine": "", "kind": "stage"}, ["llamacpp"]) == "llamacpp"

@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from scripts.runtime.engines.base import (
     EmbeddingMeasurement, GenerationMeasurement, aggregate_generation_measurements,
     embedding_validation_errors,
@@ -46,9 +48,10 @@ def test_measurement_validation_rejects_implausible_server_timing_marker():
 
 
 def test_embedding_validation_rejects_zero_wall_time_and_bad_payload():
-    assert embedding_validation_errors(EmbeddingMeasurement(None, 0)) == [
-        "client_wall_sec", "embeddings",
-    ]
+    # Deliberately violates EmbeddingMeasurement's own field type — this is the
+    # malformed-payload shape embedding_validation_errors exists to catch.
+    bad = EmbeddingMeasurement(None, 0)  # type: ignore[arg-type]
+    assert embedding_validation_errors(bad) == ["client_wall_sec", "embeddings"]
 
 
 def test_aggregate_excludes_invalid_samples_but_keeps_completed_count_and_diagnostics():
@@ -68,3 +71,63 @@ def test_aggregate_adds_median_and_cv_with_two_valid_samples():
     assert result["client_ttft_median_sec"] == 0.3
     assert result["client_ttft_cv"] > 0
     assert result["server_prompt_mean_sec"] == 0.15
+
+
+# ── prefill throughput ──
+
+def test_prefill_tps_divides_prompt_tokens_by_the_server_reported_prompt_time():
+    from scripts.runtime.engines.base import prefill_tokens_per_sec
+    assert prefill_tokens_per_sec(2048, 0.5) == 4096.0
+
+
+@pytest.mark.parametrize("prompt_tokens,server_prompt_sec", [
+    # An engine that reports no prompt duration must never fall back to wall time.
+    (2048, None),
+    (None, 0.5),
+    (0, 0.5),
+    (-1, 0.5),
+    (2048, 0),
+    (2048, -0.1),
+    (2048, float("nan")),
+    (2048, float("inf")),
+    # Booleans are ints in Python and would otherwise divide as 1/True.
+    (True, 0.5),
+    (2048, True),
+])
+def test_prefill_tps_is_none_when_either_input_is_missing_or_implausible(
+        prompt_tokens, server_prompt_sec):
+    from scripts.runtime.engines.base import prefill_tokens_per_sec
+    assert prefill_tokens_per_sec(prompt_tokens, server_prompt_sec) is None
+
+
+def test_aggregate_reports_prefill_throughput_per_run_and_averaged():
+    measurements = [
+        replace(valid_measurement(), prompt_tokens=2048, server_prompt_sec=0.5),
+        replace(valid_measurement(), prompt_tokens=2048, server_prompt_sec=1.0),
+    ]
+    aggregate = aggregate_generation_measurements(measurements, 2)
+    assert aggregate["prefill_tps_runs"] == [4096.0, 2048.0]
+    assert aggregate["prefill_tps_mean"] == 3072.0
+    assert aggregate["prefill_tps_stdev"] > 0
+    assert aggregate["valid_samples"][0]["prefill_tps"] == 4096.0
+    assert aggregate["valid_samples"][0]["prompt_tokens"] == 2048
+
+
+def test_aggregate_omits_prefill_throughput_when_no_run_reported_prompt_timing():
+    """An engine or build without the timing source leaves the key absent rather
+    than reporting a zero that would plot as a real measurement."""
+    measurements = [replace(valid_measurement(), prompt_tokens=2048, server_prompt_sec=None)]
+    aggregate = aggregate_generation_measurements(measurements, 1)
+    assert "prefill_tps_mean" not in aggregate
+    assert aggregate["valid_samples"][0]["prefill_tps"] is None
+
+
+def test_aggregate_averages_only_the_runs_that_reported_prompt_timing():
+    measurements = [
+        replace(valid_measurement(), prompt_tokens=2048, server_prompt_sec=0.5),
+        replace(valid_measurement(), prompt_tokens=2048, server_prompt_sec=None),
+    ]
+    aggregate = aggregate_generation_measurements(measurements, 2)
+    assert aggregate["prefill_tps_runs"] == [4096.0]
+    assert aggregate["prefill_tps_mean"] == 4096.0
+    assert aggregate["prefill_tps_stdev"] == 0

@@ -1,0 +1,34 @@
+from scripts.app.benchmark import engine_incompatible_tests
+
+
+def test_llamacpp_pass_drops_vllmbench_only():
+    dropped = engine_incompatible_tests(["llm", "llamabench", "vllmbench", "emb"], "llamacpp")
+    assert dropped == ["vllmbench"]
+
+
+def test_vllm_pass_drops_both_llamabench_stages():
+    dropped = engine_incompatible_tests(
+        ["llm", "llamabench", "llamabenchconc", "vllmbench"], "vllm")
+    assert dropped == ["llamabench", "llamabenchconc"]
+
+
+def test_neither_native_test_selected_drops_nothing():
+    assert engine_incompatible_tests(["llm", "conv", "emb", "img"], "llamacpp") == []
+    assert engine_incompatible_tests(["llm", "conv", "emb", "img"], "vllm") == []
+
+
+def test_engine_own_native_tests_are_kept():
+    assert engine_incompatible_tests(["llamabench", "llamabenchconc"], "llamacpp") == []
+    assert engine_incompatible_tests(["vllmbench"], "vllm") == []
+
+
+def test_unknown_engine_drops_every_others_native_test():
+    """A future third engine has no ENGINE_NATIVE_TESTS entry of its own, so both
+    llama.cpp's and vLLM's native tests are foreign to it."""
+    dropped = engine_incompatible_tests(["llamabench", "vllmbench", "llm"], "mlx")
+    assert set(dropped) == {"llamabench", "vllmbench"}
+
+
+def test_preserves_selection_order():
+    dropped = engine_incompatible_tests(["vllmbench", "llm", "llamabench"], "vllm")
+    assert dropped == ["llamabench"]

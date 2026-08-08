@@ -1,6 +1,10 @@
+import json
+
 import pytest
 
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.app.progress_events import (
+    PROGRESS_PREFIX, emit_model_finished, emit_progress, set_progress_engine,
+)
 
 
 def test_model_progress_preserves_labels_with_punctuation(monkeypatch, capsys):
@@ -32,3 +36,33 @@ def test_model_progress_reports_usable_saved_results(monkeypatch, capsys):
     monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
     emit_model_finished("llm", "Model", {"2K": {"tps_mean": 12.5}})
     assert '"usable":true' in capsys.readouterr().out
+
+
+def _emit(capsys, **kwargs):
+    emit_progress(**kwargs)
+    line = capsys.readouterr().out.strip()
+    return json.loads(line[len(PROGRESS_PREFIX):]) if line else None
+
+
+def test_events_carry_the_running_engine(monkeypatch, capsys):
+    """Without this, a two-engine run's passes overwrite each other's progress rows."""
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    try:
+        set_progress_engine("vllm")
+        payload = _emit(capsys, kind="model", stage="llm", status="running", model="Gemma 3 1B")
+        assert payload is not None and payload["engine"] == "vllm"
+        assert (payload["stage"], payload["model"]) == ("llm", "Gemma 3 1B")
+
+        set_progress_engine("llamacpp")
+        stage_payload = _emit(capsys, kind="stage", stage="llm", status="complete")
+        assert stage_payload is not None and stage_payload["engine"] == "llamacpp"
+    finally:
+        set_progress_engine(None)
+
+
+def test_engine_is_omitted_when_unset(monkeypatch, capsys):
+    """Single-engine callers and older consumers see the original payload shape."""
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    set_progress_engine(None)
+    payload = _emit(capsys, kind="stage", stage="llm", status="running")
+    assert payload is not None and "engine" not in payload

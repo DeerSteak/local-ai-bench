@@ -1,3 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.pdf binary
+
+# Shell scripts must stay LF even on a Windows checkout — WSL and Git Bash read
+# the same worktree, and a CRLF shebang makes them look for `bash\r`.
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Batch files are only ever run by cmd.exe, which wants CRLF.
+*.bat text eol=crlf

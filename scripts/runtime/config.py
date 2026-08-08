@@ -3,6 +3,8 @@ need `config.NAME` access — `from config import NAME` binds a stale copy befor
 
 from pathlib import Path
 
+VERSION        = "5.0"
+
 COMFYUI_URL  = "http://localhost:8188"
 
 # llama-server's default port. LlamaCppEngine launches its own server on
@@ -26,6 +28,19 @@ SETUP_CONFIG_PATH = SCRIPT_DIR / "local_ai_bench_config.json"
 # Vendored llama.cpp location (Linux source build / Windows prebuilt zip); macOS's brew
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
+
+# Own venv: vLLM pins a torch build that would collide with bench-env's.
+VLLM_VENV = SCRIPT_DIR / "vllm-env"
+VLLM_PORT = 8000
+VLLM_URL  = f"http://localhost:{VLLM_PORT}"
+# vLLM preallocates this fraction of VRAM for weights + KV cache.
+VLLM_GPU_MEMORY_UTILIZATION = 0.90
+# Prompts are padded by characters, so real tokenization can overshoot the target.
+# vLLM rejects prompt+max_tokens > max_model_len outright; llama.cpp does not.
+VLLM_CTX_TOLERANCE = 64
+
+# vLLM's own default, then AMD `vllm-launch`'s.
+VLLM_DISCOVERY_PORTS = (8000, 8001)
 
 # Model downloads land here (setup_check.py), namespaced one subdirectory per engine — see docs/engines.md.
 MODELS_DIR = SCRIPT_DIR / "models"
@@ -55,7 +70,6 @@ IMAGE_PROMPT = (
     "highly detailed, 8k resolution"
 )
 
-VERSION        = "4.1"
 WARMUP_RUNS    = 2
 N_RUNS         = 3   # measured runs for single-shot LLM, embeddings, and images
 RETRY_CRASHED_MODELS = False
@@ -92,6 +106,18 @@ LLAMABENCH_TIMEOUT = 1800
 # Exceeds any real model's layer count so every layer offloads — llama-bench's own
 # default (-1) isn't documented as meaning "all layers".
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
+
+# `vllm bench` latency/throughput sweep (opt-in `vllmbench` test) — see docs/workloads.md#vllm-bench.
+# Same shapes as LLAMABENCH_PP/TG so both engines sweep the same points; the numbers are
+# still not comparable across engines (different weights and different metric definitions).
+VLLMBENCH_INPUT = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+VLLMBENCH_OUTPUT = [128, 512]
+VLLMBENCH_BATCH_SIZE = 1
+# vllm bench latency defaults to 30 iterations and 10 warmups, far more than this suite needs.
+VLLMBENCH_ITERS = 3
+VLLMBENCH_WARMUP_ITERS = 1
+VLLMBENCH_NUM_PROMPTS = 32
+VLLMBENCH_TIMEOUT = 1800
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth

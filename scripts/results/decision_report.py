@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.results.result_store import validate_json_data
+from scripts.results.result_store import as_dict, validate_json_data
 
 
 PERFORMANCE_SECTIONS = {
@@ -44,13 +44,13 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
     if not isinstance(result, dict):
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
-    profile = result.get("profile") if isinstance(result.get("profile"), dict) else {}
+    run = as_dict(result.get("run"))
+    profile = as_dict(result.get("profile"))
     hostname = _text(profile.get("hostname"), "Unnamed system")
     status = _text(run.get("status"), "legacy")
-    plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
-    settings = plan.get("effective_config") if isinstance(plan.get("effective_config"), dict) else {}
-    export_identity = run.get("export_identity") if isinstance(run.get("export_identity"), dict) else {}
+    plan = as_dict(run.get("plan"))
+    settings = as_dict(plan.get("effective_config"))
+    export_identity = as_dict(run.get("export_identity"))
     metadata = (
         ("System", hostname), ("Application", _text(result.get("version"))),
         ("Engine", _text(result.get("engine") or run.get("engine"))),
@@ -62,9 +62,9 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
         ("Source identity", _text(export_identity.get("source_sha256"))),
     )
     coverage = []
-    stages = run.get("stages") if isinstance(run.get("stages"), dict) else {}
+    stages = as_dict(run.get("stages"))
     for stage in run.get("stage_order", stages.keys()):
-        state = stages.get(stage) if isinstance(stages.get(stage), dict) else {}
+        state = as_dict(stages.get(stage))
         coverage.append((
             str(stage), _text(state.get("status"), "not recorded"),
             str(state.get("models_with_results") or 0),

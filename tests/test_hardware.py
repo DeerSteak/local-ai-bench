@@ -148,8 +148,9 @@ REAL_SHAPED_ASSETS = [
 
 
 def test_select_cuda_release_assets_picks_exact_match():
-    bin_asset, cudart_asset, version = hardware.select_cuda_release_assets(
-        REAL_SHAPED_ASSETS, "13.3")
+    result = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "13.3")
+    assert result is not None
+    bin_asset, cudart_asset, version = result
     assert version == "13.3"
     assert bin_asset["name"] == "llama-b10106-bin-win-cuda-13.3-x64.zip"
     assert cudart_asset["name"] == "cudart-llama-bin-win-cuda-13.3-x64.zip"
@@ -157,7 +158,9 @@ def test_select_cuda_release_assets_picks_exact_match():
 
 def test_select_cuda_release_assets_picks_highest_not_exceeding_driver():
     """A driver that only supports up to 12.9 must not get the 13.3 build."""
-    _, _, version = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "12.9")
+    result = hardware.select_cuda_release_assets(REAL_SHAPED_ASSETS, "12.9")
+    assert result is not None
+    _, _, version = result
     assert version == "12.4"
 
 
@@ -336,3 +339,88 @@ def test_image_model_fits_against_real_catalog_values():
 
     flux2 = next(m for m in IMAGE_MODELS if m["short"] == "flux2-dev")
     assert hardware.image_model_fits(flux2["checkpoint"], flux2["short"], 24.0) is False
+
+
+def test_parse_rocm_version():
+    assert hardware.parse_rocm_version("HIP version: 6.4.43483-a187df25c") == (6, 4)
+    assert hardware.parse_rocm_version("6.3.0-63") == (6, 3)
+    assert hardware.parse_rocm_version("unknown") is None
+    assert hardware.parse_rocm_version("") is None
+    assert hardware.parse_rocm_version(None) is None
+
+
+STRIX_HALO_ROCMINFO = """
+Agent 1
+  Name:                    AMD Ryzen AI Max+ 395
+  Marketing Name:          AMD Ryzen AI Max+ 395 w/ Radeon 8060S
+  Device Type:             CPU
+Agent 2
+  Name:                    gfx1151
+  Marketing Name:          AMD Radeon Graphics
+  Device Type:             GPU
+"""
+
+MI300_ROCMINFO = """
+Agent 1
+  Name:                    AMD EPYC 9654
+  Device Type:             CPU
+Agent 2
+  Name:                    gfx942:sramecc+:xnack-
+  Marketing Name:          AMD Instinct MI300X
+  Device Type:             GPU
+Agent 3
+  Name:                    gfx942:sramecc+:xnack-
+  Marketing Name:          AMD Instinct MI300X
+  Device Type:             GPU
+"""
+
+
+def test_rocminfo_gfx_targets_ignores_the_cpu_agent():
+    assert hardware.rocminfo_gfx_targets(STRIX_HALO_ROCMINFO) == ["gfx1151"]
+
+
+def test_rocminfo_gfx_targets_strips_feature_suffixes_and_deduplicates():
+    assert hardware.rocminfo_gfx_targets(MI300_ROCMINFO) == ["gfx942"]
+
+
+def test_rocminfo_gfx_targets_is_empty_without_gpu_agents():
+    assert hardware.rocminfo_gfx_targets("") == []
+    assert hardware.rocminfo_gfx_targets("Agent 1\n  Name: cpu\n  Device Type: CPU\n") == []
+
+
+# ── unified-memory NVIDIA parts (GB10 / DGX Spark) ──
+
+def test_a_gpu_reporting_no_vram_is_still_detected():
+    """GB10 shares memory with the host, so nvidia-smi has no dedicated figure to give.
+    Dropping the row made setup conclude there was no GPU at all."""
+    devices = hardware.parse_nvidia_gpus("NVIDIA GB10, [N/A], 580.173.02")
+    assert devices == [{"name": "NVIDIA GB10", "vram_gb": None, "driver": "580.173.02"}]
+
+
+def test_vram_field_accepts_every_unit_nvidia_smi_uses():
+    assert hardware.parse_nvidia_vram_gb("16384 MiB") == 16.0
+    assert hardware.parse_nvidia_vram_gb("120 GiB") == 120.0
+    assert hardware.parse_nvidia_vram_gb("16384MiB") == 16.0
+    for junk in ("[N/A]", "N/A", "", None, "Insufficient Permissions"):
+        assert hardware.parse_nvidia_vram_gb(junk) is None
+
+
+def test_decimal_mb_and_gb_convert_using_the_same_1000_1024_ratio():
+    """MB/GB are decimal (1000-based) units; converting to GiB-equivalent must divide
+    by 1024**3, not 1024**2 — a factor-of-1024 slip understates VRAM by ~2.4%."""
+    assert hardware.parse_nvidia_vram_gb("24000 MB") == pytest.approx(24000 * 1000**2 / 1024**3)
+    assert hardware.parse_nvidia_vram_gb("24 GB") == pytest.approx(24 * 1000**3 / 1024**3)
+
+
+def test_rows_without_a_name_are_still_rejected():
+    assert hardware.parse_nvidia_gpus(", 16384 MiB, 610.74") == []
+    assert hardware.parse_nvidia_gpus("malformed") == []
+
+
+def test_unknown_vram_falls_back_to_the_system_ram_ceiling():
+    ceiling, note = hardware.compute_memory_ceiling_gb(
+        os_name="Linux", total_ram_gb=121.6, gpu_vendor="nvidia",
+        vram_gb=None, device_vram_gb=None,
+    )
+    assert ceiling == pytest.approx(121.6 - hardware.RAM_RESERVE_GB)
+    assert "system RAM" in note

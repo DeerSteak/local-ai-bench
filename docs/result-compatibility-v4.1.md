@@ -22,6 +22,8 @@ The journal-owned HTTP concurrency projections retain numeric level keys, per-re
 
 A current result contains `version`, `engine`, `profile`, `accuracy_settings`, `bank_versions`, `sample_ids`, `run`, and every workload section, even when a section is empty. The workload sections are `llm`, `llm_conversation`, `embeddings`, `images`, `mcq`, `math`, `reasoning`, `code`, `tool`, `concurrency_tool`, `concurrency_chat`, `llamabench`, and `llamabenchconc`.
 
+`profile.wsl` is an additive optional boolean, written as `true` only when the run executed inside WSL2 and omitted entirely otherwise. Readers must treat its absence as "not WSL2" rather than as an incompatible file, which keeps every result produced before this field was introduced valid.
+
 Older files may lack the application version, run manifest, or newer workload sections. Dashboard readers continue to treat absent legacy fields as unknown or empty rather than rejecting the file. This contract freezes the current producer shape without revoking that legacy-reader behavior.
 
 ## Run and stage state

@@ -18,6 +18,10 @@ from scripts.workloads.models import (
     LLM_MODELS_XSMALL,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
+from scripts.setup.engine_selection import LLAMACPP
+from scripts.setup.model_inventory import (
+    engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
+)
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 
 
@@ -30,13 +34,25 @@ LLM_GROUPS = (
 HF_LOGIN_URL = "https://huggingface.co/login"
 
 
-def default_model_selection(memory_ceiling_gb: float | None) -> dict[str, bool]:
-    """Return the same memory-aware defaults used by terminal setup."""
+def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
+    """One model row: per-engine sizes, plus a warning per engine it won't fit."""
+    report = engine_fit_report(model, engines, memory_ceiling_gb)
+    if not report:  # image checkpoints carry no per-engine weights
+        return f"{model['label']}  {model.get('download_size', '')}".rstrip()
+    label = f"{model['label']}  {format_engine_sizes(report)}"
+    for warning in engine_fit_warnings(report, memory_ceiling_gb):
+        label += f"   ⚠ {warning}"
+    return label
+
+
+def default_model_selection(memory_ceiling_gb: float | None,
+                            engines=(LLAMACPP,)) -> dict[str, bool]:
+    """Memory-aware defaults, matching terminal setup. Checked if it fits any engine."""
     selected: dict[str, bool] = {}
     for _, models in LLM_GROUPS:
         for model in models:
-            selected[model["tag"]] = hardware.model_fits(
-                model["download_size"], memory_ceiling_gb,
+            selected[model["tag"]] = fits_any_engine(
+                engine_fit_report(model, engines, memory_ceiling_gb),
             ) is not False
     for model in EMBED_MODELS:
         selected[model["tag"]] = True
@@ -50,11 +66,24 @@ def default_model_selection(memory_ceiling_gb: float | None) -> dict[str, bool]:
 def validate_gui_plan(plan: dict) -> list[str]:
     """Return user-facing validation errors for a completed wizard plan."""
     errors = []
-    if plan.get("comfyui_mode") == "existing":
+    # Where image checkpoints come from is moot when none were picked.
+    if plan.get("image_shorts") and plan.get("comfyui_mode") == "existing":
         entered = str(plan.get("comfyui_path", "")).strip()
         if not entered or not normalize_comfyui_dir(Path(entered)):
             errors.append("The existing ComfyUI path is not usable.")
+    if "engines" in plan and not plan["engines"]:
+        errors.append("Select at least one inference engine.")
     return errors
+
+
+def next_page_index(current: int, step: int, enabled: list[bool]) -> int:
+    """Nearest page in the `step` direction that applies, or `current` when there is none."""
+    index = current + step
+    while 0 <= index < len(enabled):
+        if enabled[index]:
+            return index
+        index += step
+    return current
 
 
 def hf_token_review_label(plan: dict) -> str:
@@ -85,10 +114,31 @@ def token_controls_enabled(existing_available: bool, override: bool) -> bool:
     return not existing_available or override
 
 
+def sudo_notice(engines, package: str | None) -> str:
+    """Warning shown before any privileged install, or "" when none will run."""
+    if not package or "vllm" not in (engines or []):
+        return ""
+    return (f"Installing {package} needs administrator rights. You may be prompted for "
+            "your password in the terminal window behind this wizard.")
+
+
+def engine_checkbox_label(entry: dict) -> str:
+    """Checkbox text for one engine row, including why a disabled one is unavailable."""
+    label = entry["label"]
+    if entry.get("experimental") and entry["enabled"]:
+        label += " (experimental)"
+    if not entry["enabled"]:
+        label += " (unavailable on this system)"
+    return f"{label} — {entry['note']}"
+
+
 def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
-                             existing_hf_token: bool = False) -> dict | None:
+                             vllm_cleanup: list[dict] | None = None,
+                             existing_hf_token: bool = False,
+                             engine_entries: list[dict] | None = None,
+                             sudo_package: str | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -99,7 +149,10 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "memory_ceiling_gb": memory_ceiling_gb,
             "detected_comfyui": str(detected_comfyui) if detected_comfyui else None,
             "cleanup_names": cleanup_names,
+            "vllm_cleanup": vllm_cleanup or [],
             "existing_hf_token": existing_hf_token,
+            "engine_entries": engine_entries or [],
+            "sudo_package": sudo_package,
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -117,7 +170,10 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
 def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      detected_comfyui: Path | None,
                      cleanup_names: list[str],
-                     existing_hf_token: bool = False) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     vllm_cleanup: list[dict] | None = None,
+                     existing_hf_token: bool = False,
+                     engine_entries: list[dict] | None = None,
+                     sudo_package: str | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -137,12 +193,22 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
 
     root.after(150, bring_to_front)
 
-    defaults = default_model_selection(memory_ceiling_gb)
+    engine_entries = engine_entries or []
+    initial_engines = [entry["name"] for entry in engine_entries
+                       if entry["checked"] and entry["enabled"]] or [LLAMACPP]
+    defaults = default_model_selection(memory_ceiling_gb, initial_engines)
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
+    labelled_models: dict[str, tuple] = {}
+    applied_engines = list(initial_engines)
     token_var = tk.StringVar()
     save_token_var = tk.BooleanVar(value=True)
     override_token_var = tk.BooleanVar(value=False)
     cleanup_var = tk.BooleanVar(value=False)
+    vllm_cleanup = list(vllm_cleanup or [])
+    # One variable per cached repo: the vLLM cache is shared with other tools, so
+    # each entry is opted into individually rather than as a group.
+    vllm_cleanup_vars = {entry["directory_name"]: tk.BooleanVar(value=False)
+                         for entry in vllm_cleanup}
     comfy_mode_var = tk.StringVar(value="detected" if detected_comfyui else "download")
     comfy_path_var = tk.StringVar(value=str(detected_comfyui or ""))
     result: dict | None = None
@@ -182,6 +248,26 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(welcome, text=memory_text, wraplength=740).grid(sticky="w", pady=8)
     if detected_comfyui:
         ttk.Label(welcome, text=f"Existing ComfyUI detected: {detected_comfyui}", wraplength=740).grid(sticky="w")
+    engine_vars: dict[str, "tk.BooleanVar"] = {}
+    if engine_entries:
+        ttk.Label(welcome, text="Engines", font=("TkDefaultFont", 12, "bold")).grid(
+            sticky="w", pady=(16, 0))
+        ttk.Label(welcome, wraplength=740, justify="left",
+                  text="Models you select later are downloaded for every engine checked here.",
+                  ).grid(sticky="w")
+        for entry in engine_entries:
+            var = tk.BooleanVar(value=entry["checked"] and entry["enabled"])
+            engine_vars[entry["name"]] = var
+            ttk.Checkbutton(
+                welcome, text=engine_checkbox_label(entry), variable=var,
+                state="normal" if entry["enabled"] else "disabled",
+            ).grid(sticky="w", pady=(4, 0))
+        if sudo_package:
+            ttk.Label(welcome, wraplength=740, justify="left",
+                      text=("Note: selecting vLLM also installs "
+                            f"{sudo_package}, which needs administrator rights. "
+                            "You may be prompted for your password in the terminal."),
+                      ).grid(sticky="w", pady=(8, 0))
 
     models_page = new_page()
     ttk.Label(models_page, text="Choose models", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -225,11 +311,14 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         )
         row += 1
         for model in models:
-            key = model.get("tag", model.get("short"))
-            size = model.get("download_size", "")
-            ttk.Checkbutton(
-                model_list, text=f"{model['label']}  {size}", variable=model_vars[key],
-            ).grid(row=row, column=0, sticky="w", padx=(16, 0))
+            key = model.get("tag") or model["short"]
+            checkbutton = ttk.Checkbutton(
+                model_list, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                variable=model_vars[key],
+            )
+            checkbutton.grid(row=row, column=0, sticky="w", padx=(16, 0))
+            if "download_size" in model:
+                labelled_models[key] = (checkbutton, model)
             license_url = model.get("license_url")
             if license_url:
                 ttk.Button(
@@ -238,11 +327,42 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 ).grid(row=row, column=1, sticky="w", padx=(12, 0))
             row += 1
     if cleanup_names:
+        ttk.Label(
+            model_list, font=("TkDefaultFont", 11, "bold"),
+            text="Downloaded llama.cpp models not in the catalog",
+        ).grid(row=row, column=0, sticky="w", pady=(14, 0))
+        row += 1
+        ttk.Label(
+            model_list, wraplength=520,
+            text=("These folders are in this project's own models directory, usually left "
+                  "behind by an earlier catalog. Nothing outside it is touched."),
+        ).grid(row=row, column=0, sticky="w", pady=(0, 4))
+        row += 1
         ttk.Checkbutton(
             model_list,
-            text=f"Delete {len(cleanup_names)} non-catalog model folder(s): {', '.join(cleanup_names)}",
+            text=f"Delete {len(cleanup_names)} model folder(s): {', '.join(cleanup_names)}",
             variable=cleanup_var,
-        ).grid(row=row, column=0, sticky="w", pady=(14, 4))
+        ).grid(row=row, column=0, sticky="w")
+        row += 1
+    if vllm_cleanup:
+        ttk.Label(
+            model_list, font=("TkDefaultFont", 11, "bold"),
+            text="Cached vLLM weights not in the catalog",
+        ).grid(row=row, column=0, sticky="w", pady=(14, 0))
+        row += 1
+        ttk.Label(
+            model_list, wraplength=520,
+            text=("This cache is shared with anything else on this machine that uses "
+                  "Hugging Face. Delete only what you recognize."),
+        ).grid(row=row, column=0, sticky="w", pady=(0, 4))
+        row += 1
+        for entry in vllm_cleanup:
+            ttk.Checkbutton(
+                model_list,
+                text=f"Delete {entry['repo']}  (~{entry['size'] / 1e9:.1f} GB)",
+                variable=vllm_cleanup_vars[entry["directory_name"]],
+            ).grid(row=row, column=0, sticky="w")
+            row += 1
 
     credentials = new_page()
     ttk.Label(credentials, text="Hugging Face", font=("TkDefaultFont", 16, "bold")).grid(sticky="w")
@@ -252,6 +372,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
               "It is never written to the setup configuration."),
         wraplength=740,
     ).grid(sticky="w", pady=(6, 14))
+    override_token_check = None
     if existing_hf_token:
         ttk.Label(
             credentials, text="A token is already available from HF_TOKEN or hf.txt.",
@@ -296,7 +417,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             token_help.grid_remove()
         refresh_tk_layout(credentials)
 
-    if existing_hf_token:
+    if override_token_check is not None:
         override_token_check.configure(command=update_token_controls)
     update_token_controls()
 
@@ -353,11 +474,14 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             "embedding_tags": [m["tag"] for m in EMBED_MODELS if model_vars[m["tag"]].get()],
             "image_shorts": [m["short"] for m in IMAGE_MODELS if model_vars[m["short"]].get()],
             "cleanup_names": cleanup_names if cleanup_var.get() else [],
+            "vllm_cleanup_names": [name for name, var in vllm_cleanup_vars.items() if var.get()],
             "hf_token": hf_token,
             "save_hf_token": should_save_gui_token(hf_token, save_token_var.get()),
             "use_existing_hf_token": existing_hf_token and not hf_token,
             "comfyui_mode": comfy_mode_var.get(),
             "comfyui_path": comfy_path_var.get().strip(),
+            "engines": [entry["name"] for entry in engine_entries
+                        if entry["enabled"] and engine_vars[entry["name"]].get()],
         }
 
     def refresh_review() -> None:
@@ -367,10 +491,17 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             f"Embedding models: {len(plan['embedding_tags'])}",
             f"Image models: {len(plan['image_shorts'])}",
             f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
+            f"Delete cached vLLM weights: {len(plan['vllm_cleanup_names'])}",
             f"Hugging Face token: {hf_token_review_label(plan)}",
-            f"ComfyUI: {plan['comfyui_mode']}",
         ]
-        if plan["comfyui_path"]:
+        if plan["image_shorts"]:
+            lines.append(f"ComfyUI: {plan['comfyui_mode']}")
+        if engine_entries:
+            lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
+        notice = sudo_notice(plan["engines"], sudo_package)
+        if notice:
+            lines.extend(["", notice])
+        if plan["image_shorts"] and plan["comfyui_path"]:
             lines.append(f"ComfyUI path: {plan['comfyui_path']}")
         lines.extend(["", "Nothing will be downloaded until you click Install."])
         review_text.configure(state="normal")
@@ -378,9 +509,29 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         review_text.insert("1.0", "\n".join(lines))
         review_text.configure(state="disabled")
 
+    def selected_engines() -> list[str]:
+        chosen = [entry["name"] for entry in engine_entries
+                  if entry["enabled"] and engine_vars[entry["name"]].get()]
+        return chosen or [LLAMACPP]
+
+    def refresh_model_rows() -> None:
+        """Re-label and re-default the model list for the checked engines."""
+        nonlocal applied_engines
+        engines = selected_engines()
+        if engines == applied_engines:
+            return
+        applied_engines = engines
+        for key, (checkbutton, model) in labelled_models.items():
+            checkbutton.configure(text=model_row_label(model, engines, memory_ceiling_gb))
+        for key, value in default_model_selection(memory_ceiling_gb, engines).items():
+            if key in model_vars:
+                model_vars[key].set(value)
+
     def show_page(index: int) -> None:
         nonlocal page_index
         page_index = index
+        if pages[index] is models_page:
+            refresh_model_rows()
         pages[index].tkraise()
         back_button.configure(state="disabled" if index == 0 else "normal")
         next_button.configure(text="Install" if index == len(pages) - 1 else "Next")
@@ -388,9 +539,12 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             refresh_review()
         refresh_tk_layout(root)
 
+    def page_enabled() -> list[bool]:
+        image_selected = any(model_vars[model["short"]].get() for model in IMAGE_MODELS)
+        return [page is not comfy or image_selected for page in pages]
+
     def go_back() -> None:
-        if page_index:
-            show_page(page_index - 1)
+        show_page(next_page_index(page_index, -1, page_enabled()))
 
     def go_next() -> None:
         nonlocal result
@@ -400,7 +554,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 if errors:
                     messagebox.showerror("Check ComfyUI", "\n".join(errors))
                     return
-            show_page(page_index + 1)
+            show_page(next_page_index(page_index, 1, page_enabled()))
             return
         plan = build_plan()
         errors = validate_gui_plan(plan)
@@ -431,7 +585,10 @@ def main() -> None:  # pragma: no cover
         memory_ceiling_gb=request["memory_ceiling_gb"],
         detected_comfyui=Path(request["detected_comfyui"]) if request["detected_comfyui"] else None,
         cleanup_names=request["cleanup_names"],
+        vllm_cleanup=request.get("vllm_cleanup", []),
         existing_hf_token=request["existing_hf_token"],
+        engine_entries=request.get("engine_entries") or [],
+        sudo_package=request.get("sudo_package"),
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

@@ -316,6 +316,11 @@ def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):
         stage.record_case(model, 2048, "2K", [sample], "ok", 1)
         actual = stage.export()["golden"]["2K"]
         for key, value in expected.items():
+            if key == "valid_samples":
+                # Later schemas may add sample fields; the schema-3 ones must survive intact.
+                for expected_sample, actual_sample in zip(value, actual[key], strict=True):
+                    assert {k: actual_sample[k] for k in expected_sample} == expected_sample
+                continue
             assert actual[key] == value
     finally:
         stage.close()

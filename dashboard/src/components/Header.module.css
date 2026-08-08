@@ -63,6 +63,13 @@
   font-size: 13px;
 }
 
+.tagWsl {
+  background: #fff8c5;
+  color: #7d4e00;
+  border: 1px solid #d4a72c;
+  font-size: 13px;
+}
+
 .tagTimestamp {
   font-size: 12px;
   color: #8c959f;

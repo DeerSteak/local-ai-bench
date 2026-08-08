@@ -12,7 +12,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import cast
 
 import gguf
 import requests
@@ -20,6 +21,7 @@ import requests
 from scripts.runtime import config
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
+from scripts.runtime.engines import openai_api
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.runtime.shared import (
     EngineBudgetExceeded,
@@ -35,8 +37,9 @@ class LlamaCppEngine(InferenceEngine):
 
     BINARY = "llama-server"
 
-    # Model *load* time (disk read + VRAM placement), not inference time — generous since large models can take a while.
-    LOAD_TIMEOUT = 300
+    # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
+    # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
+    LOAD_TIMEOUT = 900
 
     @staticmethod
     def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
@@ -105,12 +108,13 @@ class LlamaCppEngine(InferenceEngine):
                 return paths
             if not paths or not all(matches):
                 return None
-            prefixes = {match.group(1) for match in matches}
-            totals = {int(match.group(3)) for match in matches}
+            confirmed = cast(list[re.Match], matches)
+            prefixes = {match.group(1) for match in confirmed}
+            totals = {int(match.group(3)) for match in confirmed}
             if len(prefixes) != 1 or len(totals) != 1:
                 return None
             total = totals.pop()
-            by_part = {int(match.group(2)): path for match, path in zip(matches, paths)}
+            by_part = {int(match.group(2)): path for match, path in zip(confirmed, paths)}
             expected_parts = set(range(1, total + 1))
             return [by_part[i] for i in range(1, total + 1)] if set(by_part) == expected_parts else None
         hf_files = entry["hf_file"]
@@ -129,6 +133,32 @@ class LlamaCppEngine(InferenceEngine):
             return r.status_code == 200
         except Exception:
             return False
+
+    @staticmethod
+    def serving_model_file(props: dict | None) -> str | None:
+        """Model filename llama-server reports on /props, across the keys it has used.
+        None when the running server cannot be identified — see docs/engines.md."""
+        if not isinstance(props, dict):
+            return None
+        candidates = (
+            props.get("model_path"),
+            (props.get("default_generation_settings") or {}).get("model"),
+            props.get("model"),
+        )
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                return PurePosixPath(value.replace("\\", "/")).name
+        return None
+
+    def _fetch_props(self) -> dict | None:  # pragma: no cover — real HTTP call
+        try:
+            response = requests.get(f"{config.LLAMACPP_URL}/props", timeout=5)
+            return response.json() if response.status_code == 200 else None
+        except Exception:
+            return None
+
+    def is_installed(self) -> bool:
+        return self._binary_path() is not None
 
     def ensure_running(self) -> bool:
         """Preflight only (binary + model dir exist) — see docs/engines.md's
@@ -180,12 +210,12 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
 
-    def is_connection_crash(self, e: Exception) -> bool:
+    def is_connection_crash(self, exc: Exception) -> bool:
         """True for the exception shapes a dead HTTP server surfaces as."""
-        if isinstance(e, (requests.exceptions.ConnectionError, urllib.error.URLError,
-                          http.client.IncompleteRead, ConnectionError)):
+        if isinstance(exc, (requests.exceptions.ConnectionError, urllib.error.URLError,
+                            http.client.IncompleteRead, ConnectionError)):
             return True
-        return "actively refused" in str(e).lower()
+        return "actively refused" in str(exc).lower()
 
     def wait_for_recovery(self, timeout: int = 30) -> bool:
         """Always True — see docs/engines.md; recovery happens synchronously
@@ -303,7 +333,8 @@ class LlamaCppEngine(InferenceEngine):
                     if self.is_connection_crash(e):
                         self.wait_for_recovery()
                     Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}", extra=crash_extra)
+                                         f"warming up at num_ctx={num_ctx}",
+                                         extra=crash_extra, engine_name=self.name)
                 return False
             Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
         return True
@@ -343,45 +374,16 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _urlopen(req, timeout):
-        """urlopen wrapper that surfaces llama-server's JSON error body on
-        HTTP errors, instead of the bare "HTTP Error 500" HTTPError message."""
-        try:
-            return urllib.request.urlopen(req, timeout=timeout)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode(errors="replace")
-            try:
-                detail = json.loads(body).get("error", body)
-            except json.JSONDecodeError:
-                detail = body
-            raise RuntimeError(f"llama-server returned HTTP {e.code}: {str(detail)[:500]}") from None
+        return openai_api.urlopen_with_detail(req, timeout, "llama-server")
 
     @staticmethod
     def _iter_sse(resp):
-        """Yield parsed JSON from an SSE response body ('data: {...}' lines).
-        Empty dicts for comments/malformed/[DONE] lines, so callers can still enforce a deadline on keepalive-only traffic."""
-        for raw_line in resp:
-            line = raw_line.decode(errors="replace") if isinstance(raw_line, bytes) else raw_line
-            line = line.strip()
-            if not line.startswith("data:"):
-                yield {}
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                yield {}
-                continue
-            try:
-                yield json.loads(data)
-            except json.JSONDecodeError:
-                yield {}
+        return openai_api.iter_sse(resp)
 
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
-        """Replace an implausible self-reported tps with a wall-clock estimate
-        — see docs/engines.md's "_sanitize_tps"."""
-        if tps <= config.MAX_PLAUSIBLE_TPS:
-            return tps
-        decode_elapsed = total - ttft
-        return tokens / decode_elapsed if decode_elapsed > 0 else 0
+        """See docs/engines.md's "_sanitize_tps"."""
+        return openai_api.sanitize_tps(tps, tokens, ttft, total)
 
     @staticmethod
     def _warn_tps_sanitized(tag: str, raw_tps: float, sanitized_tps: float,
@@ -467,15 +469,24 @@ class LlamaCppEngine(InferenceEngine):
                 if deadline is not None and time.perf_counter() >= deadline:
                     self._stop_process()
                     raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
+                # Before health: a bind failure exits fast, and /health cannot tell our
+                # server from one another process already has on the port.
+                if proc.poll() is not None:
+                    raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
+                                       f"loading {tag} — last output:\n{self.tail_log()}")
                 if self.available():
+                    serving = self.serving_model_file(self._fetch_props())
+                    if serving is not None and serving != paths[0].name:
+                        self._stop_process()
+                        raise RuntimeError(
+                            f"port {config.LLAMACPP_PORT} is serving {serving}, not {paths[0].name} "
+                            f"— another llama-server owns it; stop it before loading {tag}"
+                        )
                     self._loaded_tag = tag
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
                     return
-                if proc.poll() is not None:
-                    raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
-                                       f"loading {tag} — last output:\n{self.tail_log()}")
                 time.sleep(1)
 
             self._stop_process()
@@ -808,16 +819,7 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:
-        tool_calls_out = []
-        for idx in sorted(tool_fragments):
-            frag = tool_fragments[idx]
-            call = {"name": frag["name"], "arguments": {}}
-            try:
-                call["arguments"] = json.loads(frag["arguments"]) if frag["arguments"] else {}
-            except json.JSONDecodeError:
-                call["incomplete"] = True
-            tool_calls_out.append(call)
-        return tool_calls_out
+        return openai_api.tool_calls_from_fragments(tool_fragments)
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:
         """Embed every input in one request, loading in embedding mode."""

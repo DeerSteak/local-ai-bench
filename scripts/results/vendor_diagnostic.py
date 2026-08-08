@@ -7,7 +7,7 @@ from pathlib import Path
 
 from scripts.results.outbound_metadata import outbound_metadata_preview
 from scripts.results.result_history import compare_results, load_result
-from scripts.results.result_store import atomic_write_json, validate_json_data
+from scripts.results.result_store import as_dict, atomic_write_json, validate_json_data
 
 
 DIAGNOSTIC_SCHEMA_VERSION = 1
@@ -22,7 +22,7 @@ def _source_digest(result: dict) -> str:
 
 
 def _run_plan(result: dict):
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
+    run = as_dict(result.get("run"))
     return copy.deepcopy(run.get("plan"))
 
 

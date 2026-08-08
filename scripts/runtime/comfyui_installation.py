@@ -134,19 +134,26 @@ def find_comfyui_python(comfyui_dir: Path, environ: dict[str, str] | None = None
     return str(next((path for path in candidates if path.is_file()), Path(sys.executable)))
 
 
-def write_extra_model_paths(path: Path, models_dir: Path) -> None:
-    """Write ComfyUI configuration for benchmark-owned model directories."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    base_path = json.dumps(str(models_dir.resolve()))
-    path.write_text(
-        "local_ai_bench:\n"
-        f"  base_path: {base_path}\n"
+def _model_paths_section(name: str, models_dir: Path) -> str:
+    return (
+        f"{name}:\n"
+        f"  base_path: {json.dumps(str(Path(models_dir).resolve()))}\n"
         "  checkpoints: checkpoints\n"
         "  clip: clip\n"
         "  text_encoders: text_encoders\n"
-        "  vae: vae\n",
-        encoding="utf-8",
+        "  vae: vae\n"
     )
+
+
+def write_extra_model_paths(path: Path, models_dir: Path,
+                            legacy_models_dir: Path | None = None) -> None:
+    """Write ComfyUI configuration for benchmark-owned model directories, plus the
+    pre-4.1 location when models are still there."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = _model_paths_section("local_ai_bench", models_dir)
+    if legacy_models_dir is not None:
+        text += _model_paths_section("local_ai_bench_legacy", legacy_models_dir)
+    path.write_text(text, encoding="utf-8")
 
 
 def add_managed_models_to_comfyui(comfyui_dir: Path, models_dir: Path) -> Path:
@@ -173,6 +180,41 @@ def add_managed_models_to_comfyui(comfyui_dir: Path, models_dir: Path) -> Path:
     separator = "\n" if existing and not existing.endswith("\n") else ""
     config_path.write_text(existing + separator + block, encoding="utf-8")
     return config_path
+
+
+# Image models lived under <ComfyUI>/models before 4.1 moved them to models/comfyui.
+# Both are searched, so an upgrade reuses them in place instead of re-downloading.
+LEGACY_MODEL_SUBDIRS = ("checkpoints", "clip", "vae", "text_encoders")
+
+
+def legacy_models_dir_with_assets(comfyui_dir: Path | None, has_files_fn=None) -> Path | None:
+    """<ComfyUI>/models when it still holds image assets, else None."""
+    has_files_fn = has_files_fn or (
+        lambda path: path.is_dir() and any(item.is_file() for item in path.iterdir()))
+    if not comfyui_dir:
+        return None
+    legacy = Path(comfyui_dir) / "models"
+    return legacy if any(has_files_fn(legacy / sub) for sub in LEGACY_MODEL_SUBDIRS) else None
+
+
+def image_asset_dirs(managed_models_dir: Path, subdir: str,
+                     comfyui_dir: Path | None = None) -> list[Path]:
+    """Directories holding one kind of image asset, managed location first."""
+    dirs = [Path(managed_models_dir) / subdir]
+    if comfyui_dir and subdir in LEGACY_MODEL_SUBDIRS:
+        dirs.append(Path(comfyui_dir) / "models" / subdir)
+    return dirs
+
+
+def find_image_asset(name: str, managed_models_dir: Path, subdir: str,
+                     comfyui_dir: Path | None = None, exists_fn=None) -> Path | None:
+    """Existing path of one image asset across both locations, or None."""
+    exists_fn = exists_fn or (lambda path: path.exists())
+    for directory in image_asset_dirs(managed_models_dir, subdir, comfyui_dir):
+        candidate = directory / name
+        if exists_fn(candidate):
+            return candidate
+    return None
 
 
 def checkpoint_names_from_object_info(data: dict) -> set[str]:

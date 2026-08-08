@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 from scripts.results.result_store import ResultStore
 from scripts.results.run_plan import RunPlan
@@ -11,11 +11,17 @@ from scripts.runtime.shared import Shared
 
 
 STAGE_ORDER = (
-    "llm", "conv", "llamabench", "llamabenchconc", "emb",
+    "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb",
     "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "img",
 )
 def emit_stage_progress(stage: str, status: str) -> None:
     emit_progress("stage", stage, status)
+
+
+class EngineLifecycle(Protocol):
+    """What orchestration actually calls on a lifecycle — see LifecycleCoordinator."""
+    def ensure_engine(self, cpu_only: bool, /) -> bool: ...
+    def cleanup(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -30,7 +36,7 @@ class RunContext:
     paths: RunPaths
     engine: object
     store: ResultStore
-    lifecycle: "LifecycleCoordinator"
+    lifecycle: EngineLifecycle
 
 
 def _noop(_context: RunContext) -> None:
@@ -110,7 +116,7 @@ def execute_stages(context: RunContext, stages: list[StageDefinition]) -> None:
         emit_stage_progress(stage.key, "complete")
 
 
-def execute_with_final_cleanup(action: Callable[[], None], lifecycle: "LifecycleCoordinator") -> None:
+def execute_with_final_cleanup(action: Callable[[], None], lifecycle: EngineLifecycle) -> None:
     terminal_exc = None
     try:
         action()

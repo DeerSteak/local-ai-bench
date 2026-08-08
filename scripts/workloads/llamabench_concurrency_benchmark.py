@@ -58,7 +58,7 @@ class LlamaBenchConcurrencyBenchmark:
 
     @classmethod
     def run_one(cls, binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
-                npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int,
+                npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int | float,
                 on_progress=None, on_entry=None) -> list[dict]:
         """Parses each stdout JSONL row as it arrives (this build is silent on stderr, so
         that's the only progress signal). `timeout` is an idle timeout, not a wall-clock cap."""
@@ -130,7 +130,7 @@ class LlamaBenchConcurrencyBenchmark:
 
         if idle_timed_out:
             error = subprocess.TimeoutExpired(cmd, timeout)
-            error.partial_entries = list(entries)
+            setattr(error, "partial_entries", list(entries))
             raise error
 
         if proc.returncode != 0:
@@ -222,6 +222,10 @@ class LlamaBenchConcurrencyBenchmark:
                     continue
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running llama-batched-bench — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

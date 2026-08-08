@@ -5,6 +5,7 @@ import json
 import re
 import zipfile
 from pathlib import Path
+from scripts.results.result_store import as_dict
 
 
 SUPPORT_SCHEMA_VERSION = 1
@@ -46,9 +47,9 @@ def _diagnostics(value, path="$", output=None):
 
 
 def build_support_payload(result: dict) -> dict:
-    run = result.get("run", {}) if isinstance(result.get("run"), dict) else {}
-    profile = result.get("profile", {}) if isinstance(result.get("profile"), dict) else {}
-    stages = run.get("stages", {}) if isinstance(run.get("stages"), dict) else {}
+    run = as_dict(result.get("run"))
+    profile = as_dict(result.get("profile"))
+    stages = as_dict(run.get("stages"))
     return {
         "schema_version": SUPPORT_SCHEMA_VERSION,
         "application": {

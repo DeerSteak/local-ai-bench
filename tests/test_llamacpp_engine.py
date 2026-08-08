@@ -1,6 +1,8 @@
 """Tests for LlamaCppEngine — see docs/testing.md for the full coverage breakdown."""
 
 import json
+import subprocess
+from typing import cast
 
 import gguf
 import pytest
@@ -1074,7 +1076,7 @@ def test_ensure_model_fast_path_does_not_probe_health(monkeypatch):
     engine._loaded_num_ctx = 2048
     engine._loaded_embedding = False
     engine._loaded_n_parallel = 4
-    engine._proc = type("Proc", (), {"poll": lambda self: None})()
+    engine._proc = cast(subprocess.Popen, type("Proc", (), {"poll": lambda self: None})())
     monkeypatch.setattr(engine, "available", lambda: pytest.fail("health probe should not run"))
     engine._ensure_model("tag", 2048, n_parallel=4)
 
@@ -1258,3 +1260,44 @@ def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch
         "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
         "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
     ]
+
+
+# ── server identity on /props ──
+
+def test_serving_model_file_reads_the_modern_model_path_key():
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    props = {"model_path": "/models/gemma3-1b-it-q4_K_M.gguf"}
+    assert LlamaCppEngine.serving_model_file(props) == "gemma3-1b-it-q4_K_M.gguf"
+
+
+def test_serving_model_file_falls_back_through_older_llama_server_shapes():
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    nested = {"default_generation_settings": {"model": "/models/mxbai-embed-large.gguf"}}
+    assert LlamaCppEngine.serving_model_file(nested) == "mxbai-embed-large.gguf"
+    assert LlamaCppEngine.serving_model_file({"model": "/m/a.gguf"}) == "a.gguf"
+
+
+def test_serving_model_file_handles_windows_paths():
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    props = {"model_path": r"C:\\models\\granite4.1-3b-q4_K_M.gguf"}
+    assert LlamaCppEngine.serving_model_file(props) == "granite4.1-3b-q4_K_M.gguf"
+
+
+@pytest.mark.parametrize("props", [
+    None, {}, "not-a-dict", {"model_path": ""}, {"model_path": "   "},
+    {"model_path": None}, {"default_generation_settings": None},
+    {"default_generation_settings": {}},
+])
+def test_serving_model_file_is_none_when_the_server_cannot_be_identified(props):
+    """An unidentifiable server is not treated as a mismatch — the load proceeds
+    rather than failing on a llama-server build that reports nothing useful."""
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    assert LlamaCppEngine.serving_model_file(props) is None
+
+
+def test_serving_model_file_detects_a_foreign_server_on_the_port():
+    """The embeddings server answering a concurrency runner's requests: /props names
+    the embedding model, so the requested generation model is a mismatch."""
+    from scripts.runtime.engines.llamacpp import LlamaCppEngine
+    serving = LlamaCppEngine.serving_model_file({"model_path": "/m/mxbai-embed-large.gguf"})
+    assert serving is not None and serving != "gemma3-1b-it-q4_K_M.gguf"

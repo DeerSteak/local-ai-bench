@@ -10,6 +10,8 @@ EMBED_MODELS = [
         "download_size":  "~0.3 GB",
         "hf_repo":        "nomic-ai/nomic-embed-text-v1.5-GGUF",
         "hf_file":        "nomic-embed-text-v1.5.f16.gguf",
+        "vllm_repo":      "nomic-ai/nomic-embed-text-v1.5",
+        "vllm_download_size": "~0.6 GB",
     },
     {
         "tag":            "mxbai-embed-large",
@@ -18,6 +20,8 @@ EMBED_MODELS = [
         "download_size":  "~0.7 GB",
         "hf_repo":        "ChristianAzinn/mxbai-embed-large-v1-gguf",
         "hf_file":        "mxbai-embed-large-v1_fp16.gguf",
+        "vllm_repo":      "mixedbread-ai/mxbai-embed-large-v1",
+        "vllm_download_size": "~0.7 GB",
     },
 ]
 
@@ -95,26 +99,33 @@ LLM_MODELS_XSMALL = sorted([
         "params_b":       1,
         "hf_repo":        "bartowski/google_gemma-3-1b-it-GGUF",
         "hf_file":        "google_gemma-3-1b-it-Q4_K_M.gguf",
+        "vllm_repo":      "gaunernst/gemma-3-1b-it-int4-awq",
+        "vllm_download_size": "~1.1 GB",
     },
     {
         "tag":            "granite4.1:3b-q4_K_M",
-        "label":          "Granite 4.1 3B Q4_K_M",
+        "label":          "Granite 4.1 3B 4-Bit Quantization",
         "short":          "granite4.1-3b-q4",
         "tier":           "xsmall",
         "download_size":  "~2.1 GB",
         "params_b":       3,
         "hf_repo":        "ibm-granite/granite-4.1-3b-GGUF",
         "hf_file":        "granite-4.1-3b-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/granite-4.1-3b-AWQ-INT4",
+        "vllm_download_size": "~2.4 GB",
+        "vllm_tool_parser": "granite4",
     },
     {
         "tag":            "qwen3.5:4b-q4_K_M",
-        "label":          "Qwen3.5 4B Q4_K_M",
+        "label":          "Qwen3.5 4B 4-Bit Quantization",
         "short":          "qwen3.5-4b-q4",
         "tier":           "xsmall",
         "download_size":  "~3.1 GB",
         "params_b":       4,
         "hf_repo":        "bartowski/Qwen_Qwen3.5-4B-GGUF",
         "hf_file":        "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/Qwen3.5-4B-AWQ-4bit",
+        "vllm_download_size": "~4.1 GB",
     },
 ], key=lambda m: m["params_b"])
 
@@ -123,33 +134,41 @@ LLM_MODELS_XSMALL = sorted([
 LLM_MODELS_SMALL = sorted([
     {
         "tag":            "granite4.1:8b-q4_K_M",
-        "label":          "Granite 4.1 8B Q4_K_M",
+        "label":          "Granite 4.1 8B 4-Bit Quantization",
         "short":          "granite4.1-8b-q4",
         "tier":           "small",
         "download_size":  "~5.4 GB",
         "params_b":       8,
         "hf_repo":        "ibm-granite/granite-4.1-8b-GGUF",
         "hf_file":        "granite-4.1-8b-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/granite-4.1-8b-AWQ-INT4",
+        "vllm_download_size": "~5.5 GB",
+        "vllm_tool_parser": "granite4",
     },
     {
         "tag":            "qwen3.5:9b-q4_K_M",
-        "label":          "Qwen3.5 9B Q4_K_M",
+        "label":          "Qwen3.5 9B 4-Bit Quantization",
         "short":          "qwen3.5-9b-q4",
         "tier":           "small",
         "download_size":  "~6.2 GB",
         "params_b":       9,
         "hf_repo":        "bartowski/Qwen_Qwen3.5-9B-GGUF",
         "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/Qwen3.5-9B-AWQ-4bit",
+        "vllm_download_size": "~9.1 GB",
     },
     {
         "tag":            "gemma4:12b-it-q4_K_M",
-        "label":          "Gemma 4 12B Q4_K_M",
+        "label":          "Gemma 4 12B 4-Bit Quantization",
         "short":          "gemma4-12b-q4",
         "tier":           "small",
         "download_size":  "~7.7 GB",
         "params_b":       12,
         "hf_repo":        "bartowski/gemma-4-12B-it-GGUF",
         "hf_file":        "gemma-4-12B-it-Q4_K_M.gguf",
+        "vllm_repo":      "mattbucci/gemma-4-12B-AWQ",
+        "vllm_download_size": "~7.8 GB",
+        "vllm_tool_parser": "gemma4",
     },
 ], key=lambda m: m["params_b"])
 
@@ -157,23 +176,27 @@ LLM_MODELS_SMALL = sorted([
 LLM_MODELS_MEDIUM = sorted([
     {
         "tag":            "gemma3:27b-it-q4_K_M",
-        "label":          "Gemma 3 27B Q4_K_M",
+        "label":          "Gemma 3 27B 4-Bit Quantization",
         "short":          "gemma3-27b-q4",
         "tier":           "medium",
         "download_size":  "~16.6 GB",
         "params_b":       27,
         "hf_repo":        "ggml-org/gemma-3-27b-it-GGUF",
         "hf_file":        "gemma-3-27b-it-Q4_K_M.gguf",
+        "vllm_repo":      "ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g",
+        "vllm_download_size": "~16.9 GB",
     },
     {
-        "tag":            "nemotron-3-nano:30b-a3b-q4_K_M",
-        "label":          "Nemotron 3 Nano 30B-A3B",
-        "short":          "nemotron3-nano-30b-a3b",
+        "tag":            "nemotron-cascade2:30b-a3b-q4_K_M",
+        "label":          "Nemotron Cascade 2 30B-A3B",
+        "short":          "nemotron-cascade2-30b-a3b",
         "tier":           "medium",
-        "download_size":  "~24.0 GB",
-        "params_b":       30,   # 3B active — hybrid Mamba-Transformer MoE
-        "hf_repo":        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
-        "hf_file":        "Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf",
+        "download_size":  "~24.7 GB",
+        "params_b":       32,   # 3B active — hybrid Mamba MoE, post-trained from Nemotron 3 Nano's base
+        "hf_repo":        "bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF",
+        "hf_file":        "nvidia_Nemotron-Cascade-2-30B-A3B-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit",
+        "vllm_download_size": "~20.8 GB",
     },
     {
         "tag":            "qwen3.6:35b-a3b",
@@ -184,6 +207,8 @@ LLM_MODELS_MEDIUM = sorted([
         "params_b":       35,   # 3B active
         "hf_repo":        "unsloth/Qwen3.6-35B-A3B-GGUF",
         "hf_file":        "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
+        "vllm_download_size": "~25.1 GB",
     },
 ], key=lambda m: m["params_b"])
 
@@ -192,17 +217,20 @@ LLM_MODELS_MEDIUM = sorted([
 LLM_MODELS_LARGE = sorted([
     {
         "tag":            "llama3.3:70b-instruct-q4_K_M",
-        "label":          "Llama 3.3 70B Q4_K_M",
+        "label":          "Llama 3.3 70B 4-Bit Quantization",
         "short":          "llama3.3-70b-q4",
         "tier":           "large",
         "download_size":  "~39.7 GB",
         "params_b":       70,
         "hf_repo":        "bartowski/Llama-3.3-70B-Instruct-GGUF",
         "hf_file":        "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+        "vllm_repo":      "ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4",
+        "vllm_download_size": "~39.8 GB",
+        "vllm_tool_parser": "llama3_json",
     },
     {
         "tag":            "qwen3-coder-next:80b-a3b-q4_K_M",
-        "label":          "Qwen3-Coder-Next 80B-A3B Q4_K_M",
+        "label":          "Qwen3-Coder-Next 80B-A3B 4-Bit Quantization",
         "short":          "qwen3-coder-next-80b-a3b-q4",
         "tier":           "large",
         "download_size":  "~48.4 GB",
@@ -214,6 +242,9 @@ LLM_MODELS_LARGE = sorted([
             "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00003-of-00004.gguf",
             "Qwen3-Coder-Next-Q4_K_M/Qwen3-Coder-Next-Q4_K_M-00004-of-00004.gguf",
         ],
+        "vllm_repo":      "bullpoint/Qwen3-Coder-Next-AWQ-4bit",
+        "vllm_download_size": "~48.3 GB",
+        "vllm_tool_parser": "qwen3_coder",
     },
     {
         "tag":            "nemotron-3-super:120b",
@@ -228,6 +259,8 @@ LLM_MODELS_LARGE = sorted([
             "UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00002-of-00003.gguf",
             "UD-Q4_K_M/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q4_K_M-00003-of-00003.gguf",
         ],
+        "vllm_repo":      "cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit",
+        "vllm_download_size": "~80.7 GB",
     },
 ], key=lambda m: m["params_b"])
 

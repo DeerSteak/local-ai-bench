@@ -12,12 +12,12 @@ def toggle_all_models(entries: list[dict]) -> None:
         entry["checked"] = checked
 
 
-def selected_cleanup_names(entries: list[dict]) -> list[str]:
-    """Return names from explicitly selected cleanup entries."""
+def selected_cleanup_names(entries: list[dict], kind: str = "cleanup") -> list[str]:
+    """Return names from explicitly selected cleanup entries of one kind."""
     return [
         name
         for entry in entries
-        if entry["kind"] == "cleanup" and entry["checked"]
+        if entry["kind"] == kind and entry["checked"]
         for name in entry["item"]["directory_names"]
     ]
 

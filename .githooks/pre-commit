@@ -14,3 +14,38 @@ else
 fi
 
 "$python" -m scripts.release.version_sync || exit 1
+
+# Type-check staged Python — see docs/release-policy.md#pyright-hook.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '\.py$'; then
+  if command -v pyright >/dev/null 2>&1; then
+    pyright_cmd="pyright"
+  else
+    pyright_cmd="npx --yes pyright@latest"
+  fi
+  if ! $pyright_cmd; then
+    echo "pyright found type errors — fix them or, for a false positive only, commit with --no-verify." >&2
+    exit 1
+  fi
+fi
+
+# Type-check the dashboard — see docs/release-policy.md#dashboard-tsc-hook.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '^dashboard/src/.*\.tsx\?$'; then
+  if [ -x "$root/dashboard/node_modules/.bin/tsc" ]; then
+    if ! (cd "$root/dashboard" && "$root/dashboard/node_modules/.bin/tsc" --noEmit); then
+      tsc_failed=1
+    fi
+  else
+    if ! (cd "$root/dashboard" && npx --yes typescript@latest tsc --noEmit); then
+      tsc_failed=1
+    fi
+  fi
+  if [ -n "$tsc_failed" ]; then
+    echo "tsc found type errors in the dashboard — fix them or, for a false positive only, commit with --no-verify." >&2
+    exit 1
+  fi
+
+  # Dashboard `any` ratchet — see docs/release-policy.md#any-ratchet-hook.
+  if command -v node >/dev/null 2>&1; then
+    node "$root/dashboard/check_any_ratchet.mjs" || exit 1
+  fi
+fi
