@@ -778,13 +778,44 @@ def test_build_command_emits_every_applicable_explicit_selector(tmp_path):
     ],
 )
 def test_build_command_is_exact_for_each_isolated_workload_family(tests, entry, selector):
+    comfyui = ["--comfyui", str(Path("/comfy"))] if "img" in tests else []
     assert build_benchmark_command(
         "fake", Path("/comfy"), tests, [entry],
         python_executable="python", benchmark_path=Path("/benchmark.py"),
     ) == [
-        "python", "/benchmark.py", "--engine", "fake", "--comfyui", "/comfy",
+        "python", "/benchmark.py", "--engine", "fake", *comfyui,
         "--tests", *tests, selector, entry.value,
     ]
+
+
+def test_build_command_omits_comfyui_when_no_image_test_is_selected():
+    # A ComfyUI that was never installed fails --comfyui validation and aborts the run.
+    for tests in (["llm"], ["emb"], ["llm", "conv", "acc"]):
+        assert "--comfyui" not in build_benchmark_command(
+            "fake", Path("/not/installed"), tests,
+            [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+            python_executable="python", benchmark_path=Path("/benchmark.py"),
+        )
+
+
+def test_build_command_keeps_an_explicit_gui_comfyui_path_only_for_image_runs():
+    options = dict(GUI_OPTION_DEFAULTS, comfyui="/chosen/ComfyUI")
+    entries = [MenuEntry("sdxl", "SDXL", "image", "Images", True)]
+    with_images = build_benchmark_command(
+        "fake", Path("/comfy"), ["img"], entries,
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        gui_options=options,
+    )
+    assert with_images[with_images.index("--comfyui") + 1] == "/chosen/ComfyUI"
+
+    without_images = build_benchmark_command(
+        "fake", Path("/comfy"), ["llm"],
+        [MenuEntry("phi4-mini", "Phi", "llm", "LLM", True)],
+        python_executable="python", benchmark_path=Path("/benchmark.py"),
+        gui_options=options,
+    )
+    assert "--comfyui" not in without_images
+    assert "/chosen/ComfyUI" not in without_images
 
 
 def test_build_command_uses_one_llm_selection_for_accuracy_and_concurrency():

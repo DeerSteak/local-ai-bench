@@ -90,8 +90,10 @@ def test_build_command_includes_every_gui_execution_setting():
         out="chosen.json", comfyui="/chosen/ComfyUI",
     )
     command = build_benchmark_command(
-        "llamacpp", Path("/detected/ComfyUI"), ["llm"],
-        [MenuEntry("model", "Model", "llm", "LLM", True)],
+        # An image test is included so --comfyui is emitted at all; it is omitted without one.
+        "llamacpp", Path("/detected/ComfyUI"), ["llm", "img"],
+        [MenuEntry("model", "Model", "llm", "LLM", True),
+         MenuEntry("sdxl", "SDXL", "image", "Images", True)],
         python_executable="python", benchmark_path=Path("benchmark.py"), gui_options=options,
     )
     assert command[command.index("--comfyui") + 1] == "/chosen/ComfyUI"

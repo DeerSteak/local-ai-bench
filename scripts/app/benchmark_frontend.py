@@ -719,12 +719,12 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
                             tg_tokens: list[int] | None = None,
                             gui_options: dict | None = None) -> list[str]:
     benchmark_target = [str(benchmark_path)] if benchmark_path else ["-m", "scripts.app.benchmark"]
-    command = [
-        python_executable, *benchmark_target,
-        "--engine", engine_name,
-        "--comfyui", str(comfyui_dir),
-        "--tests", *tests,
-    ]
+    command = [python_executable, *benchmark_target, "--engine", engine_name]
+    # Sending a path for a ComfyUI that was never installed fails validation, and without
+    # image tests there is nothing for it to point at anyway.
+    if "img" in tests:
+        command.extend(["--comfyui", str(comfyui_dir)])
+    command.extend(["--tests", *tests])
     if max_prompt_tokens is not None:
         command.extend(["--max-prompt-tokens", str(max_prompt_tokens)])
     if tg_tokens is not None:
@@ -746,7 +746,7 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--offline")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
-        if gui_options["comfyui"]:
+        if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
     if any(test in LLM_BACKED_TESTS for test in tests):
