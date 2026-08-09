@@ -25,6 +25,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def as_dict(value) -> dict:
+    """Results files evolve across versions, so any nested object may be absent or malformed."""
+    return value if isinstance(value, dict) else {}
+
+
 def _nonfinite_path(value, path="$") -> str | None:
     if isinstance(value, float) and not math.isfinite(value):
         return path

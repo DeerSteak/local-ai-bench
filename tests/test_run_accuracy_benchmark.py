@@ -2,6 +2,7 @@
 see docs/testing.md for the coverage breakdown."""
 
 import json
+from typing import cast
 
 import pytest
 
@@ -51,7 +52,7 @@ class FakeEngine(InferenceEngine):
         return True
     def unload(self, tag: str) -> None: self.unloaded.append(tag)
     def unload_all(self) -> None: pass
-    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> None: pass
+    def wait_until_unloaded(self, tag: str, timeout: int = 30) -> bool: return True
     def prepare_concurrency(self, tag, n_parallel, per_slot_ctx, warmup_runs=1, timeout=300) -> bool:
         return True
 
@@ -408,3 +409,33 @@ def test_tool_crashed_run_stops_early(tmp_path):
     assert results["fake"]["correct"] == 1
     assert results["fake"]["total"] == 3
     assert results["fake"]["answered"] == 1
+
+
+def test_tool_workload_skips_a_model_the_engine_cannot_parse(monkeypatch, tmp_path):
+    """Without a parser vLLM returns no tool_calls; scoring that as wrong would publish
+    0% for a model that was never actually measured."""
+    from scripts.runtime.shared import Shared
+
+    class Engine:
+        name = "vllm"
+        def ensure_running(self): return True
+        def reachable_or_abort(self): return True
+        def model_pulled(self, tag): return True
+        def supports_tool_calls(self, tag): return False
+        def warmup(self, *a, **k): raise AssertionError("must not warm up an unmeasurable model")
+
+    bank = tmp_path / "bank.json"
+    bank.write_text("[]")
+    results = Shared.run_accuracy_benchmark(
+        section_label="Tool", skip_label="tool", question_noun="tool question",
+        data_path=bank, crash_cache_path=tmp_path / "crash.json",
+        models=[{"tag": "qwen3.5:9b-q4_K_M", "label": "Qwen", "short": "qwen"}],
+        questions=[{"id": "q1"}], warmup_runs=0, engine=cast(InferenceEngine, Engine()),
+        ask_fn=lambda *a: None, rescore_partial_fn=lambda *a: None, score_fn=lambda *a: {},
+        requires_tool_calls=True,
+    )
+    entry = results["qwen"]
+    assert entry["skipped"] is True
+    assert entry["skip_reason"] == "tool_calls_unsupported"
+    assert entry["skip_detail"] == "No vllm tool-call parser for this model"
+    assert "score" not in entry, "a skipped model must not publish a score"

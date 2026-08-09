@@ -18,7 +18,7 @@ class OptionSpec:
 
 
 TEST_CHOICES = (
-    "llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math",
+    "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb", "mcq", "math",
     "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "img",
 )
 TG_TOKEN_CHOICES = (128, 512, 1024)
@@ -91,5 +91,5 @@ def option_value_errors(values: dict[str, object]) -> list[str]:
             if spec.maximum is not None and value > spec.maximum:
                 errors.append(f"{flag} must be at most {spec.maximum}.")
         elif spec.value_type == "choice" and value not in spec.choices:
-            errors.append(f"{flag} must be one of: {', '.join(spec.choices)}.")
+            errors.append(f"{flag} must be one of: {', '.join(str(choice) for choice in spec.choices)}.")
     return errors

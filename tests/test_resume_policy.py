@@ -54,6 +54,10 @@ def test_engine_resume_identity_covers_selected_models_runtime_and_methodology(t
         path.write_bytes(content)
 
     class Engine:
+        @staticmethod
+        def model_pulled(_tag):
+            return True
+
         def resume_artifact_paths(self, tag):
             assert tag == "model:4b"
             return (model,)
@@ -78,6 +82,10 @@ def test_native_only_identity_does_not_require_server_runtime(tmp_path):
     model.write_bytes(b"model")
 
     class Engine:
+        @staticmethod
+        def model_pulled(_tag):
+            return True
+
         @staticmethod
         def resume_artifact_paths(_tag):
             return (model,)
@@ -117,6 +125,10 @@ def test_engine_identity_persists_private_digest_cache_but_not_paths_in_identity
 
     class Engine:
         @staticmethod
+        def model_pulled(_tag):
+            return True
+
+        @staticmethod
         def resume_artifact_paths(_tag):
             return (model,)
 
@@ -141,6 +153,10 @@ def test_recovery_identity_can_bypass_same_metadata_digest_cache(tmp_path):
     cache_path = tmp_path / "cache.json"
 
     class Engine:
+        @staticmethod
+        def model_pulled(_tag):
+            return True
+
         @staticmethod
         def resume_artifact_paths(_tag):
             return (model,)
@@ -211,3 +227,56 @@ def test_complete_job_or_unknown_case_requires_fork():
     assert decision.reasons == (
         "job is already complete", "journal contains cases outside the current plan",
     )
+
+
+def test_identity_skips_models_the_engine_does_not_have(tmp_path):
+    """A partial download must not abort the run: workloads skip missing models, so
+    resume identity has nothing to protect for them."""
+    plan = make_plan()
+    runtime = tmp_path / "vllm"
+    runtime.write_bytes(b"runtime")
+
+    class Engine:
+        @staticmethod
+        def model_pulled(_tag):
+            return False
+
+        @staticmethod
+        def resume_artifact_paths(tag):
+            raise AssertionError(f"must not hash a model that is not installed: {tag}")
+
+        @staticmethod
+        def resume_runtime_paths():
+            return {"vllm": runtime}
+
+    identity = build_engine_resume_identity(plan, Engine(), model_families=["llm"])
+    assert identity["artifacts"] == {}
+    assert identity["runtimes"]["vllm"] == file_identity(runtime)
+
+
+def test_installing_a_model_later_changes_the_identity(tmp_path):
+    """Resume must be refused once a previously absent model becomes measurable."""
+    plan = make_plan()
+    model = tmp_path / "model.safetensors"
+    model.write_bytes(b"weights")
+    runtime = tmp_path / "vllm"
+    runtime.write_bytes(b"runtime")
+
+    class Engine:
+        def __init__(self, installed):
+            self.installed = installed
+
+        def model_pulled(self, _tag):
+            return self.installed
+
+        @staticmethod
+        def resume_artifact_paths(_tag):
+            return (model,)
+
+        @staticmethod
+        def resume_runtime_paths():
+            return {"vllm": runtime}
+
+    before = build_engine_resume_identity(plan, Engine(False), model_families=["llm"])
+    after = build_engine_resume_identity(plan, Engine(True), model_families=["llm"])
+    assert before["artifacts"] != after["artifacts"]

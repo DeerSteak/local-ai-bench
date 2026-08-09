@@ -58,6 +58,8 @@ def test_project_applies_portable_configuration_but_retains_machine_local_paths(
     project = build_project("Selection", "model_selection", state())
     local = dict(GUI_OPTION_DEFAULTS, out="local.json", comfyui="local-comfy")
     restored = project_frontend_state(project, local)
+    # A project describes what to run, not which engines — that stays on screen.
+    assert "engine" not in restored
     assert restored["models"]["llm"] == ["model:4b"]
     assert restored["gui_options"]["out"] == "local.json"
     assert restored["gui_options"]["comfyui"] == "local-comfy"

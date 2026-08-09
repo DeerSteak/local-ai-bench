@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
+
+import pytest
 
 from scripts.results.result_history import (
-    compare_results, discover_results, extract_comparable_metrics, filter_results,
-    summarize_result,
+    compare_results, delete_run_artifacts, discover_results, existing_run_artifacts,
+    extract_comparable_metrics, filter_results, run_artifact_paths, summarize_result,
 )
 
 
@@ -42,6 +45,127 @@ def test_history_filter_combines_query_status_and_engine():
     assert [item["system"] for item in filter_results(entries, query="alp")] == ["Alpha"]
     assert [item["system"] for item in filter_results(entries, status="interrupted")] == ["Beta"]
     assert filter_results(entries, engine="other") == []
+
+
+def test_run_artifact_paths_cover_run_journal_sidecars_images_and_regrades(tmp_path):
+    result_path = tmp_path / "results_Host_20260101_000000_vllm.json"
+    names = {path.name for path in run_artifact_paths(result_path, tmp_path)}
+    assert names == {
+        result_path.name, "results_Host_20260101_000000_vllm.events.sqlite3",
+        "results_Host_20260101_000000_vllm.events.sqlite3-wal",
+        "results_Host_20260101_000000_vllm.events.sqlite3-shm",
+        "results_Host_20260101_000000_vllm.events.sqlite3-journal",
+        "images_Host_20260101_000000_vllm",
+        "regraded_results_Host_20260101_000000_vllm.json",
+        *(f"answers_{workload}_Host_20260101_000000_vllm.json"
+          for workload in ("mcq", "math", "reasoning", "code", "tool")),
+        *(f"regraded_answers_{workload}_Host_20260101_000000_vllm.json"
+          for workload in ("mcq", "math", "reasoning", "code", "tool")),
+    }
+
+
+def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path):
+    result_path = tmp_path / "results_run.json"
+    result_path.write_text("{}", encoding="utf-8")
+    journal = result_path.with_suffix(".events.sqlite3")
+    journal.write_bytes(b"sqlite")
+    wal = Path(f"{journal}-wal")
+    wal.write_bytes(b"wal")
+    shm = Path(f"{journal}-shm")
+    shm.write_bytes(b"shm")
+    answer = tmp_path / "answers_mcq_run.json"
+    answer.write_text("{}", encoding="utf-8")
+    images = tmp_path / "images_run"
+    images.mkdir()
+    (images / "sample.png").write_bytes(b"png")
+    regraded = tmp_path / "regraded_results_run.json"
+    regraded.write_text("{}", encoding="utf-8")
+    unrelated = tmp_path / "answers_mcq_run_extra.json"
+    unrelated.write_text("{}", encoding="utf-8")
+
+    removed, failures = delete_run_artifacts(result_path, tmp_path)
+
+    assert failures == {}
+    assert set(removed) == {result_path, journal, wal, shm, answer, images, regraded}
+    assert unrelated.is_file()
+    assert existing_run_artifacts(result_path, tmp_path) == []
+
+
+def test_regraded_selection_does_not_delete_its_source_result(tmp_path):
+    source = tmp_path / "results_run.json"
+    source.write_text("{}", encoding="utf-8")
+    regraded = tmp_path / "regraded_results_run.json"
+    regraded.write_text("{}", encoding="utf-8")
+    sidecar = tmp_path / "regraded_answers_math_run.json"
+    sidecar.write_text("{}", encoding="utf-8")
+    images = tmp_path / "images_run"
+    images.mkdir()
+
+    removed, failures = delete_run_artifacts(regraded, tmp_path)
+
+    assert failures == {}
+    assert set(removed) == {regraded, sidecar}
+    assert source.is_file()
+    assert images.is_dir()
+
+
+def test_regraded_custom_name_deletes_its_sidecar_without_touching_source(tmp_path):
+    source = tmp_path / "custom.json"
+    source.write_text("{}", encoding="utf-8")
+    regraded = tmp_path / "regraded_custom.json"
+    regraded.write_text("{}", encoding="utf-8")
+    sidecar = tmp_path / "regraded_answers_tool_custom.json"
+    sidecar.write_text("{}", encoding="utf-8")
+
+    removed, failures = delete_run_artifacts(regraded, tmp_path)
+
+    assert failures == {}
+    assert set(removed) == {regraded, sidecar}
+    assert source.is_file()
+
+
+def test_run_artifact_paths_reject_result_outside_history_directory(tmp_path):
+    outside = tmp_path.parent / "results_outside.json"
+    with pytest.raises(ValueError, match="outside the results directory"):
+        run_artifact_paths(outside, tmp_path)
+
+
+def test_delete_unlinks_image_symlink_without_following_it(tmp_path):
+    if not hasattr(Path, "symlink_to"):
+        pytest.skip("symlinks unavailable")
+    result_path = tmp_path / "results_run.json"
+    result_path.write_text("{}", encoding="utf-8")
+    target = tmp_path / "kept"
+    target.mkdir()
+    (target / "image.png").write_bytes(b"png")
+    link = tmp_path / "images_run"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+
+    removed, failures = delete_run_artifacts(result_path, tmp_path)
+
+    assert failures == {}
+    assert link in removed and not link.exists()
+    assert (target / "image.png").is_file()
+
+
+def test_delete_failure_retains_main_result_for_visible_retry(tmp_path, monkeypatch):
+    result_path = tmp_path / "results_run.json"
+    result_path.write_text("{}", encoding="utf-8")
+    images = tmp_path / "images_run"
+    images.mkdir()
+    monkeypatch.setattr(
+        "scripts.results.result_history.shutil.rmtree",
+        lambda _path: (_ for _ in ()).throw(OSError("busy")),
+    )
+
+    removed, failures = delete_run_artifacts(result_path, tmp_path)
+
+    assert removed == []
+    assert failures == {images: "busy"}
+    assert result_path.is_file()
 
 
 def test_metric_extraction_uses_named_supported_evidence_only():

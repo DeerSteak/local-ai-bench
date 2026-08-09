@@ -7,7 +7,9 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from scripts.runtime import config
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
@@ -15,6 +17,19 @@ from scripts.runtime.engines.llamacpp import LlamaCppEngine
 from scripts.runtime.shared import Shared
 from scripts.app.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+
+
+class LlamaBenchModelResult(TypedDict):
+    """One model's llama-bench payload in the results JSON."""
+    prefill_entries: list
+    decode_entries: list
+    requested_cases: int
+    completed_cases: int
+    requested_repetitions: int
+    completed_repetitions: int
+    error: NotRequired[str]
+    timed_out: NotRequired[bool]
+    timed_out_at: NotRequired[str]
 
 
 class LlamaBenchBenchmark:
@@ -31,6 +46,10 @@ class LlamaBenchBenchmark:
     @staticmethod
     def _base_command(binary: str, model_path: Path, batch_size: int, ubatch_size: int,
                       reps: int, ngl: int) -> list[str]:
+        cache_type = (
+            "f16" if ngl != 0 and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+            else config.LLAMACPP_KV_CACHE_TYPE
+        )
         return [
             binary,
             "-m", str(model_path),
@@ -38,6 +57,8 @@ class LlamaBenchBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
+            "--cache-type-k", cache_type,
+            "--cache-type-v", cache_type,
             "-r", str(reps),
             "-o", "jsonl",
             "--progress",
@@ -66,7 +87,7 @@ class LlamaBenchBenchmark:
         ]
 
     @classmethod
-    def run_one(cls, cmd: list[str], timeout: int, on_progress=None, on_result=None) -> list[dict]:
+    def run_one(cls, cmd: list[str], timeout: int | float, on_progress=None, on_result=None) -> list[dict]:
         """Streams progress and parses one llama-bench JSONL pass; timeout measures idle output,
         not total wall-clock duration."""
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -76,8 +97,23 @@ class LlamaBenchBenchmark:
         stdout_errors: list[str] = []
         callback_errors: list[BaseException] = []
         stderr_chunks: list[str] = []
+        pending: deque[dict] = deque()
         activity_lock = threading.Lock()
         last_activity = [time.monotonic()]
+
+        def _deliver_pending() -> bool:
+            """Run on_result on the calling (main) thread. False once a callback has raised."""
+            while True:
+                with activity_lock:
+                    row = pending.popleft() if pending else None
+                if row is None:
+                    return not callback_errors
+                if on_result:
+                    try:
+                        on_result(row)
+                    except BaseException as exc:
+                        callback_errors.append(exc)
+                        return False
 
         def _touch():
             with activity_lock:
@@ -99,12 +135,10 @@ class LlamaBenchBenchmark:
                     stdout_errors.append(stripped)
                     continue
                 rows.append(row)
-                if on_result:
-                    try:
-                        on_result(row)
-                    except BaseException as exc:
-                        callback_errors.append(exc)
-                        return
+                # Handed to the main thread rather than called here: on_result writes to the
+                # SQLite journal, which refuses use from a thread other than its creator.
+                with activity_lock:
+                    pending.append(row)
 
         def _drain_stderr():
             assert proc.stderr is not None
@@ -122,7 +156,7 @@ class LlamaBenchBenchmark:
 
         idle_timed_out = False
         while proc.poll() is None:
-            if callback_errors:
+            if not _deliver_pending():
                 proc.kill()
                 break
             with activity_lock:
@@ -138,6 +172,9 @@ class LlamaBenchBenchmark:
         stderr_thread.join()
         if proc in Shared._managed_procs:
             Shared._managed_procs.remove(proc)
+        # Rows can arrive between the last poll and process exit.
+        if not idle_timed_out:
+            _deliver_pending()
 
         if idle_timed_out:
             raise subprocess.TimeoutExpired(cmd, timeout)
@@ -215,13 +252,13 @@ class LlamaBenchBenchmark:
                     continue
 
                 prefill_entries, decode_entries = [], []
-                model_result = {"prefill_entries": prefill_entries, "decode_entries": decode_entries}
-                results[short] = model_result
                 requested_cases = len(config.LLAMABENCH_PP) * (1 + len(config.LLAMABENCH_TG))
-                model_result["requested_cases"] = requested_cases
-                model_result["completed_cases"] = 0
-                model_result["requested_repetitions"] = requested_cases * reps
-                model_result["completed_repetitions"] = 0
+                model_result: LlamaBenchModelResult = {
+                    "prefill_entries": prefill_entries, "decode_entries": decode_entries,
+                    "requested_cases": requested_cases, "completed_cases": 0,
+                    "requested_repetitions": requested_cases * reps, "completed_repetitions": 0,
+                }
+                results[short] = model_result
                 if journal:
                     journal.record_model_plan(model, requested_cases, reps)
                 stopped = False
@@ -273,7 +310,7 @@ class LlamaBenchBenchmark:
                         if journal:
                             journal.record_model_state(model, "timed_out", {
                                 "timed_out": True, "timed_out_at": sweep,
-                                "error": model_result["error"],
+                                "error": model_result.get("error"),
                             })
                         stopped = True
                         break
@@ -281,12 +318,21 @@ class LlamaBenchBenchmark:
                         model_result["error"] = str(e)
                         if journal:
                             journal.record_model_state(
-                                model, "failed", {"error": model_result["error"]},
+                                model, "failed", {"error": model_result.get("error")},
                             )
                         stopped = True
                         break
                 if stopped:
-                    Shared.err(f"{label}: native benchmark stopped with partial results")
+                    reason = model_result.get("error")
+                    Shared.err(f"{label}: native benchmark stopped with partial results"
+                               + (f" — {reason}" if reason else ""))
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running llama-bench — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

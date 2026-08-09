@@ -8,6 +8,7 @@ import os
 import platform
 import random
 import statistics
+import signal
 import subprocess
 import sys
 import tempfile
@@ -207,7 +208,19 @@ class Shared:
         for proc in Shared._managed_procs:
             if proc.poll() is None:
                 Shared.log(f"Stopping managed process (pid {proc.pid}) ...")
-                proc.terminate()
+                # A server started in its own group (vLLM, whose EngineCore child holds
+                # the weights) must be signalled as a group or the child is orphaned.
+                if getattr(proc, "own_process_group", False):
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except (OSError, ProcessLookupError):
+                            proc.terminate()
+                else:
+                    proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -344,6 +357,11 @@ class Shared:
     # ── machine profile ──
 
     @staticmethod
+    def detect_wsl(os_name: str, release: str) -> bool:
+        """WSL reports itself as Linux; only the kernel release distinguishes it."""
+        return hardware.detect_wsl(os_name, release)
+
+    @staticmethod
     def get_hostname():  # pragma: no cover — shells out to OS-specific hardware profiling tools
         system = platform.system()
         ram_gb = round(Shared.system_ram_gb())
@@ -449,16 +467,18 @@ class Shared:
 
     @staticmethod
     def build_profile():  # pragma: no cover — thin wrapper around get_hostname/detect_backend
-        os_name = platform.system()
+        os_name, release = platform.system(), platform.release()
         profile = {
             "hostname":   Shared.get_hostname(),
-            "os":         f"{os_name} {platform.release()}",
+            "os":         f"{os_name} {release}",
             "arch":       platform.machine(),
             "python":     sys.version.split()[0],
             "ram_gb":     round(Shared.system_ram_gb(), 1),
             "timestamp":  datetime.now(timezone.utc).isoformat(),
             "backend":    Shared.detect_backend(),
         }
+        if Shared.detect_wsl(os_name, release):
+            profile["wsl"] = True
         return profile
 
     @staticmethod
@@ -569,14 +589,15 @@ class Shared:
         return picked
 
     @staticmethod
-    def file_hash(path: Path) -> str:
+    def file_hash(path: Path | str) -> str:
         """First 12 hex chars of `path`'s sha256 — a bank-version fingerprint
         that catches whitespace/key-order changes a question count wouldn't."""
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
     @staticmethod
     def load_crash_cache(path: Path) -> dict:
-        """Load a benchmark's tag -> crash record cache — see docs/project-structure.md's *_crash_cache.json entries."""
+        """Load a benchmark's engine -> tag -> crash record cache — see
+        docs/project-structure.md's *_crash_cache.json entries."""
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
@@ -590,11 +611,34 @@ class Shared:
             Shared.warn(f"Failed to save crash cache to {path}: {e}")
 
     @staticmethod
+    def crash_cache_paths(root: Path) -> list[Path]:
+        """All current and future workload crash caches in the repository root."""
+        return sorted(
+            path for path in Path(root).glob(".*_crash_cache.json")
+            if path.is_file() or path.is_symlink()
+        )
+
+    @staticmethod
+    def clear_crash_caches(root: Path) -> tuple[list[Path], dict[Path, str]]:
+        removed = []
+        failures = {}
+        for path in Shared.crash_cache_paths(root):
+            try:
+                path.unlink()
+                removed.append(path)
+            except OSError as exc:
+                failures[path] = str(exc)
+        return removed, failures
+
+    @staticmethod
     def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
-                           expected_bank_hash: str | None = None) -> dict | None:
-        """Skip-result dict if `tag` is a known repeat-crasher, else None.
+                           expected_bank_hash: str | None = None, *,
+                           engine_name: str) -> dict | None:
+        """Skip-result dict if `tag` is a known repeat-crasher on `engine_name`, else None.
+        Scoped per engine — a llama.cpp crash says nothing about vLLM's different weights
+        and runtime for the same catalog tag, and vice versa.
         `expected_bank_hash` treats a crash cached against a stale bank version as not-crashed, without deleting it."""
-        detail = crash_cache.get(tag)
+        detail = crash_cache.get(engine_name, {}).get(tag)
         if detail is None:
             return None
         if config.RETRY_CRASHED_MODELS:
@@ -605,24 +649,46 @@ class Shared:
                         "— ignoring stale entry and retrying")
             return None
         crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed the engine's runner repeatedly on "
+        Shared.warn(f"{tag} previously crashed {engine_name}'s runner repeatedly on "
                     f"{crashed_at} — skipping (delete {cache_path} to retry)")
         return {
             "label": label,
             "skipped": True,
             "skip_reason": "known_crash",
-            "skip_detail": f"Crashed the engine's runner repeatedly on {crashed_at}",
+            "skip_detail": f"Crashed {engine_name}'s runner repeatedly on {crashed_at}",
         }
 
     @staticmethod
+    def unexpected_model_failure(label: str, exc: BaseException, *, crashed: bool | None = None) -> dict:
+        """A results entry for a model that raised outside the crash/timeout paths a
+        workload already understands (e.g. a bug in the runner itself) — every per-model
+        loop catches this at the top level so one model's failure can never abort the run.
+        `crashed` is a boolean only in accuracy sections; leave it None elsewhere — llm/
+        llm_conversation read `crashed` as a context-label string (see dashboard/src/utils/
+        llm.ts), so a bool there would corrupt any real checkpoint data already recorded."""
+        try:
+            detail = str(exc)
+        except Exception:
+            detail = "(exception could not be formatted)"
+        entry = {
+            "label": label,
+            "unexpected_error": True,
+            "crashed_at": datetime.now().isoformat(timespec="seconds"),
+            "error": f"{type(exc).__name__}: {detail}",
+        }
+        if crashed is not None:
+            entry["crashed"] = crashed
+        return entry
+
+    @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
-                      extra: dict | None = None) -> str:
-        """Record a crash for `tag`; `extra` (e.g. {"bank_hash": ...}) lets
+                      extra: dict | None = None, *, engine_name: str) -> str:
+        """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
         check_crash_cache later tell a stale record from a current one."""
         crashed_at = datetime.now().isoformat(timespec="seconds")
-        crash_cache[tag] = {"crashed_at": crashed_at, **(extra or {})}
+        crash_cache.setdefault(engine_name, {})[tag] = {"crashed_at": crashed_at, **(extra or {})}
         Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"The engine's runner crashed repeatedly {what} — recorded to {cache_path}")
+        Shared.err(f"{engine_name}'s runner crashed repeatedly {what} — recorded to {cache_path}")
         return crashed_at
 
     @staticmethod
@@ -661,12 +727,14 @@ class Shared:
                            f"— last server output:\n{engine.tail_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
-                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
+                    Shared.record_crash(tag, crash_cache, cache_path, what,
+                                        extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not engine.wait_for_recovery():
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
-                    Shared.record_crash(tag, crash_cache, cache_path, what, extra=crash_extra)
+                    Shared.record_crash(tag, crash_cache, cache_path, what,
+                                        extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
@@ -780,6 +848,7 @@ class Shared:
                                 ask_fn, rescore_partial_fn, score_fn,
                                 save_fn=None, answers_path: Path | None = None,
                                 progress_stage: str | None = None,
+                                requires_tool_calls: bool = False,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
@@ -811,8 +880,19 @@ class Shared:
                     Shared.warn("Download it with: python setup_check.py")
                     continue
 
+                if requires_tool_calls and not engine.supports_tool_calls(tag):
+                    Shared.warn(f"{tag}: {engine.name} cannot return parsed tool calls for "
+                                "this model — skipping rather than scoring unparsed calls wrong")
+                    results[short] = {
+                        "label": label,
+                        "skipped": True,
+                        "skip_reason": "tool_calls_unsupported",
+                        "skip_detail": f"No {engine.name} tool-call parser for this model",
+                    }
+                    continue
+
                 skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
-                                                       expected_bank_hash=bank_hash)
+                                                       expected_bank_hash=bank_hash, engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
@@ -920,6 +1000,11 @@ class Shared:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the {skip_label} benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                results.setdefault(short, {}).update(
+                    Shared.unexpected_model_failure(label, exc, crashed=True))
             finally:
                 if save_fn:
                     save_fn(results)

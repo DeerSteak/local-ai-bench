@@ -16,6 +16,15 @@ def _store(tmp_path):
     return ResultStore(tmp_path / "result.json", data, writer=lambda *_: None)
 
 
+class _NoopLifecycle:
+    """Minimal EngineLifecycle stand-in for stages that never touch it."""
+    def ensure_engine(self, cpu_only: bool) -> bool:
+        return True
+
+    def cleanup(self) -> None:
+        pass
+
+
 def _plan(tests=("a",), cpu_only=False):
     return RunPlan.create(
         application_version="4.1", engine_name="fake", tests=tests,
@@ -27,7 +36,7 @@ def _plan(tests=("a",), cpu_only=False):
 def test_run_plan_is_immutable():
     spec = _plan(("llm",))
     with pytest.raises(FrozenInstanceError):
-        spec.engine_name = "other"
+        setattr(spec, "engine_name", "other")
     assert spec.tests == ("llm",)
 
 
@@ -35,7 +44,7 @@ def test_execute_stages_preserves_registry_order_and_transitions(tmp_path):
     events = []
     store = _store(tmp_path)
     context = RunContext(
-        _plan(("a", "b")), RunPaths(Path("out")), object(), store, object(),
+        _plan(("a", "b")), RunPaths(Path("out")), object(), store, _NoopLifecycle(),
     )
     stages = [
         StageDefinition("a", "a", 1, lambda _: events.append("run-a") or {"m": {"x": 1}},
@@ -62,7 +71,11 @@ def test_stage_progress_is_opt_in_and_machine_parseable(monkeypatch, capsys):
 def test_execute_stages_prepares_only_engine_required_stages(tmp_path):
     class Lifecycle:
         def __init__(self): self.calls = []
-        def ensure_engine(self, cpu_only): self.calls.append(cpu_only)
+        def ensure_engine(self, cpu_only) -> bool:
+            self.calls.append(cpu_only)
+            return True
+        def cleanup(self) -> None:
+            pass
 
     lifecycle = Lifecycle()
     context = RunContext(
@@ -115,7 +128,7 @@ def test_ordered_stage_keys_rejects_unknown_and_duplicate_selections():
 def test_execute_stages_always_cleans_up_and_leaves_failed_stage_running(tmp_path):
     events = []
     context = RunContext(
-        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), _NoopLifecycle(),
     )
     stage = StageDefinition(
         "a", "a", 1, lambda _: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -130,9 +143,9 @@ def test_execute_stages_always_cleans_up_and_leaves_failed_stage_running(tmp_pat
 def test_execute_stages_cleans_up_when_section_persistence_fails(tmp_path):
     events = []
     store = _store(tmp_path)
-    store.update_section = lambda *_: (_ for _ in ()).throw(OSError("disk full"))
+    setattr(store, "update_section", lambda *_: (_ for _ in ()).throw(OSError("disk full")))
     context = RunContext(
-        _plan(), RunPaths(Path("out")), object(), store, object(),
+        _plan(), RunPaths(Path("out")), object(), store, _NoopLifecycle(),
     )
     stage = StageDefinition(
         "a", "a", 1, lambda _: {"model": {}},
@@ -149,7 +162,7 @@ def test_execute_stages_records_secondary_cleanup_failure(tmp_path, phase):
     def fail(_): raise RuntimeError("primary")
     def cleanup(_): raise OSError("cleanup")
     context = RunContext(
-        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), _NoopLifecycle(),
     )
     stage = StageDefinition(
         "a", "a", 0, fail if phase == "execution" else lambda _: {},
@@ -166,7 +179,7 @@ def test_execute_stages_records_secondary_cleanup_failure(tmp_path, phase):
 def test_execute_stages_preserves_system_exit_and_still_cleans_up(tmp_path):
     events = []
     context = RunContext(
-        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), _NoopLifecycle(),
     )
     stage = StageDefinition(
         "a", "a", 0, lambda _: (_ for _ in ()).throw(SystemExit(0)),
@@ -180,7 +193,12 @@ def test_execute_stages_preserves_system_exit_and_still_cleans_up(tmp_path):
 
 def test_execute_with_final_cleanup_cleans_before_propagating_failure():
     events = []
-    lifecycle = type("Lifecycle", (), {"cleanup": lambda _: events.append("cleanup")})()
+    class Lifecycle:
+        def ensure_engine(self, cpu_only: bool) -> bool:
+            return True
+        def cleanup(self) -> None:
+            events.append("cleanup")
+    lifecycle = Lifecycle()
 
     def fail():
         events.append("execute")
@@ -192,10 +210,12 @@ def test_execute_with_final_cleanup_cleans_before_propagating_failure():
 
 
 def test_execute_with_final_cleanup_classifies_cleanup_only_failure():
-    lifecycle = type(
-        "Lifecycle", (),
-        {"cleanup": lambda _: (_ for _ in ()).throw(OSError("cleanup"))},
-    )()
+    class Lifecycle:
+        def ensure_engine(self, cpu_only: bool) -> bool:
+            return True
+        def cleanup(self) -> None:
+            raise OSError("cleanup")
+    lifecycle = Lifecycle()
     with pytest.raises(StageExecutionError) as exc_info:
         execute_with_final_cleanup(lambda: None, lifecycle)
     assert exc_info.value.phase == "cleanup"
@@ -205,7 +225,7 @@ def test_execute_with_final_cleanup_classifies_cleanup_only_failure():
 def test_execute_stages_classifies_hook_failures(tmp_path, phase):
     def fail(_): raise RuntimeError("hook")
     context = RunContext(
-        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), object(),
+        _plan(), RunPaths(Path("out")), object(), _store(tmp_path), _NoopLifecycle(),
     )
     stage = StageDefinition(
         "a", "a", 0, lambda _: {},

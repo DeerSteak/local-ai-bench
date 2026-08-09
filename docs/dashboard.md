@@ -44,7 +44,7 @@ New results record whether the run completed, remained in progress, was interrup
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (capped by the model's real context ceiling) |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
-| Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.js`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
+| Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.ts`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
 | Images | One grouped bar chart per resolution — all image models side by side per host |
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
@@ -134,7 +134,7 @@ llama3.1-8b-q4_llamabench_prefill.png # llama-bench prefill section
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
 
-A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.js` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
+A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.ts` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 
 When explicit measurement fields are present, TTFT charts and tables prefer client-observed TTFT and run tables prefer `valid_runs`; older files fall back to `ttft_mean_sec` and `n_runs`. Server-reported prompt duration remains available for auditing but is not silently substituted into the TTFT charts. Comparing legacy server-prompt conversation TTFT with explicit client-observed conversation TTFT produces a methodology warning.
 

@@ -201,4 +201,5 @@ class ToolBenchmark:
             rescore_partial_fn=ToolBenchmark.rescore_partial_fn,
             score_fn=ToolBenchmark.score,
             save_fn=save_fn, answers_path=answers_path, progress_stage="tool",
+            requires_tool_calls=True,
         )

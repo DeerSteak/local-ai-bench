@@ -7,6 +7,7 @@ import sys
 import os
 import platform
 import re
+import shlex
 import signal
 import subprocess
 import json
@@ -24,18 +25,38 @@ from scripts.runtime.comfyui_installation import (
     checkpoint_names_from_object_info,
     find_comfyui_installation,
     find_comfyui_python,
+    find_image_asset,
+    legacy_models_dir_with_assets,
     managed_checkpoints_visible,
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
     write_extra_model_paths,
 )
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
-from scripts.setup.model_inventory import delete_non_catalog_model_dirs, find_non_catalog_model_dirs
+from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
+from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
+from scripts.setup.model_inventory import (
+    delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
+    engine_download_size, engine_fit_report, find_non_catalog_vllm_repos,
+    hf_cache_repo_id,
+    engine_fit_warnings, engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
+    fits_any_engine, format_engine_sizes, models_missing_engine_support,
+)
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
+from scripts.setup.engine_selection import (
+    LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
+    needs_python_headers, selected_engine_names, toggle_engine,
+)
+from scripts.setup.vllm_install import (
+    find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
+    build_tools_command, install_vllm, missing_build_tools, missing_python_headers,
+    python_dev_package_command, python_include_dir, python_version_from_include_dir,
+    read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
+    PINNED_PYTHON, python_bootstrap_plan, run_python_bootstrap,
+)
 from scripts.app.interface_mode import select_interface_mode
 
 # Repo root, one level up — sourced from config.py rather than redefined here.
@@ -54,7 +75,7 @@ _detected_comfyui = find_comfyui_installation(
     saved_path=configured_comfyui_dir(_saved_setup),
     managed_dir=config.COMFYUI_DIR,
 )
-COMFYUI_DIR = _detected_comfyui or config.COMFYUI_DIR
+COMFYUI_DIR: Path = _detected_comfyui or config.COMFYUI_DIR
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -148,6 +169,34 @@ def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
                     pass
     return success
 
+def hf_snapshot_download(repo, cache_home, token=None):
+    """Download a whole HF repo into the cache vLLM reads, so it resolves by repo id."""
+    cache_home.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HF_HOME": str(cache_home)}
+    if token:
+        env["HF_TOKEN"] = token
+    ignore = ["*.pth", "*.bin", "original/*"]  # duplicate formats of the same weights
+    for cli in ["hf", "huggingface-cli"]:
+        if shutil.which(cli):
+            command = [cli, "download", repo]
+            for pattern in ignore:
+                command += ["--exclude", pattern]
+            result = subprocess.run(command, env=env, capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+            stderr = (result.stderr or result.stdout or "").strip()
+            if stderr:
+                warn(f"{cli} error: {stderr}")
+            break
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+        snapshot_download(repo_id=repo, token=token, ignore_patterns=ignore,
+                          cache_dir=str(cache_home / "hub"))
+        return True
+    except Exception as e:
+        warn(f"Python API download failed: {e}")
+        return False
+
 issues = []
 
 # Local aliases for hardware.py's sizes, shared with select_models()'s memory-fit check.
@@ -234,10 +283,12 @@ def check_nvidia():
             text=True, stderr=subprocess.DEVNULL
         )
         nvidia_gpus = hardware.parse_nvidia_gpus(out)
-        nvidia_vram_gb = sum(device["vram_gb"] for device in nvidia_gpus)
+        nvidia_vram_gb = sum(device["vram_gb"] or 0.0 for device in nvidia_gpus)
         for device in nvidia_gpus:
             print(f"  GPU:     {device['name']}")
-            print(f"  VRAM:    {device['vram_gb']:.1f} GB")
+            vram = device["vram_gb"]
+            # Unified-memory parts report no dedicated VRAM; the RAM ceiling applies instead.
+            print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unified with system RAM'}")
             print(f"  Driver:  {device['driver']}")
         return bool(nvidia_gpus)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -265,17 +316,19 @@ def get_nvidia_compute_cap():
     except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
         return None
 
+rocm_gfx = []         # gfx targets, set by check_rocm() — vLLM's wheels are per-target
 rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
 rocm_vram_gb  = None  # only queried for a discrete GPU — see compute_memory_ceiling_gb
 rocm_gpus = []
 
 def check_rocm():
-    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus
+    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus, rocm_gfx
     try:
         out = subprocess.check_output(
             ["rocminfo"], text=True, stderr=subprocess.DEVNULL
         )
         gpu_names = hardware.rocminfo_gpu_names(out)
+        rocm_gfx = hardware.rocminfo_gfx_targets(out)
         for name in gpu_names[:3]:
             print(f"  ROCm GPU: {name}")
         if gpu_names:
@@ -300,6 +353,20 @@ def check_rocm():
         return bool(gpu_names)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+def get_rocm_version():
+    """Installed ROCm major/minor, or None — vLLM's wheels need 6.3+."""
+    try:
+        out = subprocess.check_output(["hipconfig", "--version"],
+                                       text=True, stderr=subprocess.DEVNULL)
+        return hardware.parse_rocm_version(out)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    version_file = Path("/opt/rocm/.info/version")
+    try:
+        return hardware.parse_rocm_version(version_file.read_text())
+    except OSError:
+        return None
 
 def check_metal():
     if platform.system() != "Darwin":
@@ -472,14 +539,23 @@ memory_ceiling_gb, memory_ceiling_note = hardware.compute_memory_ceiling_gb(
     os_name=os_name, total_ram_gb=total_ram_gb,
     gpu_vendor=gpu_vendor, vram_gb=gpu_vram_gb,
     device_vram_gb=(
-        [device["vram_gb"] for device in nvidia_gpus] if nvidia_ok else
+        [device["vram_gb"] for device in nvidia_gpus if device["vram_gb"] is not None]
+        if nvidia_ok else
         [device["vram_gb"] for device in rocm_gpus] if rocm_ok else None
-    ),
+    ) or None,
 )
 if memory_ceiling_gb is not None:
     ok(f"Model memory ceiling: {memory_ceiling_note}")
 else:
     warn(memory_ceiling_note)
+
+# WSL2 caps the VM near half the host's RAM, and the host total isn't visible from in here.
+if hardware.detect_wsl(os_name, platform.release()):
+    _reported = f"{total_ram_gb:.0f} GB" if total_ram_gb else "an unknown amount"
+    warn(f"Running under WSL2, which reports {_reported} of RAM — if the Windows "
+         "host has more, models that would fit are being filtered out silently")
+    info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
+         "then run 'wsl --shutdown' — see docs/setup.md")
 
 def _find_llamacpp_exe(base_name):
     """Locate one llama.cpp tool using the runtime's system-first policy."""
@@ -591,12 +667,20 @@ def install_llamacpp():
 
         cmake_flags = []
         if nvidia_ok:
-            if not shutil.which("nvcc"):
+            nvcc_path = find_nvcc()
+            if not nvcc_path:
                 warn("NVIDIA GPU detected but the CUDA toolkit (nvcc) isn't installed — "
                      "building CPU-only. Install the CUDA toolkit and re-run for GPU support.")
             else:
-                info("Building with CUDA support ...")
-                cmake_flags.append("-DGGML_CUDA=ON")
+                info(f"Building with CUDA support ({nvcc_path}) ...")
+                # Named explicitly so a toolkit that is off PATH still configures.
+                cmake_flags += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc_path}"]
+                cuda_arch = cuda_architecture(nvidia_compute_cap)
+                if cuda_arch:
+                    cmake_flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={cuda_arch}")
+                else:
+                    warn("Could not read this GPU's compute capability — cmake will probe for it, "
+                         "which fails under WSL2 and yields a CUDA build with no usable kernels")
         elif rocm_ok:
             info("Building with ROCm/HIP support ...")
             cmake_flags += ["-DGGML_HIP=ON"]
@@ -687,21 +771,140 @@ else:
          "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
          "the llamabenchconc test")
 
-# ── 5. Welcome / prerequisites approval ────────────────────────────────────────
+# ── 4b. vLLM detection (read-only) ─────────────────────────────────────────────
 
-section("Setup Plan")
-print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
-print("  This will:")
-print("    • Install Python dependencies from requirements.txt")
-if needs_llamacpp_install:
-    build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
-    print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
-if _detected_comfyui:
-    print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
-print()
-print("  You'll then pick which models to install — everything after that")
-print("  runs on its own, with no further prompts.")
-print()
+section("vLLM")
+
+VLLM_BIN = find_vllm_binary(platform_name=os_name)
+# A reachable server counts as present even with no host-side binary — AMD's Strix Halo
+# image ships one preconfigured, and a container/remote server looks the same from here.
+VLLM_LAUNCHER = find_vllm_launcher()
+VLLM_SERVER_URL = find_vllm_server()
+VLLM_LAUNCHER_ARGS = (
+    redact_launcher_extra_args(read_launcher_extra_args()) if VLLM_LAUNCHER else []
+)
+VLLM_CACHE_HOME = vllm_cache_home(VLLM_LAUNCHER)
+# Triton JIT-compiles a CUDA helper on import, so vLLM cannot start without these.
+_vllm_python = config.VLLM_VENV / "bin" / "python"
+_vllm_include_dir = python_include_dir(
+    str(_vllm_python) if _vllm_python.is_file() else sys.executable)
+missing_python_header = missing_python_headers(_vllm_include_dir)
+missing_header_version = python_version_from_include_dir(_vllm_include_dir) or sys.version_info[:2]
+header_command = next(
+    (command for manager in ("apt-get", "dnf", "zypper")
+     for command in [python_dev_package_command(manager, missing_header_version)] if command),
+    None,
+) if missing_python_header else None
+header_package = header_command[-1] if header_command else None
+vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
+_cuda_plan = cuda_toolkit_plan(
+    is_wsl=hardware.detect_wsl(os_name, platform.release()),
+    nvidia_ok=nvidia_ok, nvcc_found=find_nvcc() is not None,
+)
+if _cuda_plan:
+    section("CUDA Toolkit")
+    warn("An NVIDIA GPU is available under WSL2 but the CUDA toolkit (nvcc) is missing — "
+         "llama.cpp would build CPU-only")
+    info("Setup can install NVIDIA's WSL-Ubuntu CUDA toolkit. It contains no Linux GPU "
+         "driver, so the Windows driver's passthrough is left intact. Needs sudo.")
+    for _command in _cuda_plan:
+        print(f"      {' '.join(_command)}")
+    if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+        run_cuda_toolkit_install(_cuda_plan)
+    else:
+        info("Skipped — llama.cpp will build CPU-only")
+
+vllm_note = (f"server already running at {VLLM_SERVER_URL}" if VLLM_SERVER_URL
+             else f"platform launcher {VLLM_LAUNCHER}" if VLLM_LAUNCHER
+             else f"found at {VLLM_BIN}" if VLLM_BIN else None)
+vllm_support = vllm_platform_support(
+    os_name=os_name, machine=platform.machine(), python_version=sys.version_info[:2],
+    nvidia_ok=nvidia_ok, rocm_ok=rocm_ok, intel_gpu=intel_linux or intel_windows,
+    gpu_names=[device["name"] for device in nvidia_gpus],
+    compute_cap=nvidia_compute_cap, rocm_version=get_rocm_version() if rocm_ok else None,
+    rocm_gfx_targets=rocm_gfx,
+)
+if not vllm_found and vllm_support.needs_python_bootstrap:
+    bootstrap_plan = python_bootstrap_plan(python_version=sys.version_info[:2])
+    if bootstrap_plan:
+        warn(f"vLLM needs Python 3.10–3.13 and this system only has "
+             f"{sys.version_info.major}.{sys.version_info.minor}")
+        info("Setup can install a private CPython "
+             f"{PINNED_PYTHON[0]}.{PINNED_PYTHON[1]} for vLLM to build its venv from. "
+             "This downloads uv from astral.sh and does not change your system Python.")
+        for command in bootstrap_plan:
+            print(f"      {shlex.join(command)}")
+        if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+            if run_python_bootstrap(bootstrap_plan):
+                vllm_support = vllm_platform_support(
+                    os_name=os_name, machine=platform.machine(),
+                    python_version=sys.version_info[:2],
+                    nvidia_ok=nvidia_ok, rocm_ok=rocm_ok,
+                    intel_gpu=intel_linux or intel_windows,
+                    gpu_names=[device["name"] for device in nvidia_gpus],
+                    compute_cap=nvidia_compute_cap,
+                    rocm_version=get_rocm_version() if rocm_ok else None,
+                    rocm_gfx_targets=rocm_gfx,
+                )
+        else:
+            info("Skipped — continuing without vLLM")
+
+if VLLM_SERVER_URL:
+    ok(f"vLLM server already running at {VLLM_SERVER_URL} — nothing to install")
+elif VLLM_BIN or VLLM_LAUNCHER:
+    ok(f"vllm found: {VLLM_LAUNCHER or VLLM_BIN}")
+    info(f"vLLM model cache: {VLLM_CACHE_HOME}")
+elif vllm_support.status == "unsupported":
+    info(f"vLLM not available here — {vllm_support.reason}")
+else:
+    warn(f"vllm not found — {vllm_support.reason}")
+    if vllm_support.status == "experimental":
+        info("This vLLM path is experimental and unverified by this project's maintainers")
+
+if missing_python_header and (vllm_found or vllm_support.installable):
+    warn(f"Python development headers are missing ({missing_python_header}) — "
+         "vLLM cannot start without them")
+
+if VLLM_LAUNCHER_ARGS:
+    warn(f"{VLLM_LAUNCHER} injects extra vLLM arguments on every launch: "
+         f"{' '.join(VLLM_LAUNCHER_ARGS)}")
+    info("These are recorded in the setup configuration so a run reports the flags "
+         "that actually ran")
+
+# ── 4c. Engine selection ───────────────────────────────────────────────────────
+# Whatever models are picked later are downloaded for every engine selected here.
+
+engine_entries = build_engine_entries(
+    vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
+    vllm_note=vllm_note,
+)
+
+def select_engines(entries):
+    """Numbered toggle picker for engines — same plain-input style as the model picker."""
+    section("Engines")
+    print("  Models you select later are downloaded for every engine checked here.\n")
+    while True:
+        for index, entry in enumerate(entries, start=1):
+            print(f"   {index}. {engine_summary_line(entry)}")
+        print()
+        choice = input("  Number to toggle, Enter to continue, q to cancel: ").strip().lower()
+        if choice == "":
+            return entries
+        if choice == "q":
+            print("\n  Setup cancelled — nothing was installed.\n")
+            sys.exit(0)
+        if choice.isdigit() and 1 <= int(choice) <= len(entries):
+            target = entries[int(choice) - 1]
+            if not toggle_engine(entries, target["name"]):
+                if not target["enabled"]:
+                    warn(f"{target['label']} can't be installed here — {target['note']}")
+                else:
+                    warn("At least one engine must stay selected")
+        else:
+            warn("Enter a listed number, Enter, or q")
+        print()
+
+# ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
 try:
     import tkinter  # noqa: F401
@@ -716,6 +919,27 @@ try:
 except ValueError as exc:
     _arg_parser.error(str(exc))
 
+if _interface != "gui":
+    select_engines(engine_entries)
+
+section("Setup Plan")
+print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
+print("  This will:")
+print("    • Install Python dependencies from requirements.txt")
+if needs_llamacpp_install and LLAMACPP in selected_engine_names(engine_entries):
+    build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
+    print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
+if _detected_comfyui:
+    print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
+if _interface != "gui" and VLLM in engines_needing_install(engine_entries):
+    print("    • Install vLLM (several GB, into its own vllm-env/ environment)")
+if _interface != "gui" and needs_python_headers(engine_entries, missing_python_header):
+    print("    • Install the Python development headers vLLM needs (requires sudo)")
+print()
+print("  You'll then pick which models to install — everything after that")
+print("  runs on its own, with no further prompts.")
+print()
+
 _gui_plan = None
 if _interface == "gui":
     from scripts.setup.setup_gui import run_setup_wizard_process
@@ -724,22 +948,36 @@ if _interface == "gui":
         memory_ceiling_gb=memory_ceiling_gb,
         detected_comfyui=_detected_comfyui,
         cleanup_names=[path.name for path in _cleanup_candidates],
+        vllm_cleanup=find_non_catalog_vllm_repos(VLLM_CACHE_HOME),
         existing_hf_token=bool(os.environ.get("HF_TOKEN", "").strip() or (
             (SCRIPT_DIR / "hf.txt").is_file() and (SCRIPT_DIR / "hf.txt").read_text().strip()
         )),
+        engine_entries=engine_entries,
+        sudo_package=header_package,
     )
     if _gui_plan is None:
         print("\n  Setup cancelled — nothing was installed.\n")
         sys.exit(GUI_CANCEL_EXIT)
+    _chosen = set(_gui_plan.get("engines", [LLAMACPP]))
+    for entry in engine_entries:
+        entry["checked"] = entry["enabled"] and entry["name"] in _chosen
 elif not confirm("Continue?", default=True):
     print(f"\n  Setup cancelled — nothing was installed.\n")
     sys.exit(0)
+
+selected_engines = selected_engine_names(engine_entries)
+pending_engines = engines_needing_install(engine_entries)
+_engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}
+ok(f"Engines selected: {', '.join(_engine_labels[name] for name in selected_engines)}")
+for _name in _engine_labels:
+    if _name not in selected_engines:
+        info(f"{_engine_labels[_name]} not selected — its models and tools are skipped")
 
 # ── 6. Model selection ──────────────────────────────────────────────────────────
 
 section("Model Selection")
 
-def select_models(memory_ceiling_gb=None):
+def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,)):
     """Flat numbered model picker — see docs/setup.md's "What the setup scripts do".
     Returns (selected_llm, selected_images, selected_embed, cleanup_names)."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
@@ -749,6 +987,12 @@ def select_models(memory_ceiling_gb=None):
         "label": f"Delete {len(non_catalog_dirs)} installed non-catalog model {folder_word}",
         "directory_names": [path.name for path in non_catalog_dirs],
     }] if non_catalog_dirs else []
+    # One entry per cached repo, not one aggregate: the vLLM cache is shared with
+    # anything else on the machine, so each deletion is chosen individually.
+    vllm_cleanup_items = [{
+        "label": f"Delete {entry['repo']}  (~{entry['size'] / 1e9:.1f} GB)",
+        "directory_names": [entry["directory_name"]],
+    } for entry in find_non_catalog_vllm_repos(VLLM_CACHE_HOME)]
     groups = [
         ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
         ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
@@ -756,9 +1000,16 @@ def select_models(memory_ceiling_gb=None):
         ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm",   "l"),
         ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
         ("Image generation models",           IMAGE_MODELS,      "image", "img"),
-        ("Optional cleanup",                   cleanup_items,     "cleanup", "clean"),
+        ("Optional cleanup — downloaded llama.cpp models not in the catalog",
+         cleanup_items, "cleanup", "clean"),
+        ("Optional cleanup — cached vLLM weights not in the catalog",
+         vllm_cleanup_items, "vllm_cleanup", "vclean"),
     ]
     group_keys = {group_key for _, items, _, group_key in groups if items}
+
+    def hardware_fit_report(model):
+        return engine_fit_report(model, engines, memory_ceiling_gb)
+
     entries = []
     for _, items, kind, group_key in groups:
         # LLM groups are already one-per-tier; image models carry their own
@@ -766,11 +1017,12 @@ def select_models(memory_ceiling_gb=None):
         tier = TIER_KEYS.get(group_key) if kind == "llm" else None
         for m in items:
             entry_tier = tier if kind == "llm" else m.get("tier")
-            if kind == "cleanup":
+            if kind in ("cleanup", "vllm_cleanup"):
                 fits = None
                 checked = False
             elif kind == "llm":
-                fits = hardware.model_fits(m["download_size"], memory_ceiling_gb)
+                report = hardware_fit_report(m)
+                fits = fits_any_engine(report)
                 checked = fits is not False
             elif kind == "image":
                 fits = hardware.image_model_fits(m["checkpoint"], m["short"], memory_ceiling_gb)
@@ -780,18 +1032,18 @@ def select_models(memory_ceiling_gb=None):
                 checked = True
             entries.append({"item": m, "kind": kind, "group": group_key,
                             "tier": entry_tier, "checked": checked,
-                            "fits": fits})
+                            "fits": fits,
+                            "report": hardware_fit_report(m) if kind in ("llm", "embed") else {}})
 
     def size_label(e, m, kind):
-        if kind == "cleanup":
+        if kind in ("cleanup", "vllm_cleanup"):
             return "  (unchecked by default)"
         if kind == "embed":
-            return f"  ({m['download_size']})"
+            return f"  ({format_engine_sizes(e['report'])})"
         if kind == "llm":
-            label = f"  ({m['download_size']})"
-            if e["fits"] is False:
-                needed = hardware.model_memory_requirement_gb(m["download_size"])
-                label += f"  {YELLOW}⚠ needs ~{needed:.1f} GB, ~{memory_ceiling_gb:.1f} GB available{RESET}"
+            label = f"  ({format_engine_sizes(e['report'])})"
+            for warning in engine_fit_warnings(e["report"], memory_ceiling_gb):
+                label += f"  {YELLOW}⚠ {warning}{RESET}"
             return label
         gb = CHECKPOINT_SIZES_GB.get(m["checkpoint"])
         label = f"  (~{gb:.1f} GB)" if gb else ""
@@ -813,7 +1065,7 @@ def select_models(memory_ceiling_gb=None):
                 e = entries[n - 1]
                 box = "[x]" if e["checked"] else "[ ]"
                 print(f"    {box} {n:>2}  {m['label']}{size_label(e, m, kind)}")
-                if kind == "cleanup":
+                if kind in ("cleanup", "vllm_cleanup"):
                     for name in m["directory_names"]:
                         print(f"             {name!r}")
                 n += 1
@@ -885,10 +1137,12 @@ def select_models(memory_ceiling_gb=None):
     selected_images = [e["item"] for e in entries if e["checked"] and e["kind"] == "image"]
     selected_embed  = [e["item"] for e in entries if e["checked"] and e["kind"] == "embed"]
     cleanup_names = selected_cleanup_names(entries)
-    return selected_llm, selected_images, selected_embed, cleanup_names
+    vllm_cleanup_names = selected_cleanup_names(entries, "vllm_cleanup")
+    return selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names
 
 if _gui_plan is None:
-    selected_llm, selected_images, selected_embed, cleanup_names = select_models(memory_ceiling_gb)
+    selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names = select_models(
+        memory_ceiling_gb, engines=selected_engines)
 else:
     _llm_tags = set(_gui_plan["llm_tags"])
     _image_shorts = set(_gui_plan["image_shorts"])
@@ -900,6 +1154,7 @@ else:
     selected_images = [model for model in IMAGE_MODELS if model["short"] in _image_shorts]
     selected_embed = [model for model in EMBED_MODELS if model["tag"] in _embed_tags]
     cleanup_names = list(_gui_plan["cleanup_names"])
+    vllm_cleanup_names = list(_gui_plan.get("vllm_cleanup_names", []))
 selected_llm_tags     = {m["tag"] for m in selected_llm}
 selected_image_shorts = {m["short"] for m in selected_images}
 
@@ -909,10 +1164,12 @@ info(f"Image models selected: {len(selected_images)}/{len(IMAGE_MODELS)}")
 info(f"Embeddings models selected: {len(selected_embed)}/{len(EMBED_MODELS)}")
 if cleanup_names:
     warn(f"Non-catalog model cleanup selected: {len(cleanup_names)} folder(s)")
+if vllm_cleanup_names:
+    warn(f"Cached vLLM weight cleanup selected: {len(vllm_cleanup_names)} repo(s)")
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
-_hf_token_cache = [None]
+_hf_token_cache: list[str | None] = [None]
 
 def load_token():
     """Load HF token from env var, hf.txt, or prompt — cached after first load."""
@@ -983,8 +1240,9 @@ elif selected_llm or selected_embed or selected_images:
 if _gui_plan is not None and selected_images:
     _gui_comfy_mode = _gui_plan["comfyui_mode"]
     if _gui_comfy_mode == "existing":
-        COMFYUI_DIR = normalize_comfyui_dir(Path(_gui_plan["comfyui_path"]))
-        _detected_comfyui = COMFYUI_DIR
+        _normalized_comfyui = normalize_comfyui_dir(Path(_gui_plan["comfyui_path"]))
+        COMFYUI_DIR = _normalized_comfyui or config.COMFYUI_DIR
+        _detected_comfyui = _normalized_comfyui
     elif _gui_comfy_mode == "detected" and _detected_comfyui:
         COMFYUI_DIR = _detected_comfyui
     else:
@@ -1008,7 +1266,7 @@ elif selected_images and not _detected_comfyui:
         except EOFError:
             entered_path = ""
     choice_status, chosen_comfyui = resolve_comfyui_setup_choice(comfyui_choice, entered_path)
-    if choice_status == "existing":
+    if choice_status == "existing" and chosen_comfyui:
         COMFYUI_DIR = chosen_comfyui
         _detected_comfyui = chosen_comfyui
         ok(f"Using existing ComfyUI at {COMFYUI_DIR}")
@@ -1022,13 +1280,14 @@ elif selected_images and not _detected_comfyui:
 
 INSTALL_STARTED = True
 
-_gui_progress_path = None
+_gui_progress_path: Path | None = None
 _gui_progress_status = ["stopped"]
 if _gui_plan is not None:
     try:
         _gui_progress_process, _gui_progress_path = start_setup_progress()
+        _started_progress_path = _gui_progress_path
         atexit.register(
-            lambda: finish_setup_progress(_gui_progress_path, _gui_progress_status[0]),
+            lambda: finish_setup_progress(_started_progress_path, _gui_progress_status[0]),
         )
     except OSError as exc:
         warn(f"Could not open the graphical progress window: {exc}")
@@ -1048,7 +1307,7 @@ else:
     info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
     sys.exit(1)
 
-if needs_llamacpp_install:
+if LLAMACPP in pending_engines:
     llamacpp_installed = install_llamacpp()
     if llamacpp_installed:
         ok("llama.cpp installed successfully")
@@ -1070,60 +1329,99 @@ if needs_llamacpp_install:
                        "(needs a 'llama-server' binary on PATH, or built under "
                       f"{LLAMACPP_DIR})")
 
+if needs_python_headers(engine_entries, missing_python_header):
+    if header_command is None:
+        fail(f"Python development headers are missing ({missing_python_header}) and no known "
+             "package manager was found — install your distribution's python3 dev package")
+        issues.append(f"Install the Python development headers providing {missing_python_header}")
+    else:
+        info(f"Installing Python development headers: {' '.join(header_command)} ...")
+        if subprocess.run(header_command).returncode == 0:
+            ok("Python development headers installed")
+        else:
+            fail("Python development header install failed — vLLM will not start")
+            issues.append(f"Run: {' '.join(header_command)}")
+
+if VLLM in pending_engines:
+    if install_vllm(vllm_support, log=info):
+        VLLM_BIN = find_vllm_binary(platform_name=os_name)
+        if VLLM_BIN:
+            ok(f"vLLM installed: {VLLM_BIN}")
+            vllm_found = True
+        else:
+            warn("vLLM install reported success but no 'vllm' executable was found")
+    else:
+        fail("vLLM installation failed")
+        issues.append("Install vLLM manually: https://docs.vllm.ai/en/stable/getting_started/installation/")
+
+if VLLM in selected_engines:
+    _vllm_venv_python = config.VLLM_VENV / "bin" / "python"
+    _missing_tools = missing_build_tools(config.VLLM_VENV) if _vllm_venv_python.is_file() else []
+    if not _vllm_venv_python.is_file():
+        info(f"No project vLLM venv at {config.VLLM_VENV} — build tools are that "
+             "installation's own responsibility")
+    elif not _missing_tools:
+        ok("vLLM build tools already present")
+    if _missing_tools:
+        info(f"Installing vLLM build tools ({', '.join(_missing_tools)}) — "
+             "FlashInfer compiles kernels on first use ...")
+        _tools_command = build_tools_command(str(_vllm_venv_python), _missing_tools)
+        if _tools_command and subprocess.run(_tools_command).returncode == 0:
+            ok("vLLM build tools installed")
+        else:
+            fail("vLLM build tool install failed — kernel compilation will fail at run time")
+            issues.append(f"Run: {config.VLLM_VENV}/bin/pip install {' '.join(_missing_tools)}")
+
 # ── 8a. Disk space ──────────────────────────────────────────────────────────────
 
 section("Disk Space")
 
 CHECKPOINTS = config.COMFYUI_MODELS_DIR / "checkpoints"
+
+def image_asset(name, subdir):
+    """Existing path of an image asset, including the pre-4.1 <ComfyUI>/models location."""
+    return find_image_asset(name, config.COMFYUI_MODELS_DIR, subdir, COMFYUI_DIR)
 CLIP_DIR    = config.COMFYUI_MODELS_DIR / "clip"
 VAE_DIR     = config.COMFYUI_MODELS_DIR / "vae"
 
 remaining_gb = 0.0
 
-# Mirrors LlamaCppEngine._models_dir — see docs/engines.md.
-LLAMACPP_MODELS_DIR = config.MODELS_DIR / "llamacpp"
-
-def model_slug(tag):
-    """Filesystem-safe per-tag directory name under LLAMACPP_MODELS_DIR —
-    mirrors LlamaCppEngine._slug."""
-    return tag.replace(":", "_").replace("/", "_")
-
-def model_downloaded(m):
-    """True if every GGUF file models.py lists for `m` already exists under
-    LLAMACPP_MODELS_DIR/<slug>/ — mirrors LlamaCppEngine._resolve_model_files."""
+def model_downloaded(m, engine=LLAMACPP):
+    """True if `engine`'s weights for `m` are already present."""
+    if engine == VLLM:
+        return hf_cache_model_complete(VLLM_CACHE_HOME, m["vllm_repo"])
     filenames = m["hf_file"] if isinstance(m["hf_file"], list) else [m["hf_file"]]
-    model_dir = LLAMACPP_MODELS_DIR / model_slug(m["tag"])
-    return all((model_dir / Path(name).name).exists() for name in filenames)
+    model_dir = engine_model_dir(config.MODELS_DIR, engine, m["tag"])
+    return engine_model_complete(model_dir, engine, filenames)
 
 all_llm = selected_embed + selected_llm
-for m in all_llm:
-    if not model_downloaded(m):
-        remaining_gb += hardware.parse_size_gb(m["download_size"])
+for engine in selected_engines:
+    for m in all_llm:
+        if not model_downloaded(m, engine):
+            remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
 
 sd35_selected  = "sd35-large" in selected_image_shorts
 flux1_selected = "flux-dev" in selected_image_shorts
 flux2_selected = "flux2-dev" in selected_image_shorts
 
 for m in selected_images:
-    ckpt_path = CHECKPOINTS / m["checkpoint"]
-    if not ckpt_path.exists():
+    if not image_asset(m["checkpoint"], "checkpoints"):
         remaining_gb += CHECKPOINT_SIZES_GB.get(m["checkpoint"], 0.0)
 
 # Shared T5-XXL + CLIP-L text encoders: used by SD3.5 Large and Flux.1-dev,
 # NOT Flux.2-dev (which has its own Mistral-based encoder below).
 if (sd35_selected or flux1_selected):
     for fname in ("t5xxl_fp16.safetensors", "clip_l.safetensors"):
-        if not (CLIP_DIR / fname).exists():
+        if not image_asset(fname, "clip"):
             remaining_gb += ENCODER_SIZES_GB[fname]
-if sd35_selected and not (CLIP_DIR / "clip_g.safetensors").exists():
+if sd35_selected and not image_asset("clip_g.safetensors", "clip"):
     remaining_gb += ENCODER_SIZES_GB["clip_g.safetensors"]
-if flux1_selected and not (VAE_DIR / "ae.safetensors").exists():
+if flux1_selected and not image_asset("ae.safetensors", "vae"):
     remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
 if flux2_selected:
-    text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
-    if not (text_encoder_dir / "mistral_3_small_flux2_fp8.safetensors").exists():
+    if not image_asset("mistral_3_small_flux2_fp8.safetensors", "text_encoders"):
         remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
-    if not (VAE_DIR / "flux2-vae.safetensors").exists():
+    if not image_asset("flux2-vae.safetensors", "vae"):
         remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
 
 try:
@@ -1170,6 +1468,16 @@ if cleanup_names:
         fail(f"{name!r} — could not delete: {reason}")
         issues.append(f"Delete non-catalog model folder {str(cleanup_root / name)!r}")
 
+if vllm_cleanup_names:
+    section("Cached vLLM Weight Cleanup")
+    _vllm_cache = VLLM_CACHE_HOME
+    removed, cleanup_failures = delete_non_catalog_vllm_repos(_vllm_cache, vllm_cleanup_names)
+    for name in removed:
+        ok(f"{hf_cache_repo_id(name)} — deleted")
+    for name, reason in cleanup_failures.items():
+        fail(f"{name!r} — could not delete: {reason}")
+        issues.append(f"Delete cached vLLM weights {str(_vllm_cache / 'hub' / name)!r}")
+
 # ── 8b. LLM/embedding models — download selected GGUFs, skip the rest ─────────
 
 section("LLM/Embedding Models")
@@ -1181,26 +1489,38 @@ deselected_llm = [
 for m in deselected_llm:
     info(f"{m['label']} — skipped (not selected)")
 
-for m in selected_embed + selected_llm:
-    tag, label, size = m["tag"], m["label"], m["download_size"]
-    if model_downloaded(m):
-        ok(f"{label} — already downloaded")
-        continue
-    warn(f"{label} ({size}) — not found, downloading now ...")
-    dest_dir = LLAMACPP_MODELS_DIR / model_slug(tag)
-    success = hf_download(m["hf_repo"], m["hf_file"], token=load_token(), dest_dir=dest_dir)
-    if success:
-        ok(f"{label} — downloaded successfully")
-    else:
-        fail(f"{label} — download failed")
-        issues.append(f"Download {m['hf_repo']} manually into {dest_dir}")
+for engine in selected_engines:
+    if len(selected_engines) > 1:
+        info(f"Models for {engine} ...")
+    unsupported = models_missing_engine_support(selected_embed + selected_llm, engine)
+    for tag in unsupported:
+        warn(f"{tag} — no {engine} weights defined in the catalog, skipping for this engine")
+        issues.append(f"No {engine} weights for {tag} — it will only be benchmarked on other engines")
+    for m in selected_embed + selected_llm:
+        tag, label = m["tag"], m["label"]
+        if tag in unsupported:
+            continue
+        size = engine_download_size(m, engine)
+        if model_downloaded(m, engine):
+            ok(f"{label} [{engine}] — already downloaded")
+            continue
+        warn(f"{label} [{engine}] ({size}) — not found, downloading now ...")
+        if engine == VLLM:
+            repo, dest = m["vllm_repo"], VLLM_CACHE_HOME
+            success = hf_snapshot_download(repo, VLLM_CACHE_HOME, token=load_token())
+        else:
+            repo = m["hf_repo"]
+            dest = engine_model_dir(config.MODELS_DIR, engine, tag)
+            success = hf_download(repo, m["hf_file"], token=load_token(), dest_dir=dest)
+        if success:
+            ok(f"{label} [{engine}] — downloaded successfully")
+        else:
+            fail(f"{label} [{engine}] — download failed")
+            issues.append(f"Download {repo} manually into {dest}")
 
 # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 
-if not selected_images:
-    section("ComfyUI")
-    info("No image models selected — skipping ComfyUI/image setup")
-else:
+if selected_images:
     section("ComfyUI")
 
     PORTABLE_PYTHON = COMFYUI_DIR.parent / "python_embeded" / "python.exe"
@@ -1239,7 +1559,7 @@ else:
             text=True, bufsize=1,
         )
         tail = []
-        for line in proc.stdout:
+        for line in proc.stdout or ():
             line = line.rstrip("\n")
             if not line:
                 continue
@@ -1447,7 +1767,8 @@ else:
         else:
             warn("ComfyUI requirements.txt not found — clone may be incomplete")
 
-        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR)
+        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR,
+                                legacy_models_dir_with_assets(COMFYUI_DIR))
         try:
             model_config = add_managed_models_to_comfyui(COMFYUI_DIR, config.COMFYUI_MODELS_DIR)
             ok(f"ComfyUI model path configured in {model_config}")
@@ -1513,13 +1834,12 @@ else:
                     )
 
         found_ckpts = []
-        if CHECKPOINTS.exists():
-            for m in selected_images:
-                p = CHECKPOINTS / m["checkpoint"]
-                if p.exists():
-                    size_gb = p.stat().st_size / (1024**3)
-                    ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
-                    found_ckpts.append(m["checkpoint"])
+        for m in selected_images:
+            existing = image_asset(m["checkpoint"], "checkpoints")
+            if existing:
+                size_gb = existing.stat().st_size / (1024**3)
+                ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
+                found_ckpts.append(m["checkpoint"])
 
         # ── Download missing checkpoints for the selected image models ────────
         missing = [m for m in selected_images if m["checkpoint"] not in found_ckpts]
@@ -1598,7 +1918,7 @@ else:
                 ("clip_l.safetensors",     CLIP_DIR),
             ]
             for fname, dest in shared_clip_files:
-                if not (dest / fname).exists():
+                if not image_asset(fname, "clip"):
                     info(f"Downloading {fname} (public, no token required) ...")
                     if hf_download("comfyanonymous/flux_text_encoders", fname, token=load_token(), dest_dir=dest):
                         ok(f"{fname} downloaded")
@@ -1609,8 +1929,7 @@ else:
 
         # SD3.5 Large also needs CLIP-G (gated, same license as checkpoint)
         if sd35_present:
-            clip_g = CLIP_DIR / "clip_g.safetensors"
-            if not clip_g.exists():
+            if not image_asset("clip_g.safetensors", "clip"):
                 info("Downloading clip_g.safetensors for SD3.5 Large (requires HuggingFace token) ...")
                 token = load_token()
                 if token:
@@ -1627,8 +1946,7 @@ else:
                 ok("clip_g.safetensors already present")
 
         if flux1_present:
-            vae_file = VAE_DIR / "ae.safetensors"
-            if not vae_file.exists():
+            if not image_asset("ae.safetensors", "vae"):
                 info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
                 token = load_token()
                 if token:
@@ -1647,7 +1965,7 @@ else:
         if flux2_present:
             text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
             mistral_file = "mistral_3_small_flux2_fp8.safetensors"
-            if not (text_encoder_dir / mistral_file).exists():
+            if not image_asset(mistral_file, "text_encoders"):
                 info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev",
                                f"split_files/text_encoders/{mistral_file}",
@@ -1658,8 +1976,7 @@ else:
             else:
                 ok(f"{mistral_file} already present")
 
-            flux2_vae = VAE_DIR / "flux2-vae.safetensors"
-            if not flux2_vae.exists():
+            if not image_asset("flux2-vae.safetensors", "vae"):
                 info("Downloading flux2-vae.safetensors (Flux.2 VAE, public, no token required) ...")
                 if hf_download("Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors",
                                token=load_token(), dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
@@ -1703,6 +2020,13 @@ write_setup_config(
         [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
         if nvidia_ok else rocm_gpus
     ),
+    vllm={
+        "executable": VLLM_BIN,
+        "launcher": VLLM_LAUNCHER,
+        "server_url": VLLM_SERVER_URL,
+        "launcher_extra_args": VLLM_LAUNCHER_ARGS,
+        "hf_home": str(VLLM_CACHE_HOME),
+    } if vllm_found else {},
 )
 
 section("Summary")

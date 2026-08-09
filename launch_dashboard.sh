@@ -52,7 +52,9 @@ fi
 
 echo "Building dashboard ..."
 (cd "$DASHBOARD_DIR" && npm run build)
-node "$DASHBOARD_DIR/stage_selected_results.mjs" "$DASHBOARD_DIR/dist" "${SELECTED_RESULTS[@]}"
+# "${arr[@]}" on a genuinely empty array raises "unbound variable" under `set -u` on
+# bash < 4.4 (e.g. macOS's stock bash 3.2) — this expansion works on both old and new bash.
+node "$DASHBOARD_DIR/stage_selected_results.mjs" "$DASHBOARD_DIR/dist" "${SELECTED_RESULTS[@]+"${SELECTED_RESULTS[@]}"}"
 echo "Build complete."
 echo
 

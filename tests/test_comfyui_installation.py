@@ -1,6 +1,9 @@
 from pathlib import Path
 
 from scripts.runtime.comfyui_installation import (
+    find_image_asset,
+    image_asset_dirs,
+    legacy_models_dir_with_assets,
     add_managed_models_to_comfyui,
     checkpoint_names_from_object_info,
     common_comfyui_candidates,
@@ -172,3 +175,71 @@ def test_managed_checkpoint_visibility_requires_overlap_when_models_exist():
     assert managed_checkpoints_visible({"one.safetensors"}, set())
     assert managed_checkpoints_visible({"one.safetensors"}, {"one.safetensors"})
     assert not managed_checkpoints_visible({"other.safetensors"}, {"one.safetensors"})
+
+
+# ── pre-4.1 image-model locations ──
+
+def _legacy_tree(tmp_path, subdirs=("checkpoints",), name="sd_xl_base_1.0.safetensors"):
+    comfyui = tmp_path / "ComfyUI"
+    for subdir in subdirs:
+        directory = comfyui / "models" / subdir
+        directory.mkdir(parents=True)
+        (directory / name).touch()
+    return comfyui, tmp_path / "models" / "comfyui"
+
+
+def test_image_asset_dirs_prefer_the_managed_location(tmp_path):
+    comfyui, managed = _legacy_tree(tmp_path)
+    assert image_asset_dirs(managed, "checkpoints", comfyui) == [
+        managed / "checkpoints", comfyui / "models" / "checkpoints",
+    ]
+
+
+def test_image_asset_dirs_omit_the_legacy_path_without_a_comfyui_dir(tmp_path):
+    assert image_asset_dirs(tmp_path, "checkpoints") == [tmp_path / "checkpoints"]
+
+
+def test_image_asset_dirs_ignore_unknown_subdirs(tmp_path):
+    assert image_asset_dirs(tmp_path, "loras", tmp_path / "ComfyUI") == [tmp_path / "loras"]
+
+
+def test_an_asset_only_in_the_legacy_location_is_found(tmp_path):
+    comfyui, managed = _legacy_tree(tmp_path)
+    found = find_image_asset("sd_xl_base_1.0.safetensors", managed, "checkpoints", comfyui)
+    assert found == comfyui / "models" / "checkpoints" / "sd_xl_base_1.0.safetensors"
+
+
+def test_the_managed_copy_wins_when_both_exist(tmp_path):
+    comfyui, managed = _legacy_tree(tmp_path)
+    (managed / "checkpoints").mkdir(parents=True)
+    (managed / "checkpoints" / "sd_xl_base_1.0.safetensors").touch()
+    found = find_image_asset("sd_xl_base_1.0.safetensors", managed, "checkpoints", comfyui)
+    assert found == managed / "checkpoints" / "sd_xl_base_1.0.safetensors"
+
+
+def test_a_missing_asset_is_none(tmp_path):
+    comfyui, managed = _legacy_tree(tmp_path)
+    assert find_image_asset("flux1-dev.safetensors", managed, "checkpoints", comfyui) is None
+
+
+def test_legacy_models_dir_is_reported_only_when_it_holds_assets(tmp_path):
+    comfyui, _ = _legacy_tree(tmp_path)
+    assert legacy_models_dir_with_assets(comfyui) == comfyui / "models"
+
+    empty = tmp_path / "Empty"
+    (empty / "models" / "checkpoints").mkdir(parents=True)
+    assert legacy_models_dir_with_assets(empty) is None
+    assert legacy_models_dir_with_assets(None) is None
+
+
+def test_generated_yaml_gains_a_legacy_section_only_when_needed(tmp_path):
+    from scripts.runtime.comfyui_installation import write_extra_model_paths
+    target = tmp_path / "extra_model_paths.yaml"
+
+    write_extra_model_paths(target, tmp_path / "managed")
+    assert "local_ai_bench_legacy" not in target.read_text()
+
+    write_extra_model_paths(target, tmp_path / "managed", tmp_path / "ComfyUI" / "models")
+    text = target.read_text()
+    assert "local_ai_bench:" in text and "local_ai_bench_legacy:" in text
+    assert text.count("checkpoints: checkpoints") == 2

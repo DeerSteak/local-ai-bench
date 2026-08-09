@@ -9,6 +9,14 @@ VRAM_RESERVE_GB = 1.0
 RAM_RESERVE_GB  = 8.0
 
 
+def detect_wsl(os_name: str, release: str) -> bool:
+    """WSL reports itself as Linux; only the kernel release distinguishes it.
+    Lives here, not in shared.py, so setup can call it before requirements are installed."""
+    if os_name != "Linux":
+        return False
+    return "microsoft" in release.lower()
+
+
 def parse_size_gb(s: str) -> float:
     """Parse a size string like '~4.9 GB' or '~274 MB' to float GB, 0.0 if unparsable."""
     s = s.strip().lstrip("~≈")
@@ -58,19 +66,48 @@ def parse_nvidia_max_cuda_version(nvidia_smi_output: str) -> str | None:
     return m.group(1) if m else None
 
 
+def rocminfo_gfx_targets(output: str) -> list[str]:
+    """gfx targets of GPU agents, feature suffixes stripped (gfx90a:sramecc+ → gfx90a)."""
+    targets = []
+    agent_blocks = re.split(r"(?m)^\s*Agent\s+\d+\s*$", output)[1:]
+    for block in agent_blocks:
+        device_type = re.search(r"(?m)^\s*Device Type:\s*(\S+)", block)
+        if not device_type or device_type.group(1).upper() != "GPU":
+            continue
+        target = re.search(r"(?m)^\s*Name:\s*(gfx\w+)", block)
+        if target and target.group(1) not in targets:
+            targets.append(target.group(1).split(":")[0])
+    return targets
+
+
+def parse_rocm_version(output: str | None) -> tuple[int, int] | None:
+    """Major/minor ROCm version from `hipconfig --version` or /opt/rocm/.info/version."""
+    m = re.search(r"(\d+)\.(\d+)", output or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+_VRAM_UNITS_GB = {"MIB": 1 / 1024, "GIB": 1.0, "MB": 1000**2 / 1024**3, "GB": 1000**3 / 1024**3}
+
+
+def parse_nvidia_vram_gb(value: str | None) -> float | None:
+    """VRAM in GB from an nvidia-smi memory field, or None when it reports no figure —
+    unified-memory parts (GB10) have no dedicated VRAM to report."""
+    match = re.fullmatch(r"([\d.]+)\s*(MiB|GiB|MB|GB)", (value or "").strip(), re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1)) * _VRAM_UNITS_GB[match.group(2).upper()]
+
+
 def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
-    """Parse name, MiB VRAM, and driver fields from nvidia-smi CSV output."""
+    """Parse name, VRAM, and driver from nvidia-smi CSV output. A device whose memory
+    field is unreadable is still a detected GPU, with vram_gb None."""
     devices = []
     for line in nvidia_smi_output.splitlines():
         parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 3:
-            continue
-        match = re.fullmatch(r"([\d.]+)\s*MiB", parts[1], re.IGNORECASE)
-        if not match:
+        if len(parts) != 3 or not parts[0]:
             continue
         devices.append({
-            "name": parts[0], "vram_gb": float(match.group(1)) / 1024,
-            "driver": parts[2],
+            "name": parts[0], "vram_gb": parse_nvidia_vram_gb(parts[1]), "driver": parts[2],
         })
     return devices
 

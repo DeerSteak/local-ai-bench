@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 
-from scripts.results.result_store import validate_json_data
+from scripts.results.result_store import as_dict, validate_json_data
 
 
 POLICY_SCHEMA_VERSION = 1
@@ -74,9 +74,9 @@ def load_policy(path: Path) -> dict:
 
 
 def _methodology_profile(result: dict) -> str | None:
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
-    plan = run.get("plan") if isinstance(run.get("plan"), dict) else {}
-    settings = plan.get("effective_config") if isinstance(plan.get("effective_config"), dict) else {}
+    run = as_dict(result.get("run"))
+    plan = as_dict(run.get("plan"))
+    settings = as_dict(plan.get("effective_config"))
     return settings.get("methodology_profile")
 
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { parseSuiteVersion } from './src/utils/version.js'
+import { parseSuiteVersion } from './src/utils/version.ts'
 
 function suiteVersion() {
   const path = fileURLToPath(new URL('../scripts/runtime/config.py', import.meta.url))

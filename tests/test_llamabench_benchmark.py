@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -75,7 +76,9 @@ def test_build_prefill_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "512,2048", "-n", "0", "-d", "0",
     ]
@@ -88,7 +91,9 @@ def test_build_decode_command_shape():
     assert cmd == [
         "llama-bench", "-m", "/models/x.gguf",
         "-b", "2048", "-ub", "512",
-        "-ngl", "999", "--split-mode", "layer", "-r", "3", "-o", "jsonl",
+        "-ngl", "999", "--split-mode", "layer",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
     ]
@@ -100,6 +105,8 @@ def test_native_commands_use_selected_tensor_split(monkeypatch):
         "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 1, 999,
     )
     assert command[command.index("--split-mode") + 1] == "tensor"
+    assert command[command.index("--cache-type-k") + 1] == "f16"
+    assert command[command.index("--cache-type-v") + 1] == "f16"
 
 
 def test_commands_suppress_llama_bench_unwanted_defaults():
@@ -131,6 +138,7 @@ def test_build_decode_command_cpu_only_ngl():
         "llama-bench", Path("/models/x.gguf"), [512], [128], 2048, 512, 3, 0,
     )
     assert cmd[cmd.index("-ngl") + 1] == "0"
+    assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
 
 
 class _FakePopen:
@@ -181,6 +189,42 @@ def test_run_one_streams_each_jsonl_result(monkeypatch):
     seen = []
     assert LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_result=seen.append) == rows
     assert seen == rows
+
+
+def test_run_one_delivers_results_on_the_calling_thread(monkeypatch):
+    """on_result writes to the SQLite journal, which rejects use from any thread but its
+    creator's — delivering from the stdout drain thread failed every llama-bench model."""
+    rows = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
+            {"n_prompt": 0, "n_gen": 128, "avg_ts": 2.0}]
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
+        ),
+    )
+    caller = threading.current_thread().ident
+    threads = []
+    LlamaBenchBenchmark.run_one(
+        ["llama-bench"], 60,
+        on_result=lambda _row: threads.append(threading.current_thread().ident),
+    )
+    assert threads and all(ident == caller for ident in threads)
+
+
+def test_run_one_delivers_every_row_even_when_the_process_exits_immediately(monkeypatch):
+    # A process that never polls as running must still flush its rows to on_result.
+    rows = [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
+            {"n_prompt": 1024, "n_gen": 0, "avg_ts": 2.0},
+            {"n_prompt": 2048, "n_gen": 0, "avg_ts": 3.0}]
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen",
+        lambda cmd, stdout, stderr, text: _FakePopen(
+            0, stdout_lines=[json.dumps(row) + "\n" for row in rows],
+        ),
+    )
+    seen = []
+    assert LlamaBenchBenchmark.run_one(["llama-bench"], 60, on_result=seen.append) == rows
+    assert seen == rows, "rows delivered after exit must preserve order and completeness"
 
 
 def test_run_one_propagates_stream_callback_failure(monkeypatch):

@@ -4,7 +4,7 @@ import re
 import shutil
 from pathlib import Path
 
-from scripts.runtime import config
+from scripts.runtime import config, hardware
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
@@ -16,6 +16,84 @@ def sanitize_tag_to_short(tag: str) -> str:
 def model_tag_slug(tag: str) -> str:
     """Return the llama.cpp model-directory name for a catalog tag."""
     return tag.replace(":", "_").replace("/", "_")
+
+
+def engine_model_dir(models_root: Path, engine: str, tag: str) -> Path:
+    """Per-engine model directory — mirrors each engine's own `_models_dir()`.
+    Not used by vLLM, which resolves weights from an HF cache by repo id."""
+    return Path(models_root) / engine / model_tag_slug(tag)
+
+
+def engine_download_size(model: dict, engine: str) -> str | None:
+    """Download size under `engine`, or None for entries with no engine weights
+    (image checkpoints). Engines carry different weights for the same model."""
+    if engine == "vllm":
+        return model.get("vllm_download_size")
+    return model.get("download_size")
+
+
+def engine_model_complete(model_dir: Path, engine: str, filenames=()) -> bool:
+    """True once `model_dir` holds every file `engine` needs. vLLM keeps its weights in
+    an HF cache instead — see vllm_install.hf_cache_model_complete."""
+    model_dir = Path(model_dir)
+    if not model_dir.is_dir():
+        return False
+    return all((model_dir / Path(name).name).exists() for name in filenames)
+
+
+ENGINE_LABELS = {"llamacpp": "llama.cpp", "vllm": "vLLM"}
+
+
+def engine_fit_report(model: dict, engines, ceiling_gb: float | None) -> dict[str, dict]:
+    """Per-engine size, memory need, and fit — engines carry different weights."""
+    report = {}
+    for engine in engines:
+        if engine == "vllm" and not model.get("vllm_repo"):
+            continue
+        size = engine_download_size(model, engine)
+        if size is None:
+            continue
+        report[engine] = {
+            "size": size,
+            "needed_gb": hardware.model_memory_requirement_gb(size),
+            "fits": hardware.model_fits(size, ceiling_gb),
+        }
+    return report
+
+
+def fits_any_engine(report: dict[str, dict]) -> bool | None:
+    """True if at least one engine can hold it, None when the ceiling is unknown."""
+    verdicts = [entry["fits"] for entry in report.values()]
+    if not verdicts or all(verdict is None for verdict in verdicts):
+        return None
+    return any(verdict for verdict in verdicts)
+
+
+def format_engine_sizes(report: dict[str, dict]) -> str:
+    """'~6.2 GB' for one engine, 'llama.cpp ~6.2 GB · vLLM ~12.4 GB' for several."""
+    if len(report) == 1:
+        return next(iter(report.values()))["size"]
+    return " · ".join(f"{ENGINE_LABELS.get(engine, engine)} {entry['size']}"
+                      for engine, entry in report.items())
+
+
+def engine_fit_warnings(report: dict[str, dict], ceiling_gb: float | None) -> list[str]:
+    """One warning per engine that can't hold this model."""
+    if ceiling_gb is None:
+        return []
+    prefix_needed = len(report) > 1
+    return [
+        (f"{ENGINE_LABELS.get(engine, engine)} needs " if prefix_needed else "needs ")
+        + f"~{entry['needed_gb']:.1f} GB, ~{ceiling_gb:.1f} GB available"
+        for engine, entry in report.items() if entry["fits"] is False
+    ]
+
+
+def models_missing_engine_support(models: list[dict], engine: str) -> list[str]:
+    """Catalog tags with no weights defined for `engine`."""
+    if engine != "vllm":
+        return []
+    return [model["tag"] for model in models if not model.get("vllm_repo")]
 
 
 def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None = None,
@@ -147,3 +225,85 @@ def format_model_inventory(inventory: dict[str, list[dict]], engine_name: str) -
         f"{counts['custom']} custom, {counts['image']} image installed"
     )
     return lines
+
+
+# ── non-catalog vLLM weights (HuggingFace cache) ──
+
+def hf_cache_repo_id(directory_name: str) -> str | None:
+    """`models--org--name` back to `org/name`. None for anything else in the cache."""
+    if not directory_name.startswith("models--"):
+        return None
+    parts = directory_name[len("models--"):].split("--")
+    if len(parts) < 2 or not all(parts):
+        return None
+    return "/".join(parts)
+
+
+def catalog_vllm_repos(llm_catalog: list[dict] | None = None,
+                       embed_catalog: list[dict] | None = None) -> set[str]:
+    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
+    return {model["vllm_repo"] for model in llm_catalog + embed_catalog
+            if model.get("vllm_repo")}
+
+
+def _cached_repo_weight_bytes(path: Path) -> int:
+    """Total safetensors bytes under a cache entry, following its blob symlinks."""
+    total = 0
+    for snapshot_file in path.glob("snapshots/*/*.safetensors"):
+        try:
+            total += snapshot_file.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def find_non_catalog_vllm_repos(cache_home: Path, llm_catalog: list[dict] | None = None,
+                                embed_catalog: list[dict] | None = None) -> list[dict]:
+    """Cached HuggingFace repos holding weights that the catalog does not own —
+    only entries actually holding safetensors are reported. See docs/setup.md."""
+    catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
+    hub = Path(cache_home) / "hub"
+    if not hub.is_dir():
+        return []
+    found = []
+    for path in hub.iterdir():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        repo = hf_cache_repo_id(path.name)
+        if repo is None or repo in catalog:
+            continue
+        size = _cached_repo_weight_bytes(path)
+        if not size:
+            continue
+        found.append({"repo": repo, "directory_name": path.name, "size": size})
+    return sorted(found, key=lambda entry: entry["repo"])
+
+
+def delete_non_catalog_vllm_repos(cache_home: Path, directory_names: list[str],
+                                  llm_catalog: list[dict] | None = None,
+                                  embed_catalog: list[dict] | None = None,
+                                  ) -> tuple[list[str], dict[str, str]]:
+    """Delete explicitly named cache entries, refusing anything the catalog owns."""
+    catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
+    hub = Path(cache_home) / "hub"
+    removed = []
+    failures = {}
+    for name in directory_names:
+        repo = hf_cache_repo_id(name)
+        if name != Path(name).name or repo is None or repo in catalog:
+            failures[name] = "not an eligible non-catalog cache entry"
+            continue
+        target = hub / name
+        if target.is_symlink() or not target.is_dir():
+            failures[name] = "cache entry no longer exists"
+            continue
+        if not _cached_repo_weight_bytes(target):
+            failures[name] = "cache entry holds no model weights"
+            continue
+        try:
+            shutil.rmtree(target)
+            removed.append(name)
+        except OSError as exc:
+            failures[name] = str(exc)
+    return removed, failures

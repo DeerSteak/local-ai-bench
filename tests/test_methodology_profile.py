@@ -14,6 +14,7 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
             "llamacpp:gpu_layers=auto",
             "llamacpp:gpu_split=layer",
             "llamacpp:flash_attention=on",
+            f"llama.cpp:native_kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
             f"llama.cpp:native_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
             "llama.cpp:native_gpu_split=layer",
         "comfyui:dynamic_vram=disabled",
@@ -44,3 +45,31 @@ def test_non_llamacpp_engine_does_not_inherit_llamacpp_settings():
         engine_name="future", tests=["llm"], cpu_only=False,
     )
     assert profile == {"profile": "neutral-v1", "effective_optimizations": []}
+
+
+def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["llm", "conv", "vllmbench"], cpu_only=False,
+        vllm_kv_cache_dtype="fp8",
+    )
+    assert f"vllm:bench_iters={config.VLLMBENCH_ITERS}" in profile["effective_optimizations"]
+    assert "vllm:kv_cache=fp8" in profile["effective_optimizations"]
+
+
+def test_vllm_profile_records_redacted_platform_launcher_overrides():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["conv"], cpu_only=False,
+        vllm_kv_cache_dtype="fp8",
+        vllm_launcher_args=["--gpu-memory-utilization", "0.85", "--api-key", "<secret>"],
+    )
+    assert profile["effective_optimizations"][-1] == (
+        "vllm:launcher_args=--gpu-memory-utilization 0.85 --api-key <secret>"
+    )
+
+
+def test_native_vllmbench_does_not_claim_platform_launcher_overrides():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["vllmbench"], cpu_only=False,
+        vllm_launcher_args=["--gpu-memory-utilization", "0.85"],
+    )
+    assert all("launcher_args" not in value for value in profile["effective_optimizations"])

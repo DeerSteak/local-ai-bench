@@ -26,11 +26,11 @@ def test_secret_patterns_are_reported_without_secret_values(tmp_path, name, cont
     assert content not in repr(findings)
 
 
-def test_prohibited_credentials_and_symlinks_are_blocking(tmp_path):
+def test_prohibited_credentials_and_symlinks_are_blocking(tmp_path, symlink_or_skip):
     (tmp_path / "hf.txt").write_text("short", encoding="utf-8")
     target = tmp_path / "target"
     target.write_text("ordinary", encoding="utf-8")
-    (tmp_path / "link").symlink_to(target)
+    symlink_or_skip(tmp_path / "link", target)
     assert scan_release_tree(tmp_path) == (
         {"file": "hf.txt", "kind": "prohibited credential file", "blocking": True},
         {"file": "link", "kind": "symbolic link", "blocking": True},

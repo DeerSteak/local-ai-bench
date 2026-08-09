@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from typing import Any, Callable
 
 from scripts.runtime import config
 from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark
@@ -19,12 +20,27 @@ from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.app.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
 
 
 _emit_lock = threading.Lock()
+
+
+def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
+    """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    configure = getattr(engine, "configure_kv_cache", None)
+    if configure is None:
+        return "auto"
+    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
+    return configure(runtime_backend)
+
+
+def apply_runner_settings(settings: dict) -> None:
+    """Restore mutable CLI-overridden settings inside the supervised child process."""
+    config.LLAMACPP_GPU_SPLIT_MODE = settings.get("gpu_split_mode", "layer")
 
 
 def emit(kind: str, **details) -> None:
@@ -54,20 +70,22 @@ def load_runner_plan(path, job_id):
 
 
 def execute_llm_job(path, job_id, *, engine_factory=get_engine,
-                    benchmark_factory=LLMPrefillBenchmark) -> None:
+                    benchmark_factory: Callable[[], Any] = LLMPrefillBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "llm" not in plan.tests:
         raise ValueError("runner job does not include the LLM stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -96,19 +114,21 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
-                             benchmark_factory=LLMConversationBenchmark) -> None:
+                             benchmark_factory: Callable[[], Any] = LLMConversationBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "conv" not in plan.tests:
         raise ValueError("runner job does not include the conversation stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -138,6 +158,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
                     selected.append(model)
                 else:
                     journal.record_model_state(model, "skipped", skip)
+                    emit_progress("model", "conv", "skipped", model["label"], usable=False)
             models = selected
         benchmark_factory().run(
             engine=engine, models=models, warmup_runs=plan.warmup_runs,
@@ -153,20 +174,22 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
-                           benchmark_factory=LlamaBenchBenchmark) -> None:
+                           benchmark_factory: Callable[[], Any] = LlamaBenchBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if "llamabench" not in plan.tests:
         raise ValueError("runner job does not include the native llama-bench stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.LLAMABENCH_PP = settings["llamabench_pp"]
     config.LLAMABENCH_TG = settings["llamabench_tg"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
 
     def notify(_section):
         store = EventStore(path)
@@ -188,12 +211,13 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
 
 
 def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engine,
-                            benchmark_factory=ConcurrencyBenchmark) -> None:
+                            benchmark_factory: Callable[[], Any] = ConcurrencyBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
     if stage_name not in {"conc_tool", "conc_chat"} or stage_name not in plan.tests:
         raise ValueError("runner job does not include the requested concurrency stage")
     settings = plan.effective_config
+    apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
     is_tool = stage_name == "conc_tool"
     levels = settings["concurrency_tool_levels" if is_tool else "concurrency_chat_levels"]
@@ -206,10 +230,11 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     label = "Concurrency (Tool)" if is_tool else "Concurrency (Chat)"
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
-        {**identity, "label": catalog.get(identity["tag"], identity).get("label", identity["tag"])}
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["concurrency"]
     ]
     engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -253,6 +278,9 @@ def main(argv=None) -> int:
         sys.stderr.write("Runner ownership token is required.\n")
         return 2
     plan = load_runner_plan(args.event_store, args.job_id)
+    # A runner is its own process, so it does not inherit the parent's progress
+    # engine; without this every event falls back to the first engine's rows.
+    set_progress_engine(plan.engine_name)
     config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()

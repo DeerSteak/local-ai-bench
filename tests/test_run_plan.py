@@ -29,7 +29,7 @@ def make_plan(**overrides):
 def test_plan_is_immutable_and_round_trips_through_public_dict():
     plan = make_plan()
     with pytest.raises(FrozenInstanceError):
-        plan.engine_name = "other"
+        setattr(plan, "engine_name", "other")
     encoded = plan.to_dict()
     assert encoded["schema_version"] == PLAN_SCHEMA_VERSION
     assert RunPlan.from_dict(encoded) == plan

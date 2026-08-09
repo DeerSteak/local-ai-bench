@@ -36,11 +36,11 @@ def test_manifest_rejects_outside_duplicate_missing_and_invalid_channel(tmp_path
         build_release_manifest(tmp_path, [artifact], application_version="4.1", channel="nightly", source_commit="a")
 
 
-def test_manifest_rejects_symlinked_artifact(tmp_path):
+def test_manifest_rejects_symlinked_artifact(tmp_path, symlink_or_skip):
     target = tmp_path / "target"
     link = tmp_path / "link"
     target.write_text("x", encoding="utf-8")
-    link.symlink_to(target)
+    symlink_or_skip(link, target)
     with pytest.raises(ValueError, match="regular file"):
         build_release_manifest(tmp_path, [link], application_version="4.1", channel="preview", source_commit="a")
 

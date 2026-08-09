@@ -12,6 +12,7 @@ from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.runtime.shared import Shared
 from scripts.results.result_store import atomic_write_json
 from scripts.workloads.tool_benchmark import ToolBenchmark
+from scripts.results.result_store import as_dict
 
 
 WORKLOADS = {
@@ -63,7 +64,7 @@ def current_bank_hashes(workloads=None) -> dict[str, str]:
 
 
 def validate_bank_hashes(results: dict, results_path: Path) -> None:
-    recorded = results.get("bank_versions")
+    recorded = as_dict(results.get("bank_versions"))
     workloads = recorded_workloads(results, results_path)
     current = current_bank_hashes(workloads)
     mismatches = [

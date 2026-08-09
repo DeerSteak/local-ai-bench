@@ -51,6 +51,10 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
         for model in plan.models[family] if model.get("tag")
     }
     for tag in sorted(tags):
+        # A model the engine cannot find is skipped by every workload, so it has no
+        # artifact to protect; installing one later changes this identity and blocks resume.
+        if not engine.model_pulled(tag):
+            continue
         paths = engine.resume_artifact_paths(tag)
         for number, path in enumerate(paths, 1):
             artifacts[f"model:{tag}:part{number}"] = path

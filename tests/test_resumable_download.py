@@ -109,7 +109,7 @@ def test_range_end_must_match_requested_remainder(tmp_path):
 
 def test_failed_stream_keeps_partial_and_existing_destination(tmp_path):
     class FailingResponse(Response):
-        def read(self, size=-1):
+        def read(self, size: int | None = -1):
             if self.tell() >= 3:
                 raise OSError("connection lost")
             return super().read(3)

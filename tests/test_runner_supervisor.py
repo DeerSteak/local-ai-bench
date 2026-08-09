@@ -1,6 +1,7 @@
 import signal
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -12,7 +13,7 @@ from scripts.results.run_plan import RunPlan
 from scripts.runtime import runner_supervisor
 from scripts.runtime import workload_runner
 from scripts.runtime.runner_supervisor import (
-    RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor,
+    RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor, SupervisedProcess,
     build_runner_command, parse_runner_event,
 )
 
@@ -45,15 +46,17 @@ def test_runner_event_requires_matching_ownership_token_and_shape():
     line = RUNNER_EVENT_PREFIX + (
         '{"ownership_token":"token","kind":"heartbeat","timestamp":1.5}'
     )
-    assert parse_runner_event(line, "token")["kind"] == "heartbeat"
+    heartbeat_event = parse_runner_event(line, "token")
+    assert heartbeat_event is not None and heartbeat_event["kind"] == "heartbeat"
     assert parse_runner_event(line, "other") is None
     assert parse_runner_event(RUNNER_EVENT_PREFIX + "{bad", "token") is None
     assert parse_runner_event("ordinary output", "token") is None
-    assert parse_runner_event(
+    sequenced_event = parse_runner_event(
         RUNNER_EVENT_PREFIX
         + '{"ownership_token":"token","kind":"event","timestamp":1,"sequence":1,"event":{}}',
         "token",
-    )["sequence"] == 1
+    )
+    assert sequenced_event is not None and sequenced_event["sequence"] == 1
     assert parse_runner_event(
         RUNNER_EVENT_PREFIX
         + '{"ownership_token":"token","kind":"event","timestamp":1,"sequence":true,"event":{}}',
@@ -71,7 +74,9 @@ def test_supervisor_start_owns_process_group_and_private_token(tmp_path):
         captured.update(command=command, options=options)
         return Process()
 
-    supervisor = RunnerSupervisor(spec(tmp_path), process_factory=factory, system="Linux")
+    supervisor = RunnerSupervisor(
+        spec(tmp_path), process_factory=cast("type[subprocess.Popen]", factory), system="Linux",
+    )
     supervisor.start()
     assert captured["options"]["start_new_session"] is True
     assert captured["options"]["env"]["LOCAL_AI_BENCH_RUNNER_TOKEN"] == supervisor.ownership_token
@@ -87,7 +92,7 @@ def test_heartbeat_uses_supervisor_receive_time_and_times_out(tmp_path):
             return None
 
     supervisor = RunnerSupervisor(spec(tmp_path), heartbeat_timeout=5, clock=lambda: now[0])
-    supervisor.process = Process()
+    supervisor.process = cast(SupervisedProcess, Process())
     supervisor.last_heartbeat = now[0]
     events = []
     supervisor.accept_line(
@@ -129,7 +134,7 @@ def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
         def wait(timeout=None):
             calls.append(("wait", timeout))
             if len([call for call in calls if call[0] == "wait"]) < 3:
-                raise subprocess.TimeoutExpired("runner", timeout)
+                raise subprocess.TimeoutExpired("runner", timeout or 0)
 
         @staticmethod
         def terminate():
@@ -143,7 +148,7 @@ def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
     monkeypatch.setattr(runner_supervisor.os, "killpg", lambda group, sig: calls.append(
         ("signal", group, sig)))
     supervisor = RunnerSupervisor(spec(tmp_path), graceful_timeout=2, system="Linux")
-    supervisor.process = Process()
+    supervisor.process = cast(SupervisedProcess, Process())
     supervisor.cancel()
     assert calls == [
         ("signal", 1123, signal.SIGINT), ("wait", 2), ("terminate",),
@@ -219,12 +224,16 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
     assert export_llm_section(path, plan.job_id)["fake"]["512"]["tps_mean"] == 50
 
 
-def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path):
+def test_conversation_runner_uses_llm_preflight_and_commits_projection(
+        tmp_path, monkeypatch, capsys):
     path = tmp_path / "events.sqlite3"
     plan = RunPlan.create(
         application_version="4.1", engine_name="fake", tests=["llm", "conv"],
         stage_order=["llm", "conv"], models={
-            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "llm": [
+                {"tag": "fake:model", "short": "fake"},
+                {"tag": "slow:model", "short": "slow"},
+            ],
             "concurrency": [], "embeddings": [], "images": [],
         }, effective_config={
             "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
@@ -241,6 +250,10 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
     llm = LLMEventStage(path, plan, lambda _: None)
     llm.record_case(
         model, 512, "0.5K", [GenerationMeasurement(0.2, 100, 50, 2.2, 2.0)], "ok", 1,
+    )
+    llm.record_case(
+        {"tag": "slow:model", "short": "slow", "label": "Slow"}, 512, "0.5K",
+        [GenerationMeasurement(0.2, 100, 1, 100.2, 100.0)], "ok", 1,
     )
     llm.finish()
     llm.close()
@@ -270,14 +283,20 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(tmp_path)
             kwargs["journal"].finish()
 
     old_timeout = config.RUN_TIMEOUT
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    workload_runner.set_progress_engine("fake")
     try:
         workload_runner.execute_conversation_job(
             path, plan.job_id, engine_factory=lambda _: Engine(), benchmark_factory=Benchmark,
         )
     finally:
         config.RUN_TIMEOUT = old_timeout
+        workload_runner.set_progress_engine(None)
     result = export_llm_section(path, plan.job_id, "conv")
     assert result["fake"]["0K"]["depth_tokens"] == 400
+    assert result["slow"]["skip_reason"] == "slow_tps"
+    progress = capsys.readouterr().out
+    assert '"stage":"conv","status":"skipped","engine":"fake","model":"slow:model"' in progress
 
 
 def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):

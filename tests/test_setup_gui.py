@@ -5,6 +5,9 @@ import pytest
 
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
+    engine_checkbox_label,
+    sudo_notice,
+    model_row_label,
     default_model_selection,
     hf_token_review_label,
     license_button_label,
@@ -14,6 +17,7 @@ from scripts.setup.setup_gui import (
     selected_gui_token,
     should_save_gui_token,
     token_controls_enabled,
+    next_page_index,
     validate_gui_plan,
 )
 
@@ -25,16 +29,39 @@ def test_default_selection_keeps_embeddings_and_respects_memory_limit():
 
 
 def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
-    assert validate_gui_plan({"comfyui_mode": "download"}) == []
+    assert validate_gui_plan({"comfyui_mode": "download", "image_shorts": ["flux"]}) == []
     assert validate_gui_plan({
         "comfyui_mode": "existing", "comfyui_path": str(tmp_path / "missing"),
+        "image_shorts": ["flux"],
     }) == ["The existing ComfyUI path is not usable."]
     comfyui = tmp_path / "ComfyUI"
     comfyui.mkdir()
     (comfyui / "main.py").touch()
     assert validate_gui_plan({
-        "comfyui_mode": "existing", "comfyui_path": str(comfyui),
+        "comfyui_mode": "existing", "comfyui_path": str(comfyui), "image_shorts": ["flux"],
     }) == []
+
+
+def test_gui_plan_ignores_comfyui_when_no_image_models_are_selected(tmp_path):
+    unusable = {"comfyui_mode": "existing", "comfyui_path": str(tmp_path / "missing")}
+    assert validate_gui_plan({**unusable, "image_shorts": []}) == []
+    assert validate_gui_plan(unusable) == []
+    # An unrelated error still surfaces, so the gate is scoped to the ComfyUI check alone.
+    assert validate_gui_plan({**unusable, "image_shorts": [], "engines": []}) == [
+        "Select at least one inference engine."]
+
+
+def test_page_navigation_skips_pages_that_do_not_apply():
+    enabled = [True, True, True, False, True]
+    assert next_page_index(2, 1, enabled) == 4
+    assert next_page_index(4, -1, enabled) == 2
+    assert next_page_index(2, 1, [True] * 5) == 3
+
+
+def test_page_navigation_holds_position_when_nothing_remains():
+    assert next_page_index(0, -1, [True, True]) == 0
+    assert next_page_index(1, 1, [True, True]) == 1
+    assert next_page_index(0, 1, [True, False, False]) == 0
 
 
 @pytest.mark.parametrize(
@@ -52,7 +79,7 @@ def test_hf_token_review_label_reports_existing_and_new_credentials(plan, expect
 
 def test_license_button_label_explains_the_link_action():
     url = "https://huggingface.co/example/model"
-    assert license_button_label(url) == f"Accept license: {url}"
+    assert license_button_label(url) == "Review license…"
 
 
 @pytest.mark.parametrize(
@@ -155,3 +182,111 @@ def test_refresh_tk_layout_flushes_now_and_after_idle():
     refresh_tk_layout(Widget())
 
     assert calls == ["refresh", "scheduled", "refresh"]
+
+
+def test_engine_checkbox_label_marks_experimental_and_unavailable_engines():
+    plain = {"label": "llama.cpp", "enabled": True, "note": "already installed"}
+    assert engine_checkbox_label(plain) == "llama.cpp — already installed"
+
+    experimental = {"label": "vLLM", "enabled": True, "experimental": True, "note": "nightly"}
+    assert "(experimental)" in engine_checkbox_label(experimental)
+
+    blocked = {"label": "vLLM", "enabled": False, "experimental": True, "note": "no Windows build"}
+    assert "(unavailable on this system)" in engine_checkbox_label(blocked)
+    assert "(experimental)" not in engine_checkbox_label(blocked)
+
+
+def test_gui_plan_requires_at_least_one_engine():
+    base = {"comfyui_mode": "download"}
+    assert validate_gui_plan({**base, "engines": []}) == ["Select at least one inference engine."]
+    assert validate_gui_plan({**base, "engines": ["llamacpp"]}) == []
+    assert validate_gui_plan(base) == []
+
+
+def test_model_row_label_shows_one_size_for_one_engine():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    assert model_row_label(model, ["llamacpp"], 100) == "Qwen3.5 9B  ~6.2 GB"
+    assert model_row_label(model, ["vllm"], 100) == "Qwen3.5 9B  ~12.4 GB"
+
+
+def test_model_row_label_names_both_engines_when_both_are_selected():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    label = model_row_label(model, ["llamacpp", "vllm"], 100)
+    assert label == "Qwen3.5 9B  llama.cpp ~6.2 GB · vLLM ~12.4 GB"
+
+
+def test_model_row_label_warns_per_engine_that_will_not_fit():
+    model = {"label": "Qwen3.5 9B", "download_size": "~6.2 GB",
+             "vllm_download_size": "~12.4 GB", "vllm_repo": "org/q"}
+    label = model_row_label(model, ["llamacpp", "vllm"], 12.0)
+    assert "⚠ vLLM needs ~14.9 GB" in label
+    assert "llama.cpp needs" not in label
+
+    only_vllm = model_row_label(model, ["vllm"], 12.0)
+    assert "⚠ needs ~14.9 GB, ~12.0 GB available" in only_vllm
+
+
+def test_model_row_label_falls_back_when_the_engine_has_no_weights():
+    model = {"label": "Some Model", "download_size": "~6.2 GB"}
+    assert model_row_label(model, ["vllm"], 100) == "Some Model  ~6.2 GB"
+
+
+def test_defaults_differ_between_engines_at_the_same_ceiling():
+    """Selection follows each engine's own download size. The ceiling has to sit
+    between a model's two builds, so it moves whenever the catalog is rebalanced."""
+    ceiling = 10.0   # qwen3.5-9b: ~6.2 GB of GGUF against ~9.1 GB of AWQ
+    llamacpp = default_model_selection(ceiling, ["llamacpp"])
+    vllm = default_model_selection(ceiling, ["vllm"])
+    assert vllm != llamacpp
+    unchecked = lambda sel: sum(1 for value in sel.values() if not value)
+    assert unchecked(vllm) > unchecked(llamacpp), "the larger build of a model fits less often"
+
+
+def test_engine_specific_sizing_still_separates_some_ceiling():
+    """Guards the mechanism rather than one ceiling: if per-engine sizes were ever
+    ignored, no ceiling would separate the two engines."""
+    separating = [
+        c / 2 for c in range(2, 200)
+        if default_model_selection(c / 2, ["llamacpp"]) != default_model_selection(c / 2, ["vllm"])
+    ]
+    assert separating, "no ceiling distinguishes the engines — per-engine sizes are unused"
+
+
+def test_a_model_fitting_only_one_selected_engine_stays_checked():
+    both = default_model_selection(12.0, ["llamacpp", "vllm"])
+    llamacpp = default_model_selection(12.0, ["llamacpp"])
+    assert both == llamacpp, "still worth downloading for the engine it fits"
+
+
+def test_model_row_label_renders_every_real_catalog_entry():
+    """Image checkpoints carry no download_size; the GUI labels them anyway."""
+    from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+    for engines in (["llamacpp"], ["vllm"], ["llamacpp", "vllm"]):
+        for model in LLM_MODELS + EMBED_MODELS + IMAGE_MODELS:
+            label = model_row_label(model, engines, 117.1)
+            assert label.startswith(model["label"])
+
+
+def test_model_row_label_handles_an_entry_without_any_size():
+    assert model_row_label({"label": "SDXL"}, ["llamacpp", "vllm"], 100) == "SDXL"
+
+
+def test_default_model_selection_covers_every_real_catalog_entry():
+    from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS
+    for engines in (["llamacpp"], ["vllm"], ["llamacpp", "vllm"]):
+        selection = default_model_selection(117.1, engines)
+        for model in LLM_MODELS:
+            assert model["tag"] in selection
+        for model in IMAGE_MODELS:
+            assert model["short"] in selection
+
+
+def test_sudo_notice_only_appears_when_a_privileged_install_will_run():
+    assert sudo_notice(["llamacpp", "vllm"], "python3.12-dev").startswith("Installing python3.12-dev")
+    assert "password" in sudo_notice(["vllm"], "python3.12-dev")
+    assert sudo_notice(["llamacpp"], "python3.12-dev") == "", "no vLLM, no sudo"
+    assert sudo_notice(["vllm"], None) == "", "headers already present"
+    assert sudo_notice(None, "python3.12-dev") == ""
+    assert sudo_notice([], None) == ""

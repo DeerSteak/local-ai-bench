@@ -4,7 +4,7 @@ import copy
 import hashlib
 import json
 
-from scripts.results.result_store import validate_json_data
+from scripts.results.result_store import as_dict, validate_json_data
 
 
 PROFILE_FIELDS = ("hostname", "hardware", "gpu", "cpu", "chip", "processor", "os", "arch", "ram_gb", "backend")
@@ -15,15 +15,15 @@ def outbound_metadata_preview(result: dict) -> tuple[tuple[str, str], ...]:
     if not isinstance(result, dict):
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
-    profile = result.get("profile") if isinstance(result.get("profile"), dict) else {}
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
+    profile = as_dict(result.get("profile"))
+    run = as_dict(result.get("run"))
     rows = [(f"profile.{key}", str(profile[key])) for key in PROFILE_FIELDS if key in profile]
     rows.extend((
         ("engine", str(result.get("engine") or run.get("engine") or "Not recorded")),
         ("application_version", str(result.get("version") or "Not recorded")),
         ("plan_id", str(run.get("plan_id") or "Not recorded")),
     ))
-    models = run.get("models") if isinstance(run.get("models"), dict) else {}
+    models = as_dict(run.get("models"))
     for family, entries in sorted(models.items()):
         if isinstance(entries, list):
             for index, entry in enumerate(entries):
@@ -37,8 +37,8 @@ def format_outbound_preview(result: dict) -> str:
 
 
 def _source_identity(result: dict) -> dict:
-    profile = result.get("profile") if isinstance(result.get("profile"), dict) else {}
-    run = result.get("run") if isinstance(result.get("run"), dict) else {}
+    profile = as_dict(result.get("profile"))
+    run = as_dict(result.get("run"))
     return {
         "profile": {key: profile.get(key) for key in PROFILE_FIELDS if key in profile},
         "engine": result.get("engine") or run.get("engine"),
@@ -86,6 +86,6 @@ def prepare_outbound_result(result: dict, *, system_alias: str | None = None,
 
 
 def verify_source_identity(outbound: dict, source: dict) -> bool:
-    run = outbound.get("run") if isinstance(outbound.get("run"), dict) else {}
-    identity = run.get("export_identity") if isinstance(run.get("export_identity"), dict) else {}
+    run = as_dict(outbound.get("run"))
+    identity = as_dict(run.get("export_identity"))
     return identity.get("source_sha256") == source_identity_digest(source)

@@ -68,8 +68,9 @@ def project_frontend_state(project: dict, local_options: dict) -> dict:
     configuration = project["preset"]["configuration"]
     options = dict(local_options)
     options.update(configuration["options"])
+    # No "engine": a project's preset never overrides the engines selected on screen.
     return {
-        "engine": configuration["engine"], "tests": list(configuration["tests"]),
+        "tests": list(configuration["tests"]),
         "models": {key: list(values) for key, values in configuration["models"].items()},
         "max_prompt_tokens": configuration["max_prompt_tokens"],
         "tg_tokens": configuration["tg_tokens"], "gui_options": options,

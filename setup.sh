@@ -57,9 +57,9 @@ else
     if [ "$OS" = "Darwin" ]; then
         echo "    • Install Python 3.11 via Homebrew"
     elif command -v apt-get &>/dev/null; then
-        echo "    • Install python3.11 via apt-get (requires sudo)"
+        echo "    • Install python3.11, its venv module, and development headers via apt-get (requires sudo)"
     elif command -v dnf &>/dev/null; then
-        echo "    • Install python3.11 via dnf (requires sudo)"
+        echo "    • Install python3.11 and its development headers via dnf (requires sudo)"
     elif command -v snap &>/dev/null; then
         echo "    • Install python311 via snap (requires sudo)"
     else
@@ -89,13 +89,79 @@ else
         sudo apt-get install -y python3.11 python3.11-venv python3.11-dev
         PYTHON=python3.11
     elif command -v dnf &>/dev/null; then
-        sudo dnf install -y python3.11
+        sudo dnf install -y python3.11 python3.11-devel
         PYTHON=python3.11
     elif command -v snap &>/dev/null; then
         sudo snap install python311
         PYTHON=python3.11
     fi
     ok "Installed $($PYTHON --version)"
+fi
+
+# Triton (a vLLM dependency) compiles a CUDA helper at import time and needs Python.h.
+# Installed here, with any other prerequisite, so vLLM never triggers a later sudo prompt.
+# 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/DGX-Spark wheels require.
+if [ "$OS" = "Linux" ]; then
+    PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    MISSING_HEADERS=()
+    for _series in $(printf '%s\n' "$PYTHON_SERIES" 3.12 | sort -u); do
+        if [ ! -f "/usr/include/python${_series}/Python.h" ]; then
+            MISSING_HEADERS+=("$_series")
+        fi
+    done
+    if [ ${#MISSING_HEADERS[@]} -gt 0 ]; then
+        if command -v apt-get &>/dev/null; then
+            HEADER_PACKAGES=()
+            for _series in "${MISSING_HEADERS[@]}"; do
+                if apt-cache show "python${_series}-dev" &>/dev/null; then
+                    HEADER_PACKAGES+=("python${_series}-dev")
+                fi
+            done
+            if [ ${#HEADER_PACKAGES[@]} -gt 0 ]; then
+                info "Installing Python development headers (${HEADER_PACKAGES[*]}) — needed by vLLM ..."
+                sudo apt-get install -y "${HEADER_PACKAGES[@]}" || \
+                    warn "Header install failed — vLLM will not start until it succeeds"
+            fi
+        elif command -v dnf &>/dev/null; then
+            info "Installing Python development headers — needed by vLLM ..."
+            sudo dnf install -y python3-devel || \
+                warn "Header install failed — vLLM will not start until it succeeds"
+        fi
+    fi
+
+    # Debian/Ubuntu ship ensurepip separately, and without it `python -m venv` fails
+    # for an interpreter this script found rather than installed.
+    if ! "$PYTHON" -c "import ensurepip" &>/dev/null; then
+        if command -v apt-get &>/dev/null && apt-cache show "python${PYTHON_SERIES}-venv" &>/dev/null; then
+            info "Installing the Python venv module (python${PYTHON_SERIES}-venv)..."
+            sudo apt-get install -y "python${PYTHON_SERIES}-venv" || \
+                warn "venv install failed — creating $VENV_DIR will not succeed"
+        else
+            warn "Python's venv module is missing and no package was found to install it."
+        fi
+    fi
+
+    # llama.cpp builds from source on Linux; discovering a missing tool mid-install would
+    # strand the run after its last approval prompt.
+    if ! command -v llama-cli &>/dev/null && ! command -v llama-server &>/dev/null; then
+        BUILD_TOOLS=()
+        for _tool in git cmake; do
+            command -v "$_tool" &>/dev/null || BUILD_TOOLS+=("$_tool")
+        done
+        if [ ${#BUILD_TOOLS[@]} -gt 0 ]; then
+            if command -v apt-get &>/dev/null; then
+                info "Installing llama.cpp build prerequisites (${BUILD_TOOLS[*]} build-essential) ..."
+                sudo apt-get install -y "${BUILD_TOOLS[@]}" build-essential || \
+                    warn "Install failed — llama.cpp cannot build without ${BUILD_TOOLS[*]}"
+            elif command -v dnf &>/dev/null; then
+                info "Installing llama.cpp build prerequisites (${BUILD_TOOLS[*]}) ..."
+                sudo dnf install -y "${BUILD_TOOLS[@]}" gcc-c++ make || \
+                    warn "Install failed — llama.cpp cannot build without ${BUILD_TOOLS[*]}"
+            else
+                warn "llama.cpp needs ${BUILD_TOOLS[*]} to build — install them and re-run"
+            fi
+        fi
+    fi
 fi
 
 GUI_SESSION=0
@@ -137,6 +203,11 @@ if [ -x "$VENV_DIR/bin/python" ]; then
         fail "$VENV_DIR uses Python older than 3.11. Move or remove it, then re-run setup."
         exit 1
     fi
+    # venv symlinks bin/python before running ensurepip, so pip is the real completeness test.
+    if [ ! -x "$VENV_DIR/bin/pip" ]; then
+        fail "$VENV_DIR is missing pip — an earlier setup run failed partway. Remove it, then re-run setup."
+        exit 1
+    fi
     ok "Venv already exists at $VENV_DIR"
 elif [ -e "$VENV_DIR" ]; then
     fail "$VENV_DIR exists but is not a usable virtual environment. Move or remove it, then re-run setup."
@@ -150,6 +221,17 @@ fi
 VENV_PYTHON="$VENV_DIR/bin/python"
 
 # ── 3. Base Python dependencies ────────────────────────────────────────────────
+# setup_check.py imports third-party packages at module level, so a fresh venv needs
+# them before it can start; its own later install then refreshes them.
+section "Base Dependencies"
+info "Installing Python dependencies ..."
+if "$VENV_PYTHON" -m pip install -q -r requirements.txt; then
+    ok "Dependencies installed from requirements.txt"
+else
+    fail "pip install -r requirements.txt failed — setup cannot continue"
+    exit 1
+fi
+
 # ── 4. Run setup_check.py inside the venv ─────────────────────────────────────
 # (llama.cpp detection/install — including on Linux — happens inside
 # setup_check.py, gated behind its own approval prompt, so it isn't

@@ -122,7 +122,8 @@ class LLMConversationBenchmark:
                         })
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -195,6 +196,7 @@ class LLMConversationBenchmark:
 
                     try:
                         out_of_room = False
+                        measurement = None
                         for idx, target in enumerate(checkpoints):
                             label_ctx = f"{target // 1024}K" if target > 0 else "0K"
                             attempt_number = journal.next_context_attempt(model, target) if journal else 1
@@ -227,6 +229,8 @@ class LLMConversationBenchmark:
 
                             # ttft/tps here are from the turn that just crossed `target`
                             # (or the opening turn for target == 0).
+                            if measurement is None:
+                                continue
                             if attempt_number is not None:
                                 samples_by_label.setdefault(label_ctx, []).append(
                                     (measurement, cumulative_tokens))
@@ -341,7 +345,8 @@ class LLMConversationBenchmark:
                 if crashed:
                     results[short]["crashed"] = crashed_label or "0K"
                     results[short]["crashed_at"] = Shared.record_crash(
-                        tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}")
+                        tag, crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE, f"running {label}",
+                        engine_name=engine.name)
                     if journal:
                         journal.record_model_state(model, "failed", {
                             "crashed": results[short]["crashed"],
@@ -351,6 +356,13 @@ class LLMConversationBenchmark:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the conversation benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

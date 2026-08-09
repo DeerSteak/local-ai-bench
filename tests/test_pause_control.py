@@ -25,6 +25,7 @@ def test_pause_transitions_become_run_evidence(tmp_path):
     write_pause_state(path, "paused", now=lambda: "2026-08-04T10:00:00.000+00:00")
     write_pause_state(path, "running", now=lambda: "2026-08-04T10:05:00.000+00:00")
     evidence = pause_evidence(path)
+    assert evidence is not None
     assert evidence["pause_requests"] == 1
     assert evidence["control_transitions"][-2:] == [
         {"state": "paused", "at": "2026-08-04T10:00:00.000+00:00"},

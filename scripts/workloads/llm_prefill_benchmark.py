@@ -44,7 +44,8 @@ class LLMPrefillBenchmark:
                     Shared.warn("Download it with: python setup_check.py")
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE)
+                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE,
+                                       engine_name=engine.name)
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -170,6 +171,13 @@ class LLMPrefillBenchmark:
                 Shared.log(f"Unloading {label} ...")
                 engine.unload(tag)
                 engine.wait_until_unloaded(tag)
+            except Exception as exc:
+                Shared.err(f"{label}: unexpected error running the LLM benchmark — {exc} — "
+                           "skipping remaining work for this model")
+                entry = Shared.unexpected_model_failure(label, exc)
+                results.setdefault(short, {}).update(entry)
+                if journal:
+                    journal.record_model_state(model, "crashed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

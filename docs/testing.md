@@ -38,6 +38,8 @@ The scripts tree is a package rather than a flat import directory. A structural 
 
 [tests/conftest.py](../tests/conftest.py) prevents llama.cpp discovery tests from reading the machine's real saved setup configuration, so running setup cannot change mocked discovery outcomes. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
+`conftest.py` also provides the `symlink_or_skip` fixture. Tests covering symlink-escape defenses need a real symlink, which Windows refuses without Developer Mode or administrator rights, so the fixture creates one and skips the test when the platform will not. Use it instead of calling `Path.symlink_to` directly. The skip is limited to platforms that cannot create the link: on Linux and macOS these tests always run, and a Windows skip is not a silent hole because the behavior under test is POSIX symlink semantics, which Windows junctions do not reproduce faithfully.
+
 ## Coverage and safety boundaries
 
 Install `pytest-cov` into `bench-env/`, then run:
@@ -93,6 +95,8 @@ Execution-progress tests verify the structured event parser, idempotent model co
 | Embeddings and images | [test_embedding_benchmark.py](../tests/test_embedding_benchmark.py), [test_image_benchmark.py](../tests/test_image_benchmark.py) |
 | HTTP concurrency | [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
 | llama.cpp native benchmarks | [test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py), [test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py) |
+| vLLM native benchmark | [test_vllm_benchmark.py](../tests/test_vllm_benchmark.py) |
+| Non-catalog vLLM cache cleanup | [test_vllm_cleanup.py](../tests/test_vllm_cleanup.py) |
 | MCQ, math, and reasoning | [test_mcq_benchmark.py](../tests/test_mcq_benchmark.py), [test_math_benchmark.py](../tests/test_math_benchmark.py), [test_reasoning_benchmark.py](../tests/test_reasoning_benchmark.py), [test_reasoning_questions.py](../tests/test_reasoning_questions.py) |
 | Code and tool use | [test_code_benchmark.py](../tests/test_code_benchmark.py), [test_tool_benchmark.py](../tests/test_tool_benchmark.py) |
 | Offline regrading | [test_regrade.py](../tests/test_regrade.py) |
@@ -112,6 +116,9 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | ComfyUI installation and managed-model path resolution | [test_comfyui_installation.py](../tests/test_comfyui_installation.py) |
 | Versioned setup configuration and path handoff | [test_setup_config.py](../tests/test_setup_config.py) |
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
+| CUDA toolkit plan gating and install execution | [test_cuda_install.py](../tests/test_cuda_install.py) |
+| vLLM platform support, interpreter resolution, install commands | [test_vllm_install.py](../tests/test_vllm_install.py) |
+| Engine picker defaults, disabled engines, install fan-out | [test_engine_selection.py](../tests/test_engine_selection.py) |
 | Atomic results, run/recovery state, terminal-history retention, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
 | Neutral methodology profile and effective optimization inventory | [test_methodology_profile.py](../tests/test_methodology_profile.py) |
@@ -143,16 +150,17 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 ## Dashboard tests
 
-The dashboard uses Vitest and ESLint from its own `node_modules`:
+The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:
 
 ```bash
 cd dashboard
 npm test
 npx vitest -t "getBarStatusLabel"
 npm run lint
+npx tsc --noEmit
 ```
 
-The Vitest suite covers pure transformations in `dashboard/src/utils/*.js`, selected-result staging, and registry invariants in `dashboard/src/constants.js`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
+The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
 
 ## What to run before submitting
 
@@ -161,6 +169,7 @@ bash tests.sh
 cd dashboard
 npm test
 npm run lint
+npx tsc --noEmit
 ```
 
 Run the dashboard commands whenever `dashboard/src` changed. For a Python-only change, the pytest suite is sufficient unless the results schema or documented dashboard behavior also changed.

@@ -17,7 +17,7 @@ from scripts.app.benchmark_options import (
 
 from scripts.runtime import config
 from scripts.runtime.comfyui_installation import find_comfyui_installation
-from scripts.app.benchmark import CONCURRENCY_TESTS, LLM_TESTS
+from scripts.app.benchmark import CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
@@ -28,7 +28,8 @@ from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 TEST_DEFINITIONS = [
     ("llm", "Single-shot LLM", "llm", True),
     ("conv", "Conversation", "llm", True),
-    ("llamabench", "llama-bench throughput", "llm", False),
+    ("llamabench", "llama-bench (throughput + concurrency)", "llm", False),
+    ("vllmbench", "vllm bench (latency + throughput)", "llm", False),
     ("emb", "Embeddings", "embedding", True),
     ("mcq", "MCQ accuracy", "llm", False),
     ("math", "Math accuracy", "llm", False),
@@ -37,22 +38,31 @@ TEST_DEFINITIONS = [
     ("tool", "Tool accuracy", "llm", False),
     ("conc_tool", "Tool concurrency", "llm", False),
     ("conc_chat", "Chat concurrency", "llm", False),
-    ("llamabenchconc", "llama-bench concurrency", "llm", False),
     ("img", "Image generation", "image", True),
 ]
+# One frontend toggle can cover several CLI tests. The CLI keeps them separate so
+# `--tests llamabenchconc` alone still works; only the menus combine them.
+TEST_ENTRY_TESTS = {"llamabench": ("llamabench", "llamabenchconc")}
+# Every CLI test name a menu toggle can produce, including ones folded into another
+# toggle, so the progress window can title their rows.
+TEST_STAGE_LABELS = {
+    **{name: label for name, label, _, _ in TEST_DEFINITIONS},
+    "llamabench": "llama-bench throughput",
+    "llamabenchconc": "llama-bench concurrency",
+}
 TEST_SHORTCUT_GROUPS = {
-    "l": {"llm", "conv", "llamabench"},
+    "l": {"llm", "conv", "llamabench", "vllmbench"},
     "x": {"mcq", "math", "reasoning", "code", "tool"},
-    "c": {"conc_tool", "conc_chat", "llamabenchconc"},
+    "c": {"conc_tool", "conc_chat"},
     "e": {"emb"},
     "i": {"img"},
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
-LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS)
-MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc"}
-MAX_PROMPT_TOKEN_OPTIONS = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
+LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS + ["vllmbench"])
+MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
+MAX_PROMPT_TOKEN_OPTIONS: list[int] = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
-TG_TOKEN_OPTIONS = list(TG_TOKEN_CHOICES)
+TG_TOKEN_OPTIONS: list[int] = list(TG_TOKEN_CHOICES)
 FRONTEND_OPTION_INVENTORY = {
     flag: (spec.ui_status, spec.ui_location) for flag, spec in PUBLIC_OPTION_SCHEMA.items()
 }
@@ -80,6 +90,28 @@ FRONTEND_MODEL_FAMILIES = {
 
 class FrontendCancelled(Exception):
     pass
+
+
+def expand_selected_tests(values) -> list[str]:
+    """Menu selections to CLI test names, preserving order and de-duplicating."""
+    expanded = []
+    for value in values:
+        for name in TEST_ENTRY_TESTS.get(value, (value,)):
+            if name not in expanded:
+                expanded.append(name)
+    return expanded
+
+
+def collapse_tests_to_entries(tests) -> set[str]:
+    """CLI test names back to the menu values that cover them, so a saved selection
+    or preset written before two tests were combined still restores its toggle."""
+    selected = set()
+    for value, covered in TEST_ENTRY_TESTS.items():
+        if any(name in tests for name in covered):
+            selected.add(value)
+    covered_names = {name for names in TEST_ENTRY_TESTS.values() for name in names}
+    selected.update(name for name in tests if name not in covered_names)
+    return selected
 
 
 def frontend_option_gaps(inventory=None, bindings=None) -> list[str]:
@@ -250,8 +282,13 @@ def frontend_state_availability_errors(state: dict, engines: list[str],
                                        test_entries: list[MenuEntry],
                                        model_entries: list[MenuEntry]) -> list[str]:
     errors = []
-    if state["engine"] not in engines:
-        errors.append(f"Engine is not installed: {state['engine']}")
+    # Portable presets carry no engine — an absent key keeps the live selection.
+    if "engine" in state:
+        selected_engines = parse_engine_selection(state["engine"])
+        missing_engines = [name for name in selected_engines if name not in engines]
+        if not selected_engines or missing_engines:
+            errors.append("Engine is not installed: "
+                          + (", ".join(missing_engines) or state["engine"]))
     available_tests = {entry.value for entry in test_entries if entry.available}
     missing_tests = sorted(set(state["tests"]) - available_tests)
     if missing_tests:
@@ -267,7 +304,7 @@ def frontend_state_availability_errors(state: dict, engines: list[str],
 def apply_saved_test_selection(entries: list[MenuEntry], state: dict | None) -> bool:
     if state is None:
         return False
-    saved = set(state["tests"])
+    saved = collapse_tests_to_entries(state["tests"])
     if not any(entry.available and entry.value in saved for entry in entries):
         return False
     for entry in entries:
@@ -516,6 +553,42 @@ def choose_tg_tokens(input_fn, output_fn, clear_fn=lambda: None,
             checked[value] = not checked[value]
 
 
+def parse_engine_selection(value: str | None) -> list[str]:
+    """Engine names from a --engine value. One name, or several comma-separated;
+    "all" is expanded later, against the registry."""
+    return [name.strip() for name in str(value or "").split(",") if name.strip()]
+
+
+def format_engine_selection(names) -> str:
+    return ",".join(names)
+
+
+def merge_model_inventories(inventories: dict[str, dict]) -> tuple[dict, dict[str, set[str]]]:
+    """Union of every engine's inventory, plus which engines hold each model. Lets a
+    frontend list all models once and enable only those the selected engine can run."""
+    merged: dict[str, list[dict]] = {}
+    owners: dict[str, set[str]] = {}
+    for engine_name, inventory in inventories.items():
+        for section, models in inventory.items():
+            seen = {entry.get("tag") or entry.get("short") for entry in merged.setdefault(section, [])}
+            for model in models:
+                key = model.get("tag") or model.get("short")
+                owners.setdefault(key, set()).add(engine_name)
+                if key not in seen:
+                    merged[section].append(model)
+                    seen.add(key)
+    return merged, owners
+
+
+def models_runnable_by(entries, engine_name: str, owners: dict[str, set[str]]) -> dict[str, bool]:
+    """Which menu entries the given engine can actually run. Image models are engine-
+    independent (ComfyUI), so they stay available whatever engine is selected."""
+    return {
+        entry.value: entry.kind == "image" or engine_name in owners.get(entry.value, set())
+        for entry in entries
+    }
+
+
 def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> list[MenuEntry]:
     entries = []
     if any(test in LLM_BACKED_TESTS for test in tests):
@@ -646,12 +719,12 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
                             tg_tokens: list[int] | None = None,
                             gui_options: dict | None = None) -> list[str]:
     benchmark_target = [str(benchmark_path)] if benchmark_path else ["-m", "scripts.app.benchmark"]
-    command = [
-        python_executable, *benchmark_target,
-        "--engine", engine_name,
-        "--comfyui", str(comfyui_dir),
-        "--tests", *tests,
-    ]
+    command = [python_executable, *benchmark_target, "--engine", engine_name]
+    # Sending a path for a ComfyUI that was never installed fails validation, and without
+    # image tests there is nothing for it to point at anyway.
+    if "img" in tests:
+        command.extend(["--comfyui", str(comfyui_dir)])
+    command.extend(["--tests", *tests])
     if max_prompt_tokens is not None:
         command.extend(["--max-prompt-tokens", str(max_prompt_tokens)])
     if tg_tokens is not None:
@@ -673,7 +746,7 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--offline")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
-        if gui_options["comfyui"]:
+        if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
     if any(test in LLM_BACKED_TESTS for test in tests):
@@ -755,10 +828,10 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
 
         if len(available_engines) > 1:
             clear_fn()
-        tests = choose_tests(
+        tests = expand_selected_tests(choose_tests(
             test_entries, input_fn, output_fn, clear_fn,
             selection_note=selection_note,
-        )
+        ))
         model_entries = build_model_entries(inventory, tests)
         apply_saved_model_selection(model_entries, saved_state)
         hint = missing_catalog_hint(inventory, system)

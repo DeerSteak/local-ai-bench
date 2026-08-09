@@ -18,3 +18,27 @@ def test_does_not_mutate_available_list():
     result = resolve_engine_names("all", available)
     result.append("extra")
     assert available == ["llamacpp", "mlx"]
+
+
+def test_a_comma_list_runs_exactly_those_engines():
+    assert resolve_engine_names("llamacpp,vllm", ["llamacpp", "vllm"]) == ["llamacpp", "vllm"]
+    assert resolve_engine_names("vllm", ["llamacpp", "vllm"]) == ["vllm"]
+
+
+def test_comma_list_order_follows_the_registry_not_the_typing():
+    """Two runs written differently must execute in the same order, so results files
+    land in a predictable sequence."""
+    assert resolve_engine_names("vllm,llamacpp", ["llamacpp", "vllm"]) == ["llamacpp", "vllm"]
+    assert resolve_engine_names(" vllm , llamacpp ", ["llamacpp", "vllm"]) == ["llamacpp", "vllm"]
+
+
+def test_an_unknown_engine_in_a_list_is_rejected():
+    import pytest
+    with pytest.raises(ValueError, match="mlx"):
+        resolve_engine_names("llamacpp,mlx", ["llamacpp", "vllm"])
+    with pytest.raises(ValueError):
+        resolve_engine_names("", ["llamacpp"])
+
+
+def test_duplicates_collapse():
+    assert resolve_engine_names("vllm,vllm", ["llamacpp", "vllm"]) == ["vllm"]

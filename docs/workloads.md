@@ -12,6 +12,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
   - [Small tier (≤20B params)](#small-tier-20b-params)
   - [Medium tier (26–35B params)](#medium-tier-2635b-params)
   - [Large tier (70B+ params)](#large-tier-70b-params)
+  - [Per-engine weights](#per-engine-weights)
   - [Dense vs. Mixture-of-Experts (MoE)](#dense-vs-mixture-of-experts-moe)
 - [Image Generation](#image-generation)
 - [Embeddings](#embeddings)
@@ -46,6 +47,8 @@ The conversation test grows toward each checkpoint in bounded steps rather than 
 
 Each growth turn's step size is computed from an *effective* depth — the last known ground-truth prompt size (`prompt_eval_count`) plus that turn's own response length — not the ground-truth number alone. A turn's response only shows up in `prompt_eval_count` once the *next* turn's prompt is evaluated, so using the ground-truth number by itself understates how much context is actually occupied by the time the next turn's request goes out. That gap is usually harmless when there's slack between the checkpoint and `num_ctx`, but at a checkpoint sitting exactly at a model's real ceiling (`num_ctx == model_max`, zero headroom) it's enough to push a request over the hard context limit.
 
+Prompt padding is approximate — a character count at roughly 4 chars per token — so the real prompt can land slightly either side of the target. llama.cpp absorbs an overshoot by generating a few tokens fewer; vLLM rejects the request, so its server allocation carries a small tolerance (see [Engines](engines.md#vllmengine)). The measured depth is unchanged either way.
+
 These two tests measure genuinely different things, and their TTFT numbers are **not** comparable at face value — see [What the charts mean](dashboard.md#what-the-charts-mean) for why the conversation test's TTFT is typically far lower than the single-shot test's at the same nominal context length.
 
 The single-shot slow-model check applies at its first checkpoint (512 tokens): below 15 tok/s, deeper single-shot contexts are skipped unless `--force-all` is set. When single-shot and conversation run together, the conversation pre-flight also excludes a model with no usable single-shot data, a repeatable runner crash, a first-checkpoint timeout, or that first-checkpoint slow marker. A timeout only at a deeper single-shot context does not by itself exclude conversation. Running `--tests conv` alone has no single-shot pre-flight data, so it attempts every selected model.
@@ -58,53 +61,102 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 ### Extra-small tier (<6B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Gemma 3 1B | `gemma3:1b-it-q4_K_M` | ~0.8 GB | Dense |
-| Granite 4.1 3B Q4_K_M | `granite4.1:3b-q4_K_M` | ~2.1 GB | Dense |
-| Qwen3.5 4B Q4_K_M | `qwen3.5:4b-q4_K_M` | ~3.1 GB | Dense |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Gemma 3 1B | `gemma3:1b-it-q4_K_M` | `gaunernst/gemma-3-1b-it-int4-awq` | ~0.8 GB | Dense |
+| Granite 4.1 3B 4-Bit Quantization | `granite4.1:3b-q4_K_M` | `cyankiwi/granite-4.1-3b-AWQ-INT4` | ~2.1 GB | Dense |
+| Qwen3.5 4B 4-Bit Quantization | `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | ~3.1 GB | Dense |
 
 The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-light speed floor, showing what the suite costs on the smallest practical general model. Granite 4.1 3B is the compact structured-execution and tool-calling specialist. Qwen3.5 4B is the more capable general executor, trading some speed for stronger instruction following, reasoning, coding, and tool use. This makes the tier useful for evaluating fast worker models rather than filling it with three interchangeable general chat baselines.
 
 ### Small tier (≤20B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Granite 4.1 8B Q4_K_M | `granite4.1:8b-q4_K_M` | ~5.4 GB | Dense |
-| Qwen3.5 9B Q4_K_M | `qwen3.5:9b-q4_K_M` | ~6.2 GB | Dense |
-| Gemma 4 12B Q4_K_M | `gemma4:12b-it-q4_K_M` | ~7.7 GB | Dense |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Granite 4.1 8B 4-Bit Quantization | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | ~5.4 GB | Dense |
+| Qwen3.5 9B 4-Bit Quantization | `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | ~6.2 GB | Dense |
+| Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | ~7.7 GB | Dense |
 
 The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
 
 ### Medium tier (26–35B params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Gemma 3 27B Q4_K_M | `gemma3:27b-it-q4_K_M` | ~16.6 GB | Dense |
-| Nemotron 3 Nano 30B-A3B | `nemotron-3-nano:30b-a3b-q4_K_M` | ~24.0 GB | Hybrid Mamba-Transformer MoE — 3B active of 30B total |
-| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | ~24.0 GB | MoE — 3B active of 35B total |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Gemma 3 27B 4-Bit Quantization | `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | ~16.6 GB | Dense |
+| Nemotron Cascade 2 30B-A3B | `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | ~24.7 GB | Hybrid Mamba MoE — 3B active of 32B total |
+| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~24.0 GB | MoE — 3B active of 35B total |
 
-The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron 3 Nano represents hybrid long-context reasoning with only 3B parameters active per token. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
+The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron Cascade 2 represents hybrid long-context reasoning with only 3B parameters active per token; it is post-trained from Nemotron 3 Nano's base and replaced that model in this tier. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
 
 ### Large tier (70B+ params)
 
-| Model | Tag | Size | Architecture |
-|---|---|---|---|
-| Llama 3.3 70B Q4_K_M | `llama3.3:70b-instruct-q4_K_M` | ~39.7 GB | Dense |
-| Qwen3-Coder-Next 80B-A3B Q4_K_M | `qwen3-coder-next:80b-a3b-q4_K_M` | ~48.4 GB | Hybrid-attention MoE — 3B active of 80B total |
-| Nemotron 3 Super 120B | `nemotron-3-super:120b` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
+| Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
+|---|---|---|---|---|
+| Llama 3.3 70B 4-Bit Quantization | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | ~39.7 GB | Dense |
+| Qwen3-Coder-Next 80B-A3B 4-Bit Quantization | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | ~48.4 GB | Hybrid-attention MoE — 3B active of 80B total |
+| Nemotron 3 Super 120B | `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | ~87.0 GB | Hybrid Mamba-Transformer MoE — 12B active of 120B total |
 
 The large tier assigns each slot a distinct role. Llama 3.3 70B is the dense general-purpose baseline. Qwen3-Coder-Next is the long-horizon execution specialist, trained for coding agents, complex tool use, and recovery after failed actions. Nemotron 3 Super is the broader agentic reasoning model and represents the planner/verifier role for long-context, multi-step workflows. This combination measures a dense generalist, a fast sparse tool specialist, and a more capable sparse planner instead of using two large Llama-family models with overlapping general-purpose roles.
 
 The tier is intentionally limited to one model per role and avoids spending multiple slots on overlapping general-purpose models. Its capabilities also align with what the suite can measure: the code and tool accuracy tests exercise structured execution, while conversation and concurrency exercise sustained context and multi-request behavior. Qwen3-Coder-Next therefore represents carrying out long sequences of tool-heavy steps, while Nemotron 3 Super represents planning and verifying the broader workflow. Their different sparse architectures add an inference comparison that model size alone would not expose.
 
+### Tool calling across engines
+
+llama.cpp parses tool calls from the model's own chat template, so every catalog model can be measured. vLLM cannot: it returns **no** `tool_calls` at all unless the server is started with `--enable-auto-tool-choice --tool-call-parser <name>`, and the parser is model-specific. A model with no parser configured is therefore **skipped** with `skip_reason: "tool_calls_unsupported"` rather than measured — scoring unparsed output as wrong answers would publish 0% for a model that was never actually tested.
+
+`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `llama3_json` (Llama 3.3), `qwen3_coder` (Qwen3-Coder-Next). Gemma has no parser for its instruct models (only `functiongemma`, for a different model), vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.6 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
+
+### Per-engine weights
+
+The tier tables above give each model's identifier on both engines. The llama.cpp tag names a `Q4_K_M` GGUF, and that file is llama.cpp's alone — vLLM cannot use it, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, different identifier and different file. This table adds each vLLM repo's quantization format and download size:
+
+| Tag | vLLM weights | Format | Size |
+|---|---|---|---|
+| `gemma3:1b-it-q4_K_M` | `gaunernst/gemma-3-1b-it-int4-awq` | AWQ INT4 | ~1.1 GB |
+| `granite4.1:3b-q4_K_M` | `cyankiwi/granite-4.1-3b-AWQ-INT4` | AWQ INT4 | ~2.4 GB |
+| `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | AWQ INT4 | ~4.1 GB |
+| `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | AWQ INT4 | ~5.5 GB |
+| `qwen3.5:9b-q4_K_M` | `cyankiwi/Qwen3.5-9B-AWQ-4bit` | AWQ INT4 | ~9.1 GB |
+| `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | AWQ INT4 | ~7.8 GB |
+| `gemma3:27b-it-q4_K_M` | `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` | GPTQ 4-bit (128g) | ~16.9 GB |
+| `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | AWQ INT4 | ~20.8 GB |
+| `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | AWQ INT4 | ~25.1 GB |
+| `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
+| `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |
+| `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | AWQ INT4 | ~80.7 GB |
+| `nomic-embed-text` | `nomic-ai/nomic-embed-text-v1.5` | fp16 | ~0.6 GB |
+| `mxbai-embed-large` | `mixedbread-ai/mxbai-embed-large-v1` | fp16 | ~0.7 GB |
+
+These are selected to match `Q4_K_M`'s **bit width**, which is as close as the two runtimes get — see [Limitations](limitations.md#cross-engine-comparison) for what that does and doesn't license you to conclude. Where several builds of the same model exist, the one whose footprint sits closest to the GGUF is preferred over the most popular or the most official, because a size gap is a precision gap (see below). The two embedding models are unquantized upstream fp16 repos on both engines.
+
+Sizes here are the sum of the repo's safetensors and config files. A vLLM snapshot is generally *not* the same size as the corresponding GGUF — compare the two size columns before selecting both engines, and see [Setup](setup.md#choosing-engines).
+
+#### Where the two builds diverge
+
+Both columns say "4-bit", and that label hides real differences. `Q4_K_M` is mixed precision by design: llama.cpp promotes selected tensors to `Q6_K`, so its effective rate lands nearer 5 bits per weight than 4. AWQ and GPTQ recipes make their own choices about what to leave in higher precision — embeddings, `lm_head`, the MoE router, Mamba state layers — and different quantizers disagree. The result is that two files both described as 4-bit can differ by a factor of two in size.
+
+Dividing each build's size by the model's parameter count gives an effective bits-per-weight, and comparing that across a pair shows how far apart they really are. Most of the catalog is within ±0.25 bpw. Three entries are not, and all three lean the same way:
+
+| Model | GGUF | vLLM | Δ bits/weight |
+|---|---|---|---|
+| Qwen3.5 9B | ~5.5 | ~8.1 | **+2.6** |
+| Gemma 3 1B | ~6.4 | ~8.8 | **+2.4** |
+| Qwen3.5 4B | ~6.2 | ~8.2 | **+2.0** |
+
+On those three, the vLLM build carries meaningfully more precision than the GGUF. Expect it to look slightly *better* on accuracy — fewer bits discarded means less quantization error — and slightly *worse* on tokens/sec, because decode is memory-bandwidth-bound and a larger file moves more bytes per token. Neither difference is attributable to the runtime, which is the whole point of flagging them.
+
+This matters only when reading one engine against the other. Comparing llama.cpp results across machines, or vLLM results across machines, is unaffected: both sides of that comparison use the same weights.
+
+The effect concentrates in small models because a vocabulary embedding is a large fraction of a 1–4B parameter model, and most quantizers keep it at higher precision. That inflates both sides, unevenly. It is not a sign that a better build exists — for each of these three, the entry in use is already the closest match available.
+
 ### Dense vs. Mixture-of-Experts (MoE)
 
 A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3 Nano (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3 Nano and Nemotron 3 Super use a hybrid Mamba-Transformer architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron Cascade 2 (3B active of 32B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron Cascade 2 and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
-**Reasoning models** (Nemotron 3 Nano here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
+**Reasoning models** (Nemotron Cascade 2 here, a unified model for both reasoning and non-reasoning tasks, with thinking off unless the chat template's `enable_thinking` is set) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
 
 Measured generation results record requested, completed, and valid sample counts. Invalid non-finite, negative, internally inconsistent, or TTFT-after-wall measurements remain visible as diagnostic run entries but are excluded from means and raw valid-sample arrays; legacy `n_runs` keeps its historical completed-call meaning. With at least two valid samples, results also include medians and coefficients of variation without dropping outliers or assigning an instability verdict.
 
@@ -234,8 +286,9 @@ Run every accuracy-style test at once with `--tests acc` — expands to MCQ, mat
 Question banks grow and change over time (the MCQ and math banks each doubled in size in one revision, for example), so a raw correct count from one results file is never safely comparable to another without knowing which version of the bank produced it — 40/50 and 40/150 both look like "40 correct" but mean very different things. To make that comparison safe:
 
 - Every results JSON records a `bank_versions` object — a short hash of each accuracy bank's file contents (`mcq`, `math`, `reasoning`, `code`, `tool`) at the time of that run, computed from the raw bank bytes (not just parsed field values, so even a whitespace-only or key-reordering change is caught). Two results files only used the exact same question set if their `bank_versions` entries match.
-- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.reasoning_crash_cache.json`, `.code_crash_cache.json`, `.tool_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried. `--retry-crashed-models` bypasses current crash-cache entries across workload families for one execution without deleting them; a repeated crash is still handled and recorded normally.
+- The crash cache each accuracy test keeps (`.mcq_crash_cache.json`, `.math_crash_cache.json`, `.reasoning_crash_cache.json`, `.code_crash_cache.json`, `.tool_crash_cache.json`) records the bank version a model crashed against, so a model that crashed repeatedly on an old, smaller bank isn't silently skipped forever once the bank has since changed — the stale entry is ignored and the model is retried. `--retry-crashed-models` bypasses current crash-cache entries across workload families for one execution without deleting them; a repeated crash is still handled and recorded normally. Every crash cache is also scoped per engine — a catalog tag shares one identifier across engines, but a crash under llama.cpp's GGUF says nothing about vLLM's separate weights and runtime for that same tag, so a crash recorded under one engine never skips that model under another.
 - Percentages normalize for bank size, but a changed bank can also change difficulty and composition. Use matching `bank_versions` hashes for direct model/system comparisons; treat cross-version percentages as contextual rather than apples-to-apples.
+- Every workload's per-model loop (LLM, conversation, embeddings, concurrency, accuracy, llama-bench, llama-bench concurrency, vllm bench) has a top-level `except Exception` around each model's iteration, on top of the specific crash/timeout handling described above — an unexpected error (a bug in the runner itself, not just an OOM or a hung load) still records that model as `crashed` via `Shared.unexpected_model_failure` and moves on, rather than aborting the whole stage. A single model failing this way must never take the rest of the run down with it.
 
 `--sample N` (see [CLI Reference](cli-reference.md)) is a separate, dev-only mode for fast local iteration. It uses a deterministic round-robin across categories; every category is represented when `N` is at least that bank's category count, while smaller samples cover as many categories as their size permits. The exact sampled IDs are recorded under `sample_ids`. Sampled runs are reproducible, but are not comparable with full-bank or differently sampled runs.
 
@@ -316,6 +369,27 @@ This build of `llama-batched-bench` prints nothing to stderr and has no `--progr
 Each model's `llamabenchconc` result is either `{"entries": [...], "pp": <effective prompt depth>, "ctx_size": <-c value used>}` — where `entries` are the parsed JSONL rows verbatim, with `llama-batched-bench`'s own field names (`pp`, `tg`, `pl`, `n_kv`, `t_pp`, `speed_pp`, `t_tg`, `speed_tg`, `t`, `speed`, ...) — or `{"error": "..."}`.
 
 Requires `llama-batched-bench` to be installed — `setup.sh`/`setup.bat` install it alongside `llama-server` (see [Setup](setup.md)); if it's missing, the test prints where to get it and records nothing rather than failing the whole run.
+
+## vllm bench
+
+Opt-in (`--tests vllmbench`, not part of the default set) — runs vLLM's own `vllm bench` tool against every model in the same `--maxtier`/`--llm-models` scope as `llm`/`conv`, and is the vLLM counterpart to [llama-bench](#llama-bench): the tool the engine's own community publishes numbers with, run outside this project's HTTP/SSE pipeline so a divergence from the `llm` test isolates where a difference comes from. It is skipped with a warning under any non-vLLM engine, mirroring how `llamabench` is skipped under any non-llama.cpp engine.
+
+Two subcommands run per size, both offline — they load the weights themselves rather than talking to a server, so the stage stops this project's vLLM server first and nothing else may hold the GPU:
+
+- **`vllm bench latency`** measures one batch end to end and reports `avg_latency` in seconds, plus every iteration and a percentile map. vLLM's own defaults (30 iterations, 10 warmups) are far more than this suite needs, so `config.VLLMBENCH_ITERS`/`VLLMBENCH_WARMUP_ITERS` pin them down.
+- **`vllm bench throughput`** runs `config.VLLMBENCH_NUM_PROMPTS` prompts and reports `elapsed_time`, `num_requests`, `total_num_tokens`, and rates.
+
+`config.VLLMBENCH_INPUT`/`VLLMBENCH_OUTPUT` use the same shapes as `LLAMABENCH_PP`/`LLAMABENCH_TG` so both engines sweep the same points. A pair is skipped when input plus output exceeds the model's context: vLLM rejects such a request outright, where llama-server merely generates fewer tokens.
+
+**These numbers are not comparable to `llamabench`, and the dashboard never puts them on the same chart.** Two independent reasons, either of which alone would be enough. The weights differ — llama.cpp runs Q4_K_M GGUFs while vLLM runs 4-bit AWQ/GPTQ safetensors of the same base model (see [Per-engine weights](#per-engine-weights)). And the metrics differ: `llama-bench` reports separate prefill and decode token rates, while `vllm bench latency` reports whole-batch seconds and `throughput` reports a combined rate over prompt *and* output tokens. This suite derives an output-only rate (`requests × output_len / elapsed`) rather than reporting vLLM's `tokens_per_second`, which counts prompt tokens too.
+
+KV-cache precision stays consistent within each engine so the server and native cross-checks do not silently test different cache formats. `llama-bench` and `llama-batched-bench` receive the same `q8_0` cache used by llama-server, falling back to `f16` for tensor split; `vllm bench latency` and `throughput` receive the same supported `fp8` or fallback `auto` selected for the managed vLLM server.
+
+Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
+
+Requires the benchmark extra, which the base vLLM package does not include — setup installs `vllm[bench]` (see [Setup](setup.md)). If `vllm bench` is unavailable the test prints the `pip install 'vllm[bench]'` hint and records nothing rather than failing the run.
+
+Concurrency through vLLM's own tooling (`vllm bench serve`) is not implemented yet. Unlike these two subcommands it requires a *running* server, so it cannot reuse this stage's shape; it would sit alongside `conc_tool`/`conc_chat` as a further cross-check rather than replacing them.
 
 ---
 

@@ -88,7 +88,7 @@ class MCQBenchmark:
         )
 
     @staticmethod
-    def parse_answer(response_text: str, valid_choices,
+    def parse_answer(response_text: str | None, valid_choices,
                      allow_unstructured_fallback: bool = True) -> str | None:
         """Extract a structurally stated choice from free-form text."""
         if not response_text:
