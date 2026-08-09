@@ -930,7 +930,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=13, column=0, sticky="w", pady=(10, 0))
+    ).grid(row=14, column=0, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
