@@ -498,6 +498,46 @@ def test_stop_signals_the_group_then_escalates(engine, monkeypatch):
     assert ("killpg", 4321, _signal.SIGKILL) in signalled, "a hung group must be forced"
 
 
+def test_launcher_stop_interrupts_before_escalating(engine, monkeypatch):
+    signalled = []
+
+    class Proc:
+        pid = 4321
+        def poll(self): return None
+        def wait(self, timeout=None): return None
+        def kill(self): pass
+        def send_signal(self, sig): pass
+
+    engine._launcher = "/usr/bin/vllm-launch"
+    engine._proc = Proc()
+    monkeypatch.setattr("os.getpgid", lambda pid: pid)
+    monkeypatch.setattr("os.killpg", lambda pgid, sig: signalled.append(sig))
+    engine._stop_process()
+
+    import signal as _signal
+    assert signalled == [_signal.SIGINT]
+
+
+@pytest.mark.parametrize("operation", ["generate", "chat"])
+def test_model_load_uses_startup_timeout_not_request_timeout(engine, monkeypatch, operation):
+    deadlines = []
+
+    def ensure(*_args, **kwargs):
+        deadlines.append(kwargs["deadline"])
+        raise RuntimeError("captured")
+
+    monkeypatch.setattr("scripts.runtime.engines.vllm.time.perf_counter", lambda: 100.0)
+    monkeypatch.setattr(engine, "_ensure_model", ensure)
+
+    with pytest.raises(RuntimeError, match="captured"):
+        if operation == "generate":
+            engine.generate(TEST_TAG, "hello", timeout=3)
+        else:
+            engine.chat(TEST_TAG, [{"role": "user", "content": "hello"}], timeout=3)
+
+    assert deadlines == [100.0 + engine.LOAD_TIMEOUT]
+
+
 def test_stop_falls_back_when_the_group_is_gone(engine, monkeypatch):
     """A process that already exited must not raise out of teardown."""
     sent = []

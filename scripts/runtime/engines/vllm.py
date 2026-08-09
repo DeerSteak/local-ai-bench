@@ -265,7 +265,8 @@ class VllmEngine(InferenceEngine):
     def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Signal the whole process group, so the EngineCore child dies with the server."""
         if self._proc is not None and self._proc.poll() is None:
-            self._signal_group(signal.SIGTERM)
+            # Container launchers handle an interactive interrupt by stopping their container.
+            self._signal_group(signal.SIGINT if self._launcher else signal.SIGTERM)
             try:
                 self._proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -584,8 +585,10 @@ class VllmEngine(InferenceEngine):
                  num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
         """Generate via /v1/completions; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
-        deadline = operation_start + timeout
-        self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
+        self._ensure_model(
+            tag, num_ctx, n_parallel=n_parallel,
+            deadline=operation_start + self.LOAD_TIMEOUT,
+        )
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
@@ -598,6 +601,7 @@ class VllmEngine(InferenceEngine):
         }
         prefill_before = self._prefill_reading()
         request_start = time.perf_counter()
+        deadline = request_start + timeout
         ttft = None
         tokens = 0
         prompt_tokens = None
@@ -751,9 +755,12 @@ class VllmEngine(InferenceEngine):
                 f"no vLLM tool-call parser is configured for {tag}; vLLM returns no tool_calls "
                 "without --tool-call-parser, so a tool result here would be wrong, not zero")
         operation_start = time.perf_counter()
-        deadline = operation_start + timeout
-        self._ensure_model(tag, num_ctx, deadline=deadline, tool_parser=tool_parser)
+        self._ensure_model(
+            tag, num_ctx, deadline=operation_start + self.LOAD_TIMEOUT,
+            tool_parser=tool_parser,
+        )
         model_load_sec = time.perf_counter() - operation_start
+        deadline = time.perf_counter() + timeout
 
         if token_budget is None:
             return self._chat_request(tag, messages, tools, deadline, num_predict,
