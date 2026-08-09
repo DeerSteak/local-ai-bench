@@ -31,9 +31,11 @@ _emit_lock = threading.Lock()
 
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
-    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
     configure = getattr(engine, "configure_kv_cache", None)
-    return configure(runtime_backend) if configure else "auto"
+    if configure is None:
+        return "auto"
+    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
+    return configure(runtime_backend)
 
 
 def apply_runner_settings(settings: dict) -> None:

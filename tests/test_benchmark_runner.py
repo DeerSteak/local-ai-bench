@@ -386,6 +386,12 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cpu"
 
 
+def test_runner_skips_cache_policy_for_engines_without_configuration_hook():
+    from scripts.runtime.workload_runner import configure_runner_engine
+
+    assert configure_runner_engine(object(), "cuda", False) == "auto"
+
+
 def test_runner_restores_recorded_gpu_split_mode(monkeypatch):
     from scripts.runtime import config
     from scripts.runtime.workload_runner import apply_runner_settings
