@@ -27,7 +27,7 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, hf_cache_model_complete, hf_cache_model_dir,
-    vllm_cache_home,
+    hf_cache_snapshot_dir, vllm_cache_home,
 )
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.runtime.shared import (
@@ -120,15 +120,7 @@ class VllmEngine(InferenceEngine):
 
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
-        if repo is None:
-            return None
-        snapshots = hf_cache_model_dir(self._cache_home, repo) / "snapshots"
-        if not snapshots.is_dir():
-            return None
-        for snapshot in sorted(snapshots.iterdir()):
-            if (snapshot / "config.json").is_file():
-                return snapshot
-        return None
+        return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
 
     # ── per-request prefill timing ──
 

@@ -10,6 +10,7 @@ from scripts.setup.vllm_install import (
     NIGHTLY_CU130_INDEX,
     hf_cache_model_complete,
     hf_cache_model_dir,
+    hf_cache_snapshot_dir,
     vllm_cache_home,
     build_tools_command,
     missing_build_tools,
@@ -558,6 +559,36 @@ def test_cache_completeness_ignores_a_partial_sibling_snapshot(tmp_path):
     (good / "config.json").touch()
     (good / "model.safetensors").touch()
     assert hf_cache_model_complete(tmp_path, repo) is True
+
+
+def test_cache_resolution_follows_main_ref_instead_of_snapshot_sort_order(tmp_path):
+    repo = "org/model"
+    model_dir = hf_cache_model_dir(tmp_path, repo)
+    old = model_dir / "snapshots" / "aaa-old"
+    current = model_dir / "snapshots" / "zzz-current"
+    for snapshot in (old, current):
+        snapshot.mkdir(parents=True)
+        (snapshot / "config.json").touch()
+        (snapshot / "model.safetensors").touch()
+    (model_dir / "refs").mkdir()
+    (model_dir / "refs" / "main").write_text("zzz-current\n", encoding="utf-8")
+    assert hf_cache_snapshot_dir(tmp_path, repo) == current
+
+
+def test_incomplete_current_ref_is_not_masked_by_an_old_complete_snapshot(tmp_path):
+    repo = "org/model"
+    model_dir = hf_cache_model_dir(tmp_path, repo)
+    old = model_dir / "snapshots" / "old"
+    current = model_dir / "snapshots" / "current"
+    old.mkdir(parents=True)
+    current.mkdir()
+    (old / "config.json").touch()
+    (old / "model.safetensors").touch()
+    (current / "config.json").touch()
+    (model_dir / "refs").mkdir()
+    (model_dir / "refs" / "main").write_text("current", encoding="utf-8")
+    assert hf_cache_snapshot_dir(tmp_path, repo) == current
+    assert hf_cache_model_complete(tmp_path, repo) is False
 
 
 # ── Python development headers (Triton JIT dependency) ──

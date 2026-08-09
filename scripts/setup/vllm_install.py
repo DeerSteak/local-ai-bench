@@ -267,13 +267,31 @@ def hf_cache_model_dir(cache_home: Path, repo: str) -> Path:
     return Path(cache_home) / "hub" / ("models--" + repo.replace("/", "--"))
 
 
+def hf_cache_snapshot_dir(cache_home: Path, repo: str) -> Path | None:
+    """Snapshot vLLM resolves for the repo's current main ref, with a legacy fallback."""
+    model_dir = hf_cache_model_dir(cache_home, repo)
+    snapshots = model_dir / "snapshots"
+    try:
+        revision = (model_dir / "refs" / "main").read_text(encoding="utf-8").strip()
+    except OSError:
+        revision = ""
+    if revision:
+        snapshot = snapshots / revision
+        return snapshot if snapshot.is_dir() else None
+    candidates = [path for path in snapshots.iterdir() if path.is_dir()] \
+        if snapshots.is_dir() else []
+    complete = [path for path in candidates
+                if (path / "config.json").is_file() and any(path.glob("*.safetensors"))]
+    configured = [path for path in candidates if (path / "config.json").is_file()]
+    usable = complete or configured
+    return max(usable, key=lambda path: path.stat().st_mtime_ns) if usable else None
+
+
 def hf_cache_model_complete(cache_home: Path, repo: str) -> bool:
     """True once a snapshot of `repo` holds weights and the config beside them."""
-    snapshots = hf_cache_model_dir(cache_home, repo) / "snapshots"
-    if not snapshots.is_dir():
-        return False
-    return any((snapshot / "config.json").is_file() and any(snapshot.glob("*.safetensors"))
-               for snapshot in snapshots.iterdir() if snapshot.is_dir())
+    snapshot = hf_cache_snapshot_dir(cache_home, repo)
+    return bool(snapshot and (snapshot / "config.json").is_file()
+                and any(snapshot.glob("*.safetensors")))
 
 
 def parse_launcher_extra_args(text: str | None) -> list[str]:
