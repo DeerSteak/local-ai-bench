@@ -1074,7 +1074,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=15, column=0, sticky="w", pady=(8, 0))
+    ).grid(row=16, column=0, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -1357,7 +1357,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=14, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
@@ -2431,7 +2431,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 for entry in stage_models:
                     model_row = ttk.Frame(status_list)
                     model_row.pack(fill="x", padx=(14, 0), pady=2)
-                    ttk.Label(model_row, text=entry.label, wraplength=270).pack(
+                    ttk.Label(model_row, text=entry.label).pack(
                         side="left", anchor="w", fill="x", expand=True,
                     )
                     variable = tk.StringVar(value="○ Queued")
