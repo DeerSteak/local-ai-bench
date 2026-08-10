@@ -177,6 +177,23 @@ describe("applyEngineLabels", () => {
     ];
     expect(applyEngineLabels(files)).toEqual(files);
   });
+
+  it("always labels chart systems with a recorded engine version", () => {
+    const files: ResultsFile[] = [
+      { id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000", data: {} },
+      { id: 2, hostname: "host-b", engine: "llamacpp", engineVersion: "7001", data: {} },
+    ];
+    expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
+      "host-a (llamacpp 7000)", "host-b (llamacpp 7001)",
+    ]);
+  });
+
+  it("labels a version even when an older result omitted its engine name", () => {
+    const files: ResultsFile[] = [
+      { id: 1, hostname: "host-a", engineVersion: "0.10.2", data: {} },
+    ];
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (0.10.2)");
+  });
   it("leaves hostnames untouched when no file has an engine field", () => {
     const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
     expect(applyEngineLabels(files)).toEqual(files);

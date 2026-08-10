@@ -107,14 +107,17 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
     .replace(/^-|-$/g, "");
 }
 
-// Fold each file's engine into its hostname label, but only when needed to
-// disambiguate — e.g. two --engine runs off the same host (identical
-// profile.hostname) loaded side by side. With a single engine among the
-// loaded files, appending "(llamacpp)" to every label is just noise.
+// Runtime versions are always material comparison context. Engine-only labels
+// remain conditional so older files do not gain redundant chart text.
 export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
-  if (!multiEngine) return files;
-  return files.map(f => f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f);
+  return files.map(f => {
+    if (f.engineVersion) {
+      const runtime = [f.engine, f.engineVersion].filter(Boolean).join(" ");
+      return { ...f, hostname: `${f.hostname} (${runtime})` };
+    }
+    return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f;
+  });
 }
 
 export function fmt(v: number | null | undefined, unit: string): string {

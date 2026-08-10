@@ -191,7 +191,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 
 | Key | Contents |
 |---|---|
-| `version`, `engine` | Application release and inference-engine name |
+| `version`, `engine`, `engine_version` | Application release, inference-engine name, and the local runtime version when it can be inspected |
 | `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, and per-stage state/coverage |
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |

@@ -1,0 +1,21 @@
+{
+  "version": "4.5",
+  "engine": "llamacpp",
+  "engine_version": "7000",
+  "profile": {
+    "hostname": "Engine Version Preview",
+    "os": "Linux",
+    "backend": "cuda",
+    "ram_gb": 64,
+    "timestamp": "2026-08-10T12:00:00Z"
+  },
+  "llm": {
+    "gemma3-1b": {
+      "2K": {
+        "tps_mean": 100.0,
+        "ttft_mean_sec": 0.2,
+        "prefill_tps_mean": 1000.0
+      }
+    }
+  }
+}

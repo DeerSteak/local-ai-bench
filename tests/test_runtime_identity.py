@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.runtime_identity import (
-    inspect_runtime, parse_runtime_version, runtime_ownership,
+    engine_runtime_version, inspect_runtime, parse_runtime_version, runtime_ownership,
 )
 
 
@@ -51,3 +51,19 @@ def test_inspect_runtime_does_not_execute_external_server(tmp_path):
 
     assert identity.ownership == "external_server"
     assert identity.version is None
+
+
+def test_engine_runtime_version_uses_the_engine_runtime_descriptor():
+    engine = type("Engine", (), {"runtime_location": lambda self: "/runtime/llama-server"})()
+    version = engine_runtime_version(
+        "llamacpp", engine,
+        run=lambda *args, **kwargs: SimpleNamespace(
+            stdout="version: 7000 (abcdef)", stderr="", returncode=0,
+        ),
+    )
+    assert version == "7000"
+
+
+def test_engine_runtime_version_is_absent_without_a_local_executable():
+    engine = type("Engine", (), {"runtime_location": lambda self: None})()
+    assert engine_runtime_version("vllm", engine) is None

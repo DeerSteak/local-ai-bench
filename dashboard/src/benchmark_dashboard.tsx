@@ -162,6 +162,7 @@ export default function Dashboard() {
       name: file.name,
       hostname: baseHostname,
       engine:   data.engine || null,
+      engineVersion: data.engine_version || null,
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       wsl:      p.wsl === true,

@@ -56,6 +56,7 @@ from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
+from scripts.setup.runtime_identity import engine_runtime_version
 
 
 def relay_runner_log(text: str) -> None:
@@ -770,6 +771,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
                         if engine_backed_tests else hardware_backend),
         }
+        runtime_version = engine_runtime_version(engine_name, engine)
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(
@@ -785,6 +787,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.output(f"  Hardware:  {profile['hardware_backend']}")
         Shared.output(f"  RAM:       {profile['ram_gb']} GB")
         Shared.output(f"  Engine:    {engine_name}")
+        if runtime_version:
+            Shared.output(f"  Runtime:   {runtime_version}")
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         Shared.output(
             f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
@@ -913,6 +917,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         results = {
             "version":         config.VERSION,
             "engine":          engine_name,
+            "engine_version":  runtime_version,
             "profile":         profile,
             "accuracy_settings": {
                 "timeout_seconds": config.ACC_TIMEOUT,

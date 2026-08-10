@@ -5,6 +5,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.runtime import config
+
 
 @dataclass(frozen=True)
 class RuntimeIdentity:
@@ -63,3 +65,9 @@ def inspect_runtime(engine: str, location: str | Path | None, managed_root: Path
     return RuntimeIdentity(
         engine, ownership, str(location), parse_runtime_version(output), output,
     )
+
+
+def engine_runtime_version(engine_name: str, engine, *, run=subprocess.run) -> str | None:
+    location = getattr(engine, "runtime_location", lambda: None)()
+    managed_root = config.LLAMACPP_DIR if engine_name == "llamacpp" else config.VLLM_VENV
+    return inspect_runtime(engine_name, location, managed_root, run=run).version

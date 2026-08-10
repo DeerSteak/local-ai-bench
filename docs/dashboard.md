@@ -108,7 +108,7 @@ Performance sections with sample evidence also render a collapsible **Decision-g
 
 ## Multi-file comparison
 
-Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. A file's `"engine"` field, when present, is folded into its default label (`hostname (llamacpp)`) so an `--engine all` pair from the same machine loads as two distinct series instead of two identically-labeled ones (currently a no-op with only one engine registered — see [Engines](engines.md#selecting-an-engine)) — still overridable per file in the header. This also keeps an older results file generated against the now-removed Ollama engine distinguishable if loaded alongside a newer llama.cpp one. The **Models** filter shows or hides individual models.
+Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. When `engine_version` is recorded, every chart label includes the runtime (`hostname (llamacpp 7000)` or `hostname (vllm 0.10.2)`) so results made before and after an engine update remain distinguishable. Older files remain compatible: their `engine` is folded into the label only when loaded files span multiple engines, preserving the existing `hostname (llamacpp)` disambiguation without inventing an unknown version. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
 
 ## Exporting
 
