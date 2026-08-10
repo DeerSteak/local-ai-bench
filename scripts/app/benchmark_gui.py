@@ -72,8 +72,8 @@ from scripts.app.engine_management import (
     build_engine_management_tab, collect_engine_management, vllm_update_support,
 )
 from scripts.setup.runtime_update import (
-    RuntimeUpdateResult, rebuild_managed_llamacpp, update_homebrew_llamacpp,
-    update_managed_vllm,
+    RuntimeUpdateResult, detect_nvidia_max_cuda_version, rebuild_managed_llamacpp,
+    update_homebrew_llamacpp, update_managed_vllm, update_windows_llamacpp,
 )
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
@@ -762,9 +762,19 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
         if platform.system() == "Darwin":
             return update_homebrew_llamacpp(status.location)
+        if platform.system() == "Windows":
+            return update_windows_llamacpp(
+                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(),
+            )
         if not status.managed:
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
         return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend)
+
+    llamacpp_update_prompts = {
+        "Darwin": "Ask Homebrew to update llama.cpp, then validate the installed tools?",
+        "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
+        "Linux": "Clone and build the latest llama.cpp, then replace the current checkout?",
+    }
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
@@ -780,8 +790,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
         vllm_updater=perform_vllm_update,
-        llamacpp_updater=(perform_llamacpp_update
-                          if platform.system() in {"Darwin", "Linux"} else None),
+        llamacpp_updater=perform_llamacpp_update,
+        llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
         run_active=lambda: process is not None and process.poll() is None,
     )
     notebook.bind(

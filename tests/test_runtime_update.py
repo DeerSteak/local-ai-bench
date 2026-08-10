@@ -2,8 +2,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.setup.runtime_update import (
-    detect_nvidia_compute_capability, homebrew_llamacpp_prefix, llamacpp_cmake_flags,
-    rebuild_managed_llamacpp, update_homebrew_llamacpp,
+    detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
+    homebrew_llamacpp_prefix, llamacpp_cmake_flags, rebuild_managed_llamacpp,
+    select_windows_llamacpp_assets, update_homebrew_llamacpp, update_windows_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
 )
 from scripts.setup.vllm_install import VllmSupport
@@ -202,6 +203,78 @@ def test_update_homebrew_llamacpp_rejects_unrelated_system_binary(tmp_path):
     )
     assert not result.success
     assert "not owned by Homebrew" in result.detail
+
+
+def test_detect_nvidia_max_cuda_version_reads_driver_header():
+    result = detect_nvidia_max_cuda_version(
+        run=lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout="NVIDIA-SMI 580.1 CUDA Version: 13.0",
+        ),
+    )
+    assert result == "13.0"
+
+
+def test_select_windows_assets_prefers_compatible_cuda_pair():
+    assets = [
+        {"name": "llama-b1-bin-win-cuda-12.4-x64.zip"},
+        {"name": "cudart-llama-bin-win-cuda-12.4-x64.zip"},
+        {"name": "llama-b1-bin-win-vulkan-x64.zip"},
+    ]
+    selected = select_windows_llamacpp_assets({"assets": assets}, "12.4")
+    assert [asset["name"] for asset in selected] == [
+        "llama-b1-bin-win-cuda-12.4-x64.zip",
+        "cudart-llama-bin-win-cuda-12.4-x64.zip",
+    ]
+
+
+def test_update_windows_llamacpp_stages_validates_and_swaps(tmp_path):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    (target / "old").touch()
+    asset = {
+        "name": "llama-b1-bin-win-vulkan-x64.zip", "browser_download_url": "https://x/a.zip",
+        "size": 10,
+    }
+
+    def downloader(_url, destination, **_kwargs):
+        destination.touch()
+        return destination
+
+    def extractor(_archive, destination):
+        for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+            tool = destination / "bin" / f"{name}.exe"
+            tool.parent.mkdir(parents=True, exist_ok=True)
+            tool.touch()
+
+    result = update_windows_llamacpp(
+        target, None, release_fetcher=lambda: {"assets": [asset]},
+        downloader=downloader, extractor=extractor,
+        run=lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout="version: 7002", stderr="",
+        ), token_factory=lambda: "test",
+    )
+
+    assert result.success and result.version == "version: 7002"
+    assert (target / "bin" / "llama-server.exe").is_file()
+    assert not (target / "old").exists()
+    assert not (tmp_path / ".llama.cpp-downloads-test").exists()
+
+
+def test_update_windows_llamacpp_preserves_target_when_validation_fails(tmp_path):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    asset = {"name": "llama-win-vulkan-x64.zip", "browser_download_url": "https://x/a", "size": 1}
+
+    result = update_windows_llamacpp(
+        target, None, release_fetcher=lambda: {"assets": [asset]},
+        downloader=lambda _url, destination, **_kwargs: destination,
+        extractor=lambda _archive, destination: destination.mkdir(exist_ok=True),
+        token_factory=lambda: "test",
+    )
+    assert not result.success
+    assert marker.exists()
 
 
 def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeypatch):

@@ -125,6 +125,7 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
 
 def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
                                 vllm_updater=None, llamacpp_updater=None,
+                                llamacpp_update_prompt=None,
                                 run_active=lambda: False) -> None:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
     parent.rowconfigure(1, weight=1)
@@ -250,7 +251,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             header, text="Update / Rebuild llama.cpp",
             command=lambda: update_engine(
                 "llamacpp", "llama.cpp", llamacpp_updater,
-                "Clone and build the latest llama.cpp, then replace the current checkout?",
+                llamacpp_update_prompt or "Update the selected llama.cpp installation?",
                 allow_system=platform.system() == "Darwin",
             ),
         ).pack(side="right", padx=(0, 8))

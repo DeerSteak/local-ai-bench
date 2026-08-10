@@ -2,17 +2,23 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
+import urllib.request
 import uuid
 
 from scripts.setup.vllm_install import VllmSupport, install_vllm
+from scripts.setup.archive_safety import safe_extract_zip
+from scripts.setup.resumable_download import download_file
+from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
 
 
 LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp"
 LLAMACPP_TARGETS = ("llama-server", "llama-bench", "llama-batched-bench")
+LLAMACPP_RELEASE_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,14 @@ def detect_nvidia_compute_capability(*, run=subprocess.run) -> str | None:
         return None
     first = (result.stdout or "").strip().splitlines()
     return first[0].strip() if result.returncode == 0 and first else None
+
+
+def detect_nvidia_max_cuda_version(*, run=subprocess.run) -> str | None:
+    try:
+        result = run(["nvidia-smi"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return hardware.parse_nvidia_max_cuda_version(result.stdout) if result.returncode == 0 else None
 
 
 def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
@@ -110,6 +124,109 @@ def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run)
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Updated llama.cpp returned no version.")
     return RuntimeUpdateResult(True, "Homebrew llama.cpp updated successfully.", output.splitlines()[0])
+
+
+def fetch_llamacpp_release(*, opener=urllib.request.urlopen) -> dict:
+    request = urllib.request.Request(
+        LLAMACPP_RELEASE_URL, headers={"Accept": "application/vnd.github+json"},
+    )
+    with opener(request, timeout=15) as response:
+        payload = json.load(response)
+    if not isinstance(payload, dict) or not isinstance(payload.get("assets"), list):
+        raise ValueError("GitHub returned invalid llama.cpp release metadata")
+    return payload
+
+
+def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None) -> list[dict]:
+    assets = release.get("assets", [])
+    cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
+    if cuda_pair is not None:
+        return [cuda_pair[0], cuda_pair[1]]
+    vulkan = next((asset for asset in assets
+                   if "win-vulkan-x64" in str(asset.get("name", "")).lower()
+                   and str(asset.get("name", "")).endswith(".zip")), None)
+    return [vulkan] if vulkan is not None else []
+
+
+def validate_windows_llamacpp(directory: Path, *, run=subprocess.run) -> RuntimeUpdateResult:
+    tools = {}
+    for name in LLAMACPP_TARGETS:
+        matches = [path for path in directory.rglob(f"{name}.exe") if path.is_file()]
+        if not matches:
+            return RuntimeUpdateResult(False, f"Staged Windows release is missing {name}.exe.")
+        tools[name] = matches[0]
+    try:
+        result = run(
+            [str(tools["llama-server"]), "--version"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return RuntimeUpdateResult(False, f"Staged Windows llama.cpp validation failed: {exc}")
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0 or not output:
+        return RuntimeUpdateResult(False, output or "Staged Windows llama.cpp returned no version.")
+    return RuntimeUpdateResult(True, "Staged Windows llama.cpp validated.", output.splitlines()[0])
+
+
+def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
+                            release_fetcher=fetch_llamacpp_release,
+                            downloader=download_file, extractor=safe_extract_zip,
+                            run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
+                            token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
+    """Stage and validate an official Windows release, then swap with rollback."""
+    target = Path(target)
+    if not target.is_dir():
+        return RuntimeUpdateResult(False, f"Managed llama.cpp directory does not exist: {target}")
+    token = token_factory()
+    staged = target.with_name(f".{target.name}-update-{token}")
+    downloads = target.with_name(f".{target.name}-downloads-{token}")
+    backup = target.with_name(f".{target.name}-backup-{token}")
+    try:
+        release = release_fetcher()
+        assets = select_windows_llamacpp_assets(release, max_cuda_version)
+        if not assets:
+            return RuntimeUpdateResult(False, "The latest release has no compatible Windows asset.")
+        downloads.mkdir(parents=True)
+        for asset in assets:
+            name, url, size = asset.get("name"), asset.get("browser_download_url"), asset.get("size")
+            if not isinstance(name, str) or not isinstance(url, str) or not isinstance(size, int):
+                return RuntimeUpdateResult(False, "The selected release asset metadata is invalid.")
+            archive = downloader(url, downloads / name, expected_size=size)
+            extractor(archive, staged)
+        validation = validate_windows_llamacpp(staged, run=run)
+        if not validation.success:
+            return validation
+        replace(target, backup)
+        try:
+            replace(staged, target)
+        except Exception as exc:
+            try:
+                replace(backup, target)
+            except Exception as rollback_exc:
+                return RuntimeUpdateResult(
+                    False, f"Windows llama.cpp swap and rollback failed: {exc}; "
+                    f"rollback: {rollback_exc}",
+                )
+            return RuntimeUpdateResult(
+                False, f"Windows llama.cpp update failed; the prior release was preserved: {exc}",
+            )
+        try:
+            remove(backup)
+        except OSError as exc:
+            return RuntimeUpdateResult(
+                True, f"llama.cpp updated, but its backup remains at {backup}: {exc}",
+                validation.version,
+            )
+        return RuntimeUpdateResult(True, "Windows llama.cpp updated successfully.", validation.version)
+    except Exception as exc:
+        return RuntimeUpdateResult(False, f"Windows llama.cpp update failed: {exc}")
+    finally:
+        for path in (staged, downloads):
+            if path.exists():
+                try:
+                    remove(path)
+                except OSError:
+                    pass
 
 
 def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
