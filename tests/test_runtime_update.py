@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 from scripts.setup.runtime_update import (
@@ -106,6 +107,53 @@ def test_update_managed_vllm_reports_cancellation_and_preserves_target(tmp_path)
     )
     assert not result.success
     assert "cancelled" in result.detail
+    assert marker.exists()
+
+
+def test_update_managed_vllm_stops_before_validation_when_cancelled(tmp_path):
+    target = tmp_path / "vllm-env"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    control = RuntimeUpdateControl()
+
+    def installer(_support, **kwargs):
+        executable = vllm_executable(kwargs["venv_dir"])
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        control.cancel()
+        return True
+
+    result = update_managed_vllm(
+        SUPPORT, target, installer=installer, control=control,
+        token_factory=lambda: "test",
+    )
+    assert not result.success and "cancelled" in result.detail
+    assert marker.exists()
+
+
+def test_update_managed_vllm_reports_cancellation_during_validation(tmp_path):
+    target = tmp_path / "vllm-env"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+
+    class Control(RuntimeUpdateControl):
+        def run(self, command, **_kwargs):
+            self.cancel()
+            return subprocess.CompletedProcess(command, -1, "", "update cancelled")
+
+    def installer(_support, **kwargs):
+        executable = vllm_executable(kwargs["venv_dir"])
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        return True
+
+    result = update_managed_vllm(
+        SUPPORT, target, installer=installer, control=Control(),
+        token_factory=lambda: "test",
+    )
+    assert not result.success and "cancelled" in result.detail
     assert marker.exists()
 
 

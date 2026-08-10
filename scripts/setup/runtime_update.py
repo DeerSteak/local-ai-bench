@@ -203,6 +203,8 @@ def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run,
                 )
             return RuntimeUpdateResult(False, f"Homebrew command failed: {' '.join(command)}")
     missing = [name for name in LLAMACPP_TARGETS if not (prefix / "bin" / name).is_file()]
+    if cancelled := _cancelled(control):
+        return cancelled
     if missing:
         return RuntimeUpdateResult(False, f"Updated Homebrew formula is missing: {', '.join(missing)}")
     try:
@@ -213,6 +215,8 @@ def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run,
     except (OSError, subprocess.SubprocessError) as exc:
         return RuntimeUpdateResult(False, f"Updated llama.cpp validation failed: {exc}")
     output = (result.stdout or result.stderr or "").strip()
+    if cancelled := _cancelled(control):
+        return cancelled
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Updated llama.cpp returned no version.")
     return RuntimeUpdateResult(True, "Homebrew llama.cpp updated successfully.", output.splitlines()[0])
@@ -295,6 +299,8 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
         if cancelled := _cancelled(control):
             return cancelled
         validation = validate_windows_llamacpp(staged, run=active_run)
+        if cancelled := _cancelled(control):
+            return cancelled
         if not validation.success:
             return validation
         replace(target, backup)
@@ -369,6 +375,8 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
                     return cancelled
                 return RuntimeUpdateResult(False, f"llama.cpp update command failed: {command[0]}")
         validation = validate_llamacpp_build(staged, run=active_run)
+        if cancelled := _cancelled(control):
+            return cancelled
         if not validation.success:
             return validation
         replace(target, backup)
@@ -443,7 +451,11 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
             if cancelled := _cancelled(control):
                 return cancelled
             return RuntimeUpdateResult(False, "The staged vLLM installation failed.")
+        if cancelled := _cancelled(control):
+            return cancelled
         validation = validate_vllm_environment(staged, run=active_run)
+        if cancelled := _cancelled(control):
+            return cancelled
         if not validation.success:
             return validation
         remove(staged)
