@@ -68,3 +68,23 @@ def test_vllm_import_uses_cache_and_rejects_duplicate_tag(monkeypatch, tmp_path)
 def test_disk_check_handles_known_size(tmp_path):
     tiny = ImportVariant("q4", "Q4", ("model.gguf",), 1)
     assert enough_disk_space(tiny, tmp_path / "new") is True
+
+
+def test_failed_llamacpp_import_preserves_preexisting_empty_destination(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 10}))
+    destination = tmp_path / "models" / "llamacpp" / "custom"
+    destination.mkdir(parents=True)
+    import huggingface_hub
+    monkeypatch.setattr(
+        huggingface_hub, "hf_hub_download", lambda **_kwargs: (_ for _ in ()).throw(OSError("fail")),
+    )
+
+    with pytest.raises(OSError, match="fail"):
+        import_model(
+            inspection=inspection, engine="llamacpp", variant=inspection.llama_variants[0],
+            tag="custom", label="Custom", models_dir=tmp_path / "models",
+            registry_path=tmp_path / "registry.json",
+        )
+
+    assert destination.is_dir()
+    assert not any(destination.iterdir())

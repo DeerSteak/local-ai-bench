@@ -43,6 +43,7 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         destination = Path(models_dir) / "llamacpp" / tag
         if destination.exists() and any(destination.iterdir()):
             raise ValueError(f"model destination already exists: {destination}")
+        created_destination = not destination.exists()
         destination.mkdir(parents=True, exist_ok=True)
         from huggingface_hub import hf_hub_download
         try:
@@ -55,8 +56,11 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
                 if downloaded != target:
                     shutil.move(str(downloaded), target)
         except BaseException:
-            if destination.exists():
+            if created_destination and destination.exists():
                 shutil.rmtree(destination)
+            else:
+                for filename in variant.files:
+                    (destination / Path(filename).name).unlink(missing_ok=True)
             raise
         record = {
             "tag": tag, "label": label.strip(), "engine": engine,

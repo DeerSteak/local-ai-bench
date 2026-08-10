@@ -109,3 +109,57 @@ def test_preferred_variant_chooses_standard_q4_before_smaller_quants():
     )
     assert preferred_variant(variants) == variants[2]
     assert preferred_variant(()) is None
+
+
+def test_multipart_gguf_variants_keep_their_directories_separate():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "Q4_K_M/model-00001-of-00002.gguf": 1,
+        "Q4_K_M/model-00002-of-00002.gguf": 2,
+        "Q8_0/model-00001-of-00002.gguf": 3,
+        "Q8_0/model-00002-of-00002.gguf": 4,
+    }))
+
+    assert [variant.files for variant in inspection.llama_variants] == [
+        ("Q4_K_M/model-00001-of-00002.gguf", "Q4_K_M/model-00002-of-00002.gguf"),
+        ("Q8_0/model-00001-of-00002.gguf", "Q8_0/model-00002-of-00002.gguf"),
+    ]
+
+
+def test_single_gguf_labels_include_the_disambiguating_path():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "Q4_K_M/model.gguf": 1, "Q8_0/model.gguf": 1,
+    }))
+
+    assert [variant.label for variant in inspection.llama_variants] == [
+        "Q4_K_M/model.gguf", "Q8_0/model.gguf",
+    ]
+
+
+def test_auxiliary_filter_does_not_drop_model_names_containing_draft():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "redraft-model-Q4_K_M.gguf": 1, "draft-helper.gguf": 1,
+    }))
+
+    assert [variant.label for variant in inspection.llama_variants] == [
+        "redraft-model-Q4_K_M.gguf",
+    ]
+
+
+def test_vllm_rejects_nested_weights_ignored_by_the_downloader():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "original/consolidated.safetensors": 10,
+    }))
+
+    assert inspection.vllm_variant is None
+
+
+def test_vllm_prefers_canonical_index_when_multiple_are_present():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors.index.json": 1,
+        "consolidated.safetensors.index.json": 1, "model.safetensors": 10,
+    }), read_repo_json=lambda name: {
+        "weight_map": {"layer": "model.safetensors"}
+    } if name == "model.safetensors.index.json" else {})
+
+    assert inspection.vllm_variant is not None
+    assert inspection.vllm_variant.files == ("model.safetensors",)

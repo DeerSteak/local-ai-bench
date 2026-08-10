@@ -71,18 +71,19 @@ def _llama_variants(files: dict[str, int | None]) -> tuple[ImportVariant, ...]:
     ggufs = {
         name: size for name, size in files.items()
         if name.lower().endswith(".gguf")
-        and not any(marker in Path(name).name.lower() for marker in ("mmproj", "dflash", "draft"))
+        and not Path(name).name.lower().startswith(("mmproj-", "dflash-", "draft-"))
     }
     grouped: dict[str, list[tuple[int, int, str]]] = {}
     singles = []
     for name in ggufs:
         match = _PART_RE.match(Path(name).name)
         if match:
-            grouped.setdefault(match.group(1), []).append((int(match.group(2)), int(match.group(3)), name))
+            prefix = str(Path(name).parent / match.group(1))
+            grouped.setdefault(prefix, []).append((int(match.group(2)), int(match.group(3)), name))
         else:
             singles.append(name)
     variants = [
-        ImportVariant(name, Path(name).name, (name,), ggufs[name]) for name in sorted(singles)
+        ImportVariant(name, name, (name,), ggufs[name]) for name in sorted(singles)
     ]
     for prefix, parts in sorted(grouped.items()):
         total = parts[0][1]
@@ -138,12 +139,16 @@ def inspect_repository(value: str, revision: str = "main", token: str | None = N
     safetensors = [
         name for name in files
         if name.lower().endswith(".safetensors")
+        and Path(name).parent == Path(".")
         and Path(name).name.lower() not in {"adapter_model.safetensors"}
     ]
     vllm = None
-    indexes = sorted(name for name in files if name.lower().endswith(".safetensors.index.json"))
+    indexes = sorted(name for name in files if name.lower().endswith(".safetensors.index.json")
+                     and Path(name).parent == Path("."))
+    index = ("model.safetensors.index.json" if "model.safetensors.index.json" in indexes
+             else indexes[0] if len(indexes) == 1 else None)
     weights: tuple[str, ...] = ()
-    if "config.json" in files and len(indexes) == 1:
+    if "config.json" in files and index is not None:
         repo_json_reader = read_repo_json
         if read_repo_json is None:
             from huggingface_hub import hf_hub_download
@@ -155,7 +160,7 @@ def inspect_repository(value: str, revision: str = "main", token: str | None = N
                 return json.loads(Path(path).read_text(encoding="utf-8"))
             repo_json_reader = default_repo_json_reader
         assert repo_json_reader is not None
-        weights = _indexed_safetensors(repo_json_reader(indexes[0]), files)
+        weights = _indexed_safetensors(repo_json_reader(index), files)
     elif "config.json" in files and len(safetensors) == 1:
         weights = tuple(safetensors)
     if weights:
@@ -164,7 +169,7 @@ def inspect_repository(value: str, revision: str = "main", token: str | None = N
             if all(value is not None for value in sizes) else None
         vllm = ImportVariant(
             "snapshot", "Safetensors repository snapshot", weights, size,
-            _vllm_support_files(files, indexes[0] if indexes else None),
+            _vllm_support_files(files, index),
         )
     return RepositoryInspection(
         repo=repo,
