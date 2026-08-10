@@ -44,6 +44,7 @@ VLLM_DISCOVERY_PORTS = (8000, 8001)
 
 # Model downloads land here (setup_check.py), namespaced one subdirectory per engine — see docs/engines.md.
 MODELS_DIR = SCRIPT_DIR / "models"
+CUSTOM_MODELS_PATH = MODELS_DIR / "custom_models.json"
 COMFYUI_MODELS_DIR = MODELS_DIR / "comfyui"
 COMFYUI_EXTRA_MODEL_PATHS = COMFYUI_MODELS_DIR / "extra_model_paths.yaml"
 RESUME_DIGEST_CACHE_PATH = SCRIPT_DIR / ".resume_digest_cache.json"
