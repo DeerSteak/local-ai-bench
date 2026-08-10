@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.setup.runtime_update import (
+    detect_nvidia_compute_capability, llamacpp_cmake_flags, rebuild_managed_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
 )
 from scripts.setup.vllm_install import VllmSupport
@@ -133,3 +134,68 @@ def test_update_managed_vllm_rejects_unmanaged_or_unsupported_target(tmp_path):
     )
     assert "does not exist" in missing.detail
     assert unsupported.detail == "unsupported here"
+
+
+def test_detect_nvidia_compute_capability_reads_first_gpu():
+    result = detect_nvidia_compute_capability(
+        run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="8.9\n8.9\n"),
+    )
+    assert result == "8.9"
+
+
+def test_llamacpp_cmake_flags_match_backend():
+    assert llamacpp_cmake_flags("cuda", nvcc="/cuda/nvcc", compute_capability="8.9") == [
+        "-DGGML_CUDA=ON", "-DCMAKE_CUDA_COMPILER=/cuda/nvcc",
+        "-DCMAKE_CUDA_ARCHITECTURES=89",
+    ]
+    assert llamacpp_cmake_flags("rocm") == ["-DGGML_HIP=ON"]
+    assert llamacpp_cmake_flags("cpu") == []
+
+
+def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeypatch):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    (target / "old").touch()
+    commands = []
+    monkeypatch.setattr("scripts.setup.runtime_update.find_nvcc", lambda: "/cuda/nvcc")
+
+    def run(command, **kwargs):
+        commands.append(command)
+        if command[:3] == ["git", "clone", "--depth"]:
+            staged = Path(command[-1])
+            for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+                tool = staged / "build" / "bin" / name
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.touch()
+        if "--version" in command:
+            return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        if command[:1] == ["nvidia-smi"]:
+            return SimpleNamespace(returncode=0, stdout="8.9\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    result = rebuild_managed_llamacpp(
+        target, "cuda", run=run, token_factory=lambda: "test",
+    )
+
+    assert result.success
+    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
+    build = next(command for command in commands if command[:2] == ["cmake", "--build"])
+    assert "-DCMAKE_CUDA_ARCHITECTURES=89" in configure
+    assert all(name in build for name in ("llama-server", "llama-bench", "llama-batched-bench"))
+    assert not (target / "old").exists()
+
+
+def test_rebuild_managed_llamacpp_preserves_checkout_on_build_failure(tmp_path):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+
+    result = rebuild_managed_llamacpp(
+        target, "cpu",
+        run=lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="failed"),
+        token_factory=lambda: "test",
+    )
+
+    assert not result.success
+    assert marker.exists()
