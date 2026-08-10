@@ -82,6 +82,17 @@ export function getGpuSplitMethodologyWarning(files: ResultsFile[]): string {
     : "";
 }
 
+export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: string): string {
+  if (section && ["images", "llamabench", "vllmbench"].includes(section)) return "";
+  const relevant = files.filter(file => file.engine === "llamacpp" || file.engine == null);
+  if (relevant.length < 2) return "";
+  const modes = new Set(relevant.map(file =>
+    file.data?.run?.effective_config?.llamacpp_no_repack === true));
+  return modes.size > 1
+    ? "Loaded llama.cpp files use different weight-repacking modes."
+    : "";
+}
+
 // Cross-engine comparison compares different weight files, not just different
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.
@@ -111,17 +122,20 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
 export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
+    const noRepack = f.engine === "llamacpp"
+      && f.data?.run?.effective_config?.llamacpp_no_repack === true;
+    const engine = noRepack ? `${f.engine} -nr` : f.engine;
     if (f.engineVersion) {
-      const runtime = [f.engine, f.engineVersion].filter(Boolean).join(" ");
+      const runtime = [engine, f.engineVersion].filter(Boolean).join(" ");
       return { ...f, hostname: `${f.hostname} (${runtime})` };
     }
     if (f.engine && f.engineVersionRecorded === false) {
-      return { ...f, hostname: `${f.hostname} (${f.engine} version not recorded)` };
+      return { ...f, hostname: `${f.hostname} (${engine} version not recorded)` };
     }
     if (f.engine && f.engineVersionRecorded === true) {
-      return { ...f, hostname: `${f.hostname} (${f.engine} version unavailable)` };
+      return { ...f, hostname: `${f.hostname} (${engine} version unavailable)` };
     }
-    return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f;
+    return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${engine})` } : f;
   });
 }
 

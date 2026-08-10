@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
+  getNoRepackMethodologyWarning,
   sanitizeForFilename, applyEngineLabels, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
@@ -149,6 +150,35 @@ describe("getGpuSplitMethodologyWarning", () => {
   });
 });
 
+describe("getNoRepackMethodologyWarning", () => {
+  const enabled = { engine: "llamacpp", data: { run: { effective_config: {} } } };
+  const disabled = { engine: "llamacpp", data: { run: {
+    effective_config: { llamacpp_no_repack: true },
+  } } };
+
+  it("warns when llama.cpp repack modes differ", () => {
+    expect(getNoRepackMethodologyWarning([enabled, disabled])).toContain("weight-repacking");
+  });
+
+  it("treats a missing legacy setting as repacking enabled", () => {
+    const legacy = { data: { run: { effective_config: {} } } };
+    expect(getNoRepackMethodologyWarning([legacy, disabled])).toContain("weight-repacking");
+  });
+
+  it("ignores vLLM settings and matching llama.cpp modes", () => {
+    const vllm = { engine: "vllm", data: { run: {
+      effective_config: { llamacpp_no_repack: true },
+    } } };
+    expect(getNoRepackMethodologyWarning([enabled, enabled, vllm])).toBe("");
+  });
+
+  it("stays quiet for workloads that do not consume the setting", () => {
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "images")).toBe("");
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "llamabench")).toBe("");
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "vllmbench")).toBe("");
+  });
+});
+
 describe("sanitizeForFilename", () => {
   it("collapses whitespace and special characters to a single hyphen", () => {
     expect(sanitizeForFilename("My Model: v1.0")).toBe("My-Model-v1-0");
@@ -186,6 +216,14 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
       "host-a (llamacpp 7000)", "host-b (llamacpp 7001)",
     ]);
+  });
+
+  it("marks llama.cpp no-repack runs in the engine label", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
+      data: { run: { effective_config: { llamacpp_no_repack: true } } },
+    }];
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (llamacpp -nr 7000)");
   });
 
   it("labels a version even when an older result omitted its engine name", () => {
