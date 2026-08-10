@@ -87,6 +87,13 @@ def test_custom_models_are_sorted_by_folder_name():
     assert [model["tag"] for model in inventory["custom"]] == ["a-custom", "z-custom"]
 
 
+def test_custom_model_inventory_preserves_registered_display_label():
+    inventory = classify_engine_models(
+        [{"tag": "custom", "label": "Friendly", "size": 10}], [], [],
+    )
+    assert inventory["custom"][0]["label"] == "Friendly"
+
+
 def test_installed_images_use_explicit_comfyui_path(tmp_path):
     checkpoints = tmp_path / "checkpoints"
     checkpoints.mkdir(parents=True)

@@ -8,6 +8,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import VllmEngine
+import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
 from scripts.runtime.shared import EngineTimeout
 
@@ -287,6 +288,29 @@ def test_model_pulled_reads_the_hf_cache(engine):
 
 def test_an_unknown_tag_has_no_repo(engine):
     assert engine._repo("not-a-model") is None
+
+
+def test_registered_custom_model_resolves_and_lists_from_cache(engine, monkeypatch):
+    record = {"engine": "vllm", "tag": "custom", "label": "Custom", "repo": "owner/model"}
+    monkeypatch.setattr(vllm_module, "load_custom_models", lambda: [record])
+    monkeypatch.setattr(
+        vllm_module, "custom_model",
+        lambda engine_name, tag: record if (engine_name, tag) == ("vllm", "custom") else None,
+    )
+    snapshot = engine._cache_home / "hub" / "models--owner--model" / "snapshots" / "commit"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "model.safetensors").write_bytes(b"weights")
+
+    assert engine._repo("custom") == "owner/model"
+    assert engine.model_pulled("custom")
+    assert engine.list_installed_models() == [{"tag": "custom", "label": "Custom", "size": None}]
+
+
+def test_external_vllm_server_cannot_receive_local_imports(engine):
+    assert engine.supports_model_import()
+    engine._server_url = "http://external:8000"
+    assert not engine.supports_model_import()
 
 
 def test_list_installed_models_skips_a_pulled_entry_missing_its_vllm_repo(engine, monkeypatch):

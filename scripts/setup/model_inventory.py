@@ -168,7 +168,7 @@ def classify_engine_models(installed: list[dict], llm_catalog: list[dict] | None
     for tag in sorted(set(installed_by_tag) - llm_tags - embed_tags):
         custom.append({
             "tag": tag,
-            "label": f"{tag} (custom)",
+            "label": installed_by_tag[tag].get("label") or f"{tag} (custom)",
             "short": sanitize_tag_to_short(tag),
             "size": installed_by_tag[tag].get("size"),
         })

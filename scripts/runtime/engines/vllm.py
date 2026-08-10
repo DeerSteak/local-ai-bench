@@ -25,6 +25,7 @@ from scripts.runtime.engines.base import (
 from scripts.setup.setup_config import (
     configured_vllm_launcher_args, configured_vllm_path, load_setup_config,
 )
+from scripts.setup.custom_models import custom_model, load_custom_models
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, hf_cache_model_complete, hf_cache_model_dir,
     hf_cache_snapshot_dir, vllm_cache_home,
@@ -106,7 +107,9 @@ class VllmEngine(InferenceEngine):
     def _tool_parser(cls, tag: str) -> str | None:
         """vLLM's per-model tool-call parser name, or None when the catalog has none."""
         entry = cls._catalog_entry(tag)
-        return entry.get("vllm_tool_parser") if entry else None
+        imported = custom_model(cls.name, tag)
+        return (entry.get("vllm_tool_parser") if entry else
+                imported.get("tool_parser") if imported else None)
 
     def supports_tool_calls(self, tag: str) -> bool:
         """vLLM emits no tool_calls without --tool-call-parser, and its parsers are
@@ -117,7 +120,8 @@ class VllmEngine(InferenceEngine):
     def _repo(cls, tag: str) -> str | None:
         """The HF repo id vLLM serves for `tag`, or None when the catalog has none."""
         entry = cls._catalog_entry(tag)
-        return entry.get("vllm_repo") if entry else None
+        imported = custom_model(cls.name, tag)
+        return entry.get("vllm_repo") if entry else imported.get("repo") if imported else None
 
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
@@ -218,6 +222,9 @@ class VllmEngine(InferenceEngine):
 
     def cache_home(self) -> Path:
         return self._cache_home
+
+    def supports_model_import(self) -> bool:
+        return self._server_url is None
 
     def bench_executable(self) -> str | None:
         """`vllm bench` needs the real binary — a launcher only wraps `vllm serve`."""
@@ -351,7 +358,7 @@ class VllmEngine(InferenceEngine):
         return repo is not None and hf_cache_model_complete(self._cache_home, repo)
 
     def list_installed_models(self) -> list[dict]:
-        """Catalog tags available from the configured server or local cache."""
+        """Catalog and registered custom tags available from the server or cache."""
         served = self._served_model_ids() if self._server_url else None
         if self._server_url and served is None:
             return []
@@ -370,6 +377,14 @@ class VllmEngine(InferenceEngine):
             blobs = hf_cache_model_dir(self._cache_home, repo) / "blobs"
             size = sum(path.stat().st_size for path in blobs.glob("*")) if blobs.is_dir() else None
             installed.append({"tag": model["tag"], "size": size})
+        if not self._server_url:
+            for model in load_custom_models():
+                if model.get("engine") != self.name or not self.model_pulled(str(model.get("tag", ""))):
+                    continue
+                repo = str(model["repo"])
+                blobs = hf_cache_model_dir(self._cache_home, repo) / "blobs"
+                size = sum(path.stat().st_size for path in blobs.glob("*")) if blobs.is_dir() else None
+                installed.append({"tag": model["tag"], "label": model.get("label"), "size": size})
         return installed
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
