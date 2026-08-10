@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, fmt, getCrossEngineWeightsWarning,
+  sanitizeForFilename, applyEngineLabels, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -233,6 +233,20 @@ describe("applyEngineLabels", () => {
       { id: 2, hostname: "host-b (mlx)", engine: "mlx", data: {} },
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ]);
+  });
+});
+
+describe("filesForSection", () => {
+  const files: ResultsFile[] = [{
+    hostname: "host-a", engine: "llamacpp", engineVersion: "7000", data: {},
+  }];
+
+  it("includes engine versions on engine-backed charts", () => {
+    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a (llamacpp 7000)");
+  });
+
+  it("does not associate LLM runtime versions with ComfyUI image charts", () => {
+    expect(filesForSection(files, "images")).toEqual(files);
   });
 });
 

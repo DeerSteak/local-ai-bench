@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, applyEngineLabels, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getCrossEngineWeightsWarning } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getCrossEngineWeightsWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -104,7 +104,7 @@ export default function Dashboard() {
     });
   }, []);
 
-  const displayFiles = useMemo(() => applyEngineLabels(files), [files]);
+  const displayFiles = useMemo(() => filesForSection(files, section), [files, section]);
 
   const effectiveFiles = useMemo(() =>
     displayFiles.map(f => {

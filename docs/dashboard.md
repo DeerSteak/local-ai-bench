@@ -108,7 +108,7 @@ Performance sections with sample evidence also render a collapsible **Decision-g
 
 ## Multi-file comparison
 
-Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. When `engine_version` is recorded, every chart label includes the runtime (`hostname (llamacpp 7000)` or `hostname (vllm 0.10.2)`) so results made before and after an engine update remain distinguishable. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
+Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. When `engine_version` is recorded, engine-backed chart labels include the runtime (`hostname (llamacpp 7000)` or `hostname (vllm 0.10.2)`) so results made before and after an engine update remain distinguishable; image charts omit it because ComfyUI runs independently. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
 
 ## Exporting
 

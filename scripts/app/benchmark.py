@@ -296,6 +296,10 @@ ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
 CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
 LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc", "vllmbench"]
 
+
+def engine_version_applies(tests: list[str]) -> bool:
+    return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
+
 # Tests that shell out to one engine's own native benchmark binary rather than going
 # through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
 ENGINE_NATIVE_TESTS = {
@@ -771,7 +775,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
                         if engine_backed_tests else hardware_backend),
         }
-        runtime_version = engine_runtime_version(engine_name, engine)
+        runtime_version = (
+            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
+        )
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(

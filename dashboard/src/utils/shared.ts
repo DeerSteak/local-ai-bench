@@ -125,6 +125,10 @@ export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
   });
 }
 
+export function filesForSection<T extends ResultsFile>(files: T[], section: string): T[] {
+  return section === "images" ? files : applyEngineLabels(files);
+}
+
 export function fmt(v: number | null | undefined, unit: string): string {
   if (v == null) return "—";
   switch (unit) {
