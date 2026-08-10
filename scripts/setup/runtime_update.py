@@ -48,6 +48,17 @@ class RuntimeUpdateControl:
         if process is not None:
             _terminate_process_tree(process)
 
+    def track_process(self, process) -> None:
+        with self._lock:
+            self._process = process
+        if self.cancelled:
+            _terminate_process_tree(process)
+
+    def clear_process(self, process) -> None:
+        with self._lock:
+            if self._process is process:
+                self._process = None
+
     def run(self, command, **kwargs):
         if self.cancelled:
             return subprocess.CompletedProcess(command, -1, "", "update cancelled")
@@ -61,8 +72,7 @@ class RuntimeUpdateControl:
         else:
             kwargs.setdefault("start_new_session", True)
         process = subprocess.Popen(command, **kwargs)
-        with self._lock:
-            self._process = process
+        self.track_process(process)
         try:
             while True:
                 try:
@@ -77,8 +87,7 @@ class RuntimeUpdateControl:
                             _terminate_process_tree(process)
                             raise subprocess.TimeoutExpired(command, original_timeout or 0)
         finally:
-            with self._lock:
-                self._process = None
+            self.clear_process(process)
 
 
 def _terminate_process_tree(process) -> None:

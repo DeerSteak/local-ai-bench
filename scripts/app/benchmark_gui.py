@@ -75,6 +75,7 @@ from scripts.setup.runtime_update import (
     RuntimeUpdateResult, detect_nvidia_max_cuda_version, rebuild_managed_llamacpp,
     update_homebrew_llamacpp, update_managed_vllm, update_windows_llamacpp,
 )
+from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
@@ -770,6 +771,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
         return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend, control=control)
 
+    def perform_llamacpp_model_probe(tag, control):
+        engine = get_engine("llamacpp")
+        paths = getattr(engine, "model_paths", lambda _tag: ())(tag)
+        if not paths:
+            return ModelCompatibility(
+                "llamacpp", tag, None, "unavailable", f"Model files for {tag} were not found.",
+            )
+        return probe_llamacpp_load(
+            tag, paths[0], getattr(engine, "runtime_location", lambda: None)(), control=control,
+        )
+
     llamacpp_update_prompts = {
         "Darwin": "Ask Homebrew to update llama.cpp, then validate the installed tools?",
         "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
@@ -792,6 +804,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         vllm_updater=perform_vllm_update,
         llamacpp_updater=perform_llamacpp_update,
         llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
+        llamacpp_model_probe=perform_llamacpp_model_probe,
         run_active=lambda: process is not None and process.poll() is None,
     )
     notebook.bind(

@@ -134,6 +134,7 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
 def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
                                 vllm_updater=None, llamacpp_updater=None,
                                 llamacpp_update_prompt=None,
+                                llamacpp_model_probe=None,
                                 run_active=lambda: False) -> EngineManagementController:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
     parent.rowconfigure(1, weight=1)
@@ -142,6 +143,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     ttk.Label(header, text="Engine Management", style="Title.TLabel").pack(side="left")
     state = {"snapshot": EngineManagementSnapshot([], []), "loading": False}
     active_control: list[RuntimeUpdateControl | None] = [None]
+    probe_results: dict[tuple[str, str], ModelCompatibility] = {}
     status_text = tk.StringVar(value="Select Refresh to inspect installed runtimes.")
     ttk.Label(parent, textvariable=status_text).grid(row=2, column=0, sticky="w", pady=(8, 0))
     body = ttk.Frame(parent)
@@ -165,9 +167,16 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             models_box = ttk.LabelFrame(body, text="Imported model compatibility", padding=12)
             models_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
             for row, model in enumerate(snapshot.models):
-                text = (f"{model.tag} [{model.engine}] — {model.architecture or 'Unknown architecture'} — "
-                        f"{model.status.replace('_', ' ')}\n{model.detail}")
+                displayed = probe_results.get((model.engine, model.tag)) or model
+                text = (f"{displayed.tag} [{displayed.engine}] — "
+                        f"{displayed.architecture or 'Unknown architecture'} — "
+                        f"{displayed.status.replace('_', ' ')}\n{displayed.detail}")
                 ttk.Label(models_box, text=text, wraplength=820).grid(row=row, column=0, sticky="w", pady=3)
+                if model.engine == "llamacpp" and llamacpp_model_probe is not None:
+                    ttk.Button(
+                        models_box, text="Verify",
+                        command=lambda selected=model: start_model_probe(selected),
+                    ).grid(row=row, column=1, sticky="e", padx=(12, 0))
 
     def refresh_finished(snapshot=None, error=None):
         state["loading"] = False
@@ -196,6 +205,19 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         else:
             messagebox.showerror(f"{engine} update", result.detail, parent=root)
             status_text.set(result.detail)
+
+    def probe_finished(model, result=None, error=None):
+        state["loading"] = False
+        active_control[0] = None
+        refresh_button.configure(state="normal")
+        cancel_button.configure(state="disabled")
+        if error is not None:
+            status_text.set(f"Model verification failed: {error}")
+            return
+        assert result is not None
+        probe_results[(model.engine, model.tag)] = result
+        render(state["snapshot"])
+        status_text.set(result.detail)
 
     def refresh():
         if state["loading"]:
@@ -256,11 +278,38 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         status_text.set("Cancelling update and restoring the prior runtime…")
         control.cancel()
 
+    def start_model_probe(model):
+        if state["loading"] or llamacpp_model_probe is None:
+            return
+        probe = llamacpp_model_probe
+        if run_active():
+            messagebox.showerror("Benchmark active", "Stop the active benchmark first.", parent=root)
+            return
+        if not messagebox.askyesno(
+                "Verify llama.cpp model",
+                f"Load {model.tag} CPU-only with a small context to verify this runtime?",
+                parent=root):
+            return
+        state["loading"] = True
+        control = RuntimeUpdateControl()
+        active_control[0] = control
+        refresh_button.configure(state="disabled")
+        cancel_button.configure(state="normal")
+        status_text.set(f"Verifying {model.tag} with llama.cpp…")
+
+        def worker():
+            try:
+                result = probe(model.tag, control)
+                root.after(0, lambda: probe_finished(model, result=result))
+            except Exception as exc:
+                root.after(0, lambda error=exc: probe_finished(model, error=error))
+        threading.Thread(target=worker, daemon=True).start()
+
     refresh_button = ttk.Button(header, text="Refresh", command=refresh)
     refresh_button.pack(side="right")
     copy_button = ttk.Button(header, text="Copy Diagnostics", command=copy_diagnostics, state="disabled")
     copy_button.pack(side="right", padx=(0, 8))
-    cancel_button = ttk.Button(header, text="Cancel Update", command=cancel_update, state="disabled")
+    cancel_button = ttk.Button(header, text="Cancel Operation", command=cancel_update, state="disabled")
     cancel_button.pack(side="right", padx=(0, 8))
     if vllm_updater is not None:
         ttk.Button(

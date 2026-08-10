@@ -1,9 +1,14 @@
 """Imported-model architecture inspection and read-only runtime checks."""
 
 import json
+import socket
 import subprocess
+import tempfile
+import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 
 VLLM_ARCH_PROBE = (
@@ -66,6 +71,76 @@ def probe_vllm_architecture(python_exe: Path | None, architecture: str | None,
                   "Architecture is not registered by this vLLM installation.")
         return verdict, detail
     return "unavailable", (result.stderr or result.stdout or "Architecture probe failed").strip()
+
+
+def reserve_loopback_port() -> int:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def llamacpp_probe_command(binary: str, model_path: Path, port: int) -> list[str]:
+    return [
+        binary, "-m", str(model_path), "--host", "127.0.0.1", "--port", str(port),
+        "-ngl", "0", "-c", "512", "-b", "128", "--parallel", "1",
+    ]
+
+
+def probe_llamacpp_load(tag: str, model_path: Path, binary: str | None, *, timeout=180.0,
+                        popen: Callable = subprocess.Popen, open_fn=urllib.request.urlopen,
+                        monotonic=time.monotonic, sleep=time.sleep,
+                        port_factory=reserve_loopback_port, control=None) -> ModelCompatibility:
+    architecture = architecture_from_gguf(model_path)
+    if binary is None:
+        return ModelCompatibility(
+            "llamacpp", tag, architecture, "unavailable", "llama-server was not found.",
+        )
+    port = port_factory()
+    with tempfile.NamedTemporaryFile(mode="w+", suffix="-llamacpp-probe.log") as log:
+        try:
+            process = popen(
+                llamacpp_probe_command(binary, model_path, port),
+                stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+            )
+        except OSError as exc:
+            return ModelCompatibility("llamacpp", tag, architecture, "unavailable", str(exc))
+        if control is not None:
+            control.track_process(process)
+        deadline = monotonic() + timeout
+        try:
+            while monotonic() < deadline:
+                if control is not None and control.cancelled:
+                    return ModelCompatibility(
+                        "llamacpp", tag, architecture, "cancelled", "Model-load probe cancelled.",
+                    )
+                if process.poll() is not None:
+                    log.seek(0)
+                    detail = log.read().strip()[-2000:] or "llama-server exited during model load."
+                    return ModelCompatibility("llamacpp", tag, architecture, "load_failed", detail)
+                try:
+                    with open_fn(f"http://127.0.0.1:{port}/health", timeout=1) as response:
+                        if 200 <= getattr(response, "status", 200) < 300:
+                            return ModelCompatibility(
+                                "llamacpp", tag, architecture, "supported",
+                                "Model loaded successfully in the installed llama.cpp runtime.",
+                            )
+                except Exception:
+                    pass
+                sleep(0.2)
+            return ModelCompatibility(
+                "llamacpp", tag, architecture, "timed_out",
+                f"Model did not finish loading within {timeout:g} seconds.",
+            )
+        finally:
+            if control is not None:
+                control.clear_process(process)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
 
 
 def inspect_llamacpp_model(tag: str, model_path: Path) -> ModelCompatibility:
