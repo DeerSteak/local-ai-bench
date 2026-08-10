@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.app.model_import_dialog import import_destination
+from scripts.app.model_import_dialog import import_destination, import_variants
 from scripts.runtime import config
 from scripts.setup.model_import import (
     ImportVariant, default_custom_tag, inspect_repository, normalize_hf_repo,
@@ -155,6 +155,17 @@ def test_vllm_rejects_nested_weights_ignored_by_the_downloader():
     assert inspection.vllm_variant is None
 
 
+def test_vllm_rejects_index_references_to_nested_weights():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors.index.json": 1,
+        "original/model.safetensors": 10,
+    }), read_repo_json=lambda _name: {
+        "weight_map": {"layer": "original/model.safetensors"},
+    })
+
+    assert inspection.vllm_variant is None
+
+
 def test_vllm_prefers_canonical_index_when_multiple_are_present():
     inspection = inspect_repository("owner/model", api=FakeApi({
         "config.json": 1, "model.safetensors.index.json": 1,
@@ -171,3 +182,13 @@ def test_import_destination_requires_a_supported_engine(tmp_path):
     assert import_destination("llamacpp", "custom") == config.MODELS_DIR / "llamacpp" / "custom"
     assert import_destination("vllm", "custom", tmp_path) == tmp_path
     assert import_destination("", "custom") is None
+
+
+def test_import_variants_requires_an_explicit_supported_engine():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10, "model.gguf": 11,
+    }))
+
+    assert import_variants(inspection, "llamacpp") == inspection.llama_variants
+    assert import_variants(inspection, "vllm") == (inspection.vllm_variant,)
+    assert import_variants(inspection, "") == ()

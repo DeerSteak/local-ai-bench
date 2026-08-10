@@ -7,7 +7,8 @@ from scripts.runtime import config
 from scripts.setup.custom_models import custom_model
 from scripts.setup.model_download import enough_disk_space, import_model, load_hf_token
 from scripts.setup.model_import import (
-    default_custom_tag, inspect_repository, preferred_variant, valid_custom_tag,
+    ImportVariant, RepositoryInspection, default_custom_tag, inspect_repository,
+    preferred_variant, valid_custom_tag,
 )
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
@@ -16,6 +17,14 @@ def import_destination(engine: str, tag: str, vllm_cache: Path | None = None) ->
     if engine == "llamacpp":
         return config.MODELS_DIR / "llamacpp" / (tag or "<tag>")
     return Path(vllm_cache) if engine == "vllm" and vllm_cache is not None else None
+
+
+def import_variants(inspection: RepositoryInspection, engine: str) -> tuple[ImportVariant, ...]:
+    if engine == "llamacpp":
+        return inspection.llama_variants
+    if engine == "vllm" and inspection.vllm_variant is not None:
+        return (inspection.vllm_variant,)
+    return ()
 
 
 def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
@@ -148,8 +157,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         inspection, engine = state["inspection"], variables["engine"].get()
         if inspection is None:
             return
-        variants = (inspection.llama_variants if engine == "llamacpp" else
-                    (inspection.vllm_variant,) if inspection.vllm_variant else ())
+        variants = import_variants(inspection, engine)
         choices = {f"{item.label} — {size_label(item.size)}": item for item in variants}
         state["variants"] = choices
         variant_combo.configure(values=tuple(choices), state="readonly" if choices else "disabled")

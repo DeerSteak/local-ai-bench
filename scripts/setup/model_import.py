@@ -102,7 +102,8 @@ def _indexed_safetensors(index_data: object, files: dict[str, int | None]) -> tu
         return ()
     names = tuple(sorted(set(index_data["weight_map"].values())))
     if not names or any(
-        not isinstance(name, str) or not name.lower().endswith(".safetensors") or name not in files
+        not isinstance(name, str) or not name.lower().endswith(".safetensors")
+        or Path(name).parent != Path(".") or name not in files
         for name in names
     ):
         return ()
