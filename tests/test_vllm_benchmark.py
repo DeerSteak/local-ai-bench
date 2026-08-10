@@ -14,14 +14,22 @@ def test_error_log_excerpt_keeps_short_output_unchanged():
     )
 
 
-def test_error_log_excerpt_explains_uva_failure_without_full_traceback():
+def test_error_log_excerpt_prepends_wsl_uva_hint_without_hiding_traceback():
     output = "startup\nRuntimeError: UVA is not available\n" + ("trace" * 1000)
 
-    excerpt = VllmBenchBenchmark.error_log_excerpt(output)
+    excerpt = VllmBenchBenchmark.error_log_excerpt(output, is_wsl=True)
 
     assert "V2 Model Runner" in excerpt
     assert "VLLM_WSL2_ENABLE_PIN_MEMORY=1" in excerpt
-    assert "trace" not in excerpt
+    assert "RuntimeError: UVA is not available" in excerpt
+    assert "trace" in excerpt
+
+
+def test_error_log_excerpt_does_not_offer_wsl_advice_on_other_platforms():
+    output = "RuntimeError: UVA is not available\nreal traceback"
+    excerpt = VllmBenchBenchmark.error_log_excerpt(output, is_wsl=False)
+    assert excerpt == output
+    assert "VLLM_WSL2_ENABLE_PIN_MEMORY" not in excerpt
 
 
 def test_offline_bench_gets_its_own_process_group(monkeypatch):
