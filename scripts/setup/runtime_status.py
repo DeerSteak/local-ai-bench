@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from scripts.setup.runtime_identity import RuntimeIdentity, inspect_runtime
+from scripts.setup.runtime_identity import RuntimeIdentity, inspect_runtime, probe_vllm_server_version
 
 
 VLLM_ENV_PROBE = (
@@ -87,10 +87,14 @@ def build_llamacpp_status(location: str | Path | None, managed_root: Path, backe
 
 def build_vllm_status(location: str | Path | None, managed_root: Path, backend: str,
                       *, launcher: str | None = None, server_url: str | None = None,
-                      is_wsl: bool = False, env=None, run=subprocess.run) -> EngineStatus:
+                      is_wsl: bool = False, env=None, run=subprocess.run,
+                      open_fn=None) -> EngineStatus:
     selected = server_url or launcher or location
     if server_url:
-        identity = RuntimeIdentity("vllm", "external_server", server_url, None, "")
+        version = probe_vllm_server_version(
+            server_url, env=env, **({"open_fn": open_fn} if open_fn is not None else {}),
+        )
+        identity = RuntimeIdentity("vllm", "external_server", server_url, version, "")
     elif launcher:
         identity = RuntimeIdentity("vllm", "platform_launcher", launcher, None, "")
     else:

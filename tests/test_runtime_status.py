@@ -72,11 +72,17 @@ def test_vllm_status_reports_dependency_stack_and_wsl_policy(tmp_path):
 
 def test_external_and_launcher_vllm_status_do_not_probe_local_python(tmp_path):
     fail = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not execute"))
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self, _size): return b'{"version":"0.14.0"}'
     external = build_vllm_status(
         None, tmp_path / "vllm-env", "cuda", server_url="http://localhost:8000", run=fail,
+        open_fn=lambda *_args, **_kwargs: Response(),
     )
     launcher = build_vllm_status(
         None, tmp_path / "vllm-env", "rocm", launcher="/usr/bin/vllm-launch", run=fail,
     )
     assert external.ownership == "external_server" and external.health == "ready"
+    assert external.version == "0.14.0"
     assert launcher.ownership == "platform_launcher" and launcher.health == "ready"
