@@ -11,6 +11,24 @@ from scripts.setup.vllm_install import hf_cache_model_complete
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 
+def cancellable_tqdm(cancel_check):
+    from tqdm.auto import tqdm
+
+    class CancellableTqdm(tqdm):
+        def update(self, n=1):
+            if cancel_check():
+                raise InterruptedError("model import cancelled")
+            return super().update(n)
+
+        def __iter__(self):
+            for item in super().__iter__():
+                if cancel_check():
+                    raise InterruptedError("model import cancelled")
+                yield item
+
+    return CancellableTqdm
+
+
 def load_hf_token(env=None, token_path: Path | None = None) -> str | None:
     env = os.environ if env is None else env
     token = str(env.get("HF_TOKEN", "")).strip()
@@ -44,7 +62,8 @@ def custom_model_artifacts_present(entry: dict, *, models_dir: Path = config.MOD
 def import_model(*, inspection: RepositoryInspection, engine: str, variant: ImportVariant,
                  tag: str, label: str, vllm_cache: Path | None = None,
                  token: str | None = None, models_dir: Path = config.MODELS_DIR,
-                 registry_path: Path = config.CUSTOM_MODELS_PATH) -> dict:
+                 registry_path: Path = config.CUSTOM_MODELS_PATH,
+                 cancel_check=lambda: False) -> dict:
     if engine not in {"llamacpp", "vllm"}:
         raise ValueError("engine must be llamacpp or vllm")
     if not valid_custom_tag(tag):
@@ -70,13 +89,18 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         from huggingface_hub import hf_hub_download
         try:
             for filename in variant.files:
+                if cancel_check():
+                    raise InterruptedError("model import cancelled")
                 downloaded = Path(hf_hub_download(
                     repo_id=inspection.repo, filename=filename, revision=inspection.revision,
                     local_dir=destination, token=token,
+                    tqdm_class=cancellable_tqdm(cancel_check),
                 ))
                 target = destination / Path(filename).name
                 if downloaded != target:
                     shutil.move(str(downloaded), target)
+                if cancel_check():
+                    raise InterruptedError("model import cancelled")
         except BaseException:
             if created_destination and destination.exists():
                 shutil.rmtree(destination)
@@ -98,17 +122,22 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         if vllm_cache is None:
             raise ValueError("vLLM cache location is unavailable")
         from huggingface_hub import snapshot_download
+        if cancel_check():
+            raise InterruptedError("model import cancelled")
         snapshot_download(
             repo_id=inspection.repo, revision=inspection.revision, token=token,
             cache_dir=str(Path(vllm_cache) / "hub"),
             allow_patterns=[*variant.files, *variant.support_files],
             ignore_patterns=["*.pth", "*.bin", "original/*"],
+            tqdm_class=cancellable_tqdm(cancel_check),
         )
         record = {
             "tag": tag, "label": label.strip(), "engine": engine,
             "repo": inspection.repo, "revision": inspection.revision,
             "format": "safetensors", "files": [],
         }
+    if cancel_check():
+        raise InterruptedError("model import cancelled")
     save_custom_model(record, registry_path)
     return record
 

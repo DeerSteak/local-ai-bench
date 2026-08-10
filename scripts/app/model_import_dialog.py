@@ -60,7 +60,9 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         "validation": tk.StringVar(),
         "destination": tk.StringVar(value="Destination will be shown after inspection."),
     }
-    state = {"inspection": None, "variants": {}, "request": None, "busy": False}
+    state = {"inspection": None, "variants": {}, "request": None, "busy": False,
+             "operation": None}
+    cancel_event: list[threading.Event | None] = [None]
 
     ttk.Label(shell, text="Import Hugging Face Model", style="Title.TLabel").grid(
         row=0, column=0, columnspan=3, sticky="w",
@@ -108,7 +110,12 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     actions = ttk.Frame(shell)
     actions.grid(row=14, column=0, columnspan=3, sticky="e", pady=(18, 0))
     def close_dialog():
-        if not state["busy"]:
+        if state["busy"] and state["operation"] == "import":
+            if cancel_event[0] is not None:
+                cancel_event[0].set()
+            variables["validation"].set("Cancelling import and cleaning partial files…")
+            cancel_button.configure(state="disabled")
+        elif not state["busy"]:
             dialog.destroy()
 
     cancel_button = ttk.Button(actions, text="Cancel", command=close_dialog)
@@ -182,6 +189,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             return
         progress.stop()
         state["busy"] = False
+        state["operation"] = None
         inspect_button.configure(state="normal")
         cancel_button.configure(state="normal")
         if error is not None:
@@ -218,6 +226,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         state["inspection"] = None
         state["request"] = None
         state["busy"] = True
+        state["operation"] = "inspection"
         inspect_button.configure(state="disabled")
         import_button.configure(state="disabled")
         cancel_button.configure(state="disabled")
@@ -239,8 +248,11 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         if inspection is None or variant is None:
             return
         state["busy"] = True
+        state["operation"] = "import"
+        event = threading.Event()
+        cancel_event[0] = event
         import_button.configure(state="disabled")
-        cancel_button.configure(state="disabled")
+        cancel_button.configure(state="normal")
         progress.start(12)
         variables["validation"].set("Downloading and validating model files…")
 
@@ -251,6 +263,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
                     tag=variables["tag"].get(), label=variables["label"].get(), token=load_hf_token(),
                     vllm_cache=(getattr(engine_factory("vllm"), "cache_home")()
                                 if engine == "vllm" else None),
+                    cancel_check=event.is_set,
                 )
                 root.after(0, import_finished)
             except Exception as exc:
@@ -271,9 +284,13 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             return
         progress.stop()
         state["busy"] = False
+        state["operation"] = None
+        cancel_event[0] = None
         inspect_button.configure(state="normal")
         cancel_button.configure(state="normal")
-        variables["validation"].set(f"Import failed: {error}")
+        variables["validation"].set(
+            "Import cancelled." if isinstance(error, InterruptedError) else f"Import failed: {error}",
+        )
         validate()
 
     inspect_button.configure(command=inspect_repo)
