@@ -196,6 +196,8 @@ Two models — Nomic Embed Text and MixedBread Embed Large — measured on a sin
 
 Each model gets `--warmup` discarded calls first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it is absorbed before the `--runs` measured calls (default 3) rather than skewing them. Embedding calls use the engine interface's fixed 120-second request timeout.
 
+Under llama.cpp, `--llamacpp-no-repack` applies to embedding models because embeddings use the same `llama-server` model-loading path as generation, conversation, accuracy, and HTTP-concurrency workloads. The setting also applies to both native llama.cpp workloads through `llama-bench` and `llama-batched-bench`; it does not affect vLLM or ComfyUI. It changes the runtime's internal weight layout, not the embedding calculation or result quality, and can trade reduced startup time and peak loading memory for lower CPU or partially offloaded throughput.
+
 If you see repeated connection errors or crashes during the embedding tests (some GPU backends are unstable or immature under batched embedding workloads), try `--cpu-only`. This restarts the active engine with GPU devices hidden for every engine-backed test in the run (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward. See [CLI Reference](cli-reference.md).
 
 | Model | Tag | Size |
