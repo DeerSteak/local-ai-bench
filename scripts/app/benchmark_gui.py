@@ -24,6 +24,7 @@ from scripts.app.benchmark_frontend import (
     parse_engine_selection, format_engine_selection,
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
+    MenuEntry,
     LLM_BACKED_TESTS,
     MAX_PROMPT_TOKEN_OPTIONS,
     MAX_PROMPT_TOKEN_TESTS,
@@ -649,6 +650,18 @@ def plan_preview_sections(preview: str) -> list[tuple[str, list[str]]]:
         index = next((i for i, (_, labels) in enumerate(groups) if label in labels), len(groups) - 1)
         sections[index][1].append(line)
     return [(title, lines) for title, lines in sections if lines]
+
+
+def reconcile_imported_model_state(
+    previous_values: set[str], previous_selected: set[str], previous_defaults: dict[str, bool],
+    rebuilt: list[MenuEntry], imported_tag: str,
+) -> tuple[set[str], set[str], set[str], dict[str, bool]]:
+    current_values = {entry.value for entry in rebuilt}
+    selected = previous_selected & current_values
+    if imported_tag in current_values:
+        selected.add(imported_tag)
+    defaults = {value: previous_defaults.get(value, False) for value in current_values}
+    return selected, previous_values - current_values, current_values - previous_values, defaults
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -2110,7 +2123,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     apply_engine_availability()
 
     def refresh_imported_models(selected_tag: str) -> None:
-        selected = {name for name, variable in model_vars.items() if variable.get()}
+        previous_values = set(model_vars)
+        previous_selected = {name for name, variable in model_vars.items() if variable.get()}
         refreshed = {
             name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
             for name in available_engines
@@ -2133,17 +2147,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             inventory, [entry.value for entry in custom_tests if entry.available],
         )
         custom_models[:] = rebuilt
-        current_values = {entry.value for entry in rebuilt}
-        for value in list(model_vars):
-            if value not in current_values:
-                model_vars.pop(value)
-                custom_model_defaults.pop(value, None)
+        selected, dropped, added, defaults = reconcile_imported_model_state(
+            previous_values, previous_selected, custom_model_defaults, rebuilt, selected_tag,
+        )
+        for value in dropped:
+            model_vars.pop(value)
+        custom_model_defaults.clear()
+        custom_model_defaults.update(defaults)
         for entry in rebuilt:
-            if entry.value not in model_vars:
+            if entry.value in added:
                 model_vars[entry.value] = tk.BooleanVar(value=False)
                 model_vars[entry.value].trace_add("write", mark_custom)
-            custom_model_defaults.setdefault(entry.value, False)
-            model_vars[entry.value].set(entry.value in selected or entry.value == selected_tag)
+            model_vars[entry.value].set(entry.value in selected)
         render_model_rows()
         apply_engine_availability()
 
