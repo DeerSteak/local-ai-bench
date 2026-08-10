@@ -131,6 +131,8 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
                     shutil.move(str(downloaded), target)
                 if cancel_check():
                     raise InterruptedError("model import cancelled")
+            if cancel_check():
+                raise InterruptedError("model import cancelled")
         except BaseException:
             if created_destination and destination.exists():
                 shutil.rmtree(destination)
@@ -175,8 +177,6 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
             "repo": inspection.repo, "revision": inspection.revision,
             "format": "safetensors", "files": [],
         }
-    if cancel_check():
-        raise InterruptedError("model import cancelled")
     save_custom_model(record, registry_path)
     return record
 

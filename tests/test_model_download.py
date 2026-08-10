@@ -123,6 +123,37 @@ def test_cancelled_llamacpp_import_cleans_destination_and_does_not_register(monk
     assert load_custom_models(registry) == []
 
 
+def test_last_instant_llamacpp_cancel_cleans_destination_and_allows_retry(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 10}))
+    calls = [0]
+
+    def cancel_after_download_checks():
+        calls[0] += 1
+        return calls[0] == 3
+
+    def download(**kwargs):
+        destination = tmp_path / "models" / "llamacpp" / "custom" / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"complete")
+        return str(destination)
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    registry = tmp_path / "registry.json"
+    arguments = {
+        "inspection": inspection, "engine": "llamacpp",
+        "variant": inspection.llama_variants[0], "tag": "custom", "label": "Custom",
+        "models_dir": tmp_path / "models", "registry_path": registry,
+    }
+    with pytest.raises(InterruptedError, match="cancelled"):
+        import_model(**arguments, cancel_check=cancel_after_download_checks)
+
+    assert not (tmp_path / "models" / "llamacpp" / "custom").exists()
+    assert load_custom_models(registry) == []
+    record = import_model(**arguments)
+    assert load_custom_models(registry) == [record]
+
+
 def test_cancelled_vllm_import_removes_partial_cache_and_does_not_register(monkeypatch, tmp_path):
     inspection = inspect_repository("owner/model", api=FakeApi({
         "config.json": 1, "model.safetensors": 10,
