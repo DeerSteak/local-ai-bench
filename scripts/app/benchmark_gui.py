@@ -1060,13 +1060,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["retry_crashed_models"].set(False)).grid(row=10, column=2, padx=(8, 0))
     ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=11, column=0, columnspan=2, sticky="w")
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=11, column=2, padx=(8, 0))
+    ttk.Checkbutton(
+        execution_box, text="Disable llama.cpp weight repacking (-nr)",
+        variable=option_vars["llamacpp_no_repack"],
+    ).grid(row=12, column=0, columnspan=2, sticky="w")
+    ttk.Button(
+        execution_box, text="Reset", width=6,
+        command=lambda: option_vars["llamacpp_no_repack"].set(False),
+    ).grid(row=12, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=14, column=0, sticky="w", pady=(8, 0))
+    ).grid(row=15, column=0, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -1109,7 +1117,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
-                    "cpu_only", "force_all", "retry_crashed_models", "offline"):
+                    "cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "llamacpp_no_repack"):
             variable = option_vars[key]
             variable.set(defaults[key])
 
@@ -2557,7 +2566,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             except ValueError:
                 values[key] = option_vars[key].get()
         values["gpu_split_mode"] = option_vars["gpu_split_mode"].get()
-        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline"):
+        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "llamacpp_no_repack"):
             values[key] = option_vars[key].get()
         for key in ("out", "comfyui"):
             values[key] = option_vars[key].get().strip()

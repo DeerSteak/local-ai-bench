@@ -150,6 +150,15 @@ def test_build_command_cpu_only_ngl():
     assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
 
 
+def test_build_command_can_disable_repacking(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
+    cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 999,
+    )
+    assert "--no-repack" in cmd
+
+
 def test_build_command_uses_f16_cache_for_tensor_split(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
     cmd = LBC.build_command(

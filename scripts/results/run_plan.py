@@ -20,13 +20,14 @@ SAFE_CONFIG_KEYS = {
     "concurrency_chat_soft_exit_floor",
     "methodology_profile", "effective_optimizations", "offline",
     "gpu_split_mode",
+    "llamacpp_no_repack",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
-    "retry_crashed_models",
+    "retry_crashed_models", "llamacpp_no_repack",
 }
 
 
@@ -210,10 +211,11 @@ class RunPlan:
             if (isinstance(value, bool) or not isinstance(value, int) or value < minimum
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
-        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline"):
+        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "llamacpp_no_repack"):
             if key == "retry_crashed_models" and key not in settings:
                 continue
-            if key not in settings and key == "offline":
+            if key not in settings and key in {"offline", "llamacpp_no_repack"}:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")

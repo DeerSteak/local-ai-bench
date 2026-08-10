@@ -593,6 +593,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
     )
     parser.add_argument(
+        "--llamacpp-no-repack", action="store_true",
+        help="Disable llama.cpp weight repacking with --no-repack/-nr. This can reduce model "
+             "startup time and peak loading memory but may reduce CPU inference throughput "
+             "(default: false).",
+    )
+    parser.add_argument(
         "--maxtier", type=str, default=None,
         choices=TIER_CHOICES,
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
@@ -649,6 +655,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     args = parser.parse_args()
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
+    config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
     config.RETRY_CRASHED_MODELS = args.retry_crashed_models
     if args.offline:
         apply_offline_mode()
@@ -864,6 +871,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "cpu_only": args.cpu_only, "force_all": args.force_all,
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
+            "llamacpp_no_repack": args.llamacpp_no_repack,
             "max_prompt_tokens": args.max_prompt_tokens,
             "context_lengths": config.CONTEXT_LENGTHS,
             "llamabench_pp": config.LLAMABENCH_PP,

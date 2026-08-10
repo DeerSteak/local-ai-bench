@@ -52,6 +52,9 @@ PUBLIC_OPTION_SCHEMA = {
         "choice", "advanced", "exposed", "Graphical execution settings",
         default="layer", choices=("layer", "tensor"),
     ),
+    "--llamacpp-no-repack": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+    ),
     "--force-all": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--retry-crashed-models": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
@@ -66,6 +69,7 @@ GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
+    "llamacpp_no_repack": "--llamacpp-no-repack",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
     "offline": "--offline", "out": "--out",
     "comfyui": "--comfyui",
