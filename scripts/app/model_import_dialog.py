@@ -5,7 +5,9 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.setup.custom_models import custom_model
-from scripts.setup.model_download import enough_disk_space, import_model, load_hf_token
+from scripts.setup.model_download import (
+    custom_model_artifacts_present, enough_disk_space, import_model, load_hf_token,
+)
 from scripts.setup.model_import import (
     ImportVariant, RepositoryInspection, default_custom_tag, inspect_repository,
     preferred_variant, valid_custom_tag,
@@ -140,7 +142,11 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             reason = "Display name is required."
         elif tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
             reason = "That tag belongs to a catalog model."
-        elif custom_model(engine, tag) is not None:
+        elif ((registered := custom_model(engine, tag)) is not None
+              and custom_model_artifacts_present(
+                  registered,
+                  vllm_cache=destination(engine, tag) if engine == "vllm" else None,
+              )):
             reason = "That custom tag is already registered for this engine."
         elif not variables["acknowledge"].get():
             reason = "Acknowledge that runtime compatibility is unverified."

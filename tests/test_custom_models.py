@@ -1,3 +1,5 @@
+import pytest
+
 from scripts.setup.custom_models import (
     custom_model, forget_custom_models, load_custom_models, save_custom_model,
 )
@@ -35,3 +37,8 @@ def test_forget_custom_models_can_match_tag_or_repo_without_crossing_engines(tmp
     assert load_custom_models(path) == [
         {"engine": "vllm", "tag": "other", "repo": "owner/b"},
     ]
+
+
+def test_forget_custom_models_requires_a_selector(tmp_path):
+    with pytest.raises(ValueError, match="tag or repo"):
+        forget_custom_models(engine="vllm", path=tmp_path / "custom.json")

@@ -30,13 +30,7 @@ def custom_model(engine: str, tag: str, path: Path = config.CUSTOM_MODELS_PATH) 
     )
 
 
-def save_custom_model(entry: dict, path: Path = config.CUSTOM_MODELS_PATH) -> None:
-    models = [
-        item for item in load_custom_models(path)
-        if (item.get("engine"), item.get("tag")) != (entry.get("engine"), entry.get("tag"))
-    ]
-    models.append(dict(entry))
-    models.sort(key=lambda item: (str(item.get("tag", "")), str(item.get("engine", ""))))
+def _write_registry(models: list[dict], path: Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -52,8 +46,20 @@ def save_custom_model(entry: dict, path: Path = config.CUSTOM_MODELS_PATH) -> No
         raise
 
 
+def save_custom_model(entry: dict, path: Path = config.CUSTOM_MODELS_PATH) -> None:
+    models = [
+        item for item in load_custom_models(path)
+        if (item.get("engine"), item.get("tag")) != (entry.get("engine"), entry.get("tag"))
+    ]
+    models.append(dict(entry))
+    models.sort(key=lambda item: (str(item.get("tag", "")), str(item.get("engine", ""))))
+    _write_registry(models, path)
+
+
 def forget_custom_models(*, engine: str, tag: str | None = None, repo: str | None = None,
                          path: Path = config.CUSTOM_MODELS_PATH) -> int:
+    if tag is None and repo is None:
+        raise ValueError("tag or repo is required")
     models = load_custom_models(path)
     kept = [entry for entry in models if not (
         entry.get("engine") == engine
@@ -62,17 +68,5 @@ def forget_custom_models(*, engine: str, tag: str | None = None, repo: str | Non
     )]
     if len(kept) == len(models):
         return 0
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            json.dump({"schema_version": SCHEMA_VERSION, "models": kept}, output, indent=2)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    _write_registry(kept, path)
     return len(models) - len(kept)

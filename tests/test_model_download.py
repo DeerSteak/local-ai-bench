@@ -46,8 +46,16 @@ def test_vllm_import_uses_cache_and_rejects_duplicate_tag(monkeypatch, tmp_path)
         "config.json": 1, "model.safetensors": 10,
     }))
     calls = []
+
+    def snapshot_download(**kwargs):
+        calls.append(kwargs)
+        snapshot = tmp_path / "cache" / "hub" / "models--owner--model" / "snapshots" / "commit"
+        snapshot.mkdir(parents=True, exist_ok=True)
+        (snapshot / "config.json").write_text("{}", encoding="utf-8")
+        (snapshot / "model.safetensors").write_bytes(b"weights")
+
     import huggingface_hub
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
     registry = tmp_path / "registry.json"
     variant = inspection.vllm_variant
     assert variant is not None
@@ -112,3 +120,29 @@ def test_failed_llamacpp_import_clears_partial_download_cache_for_retry(monkeypa
 
     assert destination.is_dir()
     assert not any(destination.iterdir())
+
+
+def test_import_replaces_registration_after_artifacts_were_deleted(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/new", api=FakeApi({"model.gguf": 10}))
+    registry = tmp_path / "registry.json"
+    from scripts.setup.custom_models import save_custom_model
+    save_custom_model({
+        "engine": "llamacpp", "tag": "custom", "repo": "owner/old",
+        "files": ["old.gguf"],
+    }, registry)
+
+    def download(**kwargs):
+        target = tmp_path / "models" / "llamacpp" / "custom" / kwargs["filename"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"gguf")
+        return str(target)
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    record = import_model(
+        inspection=inspection, engine="llamacpp", variant=inspection.llama_variants[0],
+        tag="custom", label="New", models_dir=tmp_path / "models", registry_path=registry,
+    )
+
+    assert record["repo"] == "owner/new"
+    assert load_custom_models(registry) == [record]

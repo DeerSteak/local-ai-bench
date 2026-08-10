@@ -5,8 +5,9 @@ import shutil
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.setup.custom_models import custom_model, save_custom_model
+from scripts.setup.custom_models import custom_model, forget_custom_models, save_custom_model
 from scripts.setup.model_import import ImportVariant, RepositoryInspection, valid_custom_tag
+from scripts.setup.vllm_install import hf_cache_model_complete
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 
@@ -23,6 +24,23 @@ def load_hf_token(env=None, token_path: Path | None = None) -> str | None:
     return token or None
 
 
+def custom_model_artifacts_present(entry: dict, *, models_dir: Path = config.MODELS_DIR,
+                                   vllm_cache: Path | None = None) -> bool:
+    engine, tag = entry.get("engine"), entry.get("tag")
+    if engine == "llamacpp" and isinstance(tag, str):
+        files = entry.get("files")
+        destination = Path(models_dir) / "llamacpp" / tag
+        return isinstance(files, list) and bool(files) and all(
+            isinstance(name, str) and (destination / Path(name).name).is_file()
+            for name in files
+        )
+    repo = entry.get("repo")
+    return bool(
+        engine == "vllm" and isinstance(repo, str) and vllm_cache is not None
+        and hf_cache_model_complete(Path(vllm_cache), repo)
+    )
+
+
 def import_model(*, inspection: RepositoryInspection, engine: str, variant: ImportVariant,
                  tag: str, label: str, vllm_cache: Path | None = None,
                  token: str | None = None, models_dir: Path = config.MODELS_DIR,
@@ -35,8 +53,13 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         raise ValueError("display name is required")
     if tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
         raise ValueError("model tag conflicts with a catalog model")
-    if custom_model(engine, tag, registry_path) is not None:
-        raise ValueError("model tag is already registered for this engine")
+    registered = custom_model(engine, tag, registry_path)
+    if registered is not None:
+        if custom_model_artifacts_present(
+            registered, models_dir=models_dir, vllm_cache=vllm_cache,
+        ):
+            raise ValueError("model tag is already registered for this engine")
+        forget_custom_models(engine=engine, tag=tag, path=registry_path)
     if engine == "llamacpp":
         if variant not in inspection.llama_variants:
             raise ValueError("selected GGUF variant is not available")
