@@ -137,7 +137,9 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         inspection, engine, variant = state["inspection"], variables["engine"].get(), selected_variant()
         tag, label = variables["tag"].get(), variables["label"].get().strip()
         reason = ""
-        if inspection is None:
+        if state["busy"]:
+            reason = "Operation in progress."
+        elif inspection is None:
             reason = "Inspect a repository before importing."
         elif state["request"] != (variables["repo"].get(), variables["revision"].get()):
             reason = "Repository or revision changed; inspect it again."
@@ -247,6 +249,10 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         inspection, variant, engine = state["inspection"], selected_variant(), variables["engine"].get()
         if inspection is None or variant is None:
             return
+        tag, label = variables["tag"].get(), variables["label"].get()
+        token = load_hf_token()
+        vllm_cache = (getattr(engine_factory("vllm"), "cache_home")()
+                      if engine == "vllm" else None)
         state["busy"] = True
         state["operation"] = "import"
         event = threading.Event()
@@ -260,21 +266,18 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             try:
                 import_model(
                     inspection=inspection, engine=engine, variant=variant,
-                    tag=variables["tag"].get(), label=variables["label"].get(), token=load_hf_token(),
-                    vllm_cache=(getattr(engine_factory("vllm"), "cache_home")()
-                                if engine == "vllm" else None),
+                    tag=tag, label=label, token=token, vllm_cache=vllm_cache,
                     cancel_check=event.is_set,
                 )
-                root.after(0, import_finished)
+                root.after(0, lambda: import_finished(tag, label, engine))
             except Exception as exc:
                 root.after(0, lambda error=exc: import_failed(error))
         threading.Thread(target=worker, daemon=True).start()
 
-    def import_finished():
+    def import_finished(tag, label, engine):
         if not dialog.winfo_exists():
             return
         progress.stop()
-        tag, label, engine = variables["tag"].get(), variables["label"].get(), variables["engine"].get()
         on_imported(tag)
         dialog.destroy()
         messagebox.showinfo("Model imported", f"{label} was added as {tag} for {engine}.", parent=root)
@@ -288,10 +291,10 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         cancel_event[0] = None
         inspect_button.configure(state="normal")
         cancel_button.configure(state="normal")
+        validate()
         variables["validation"].set(
             "Import cancelled." if isinstance(error, InterruptedError) else f"Import failed: {error}",
         )
-        validate()
 
     inspect_button.configure(command=inspect_repo)
     import_button.configure(command=begin_import)
