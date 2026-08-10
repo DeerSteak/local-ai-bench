@@ -68,7 +68,10 @@ from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.model_import_dialog import show_model_import_dialog
-from scripts.app.engine_management import build_engine_management_tab, collect_engine_management
+from scripts.app.engine_management import (
+    build_engine_management_tab, collect_engine_management, vllm_update_support,
+)
+from scripts.setup.runtime_update import RuntimeUpdateResult, update_managed_vllm
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
@@ -743,6 +746,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
 
+    def perform_vllm_update():
+        snapshot = collect_engine_management(get_engine, hardware_backend)
+        status = next(item for item in snapshot.statuses if item.engine == "vllm")
+        support = vllm_update_support(status, setup, platform.machine())
+        if support is None:
+            return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
+        return update_managed_vllm(support, config.VLLM_VENV)
+
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
     config_tab = ttk.Frame(notebook, padding=18)
@@ -754,8 +765,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook.add(history_tab, text="Result History")
     notebook.add(engines_tab, text="Engine Management")
     build_engine_management_tab(
-        parent=engines_tab, root=root, tk=tk, ttk=ttk,
+        parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
+        vllm_updater=perform_vllm_update,
+        run_active=lambda: process is not None and process.poll() is None,
     )
     notebook.bind(
         "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",

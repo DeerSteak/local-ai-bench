@@ -89,6 +89,8 @@ Both engines follow the same system-first policy: if a working `vllm` is already
 
 **An already-present vLLM overrides the platform support gate entirely.** That gate only decides whether setup can *install* vLLM; when there is nothing to install, an "unsupported" or "experimental" verdict is irrelevant and the engine is offered as a normal, selectable option.
 
+The benchmark GUI's Engine Management tab can update a project-owned `vllm-env/` without rerunning setup. It installs into a sibling staging environment, verifies that runtime, and only then replaces the active environment; a failed replacement restores the prior environment. System installations, platform launchers, and external servers remain under their owner's control and are inspection-only.
+
 **Whatever models you select later are downloaded for every selected engine.** The model picker is not per-engine — the point is to compare the same models on the same hardware across engines.
 
 The two engines store weights differently. llama.cpp's GGUFs are managed by this project under `models/llamacpp/<slug>/`. vLLM's are downloaded into the **HuggingFace cache vLLM itself reads**, so it resolves them by repo id and downloads nothing at run time; the engine never passes a filesystem path. Setup picks that cache in this order: a platform launcher's own cache (`~/.local/share/vLLM/models`, which AMD's `vllm-launch` bind-mounts into its container as `HF_HOME`), then `HF_HOME`, then `~/.cache/huggingface`. The resolved location is printed during setup and recorded in `local_ai_bench_config.json`.

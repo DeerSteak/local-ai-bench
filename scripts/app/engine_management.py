@@ -15,6 +15,8 @@ from scripts.setup.model_compatibility import (
     ModelCompatibility, inspect_llamacpp_model, inspect_vllm_model,
 )
 from scripts.setup.runtime_status import runtime_python
+from scripts.setup.setup_config import configured_gpu_devices
+from scripts.setup.vllm_install import PINNED_PYTHON, VllmSupport, is_dgx_spark
 
 
 OWNERSHIP_LABELS = {
@@ -59,6 +61,28 @@ def engine_diagnostics_text(statuses: list[EngineStatus],
     )
 
 
+def vllm_update_support(status: EngineStatus, setup: dict,
+                        machine: str) -> VllmSupport | None:
+    if status.engine != "vllm" or not status.managed:
+        return None
+    if status.backend == "rocm":
+        return VllmSupport(
+            "supported", "rocm_wheel", "Update the app-managed ROCm wheel environment.",
+            requires_python=PINNED_PYTHON,
+        )
+    if status.backend == "cuda":
+        names = [str(device.get("name", "")) for device in configured_gpu_devices(setup)]
+        if is_dgx_spark(machine, names):
+            return VllmSupport(
+                "experimental", "nightly_cu130", "Update the app-managed CUDA 13 nightly.",
+                requires_python=PINNED_PYTHON,
+            )
+        return VllmSupport(
+            "supported", "cuda_wheel", "Update the app-managed CUDA wheel environment.",
+        )
+    return None
+
+
 def collect_engine_statuses(engine_factory, hardware_backend: str) -> list[EngineStatus]:
     llama = engine_factory("llamacpp")
     vllm = engine_factory("vllm")
@@ -99,7 +123,8 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
     return EngineManagementSnapshot(statuses, models)
 
 
-def build_engine_management_tab(*, parent, root, tk, ttk, status_loader) -> None:  # pragma: no cover
+def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
+                                vllm_updater=None, run_active=lambda: False) -> None:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
     parent.rowconfigure(1, weight=1)
     header = ttk.Frame(parent)
@@ -145,6 +170,20 @@ def build_engine_management_tab(*, parent, root, tk, ttk, status_loader) -> None
         copy_button.configure(state="normal")
         status_text.set("Runtime inspection complete.")
 
+    def update_finished(result=None, error=None):
+        state["loading"] = False
+        refresh_button.configure(state="normal")
+        if error is not None:
+            status_text.set(f"vLLM update failed: {error}")
+            return
+        assert result is not None
+        if result.success:
+            messagebox.showinfo("vLLM update", result.detail, parent=root)
+            refresh()
+        else:
+            messagebox.showerror("vLLM update", result.detail, parent=root)
+            status_text.set(result.detail)
+
     def refresh():
         if state["loading"]:
             return
@@ -166,8 +205,40 @@ def build_engine_management_tab(*, parent, root, tk, ttk, status_loader) -> None
         root.clipboard_append(engine_diagnostics_text(snapshot.statuses, snapshot.models))
         status_text.set("Diagnostics copied to the clipboard.")
 
+    def update_vllm():
+        if state["loading"] or vllm_updater is None:
+            return
+        updater = vllm_updater
+        if run_active():
+            messagebox.showerror("Benchmark active", "Stop the active benchmark first.", parent=root)
+            return
+        status = next((item for item in state["snapshot"].statuses if item.engine == "vllm"), None)
+        if status is None or not status.managed:
+            messagebox.showinfo(
+                "vLLM update", "Only the app-managed vLLM environment can be updated here.", parent=root,
+            )
+            return
+        if not messagebox.askyesno(
+                "Update vLLM",
+                "Build and validate a new vLLM environment, then replace the current one?",
+                parent=root):
+            return
+        state["loading"] = True
+        refresh_button.configure(state="disabled")
+        status_text.set("Downloading and validating the vLLM update…")
+
+        def worker():
+            try:
+                result = updater()
+                root.after(0, lambda: update_finished(result=result))
+            except Exception as exc:
+                root.after(0, lambda error=exc: update_finished(error=error))
+        threading.Thread(target=worker, daemon=True).start()
+
     refresh_button = ttk.Button(header, text="Refresh", command=refresh)
     refresh_button.pack(side="right")
     copy_button = ttk.Button(header, text="Copy Diagnostics", command=copy_diagnostics, state="disabled")
     copy_button.pack(side="right", padx=(0, 8))
+    if vllm_updater is not None:
+        ttk.Button(header, text="Update vLLM", command=update_vllm).pack(side="right", padx=(0, 8))
     refresh()
