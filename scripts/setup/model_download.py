@@ -59,8 +59,11 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
             if created_destination and destination.exists():
                 shutil.rmtree(destination)
             else:
-                for filename in variant.files:
-                    (destination / Path(filename).name).unlink(missing_ok=True)
+                for path in destination.iterdir():
+                    if path.is_dir():
+                        shutil.rmtree(path)
+                    else:
+                        path.unlink(missing_ok=True)
             raise
         record = {
             "tag": tag, "label": label.strip(), "engine": engine,

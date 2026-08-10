@@ -140,6 +140,7 @@ def test_single_gguf_labels_include_the_disambiguating_path():
 def test_auxiliary_filter_does_not_drop_model_names_containing_draft():
     inspection = inspect_repository("owner/model", api=FakeApi({
         "redraft-model-Q4_K_M.gguf": 1, "draft-helper.gguf": 1,
+        "model-mmproj-f16.gguf": 2, "model.dflash.Q8.gguf": 3,
     }))
 
     assert [variant.label for variant in inspection.llama_variants] == [

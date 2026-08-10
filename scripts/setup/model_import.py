@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 _REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 _PART_RE = re.compile(r"^(.*)-(\d{5})-of-(\d{5})\.gguf$", re.IGNORECASE)
 _TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_AUX_GGUF_RE = re.compile(r"(?:^|[-_.])(mmproj|dflash|draft)(?:[-_.]|$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,7 @@ def _llama_variants(files: dict[str, int | None]) -> tuple[ImportVariant, ...]:
     ggufs = {
         name: size for name, size in files.items()
         if name.lower().endswith(".gguf")
-        and not Path(name).name.lower().startswith(("mmproj-", "dflash-", "draft-"))
+        and not _AUX_GGUF_RE.search(Path(name).stem)
     }
     grouped: dict[str, list[tuple[int, int, str]]] = {}
     singles = []

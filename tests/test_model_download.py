@@ -88,3 +88,27 @@ def test_failed_llamacpp_import_preserves_preexisting_empty_destination(monkeypa
 
     assert destination.is_dir()
     assert not any(destination.iterdir())
+
+
+def test_failed_llamacpp_import_clears_partial_download_cache_for_retry(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 10}))
+    destination = tmp_path / "models" / "llamacpp" / "custom"
+    destination.mkdir(parents=True)
+
+    def partial_download(**_kwargs):
+        partial = destination / ".cache" / "huggingface" / "download" / "partial"
+        partial.mkdir(parents=True)
+        (partial / "model.gguf.part").write_bytes(b"partial")
+        raise OSError("network lost")
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", partial_download)
+    with pytest.raises(OSError, match="network lost"):
+        import_model(
+            inspection=inspection, engine="llamacpp", variant=inspection.llama_variants[0],
+            tag="custom", label="Custom", models_dir=tmp_path / "models",
+            registry_path=tmp_path / "registry.json",
+        )
+
+    assert destination.is_dir()
+    assert not any(destination.iterdir())
