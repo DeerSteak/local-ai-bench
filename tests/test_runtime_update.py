@@ -34,13 +34,17 @@ def test_validate_vllm_environment_captures_version(tmp_path):
     assert result.version == "vllm 0.10.0"
 
 
-def test_update_managed_vllm_swaps_only_after_validation(tmp_path):
+def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path):
     target = tmp_path / "vllm-env"
     target.mkdir()
     (target / "old").write_text("old", encoding="utf-8")
 
+    installed_at = []
+
     def installer(_support, **kwargs):
-        executable = vllm_executable(kwargs["venv_dir"])
+        destination = kwargs["venv_dir"]
+        installed_at.append(destination)
+        executable = vllm_executable(destination)
         executable.parent.mkdir(parents=True)
         executable.touch()
         return True
@@ -56,6 +60,7 @@ def test_update_managed_vllm_swaps_only_after_validation(tmp_path):
     assert vllm_executable(target).is_file()
     assert not (target / "old").exists()
     assert not (tmp_path / ".vllm-env-backup-test").exists()
+    assert installed_at == [tmp_path / ".vllm-env-update-test", target]
 
 
 def test_update_managed_vllm_preserves_target_when_staging_fails(tmp_path):
@@ -73,27 +78,24 @@ def test_update_managed_vllm_preserves_target_when_staging_fails(tmp_path):
     assert marker.exists()
 
 
-def test_update_managed_vllm_rolls_back_failed_swap(tmp_path):
+def test_update_managed_vllm_rolls_back_failed_final_install(tmp_path):
     target = tmp_path / "vllm-env"
     target.mkdir()
     marker = target / "old"
     marker.touch()
-    calls = []
+    installs = []
 
     def installer(_support, **kwargs):
+        installs.append(kwargs["venv_dir"])
+        if len(installs) == 2:
+            return False
         executable = vllm_executable(kwargs["venv_dir"])
         executable.parent.mkdir(parents=True)
         executable.touch()
         return True
 
-    def replace(source, destination):
-        calls.append((Path(source), Path(destination)))
-        if len(calls) == 2:
-            raise OSError("swap failed")
-        Path(source).replace(destination)
-
     result = update_managed_vllm(
-        SUPPORT, target, installer=installer, replace=replace,
+        SUPPORT, target, installer=installer,
         run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="vllm 1.0", stderr=""),
         token_factory=lambda: "test",
     )
@@ -101,7 +103,7 @@ def test_update_managed_vllm_rolls_back_failed_swap(tmp_path):
     assert not result.success
     assert "prior environment was preserved" in result.detail
     assert marker.exists()
-    assert len(calls) == 3
+    assert installs == [tmp_path / ".vllm-env-update-test", target]
 
 
 def test_update_managed_vllm_reports_retained_backup_after_success(tmp_path):
@@ -114,17 +116,24 @@ def test_update_managed_vllm_reports_retained_backup_after_success(tmp_path):
         executable.touch()
         return True
 
+    backup = tmp_path / ".vllm-env-backup-test"
+
+    def remove(path):
+        if Path(path) == backup:
+            raise OSError("busy")
+        __import__("shutil").rmtree(path)
+
     result = update_managed_vllm(
         SUPPORT, target, installer=installer,
         run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="vllm 1.0", stderr=""),
-        remove=lambda _path: (_ for _ in ()).throw(OSError("busy")),
+        remove=remove,
         token_factory=lambda: "test",
     )
 
     assert result.success
     assert "backup remains" in result.detail
     assert vllm_executable(target).is_file()
-    assert (tmp_path / ".vllm-env-backup-test").exists()
+    assert backup.exists()
 
 
 def test_update_managed_vllm_rejects_unmanaged_or_unsupported_target(tmp_path):

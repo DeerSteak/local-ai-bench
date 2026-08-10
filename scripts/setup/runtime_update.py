@@ -158,7 +158,7 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
                         installer=install_vllm, run=subprocess.run,
                         replace=os.replace, remove=shutil.rmtree,
                         token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
-    """Build and validate a sibling venv, then swap it in with rollback."""
+    """Validate a sibling venv, then recreate it at its final path with rollback."""
     target = Path(target)
     if support.method is None:
         return RuntimeUpdateResult(False, support.reason)
@@ -173,15 +173,22 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
         validation = validate_vllm_environment(staged, run=run)
         if not validation.success:
             return validation
+        remove(staged)
         replace(target, backup)
         try:
-            replace(staged, target)
+            if not installer(support, log=log, run=run, venv_dir=target):
+                raise RuntimeError("The final vLLM installation failed.")
+            final_validation = validate_vllm_environment(target, run=run)
+            if not final_validation.success:
+                raise RuntimeError(final_validation.detail)
         except Exception as exc:
             try:
+                if target.exists():
+                    remove(target)
                 replace(backup, target)
             except Exception as rollback_exc:
                 return RuntimeUpdateResult(
-                    False, f"vLLM swap and rollback failed: {exc}; rollback: {rollback_exc}",
+                    False, f"vLLM final install and rollback failed: {exc}; rollback: {rollback_exc}",
                 )
             return RuntimeUpdateResult(
                 False, f"vLLM update failed; the prior environment was preserved: {exc}",
@@ -190,9 +197,10 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
             remove(backup)
         except OSError as exc:
             return RuntimeUpdateResult(
-                True, f"vLLM updated, but its backup remains at {backup}: {exc}", validation.version,
+                True, f"vLLM updated, but its backup remains at {backup}: {exc}",
+                final_validation.version,
             )
-        return RuntimeUpdateResult(True, "vLLM updated successfully.", validation.version)
+        return RuntimeUpdateResult(True, "vLLM updated successfully.", final_validation.version)
     except Exception as exc:
         return RuntimeUpdateResult(False, f"vLLM update failed; the prior environment was preserved: {exc}")
     finally:
