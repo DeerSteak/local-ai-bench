@@ -7,6 +7,7 @@ export interface ResultsFile {
   hostname?: string;
   engine?: string | null;
   engineVersion?: string | null;
+  engineVersionRecorded?: boolean;
   data: JsonRecord;
 }
 

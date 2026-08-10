@@ -107,14 +107,19 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
     .replace(/^-|-$/g, "");
 }
 
-// Runtime versions are always material comparison context. Engine-only labels
-// remain conditional so older files do not gain redundant chart text.
+// Runtime versions are always material comparison context.
 export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
     if (f.engineVersion) {
       const runtime = [f.engine, f.engineVersion].filter(Boolean).join(" ");
       return { ...f, hostname: `${f.hostname} (${runtime})` };
+    }
+    if (f.engine && f.engineVersionRecorded === false) {
+      return { ...f, hostname: `${f.hostname} (${f.engine} version not recorded)` };
+    }
+    if (f.engine && f.engineVersionRecorded === true) {
+      return { ...f, hostname: `${f.hostname} (${f.engine} version unavailable)` };
     }
     return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f;
   });

@@ -194,6 +194,20 @@ describe("applyEngineLabels", () => {
     ];
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a (0.10.2)");
   });
+  it("distinguishes historical results that predate engine version recording", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersionRecorded: false, data: {},
+    }];
+    expect(applyEngineLabels(files)[0].hostname)
+      .toBe("host-a (llamacpp version not recorded)");
+  });
+  it("labels a current result whose runtime version could not be discovered", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "vllm", engineVersionRecorded: true, data: {},
+    }];
+    expect(applyEngineLabels(files)[0].hostname)
+      .toBe("host-a (vllm version unavailable)");
+  });
   it("leaves hostnames untouched when no file has an engine field", () => {
     const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
     expect(applyEngineLabels(files)).toEqual(files);

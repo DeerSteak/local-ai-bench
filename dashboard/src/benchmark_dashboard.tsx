@@ -163,6 +163,7 @@ export default function Dashboard() {
       hostname: baseHostname,
       engine:   data.engine || null,
       engineVersion: data.engine_version || null,
+      engineVersionRecorded: Object.prototype.hasOwnProperty.call(data, "engine_version"),
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       wsl:      p.wsl === true,
