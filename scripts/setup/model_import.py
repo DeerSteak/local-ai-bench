@@ -51,6 +51,14 @@ def default_custom_tag(repo: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", repo.rsplit("/", 1)[-1]).strip("-_").lower()
 
 
+def preferred_variant(variants: tuple[ImportVariant, ...]) -> ImportVariant | None:
+    priorities = ("Q4_K_M", "Q4_K_XL", "Q4")
+    return next(
+        (variant for marker in priorities for variant in variants if marker in variant.label.upper()),
+        variants[0] if variants else None,
+    )
+
+
 def _file_size(item) -> int | None:
     size = getattr(item, "size", None)
     lfs = getattr(item, "lfs", None)
@@ -113,4 +121,3 @@ def inspect_repository(value: str, revision: str = "main", token: str | None = N
         vllm_variant=vllm,
         gated=bool(getattr(info, "gated", False)),
     )
-

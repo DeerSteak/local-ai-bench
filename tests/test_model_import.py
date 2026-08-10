@@ -3,7 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.model_import import (
-    default_custom_tag, inspect_repository, normalize_hf_repo, valid_custom_tag,
+    ImportVariant, default_custom_tag, inspect_repository, normalize_hf_repo,
+    preferred_variant, valid_custom_tag,
 )
 
 
@@ -63,3 +64,12 @@ def test_custom_tag_validation_and_default():
     assert valid_custom_tag("my-model_1.0")
     assert not valid_custom_tag("owner/model")
 
+
+def test_preferred_variant_chooses_standard_q4_before_smaller_quants():
+    variants = (
+        ImportVariant("q2", "model-Q2_K.gguf", ("q2.gguf",), 2),
+        ImportVariant("q4xl", "model-Q4_K_XL.gguf", ("q4xl.gguf",), 4),
+        ImportVariant("q4m", "model-Q4_K_M.gguf", ("q4m.gguf",), 4),
+    )
+    assert preferred_variant(variants) == variants[2]
+    assert preferred_variant(()) is None

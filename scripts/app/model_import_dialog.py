@@ -6,7 +6,9 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.setup.custom_models import custom_model
 from scripts.setup.model_download import enough_disk_space, import_model, load_hf_token
-from scripts.setup.model_import import default_custom_tag, inspect_repository, valid_custom_tag
+from scripts.setup.model_import import (
+    default_custom_tag, inspect_repository, preferred_variant, valid_custom_tag,
+)
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 
@@ -137,7 +139,10 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         choices = {f"{item.label} — {size_label(item.size)}": item for item in variants}
         state["variants"] = choices
         variant_combo.configure(values=tuple(choices), state="readonly" if choices else "disabled")
-        variables["variant"].set(next(iter(choices), ""))
+        preferred = preferred_variant(tuple(variants))
+        variables["variant"].set(next(
+            (label for label, item in choices.items() if item == preferred), next(iter(choices), ""),
+        ))
         variables["destination"].set(f"Destination: {destination(engine, variables['tag'].get())}")
         validate()
 
