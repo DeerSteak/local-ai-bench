@@ -124,7 +124,8 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
 
 
 def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
-                                vllm_updater=None, run_active=lambda: False) -> None:  # pragma: no cover
+                                vllm_updater=None, llamacpp_updater=None,
+                                run_active=lambda: False) -> None:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
     parent.rowconfigure(1, weight=1)
     header = ttk.Frame(parent)
@@ -170,18 +171,18 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         copy_button.configure(state="normal")
         status_text.set("Runtime inspection complete.")
 
-    def update_finished(result=None, error=None):
+    def update_finished(engine, result=None, error=None):
         state["loading"] = False
         refresh_button.configure(state="normal")
         if error is not None:
-            status_text.set(f"vLLM update failed: {error}")
+            status_text.set(f"{engine} update failed: {error}")
             return
         assert result is not None
         if result.success:
-            messagebox.showinfo("vLLM update", result.detail, parent=root)
+            messagebox.showinfo(f"{engine} update", result.detail, parent=root)
             refresh()
         else:
-            messagebox.showerror("vLLM update", result.detail, parent=root)
+            messagebox.showerror(f"{engine} update", result.detail, parent=root)
             status_text.set(result.detail)
 
     def refresh():
@@ -205,34 +206,31 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         root.clipboard_append(engine_diagnostics_text(snapshot.statuses, snapshot.models))
         status_text.set("Diagnostics copied to the clipboard.")
 
-    def update_vllm():
-        if state["loading"] or vllm_updater is None:
+    def update_engine(engine_key, label, updater, prompt):
+        if state["loading"] or updater is None:
             return
-        updater = vllm_updater
         if run_active():
             messagebox.showerror("Benchmark active", "Stop the active benchmark first.", parent=root)
             return
-        status = next((item for item in state["snapshot"].statuses if item.engine == "vllm"), None)
+        status = next((item for item in state["snapshot"].statuses if item.engine == engine_key), None)
         if status is None or not status.managed:
             messagebox.showinfo(
-                "vLLM update", "Only the app-managed vLLM environment can be updated here.", parent=root,
+                f"{label} update", f"Only app-managed {label} can be updated here.", parent=root,
             )
             return
         if not messagebox.askyesno(
-                "Update vLLM",
-                "Build and validate a new vLLM environment, then replace the current one?",
-                parent=root):
+                f"Update {label}", prompt, parent=root):
             return
         state["loading"] = True
         refresh_button.configure(state="disabled")
-        status_text.set("Downloading and validating the vLLM update…")
+        status_text.set(f"Downloading and validating the {label} update…")
 
         def worker():
             try:
                 result = updater()
-                root.after(0, lambda: update_finished(result=result))
+                root.after(0, lambda: update_finished(label, result=result))
             except Exception as exc:
-                root.after(0, lambda error=exc: update_finished(error=error))
+                root.after(0, lambda error=exc: update_finished(label, error=error))
         threading.Thread(target=worker, daemon=True).start()
 
     refresh_button = ttk.Button(header, text="Refresh", command=refresh)
@@ -240,5 +238,19 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     copy_button = ttk.Button(header, text="Copy Diagnostics", command=copy_diagnostics, state="disabled")
     copy_button.pack(side="right", padx=(0, 8))
     if vllm_updater is not None:
-        ttk.Button(header, text="Update vLLM", command=update_vllm).pack(side="right", padx=(0, 8))
+        ttk.Button(
+            header, text="Update vLLM",
+            command=lambda: update_engine(
+                "vllm", "vLLM", vllm_updater,
+                "Build and validate a new vLLM environment, then replace the current one?",
+            ),
+        ).pack(side="right", padx=(0, 8))
+    if llamacpp_updater is not None:
+        ttk.Button(
+            header, text="Update / Rebuild llama.cpp",
+            command=lambda: update_engine(
+                "llamacpp", "llama.cpp", llamacpp_updater,
+                "Clone and build the latest llama.cpp, then replace the current checkout?",
+            ),
+        ).pack(side="right", padx=(0, 8))
     refresh()
