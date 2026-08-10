@@ -41,7 +41,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         "validation": tk.StringVar(),
         "destination": tk.StringVar(value="Destination will be shown after inspection."),
     }
-    state = {"inspection": None, "variants": {}}
+    state = {"inspection": None, "variants": {}, "request": None}
 
     ttk.Label(shell, text="Import Hugging Face Model", style="Title.TLabel").grid(
         row=0, column=0, columnspan=3, sticky="w",
@@ -88,7 +88,8 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     progress.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(14, 0))
     actions = ttk.Frame(shell)
     actions.grid(row=14, column=0, columnspan=3, sticky="e", pady=(18, 0))
-    ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="left")
+    cancel_button = ttk.Button(actions, text="Cancel", command=dialog.destroy)
+    cancel_button.pack(side="left")
     import_button = ttk.Button(actions, text="Import Model", state="disabled")
     import_button.pack(side="left", padx=(10, 0))
 
@@ -108,6 +109,8 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         reason = ""
         if inspection is None:
             reason = "Inspect a repository before importing."
+        elif state["request"] != (variables["repo"].get(), variables["revision"].get()):
+            reason = "Repository or revision changed; inspect it again."
         elif engine not in engines or variant is None:
             reason = "Select an available engine and artifact variant."
         elif not valid_custom_tag(tag):
@@ -139,6 +142,8 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         validate()
 
     def inspection_finished(result=None, error=None):
+        if not dialog.winfo_exists():
+            return
         progress.stop()
         inspect_button.configure(state="normal")
         if error is not None:
@@ -163,6 +168,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         variables["label"].set(result.repo.rsplit("/", 1)[-1])
         variables["tag"].set(default_custom_tag(result.repo))
         variables["revision"].set(result.revision)
+        state["request"] = (variables["repo"].get(), result.revision)
         acknowledgement.configure(state="normal" if supported else "disabled")
         variables["acknowledge"].set(False)
         refresh_variants()
@@ -170,8 +176,11 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             variables["validation"].set("This repository cannot be imported by an installed engine.")
 
     def inspect_repo():
+        state["inspection"] = None
+        state["request"] = None
         inspect_button.configure(state="disabled")
         import_button.configure(state="disabled")
+        cancel_button.configure(state="disabled")
         progress.start(12)
         variables["support"].set("Inspecting repository metadata…")
 
@@ -207,6 +216,8 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         threading.Thread(target=worker, daemon=True).start()
 
     def import_finished():
+        if not dialog.winfo_exists():
+            return
         progress.stop()
         tag, label, engine = variables["tag"].get(), variables["label"].get(), variables["engine"].get()
         on_imported(tag)
@@ -214,15 +225,18 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         messagebox.showinfo("Model imported", f"{label} was added as {tag} for {engine}.", parent=root)
 
     def import_failed(error):
+        if not dialog.winfo_exists():
+            return
         progress.stop()
         inspect_button.configure(state="normal")
+        cancel_button.configure(state="normal")
         variables["validation"].set(f"Import failed: {error}")
         validate()
 
     inspect_button.configure(command=inspect_repo)
     import_button.configure(command=begin_import)
     engine_combo.bind("<<ComboboxSelected>>", refresh_variants)
-    for key in ("variant", "label", "tag", "acknowledge"):
+    for key in ("repo", "revision", "variant", "label", "tag", "acknowledge"):
         variables[key].trace_add("write", validate)
     repo_entry.focus_set()
     dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
