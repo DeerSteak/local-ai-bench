@@ -43,6 +43,7 @@ def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]
     if not regraded:
         event_path = result_path.with_suffix(".events.sqlite3")
         artifacts.extend([
+            results_dir / f"log_{suffix}.txt",
             results_dir / f"images_{suffix}",
             event_path,
             *(Path(f"{event_path}{suffix}") for suffix in ("-wal", "-shm", "-journal")),

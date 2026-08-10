@@ -55,6 +55,7 @@ def test_run_artifact_paths_cover_run_journal_sidecars_images_and_regrades(tmp_p
         "results_Host_20260101_000000_vllm.events.sqlite3-wal",
         "results_Host_20260101_000000_vllm.events.sqlite3-shm",
         "results_Host_20260101_000000_vllm.events.sqlite3-journal",
+        "log_Host_20260101_000000_vllm.txt",
         "images_Host_20260101_000000_vllm",
         "regraded_results_Host_20260101_000000_vllm.json",
         *(f"answers_{workload}_Host_20260101_000000_vllm.json"
@@ -75,6 +76,8 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     shm.write_bytes(b"shm")
     answer = tmp_path / "answers_mcq_run.json"
     answer.write_text("{}", encoding="utf-8")
+    log = tmp_path / "log_run.txt"
+    log.write_text("run output", encoding="utf-8")
     images = tmp_path / "images_run"
     images.mkdir()
     (images / "sample.png").write_bytes(b"png")
@@ -86,7 +89,7 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     removed, failures = delete_run_artifacts(result_path, tmp_path)
 
     assert failures == {}
-    assert set(removed) == {result_path, journal, wal, shm, answer, images, regraded}
+    assert set(removed) == {result_path, journal, wal, shm, answer, log, images, regraded}
     assert unrelated.is_file()
     assert existing_run_artifacts(result_path, tmp_path) == []
 
@@ -100,6 +103,8 @@ def test_regraded_selection_does_not_delete_its_source_result(tmp_path):
     sidecar.write_text("{}", encoding="utf-8")
     images = tmp_path / "images_run"
     images.mkdir()
+    log = tmp_path / "log_run.txt"
+    log.write_text("source log", encoding="utf-8")
 
     removed, failures = delete_run_artifacts(regraded, tmp_path)
 
@@ -107,6 +112,7 @@ def test_regraded_selection_does_not_delete_its_source_result(tmp_path):
     assert set(removed) == {regraded, sidecar}
     assert source.is_file()
     assert images.is_dir()
+    assert log.is_file()
 
 
 def test_regraded_custom_name_deletes_its_sidecar_without_touching_source(tmp_path):

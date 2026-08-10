@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
-from scripts.runtime import config
+from scripts.runtime import config, hardware
 import psutil
 from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.app.benchmark_frontend import (
@@ -73,7 +73,8 @@ from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_contro
 from scripts.app.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import (
-    available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
+    available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
+    load_setup_config,
 )
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
@@ -103,6 +104,32 @@ def selected_result_paths(selected_items, item_paths: dict, *, exact: int | None
     if maximum is not None and len(paths) > maximum:
         raise ValueError(f"Select no more than {maximum} results.")
     return paths
+
+
+def run_log_path(result_path: Path) -> Path:
+    result_path = Path(result_path)
+    stem = result_path.stem
+    suffix = stem[len("results_"):] if stem.startswith("results_") else stem
+    return result_path.with_name(f"log_{suffix}.txt")
+
+
+def completed_result_paths(log: str) -> list[Path]:
+    paths = []
+    for line in log.splitlines():
+        match = re.search(r"Results saved to:\s*(.+?)\s*$", line)
+        if match:
+            paths.append(Path(match.group(1)).expanduser().resolve())
+    return list(dict.fromkeys(paths))
+
+
+def write_run_logs(log: str, result_paths: list[Path]) -> list[Path]:
+    written = []
+    for result_path in result_paths:
+        destination = run_log_path(result_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(log, encoding="utf-8")
+        written.append(destination)
+    return written
 
 
 def dashboard_launcher_command(result_paths: list[Path], system: str,
@@ -326,8 +353,26 @@ def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.wh
     return parse_gpu_process_memory(result.stdout, process_ids) if result.returncode == 0 else None
 
 
+def show_vram_usage(devices: list[dict]) -> bool:
+    return any(
+        device.get("vram_gb") is not None
+        and (device.get("vendor") == "nvidia"
+             or hardware.classify_gpu(str(device.get("name", ""))) == "discrete")
+        for device in devices
+    )
+
+
+def query_vram_usage() -> tuple[float, float] | None:
+    snapshot = Shared.sample_memory_gb()
+    used = snapshot["gpu_vram_used_gb"]
+    total = snapshot["gpu_vram_total_gb"]
+    return (used, total) if used is not None and total is not None else None
+
+
 def resource_usage_rows(process_usage, system_usage, baseline_system_used: float,
-                        gpu_usage: float | None, gpu_memory: float | None) -> dict[str, str]:
+                        gpu_usage: float | None, gpu_memory: float | None,
+                        vram_usage: tuple[float, float] | None = None,
+                        include_vram: bool = False) -> dict[str, str]:
     rows = {
         "CPU": "Unavailable" if process_usage is None else f"{process_usage[0]:.0f}%",
         "Process RAM": "Unavailable" if process_usage is None else f"{process_usage[1]:.1f} GB",
@@ -341,6 +386,11 @@ def resource_usage_rows(process_usage, system_usage, baseline_system_used: float
         )
     if gpu_memory is not None:
         rows["GPU"] += f" · {gpu_memory:.1f} GB process memory"
+    if include_vram:
+        rows["VRAM"] = (
+            "Unavailable" if vram_usage is None
+            else f"{vram_usage[0]:.1f} / {vram_usage[1]:.1f} GB used"
+        )
     return rows
 
 
@@ -1243,6 +1293,30 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     pause_button = ttk.Button(log_run_actions, text="Pause", state="disabled")
     pause_button.pack(side="right", padx=(0, 8))
     ttk.Button(log_run_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
+
+    def current_log() -> str:
+        return log_text.get("1.0", "end-1c")
+
+    def export_log():
+        log = current_log()
+        if not log:
+            messagebox.showinfo("Export Log", "The Run Log is empty.", parent=root)
+            return
+        known_results = completed_result_paths(log) or active_result_paths[:1]
+        suggested = run_log_path(known_results[0]) if known_results else config.RESULTS_DIR / "run_log.txt"
+        destination = filedialog.asksaveasfilename(
+            title="Export Run Log", initialdir=str(suggested.parent),
+            initialfile=suggested.name, defaultextension=".txt",
+            filetypes=[("Text log", "*.txt"), ("All files", "*")],
+        )
+        if not destination:
+            return
+        try:
+            Path(destination).write_text(log, encoding="utf-8")
+            messagebox.showinfo("Log exported", f"Run Log saved to:\n{destination}", parent=root)
+        except OSError as exc:
+            messagebox.showerror("Log export failed", str(exc), parent=root)
+
     def open_results_folder():
         output = option_vars["out"].get().strip()
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
@@ -1448,6 +1522,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(log_result_actions, text="Open Results Folder", command=open_results_folder).pack(
         side="left",
     )
+    ttk.Button(log_result_actions, text="Export Log", command=export_log).pack(side="left", padx=(8, 0))
     ttk.Button(log_result_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(8, 0))
     ttk.Button(log_result_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(8, 0))
     ttk.Button(log_result_actions, text="Create Report", command=create_report).pack(side="left", padx=(8, 0))
@@ -1700,7 +1775,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         threading.Thread(target=worker, daemon=True).start()
 
     def start_history_recovery(result_path, report):
-        nonlocal process, active_process_kind
+        nonlocal process, active_process_kind, active_result_paths
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
@@ -1733,6 +1808,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         begin_process_control(control_path)
         active_process_kind = "recovery"
+        active_result_paths = [Path(result_path).resolve()]
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")
@@ -1745,7 +1821,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
     def start_history_fork(source_path, report):
-        nonlocal process, active_process_kind, pending_fork_source
+        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
@@ -1792,6 +1868,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         begin_process_control(control_path)
         active_process_kind = "fork"
+        active_result_paths = [output_path]
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")
@@ -1855,7 +1932,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         return selected
 
     def start_history_retry(result_path, report):
-        nonlocal process, active_process_kind
+        nonlocal process, active_process_kind, active_result_paths
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
@@ -1882,6 +1959,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         begin_process_control(control_path)
         active_process_kind = "retry"
+        active_result_paths = [Path(result_path).resolve()]
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")
@@ -2046,6 +2124,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     process = None
     active_process_kind = None
+    active_result_paths: list[Path] = []
     pending_fork_source = None
     process_control_path = None
     process_paused = False
@@ -2077,18 +2156,20 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     progress_metrics = {}
     progress_started_at = None
     gpu_sample = {
-        "usage": None, "memory": None, "next_at": 0.0,
+        "usage": None, "memory": None, "vram": None, "next_at": 0.0,
         "running": False, "generation": 0,
     }
     system_memory_baseline = [0.0]
+    has_discrete_vram = [False]
 
     def show_progress_window(tests, entries, engines=None):
         nonlocal progress_window, stage_progress_vars, model_progress_vars
         nonlocal progress_metrics, progress_started_at
         gpu_sample.update({
-            "usage": None, "memory": None, "next_at": 0.0, "running": False,
+            "usage": None, "memory": None, "vram": None, "next_at": 0.0, "running": False,
             "generation": gpu_sample["generation"] + 1,
         })
+        has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
         system_memory_baseline[0] = system_memory_usage()[0]
         if progress_window is not None and progress_window.winfo_exists():
             progress_window.destroy()
@@ -2133,7 +2214,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         resource_box.pack(fill="x", pady=(0, 8))
         resource_box.columnconfigure(1, weight=1)
         progress_resource_vars.clear()
-        for row, label in enumerate(("CPU", "Process RAM", "System RAM", "GPU")):
+        resource_labels = ["CPU", "Process RAM", "System RAM", "GPU"]
+        if has_discrete_vram[0]:
+            resource_labels.append("VRAM")
+        for row, label in enumerate(resource_labels):
             ttk.Label(resource_box, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=1)
             variable = tk.StringVar(value="Starting…")
             progress_resource_vars[label] = variable
@@ -2255,6 +2339,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     update_progress(value)
                 else:
                     process = None
+                    if value == 0:
+                        try:
+                            write_run_logs(
+                                current_log(), completed_result_paths(current_log()) or active_result_paths,
+                            )
+                        except OSError as exc:
+                            append_log(f"\nCould not save Run Log: {exc}\n")
                     finish_process_control()
                     stop_button.configure(state="disabled")
                     start_button.configure(state="normal")
@@ -2298,15 +2389,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 def sample_gpu():
                     value = query_gpu_usage()
                     memory = query_gpu_process_memory(sampled_pid)
+                    vram = query_vram_usage() if has_discrete_vram[0] else None
                     if gpu_sample["generation"] == generation:
                         gpu_sample["usage"] = value
                         gpu_sample["memory"] = memory
+                        gpu_sample["vram"] = vram
                         gpu_sample["running"] = False
 
                 threading.Thread(target=sample_gpu, daemon=True).start()
             resources = resource_usage_rows(
                 usage, system_memory_usage(), system_memory_baseline[0],
-                gpu_sample["usage"], gpu_sample["memory"],
+                gpu_sample["usage"], gpu_sample["memory"], gpu_sample["vram"],
+                has_discrete_vram[0],
             )
             for label, value in resources.items():
                 progress_resource_vars[label].set(value)
@@ -2393,7 +2487,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         return confirmed[0]
 
     def start_run():
-        nonlocal process, active_process_kind, pending_fork_source
+        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -2453,6 +2547,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         begin_process_control(control_path)
         pending_fork_source = None
         active_process_kind = "benchmark"
+        explicit_output = gui_options.get("out", "").strip()
+        active_result_paths = [Path(explicit_output).expanduser().resolve()] if explicit_output else []
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")
