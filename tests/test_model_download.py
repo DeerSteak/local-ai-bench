@@ -1,0 +1,68 @@
+from types import SimpleNamespace
+
+import pytest
+
+from scripts.setup.custom_models import load_custom_models
+from scripts.setup.model_download import enough_disk_space, import_model
+from scripts.setup.model_import import ImportVariant, inspect_repository
+
+
+class FakeApi:
+    def __init__(self, files):
+        self.files = files
+
+    def model_info(self, repo, **_kwargs):
+        siblings = [SimpleNamespace(rfilename=name, size=size, lfs=None)
+                    for name, size in self.files.items()]
+        return SimpleNamespace(siblings=siblings, sha="commit", gated=False)
+
+
+def test_llamacpp_import_downloads_selected_files_and_registers(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model-Q4.gguf": 10}))
+    downloaded = []
+
+    def download(**kwargs):
+        destination = tmp_path / "models" / "llamacpp" / "custom" / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"gguf")
+        downloaded.append(kwargs)
+        return str(destination)
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    registry = tmp_path / "registry.json"
+    record = import_model(
+        inspection=inspection, engine="llamacpp", variant=inspection.llama_variants[0],
+        tag="custom", label="Custom", models_dir=tmp_path / "models", registry_path=registry,
+    )
+
+    assert downloaded[0]["revision"] == "commit"
+    assert record["format"] == "gguf"
+    assert load_custom_models(registry) == [record]
+
+
+def test_vllm_import_uses_cache_and_rejects_duplicate_tag(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10,
+    }))
+    calls = []
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: calls.append(kwargs))
+    registry = tmp_path / "registry.json"
+    variant = inspection.vllm_variant
+    assert variant is not None
+    import_model(
+        inspection=inspection, engine="vllm", variant=variant, tag="custom",
+        label="Custom", vllm_cache=tmp_path / "cache", registry_path=registry,
+    )
+    assert calls[0]["cache_dir"] == str(tmp_path / "cache" / "hub")
+    with pytest.raises(ValueError, match="already registered"):
+        import_model(
+            inspection=inspection, engine="vllm", variant=variant, tag="custom",
+            label="Again", vllm_cache=tmp_path / "cache", registry_path=registry,
+        )
+
+
+def test_disk_check_handles_known_size(tmp_path):
+    tiny = ImportVariant("q4", "Q4", ("model.gguf",), 1)
+    assert enough_disk_space(tiny, tmp_path / "new") is True
