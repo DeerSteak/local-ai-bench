@@ -118,6 +118,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
 | CUDA toolkit plan gating and install execution | [test_cuda_install.py](../tests/test_cuda_install.py) |
 | vLLM platform support, interpreter resolution, install commands | [test_vllm_install.py](../tests/test_vllm_install.py) |
+| Managed runtime update validation, replacement, and rollback | [test_runtime_update.py](../tests/test_runtime_update.py) |
 | Engine picker defaults, disabled engines, install fan-out | [test_engine_selection.py](../tests/test_engine_selection.py) |
 | Atomic results, run/recovery state, terminal-history retention, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |

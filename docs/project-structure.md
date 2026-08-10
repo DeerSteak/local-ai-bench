@@ -126,6 +126,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/engine_selection.py` | Pure engine-picker rules: defaults, disabled engines, and which selected engines still need installing |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
+| `setup/runtime_update.py` | Transactional validation, replacement, and rollback for app-managed engine updates |
 | `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
 | `runtime/shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
