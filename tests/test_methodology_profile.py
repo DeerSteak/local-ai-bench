@@ -18,7 +18,6 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
             f"llama.cpp:native_kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
             f"llama.cpp:native_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
             "llama.cpp:native_gpu_split=layer",
-            "llama.cpp:native_repack=enabled",
         "comfyui:dynamic_vram=disabled",
     ]
 
@@ -33,13 +32,21 @@ def test_tensor_profile_records_split_cache_and_full_offload(monkeypatch):
     assert "llamacpp:gpu_split=tensor" in optimizations
 
 
-def test_no_repack_profile_records_server_and_native_paths(monkeypatch):
+def test_no_repack_profile_records_server_and_supported_native_path(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     optimizations = resolve_methodology_profile(
-        engine_name="llamacpp", tests=["llm", "llamabench"], cpu_only=False,
+        engine_name="llamacpp", tests=["llm", "llamabench", "llamabenchconc"], cpu_only=False,
     )["effective_optimizations"]
     assert "llamacpp:repack=disabled" in optimizations
     assert "llama.cpp:native_repack=disabled" in optimizations
+
+
+def test_llamabench_profile_does_not_record_unsupported_repack_setting(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
+    optimizations = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llamabench"], cpu_only=False,
+    )["effective_optimizations"]
+    assert all("repack" not in value for value in optimizations)
 
 
 def test_cpu_profile_records_cpu_offload_without_unselected_paths():

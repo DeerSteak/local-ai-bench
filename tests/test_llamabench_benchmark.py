@@ -84,12 +84,12 @@ def test_build_prefill_command_shape():
     ]
 
 
-def test_build_prefill_command_can_disable_repacking(monkeypatch):
+def test_build_prefill_command_never_passes_unsupported_repack_option(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     cmd = LlamaBenchBenchmark.build_prefill_command(
         "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
     )
-    assert "--no-repack" in cmd
+    assert "--no-repack" not in cmd
 
 
 def test_build_decode_command_shape():

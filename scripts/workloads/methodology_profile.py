@@ -42,8 +42,11 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             f"llama.cpp:native_kv_cache={native_cache}",
             f"llama.cpp:native_gpu_layers={'0' if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL}",
             f"llama.cpp:native_gpu_split={'none' if cpu_only else config.LLAMACPP_GPU_SPLIT_MODE}",
-            f"llama.cpp:native_repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}",
         ))
+        if "llamabenchconc" in selected:
+            optimizations.append(
+                f"llama.cpp:native_repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}"
+            )
     if "img" in selected:
         optimizations.append("comfyui:dynamic_vram=disabled")
     return {
