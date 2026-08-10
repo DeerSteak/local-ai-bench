@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.setup.custom_models import custom_model, forget_custom_models, save_custom_model
+from scripts.setup.custom_models import custom_model, save_custom_model
 from scripts.setup.model_import import ImportVariant, RepositoryInspection, valid_custom_tag
 from scripts.setup.vllm_install import hf_cache_model_complete
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
@@ -59,7 +59,6 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
             registered, models_dir=models_dir, vllm_cache=vllm_cache,
         ):
             raise ValueError("model tag is already registered for this engine")
-        forget_custom_models(engine=engine, tag=tag, path=registry_path)
     if engine == "llamacpp":
         if variant not in inspection.llama_variants:
             raise ValueError("selected GGUF variant is not available")

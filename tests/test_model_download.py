@@ -146,3 +146,26 @@ def test_import_replaces_registration_after_artifacts_were_deleted(monkeypatch, 
 
     assert record["repo"] == "owner/new"
     assert load_custom_models(registry) == [record]
+
+
+def test_failed_stale_vllm_reimport_preserves_registration(tmp_path):
+    inspection = inspect_repository("owner/new", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10,
+    }))
+    registry = tmp_path / "registry.json"
+    previous = {
+        "engine": "vllm", "tag": "custom", "repo": "owner/old",
+        "format": "safetensors", "files": [],
+    }
+    from scripts.setup.custom_models import save_custom_model
+    save_custom_model(previous, registry)
+    variant = inspection.vllm_variant
+    assert variant is not None
+
+    with pytest.raises(ValueError, match="cache location is unavailable"):
+        import_model(
+            inspection=inspection, engine="vllm", variant=variant, tag="custom",
+            label="New", vllm_cache=None, registry_path=registry,
+        )
+
+    assert load_custom_models(registry) == [previous]
