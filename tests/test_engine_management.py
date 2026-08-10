@@ -19,5 +19,6 @@ def test_engine_status_lines_include_identity_components_and_warnings():
 def test_engine_diagnostics_are_stable_machine_readable_json():
     statuses = [EngineStatus("llamacpp", "system_managed", "/bin/llama", "1", "cpu", "ready")]
     payload = json.loads(engine_diagnostics_text(statuses))
-    assert payload["llamacpp"]["ownership"] == "system_managed"
-    assert payload["llamacpp"]["version"] == "1"
+    assert payload["engines"]["llamacpp"]["ownership"] == "system_managed"
+    assert payload["engines"]["llamacpp"]["version"] == "1"
+    assert payload["imported_models"] == []

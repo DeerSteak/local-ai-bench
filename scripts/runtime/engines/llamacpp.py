@@ -77,6 +77,9 @@ class LlamaCppEngine(InferenceEngine):
     def runtime_location(self) -> str | None:
         return self._binary_path()
 
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        return tuple(self._resolve_model_files(tag) or ())
+
     # ── local model-file resolution ──
 
     @classmethod

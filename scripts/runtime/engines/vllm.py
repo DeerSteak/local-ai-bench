@@ -230,6 +230,9 @@ class VllmEngine(InferenceEngine):
     def external_server_url(self) -> str | None:
         return self._server_url
 
+    def model_snapshot(self, tag: str) -> Path | None:
+        return self._snapshot_dir(tag)
+
     def supports_model_import(self) -> bool:
         return self._server_url is None
 
