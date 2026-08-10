@@ -12,6 +12,12 @@ from scripts.setup.model_import import (
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 
+def import_destination(engine: str, tag: str, vllm_cache: Path | None = None) -> Path | None:
+    if engine == "llamacpp":
+        return config.MODELS_DIR / "llamacpp" / (tag or "<tag>")
+    return Path(vllm_cache) if engine == "vllm" and vllm_cache is not None else None
+
+
 def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
                              engine_factory, on_imported) -> None:  # pragma: no cover — interactive Tk UI
     engines = [
@@ -43,7 +49,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         "validation": tk.StringVar(),
         "destination": tk.StringVar(value="Destination will be shown after inspection."),
     }
-    state = {"inspection": None, "variants": {}, "request": None}
+    state = {"inspection": None, "variants": {}, "request": None, "busy": False}
 
     ttk.Label(shell, text="Import Hugging Face Model", style="Title.TLabel").grid(
         row=0, column=0, columnspan=3, sticky="w",
@@ -90,7 +96,11 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     progress.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(14, 0))
     actions = ttk.Frame(shell)
     actions.grid(row=14, column=0, columnspan=3, sticky="e", pady=(18, 0))
-    cancel_button = ttk.Button(actions, text="Cancel", command=dialog.destroy)
+    def close_dialog():
+        if not state["busy"]:
+            dialog.destroy()
+
+    cancel_button = ttk.Button(actions, text="Cancel", command=close_dialog)
     cancel_button.pack(side="left")
     import_button = ttk.Button(actions, text="Import Model", state="disabled")
     import_button.pack(side="left", padx=(10, 0))
@@ -102,8 +112,8 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         return state["variants"].get(variables["variant"].get())
 
     def destination(engine, tag):
-        return (config.MODELS_DIR / "llamacpp" / (tag or "<tag>") if engine == "llamacpp"
-                else getattr(engine_factory("vllm"), "cache_home")())
+        cache = getattr(engine_factory("vllm"), "cache_home")() if engine == "vllm" else None
+        return import_destination(engine, tag, cache)
 
     def validate(*_args):
         inspection, engine, variant = state["inspection"], variables["engine"].get(), selected_variant()
@@ -125,8 +135,12 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             reason = "That custom tag is already registered for this engine."
         elif not variables["acknowledge"].get():
             reason = "Acknowledge that runtime compatibility is unverified."
-        elif enough_disk_space(variant, destination(engine, tag)) is False:
-            reason = "Not enough free disk space for this variant."
+        else:
+            target = destination(engine, tag)
+            if target is None:
+                reason = "No import destination is available for this engine."
+            elif enough_disk_space(variant, target) is False:
+                reason = "Not enough free disk space for this variant."
         variables["validation"].set(reason or "Ready to import.")
         import_button.configure(state="disabled" if reason else "normal")
 
@@ -143,14 +157,19 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         variables["variant"].set(next(
             (label for label, item in choices.items() if item == preferred), next(iter(choices), ""),
         ))
-        variables["destination"].set(f"Destination: {destination(engine, variables['tag'].get())}")
+        target = destination(engine, variables["tag"].get())
+        variables["destination"].set(
+            f"Destination: {target}" if target is not None else "No import destination available.",
+        )
         validate()
 
     def inspection_finished(result=None, error=None):
         if not dialog.winfo_exists():
             return
         progress.stop()
+        state["busy"] = False
         inspect_button.configure(state="normal")
+        cancel_button.configure(state="normal")
         if error is not None:
             state["inspection"] = None
             variables["support"].set(f"Repository inspection failed: {error}")
@@ -167,6 +186,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         variables["support"].set(
             f"llama.cpp: {len(result.llama_variants)} GGUF variant(s) · "
             + ("vLLM: safetensors snapshot" if result.vllm_variant else "vLLM: unavailable")
+            + (" · custom vLLM tool calling is disabled" if result.vllm_variant else "")
         )
         engine_combo.configure(values=supported, state="readonly" if supported else "disabled")
         variables["engine"].set(supported[0] if supported else "")
@@ -183,6 +203,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     def inspect_repo():
         state["inspection"] = None
         state["request"] = None
+        state["busy"] = True
         inspect_button.configure(state="disabled")
         import_button.configure(state="disabled")
         cancel_button.configure(state="disabled")
@@ -203,7 +224,9 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         inspection, variant, engine = state["inspection"], selected_variant(), variables["engine"].get()
         if inspection is None or variant is None:
             return
+        state["busy"] = True
         import_button.configure(state="disabled")
+        cancel_button.configure(state="disabled")
         progress.start(12)
         variables["validation"].set("Downloading and validating model files…")
 
@@ -233,6 +256,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
         if not dialog.winfo_exists():
             return
         progress.stop()
+        state["busy"] = False
         inspect_button.configure(state="normal")
         cancel_button.configure(state="normal")
         variables["validation"].set(f"Import failed: {error}")
@@ -244,4 +268,4 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     for key in ("repo", "revision", "variant", "label", "tag", "acknowledge"):
         variables[key].trace_add("write", validate)
     repo_entry.focus_set()
-    dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+    dialog.protocol("WM_DELETE_WINDOW", close_dialog)

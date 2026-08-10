@@ -305,6 +305,7 @@ def test_registered_custom_model_resolves_and_lists_from_cache(engine, monkeypat
     assert engine._repo("custom") == "owner/model"
     assert engine.model_pulled("custom")
     assert engine.list_installed_models() == [{"tag": "custom", "label": "Custom", "size": None}]
+    assert not engine.supports_tool_calls("custom")
 
 
 def test_external_vllm_server_cannot_receive_local_imports(engine):

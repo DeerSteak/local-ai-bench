@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.app.model_import_dialog import import_destination
+from scripts.runtime import config
 from scripts.setup.model_import import (
     ImportVariant, default_custom_tag, inspect_repository, normalize_hf_repo,
     preferred_variant, valid_custom_tag,
@@ -163,3 +165,9 @@ def test_vllm_prefers_canonical_index_when_multiple_are_present():
 
     assert inspection.vllm_variant is not None
     assert inspection.vllm_variant.files == ("model.safetensors",)
+
+
+def test_import_destination_requires_a_supported_engine(tmp_path):
+    assert import_destination("llamacpp", "custom") == config.MODELS_DIR / "llamacpp" / "custom"
+    assert import_destination("vllm", "custom", tmp_path) == tmp_path
+    assert import_destination("", "custom") is None

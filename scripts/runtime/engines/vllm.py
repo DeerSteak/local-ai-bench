@@ -107,9 +107,7 @@ class VllmEngine(InferenceEngine):
     def _tool_parser(cls, tag: str) -> str | None:
         """vLLM's per-model tool-call parser name, or None when the catalog has none."""
         entry = cls._catalog_entry(tag)
-        imported = custom_model(cls.name, tag)
-        return (entry.get("vllm_tool_parser") if entry else
-                imported.get("tool_parser") if imported else None)
+        return entry.get("vllm_tool_parser") if entry else None
 
     def supports_tool_calls(self, tag: str) -> bool:
         """vLLM emits no tool_calls without --tool-call-parser, and its parsers are
