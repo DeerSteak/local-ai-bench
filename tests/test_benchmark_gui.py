@@ -49,7 +49,7 @@ def test_import_refresh_preserves_valid_selections_selects_import_and_prunes_sta
     rebuilt = [
         MenuEntry("kept", "Kept", "llm", "LLM", False),
         MenuEntry("imported", "Imported", "llm", "LLM", False),
-        MenuEntry("new-other", "Other", "llm", "LLM", False),
+        MenuEntry("new-other", "Other", "llm", "LLM", True),
     ]
 
     selected, dropped, added, defaults = reconcile_imported_model_state(
@@ -60,7 +60,7 @@ def test_import_refresh_preserves_valid_selections_selects_import_and_prunes_sta
     assert selected == {"kept", "imported"}
     assert dropped == {"removed"}
     assert added == {"imported", "new-other"}
-    assert defaults == {"kept": True, "imported": False, "new-other": False}
+    assert defaults == {"kept": True, "imported": False, "new-other": True}
 
 
 def test_import_refresh_does_not_select_tag_absent_from_rebuilt_entries():

@@ -660,7 +660,9 @@ def reconcile_imported_model_state(
     selected = previous_selected & current_values
     if imported_tag in current_values:
         selected.add(imported_tag)
-    defaults = {value: previous_defaults.get(value, False) for value in current_values}
+    defaults = {
+        entry.value: previous_defaults.get(entry.value, entry.checked) for entry in rebuilt
+    }
     return selected, previous_values - current_values, current_values - previous_values, defaults
 
 
