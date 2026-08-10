@@ -46,6 +46,9 @@ def test_inspection_groups_complete_gguf_parts_and_detects_vllm_snapshot():
         "model-00002-of-00002.safetensors": 40,
         "unused.safetensors": 50,
         "adapter_model.safetensors": 3,
+        "tokenizer.json": 4,
+        "training_args.json": 5,
+        "README.md": 6,
     }), read_repo_json=lambda _name: {"weight_map": {
         "layer.0": "model-00001-of-00002.safetensors",
         "layer.1": "model-00002-of-00002.safetensors",
@@ -58,6 +61,9 @@ def test_inspection_groups_complete_gguf_parts_and_detects_vllm_snapshot():
     assert inspection.vllm_variant.size == 70
     assert inspection.vllm_variant.files == (
         "model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors",
+    )
+    assert inspection.vllm_variant.support_files == (
+        "config.json", "model.safetensors.index.json", "tokenizer.json",
     )
 
 

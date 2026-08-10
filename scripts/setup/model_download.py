@@ -72,10 +72,7 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         snapshot_download(
             repo_id=inspection.repo, revision=inspection.revision, token=token,
             cache_dir=str(Path(vllm_cache) / "hub"),
-            allow_patterns=[
-                *variant.files, "*.json", "*.py", "*.txt", "*.model", "*.tiktoken",
-                "tokenizer*", "chat_template*",
-            ],
+            allow_patterns=[*variant.files, *variant.support_files],
             ignore_patterns=["*.pth", "*.bin", "original/*"],
         )
         record = {

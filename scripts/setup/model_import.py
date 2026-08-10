@@ -18,6 +18,7 @@ class ImportVariant:
     label: str
     files: tuple[str, ...]
     size: int | None
+    support_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,24 @@ def _indexed_safetensors(index_data: object, files: dict[str, int | None]) -> tu
     return names
 
 
+def _vllm_support_files(files: dict[str, int | None], index: str | None) -> tuple[str, ...]:
+    exact = {
+        "added_tokens.json", "config.json", "generation_config.json", "merges.txt",
+        "preprocessor_config.json", "processor_config.json", "special_tokens_map.json",
+        "quant_config.json", "quantize_config.json", "sentencepiece.bpe.model", "spiece.model",
+        "tekken.json", "tokenizer.json", "tokenizer.model", "tokenizer_config.json", "vocab.json",
+        "vocab.txt",
+    }
+    selected = [name for name in files if Path(name).parent == Path(".") and (
+        Path(name).name in exact
+        or Path(name).name.startswith("chat_template")
+        or Path(name).name.startswith("tokenizer.")
+    )]
+    if index is not None:
+        selected.append(index)
+    return tuple(sorted(set(selected)))
+
+
 def inspect_repository(value: str, revision: str = "main", token: str | None = None,
                        api=None, read_repo_json=None) -> RepositoryInspection:
     repo = normalize_hf_repo(value)
@@ -143,7 +162,10 @@ def inspect_repository(value: str, revision: str = "main", token: str | None = N
         sizes = [files[name] for name in weights]
         size = sum(value for value in sizes if value is not None) \
             if all(value is not None for value in sizes) else None
-        vllm = ImportVariant("snapshot", "Safetensors repository snapshot", weights, size)
+        vllm = ImportVariant(
+            "snapshot", "Safetensors repository snapshot", weights, size,
+            _vllm_support_files(files, indexes[0] if indexes else None),
+        )
     return RepositoryInspection(
         repo=repo,
         revision=resolved_revision,
