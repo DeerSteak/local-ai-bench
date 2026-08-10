@@ -7,7 +7,9 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from scripts.setup.runtime_identity import RuntimeIdentity, inspect_runtime, probe_vllm_server_version
+from scripts.setup.runtime_identity import (
+    RuntimeIdentity, inspect_runtime, probe_vllm_server_health, probe_vllm_server_version,
+)
 
 
 VLLM_ENV_PROBE = (
@@ -90,8 +92,12 @@ def build_vllm_status(location: str | Path | None, managed_root: Path, backend: 
                       is_wsl: bool = False, env=None, run=subprocess.run,
                       open_fn=None) -> EngineStatus:
     selected = server_url or launcher or location
+    reachable = False
     if server_url:
         version = probe_vllm_server_version(
+            server_url, env=env, **({"open_fn": open_fn} if open_fn is not None else {}),
+        )
+        reachable = bool(version) or probe_vllm_server_health(
             server_url, env=env, **({"open_fn": open_fn} if open_fn is not None else {}),
         )
         identity = RuntimeIdentity("vllm", "external_server", server_url, version, "")
@@ -110,8 +116,13 @@ def build_vllm_status(location: str | Path | None, managed_root: Path, backend: 
         "kernel": platform.release() if is_wsl else None,
     })
     version = components.get("vllm") if isinstance(components.get("vllm"), str) else identity.version
-    health = "ready" if (version or ownership in {"external_server", "platform_launcher"}) else "unverified"
     warnings = tuple(value for value in (warning,) if value)
+    if ownership == "external_server":
+        health = "ready" if reachable else "unavailable"
+        if not reachable:
+            warnings = (*warnings, "External vLLM server did not respond to /health.")
+    else:
+        health = "ready" if (version or ownership == "platform_launcher") else "unverified"
     adjusted = RuntimeIdentity("vllm", ownership, str(selected or ""), version, identity.version_output)
     return _status(adjusted, backend, health, components, warnings)
 

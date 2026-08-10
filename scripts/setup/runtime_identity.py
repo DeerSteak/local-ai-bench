@@ -82,11 +82,7 @@ def engine_runtime_version(engine_name: str, engine, *, run=subprocess.run) -> s
 
 def probe_vllm_server_version(server_url: str, *, open_fn=urllib.request.urlopen,
                               env=None) -> str | None:
-    headers = {}
-    token = (os.environ if env is None else env).get("VLLM_API_KEY")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(f"{server_url.rstrip('/')}/version", headers=headers)
+    request = _vllm_request(server_url, "/version", env)
     try:
         with open_fn(request, timeout=3) as response:
             payload = response.read(4097)
@@ -100,3 +96,22 @@ def probe_vllm_server_version(server_url: str, *, open_fn=urllib.request.urlopen
         return None
     version = data.get("version") if isinstance(data, dict) else None
     return version.strip() if isinstance(version, str) and version.strip() else None
+
+
+def probe_vllm_server_health(server_url: str, *, open_fn=urllib.request.urlopen,
+                             env=None) -> bool:
+    request = _vllm_request(server_url, "/health", env)
+    try:
+        with open_fn(request, timeout=3) as response:
+            status = getattr(response, "status", 200)
+            return 200 <= status < 300
+    except Exception:
+        return False
+
+
+def _vllm_request(server_url: str, path: str, env) -> urllib.request.Request:
+    headers = {}
+    token = (os.environ if env is None else env).get("VLLM_API_KEY")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(f"{server_url.rstrip('/')}{path}", headers=headers)
