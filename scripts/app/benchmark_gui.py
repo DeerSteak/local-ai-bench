@@ -808,6 +808,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     tests_box.columnconfigure(0, weight=1)
     test_widgets = {}
+    test_labels = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
         text = label if entry.available else f"{label} (model not installed)"
@@ -824,6 +825,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
         ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         test_widgets[name] = widget
+        test_labels[name] = option_label
     ttk.Label(
         tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
         wraplength=330,
@@ -2120,6 +2122,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         inventory.update(merged)
         model_owners.clear()
         model_owners.update(owners)
+        refreshed_tests = {entry.value: entry for entry in build_test_entries(inventory)}
+        for entry in custom_tests:
+            entry.available = refreshed_tests[entry.value].available
+            test_widgets[entry.value].configure(state="normal" if entry.available else "disabled")
+            test_labels[entry.value].configure(
+                text=entry.label if entry.available else f"{entry.label} (model not installed)",
+            )
         rebuilt = build_model_entries(
             inventory, [entry.value for entry in custom_tests if entry.available],
         )
