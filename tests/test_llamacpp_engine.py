@@ -194,6 +194,21 @@ def test_list_installed_models_includes_custom_dropped_in_model(fake_catalog):
     assert installed == {"my-custom-model": 2}
 
 
+def test_registered_custom_model_uses_its_display_label(fake_catalog, monkeypatch):
+    custom_dir = fake_catalog / "llamacpp" / "my-custom-model"
+    custom_dir.mkdir(parents=True)
+    (custom_dir / "weights.gguf").write_bytes(b"cc")
+    monkeypatch.setattr(
+        llamacpp_module, "custom_model",
+        lambda engine, tag: {"label": "My Imported Model"}
+        if (engine, tag) == ("llamacpp", "my-custom-model") else None,
+    )
+
+    installed = LlamaCppEngine().list_installed_models()
+
+    assert installed == [{"tag": "my-custom-model", "label": "My Imported Model", "size": 2}]
+
+
 def test_removed_catalog_model_remains_available_by_its_folder_name(
         fake_catalog, monkeypatch):
     old_tag = "llama3.2:3b-instruct-q4_K_M"

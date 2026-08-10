@@ -577,6 +577,9 @@ def merge_model_inventories(inventories: dict[str, dict]) -> tuple[dict, dict[st
                 if key not in seen:
                     merged[section].append(model)
                     seen.add(key)
+    for model in merged.get("custom", []):
+        key = model.get("tag")
+        model["engines"] = sorted(owners.get(key, ())) if isinstance(key, str) else []
     return merged, owners
 
 
@@ -599,8 +602,10 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
                 checked=tier != "large", tier=tier,
             ))
         for model in inventory["custom"]:
+            engines = ", ".join(model.get("engines", ()))
+            section = f"Custom LLM — {engines}" if engines else "Custom LLM"
             entries.append(MenuEntry(
-                model["tag"], model["label"], "custom", "Custom LLM",
+                model["tag"], model["label"], "custom", section,
                 checked=False,
             ))
     if "emb" in tests:

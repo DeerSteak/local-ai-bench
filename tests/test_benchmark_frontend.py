@@ -1416,6 +1416,17 @@ def test_merged_inventory_is_the_union_with_owners():
     assert owners["b"] == {"llamacpp"} and owners["c"] == {"vllm"}
 
 
+def test_custom_model_section_names_its_owning_engines():
+    inventory = _inventory([])
+    inventory["custom"] = [{"tag": "custom", "label": "Custom"}]
+    merged, owners = merge_model_inventories({"llamacpp": inventory})
+
+    entry = build_model_entries(merged, ["llm"])[0]
+
+    assert entry.section == "Custom LLM — llamacpp"
+    assert owners["custom"] == {"llamacpp"}
+
+
 def test_only_models_the_engine_holds_are_runnable():
     merged, owners = merge_model_inventories({
         "llamacpp": _inventory(["a", "b"]),

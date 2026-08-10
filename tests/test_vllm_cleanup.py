@@ -1,5 +1,6 @@
 import pytest
 
+from scripts.setup.custom_models import load_custom_models, save_custom_model
 from scripts.setup.model_inventory import (
     catalog_vllm_repos, delete_non_catalog_vllm_repos, find_non_catalog_vllm_repos,
     hf_cache_repo_id,
@@ -67,6 +68,20 @@ def test_deletion_removes_only_the_named_entries(tmp_path):
     removed, failures = delete_non_catalog_vllm_repos(tmp_path, [drop.name])
     assert removed == [drop.name] and failures == {}
     assert not drop.exists() and keep.exists()
+
+
+def test_deleting_imported_vllm_repo_forgets_its_registry_entry(tmp_path):
+    registry = tmp_path / "custom.json"
+    repo = "someone/Drop-Me"
+    drop = make_cached_repo(tmp_path, repo)
+    save_custom_model({"engine": "vllm", "tag": "drop", "repo": repo}, registry)
+
+    removed, failures = delete_non_catalog_vllm_repos(
+        tmp_path, [drop.name], registry_path=registry,
+    )
+
+    assert removed == [drop.name] and failures == {}
+    assert load_custom_models(registry) == []
 
 
 def test_deletion_refuses_a_repo_the_catalog_owns(tmp_path):

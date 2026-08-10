@@ -27,6 +27,7 @@ from scripts.app.benchmark_gui import (
     query_vram_usage, show_vram_usage,
     progress_event_engine,
     progress_summary_rows, recovery_executor_command, recovery_progress_entries,
+    reconcile_imported_model_state,
     resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name,
@@ -42,6 +43,36 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_import_refresh_preserves_valid_selections_selects_import_and_prunes_stale_state():
+    rebuilt = [
+        MenuEntry("kept", "Kept", "llm", "LLM", False),
+        MenuEntry("imported", "Imported", "llm", "LLM", False),
+        MenuEntry("new-other", "Other", "llm", "LLM", True),
+    ]
+
+    selected, dropped, added, defaults = reconcile_imported_model_state(
+        {"kept", "removed"}, {"kept", "removed"}, {"kept": True, "removed": True},
+        rebuilt, "imported",
+    )
+
+    assert selected == {"kept", "imported"}
+    assert dropped == {"removed"}
+    assert added == {"imported", "new-other"}
+    assert defaults == {"kept": True, "imported": False, "new-other": True}
+
+
+def test_import_refresh_does_not_select_tag_absent_from_rebuilt_entries():
+    rebuilt = [MenuEntry("kept", "Kept", "llm", "LLM", False)]
+
+    selected, dropped, added, defaults = reconcile_imported_model_state(
+        {"kept"}, set(), {"kept": False}, rebuilt, "not-installed",
+    )
+
+    assert selected == set()
+    assert dropped == set() and added == set()
+    assert defaults == {"kept": False}
 
 
 def test_selected_result_paths_supports_multiple_and_enforces_action_limits(tmp_path):

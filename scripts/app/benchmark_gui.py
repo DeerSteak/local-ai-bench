@@ -24,6 +24,7 @@ from scripts.app.benchmark_frontend import (
     parse_engine_selection, format_engine_selection,
     FRONTEND_STATE_PATH,
     GUI_OPTION_DEFAULTS,
+    MenuEntry,
     LLM_BACKED_TESTS,
     MAX_PROMPT_TOKEN_OPTIONS,
     MAX_PROMPT_TOKEN_TESTS,
@@ -66,6 +67,7 @@ from scripts.results.result_history import (
 from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
+from scripts.app.model_import_dialog import show_model_import_dialog
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
@@ -650,6 +652,20 @@ def plan_preview_sections(preview: str) -> list[tuple[str, list[str]]]:
     return [(title, lines) for title, lines in sections if lines]
 
 
+def reconcile_imported_model_state(
+    previous_values: set[str], previous_selected: set[str], previous_defaults: dict[str, bool],
+    rebuilt: list[MenuEntry], imported_tag: str,
+) -> tuple[set[str], set[str], set[str], dict[str, bool]]:
+    current_values = {entry.value for entry in rebuilt}
+    selected = previous_selected & current_values
+    if imported_tag in current_values:
+        selected.add(imported_tag)
+    defaults = {
+        entry.value: previous_defaults.get(entry.value, entry.checked) for entry in rebuilt
+    }
+    return selected, previous_values - current_values, current_values - previous_values, defaults
+
+
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -807,6 +823,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
     tests_box.columnconfigure(0, weight=1)
     test_widgets = {}
+    test_labels = {}
     for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
         entry = next(item for item in custom_tests if item.value == name)
         text = label if entry.available else f"{label} (model not installed)"
@@ -823,6 +840,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
         ).grid(row=row, column=1, sticky="e", padx=(8, 0))
         test_widgets[name] = widget
+        test_labels[name] = option_label
     ttk.Label(
         tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
         wraplength=330,
@@ -831,33 +849,44 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     models_box = ttk.LabelFrame(configuration_frame, text="Installed models", padding=12)
     models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
     models_box.columnconfigure(0, weight=1)
-    previous = None
+    model_rows = ttk.Frame(models_box)
+    model_rows.grid(row=0, column=0, columnspan=2, sticky="ew")
+    model_rows.columnconfigure(0, weight=1)
     model_widgets = {}
-    row = 0
-    for entry in custom_models:
-        if entry.section != previous:
-            ttk.Label(models_box, text=entry.section, style="Section.TLabel").grid(row=row, column=0, sticky="w", pady=(7, 2))
+
+    def render_model_rows():
+        for child in model_rows.winfo_children():
+            child.destroy()
+        model_widgets.clear()
+        previous = None
+        row = 0
+        for entry in custom_models:
+            if entry.section != previous:
+                ttk.Label(model_rows, text=entry.section, style="Section.TLabel").grid(
+                    row=row, column=0, sticky="w", pady=(7, 2),
+                )
+                row += 1
+                previous = entry.section
+            option_row = ttk.Frame(model_rows)
+            option_row.grid(row=row, column=0, sticky="ew", padx=(12, 0), pady=2)
+            option_row.columnconfigure(1, weight=1)
+            widget = ttk.Checkbutton(option_row, variable=model_vars[entry.value])
+            widget.grid(row=0, column=0, sticky="nw")
+            option_label = ttk.Label(option_row, text=entry.label, wraplength=280)
+            option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
+            option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
+            ttk.Button(
+                model_rows, text="Reset", width=6,
+                command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
+            ).grid(row=row, column=1, sticky="e", padx=(8, 0))
+            model_widgets[entry.value] = widget
             row += 1
-            previous = entry.section
-        option_row = ttk.Frame(models_box)
-        option_row.grid(row=row, column=0, sticky="ew", padx=(12, 0), pady=2)
-        option_row.columnconfigure(1, weight=1)
-        widget = ttk.Checkbutton(option_row, variable=model_vars[entry.value])
-        widget.grid(row=0, column=0, sticky="nw")
-        option_label = ttk.Label(option_row, text=entry.label, wraplength=280)
-        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
-        ttk.Button(
-            models_box, text="Reset", width=6,
-            command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
-        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
-        model_widgets[entry.value] = widget
-        row += 1
-    model_end_row = row
+
+    render_model_rows()
     ttk.Label(
         models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
         wraplength=330,
-    ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     workload_box = ttk.LabelFrame(configuration_frame, text="Workload sizes", padding=12)
     workload_box.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -1251,9 +1280,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
     )
-    ttk.Button(models_box, text="Reset Models", command=reset_models).grid(
-        row=model_end_row + 1, column=0, sticky="w", pady=(8, 0),
-    )
+    model_actions = ttk.Frame(models_box)
+    model_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+    ttk.Button(model_actions, text="Reset Models", command=reset_models).pack(side="left")
+    ttk.Button(
+        model_actions, text="Import Hugging Face Model",
+        command=lambda: open_model_import_dialog(),
+    ).pack(side="right")
     ttk.Button(workload_box, text="Reset Workload Sizes", command=reset_workload).grid(
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
@@ -2091,6 +2124,52 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         _engine_var.trace_add("write", apply_engine_availability)
     apply_engine_availability()
 
+    def refresh_imported_models(selected_tag: str) -> None:
+        previous_values = set(model_vars)
+        previous_selected = {name for name, variable in model_vars.items() if variable.get()}
+        refreshed = {
+            name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
+            for name in available_engines
+        }
+        merged, owners = merge_model_inventories(refreshed)
+        engine_inventories.clear()
+        engine_inventories.update(refreshed)
+        inventory.clear()
+        inventory.update(merged)
+        model_owners.clear()
+        model_owners.update(owners)
+        refreshed_tests = {entry.value: entry for entry in build_test_entries(inventory)}
+        for entry in custom_tests:
+            entry.available = refreshed_tests[entry.value].available
+            test_widgets[entry.value].configure(state="normal" if entry.available else "disabled")
+            test_labels[entry.value].configure(
+                text=entry.label if entry.available else f"{entry.label} (model not installed)",
+            )
+        rebuilt = build_model_entries(
+            inventory, [entry.value for entry in custom_tests if entry.available],
+        )
+        custom_models[:] = rebuilt
+        selected, dropped, added, defaults = reconcile_imported_model_state(
+            previous_values, previous_selected, custom_model_defaults, rebuilt, selected_tag,
+        )
+        for value in dropped:
+            model_vars.pop(value)
+        custom_model_defaults.clear()
+        custom_model_defaults.update(defaults)
+        for entry in rebuilt:
+            if entry.value in added:
+                model_vars[entry.value] = tk.BooleanVar(value=False)
+                model_vars[entry.value].trace_add("write", mark_custom)
+            model_vars[entry.value].set(entry.value in selected)
+        render_model_rows()
+        apply_engine_availability()
+
+    def open_model_import_dialog() -> None:
+        show_model_import_dialog(
+            root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+            available_engines=available_engines, engine_factory=get_engine,
+            on_imported=refresh_imported_models,
+        )
     preset_var.trace_add("write", select_preset)
     for variable in (
             *test_vars.values(), *model_vars.values(), engine_var, cap_var,

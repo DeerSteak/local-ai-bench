@@ -83,6 +83,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
+| `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
@@ -116,6 +117,8 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
+| `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
+| `setup/model_import.py` / `setup/model_download.py` | Hugging Face repository inspection and engine-specific artifact downloads |
 | `setup/engine_selection.py` | Pure engine-picker rules: defaults, disabled engines, and which selected engines still need installing |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |

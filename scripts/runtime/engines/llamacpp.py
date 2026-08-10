@@ -23,6 +23,7 @@ from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.setup.custom_models import custom_model
 from scripts.runtime.shared import (
     EngineBudgetExceeded,
     EngineLoopDetected,
@@ -264,7 +265,11 @@ class LlamaCppEngine(InferenceEngine):
                     continue
                 ggufs = self._resolve_model_files(entry.name)
                 if ggufs is not None:
-                    installed.append({"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)})
+                    imported = custom_model(self.name, entry.name)
+                    item = {"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)}
+                    if imported and imported.get("label"):
+                        item["label"] = imported["label"]
+                    installed.append(item)
         return installed
 
     @staticmethod
