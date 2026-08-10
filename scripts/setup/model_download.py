@@ -29,6 +29,36 @@ def cancellable_tqdm(cancel_check):
     return CancellableTqdm
 
 
+def _cache_tree_state(*roots: Path) -> dict[Path, set[Path] | None]:
+    return {
+        root: ({path.relative_to(root) for path in root.rglob("*")} if root.exists() else None)
+        for root in roots
+    }
+
+
+def _remove_cache_changes(state: dict[Path, set[Path] | None]) -> None:
+    for root, previous in state.items():
+        if not root.exists():
+            continue
+        if previous is None:
+            shutil.rmtree(root)
+            continue
+        for path in root.rglob("*.incomplete"):
+            path.unlink(missing_ok=True)
+        current = sorted(
+            (path for path in root.rglob("*") if path.relative_to(root) not in previous),
+            key=lambda path: len(path.parts), reverse=True,
+        )
+        for path in current:
+            if path.is_symlink() or path.is_file():
+                path.unlink(missing_ok=True)
+            elif path.is_dir():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+
+
 def load_hf_token(env=None, token_path: Path | None = None) -> str | None:
     env = os.environ if env is None else env
     token = str(env.get("HF_TOKEN", "")).strip()
@@ -122,15 +152,24 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         if vllm_cache is None:
             raise ValueError("vLLM cache location is unavailable")
         from huggingface_hub import snapshot_download
+        hub = Path(vllm_cache) / "hub"
+        cache_name = f"models--{inspection.repo.replace('/', '--')}"
+        cache_state = _cache_tree_state(hub / cache_name, hub / ".locks" / cache_name)
         if cancel_check():
             raise InterruptedError("model import cancelled")
-        snapshot_download(
-            repo_id=inspection.repo, revision=inspection.revision, token=token,
-            cache_dir=str(Path(vllm_cache) / "hub"),
-            allow_patterns=[*variant.files, *variant.support_files],
-            ignore_patterns=["*.pth", "*.bin", "original/*"],
-            tqdm_class=cancellable_tqdm(cancel_check),
-        )
+        try:
+            snapshot_download(
+                repo_id=inspection.repo, revision=inspection.revision, token=token,
+                cache_dir=str(hub),
+                allow_patterns=[*variant.files, *variant.support_files],
+                ignore_patterns=["*.pth", "*.bin", "original/*"],
+                tqdm_class=cancellable_tqdm(cancel_check),
+            )
+            if cancel_check():
+                raise InterruptedError("model import cancelled")
+        except InterruptedError:
+            _remove_cache_changes(cache_state)
+            raise
         record = {
             "tag": tag, "label": label.strip(), "engine": engine,
             "repo": inspection.repo, "revision": inspection.revision,
