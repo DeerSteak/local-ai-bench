@@ -122,7 +122,7 @@ def probe_llamacpp_load(tag: str, model_path: Path, binary: str | None, *, timeo
                         if 200 <= getattr(response, "status", 200) < 300:
                             return ModelCompatibility(
                                 "llamacpp", tag, architecture, "supported",
-                                "Model loaded successfully in the installed llama.cpp runtime.",
+                                "Model loaded successfully CPU-only; GPU compatibility was not tested.",
                             )
                 except Exception:
                     pass

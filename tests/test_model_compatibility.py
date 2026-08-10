@@ -90,6 +90,7 @@ def test_llamacpp_load_probe_reports_health_and_terminates(monkeypatch, tmp_path
         port_factory=lambda: 4123,
     )
     assert result.status == "supported"
+    assert result.detail == "Model loaded successfully CPU-only; GPU compatibility was not tested."
     assert process.terminated
 
 
