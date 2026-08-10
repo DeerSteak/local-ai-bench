@@ -14,6 +14,16 @@ def test_error_log_excerpt_keeps_short_output_unchanged():
     )
 
 
+def test_error_log_excerpt_explains_uva_failure_without_full_traceback():
+    output = "startup\nRuntimeError: UVA is not available\n" + ("trace" * 1000)
+
+    excerpt = VllmBenchBenchmark.error_log_excerpt(output)
+
+    assert "V2 Model Runner" in excerpt
+    assert "VLLM_WSL2_ENABLE_PIN_MEMORY=1" in excerpt
+    assert "trace" not in excerpt
+
+
 def test_offline_bench_gets_its_own_process_group(monkeypatch):
     monkeypatch.setattr("scripts.workloads.vllm_benchmark.subprocess.CREATE_NEW_PROCESS_GROUP", 512,
                         raising=False)

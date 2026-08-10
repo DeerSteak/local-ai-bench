@@ -55,6 +55,9 @@ class VllmBenchBenchmark:
     def error_log_excerpt(output: str | None, limit: int = ERROR_LOG_CHARS) -> str:
         """Keep startup/root-cause output and the final traceback within a readable limit."""
         text = (output or "").strip()
+        if "UVA is not available" in text:
+            return ("vLLM's V2 Model Runner could not allocate its UVA buffer. Under WSL2, "
+                    "verify that VLLM_WSL2_ENABLE_PIN_MEMORY=1 reaches the managed vLLM process.")
         if len(text) <= limit:
             return text
         omitted = len(text) - limit

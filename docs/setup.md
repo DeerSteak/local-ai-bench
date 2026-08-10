@@ -187,6 +187,8 @@ Clone into the WSL2 filesystem (`~/`), **not** a Windows drive under `/mnt/c`. T
 
 Runs made this way record `wsl: true` in the results profile and are tagged `WSL2` in the dashboard. This is not cosmetic: GPU access under WSL2 is virtualized and carries real overhead, so a WSL2 result is not interchangeable with a bare-metal Linux result on identical hardware. See [Limitations](limitations.md).
 
+For locally managed vLLM processes, the app enables vLLM's WSL2 pinned-memory opt-in to support the V2 Model Runner's UVA allocation. An explicitly configured `VLLM_WSL2_ENABLE_PIN_MEMORY` value is preserved, and external vLLM servers remain unmanaged.
+
 This route is reasoned from the platform detection rather than verified on hardware by the project maintainer. If something does fail first, expect it to be `nvidia-smi`'s compute-capability output or the memory ceiling above.
 
 ## Memory-fit estimate
