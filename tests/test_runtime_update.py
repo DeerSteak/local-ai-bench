@@ -2,7 +2,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.setup.runtime_update import (
-    detect_nvidia_compute_capability, llamacpp_cmake_flags, rebuild_managed_llamacpp,
+    detect_nvidia_compute_capability, homebrew_llamacpp_prefix, llamacpp_cmake_flags,
+    rebuild_managed_llamacpp, update_homebrew_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
 )
 from scripts.setup.vllm_install import VllmSupport
@@ -159,6 +160,48 @@ def test_llamacpp_cmake_flags_match_backend():
     ]
     assert llamacpp_cmake_flags("rocm") == ["-DGGML_HIP=ON"]
     assert llamacpp_cmake_flags("cpu") == []
+
+
+def test_homebrew_llamacpp_prefix_rejects_missing_formula():
+    result = homebrew_llamacpp_prefix(
+        run=lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=""),
+    )
+    assert result is None
+
+
+def test_update_homebrew_llamacpp_upgrades_and_validates_all_tools(tmp_path):
+    prefix = tmp_path / "Cellar" / "llama.cpp" / "1"
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        tool = prefix / "bin" / name
+        tool.parent.mkdir(parents=True, exist_ok=True)
+        tool.touch()
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append((command, kwargs))
+        if command == ["brew", "--prefix", "llama.cpp"]:
+            return SimpleNamespace(returncode=0, stdout=str(prefix), stderr="")
+        if "--version" in command:
+            return SimpleNamespace(returncode=0, stdout="version: 7001", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    result = update_homebrew_llamacpp(prefix / "bin" / "llama-server", run=run)
+
+    assert result.success and result.version == "version: 7001"
+    assert [entry[0] for entry in commands[1:3]] == [
+        ["brew", "update"], ["brew", "upgrade", "llama.cpp"],
+    ]
+    assert commands[1][1]["env"]["NONINTERACTIVE"] == "1"
+
+
+def test_update_homebrew_llamacpp_rejects_unrelated_system_binary(tmp_path):
+    prefix = tmp_path / "homebrew" / "llama.cpp"
+    result = update_homebrew_llamacpp(
+        tmp_path / "usr" / "bin" / "llama-server",
+        run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=str(prefix), stderr=""),
+    )
+    assert not result.success
+    assert "not owned by Homebrew" in result.detail
 
 
 def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeypatch):

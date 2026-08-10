@@ -206,14 +206,14 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         root.clipboard_append(engine_diagnostics_text(snapshot.statuses, snapshot.models))
         status_text.set("Diagnostics copied to the clipboard.")
 
-    def update_engine(engine_key, label, updater, prompt):
+    def update_engine(engine_key, label, updater, prompt, allow_system=False):
         if state["loading"] or updater is None:
             return
         if run_active():
             messagebox.showerror("Benchmark active", "Stop the active benchmark first.", parent=root)
             return
         status = next((item for item in state["snapshot"].statuses if item.engine == engine_key), None)
-        if status is None or not status.managed:
+        if status is None or (not status.managed and not allow_system):
             messagebox.showinfo(
                 f"{label} update", f"Only app-managed {label} can be updated here.", parent=root,
             )
@@ -251,6 +251,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             command=lambda: update_engine(
                 "llamacpp", "llama.cpp", llamacpp_updater,
                 "Clone and build the latest llama.cpp, then replace the current checkout?",
+                allow_system=platform.system() == "Darwin",
             ),
         ).pack(side="right", padx=(0, 8))
     refresh()

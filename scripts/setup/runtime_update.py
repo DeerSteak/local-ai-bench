@@ -69,6 +69,49 @@ def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeU
     return RuntimeUpdateResult(True, "Staged llama.cpp build validated.", output.splitlines()[0])
 
 
+def homebrew_llamacpp_prefix(*, run=subprocess.run) -> Path | None:
+    try:
+        result = run(
+            ["brew", "--prefix", "llama.cpp"], capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = (result.stdout or "").strip()
+    return Path(value) if result.returncode == 0 and value else None
+
+
+def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run) -> RuntimeUpdateResult:
+    prefix = homebrew_llamacpp_prefix(run=run)
+    if prefix is None or location is None:
+        return RuntimeUpdateResult(False, "A Homebrew llama.cpp installation was not found.")
+    try:
+        Path(location).resolve().relative_to(prefix.resolve())
+    except (OSError, ValueError):
+        return RuntimeUpdateResult(False, "The active llama.cpp runtime is not owned by Homebrew.")
+    env = {**os.environ, "HOMEBREW_NO_ASK": "1", "NONINTERACTIVE": "1"}
+    for command in (["brew", "update"], ["brew", "upgrade", "llama.cpp"]):
+        try:
+            result = run(command, env=env)
+        except OSError as exc:
+            return RuntimeUpdateResult(False, f"Homebrew update failed: {exc}")
+        if result.returncode != 0:
+            return RuntimeUpdateResult(False, f"Homebrew command failed: {' '.join(command)}")
+    missing = [name for name in LLAMACPP_TARGETS if not (prefix / "bin" / name).is_file()]
+    if missing:
+        return RuntimeUpdateResult(False, f"Updated Homebrew formula is missing: {', '.join(missing)}")
+    try:
+        result = run(
+            [str(prefix / "bin" / "llama-server"), "--version"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return RuntimeUpdateResult(False, f"Updated llama.cpp validation failed: {exc}")
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0 or not output:
+        return RuntimeUpdateResult(False, output or "Updated llama.cpp returned no version.")
+    return RuntimeUpdateResult(True, "Homebrew llama.cpp updated successfully.", output.splitlines()[0])
+
+
 def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
                              run=subprocess.run, replace=os.replace,
                              remove=shutil.rmtree,

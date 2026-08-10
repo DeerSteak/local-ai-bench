@@ -91,7 +91,7 @@ Both engines follow the same system-first policy: if a working `vllm` is already
 
 The benchmark GUI's Engine Management tab can update a project-owned `vllm-env/` without rerunning setup. It installs into a sibling staging environment, verifies that runtime, and only then replaces the active environment; a failed replacement restores the prior environment. System installations, platform launchers, and external servers remain under their owner's control and are inspection-only.
 
-On Linux, that tab can also update and rebuild a project-owned `llama.cpp/` checkout. It clones into a sibling directory, configures the detected CPU, CUDA, or ROCm backend, builds and verifies `llama-server`, `llama-bench`, and `llama-batched-bench`, then performs the same rollback-capable replacement. Homebrew and other system installs remain inspection-only; managed Windows release replacement is not yet available in the app.
+On Linux, that tab can also update and rebuild a project-owned `llama.cpp/` checkout. It clones into a sibling directory, configures the detected CPU, CUDA, or ROCm backend, builds and verifies `llama-server`, `llama-bench`, and `llama-batched-bench`, then performs the same rollback-capable replacement. On macOS, the action verifies that the active runtime belongs to Homebrew, runs a noninteractive `brew update` and `brew upgrade llama.cpp`, and validates the same three tools afterward. Other system installs remain inspection-only; managed Windows release replacement is not yet available in the app.
 
 **Whatever models you select later are downloaded for every selected engine.** The model picker is not per-engine — the point is to compare the same models on the same hardware across engines.
 
