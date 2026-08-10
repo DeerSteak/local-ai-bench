@@ -86,3 +86,26 @@ def test_external_and_launcher_vllm_status_do_not_probe_local_python(tmp_path):
     assert external.ownership == "external_server" and external.health == "ready"
     assert external.version == "0.14.0"
     assert launcher.ownership == "platform_launcher" and launcher.health == "ready"
+
+
+def test_external_vllm_status_uses_health_when_version_is_unavailable(tmp_path):
+    class Response:
+        status = 200
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self, _size): return self.payload
+
+    def healthy(request, **_kwargs):
+        return Response(b"not json" if request.full_url.endswith("/version") else b"")
+
+    ready = build_vllm_status(
+        None, tmp_path, "cuda", server_url="http://external", open_fn=healthy, env={},
+    )
+    offline = build_vllm_status(
+        None, tmp_path, "cuda", server_url="http://external",
+        open_fn=lambda *_a, **_k: (_ for _ in ()).throw(OSError()), env={},
+    )
+    assert ready.health == "ready" and ready.version is None
+    assert offline.health == "unavailable"
+    assert any("/health" in warning for warning in offline.warnings)

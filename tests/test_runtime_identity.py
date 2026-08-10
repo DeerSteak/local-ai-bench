@@ -5,7 +5,7 @@ import pytest
 
 from scripts.setup.runtime_identity import (
     engine_runtime_version, inspect_runtime, parse_runtime_version,
-    probe_vllm_server_version, runtime_ownership,
+    probe_vllm_server_health, probe_vllm_server_version, runtime_ownership,
 )
 
 
@@ -80,7 +80,7 @@ def test_engine_runtime_version_probes_an_external_vllm_server(monkeypatch):
 
 
 class VersionResponse:
-    def __init__(self, payload): self.payload = payload
+    def __init__(self, payload, status=200): self.payload, self.status = payload, status
     def __enter__(self): return self
     def __exit__(self, *_args): return False
     def read(self, _size): return self.payload
@@ -111,3 +111,23 @@ def test_probe_vllm_server_version_tolerates_absent_or_invalid_endpoint():
     assert probe_vllm_server_version(
         "http://external", open_fn=lambda *_a, **_k: (_ for _ in ()).throw(OSError()), env={},
     ) is None
+
+
+def test_probe_vllm_server_health_checks_status_and_authentication():
+    seen = {}
+
+    def open_health(request, timeout):
+        seen["url"], seen["auth"], seen["timeout"] = (
+            request.full_url, request.get_header("Authorization"), timeout,
+        )
+        return VersionResponse(b"", 204)
+
+    assert probe_vllm_server_health(
+        "http://external:8000/", open_fn=open_health, env={"VLLM_API_KEY": "secret"},
+    )
+    assert seen == {
+        "url": "http://external:8000/health", "auth": "Bearer secret", "timeout": 3,
+    }
+    assert not probe_vllm_server_health(
+        "http://external", open_fn=lambda *_a, **_k: (_ for _ in ()).throw(OSError()), env={},
+    )
