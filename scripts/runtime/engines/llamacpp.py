@@ -74,6 +74,9 @@ class LlamaCppEngine(InferenceEngine):
             platform_name=platform.system(), which_fn=shutil.which,
         )
 
+    def runtime_location(self) -> str | None:
+        return self._binary_path()
+
     # ── local model-file resolution ──
 
     @classmethod

@@ -68,6 +68,7 @@ from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.model_import_dialog import show_model_import_dialog
+from scripts.app.engine_management import build_engine_management_tab, collect_engine_statuses
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
@@ -747,9 +748,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     config_tab = ttk.Frame(notebook, padding=18)
     log_tab = ttk.Frame(notebook, padding=18)
     history_tab = ttk.Frame(notebook, padding=18)
+    engines_tab = ttk.Frame(notebook, padding=18)
     notebook.add(config_tab, text="Configuration")
     notebook.add(log_tab, text="Run Log")
     notebook.add(history_tab, text="Result History")
+    notebook.add(engines_tab, text="Engine Management")
+    build_engine_management_tab(
+        parent=engines_tab, root=root, tk=tk, ttk=ttk,
+        status_loader=lambda: collect_engine_statuses(get_engine, hardware_backend),
+    )
     notebook.bind(
         "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
     )

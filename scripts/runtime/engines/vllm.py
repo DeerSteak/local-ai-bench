@@ -221,6 +221,15 @@ class VllmEngine(InferenceEngine):
     def cache_home(self) -> Path:
         return self._cache_home
 
+    def runtime_location(self) -> str | None:
+        return self._executable
+
+    def runtime_launcher(self) -> str | None:
+        return self._launcher
+
+    def external_server_url(self) -> str | None:
+        return self._server_url
+
     def supports_model_import(self) -> bool:
         return self._server_url is None
 
