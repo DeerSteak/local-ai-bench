@@ -4,13 +4,22 @@ from types import SimpleNamespace
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
     homebrew_llamacpp_prefix, llamacpp_cmake_flags, rebuild_managed_llamacpp,
-    select_windows_llamacpp_assets, update_homebrew_llamacpp, update_windows_llamacpp,
+    RuntimeUpdateControl, select_windows_llamacpp_assets, update_homebrew_llamacpp,
+    update_windows_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
 )
 from scripts.setup.vllm_install import VllmSupport
 
 
 SUPPORT = VllmSupport("supported", "cuda_wheel", "supported")
+
+
+def test_runtime_update_control_prevents_commands_after_cancellation():
+    control = RuntimeUpdateControl()
+    control.cancel()
+    result = control.run(["never-run"])
+    assert result.returncode == -1
+    assert result.stderr == "update cancelled"
 
 
 def test_vllm_executable_uses_platform_venv_layout():
@@ -77,6 +86,26 @@ def test_update_managed_vllm_preserves_target_when_staging_fails(tmp_path):
     )
 
     assert not result.success
+    assert marker.exists()
+
+
+def test_update_managed_vllm_reports_cancellation_and_preserves_target(tmp_path):
+    target = tmp_path / "vllm-env"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    control = RuntimeUpdateControl()
+
+    def installer(*args, **kwargs):
+        control.cancel()
+        return False
+
+    result = update_managed_vllm(
+        SUPPORT, target, installer=installer, control=control,
+        token_factory=lambda: "test",
+    )
+    assert not result.success
+    assert "cancelled" in result.detail
     assert marker.exists()
 
 

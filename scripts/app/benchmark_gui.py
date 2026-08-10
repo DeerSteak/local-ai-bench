@@ -749,26 +749,26 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
 
-    def perform_vllm_update():
+    def perform_vllm_update(control):
         snapshot = collect_engine_management(get_engine, hardware_backend)
         status = next(item for item in snapshot.statuses if item.engine == "vllm")
         support = vllm_update_support(status, setup, platform.machine())
         if support is None:
             return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
-        return update_managed_vllm(support, config.VLLM_VENV)
+        return update_managed_vllm(support, config.VLLM_VENV, control=control)
 
-    def perform_llamacpp_update():
+    def perform_llamacpp_update(control):
         snapshot = collect_engine_management(get_engine, hardware_backend)
         status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
         if platform.system() == "Darwin":
-            return update_homebrew_llamacpp(status.location)
+            return update_homebrew_llamacpp(status.location, control=control)
         if platform.system() == "Windows":
             return update_windows_llamacpp(
-                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(),
+                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
             )
         if not status.managed:
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
-        return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend)
+        return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend, control=control)
 
     llamacpp_update_prompts = {
         "Darwin": "Ask Homebrew to update llama.cpp, then validate the installed tools?",
@@ -786,7 +786,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook.add(log_tab, text="Run Log")
     notebook.add(history_tab, text="Result History")
     notebook.add(engines_tab, text="Engine Management")
-    build_engine_management_tab(
+    engine_management = build_engine_management_tab(
         parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
         vllm_updater=perform_vllm_update,
@@ -2714,6 +2714,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
 
     def close_window():
+        if engine_management.busy():
+            if messagebox.askyesno(
+                    "Runtime update active",
+                    "Cancel the active runtime update? Keep this window open until cleanup finishes.",
+                    parent=root):
+                engine_management.cancel()
+            return
         if process is not None and process.poll() is None:
             if not messagebox.askyesno("Benchmark running", "Stop the benchmark and close?", parent=root):
                 return

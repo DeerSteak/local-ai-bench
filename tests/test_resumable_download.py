@@ -125,6 +125,19 @@ def test_failed_stream_keeps_partial_and_existing_destination(tmp_path):
     assert destination.with_name("runtime.zip.part").read_bytes() == b"par"
 
 
+def test_cancelled_download_keeps_partial_for_resume(tmp_path):
+    checks = iter((False, True))
+    destination = tmp_path / "runtime.zip"
+    with pytest.raises(InterruptedError, match="cancelled"):
+        download_file(
+            "https://downloads.example/runtime.zip", destination,
+            opener=opener_for(Response(b"abcdef"), []), chunk_size=3,
+            cancel_check=lambda: next(checks),
+        )
+    assert destination.with_name("runtime.zip.part").read_bytes() == b"abc"
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize("url", ["http://downloads.example/file", "file:///private/file"])
 def test_non_https_downloads_are_rejected(url, tmp_path):
     with pytest.raises(ValueError, match="HTTPS"):

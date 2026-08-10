@@ -4,6 +4,7 @@ import json
 import platform
 import threading
 from dataclasses import dataclass
+from typing import Callable
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
@@ -17,6 +18,7 @@ from scripts.setup.model_compatibility import (
 from scripts.setup.runtime_status import runtime_python
 from scripts.setup.setup_config import configured_gpu_devices
 from scripts.setup.vllm_install import PINNED_PYTHON, VllmSupport, is_dgx_spark
+from scripts.setup.runtime_update import RuntimeUpdateControl
 
 
 OWNERSHIP_LABELS = {
@@ -32,6 +34,12 @@ OWNERSHIP_LABELS = {
 class EngineManagementSnapshot:
     statuses: list[EngineStatus]
     models: list[ModelCompatibility]
+
+
+@dataclass(frozen=True)
+class EngineManagementController:
+    busy: Callable[[], bool]
+    cancel: Callable[[], None]
 
 
 def engine_status_lines(status: EngineStatus) -> list[tuple[str, str]]:
@@ -126,13 +134,14 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
 def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
                                 vllm_updater=None, llamacpp_updater=None,
                                 llamacpp_update_prompt=None,
-                                run_active=lambda: False) -> None:  # pragma: no cover
+                                run_active=lambda: False) -> EngineManagementController:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
     parent.rowconfigure(1, weight=1)
     header = ttk.Frame(parent)
     header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
     ttk.Label(header, text="Engine Management", style="Title.TLabel").pack(side="left")
     state = {"snapshot": EngineManagementSnapshot([], []), "loading": False}
+    active_control: list[RuntimeUpdateControl | None] = [None]
     status_text = tk.StringVar(value="Select Refresh to inspect installed runtimes.")
     ttk.Label(parent, textvariable=status_text).grid(row=2, column=0, sticky="w", pady=(8, 0))
     body = ttk.Frame(parent)
@@ -174,7 +183,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
 
     def update_finished(engine, result=None, error=None):
         state["loading"] = False
+        active_control[0] = None
         refresh_button.configure(state="normal")
+        cancel_button.configure(state="disabled")
         if error is not None:
             status_text.set(f"{engine} update failed: {error}")
             return
@@ -223,21 +234,34 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 f"Update {label}", prompt, parent=root):
             return
         state["loading"] = True
+        control = RuntimeUpdateControl()
+        active_control[0] = control
         refresh_button.configure(state="disabled")
+        cancel_button.configure(state="normal")
         status_text.set(f"Downloading and validating the {label} update…")
 
         def worker():
             try:
-                result = updater()
+                result = updater(control)
                 root.after(0, lambda: update_finished(label, result=result))
             except Exception as exc:
                 root.after(0, lambda error=exc: update_finished(label, error=error))
         threading.Thread(target=worker, daemon=True).start()
 
+    def cancel_update():
+        control = active_control[0]
+        if control is None:
+            return
+        cancel_button.configure(state="disabled")
+        status_text.set("Cancelling update and restoring the prior runtime…")
+        control.cancel()
+
     refresh_button = ttk.Button(header, text="Refresh", command=refresh)
     refresh_button.pack(side="right")
     copy_button = ttk.Button(header, text="Copy Diagnostics", command=copy_diagnostics, state="disabled")
     copy_button.pack(side="right", padx=(0, 8))
+    cancel_button = ttk.Button(header, text="Cancel Update", command=cancel_update, state="disabled")
+    cancel_button.pack(side="right", padx=(0, 8))
     if vllm_updater is not None:
         ttk.Button(
             header, text="Update vLLM",
@@ -256,3 +280,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             ),
         ).pack(side="right", padx=(0, 8))
     refresh()
+    return EngineManagementController(
+        busy=lambda: active_control[0] is not None,
+        cancel=cancel_update,
+    )

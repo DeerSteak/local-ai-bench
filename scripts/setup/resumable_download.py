@@ -11,7 +11,7 @@ CONTENT_RANGE = re.compile(r"^bytes (\d+)-(\d+)/(\d+|\*)$")
 
 
 def download_file(url, destination, *, expected_size=None, opener=urllib.request.urlopen,
-                  timeout=60, chunk_size=1024 * 1024):
+                  timeout=60, chunk_size=1024 * 1024, cancel_check=lambda: False):
     """Resume into a sibling part file and atomically publish only a complete response."""
     if urlparse(url).scheme != "https":
         raise ValueError("setup downloads require HTTPS")
@@ -39,6 +39,8 @@ def download_file(url, destination, *, expected_size=None, opener=urllib.request
             raise ValueError(f"unexpected download response status: {status}")
         with partial.open(mode) as output:
             while True:
+                if cancel_check():
+                    raise InterruptedError("download cancelled")
                 chunk = response.read(chunk_size)
                 if not chunk:
                     break
