@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from scripts.runtime import config, hardware
+from scripts.setup.custom_models import forget_custom_models
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
@@ -118,6 +119,7 @@ def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None
 def delete_non_catalog_model_dirs(models_dir: Path, directory_names: list[str],
                                   llm_catalog: list[dict] | None = None,
                                   embed_catalog: list[dict] | None = None,
+                                  registry_path: Path = config.CUSTOM_MODELS_PATH,
                                   ) -> tuple[list[str], dict[str, str]]:
     """Delete explicitly named non-catalog directories without following symlinks."""
     llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
@@ -143,6 +145,7 @@ def delete_non_catalog_model_dirs(models_dir: Path, directory_names: list[str],
                 target.unlink()
             else:
                 shutil.rmtree(target)
+            forget_custom_models(engine="llamacpp", tag=name, path=registry_path)
             removed.append(name)
         except OSError as exc:
             failures[name] = str(exc)
@@ -283,6 +286,7 @@ def find_non_catalog_vllm_repos(cache_home: Path, llm_catalog: list[dict] | None
 def delete_non_catalog_vllm_repos(cache_home: Path, directory_names: list[str],
                                   llm_catalog: list[dict] | None = None,
                                   embed_catalog: list[dict] | None = None,
+                                  registry_path: Path = config.CUSTOM_MODELS_PATH,
                                   ) -> tuple[list[str], dict[str, str]]:
     """Delete explicitly named cache entries, refusing anything the catalog owns."""
     catalog = catalog_vllm_repos(llm_catalog, embed_catalog)
@@ -303,6 +307,7 @@ def delete_non_catalog_vllm_repos(cache_home: Path, directory_names: list[str],
             continue
         try:
             shutil.rmtree(target)
+            forget_custom_models(engine="vllm", repo=repo, path=registry_path)
             removed.append(name)
         except OSError as exc:
             failures[name] = str(exc)

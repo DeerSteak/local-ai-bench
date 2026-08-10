@@ -16,6 +16,7 @@ from scripts.setup.model_inventory import (
     model_tag_slug,
     sanitize_tag_to_short,
 )
+from scripts.setup.custom_models import load_custom_models, save_custom_model
 
 
 LLM_CATALOG = [
@@ -203,6 +204,21 @@ def test_delete_non_catalog_model_dirs_removes_only_explicit_safe_names(tmp_path
     assert set(failures) == {"llm-small", f"../{outside.name}", "missing"}
     assert catalog.is_dir()
     assert outside.is_dir()
+
+
+def test_deleting_imported_llamacpp_folder_forgets_its_registry_entry(tmp_path):
+    registry = tmp_path / "custom.json"
+    target = tmp_path / "custom-model"
+    target.mkdir()
+    (target / "model.gguf").write_bytes(b"model")
+    save_custom_model({"engine": "llamacpp", "tag": target.name}, registry)
+
+    removed, failures = delete_non_catalog_model_dirs(
+        tmp_path, [target.name], llm_catalog=[], embed_catalog=[], registry_path=registry,
+    )
+
+    assert removed == [target.name] and failures == {}
+    assert load_custom_models(registry) == []
 
 
 def test_delete_non_catalog_model_dirs_unlinks_symlink_without_touching_target(

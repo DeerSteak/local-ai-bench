@@ -50,3 +50,29 @@ def save_custom_model(entry: dict, path: Path = config.CUSTOM_MODELS_PATH) -> No
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def forget_custom_models(*, engine: str, tag: str | None = None, repo: str | None = None,
+                         path: Path = config.CUSTOM_MODELS_PATH) -> int:
+    models = load_custom_models(path)
+    kept = [entry for entry in models if not (
+        entry.get("engine") == engine
+        and (tag is None or entry.get("tag") == tag)
+        and (repo is None or entry.get("repo") == repo)
+    )]
+    if len(kept) == len(models):
+        return 0
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump({"schema_version": SCHEMA_VERSION, "models": kept}, output, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    return len(models) - len(kept)
