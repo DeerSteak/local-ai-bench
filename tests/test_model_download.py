@@ -56,6 +56,7 @@ def test_vllm_import_uses_cache_and_rejects_duplicate_tag(monkeypatch, tmp_path)
         label="Custom", vllm_cache=tmp_path / "cache", registry_path=registry,
     )
     assert calls[0]["cache_dir"] == str(tmp_path / "cache" / "hub")
+    assert "model.safetensors" in calls[0]["allow_patterns"]
     with pytest.raises(ValueError, match="already registered"):
         import_model(
             inspection=inspection, engine="vllm", variant=variant, tag="custom",

@@ -1,5 +1,6 @@
 """Hugging Face custom-model repository inspection."""
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -94,29 +95,58 @@ def _llama_variants(files: dict[str, int | None]) -> tuple[ImportVariant, ...]:
     return tuple(sorted(variants, key=lambda item: (item.size is None, item.size or 0, item.label)))
 
 
+def _indexed_safetensors(index_data: object, files: dict[str, int | None]) -> tuple[str, ...]:
+    if not isinstance(index_data, dict) or not isinstance(index_data.get("weight_map"), dict):
+        return ()
+    names = tuple(sorted(set(index_data["weight_map"].values())))
+    if not names or any(
+        not isinstance(name, str) or not name.lower().endswith(".safetensors") or name not in files
+        for name in names
+    ):
+        return ()
+    return names
+
+
 def inspect_repository(value: str, revision: str = "main", token: str | None = None,
-                       api=None) -> RepositoryInspection:
+                       api=None, read_repo_json=None) -> RepositoryInspection:
     repo = normalize_hf_repo(value)
     if api is None:
         from huggingface_hub import HfApi
         api = HfApi()
     info = api.model_info(repo, revision=revision or "main", files_metadata=True, token=token)
+    resolved_revision = str(getattr(info, "sha", None) or revision or "main")
     files = {item.rfilename: _file_size(item) for item in (info.siblings or [])}
     safetensors = [
         name for name in files
         if name.lower().endswith(".safetensors")
-        and Path(name).parent == Path(".")
         and Path(name).name.lower() not in {"adapter_model.safetensors"}
     ]
     vllm = None
-    if "config.json" in files and safetensors:
-        sizes = [files[name] for name in safetensors]
+    indexes = sorted(name for name in files if name.lower().endswith(".safetensors.index.json"))
+    weights: tuple[str, ...] = ()
+    if "config.json" in files and len(indexes) == 1:
+        repo_json_reader = read_repo_json
+        if read_repo_json is None:
+            from huggingface_hub import hf_hub_download
+
+            def default_repo_json_reader(filename):
+                path = hf_hub_download(
+                    repo_id=repo, filename=filename, revision=resolved_revision, token=token,
+                )
+                return json.loads(Path(path).read_text(encoding="utf-8"))
+            repo_json_reader = default_repo_json_reader
+        assert repo_json_reader is not None
+        weights = _indexed_safetensors(repo_json_reader(indexes[0]), files)
+    elif "config.json" in files and len(safetensors) == 1:
+        weights = tuple(safetensors)
+    if weights:
+        sizes = [files[name] for name in weights]
         size = sum(value for value in sizes if value is not None) \
             if all(value is not None for value in sizes) else None
-        vllm = ImportVariant("snapshot", "Safetensors repository snapshot", tuple(sorted(safetensors)), size)
+        vllm = ImportVariant("snapshot", "Safetensors repository snapshot", weights, size)
     return RepositoryInspection(
         repo=repo,
-        revision=str(getattr(info, "sha", None) or revision or "main"),
+        revision=resolved_revision,
         llama_variants=_llama_variants(files),
         vllm_variant=vllm,
         gated=bool(getattr(info, "gated", False)),

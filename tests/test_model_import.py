@@ -41,16 +41,46 @@ def test_inspection_groups_complete_gguf_parts_and_detects_vllm_snapshot():
         "broken-00001-of-00002.gguf": 5,
         "mmproj-model.gguf": 2,
         "config.json": 1,
+        "model.safetensors.index.json": 1,
         "model-00001-of-00002.safetensors": 30,
         "model-00002-of-00002.safetensors": 40,
+        "unused.safetensors": 50,
         "adapter_model.safetensors": 3,
-    }))
+    }), read_repo_json=lambda _name: {"weight_map": {
+        "layer.0": "model-00001-of-00002.safetensors",
+        "layer.1": "model-00002-of-00002.safetensors",
+    }})
 
     assert inspection.revision == "commit"
     assert len(inspection.llama_variants) == 1
     assert inspection.llama_variants[0].size == 30
     assert inspection.vllm_variant is not None
     assert inspection.vllm_variant.size == 70
+    assert inspection.vllm_variant.files == (
+        "model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors",
+    )
+
+
+@pytest.mark.parametrize("index_data", [
+    {"weight_map": {"layer": "missing.safetensors"}},
+    {"weight_map": {"layer": "weights.bin"}},
+    {"metadata": {}},
+])
+def test_inspection_rejects_invalid_safetensors_index(index_data):
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors.index.json": 1,
+        "model-00001-of-00002.safetensors": 10,
+    }), read_repo_json=lambda _name: index_data)
+
+    assert inspection.vllm_variant is None
+
+
+def test_inspection_rejects_multiple_unindexed_safetensors_files():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "first.safetensors": 10, "second.safetensors": 20,
+    }))
+
+    assert inspection.vllm_variant is None
 
 
 def test_inspection_reports_repo_with_no_engine_artifacts():
