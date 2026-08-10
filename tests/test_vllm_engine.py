@@ -500,6 +500,7 @@ def test_stop_signals_the_group_then_escalates(engine, monkeypatch):
 
 def test_launcher_stop_interrupts_before_escalating(engine, monkeypatch):
     signalled = []
+    waited = []
 
     class Proc:
         pid = 4321
@@ -512,10 +513,34 @@ def test_launcher_stop_interrupts_before_escalating(engine, monkeypatch):
     engine._proc = Proc()
     monkeypatch.setattr("os.getpgid", lambda pid: pid)
     monkeypatch.setattr("os.killpg", lambda pgid, sig: signalled.append(sig))
+    monkeypatch.setattr(engine, "_wait_for_launcher_shutdown", lambda timeout: waited.append(timeout))
     engine._stop_process()
 
     import signal as _signal
     assert signalled == [_signal.SIGINT]
+    assert waited == [engine.LAUNCHER_STOP_TIMEOUT]
+
+
+def test_launcher_shutdown_waits_until_the_container_health_endpoint_disappears(
+        engine, monkeypatch):
+    health = iter([True, True, False])
+    sleeps = []
+    monkeypatch.setattr(engine, "available", lambda: next(health))
+    monkeypatch.setattr("scripts.runtime.engines.vllm.time.sleep", sleeps.append)
+
+    engine._wait_for_launcher_shutdown(timeout=30)
+
+    assert sleeps == [1, 1]
+
+
+def test_launcher_shutdown_refuses_to_continue_while_container_is_reachable(
+        engine, monkeypatch):
+    clock = iter([0.0, 1.0])
+    monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr("scripts.runtime.engines.vllm.time.perf_counter", lambda: next(clock))
+
+    with pytest.raises(RuntimeError, match="still reachable"):
+        engine._wait_for_launcher_shutdown(timeout=1)
 
 
 @pytest.mark.parametrize("operation", ["generate", "chat"])

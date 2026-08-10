@@ -44,6 +44,7 @@ class VllmEngine(InferenceEngine):
 
     # vLLM start-up includes weight load, graph capture, and KV allocation.
     LOAD_TIMEOUT = 900
+    LAUNCHER_STOP_TIMEOUT = 300
 
     # vLLM's startup traceback is long and its root cause precedes it, so a short tail hides it.
     SPAWN_LOG_LINES = 200
@@ -264,17 +265,21 @@ class VllmEngine(InferenceEngine):
 
     def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Signal the whole process group, so the EngineCore child dies with the server."""
-        if self._proc is not None and self._proc.poll() is None:
+        proc = self._proc
+        launcher_was_running = self._launcher is not None and proc is not None
+        if proc is not None and proc.poll() is None:
             # Container launchers handle an interactive interrupt by stopping their container.
             self._signal_group(signal.SIGINT if self._launcher else signal.SIGTERM)
             try:
-                self._proc.wait(timeout=timeout)
+                proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 self._signal_group(signal.SIGKILL)
                 try:
-                    self._proc.wait(timeout=timeout)
+                    proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    self._proc.kill()
+                    proc.kill()
+        if launcher_was_running:
+            self._wait_for_launcher_shutdown(self.LAUNCHER_STOP_TIMEOUT)
         self._proc = None
         self._loaded_tag = None
         self._loaded_model_id = None
@@ -282,6 +287,15 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
+
+    def _wait_for_launcher_shutdown(self, timeout: int) -> None:
+        """Wait for a launcher-owned container to stop serving after its wrapper exits."""
+        deadline = time.perf_counter() + timeout
+        while self.available():
+            if time.perf_counter() >= deadline:
+                raise RuntimeError(
+                    f"vLLM is still reachable after waiting {timeout}s for its container to stop")
+            time.sleep(1)
 
     def _signal_group(self, sig) -> None:  # pragma: no cover — signals real processes
         """Signal the server's whole group, falling back to the process itself."""
