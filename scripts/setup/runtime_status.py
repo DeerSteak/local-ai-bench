@@ -110,9 +110,12 @@ def build_vllm_status(location: str | Path | None, managed_root: Path, backend: 
     if location and not launcher and not server_url:
         components, warning = probe_vllm_environment(runtime_python(location), run=run)
     effective_env = os.environ if env is None else env
+    wsl_pin_memory = None
+    if is_wsl and not launcher and not server_url:
+        wsl_pin_memory = effective_env.get("VLLM_WSL2_ENABLE_PIN_MEMORY", "1")
     components.update({
         "wsl": is_wsl,
-        "wsl_pin_memory": effective_env.get("VLLM_WSL2_ENABLE_PIN_MEMORY") if is_wsl else None,
+        "wsl_pin_memory": wsl_pin_memory,
         "kernel": platform.release() if is_wsl else None,
     })
     version = components.get("vllm") if isinstance(components.get("vllm"), str) else identity.version

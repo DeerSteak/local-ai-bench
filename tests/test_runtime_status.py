@@ -88,6 +88,23 @@ def test_external_and_launcher_vllm_status_do_not_probe_local_python(tmp_path):
     assert launcher.ownership == "platform_launcher" and launcher.health == "ready"
 
 
+def test_managed_wsl_status_reports_injected_pin_memory_default(tmp_path):
+    executable = tmp_path / "vllm-env" / "bin" / "vllm"
+    python = executable.with_name("python")
+    python.parent.mkdir(parents=True)
+    python.touch()
+
+    def run(command, **_kwargs):
+        if command[-1] == "--version":
+            return SimpleNamespace(stdout="vllm 0.26.0", stderr="", returncode=0)
+        return SimpleNamespace(stdout=json.dumps({"vllm": "0.26.0"}), stderr="", returncode=0)
+
+    status = build_vllm_status(
+        executable, tmp_path / "vllm-env", "cuda", is_wsl=True, env={}, run=run,
+    )
+    assert status.components["wsl_pin_memory"] == "1"
+
+
 def test_external_vllm_status_uses_health_when_version_is_unavailable(tmp_path):
     class Response:
         status = 200
