@@ -126,17 +126,18 @@ export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: s
       && !["llamabench", "vllmbench"].includes(section || "")
       && f.data?.run?.effective_config?.llamacpp_no_repack === true;
     const engine = noRepack ? `${f.engine} -nr` : f.engine;
+    const identity = (runtime: string) => [f.hostname, f.backend, runtime].filter(Boolean).join("\n");
     if (f.engineVersion) {
       const runtime = [engine, f.engineVersion].filter(Boolean).join(" ");
-      return { ...f, hostname: `${f.hostname} (${runtime})` };
+      return { ...f, hostname: identity(runtime) };
     }
     if (f.engine && f.engineVersionRecorded === false) {
-      return { ...f, hostname: `${f.hostname} (${engine} version not recorded)` };
+      return { ...f, hostname: identity(`${engine} version not recorded`) };
     }
     if (f.engine && f.engineVersionRecorded === true) {
-      return { ...f, hostname: `${f.hostname} (${engine} version unavailable)` };
+      return { ...f, hostname: identity(`${engine} version unavailable`) };
     }
-    return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${engine})` } : f;
+    return multiEngine && f.engine ? { ...f, hostname: identity(engine || f.engine) } : f;
   });
 }
 

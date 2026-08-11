@@ -16,10 +16,11 @@ export default function RunSummaryCards({ files, containerRef, logoSrc }: {
       <div ref={containerRef} className={styles.grid}>
         {files.map(file => {
           const tiers = buildSpecCardSummary(file);
+          const hostname = String(file.hostname || "").split("\n")[0];
           return (
-            <article key={file.id} className={styles.card} data-spec-card data-spec-name={file.hostname}>
+            <article key={file.id} className={styles.card} data-spec-card data-spec-name={hostname}>
               <div className={styles.eyebrow}>LOCAL AI BENCH · RUN CARD</div>
-              <div className={styles.hostname}>{file.hostname}</div>
+              <div className={styles.hostname}>{hostname}</div>
               <div className={styles.metadata}>
                 <span>{file.backend}</span><span>{file.os}</span>
                 {file.ram_gb != null && <span>{file.ram_gb} GB RAM</span>}

@@ -17,6 +17,7 @@
   letter-spacing: 0.04em;
   font-family: 'IBM Plex Mono', monospace;
   margin-bottom: 4px;
+  white-space: pre-line;
 }
 
 .chartTitleRow {
@@ -101,6 +102,7 @@
   font-family: 'IBM Plex Sans', sans-serif;
   padding-top: 16px;
   border-top: 2px solid #e0e4e8;
+  white-space: pre-line;
 }
 
 .skipNote {
@@ -126,6 +128,7 @@
   background: #edf8f0;
   color: #175c2f;
   font: 600 13px 'IBM Plex Mono', monospace;
+  white-space: pre-line;
 }
 
 .emptyState {

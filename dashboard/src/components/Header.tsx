@@ -43,6 +43,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
         <h1 className={styles.title}>AI Performance Dashboard</h1>
         {files.map((file, i) => {
           const color = FILE_COLORS[i % FILE_COLORS.length];
+          const identityLines = String(file.hostname || "").split("\n");
           return (
             <div key={file.id} className={styles.fileTagRow}>
               {files.length > 1 && (
@@ -53,8 +54,13 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
                   {i + 1}
                 </span>
               )}
-              <span className={`tag ${styles.tagHostname}`}>{file.hostname}</span>
-              <BackendTag backend={file.backend} />
+              <div className={styles.fileIdentity}>
+                <span className={`tag ${styles.tagHostname}`}>{identityLines[0]}</span>
+                <BackendTag backend={file.backend} />
+                {identityLines.length > 1 && (
+                  <span className={styles.tagEngine}>{identityLines.at(-1)}</span>
+                )}
+              </div>
               {file.os && <span className={`tag ${styles.tagOs}`}>{file.os}</span>}
               {file.wsl && (
                 <span

@@ -210,11 +210,11 @@ describe("applyEngineLabels", () => {
 
   it("always labels chart systems with a recorded engine version", () => {
     const files: ResultsFile[] = [
-      { id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000", data: {} },
-      { id: 2, hostname: "host-b", engine: "llamacpp", engineVersion: "7001", data: {} },
+      { id: 1, hostname: "host-a", backend: "cuda", engine: "llamacpp", engineVersion: "7000", data: {} },
+      { id: 2, hostname: "host-b", backend: "metal", engine: "llamacpp", engineVersion: "7001", data: {} },
     ];
     expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
-      "host-a (llamacpp 7000)", "host-b (llamacpp 7001)",
+      "host-a\ncuda\nllamacpp 7000", "host-b\nmetal\nllamacpp 7001",
     ]);
   });
 
@@ -223,7 +223,7 @@ describe("applyEngineLabels", () => {
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
-    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (llamacpp -nr 7000)");
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllamacpp -nr 7000");
   });
 
   it("omits no-repack from labels for workloads that do not consume it", () => {
@@ -231,29 +231,29 @@ describe("applyEngineLabels", () => {
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
-    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a (llamacpp 7000)");
-    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a (llamacpp 7000)");
+    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a\nllamacpp 7000");
+    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a\nllamacpp 7000");
   });
 
   it("labels a version even when an older result omitted its engine name", () => {
     const files: ResultsFile[] = [
       { id: 1, hostname: "host-a", engineVersion: "0.10.2", data: {} },
     ];
-    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (0.10.2)");
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a\n0.10.2");
   });
   it("distinguishes historical results that predate engine version recording", () => {
     const files: ResultsFile[] = [{
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersionRecorded: false, data: {},
     }];
     expect(applyEngineLabels(files)[0].hostname)
-      .toBe("host-a (llamacpp version not recorded)");
+      .toBe("host-a\nllamacpp version not recorded");
   });
   it("labels a current result whose runtime version could not be discovered", () => {
     const files: ResultsFile[] = [{
       id: 1, hostname: "host-a", engine: "vllm", engineVersionRecorded: true, data: {},
     }];
     expect(applyEngineLabels(files)[0].hostname)
-      .toBe("host-a (vllm version unavailable)");
+      .toBe("host-a\nvllm version unavailable");
   });
   it("leaves hostnames untouched when no file has an engine field", () => {
     const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
@@ -265,8 +265,8 @@ describe("applyEngineLabels", () => {
       { id: 2, hostname: "host-a", engine: "mlx", data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp", data: {} },
-      { id: 2, hostname: "host-a (mlx)", engine: "mlx", data: {} },
+      { id: 1, hostname: "host-a\nllamacpp", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-a\nmlx", engine: "mlx", data: {} },
     ]);
   });
   it("skips labeling a file with no engine even when others disagree", () => {
@@ -276,8 +276,8 @@ describe("applyEngineLabels", () => {
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a (llamacpp)", engine: "llamacpp", data: {} },
-      { id: 2, hostname: "host-b (mlx)", engine: "mlx", data: {} },
+      { id: 1, hostname: "host-a\nllamacpp", engine: "llamacpp", data: {} },
+      { id: 2, hostname: "host-b\nmlx", engine: "mlx", data: {} },
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ]);
   });
@@ -289,7 +289,7 @@ describe("filesForSection", () => {
   }];
 
   it("includes engine versions on engine-backed charts", () => {
-    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a (llamacpp 7000)");
+    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a\nllamacpp 7000");
   });
 
   it("does not associate LLM runtime versions with ComfyUI image charts", () => {
