@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol, Sequence
 
 from scripts.runtime import config, hardware
+from scripts.runtime.shared import RUN_LOG_UTC_OFFSET_ENV
 import psutil
 from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.app.benchmark_frontend import (
@@ -195,6 +196,9 @@ def launch_controlled_process(command: list[str], *, creationflags: int = 0,
         "LOCAL_AI_BENCH_PROGRESS": "1",
         PAUSE_CONTROL_ENV: str(control_path),
     }
+    utc_offset = windows_host_utc_offset_minutes()
+    if utc_offset is not None:
+        child_env[RUN_LOG_UTC_OFFSET_ENV] = str(utc_offset)
     try:
         process = popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -205,6 +209,23 @@ def launch_controlled_process(command: list[str], *, creationflags: int = 0,
         control_path.unlink(missing_ok=True)
         raise
     return process, control_path
+
+
+def windows_host_utc_offset_minutes(*, system=platform.system, release=platform.release,
+                                    run=subprocess.run) -> int | None:
+    """Read the Windows host's current UTC offset when the GUI runs under WSL."""
+    if not hardware.detect_wsl(system(), release()):
+        return None
+    try:
+        result = run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "[int][TimeZoneInfo]::Local.GetUtcOffset([DateTimeOffset]::UtcNow).TotalMinutes"],
+            capture_output=True, text=True, timeout=10,
+        )
+        minutes = int(result.stdout.strip())
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return minutes if result.returncode == 0 and -14 * 60 <= minutes <= 14 * 60 else None
 
 
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,

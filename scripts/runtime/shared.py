@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,8 +40,23 @@ if TYPE_CHECKING:
     from scripts.runtime.engines.base import InferenceEngine
 
 
+RUN_LOG_UTC_OFFSET_ENV = "LOCAL_AI_BENCH_RUN_LOG_UTC_OFFSET_MINUTES"
+
+
+def _console_timezone(environment=None):
+    raw = (os.environ if environment is None else environment).get(RUN_LOG_UTC_OFFSET_ENV)
+    try:
+        minutes = int(raw) if raw is not None else None
+    except ValueError:
+        return None
+    if minutes is None or not -14 * 60 <= minutes <= 14 * 60:
+        return None
+    return timezone(timedelta(minutes=minutes))
+
+
 def _console_now():
-    return datetime.now()
+    local_timezone = _console_timezone()
+    return datetime.now(local_timezone) if local_timezone else datetime.now()
 
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")

@@ -33,6 +33,7 @@ from scripts.app.benchmark_gui import (
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
     resource_usage_rows, run_log_path, selected_result_paths, system_memory_usage,
+    windows_host_utc_offset_minutes,
     write_run_logs,
     update_progress_metrics, workload_preflight_errors,
 )
@@ -187,10 +188,13 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
 
 
-def test_launch_controlled_process_supplies_progress_environment(tmp_path):
+def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tmp_path):
     control_path = tmp_path / "pause.json"
     control_path.write_text("{}", encoding="utf-8")
     calls = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui.windows_host_utc_offset_minutes", lambda: -300,
+    )
 
     def fake_popen(command, **kwargs):
         calls.append((command, kwargs))
@@ -208,9 +212,37 @@ def test_launch_controlled_process_supplies_progress_environment(tmp_path):
     assert calls[0][1]["env"]["NO_COLOR"] == "1"
     assert calls[0][1]["env"]["LOCAL_AI_BENCH_PROGRESS"] == "1"
     assert calls[0][1]["env"]["LOCAL_AI_BENCH_PAUSE_CONTROL"] == str(control_path)
+    assert calls[0][1]["env"]["LOCAL_AI_BENCH_RUN_LOG_UTC_OFFSET_MINUTES"] == "-300"
     assert calls[0][1]["creationflags"] == 7
     assert calls[0][1]["encoding"] == "utf-8"
     assert calls[0][1]["errors"] == "replace"
+
+
+def test_windows_host_offset_comes_from_powershell_only_under_wsl():
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"stdout": "-300\n", "returncode": 0})()
+
+    assert windows_host_utc_offset_minutes(
+        system=lambda: "Linux", release=lambda: "microsoft-standard-WSL2", run=run,
+    ) == -300
+    assert calls[0][0][0] == "powershell.exe"
+    assert windows_host_utc_offset_minutes(
+        system=lambda: "Linux", release=lambda: "6.8.0-generic",
+        run=lambda *_args, **_kwargs: pytest.fail("native Linux must not call PowerShell"),
+    ) is None
+
+
+@pytest.mark.parametrize("output,returncode", [("not-a-number", 0), ("900", 0), ("60", 1)])
+def test_windows_host_offset_rejects_invalid_powershell_results(output, returncode):
+    run = lambda *_args, **_kwargs: type(
+        "Result", (), {"stdout": output, "returncode": returncode},
+    )()
+    assert windows_host_utc_offset_minutes(
+        system=lambda: "Linux", release=lambda: "microsoft-standard-WSL2", run=run,
+    ) is None
 
 
 def test_launch_controlled_process_removes_control_file_when_launch_fails(tmp_path):

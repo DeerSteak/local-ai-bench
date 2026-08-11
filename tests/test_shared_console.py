@@ -1,7 +1,9 @@
 import io
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from scripts.runtime import config
 from scripts.runtime import shared
@@ -10,6 +12,17 @@ from scripts.runtime.shared import Shared
 
 def fixed_now():
     return datetime(2026, 7, 22, 9, 8, 7)
+
+
+def test_console_timezone_uses_valid_gui_supplied_utc_offset():
+    local_timezone = shared._console_timezone({shared.RUN_LOG_UTC_OFFSET_ENV: "-300"})
+    assert local_timezone is not None
+    assert local_timezone.utcoffset(None) == timedelta(hours=-5)
+
+
+@pytest.mark.parametrize("value", ["invalid", "841", "-841"])
+def test_console_timezone_rejects_invalid_or_impossible_offsets(value):
+    assert shared._console_timezone({shared.RUN_LOG_UTC_OFFSET_ENV: value}) is None
 
 
 def test_neutral_output_has_compact_timestamp(monkeypatch, capsys):
