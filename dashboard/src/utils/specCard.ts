@@ -21,6 +21,19 @@ export function buildRunCardFilename(names: string[], index: number, suffix: str
   return `${parts.filter(Boolean).join("_")}.png`;
 }
 
+export function runCardGpuLabels(file: DisplayFile): string[] {
+  const profile = file.data.profile;
+  const recorded = profile?.gpu;
+  if (typeof recorded === "string" && recorded.trim()) return [recorded.trim()];
+  if (Array.isArray(recorded)) {
+    const labels = recorded.filter((gpu): gpu is string => typeof gpu === "string" && Boolean(gpu.trim()))
+      .map(gpu => gpu.trim());
+    if (labels.length) return [...new Set(labels)];
+  }
+  const recordedHostname = typeof profile?.hostname === "string" ? profile.hostname : file.hostname;
+  return [...new Set(String(recordedHostname || "").split("\n").slice(1).map(line => line.trim()).filter(Boolean))];
+}
+
 function winner(entries: Winner[], direction: "max" | "min"): Winner | null {
   if (!entries.length) return null;
   return entries.reduce((best, entry) =>

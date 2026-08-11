@@ -10,29 +10,34 @@ set HAS_RESULTS=0
 
 :parse_args
 if "%~1"=="" goto args_done
-if /i "%~1"=="--port" (
-    if "%~2"=="" (
-        echo Missing value for --port
-        exit /b 1
-    )
-    set PORT=%~2
-    shift
-    shift
-    goto parse_args
-)
-if /i "%~1"=="--result" (
-    if "%~2"=="" (
-        echo Missing value for --result
-        exit /b 1
-    )
-    set RESULT_ARGS=%RESULT_ARGS% "%~2"
-    set HAS_RESULTS=1
-    shift
-    shift
-    goto parse_args
-)
+if /i "%~1"=="--port" goto parse_port
+if /i "%~1"=="--result" goto parse_result
 echo Unknown option: %~1
 exit /b 1
+
+:parse_port
+if "%~2"=="" goto missing_port
+set "PORT=%~2"
+shift
+shift
+goto parse_args
+
+:missing_port
+echo Missing value for --port
+exit /b 1
+
+:parse_result
+if "%~2"=="" goto missing_result
+set RESULT_ARGS=%RESULT_ARGS% "%~2"
+set HAS_RESULTS=1
+shift
+shift
+goto parse_args
+
+:missing_result
+echo Missing value for --result
+exit /b 1
+
 :args_done
 
 if not exist "%DASHBOARD_DIR%" (

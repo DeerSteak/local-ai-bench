@@ -3,19 +3,24 @@ import type { RefObject } from "react";
 import { SIZE_TIER_LABELS } from "../constants";
 import type { DisplayFile } from "../types";
 import { lookup } from "../utils/shared";
-import { buildSpecCardSummary } from "../utils/specCard";
+import { buildSpecCardSummary, runCardGpuLabels } from "../utils/specCard";
 import styles from "./RunSummaryCards.module.css";
 
-export default function RunSummaryCards({ files, containerRef, logoSrc }: {
+export default function RunSummaryCards({ files, containerRef, logoSrc, chartWidth }: {
   files: DisplayFile[], containerRef: RefObject<HTMLDivElement | null>, logoSrc?: string | null,
+  chartWidth: number,
 }) {
   if (!files.length) return null;
   return (
-    <section className={styles.section}>
+    <section
+      className={styles.section}
+      style={{ width: chartWidth, maxWidth: "calc(100vw - 40px)" }}
+    >
       <div className={styles.heading}>Shareable Run Cards</div>
       <div ref={containerRef} className={styles.grid}>
         {files.map(file => {
           const tiers = buildSpecCardSummary(file);
+          const gpuLabels = runCardGpuLabels(file);
           const hostname = String(file.hostname || "").split("\n")[0];
           return (
             <article key={file.id} className={styles.card} data-spec-card data-spec-name={hostname}>
@@ -27,6 +32,11 @@ export default function RunSummaryCards({ files, containerRef, logoSrc }: {
                 {file.engine && <span>{file.engine}{file.engineVersion ? ` ${file.engineVersion}` : ""}</span>}
                 {file.version && <span>suite v{file.version}</span>}
               </div>
+              {gpuLabels.length > 0 && (
+                <div className={`${styles.metadata} ${styles.gpuMetadata}`}>
+                  {gpuLabels.map(gpu => <span key={gpu}>{gpu}</span>)}
+                </div>
+              )}
               <div className={styles.context}>Single-shot leaders by model tier</div>
               {tiers.length ? (
                 <div className={styles.tiers}>

@@ -349,7 +349,9 @@ export default function Dashboard() {
         savingSpecCard={savingSpecCard} onSaveSpecCard={saveSpecCards}
       />
 
-      <RunSummaryCards files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} />
+      <RunSummaryCards
+        files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
+      />
 
       <DeltaModeContext.Provider value={baselineId != null}>
         <ChartPanel

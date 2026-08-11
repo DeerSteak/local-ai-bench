@@ -10,12 +10,13 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
   gap: 14px;
   align-items: start;
 }
 
 .card {
+  min-width: 0;
   position: relative;
   overflow: hidden;
   padding: 24px;
@@ -35,6 +36,7 @@
   margin-top: 5px;
   color: #172234;
   font: 700 27px 'IBM Plex Sans', sans-serif;
+  overflow-wrap: anywhere;
 }
 
 .metadata { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
@@ -46,6 +48,9 @@
   color: #34445d;
   font: 12px 'IBM Plex Mono', monospace;
 }
+
+.gpuMetadata { margin-top: 6px; }
+.gpuMetadata span { background: #dcecff; color: #174a82; }
 
 .context {
   margin: 20px 0 8px;
@@ -86,4 +91,11 @@
   width: 52px;
   height: 52px;
   object-fit: contain;
+}
+
+@media (max-width: 560px) {
+  .card { padding: 18px; }
+  .hostname { font-size: 22px; }
+  .tiers { grid-template-columns: 1fr; }
+  .tier > div:not(.tierName) { grid-template-columns: 76px minmax(0, 1fr) auto; }
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRunCardFilename, buildSpecCardSummary } from "./specCard";
+import type { DisplayFile } from "../types";
+import { buildRunCardFilename, buildSpecCardSummary, runCardGpuLabels } from "./specCard";
 
-function file(llm: object) {
+function file(llm: object): DisplayFile {
   return {
-    name: "result.json", backend: "cuda", os: "Linux", wsl: false, ram_gb: 32,
+    name: "result.json", hostname: "Host", backend: "cuda", os: "Linux", wsl: false, ram_gb: 32,
     version: "5.0", timestamp: null, reliabilityWarning: "", data: { llm },
   };
 }
@@ -45,5 +46,20 @@ describe("buildRunCardFilename", () => {
     expect(buildRunCardFilename(names, 1, "after upgrade")).toBe(
       "My-Host_2_after-upgrade_run-card.png",
     );
+  });
+});
+
+describe("runCardGpuLabels", () => {
+  it("prefers explicit multi-GPU profile metadata", () => {
+    const result = file({});
+    result.data.profile = { gpu: ["RTX 5090", "RTX 5090", "RTX 5080"] };
+    expect(runCardGpuLabels(result)).toEqual(["RTX 5090", "RTX 5080"]);
+  });
+
+  it("falls back to the hardware lines embedded in legacy hostnames", () => {
+    const result = file({});
+    result.hostname = "AMD Ryzen / 64 GB RAM\nNVIDIA RTX 5080 / 32 GB VRAM";
+    result.data.profile = { hostname: result.hostname };
+    expect(runCardGpuLabels(result)).toEqual(["NVIDIA RTX 5080 / 32 GB VRAM"]);
   });
 });
