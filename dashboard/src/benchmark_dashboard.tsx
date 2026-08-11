@@ -249,6 +249,7 @@ export default function Dashboard() {
     if (!chartRef.current || saving) return;
     setSaving(true);
     try {
+      setFileError("");
       await document.fonts.ready;
       const cards = [...chartRef.current.querySelectorAll<HTMLElement>("[data-chart-name]")];
       if (!cards.length) return;
@@ -266,6 +267,8 @@ export default function Dashboard() {
         link.click();
         if (i < cards.length - 1) await new Promise(r => setTimeout(r, 300));
       }
+    } catch (error) {
+      setFileError(`Chart export failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSaving(false);
     }
@@ -275,8 +278,10 @@ export default function Dashboard() {
     if (!summaryRef.current || savingSpecCard) return;
     setSavingSpecCard(true);
     try {
+      setFileError("");
       await document.fonts.ready;
       const cards = [...summaryRef.current.querySelectorAll<HTMLElement>("[data-spec-card]")];
+      if (!cards.length) throw new Error("no run cards are available");
       for (let index = 0; index < cards.length; index++) {
         const canvas = await html2canvas(cards[index], {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
@@ -288,6 +293,8 @@ export default function Dashboard() {
         link.click();
         if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
       }
+    } catch (error) {
+      setFileError(`Run-card export failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSavingSpecCard(false);
     }
@@ -347,6 +354,7 @@ export default function Dashboard() {
         <ChartPanel
           containerRef={chartRef}
           files={chartFiles}
+          absoluteFiles={effectiveFiles}
           section={section}
           accuracyTest={accuracyTest}
           enabledModels={enabledModels}

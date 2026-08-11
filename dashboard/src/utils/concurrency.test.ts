@@ -3,6 +3,7 @@ import {
   getAllConcurrencyModels, buildConcurrencyDataForModel,
   getConcurrencyStopInfo, getConcurrencySweetSpot, flattenConcurrencyData, concurrencySortValue,
 } from "./concurrency";
+import { applyBaselineDeltas } from "./baseline";
 
 describe("getAllConcurrencyModels", () => {
   it("returns known models in canonical order, unknowns appended after", () => {
@@ -44,6 +45,26 @@ describe("getConcurrencySweetSpot", () => {
     expect(getConcurrencySweetSpot({ data: {} }, "concurrency_chat", "m")).toBeNull();
     const file = { data: { concurrency_chat: { m: { "1": { aggregate_tps: null } } } } };
     expect(getConcurrencySweetSpot(file, "concurrency_chat", "m")).toBeNull();
+  });
+
+  it("keeps the absolute sweet spot when chart data is transformed to deltas", () => {
+    const files = [
+      { id: "base", data: { concurrency_tool: { m: {
+        "1": { aggregate_tps: 20, tps_mean: 10 },
+        "2": { aggregate_tps: 40, tps_mean: 8 },
+        "4": { aggregate_tps: 20, tps_mean: 6 },
+      } } } },
+      { id: "next", data: { concurrency_tool: { m: {
+        "1": { aggregate_tps: 20, tps_mean: 12 },
+        "2": { aggregate_tps: 35, tps_mean: 9 },
+        "4": { aggregate_tps: 30, tps_mean: 7 },
+      } } } },
+    ];
+    const chartFiles = applyBaselineDeltas(files, "base");
+    expect(getConcurrencySweetSpot(files[1], "concurrency_tool", "m")).toEqual({
+      level: "2", aggregateTps: 35, sacrificePct: 25,
+    });
+    expect(getConcurrencySweetSpot(chartFiles[1], "concurrency_tool", "m")?.level).toBe("4");
   });
 });
 

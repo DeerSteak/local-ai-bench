@@ -18,7 +18,7 @@ from scripts.app.benchmark_frontend import (
 from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
-    completed_result_paths, dashboard_launcher_command, detected_process_exit_code,
+    completed_result_paths, dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
@@ -30,7 +30,7 @@ from scripts.app.benchmark_gui import (
     reconcile_imported_model_state,
     resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
-    restored_preset_name,
+    restored_preset_name, should_finalize_process_exit,
     resource_usage_rows, run_log_path, selected_result_paths, system_memory_usage,
     write_run_logs,
     update_progress_metrics, workload_preflight_errors,
@@ -45,10 +45,16 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
 
 
-def test_process_exit_is_detected_before_stdout_reader_reaches_eof():
-    process = type("Process", (), {"poll": lambda self: -2})()
-    assert detected_process_exit_code(process) == -2
-    assert detected_process_exit_code(process, 0) == 0
+def test_process_exit_waits_for_reader_or_quiet_drain_period():
+    assert not should_finalize_process_exit(-2, False, 10.0, 10.0, 10.2, grace=0.25)
+    assert should_finalize_process_exit(-2, False, 10.0, 10.0, 10.25, grace=0.25)
+    assert should_finalize_process_exit(-2, True, 10.0, 10.2, 10.2, grace=0.25)
+    assert not should_finalize_process_exit(None, True, None, 10.0, 20.0, grace=0.25)
+
+
+def test_process_exit_quiet_period_restarts_after_late_output():
+    assert not should_finalize_process_exit(-2, False, 10.0, 10.2, 10.4, grace=0.25)
+    assert should_finalize_process_exit(-2, False, 10.0, 10.2, 10.45, grace=0.25)
 
 
 def test_import_refresh_preserves_valid_selections_selects_import_and_prunes_stale_state():

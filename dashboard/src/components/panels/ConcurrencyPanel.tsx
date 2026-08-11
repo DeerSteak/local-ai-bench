@@ -13,8 +13,9 @@ import styles from "../ChartPanel.module.css";
 // toggle (there's no per-model tier split like LLM's small/medium/large —
 // same precedent as AccuracyPanel). `section` is "concurrency_tool" or
 // "concurrency_chat" — same layout, different results key and level ladder.
-export default function ConcurrencyPanel({ containerRef, files, section, enabledModels, chartWidth, logoSrc, isMultiFile }: {
-  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, enabledModels: Set<string>,
+export default function ConcurrencyPanel({ containerRef, files, sweetSpotFiles, section, enabledModels, chartWidth, logoSrc, isMultiFile }: {
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], sweetSpotFiles: ResultsFile[],
+  section: string, enabledModels: Set<string>,
   chartWidth: number, logoSrc?: string | null, isMultiFile: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
@@ -39,7 +40,7 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
     const stopEntries = files
       .map(f => ({ hostname: f.hostname, info: getConcurrencyStopInfo(f, section, model) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
-    const sweetSpots = files
+    const sweetSpots = sweetSpotFiles
       .map(f => ({ hostname: f.hostname, info: getConcurrencySweetSpot(f, section, model) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
 
