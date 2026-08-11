@@ -124,3 +124,14 @@ def test_resolved_plan_lists_models_cases_and_historical_eta(monkeypatch):
     assert "Runs: 1 measured + 0 warmup" in preview
     assert "Estimated duration: about 2m" in preview
     assert "no exact completed local plan match" in format_duration_estimate(None)
+
+
+def test_resolved_plan_tolerates_missing_families_and_unlabeled_models(monkeypatch):
+    from scripts.runtime import config
+    monkeypatch.setattr(config, "CONTEXT_LENGTHS", [512])
+    preview = format_resolved_plan(
+        "llamacpp", ["llm", "emb"], {"llm": [{}, {"short": "tiny"}]}, None,
+        runs=1, warmups=0, max_prompt_tokens=None, sample_size=None,
+    )
+    assert "llm: tiny — contexts 512" in preview
+    assert "emb: (no models) — one document" in preview

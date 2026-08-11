@@ -219,8 +219,8 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
     lines = [f"Engine: {engine}", f"Workloads: {', '.join(tests)}"]
     for test in tests:
         family = family_for.get(test, "llm")
-        labels = [str(model.get("label") or model.get("short") or "")
-                  for model in models[family]]
+        labels = [label for model in models.get(family, [])
+                  if (label := str(model.get("label") or model.get("short") or ""))]
         if test == "llm":
             cases = f"contexts {', '.join(map(str, config.CONTEXT_LENGTHS))}"
         elif test == "conv":
