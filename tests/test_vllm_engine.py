@@ -125,6 +125,31 @@ def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, 
     assert environment["HF_HOME"] == str(engine.cache_home())
 
 
+def test_runtime_environment_enables_wsl2_pin_memory_for_managed_vllm(engine, monkeypatch):
+    monkeypatch.setattr(vllm_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(vllm_module.platform, "release", lambda: "6.6.0-microsoft-standard-WSL2")
+    monkeypatch.delenv("VLLM_WSL2_ENABLE_PIN_MEMORY", raising=False)
+
+    assert engine.runtime_environment()["VLLM_WSL2_ENABLE_PIN_MEMORY"] == "1"
+
+
+def test_runtime_environment_preserves_explicit_wsl2_pin_memory_override(engine, monkeypatch):
+    monkeypatch.setattr(vllm_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(vllm_module.platform, "release", lambda: "6.6.0-microsoft-standard-WSL2")
+    monkeypatch.setenv("VLLM_WSL2_ENABLE_PIN_MEMORY", "0")
+
+    assert engine.runtime_environment()["VLLM_WSL2_ENABLE_PIN_MEMORY"] == "0"
+
+
+def test_runtime_environment_leaves_external_vllm_environment_unmanaged(engine, monkeypatch):
+    monkeypatch.setattr(vllm_module.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(vllm_module.platform, "release", lambda: "6.6.0-microsoft-standard-WSL2")
+    monkeypatch.delenv("VLLM_WSL2_ENABLE_PIN_MEMORY", raising=False)
+    engine._server_url = "http://external:8000"
+
+    assert "VLLM_WSL2_ENABLE_PIN_MEMORY" not in engine.runtime_environment()
+
+
 def test_embedding_mode_uses_the_pooling_runner(engine):
     """--task was replaced by --runner in current vLLM."""
     command = engine.server_command("org/m", None, embedding=True)

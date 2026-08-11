@@ -82,6 +82,17 @@ export function getGpuSplitMethodologyWarning(files: ResultsFile[]): string {
     : "";
 }
 
+export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: string): string {
+  if (section && ["images", "llamabench", "vllmbench"].includes(section)) return "";
+  const relevant = files.filter(file => file.engine === "llamacpp" || file.engine == null);
+  if (relevant.length < 2) return "";
+  const modes = new Set(relevant.map(file =>
+    file.data?.run?.effective_config?.llamacpp_no_repack === true));
+  return modes.size > 1
+    ? "Loaded llama.cpp files use different weight-repacking modes."
+    : "";
+}
+
 // Cross-engine comparison compares different weight files, not just different
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.
@@ -107,14 +118,30 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
     .replace(/^-|-$/g, "");
 }
 
-// Fold each file's engine into its hostname label, but only when needed to
-// disambiguate — e.g. two --engine runs off the same host (identical
-// profile.hostname) loaded side by side. With a single engine among the
-// loaded files, appending "(llamacpp)" to every label is just noise.
-export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
+// Runtime versions are always material comparison context.
+export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
-  if (!multiEngine) return files;
-  return files.map(f => f.engine ? { ...f, hostname: `${f.hostname} (${f.engine})` } : f);
+  return files.map(f => {
+    const noRepack = f.engine === "llamacpp"
+      && !["llamabench", "vllmbench"].includes(section || "")
+      && f.data?.run?.effective_config?.llamacpp_no_repack === true;
+    const engine = noRepack ? `${f.engine} -nr` : f.engine;
+    if (f.engineVersion) {
+      const runtime = [engine, f.engineVersion].filter(Boolean).join(" ");
+      return { ...f, hostname: `${f.hostname} (${runtime})` };
+    }
+    if (f.engine && f.engineVersionRecorded === false) {
+      return { ...f, hostname: `${f.hostname} (${engine} version not recorded)` };
+    }
+    if (f.engine && f.engineVersionRecorded === true) {
+      return { ...f, hostname: `${f.hostname} (${engine} version unavailable)` };
+    }
+    return multiEngine && f.engine ? { ...f, hostname: `${f.hostname} (${engine})` } : f;
+  });
+}
+
+export function filesForSection<T extends ResultsFile>(files: T[], section: string): T[] {
+  return section === "images" ? files : applyEngineLabels(files, section);
 }
 
 export function fmt(v: number | null | undefined, unit: string): string {

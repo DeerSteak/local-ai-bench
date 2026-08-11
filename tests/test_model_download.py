@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -96,6 +97,126 @@ def test_failed_llamacpp_import_preserves_preexisting_empty_destination(monkeypa
 
     assert destination.is_dir()
     assert not any(destination.iterdir())
+
+
+def test_cancelled_llamacpp_import_cleans_destination_and_does_not_register(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 10}))
+    cancelled = [False]
+
+    def download(**kwargs):
+        destination = tmp_path / "models" / "llamacpp" / "custom" / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"partial")
+        cancelled[0] = True
+        return str(destination)
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    registry = tmp_path / "registry.json"
+    with pytest.raises(InterruptedError, match="cancelled"):
+        import_model(
+            inspection=inspection, engine="llamacpp", variant=inspection.llama_variants[0],
+            tag="custom", label="Custom", models_dir=tmp_path / "models",
+            registry_path=registry, cancel_check=lambda: cancelled[0],
+        )
+    assert not (tmp_path / "models" / "llamacpp" / "custom").exists()
+    assert load_custom_models(registry) == []
+
+
+def test_last_instant_llamacpp_cancel_cleans_destination_and_allows_retry(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 10}))
+    calls = [0]
+
+    def cancel_after_download_checks():
+        calls[0] += 1
+        return calls[0] == 3
+
+    def download(**kwargs):
+        destination = tmp_path / "models" / "llamacpp" / "custom" / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"complete")
+        return str(destination)
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    registry = tmp_path / "registry.json"
+    arguments = {
+        "inspection": inspection, "engine": "llamacpp",
+        "variant": inspection.llama_variants[0], "tag": "custom", "label": "Custom",
+        "models_dir": tmp_path / "models", "registry_path": registry,
+    }
+    with pytest.raises(InterruptedError, match="cancelled"):
+        import_model(**arguments, cancel_check=cancel_after_download_checks)
+
+    assert not (tmp_path / "models" / "llamacpp" / "custom").exists()
+    assert load_custom_models(registry) == []
+    record = import_model(**arguments)
+    assert load_custom_models(registry) == [record]
+
+
+def test_cancelled_vllm_import_removes_partial_cache_and_does_not_register(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10,
+    }))
+    cancelled = [False]
+
+    repo_cache = tmp_path / "cache" / "hub" / "models--owner--model"
+    existing_blob = repo_cache / "blobs" / "complete"
+    existing_blob.parent.mkdir(parents=True)
+    existing_blob.write_bytes(b"complete")
+
+    def snapshot_download(**_kwargs):
+        incomplete = repo_cache / "blobs" / "weights.incomplete"
+        incomplete.write_bytes(b"partial")
+        snapshot = repo_cache / "snapshots" / "commit"
+        snapshot.mkdir(parents=True)
+        (snapshot / "model.safetensors").symlink_to(incomplete)
+        lock = tmp_path / "cache" / "hub" / ".locks" / "models--owner--model" / "weights.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("", encoding="utf-8")
+        cancelled[0] = True
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    registry = tmp_path / "registry.json"
+    assert inspection.vllm_variant is not None
+    with pytest.raises(InterruptedError, match="cancelled"):
+        import_model(
+            inspection=inspection, engine="vllm", variant=inspection.vllm_variant,
+            tag="custom", label="Custom", vllm_cache=tmp_path / "cache",
+            registry_path=registry, cancel_check=lambda: cancelled[0],
+        )
+    assert load_custom_models(registry) == []
+    assert existing_blob.read_bytes() == b"complete"
+    assert sorted(path.relative_to(repo_cache) for path in repo_cache.rglob("*")) == [
+        Path("blobs"), Path("blobs/complete"),
+    ]
+    assert not (tmp_path / "cache" / "hub" / ".locks" / "models--owner--model").exists()
+
+
+def test_cancelled_vllm_import_removes_new_repo_cache(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10,
+    }))
+    cancelled = [False]
+    repo_cache = tmp_path / "cache" / "hub" / "models--owner--model"
+
+    def snapshot_download(**_kwargs):
+        partial = repo_cache / "blobs" / "weights.incomplete"
+        partial.parent.mkdir(parents=True)
+        partial.write_bytes(b"partial")
+        cancelled[0] = True
+
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
+    assert inspection.vllm_variant is not None
+    with pytest.raises(InterruptedError, match="cancelled"):
+        import_model(
+            inspection=inspection, engine="vllm", variant=inspection.vllm_variant,
+            tag="custom", label="Custom", vllm_cache=tmp_path / "cache",
+            registry_path=tmp_path / "registry.json", cancel_check=lambda: cancelled[0],
+        )
+    assert not repo_cache.exists()
 
 
 def test_failed_llamacpp_import_clears_partial_download_cache_for_retry(monkeypatch, tmp_path):

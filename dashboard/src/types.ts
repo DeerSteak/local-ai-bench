@@ -6,6 +6,8 @@ export interface ResultsFile {
   id?: string | number;
   hostname?: string;
   engine?: string | null;
+  engineVersion?: string | null;
+  engineVersionRecorded?: boolean;
   data: JsonRecord;
 }
 

@@ -221,6 +221,18 @@ class VllmEngine(InferenceEngine):
     def cache_home(self) -> Path:
         return self._cache_home
 
+    def runtime_location(self) -> str | None:
+        return self._executable
+
+    def runtime_launcher(self) -> str | None:
+        return self._launcher
+
+    def external_server_url(self) -> str | None:
+        return self._server_url
+
+    def model_snapshot(self, tag: str) -> Path | None:
+        return self._snapshot_dir(tag)
+
     def supports_model_import(self) -> bool:
         return self._server_url is None
 
@@ -592,6 +604,9 @@ class VllmEngine(InferenceEngine):
             token = token_file.read_text(encoding="utf-8").strip()
             if token:
                 env["HF_TOKEN"] = token
+        if (self._launcher is None and self._server_url is None
+                and Shared.detect_wsl(platform.system(), platform.release())):
+            env.setdefault("VLLM_WSL2_ENABLE_PIN_MEMORY", "1")
         return env
 
     # ── HTTP helpers ──

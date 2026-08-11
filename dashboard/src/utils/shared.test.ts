@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, fmt, getCrossEngineWeightsWarning,
+  getNoRepackMethodologyWarning,
+  sanitizeForFilename, applyEngineLabels, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
@@ -149,6 +150,35 @@ describe("getGpuSplitMethodologyWarning", () => {
   });
 });
 
+describe("getNoRepackMethodologyWarning", () => {
+  const enabled = { engine: "llamacpp", data: { run: { effective_config: {} } } };
+  const disabled = { engine: "llamacpp", data: { run: {
+    effective_config: { llamacpp_no_repack: true },
+  } } };
+
+  it("warns when llama.cpp repack modes differ", () => {
+    expect(getNoRepackMethodologyWarning([enabled, disabled])).toContain("weight-repacking");
+  });
+
+  it("treats a missing legacy setting as repacking enabled", () => {
+    const legacy = { data: { run: { effective_config: {} } } };
+    expect(getNoRepackMethodologyWarning([legacy, disabled])).toContain("weight-repacking");
+  });
+
+  it("ignores vLLM settings and matching llama.cpp modes", () => {
+    const vllm = { engine: "vllm", data: { run: {
+      effective_config: { llamacpp_no_repack: true },
+    } } };
+    expect(getNoRepackMethodologyWarning([enabled, enabled, vllm])).toBe("");
+  });
+
+  it("stays quiet for workloads that do not consume the setting", () => {
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "images")).toBe("");
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "llamabench")).toBe("");
+    expect(getNoRepackMethodologyWarning([enabled, disabled], "vllmbench")).toBe("");
+  });
+});
+
 describe("sanitizeForFilename", () => {
   it("collapses whitespace and special characters to a single hyphen", () => {
     expect(sanitizeForFilename("My Model: v1.0")).toBe("My-Model-v1-0");
@@ -177,6 +207,54 @@ describe("applyEngineLabels", () => {
     ];
     expect(applyEngineLabels(files)).toEqual(files);
   });
+
+  it("always labels chart systems with a recorded engine version", () => {
+    const files: ResultsFile[] = [
+      { id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000", data: {} },
+      { id: 2, hostname: "host-b", engine: "llamacpp", engineVersion: "7001", data: {} },
+    ];
+    expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
+      "host-a (llamacpp 7000)", "host-b (llamacpp 7001)",
+    ]);
+  });
+
+  it("marks llama.cpp no-repack runs in the engine label", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
+      data: { run: { effective_config: { llamacpp_no_repack: true } } },
+    }];
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (llamacpp -nr 7000)");
+  });
+
+  it("omits no-repack from labels for workloads that do not consume it", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
+      data: { run: { effective_config: { llamacpp_no_repack: true } } },
+    }];
+    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a (llamacpp 7000)");
+    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a (llamacpp 7000)");
+  });
+
+  it("labels a version even when an older result omitted its engine name", () => {
+    const files: ResultsFile[] = [
+      { id: 1, hostname: "host-a", engineVersion: "0.10.2", data: {} },
+    ];
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a (0.10.2)");
+  });
+  it("distinguishes historical results that predate engine version recording", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersionRecorded: false, data: {},
+    }];
+    expect(applyEngineLabels(files)[0].hostname)
+      .toBe("host-a (llamacpp version not recorded)");
+  });
+  it("labels a current result whose runtime version could not be discovered", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "vllm", engineVersionRecorded: true, data: {},
+    }];
+    expect(applyEngineLabels(files)[0].hostname)
+      .toBe("host-a (vllm version unavailable)");
+  });
   it("leaves hostnames untouched when no file has an engine field", () => {
     const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
     expect(applyEngineLabels(files)).toEqual(files);
@@ -202,6 +280,20 @@ describe("applyEngineLabels", () => {
       { id: 2, hostname: "host-b (mlx)", engine: "mlx", data: {} },
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ]);
+  });
+});
+
+describe("filesForSection", () => {
+  const files: ResultsFile[] = [{
+    hostname: "host-a", engine: "llamacpp", engineVersion: "7000", data: {},
+  }];
+
+  it("includes engine versions on engine-backed charts", () => {
+    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a (llamacpp 7000)");
+  });
+
+  it("does not associate LLM runtime versions with ComfyUI image charts", () => {
+    expect(filesForSection(files, "images")).toEqual(files);
   });
 });
 

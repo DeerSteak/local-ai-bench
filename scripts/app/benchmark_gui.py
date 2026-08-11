@@ -68,6 +68,14 @@ from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.model_import_dialog import show_model_import_dialog
+from scripts.app.engine_management import (
+    build_engine_management_tab, collect_engine_management, vllm_update_support,
+)
+from scripts.setup.runtime_update import (
+    RuntimeUpdateResult, detect_nvidia_max_cuda_version, rebuild_managed_llamacpp,
+    update_homebrew_llamacpp, update_managed_vllm, update_windows_llamacpp,
+)
+from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.workloads.models import LLM_MODELS
 from scripts.app.orchestration import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
@@ -742,14 +750,63 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
 
+    def perform_vllm_update(control):
+        snapshot = collect_engine_management(get_engine, hardware_backend)
+        status = next(item for item in snapshot.statuses if item.engine == "vllm")
+        support = vllm_update_support(status, setup, platform.machine())
+        if support is None:
+            return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
+        return update_managed_vllm(support, config.VLLM_VENV, control=control)
+
+    def perform_llamacpp_update(control):
+        snapshot = collect_engine_management(get_engine, hardware_backend)
+        status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
+        if platform.system() == "Darwin":
+            return update_homebrew_llamacpp(status.location, control=control)
+        if platform.system() == "Windows":
+            return update_windows_llamacpp(
+                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
+            )
+        if not status.managed:
+            return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
+        return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend, control=control)
+
+    def perform_llamacpp_model_probe(tag, control):
+        engine = get_engine("llamacpp")
+        paths = getattr(engine, "model_paths", lambda _tag: ())(tag)
+        if not paths:
+            return ModelCompatibility(
+                "llamacpp", tag, None, "unavailable", f"Model files for {tag} were not found.",
+            )
+        return probe_llamacpp_load(
+            tag, paths[0], getattr(engine, "runtime_location", lambda: None)(), control=control,
+        )
+
+    llamacpp_update_prompts = {
+        "Darwin": "Ask Homebrew to update llama.cpp, then validate the installed tools?",
+        "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
+        "Linux": "Clone and build the latest llama.cpp, then replace the current checkout?",
+    }
+
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
     config_tab = ttk.Frame(notebook, padding=18)
     log_tab = ttk.Frame(notebook, padding=18)
     history_tab = ttk.Frame(notebook, padding=18)
+    engines_tab = ttk.Frame(notebook, padding=18)
     notebook.add(config_tab, text="Configuration")
     notebook.add(log_tab, text="Run Log")
     notebook.add(history_tab, text="Result History")
+    notebook.add(engines_tab, text="Engine Management")
+    engine_management = build_engine_management_tab(
+        parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+        status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
+        vllm_updater=perform_vllm_update,
+        llamacpp_updater=perform_llamacpp_update,
+        llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
+        llamacpp_model_probe=perform_llamacpp_model_probe,
+        run_active=lambda: process is not None and process.poll() is None,
+    )
     notebook.bind(
         "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
     )
@@ -1003,13 +1060,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["retry_crashed_models"].set(False)).grid(row=10, column=2, padx=(8, 0))
     ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=11, column=0, columnspan=2, sticky="w")
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=11, column=2, padx=(8, 0))
+    ttk.Checkbutton(
+        execution_box, text="Disable llama.cpp weight repacking (-nr)",
+        variable=option_vars["llamacpp_no_repack"],
+    ).grid(row=12, column=0, columnspan=2, sticky="w")
+    ttk.Button(
+        execution_box, text="Reset", width=6,
+        command=lambda: option_vars["llamacpp_no_repack"].set(False),
+    ).grid(row=12, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=14, column=0, sticky="w", pady=(8, 0))
+    ).grid(row=16, column=0, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -1052,7 +1117,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
-                    "cpu_only", "force_all", "retry_crashed_models", "offline"):
+                    "cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "llamacpp_no_repack"):
             variable = option_vars[key]
             variable.set(defaults[key])
 
@@ -1291,7 +1357,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=14, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
@@ -2365,7 +2431,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 for entry in stage_models:
                     model_row = ttk.Frame(status_list)
                     model_row.pack(fill="x", padx=(14, 0), pady=2)
-                    ttk.Label(model_row, text=entry.label, wraplength=270).pack(
+                    ttk.Label(model_row, text=entry.label).pack(
                         side="left", anchor="w", fill="x", expand=True,
                     )
                     variable = tk.StringVar(value="○ Queued")
@@ -2500,7 +2566,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             except ValueError:
                 values[key] = option_vars[key].get()
         values["gpu_split_mode"] = option_vars["gpu_split_mode"].get()
-        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline"):
+        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "llamacpp_no_repack"):
             values[key] = option_vars[key].get()
         for key in ("out", "comfyui"):
             values[key] = option_vars[key].get().strip()
@@ -2670,6 +2737,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
 
     def close_window():
+        if engine_management.busy():
+            if messagebox.askyesno(
+                    "Runtime update active",
+                    "Cancel the active runtime update? Keep this window open until cleanup finishes.",
+                    parent=root):
+                engine_management.cancel()
+            return
         if process is not None and process.poll() is None:
             if not messagebox.askyesno("Benchmark running", "Stop the benchmark and close?", parent=root):
                 return

@@ -20,6 +20,13 @@ from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, Eng
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def test_repack_args_follow_the_explicit_runtime_setting(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", False)
+    assert LlamaCppEngine.repack_args() == []
+    monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
+    assert LlamaCppEngine.repack_args() == ["--no-repack"]
+
+
 def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)
@@ -1192,6 +1199,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
     monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
     monkeypatch.setattr(llamacpp_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
+    monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     engine = LlamaCppEngine()
     monkeypatch.setattr(engine, "available", lambda: True)
 
@@ -1201,6 +1209,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
     assert "--parallel" in args
     assert args[args.index("--parallel") + 1] == str(n_parallel)
     assert args[args.index("-c") + 1] == expected_ctx_arg
+    assert "--no-repack" in args
     assert engine._loaded_n_parallel == n_parallel
 
 

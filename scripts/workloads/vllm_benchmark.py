@@ -3,6 +3,7 @@ Talks to VllmEngine directly rather than the InferenceEngine interface, mirrorin
 
 import json
 import os
+import platform
 import signal
 import subprocess
 import tempfile
@@ -52,15 +53,24 @@ class VllmBenchBenchmark:
     ERROR_LOG_CHARS = 20_000
 
     @staticmethod
-    def error_log_excerpt(output: str | None, limit: int = ERROR_LOG_CHARS) -> str:
+    def error_log_excerpt(output: str | None, limit: int = ERROR_LOG_CHARS,
+                          is_wsl: bool | None = None) -> str:
         """Keep startup/root-cause output and the final traceback within a readable limit."""
         text = (output or "").strip()
         if len(text) <= limit:
-            return text
-        omitted = len(text) - limit
-        split = limit // 2
-        return (f"{text[:split]}\n\n... {omitted} characters omitted ...\n\n"
-                f"{text[-(limit - split):]}")
+            excerpt = text
+        else:
+            omitted = len(text) - limit
+            split = limit // 2
+            excerpt = (f"{text[:split]}\n\n... {omitted} characters omitted ...\n\n"
+                       f"{text[-(limit - split):]}")
+        if is_wsl is None:
+            is_wsl = Shared.detect_wsl(platform.system(), platform.release())
+        if is_wsl and "UVA is not available" in text:
+            hint = ("vLLM's V2 Model Runner could not allocate its UVA buffer. Under WSL2, "
+                    "verify that VLLM_WSL2_ENABLE_PIN_MEMORY=1 reaches the managed vLLM process.")
+            return f"{hint}\n\n{excerpt}"
+        return excerpt
 
     @staticmethod
     def bench_command(executable: str, subcommand: str, repo: str, output_json: Path,

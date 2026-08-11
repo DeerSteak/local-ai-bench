@@ -1,4 +1,4 @@
-from scripts.app.benchmark import engine_incompatible_tests, engine_pass_tests
+from scripts.app.benchmark import engine_incompatible_tests, engine_pass_tests, engine_version_applies
 
 
 def test_llamacpp_pass_drops_vllmbench_only():
@@ -43,3 +43,10 @@ def test_later_engine_pass_omits_images_and_foreign_native_workloads():
     assert engine_pass_tests(
         ["img", "llamabench", "llamabenchconc", "llm"], "vllm", include_images=False,
     ) == ["llm"]
+
+
+def test_engine_version_applies_only_to_engine_backed_workloads():
+    assert engine_version_applies(["llm", "img"])
+    assert engine_version_applies(["vllmbench"])
+    assert engine_version_applies(["emb"])
+    assert not engine_version_applies(["img"])

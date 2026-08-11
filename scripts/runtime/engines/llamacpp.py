@@ -74,6 +74,16 @@ class LlamaCppEngine(InferenceEngine):
             platform_name=platform.system(), which_fn=shutil.which,
         )
 
+    def runtime_location(self) -> str | None:
+        return self._binary_path()
+
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        return tuple(self._resolve_model_files(tag) or ())
+
+    @staticmethod
+    def repack_args() -> list[str]:
+        return ["--no-repack"] if config.LLAMACPP_NO_REPACK else []
+
     # ── local model-file resolution ──
 
     @classmethod
@@ -448,6 +458,7 @@ class LlamaCppEngine(InferenceEngine):
                 "-b", str(config.LLAMACPP_NUM_BATCH),
                 # Quantized KV cache needs flash attention explicitly on — see config.LLAMACPP_KV_CACHE_TYPE.
                 "--flash-attn", "on",
+                *self.repack_args(),
                 *self.gpu_split_args(include_cache=True, cpu_only=not self._gpu_visible),
             ]
             if num_ctx is not None:

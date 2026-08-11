@@ -84,6 +84,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
+| `app/engine_management.py` | Read-only Engine Management tab, runtime refresh, and copied diagnostics |
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
@@ -119,9 +120,13 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
 | `setup/model_import.py` / `setup/model_download.py` | Hugging Face repository inspection and engine-specific artifact downloads |
+| `setup/runtime_identity.py` | Read-only engine runtime ownership classification and version inspection |
+| `setup/runtime_status.py` | Combined engine health, backend, dependency-stack, and WSL runtime status records |
+| `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
 | `setup/engine_selection.py` | Pure engine-picker rules: defaults, disabled engines, and which selected engines still need installing |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
+| `setup/runtime_update.py` | Transactional validation, replacement, and rollback for app-managed engine updates |
 | `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
 | `runtime/shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
@@ -186,7 +191,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 
 | Key | Contents |
 |---|---|
-| `version`, `engine` | Application release and inference-engine name |
+| `version`, `engine`, `engine_version` | Application release, inference-engine name, and the local runtime version when it can be inspected |
 | `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, and per-stage state/coverage |
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
