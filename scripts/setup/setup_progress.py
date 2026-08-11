@@ -66,13 +66,20 @@ def process_is_running(pid: int) -> bool:
 
 def windows_process_is_running(pid: int) -> bool:
     import ctypes
+    from ctypes import wintypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
     handle = kernel32.OpenProcess(0x1000, False, pid)
     if not handle:
         return ctypes.get_last_error() == 5
     try:
-        exit_code = ctypes.c_ulong()
+        exit_code = wintypes.DWORD()
         return (bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))
                 and exit_code.value == 259)
     finally:

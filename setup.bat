@@ -21,7 +21,7 @@ for %%C in (python3.13 python3.12 python3.11 python3 python) do (
     if !errorlevel! == 0 (
         for /f "tokens=*" %%V in ('%%C -c "import sys; ok = sys.version_info >= (3,11); print(sys.executable if ok else '')" 2^>nul') do (
             if not "%%V"=="" (
-                set PYTHON=%%C
+                set "PYTHON=%%V"
                 for /f "tokens=*" %%W in ('%%C --version 2^>^&1') do echo   OK  %%W found
                 goto :python_found
             )
@@ -68,39 +68,39 @@ exit /b 1
 echo.
 echo [Virtual Environment]
 
-set RECREATE_VENV=
-if exist "%VENV_DIR%\Scripts\python.exe" (
-    "%VENV_DIR%\Scripts\python.exe" -c "import sys; v=sys.version_info[:2]; raise SystemExit(v != max(v, (3,11)))"
-    if !errorlevel! neq 0 (
-        echo   !  %VENV_DIR% is broken or uses Python older than 3.11; rebuilding it.
-        set RECREATE_VENV=1
-    )
-) else if exist "%VENV_DIR%" (
-    echo   !  %VENV_DIR% is not a usable virtual environment; rebuilding it.
-    set RECREATE_VENV=1
-)
+if not exist "%VENV_DIR%\Scripts\python.exe" goto :venv_missing
+"%VENV_DIR%\Scripts\python.exe" -c "import sys; raise SystemExit(sys.version_info < (3, 11))"
+if errorlevel 1 goto :venv_rebuild
+echo   OK  Venv already exists at %VENV_DIR%
+goto :venv_ready
 
-if defined RECREATE_VENV (
-    rmdir /s /q "%VENV_DIR%"
-    if exist "%VENV_DIR%" (
-        echo   X  Could not remove the unusable %VENV_DIR%. Close programs using it and re-run setup.
-        pause
-        exit /b 1
-    )
-)
+:venv_missing
+if not exist "%VENV_DIR%" goto :venv_create
+echo   !  %VENV_DIR% is not a usable virtual environment; rebuilding it.
+goto :venv_remove
 
-if exist "%VENV_DIR%\Scripts\python.exe" (
-    echo   OK  Venv already exists at %VENV_DIR%
-) else (
-    echo   -^>  Creating venv at %VENV_DIR%...
-    %PYTHON% -m venv %VENV_DIR%
-    if %errorlevel% neq 0 (
-        echo   X  Failed to create venv. Is python3-venv installed?
-        pause
-        exit /b 1
-    )
-    echo   OK  Venv created
-)
+:venv_rebuild
+echo   !  %VENV_DIR% is broken or uses Python older than 3.11; rebuilding it.
+
+:venv_remove
+rmdir /s /q "%VENV_DIR%"
+if not exist "%VENV_DIR%" goto :venv_create
+echo   X  Could not remove the unusable %VENV_DIR%. Close programs using it and re-run setup.
+pause
+exit /b 1
+
+:venv_create
+echo   -^>  Creating venv at %VENV_DIR%...
+"%PYTHON%" -m venv "%VENV_DIR%"
+if not errorlevel 1 goto :venv_created
+echo   X  Failed to create venv. Is python3-venv installed?
+pause
+exit /b 1
+
+:venv_created
+echo   OK  Venv created
+
+:venv_ready
 
 set VENV_PYTHON=%VENV_DIR%\Scripts\python.exe
 
