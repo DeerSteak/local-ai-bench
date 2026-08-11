@@ -7,6 +7,7 @@ import math
 import os
 import platform
 import random
+import re
 import statistics
 import signal
 import subprocess
@@ -43,8 +44,19 @@ def _console_now():
     return datetime.now()
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _console_supports_ansi(stream=None, environment=None):
+    stream = stream or sys.stdout
+    environment = os.environ if environment is None else environment
+    return "NO_COLOR" not in environment and bool(getattr(stream, "isatty", lambda: False)())
+
+
 def _console_safe_text(value):
     text = str(value)
+    if not _console_supports_ansi():
+        text = ANSI_ESCAPE_RE.sub("", text)
     encoding = getattr(sys.stdout, "encoding", None)
     if not encoding:
         return text

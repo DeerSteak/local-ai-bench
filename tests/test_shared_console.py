@@ -26,6 +26,7 @@ def test_plain_output_has_no_timestamp(monkeypatch, capsys):
 
 def test_clear_terminal_emits_ansi_clear_without_timestamp(monkeypatch, capsys):
     monkeypatch.setattr(shared.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(shared, "_console_supports_ansi", lambda: True)
     Shared.clear_terminal()
     assert capsys.readouterr().out == "\033[2J\033[H"
 
@@ -41,6 +42,7 @@ def test_clear_terminal_uses_native_windows_command(monkeypatch, capsys):
 
 def test_status_helpers_share_timestamp_and_keep_color_after_it(monkeypatch, capsys):
     monkeypatch.setattr(shared, "_console_now", fixed_now)
+    monkeypatch.setattr(shared, "_console_supports_ansi", lambda: True)
     Shared.log("working")
     Shared.ok("done")
     Shared.warn("careful")
@@ -55,6 +57,7 @@ def test_status_helpers_share_timestamp_and_keep_color_after_it(monkeypatch, cap
 
 def test_section_uses_one_timestamp_for_its_logical_block(monkeypatch, capsys):
     monkeypatch.setattr(shared, "_console_now", fixed_now)
+    monkeypatch.setattr(shared, "_console_supports_ansi", lambda: True)
     Shared.section("Models")
     output = capsys.readouterr().out
     assert output.startswith(f"\n[09:08:07]\n{config.BOLD}{'─' * 50}\n")
@@ -87,6 +90,24 @@ def test_status_output_replaces_symbols_unsupported_by_console_encoding(monkeypa
     text = output.getvalue().decode("cp1252")
     assert "working ?" in text
     assert "?" * 50 in text
+
+
+def test_noninteractive_output_strips_ansi_and_preserves_utf8_symbols(monkeypatch):
+    output = io.BytesIO()
+    pipe = io.TextIOWrapper(output, encoding="utf-8", errors="strict")
+    monkeypatch.setattr(sys, "stdout", pipe)
+    monkeypatch.setattr(shared, "_console_now", fixed_now)
+
+    Shared.log("working — ①")
+    Shared.ok("done")
+    Shared.section("Models")
+    pipe.flush()
+
+    text = output.getvalue().decode("utf-8")
+    assert "\x1b[" not in text
+    assert "→  working — ①" in text
+    assert "✓  done" in text
+    assert "─" * 50 in text
 
 
 def test_runtime_modules_do_not_bypass_shared_console_output():

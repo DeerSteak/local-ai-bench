@@ -187,12 +187,19 @@ def launch_controlled_process(command: list[str], *, creationflags: int = 0,
                               pause_path_factory=create_pause_control,
                               popen=subprocess.Popen) -> tuple[subprocess.Popen, Path]:
     control_path = pause_path_factory()
-    child_env = {**os.environ, "PYTHONUNBUFFERED": "1", "LOCAL_AI_BENCH_PROGRESS": "1",
-                 PAUSE_CONTROL_ENV: str(control_path)}
+    child_env = {
+        **os.environ,
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "NO_COLOR": "1",
+        "LOCAL_AI_BENCH_PROGRESS": "1",
+        PAUSE_CONTROL_ENV: str(control_path),
+    }
     try:
         process = popen(
             command, cwd=config.SCRIPT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=creationflags, env=child_env,
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
+            creationflags=creationflags, env=child_env,
         )
     except BaseException:
         control_path.unlink(missing_ok=True)
