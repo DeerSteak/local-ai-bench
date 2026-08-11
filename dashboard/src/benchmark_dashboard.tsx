@@ -6,6 +6,7 @@ import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
 import { getAccuracySettingsWarning } from "./utils/accuracy";
 import { fetchSelectedResultFiles } from "./utils/autoload";
+import { applyBaselineDeltas } from "./utils/baseline";
 import { MAX_FILES } from "./constants";
 import type { DisplayFile, SortConfig } from "./types";
 import Header from "./components/Header";
@@ -15,6 +16,9 @@ import StatsTable from "./components/StatsTable";
 import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
+import { DeltaModeContext } from "./components/DeltaModeContext";
+import RunSummaryCards from "./components/RunSummaryCards";
+import { buildRunCardFilename } from "./utils/specCard";
 
 // The minimal shape both real File objects and autoload's staged-result
 // entries satisfy — this is all parseFile/processJsonFiles actually need.
@@ -39,6 +43,8 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [filenameSuffix, setFilenameSuffix] = useState("");
   const [fileError, setFileError] = useState("");
+  const [baselineId, setBaselineId] = useState<string | null>(null);
+  const [savingSpecCard, setSavingSpecCard] = useState(false);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -47,6 +53,7 @@ export default function Dashboard() {
   useEffect(() => { sectionRef.current = section; }, [section]);
 
   const chartRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
@@ -114,6 +121,9 @@ export default function Dashboard() {
 
   const effectiveFilesRef = useRef(effectiveFiles);
   useEffect(() => { effectiveFilesRef.current = effectiveFiles; }, [effectiveFiles]);
+  const chartFiles = useMemo(
+    () => applyBaselineDeltas(effectiveFiles, baselineId), [effectiveFiles, baselineId],
+  );
   const accuracySettingsWarning = useMemo(
     () => getAccuracySettingsWarning(effectiveFiles),
     [effectiveFiles],
@@ -146,6 +156,7 @@ export default function Dashboard() {
     setEnabledImageModels(new Set());
     setEnabledEmbedModels(new Set());
     setHostnameOverrides({});
+    setBaselineId(null);
   };
 
   const parseFile = async (file: NamedTextSource): Promise<{ entry: DisplayFile | null, error: string | null }> => {
@@ -222,6 +233,7 @@ export default function Dashboard() {
       return remaining;
     });
     setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId as string]; return n; });
+    setBaselineId(current => current === String(fileId) ? null : current);
   }, []);
 
   const handleLogoDrop = useCallback((e: React.DragEvent) => {
@@ -238,6 +250,7 @@ export default function Dashboard() {
     if (!chartRef.current || saving) return;
     setSaving(true);
     try {
+      setFileError("");
       await document.fonts.ready;
       const cards = [...chartRef.current.querySelectorAll<HTMLElement>("[data-chart-name]")];
       if (!cards.length) return;
@@ -255,10 +268,38 @@ export default function Dashboard() {
         link.click();
         if (i < cards.length - 1) await new Promise(r => setTimeout(r, 300));
       }
+    } catch (error) {
+      setFileError(`Chart export failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSaving(false);
     }
   }, [saving, filenameSuffix]);
+
+  const saveSpecCards = useCallback(async () => {
+    if (!summaryRef.current || savingSpecCard) return;
+    setSavingSpecCard(true);
+    try {
+      setFileError("");
+      await document.fonts.ready;
+      const cards = [...summaryRef.current.querySelectorAll<HTMLElement>("[data-spec-card]")];
+      if (!cards.length) throw new Error("no run cards are available");
+      const names = cards.map((card, index) => card.dataset.specName || `run-${index + 1}`);
+      for (let index = 0; index < cards.length; index++) {
+        const canvas = await html2canvas(cards[index], {
+          backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
+        });
+        const link = document.createElement("a");
+        link.download = buildRunCardFilename(names, index, filenameSuffix);
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    } catch (error) {
+      setFileError(`Run-card export failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSavingSpecCard(false);
+    }
+  }, [savingSpecCard, filenameSuffix]);
 
   const cycleSort = (key: string) => {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
@@ -304,22 +345,29 @@ export default function Dashboard() {
         onLogoDragLeave={handleLogoDragLeave}
         saving={saving} onSaveChart={saveChart}
         filenameSuffix={filenameSuffix} setFilenameSuffix={setFilenameSuffix}
+        baselineId={baselineId} setBaselineId={setBaselineId}
+        savingSpecCard={savingSpecCard} onSaveSpecCard={saveSpecCards}
       />
 
-      <ChartPanel
-        containerRef={chartRef}
-        files={effectiveFiles}
-        section={section}
-        accuracyTest={accuracyTest}
-        enabledModels={enabledModels}
-        enabledImageModels={enabledImageModels}
-        enabledEmbedModels={enabledEmbedModels}
-        chartWidth={chartWidth}
-        logoSrc={logoSrc}
-        chartStyle={chartStyle}
-        groupBy={groupBy}
-        sizeSplit={sizeSplit}
-      />
+      <RunSummaryCards files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} />
+
+      <DeltaModeContext.Provider value={baselineId != null}>
+        <ChartPanel
+          containerRef={chartRef}
+          files={chartFiles}
+          absoluteFiles={effectiveFiles}
+          section={section}
+          accuracyTest={accuracyTest}
+          enabledModels={enabledModels}
+          enabledImageModels={enabledImageModels}
+          enabledEmbedModels={enabledEmbedModels}
+          chartWidth={chartWidth}
+          logoSrc={logoSrc}
+          chartStyle={chartStyle}
+          groupBy={groupBy}
+          sizeSplit={sizeSplit}
+        />
+      </DeltaModeContext.Provider>
 
       <StatsTable
         files={effectiveFiles}

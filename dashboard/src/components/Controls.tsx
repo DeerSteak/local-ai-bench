@@ -21,6 +21,8 @@ export default function Controls({
   logoDragOver, onLogoDrop, onLogoDragOver, onLogoDragLeave,
   saving, onSaveChart,
   filenameSuffix, setFilenameSuffix,
+  baselineId, setBaselineId,
+  savingSpecCard, onSaveSpecCard,
 }: {
   section: string, setSection: (s: string) => void,
   accuracyTest: string, setAccuracyTest: (t: string) => void,
@@ -38,6 +40,8 @@ export default function Controls({
   onLogoDragOver: (e: React.DragEvent) => void, onLogoDragLeave: (e: React.DragEvent) => void,
   saving: boolean, onSaveChart: () => void,
   filenameSuffix: string, setFilenameSuffix: (s: string) => void,
+  baselineId: string | null, setBaselineId: (id: string | null) => void,
+  savingSpecCard: boolean, onSaveSpecCard: () => void,
 }) {
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
@@ -111,6 +115,21 @@ export default function Controls({
 
       {files.length > 0 && (
         <div className={styles.rowBreak} />
+      )}
+
+      {files.length > 1 && (
+        <div className={styles.freshRowGroup}>
+          <div className={styles.controlLabel}>Compare As</div>
+          <select
+            className={styles.baselineSelect}
+            value={baselineId ?? ""}
+            onChange={event => setBaselineId(event.target.value || null)}
+          >
+            <option value="">Absolute values</option>
+            {files.map(file => <option key={file.id} value={String(file.id)}>Δ vs {file.hostname}</option>)}
+          </select>
+          {baselineId && <div className={styles.baselineNote}>Charts show Δ%; raw tables stay absolute.</div>}
+        </div>
       )}
 
       {files.length > 0 && (
@@ -279,6 +298,12 @@ export default function Controls({
           >
             {saving ? "Saving…" : "⬇ Save PNG"}
           </button>
+          {files.length > 0 && (
+            <button onClick={onSaveSpecCard} disabled={savingSpecCard}
+              className={`pill inactive ${styles.exportBtn}`}>
+              {savingSpecCard ? "Saving…" : "⬇ Spec Card"}
+            </button>
+          )}
         </div>
       </div>
     </div>

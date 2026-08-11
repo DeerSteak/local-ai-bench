@@ -30,6 +30,11 @@ def _spec(value_type, classification, ui_status, ui_location, **kwargs):
 
 
 PUBLIC_OPTION_SCHEMA = {
+    "--quick": _spec(
+        "boolean", "guided", "missing", "CLI smoke-test scope differs from GUI Quick run",
+        default=False,
+    ),
+    "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),
     "--tests": _spec("string-list", "guided", "exposed", "Test selection screen", choices=TEST_CHOICES),
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),

@@ -19,10 +19,11 @@ import { EmptyState } from "./panels/shared";
 // see components/panels/*.jsx. Shared chart-rendering primitives (the actual
 // recharts wrappers) live in components/charts/ChartCards.jsx.
 export default function ChartPanel({
-  containerRef, files, section, accuracyTest,
+  containerRef, files, absoluteFiles, section, accuracyTest,
   enabledModels, enabledImageModels, enabledEmbedModels, chartWidth, logoSrc, chartStyle, groupBy, sizeSplit,
 }: {
-  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], section: string, accuracyTest: string,
+  containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], absoluteFiles: ResultsFile[],
+  section: string, accuracyTest: string,
   enabledModels: Set<string>, enabledImageModels: Set<string>, enabledEmbedModels: Set<string>,
   chartWidth: number, logoSrc?: string | null, chartStyle: string, groupBy: string, sizeSplit: string,
 }) {
@@ -84,7 +85,8 @@ export default function ChartPanel({
   if (section === "concurrency_tool" || section === "concurrency_chat") {
     return (
       <ConcurrencyPanel
-        containerRef={containerRef} files={files} section={section} enabledModels={enabledModels}
+        containerRef={containerRef} files={files} sweetSpotFiles={absoluteFiles}
+        section={section} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
     );

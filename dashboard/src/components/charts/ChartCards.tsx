@@ -1,4 +1,5 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { useContext } from "react";
 import { prepareOrderedBarGroupData, fmt } from "../../utils/shared";
 import type { JsonRecord } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
@@ -6,6 +7,7 @@ import type { ChartRow } from "../../types";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
 import styles from "../ChartPanel.module.css";
+import { DeltaModeContext } from "../DeltaModeContext";
 
 interface LineConfig {
   dataKey: string, name: string, stroke?: string, strokeDasharray?: string,
@@ -34,7 +36,10 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
   xLabel: string, yLabel: string, unit: string, isMultiFile: boolean, chartName: string,
   chartModel?: string | null, logoSrc?: string | null, direction?: string,
 }) {
-  const yTickFormatter = (v: number) => fmt(v, unit);
+  const deltaMode = useContext(DeltaModeContext);
+  const effectiveUnit = deltaMode ? "pct" : unit;
+  const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
+  const yTickFormatter = (v: number) => fmt(v, effectiveUnit);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -57,9 +62,9 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
             tick={{ fill: "#57606a", fontSize: 17 }}
             tickFormatter={yTickFormatter}
             width={100}
-            label={{ value: yLabel, angle: -90, position: "insideLeft", offset: 20, fill: "#8c959f", fontSize: 15, dy: 70 }}
+            label={{ value: effectiveYLabel, angle: -90, position: "insideLeft", offset: 20, fill: "#8c959f", fontSize: 15, dy: 70 }}
           />
-          <Tooltip content={<CustomTooltip unit={unit} xPrefix={xLabel} />} />
+          <Tooltip content={<CustomTooltip unit={effectiveUnit} xPrefix={xLabel} />} />
           <Legend content={(props) => (
             <CustomLegend {...props} isMultiFile={isMultiFile} sortOrder={lineConfigs.map(config => config.name)} />
           )} />
@@ -173,7 +178,10 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
   yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
   direction?: string, orderedSeries?: boolean,
 }) {
-  const valFormatter = (v: number) => fmt(v, unit);
+  const deltaMode = useContext(DeltaModeContext);
+  const effectiveUnit = deltaMode ? "pct" : unit;
+  const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
+  const valFormatter = (v: number) => fmt(v, effectiveUnit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.
   const groupedData = data.map(row => {
@@ -214,7 +222,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             type="number"
             tick={{ fill: "#57606a", fontSize: 15 }}
             tickFormatter={valFormatter}
-            label={{ value: yLabel, position: "insideBottom", offset: -6, fill: "#8c959f", fontSize: 15 }}
+            label={{ value: effectiveYLabel, position: "insideBottom", offset: -6, fill: "#8c959f", fontSize: 15 }}
             height={56}
           />
           <YAxis
@@ -223,7 +231,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             tick={<MultiLineTick />}
             width={yAxisWidth}
           />
-          <Tooltip content={<CustomTooltip unit={unit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />
+          <Tooltip content={<CustomTooltip unit={effectiveUnit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />
           {barConfigs.length > 1 && (
             <Legend content={(props) => <CustomLegend {...props} payload={orderedSeries ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           )}

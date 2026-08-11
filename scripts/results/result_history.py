@@ -3,6 +3,8 @@
 import json
 import math
 import shutil
+import statistics
+from datetime import datetime
 from pathlib import Path
 
 from scripts.results.result_store import as_dict, validate_json_data
@@ -15,6 +17,86 @@ PERFORMANCE_METRICS = {
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }
 ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
+ETA_MATCH_KEYS = (
+    "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
+    "accuracy_token_budget", "cpu_only", "force_all", "max_prompt_tokens",
+    "context_lengths", "llamabench_pp", "llamabench_tg", "sample_size",
+    "concurrency_tool_levels", "concurrency_chat_levels",
+    "concurrency_tool_context", "concurrency_chat_context",
+    "concurrency_chat_soft_exit_floor",
+)
+HARDWARE_IDENTITY_KEYS = ("hostname", "os", "arch", "ram_gb", "backend", "wsl")
+
+
+def hardware_identity(profile: dict) -> dict:
+    """Stable hardware fields used to scope historical duration estimates."""
+    values = dict(profile)
+    values["backend"] = profile.get("hardware_backend", profile.get("backend"))
+    values["wsl"] = bool(profile.get("wsl", False))
+    return {key: values.get(key) for key in HARDWARE_IDENTITY_KEYS}
+
+
+def _timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def completed_run_duration_seconds(result: dict) -> float | None:
+    run = as_dict(result.get("run"))
+    if run.get("status") != "complete":
+        return None
+    started, finished = _timestamp(run.get("started_at")), _timestamp(run.get("finished_at"))
+    if started is None or finished is None:
+        return None
+    try:
+        seconds = (finished - started).total_seconds()
+    except TypeError:
+        return None
+    return seconds if seconds > 0 else None
+
+
+def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str],
+                                   models: dict[str, list[dict]],
+                                   effective_config: dict, profile: dict) -> float | None:
+    """Median duration for exact local plan matches; unmatched history is not an ETA."""
+    expected_models = {
+        family: sorted(str(model.get("short")) for model in entries)
+        for family, entries in models.items()
+    }
+    durations = []
+    for path in Path(directory).glob("*.json") if Path(directory).exists() else ():
+        try:
+            result = load_result(path)
+        except (OSError, ValueError):
+            continue
+        run = as_dict(result.get("run"))
+        plan = as_dict(run.get("plan"))
+        actual_models = {
+            family: sorted(str(model.get("short")) for model in entries)
+            for family, entries in as_dict(plan.get("models")).items()
+            if isinstance(entries, list)
+        }
+        recorded_tests = plan.get("requested_tests")
+        recorded_config = as_dict(plan.get("effective_config"))
+        recorded_profile = as_dict(result.get("profile"))
+        if ((result.get("engine") or run.get("engine")) != engine
+                or not isinstance(recorded_tests, list)
+                or sorted(recorded_tests) != sorted(tests)
+                or actual_models != expected_models
+                or any(key not in recorded_config
+                       or recorded_config.get(key) != effective_config.get(key)
+                       for key in ETA_MATCH_KEYS)
+                or any(key not in recorded_profile for key in HARDWARE_IDENTITY_KEYS[:-1])
+                or hardware_identity(recorded_profile) != hardware_identity(profile)):
+            continue
+        duration = completed_run_duration_seconds(result)
+        if duration is not None:
+            durations.append(duration)
+    return statistics.median(durations) if durations else None
 
 
 def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]:

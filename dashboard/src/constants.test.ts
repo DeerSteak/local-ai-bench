@@ -7,7 +7,7 @@ import {
   SIZE_TIER_ORDER, RES_ORDER, RES_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
   EMBED_BAR_COLORS, BACKEND_COLORS, ACCURACY_TIMEOUT_BAR_CONFIGS,
-  ACCURACY_TESTS, ACCURACY_TEST_LABELS,
+  ACCURACY_TESTS, ACCURACY_TEST_LABELS, CTX_ORDER, SPEC_CARD_PREFERRED_CTX,
 } from "./constants";
 import { lookup } from "./utils/shared";
 
@@ -97,6 +97,12 @@ describe("accuracy registry", () => {
   it("matches the benchmark workload order and labels every test", () => {
     expect(ACCURACY_TESTS).toEqual(["mcq", "math", "reasoning", "code", "tool"]);
     for (const test of ACCURACY_TESTS) expect(lookup(ACCURACY_TEST_LABELS, test)).toBeTruthy();
+  });
+});
+
+describe("context registry", () => {
+  it("contains the preferred run-card checkpoint", () => {
+    expect(CTX_ORDER).toContain(SPEC_CARD_PREFERRED_CTX);
   });
 });
 

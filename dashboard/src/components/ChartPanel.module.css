@@ -113,6 +113,21 @@
   gap: 2px;
 }
 
+.sweetSpotRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sweetSpotBadge {
+  padding: 7px 10px;
+  border: 1px solid #92c7a3;
+  border-radius: 999px;
+  background: #edf8f0;
+  color: #175c2f;
+  font: 600 13px 'IBM Plex Mono', monospace;
+}
+
 .emptyState {
   display: flex;
   align-items: center;

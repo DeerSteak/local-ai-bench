@@ -82,6 +82,8 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 **Concurrency → Aggregate Tokens/sec.** Total tokens generated across every concurrent request in the batch, divided by that batch's real wall-clock duration (including each request's TTFT, not just decode time). Higher is better. This is the number that shows overall system capacity — on hardware with real batching headroom it climbs with concurrency before eventually plateauing or declining; on memory/bandwidth-constrained hardware with no spare headroom, it can decline from the very first step instead, meaning concurrency only adds contention rather than paying off.
 
+Each concurrency model group identifies its **sweet spot**: the lowest tested concurrency level that achieved the maximum aggregate throughput. The badge also reports the per-request throughput tradeoff relative to the one-request measurement when both values are available.
+
 **Concurrency → TTFT.** Time to first token for one request in the batch, including any contention from the other simultaneous requests. Lower is better. Rises with concurrency for the same reason Per-Request Tokens/sec falls — everything in the batch is competing for the same underlying resources.
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).
@@ -110,6 +112,8 @@ Performance sections with sample evidence also render a collapsible **Decision-g
 
 Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. When `engine_version` is recorded, engine-backed chart labels include the runtime (`hostname (llamacpp 7000)` or `hostname (vllm 0.10.2)`) so results made before and after an engine update remain distinguishable; a llama.cpp run with weight repacking disabled is labeled `hostname (llamacpp -nr 7000)` on workloads that consume the setting. Image charts omit runtime labels because ComfyUI runs independently. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. When compared llama.cpp files disagree on weight-repacking mode, affected workload sections also show a methodology warning; Images, standard llama-bench, and vllm bench omit both `-nr` methodology cues because they do not consume the setting. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
 
+With two or more files loaded, **Compare As** can designate one file as the baseline. Charts then show each matching metric as percentage change from that result, with the baseline at zero; cells absent or zero in the baseline remain absent rather than producing an invented delta. Raw-number tables remain absolute so the underlying measurements are always available.
+
 ## Exporting
 
 Drop a logo image onto the **Logo** drop zone to embed it in the bottom-right corner of every chart. Click **Save PNG** to export all visible charts as individual files:
@@ -133,6 +137,8 @@ llama3.1-8b-q4_llamabench_prefill.png # llama-bench prefill section
 ```
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
+
+Every loaded result also renders a **Shareable Run Card** with its system, runtime, RAM, suite version, and the fastest decode/lowest-TTFT model in each represented tier. Current results use the shared 2K single-shot checkpoint; historical files without 2K use that tier's shallowest recorded canonical checkpoint and label it explicitly. **Spec Card** exports these cards as `<system>[_<suffix>]_run-card.png`, numbering repeated system names so same-host comparisons do not collide; an uploaded logo is included.
 
 A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.ts` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 

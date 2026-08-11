@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   getAllConcurrencyModels, buildConcurrencyDataForModel,
-  getConcurrencyStopInfo, flattenConcurrencyData, concurrencySortValue,
+  getConcurrencyStopInfo, getConcurrencySweetSpot, flattenConcurrencyData, concurrencySortValue,
 } from "./concurrency";
+import { applyBaselineDeltas } from "./baseline";
 
 describe("getAllConcurrencyModels", () => {
   it("returns known models in canonical order, unknowns appended after", () => {
@@ -16,6 +17,54 @@ describe("getAllConcurrencyModels", () => {
     const files = [{ data: { concurrency_tool: { "phi4-mini": {} } } }];
     expect(getAllConcurrencyModels(files, "concurrency_chat")).toEqual([]);
     expect(getAllConcurrencyModels(files, "concurrency_tool")).toEqual(["phi4-mini"]);
+  });
+});
+
+describe("getConcurrencySweetSpot", () => {
+  it("selects peak aggregate throughput and reports per-request sacrifice from one-way", () => {
+    const file = { data: { concurrency_tool: { m: {
+      "1": { aggregate_tps: 20, tps_mean: 24 },
+      "2": { aggregate_tps: 35, tps_mean: 18 },
+      "4": { aggregate_tps: 32, tps_mean: 11 },
+    } } } };
+    expect(getConcurrencySweetSpot(file, "concurrency_tool", "m")).toEqual({
+      level: "2", aggregateTps: 35, sacrificePct: 25,
+    });
+  });
+
+  it("prefers the lower concurrency level on a throughput tie", () => {
+    const file = { data: { concurrency_chat: { m: {
+      "1": { aggregate_tps: 10, tps_mean: 10 },
+      "2": { aggregate_tps: 20, tps_mean: 8 },
+      "4": { aggregate_tps: 20, tps_mean: 7 },
+    } } } };
+    expect(getConcurrencySweetSpot(file, "concurrency_chat", "m")?.level).toBe("2");
+  });
+
+  it("returns null without finite aggregate measurements", () => {
+    expect(getConcurrencySweetSpot({ data: {} }, "concurrency_chat", "m")).toBeNull();
+    const file = { data: { concurrency_chat: { m: { "1": { aggregate_tps: null } } } } };
+    expect(getConcurrencySweetSpot(file, "concurrency_chat", "m")).toBeNull();
+  });
+
+  it("keeps the absolute sweet spot when chart data is transformed to deltas", () => {
+    const files = [
+      { id: "base", data: { concurrency_tool: { m: {
+        "1": { aggregate_tps: 20, tps_mean: 10 },
+        "2": { aggregate_tps: 40, tps_mean: 8 },
+        "4": { aggregate_tps: 20, tps_mean: 6 },
+      } } } },
+      { id: "next", data: { concurrency_tool: { m: {
+        "1": { aggregate_tps: 20, tps_mean: 12 },
+        "2": { aggregate_tps: 35, tps_mean: 9 },
+        "4": { aggregate_tps: 30, tps_mean: 7 },
+      } } } },
+    ];
+    const chartFiles = applyBaselineDeltas(files, "base");
+    expect(getConcurrencySweetSpot(files[1], "concurrency_tool", "m")).toEqual({
+      level: "2", aggregateTps: 35, sacrificePct: 25,
+    });
+    expect(getConcurrencySweetSpot(chartFiles[1], "concurrency_tool", "m")?.level).toBe("4");
   });
 });
 
