@@ -17,6 +17,14 @@ PERFORMANCE_METRICS = {
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }
 ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
+ETA_MATCH_KEYS = (
+    "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
+    "accuracy_token_budget", "cpu_only", "force_all", "max_prompt_tokens",
+    "context_lengths", "llamabench_pp", "llamabench_tg", "sample_size",
+    "concurrency_tool_levels", "concurrency_chat_levels",
+    "concurrency_tool_context", "concurrency_chat_context",
+    "concurrency_chat_soft_exit_floor",
+)
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -43,7 +51,8 @@ def completed_run_duration_seconds(result: dict) -> float | None:
 
 
 def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str],
-                                   models: dict[str, list[dict]]) -> float | None:
+                                   models: dict[str, list[dict]],
+                                   effective_config: dict) -> float | None:
     """Median duration for exact local plan matches; unmatched history is not an ETA."""
     expected_models = {
         family: sorted(str(model.get("short")) for model in entries)
@@ -63,10 +72,14 @@ def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str
             if isinstance(entries, list)
         }
         recorded_tests = plan.get("requested_tests")
+        recorded_config = as_dict(plan.get("effective_config"))
         if ((result.get("engine") or run.get("engine")) != engine
                 or not isinstance(recorded_tests, list)
                 or sorted(recorded_tests) != sorted(tests)
-                or actual_models != expected_models):
+                or actual_models != expected_models
+                or any(key not in recorded_config
+                       or recorded_config.get(key) != effective_config.get(key)
+                       for key in ETA_MATCH_KEYS)):
             continue
         duration = completed_run_duration_seconds(result)
         if duration is not None:

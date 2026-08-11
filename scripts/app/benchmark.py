@@ -50,7 +50,7 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
-from scripts.results.result_history import estimate_matching_plan_seconds
+from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from typing import Callable, Protocol
 
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
@@ -185,6 +185,28 @@ def format_duration_estimate(seconds: float | None) -> str:
         return "unavailable — no exact completed local plan match"
     minutes = max(1, round(seconds / 60))
     return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
+
+
+def eta_match_config(args) -> dict:
+    """Runtime-shaping settings required for a historical ETA match."""
+    values = {
+        "runs": config.N_RUNS, "warmup_runs": args.warmup,
+        "run_timeout_seconds": config.RUN_TIMEOUT,
+        "accuracy_timeout_seconds": config.ACC_TIMEOUT,
+        "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
+        "cpu_only": args.cpu_only, "force_all": args.force_all,
+        "max_prompt_tokens": args.max_prompt_tokens,
+        "context_lengths": config.CONTEXT_LENGTHS,
+        "llamabench_pp": config.LLAMABENCH_PP,
+        "llamabench_tg": config.LLAMABENCH_TG,
+        "sample_size": args.sample,
+        "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
+        "concurrency_chat_levels": config.CONCURRENCY_CHAT_LEVELS,
+        "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
+        "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
+        "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+    }
+    return {key: values[key] for key in ETA_MATCH_KEYS}
 
 
 def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
@@ -823,6 +845,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
+                eta_match_config(args),
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
