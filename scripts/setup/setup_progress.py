@@ -11,6 +11,7 @@ import tempfile
 
 TERMINAL_STATUSES = {"complete", "action_items", "stopped"}
 IS_WINDOWS = os.name == "nt"
+WINDOWS_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
 
 def read_progress_status(path: Path) -> str:
@@ -35,7 +36,7 @@ def start_setup_progress() -> tuple[subprocess.Popen, Path]:
     path = Path(raw_path)
     path.write_text(json.dumps({"status": "running"}))
     # Keep Ctrl+C in the installer console from interrupting the Tk helper too.
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
+    creationflags = WINDOWS_NEW_PROCESS_GROUP if IS_WINDOWS else 0
     try:
         process = subprocess.Popen([
             sys.executable, "-m", "scripts.setup.setup_progress",
@@ -68,7 +69,7 @@ def windows_process_is_running(pid: int) -> bool:
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = getattr(ctypes, "WinDLL")("kernel32", use_last_error=True)
     kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
@@ -77,7 +78,7 @@ def windows_process_is_running(pid: int) -> bool:
     kernel32.CloseHandle.restype = wintypes.BOOL
     handle = kernel32.OpenProcess(0x1000, False, pid)
     if not handle:
-        return ctypes.get_last_error() == 5
+        return getattr(ctypes, "get_last_error")() == 5
     try:
         exit_code = wintypes.DWORD()
         return (bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))

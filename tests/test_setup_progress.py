@@ -63,13 +63,14 @@ def test_start_setup_progress_uses_separate_process_group_on_windows(monkeypatch
     monkeypatch.setattr("scripts.setup.setup_progress.tempfile.mkstemp", lambda **_: (5, str(status_path)))
     monkeypatch.setattr("scripts.setup.setup_progress.os.close", lambda _handle: None)
     monkeypatch.setattr("scripts.setup.setup_progress.IS_WINDOWS", True)
+    monkeypatch.setattr("scripts.setup.setup_progress.WINDOWS_NEW_PROCESS_GROUP", 512)
     launched = []
     monkeypatch.setattr(
         "scripts.setup.setup_progress.subprocess.Popen",
         lambda command, **kwargs: launched.append((command, kwargs)) or object(),
     )
     start_setup_progress()
-    assert launched[0][1]["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+    assert launched[0][1]["creationflags"] == 512
 
 
 def test_process_is_running_uses_windows_probe_instead_of_os_kill(monkeypatch):
