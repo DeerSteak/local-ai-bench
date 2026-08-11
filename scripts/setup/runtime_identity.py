@@ -53,6 +53,32 @@ def parse_runtime_version(output: str | None) -> str | None:
     return None
 
 
+def parse_llamacpp_commit(output: str | None) -> str | None:
+    match = re.search(r"\(([0-9a-f]{7,40})\)", output or "", re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
+def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
+                          run=subprocess.run) -> str | None:
+    """Prefer a sortable commit identity for a managed llama.cpp source build."""
+    commit = parse_llamacpp_commit(identity.version_output)
+    if not identity.managed or not commit or not (Path(managed_root) / ".git").exists():
+        return identity.version
+    try:
+        result = run(
+            ["git", "-C", str(managed_root), "show", "-s", "--format=%cd",
+             "--date=format-local:%Y.%m.%d", commit],
+            capture_output=True, text=True, timeout=15,
+            env={**os.environ, "TZ": "UTC"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return identity.version
+    commit_date = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", commit_date):
+        return identity.version
+    return f"{commit_date}-{commit[:7]}"
+
+
 def inspect_runtime(engine: str, location: str | Path | None, managed_root: Path,
                     *, run=subprocess.run) -> RuntimeIdentity:
     ownership = runtime_ownership(location, managed_root)
@@ -77,7 +103,10 @@ def engine_runtime_version(engine_name: str, engine, *, run=subprocess.run) -> s
             return probe_vllm_server_version(server_url)
     location = getattr(engine, "runtime_location", lambda: None)()
     managed_root = config.LLAMACPP_DIR if engine_name == "llamacpp" else config.VLLM_VENV
-    return inspect_runtime(engine_name, location, managed_root, run=run).version
+    identity = inspect_runtime(engine_name, location, managed_root, run=run)
+    if engine_name == "llamacpp":
+        return source_commit_version(identity, managed_root, run=run)
+    return identity.version
 
 
 def probe_vllm_server_version(server_url: str, *, open_fn=urllib.request.urlopen,

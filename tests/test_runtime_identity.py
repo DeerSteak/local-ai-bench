@@ -4,8 +4,9 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.runtime_identity import (
-    engine_runtime_version, inspect_runtime, parse_runtime_version,
+    RuntimeIdentity, engine_runtime_version, inspect_runtime, parse_llamacpp_commit, parse_runtime_version,
     probe_vllm_server_health, probe_vllm_server_version, runtime_ownership,
+    source_commit_version,
 )
 
 
@@ -18,6 +19,11 @@ from scripts.setup.runtime_identity import (
 ])
 def test_parse_runtime_version_handles_engine_formats(output, expected):
     assert parse_runtime_version(output) == expected
+
+
+def test_parse_llamacpp_commit_reads_the_embedded_source_revision():
+    assert parse_llamacpp_commit("version: 1 (A1B2C3D4)") == "a1b2c3d4"
+    assert parse_llamacpp_commit("version: 7000") is None
 
 
 def test_runtime_ownership_distinguishes_managed_system_external_and_missing(tmp_path):
@@ -63,6 +69,58 @@ def test_engine_runtime_version_uses_the_engine_runtime_descriptor():
         ),
     )
     assert version == "7000"
+
+
+def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):
+    (tmp_path / ".git").mkdir()
+    identity = inspect_runtime(
+        "llamacpp", tmp_path / "build" / "bin" / "llama-server", tmp_path,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="version: 1 (a1b2c3d4e5f6)", stderr="", returncode=0,
+        ),
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(stdout="2026.08.11\n", stderr="", returncode=0)
+
+    assert source_commit_version(identity, tmp_path, run=run) == "2026.08.11-a1b2c3d"
+    assert calls[0][0][-1] == "a1b2c3d4e5f6"
+    assert calls[0][1]["env"]["TZ"] == "UTC"
+
+
+def test_source_build_version_falls_back_when_git_metadata_is_unavailable(tmp_path):
+    identity = inspect_runtime(
+        "llamacpp", tmp_path / "llama-server", tmp_path,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="version: 1 (a1b2c3d4)", stderr="", returncode=0,
+        ),
+    )
+    assert source_commit_version(identity, tmp_path) == "1"
+
+
+def test_engine_runtime_version_resolves_managed_llamacpp_source_commit(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    executable = tmp_path / "build" / "bin" / "llama-server"
+    monkeypatch.setattr("scripts.setup.runtime_identity.config.LLAMACPP_DIR", tmp_path)
+    engine = type("Engine", (), {"runtime_location": lambda self: executable})()
+
+    def run(command, **_kwargs):
+        if command[0] == "git":
+            return SimpleNamespace(stdout="2026.08.11\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout="version: 1 (a1b2c3d4)", stderr="", returncode=0)
+
+    assert engine_runtime_version("llamacpp", engine, run=run) == "2026.08.11-a1b2c3d"
+
+
+def test_source_build_version_rejects_malformed_git_date(tmp_path):
+    (tmp_path / ".git").mkdir()
+    identity = RuntimeIdentity(
+        "llamacpp", "app_managed", "/runtime", "1", "version: 1 (a1b2c3d4)",
+    )
+    run = lambda *_args, **_kwargs: SimpleNamespace(stdout="yesterday\n", stderr="", returncode=0)
+    assert source_commit_version(identity, tmp_path, run=run) == "1"
 
 
 def test_engine_runtime_version_is_absent_without_a_local_executable():
