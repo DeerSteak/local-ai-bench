@@ -151,6 +151,30 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     body.columnconfigure(0, weight=1)
     body.columnconfigure(1, weight=1)
 
+    output_box = ttk.LabelFrame(parent, text="Operation output", padding=8)
+    output_box.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+    output_box.columnconfigure(0, weight=1)
+    output_text = tk.Text(
+        output_box, height=10, wrap="word", state="disabled", font=("TkFixedFont", 10),
+    )
+    output_scroll = ttk.Scrollbar(output_box, orient="vertical", command=output_text.yview)
+    output_text.configure(yscrollcommand=output_scroll.set)
+    output_text.grid(row=0, column=0, sticky="ew")
+    output_scroll.grid(row=0, column=1, sticky="ns")
+
+    def clear_output():
+        output_text.configure(state="normal")
+        output_text.delete("1.0", "end")
+        output_text.configure(state="disabled")
+
+    def append_output(text):
+        def insert():
+            output_text.configure(state="normal")
+            output_text.insert("end", str(text))
+            output_text.see("end")
+            output_text.configure(state="disabled")
+        root.after(0, insert)
+
     def render(snapshot):
         for child in body.winfo_children():
             child.destroy()
@@ -256,7 +280,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 f"Update {label}", prompt, parent=root):
             return
         state["loading"] = True
-        control = RuntimeUpdateControl()
+        clear_output()
+        append_output(f"Starting {label} updateâ€¦\n")
+        control = RuntimeUpdateControl(append_output)
         active_control[0] = control
         refresh_button.configure(state="disabled")
         cancel_button.configure(state="normal")
@@ -291,7 +317,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 parent=root):
             return
         state["loading"] = True
-        control = RuntimeUpdateControl()
+        clear_output()
+        append_output(f"Starting verification for {model.tag}â€¦\n")
+        control = RuntimeUpdateControl(append_output)
         active_control[0] = control
         refresh_button.configure(state="disabled")
         cancel_button.configure(state="normal")

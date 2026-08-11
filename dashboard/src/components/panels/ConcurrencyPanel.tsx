@@ -25,9 +25,11 @@ export default function ConcurrencyPanel({ containerRef, files, sweetSpotFiles, 
 
   const modelGroups = allModels.map(model => {
     const tpsData = buildConcurrencyDataForModel(files, section, model, "tps");
+    const prefillData = buildConcurrencyDataForModel(files, section, model, "prefill");
     const aggData = buildConcurrencyDataForModel(files, section, model, "aggregate");
     const ttftData = buildConcurrencyDataForModel(files, section, model, "ttft");
     const tpsLineConfigs = lineConfigs.filter(lc => tpsData.some(r => r[lc.dataKey] != null));
+    const prefillLineConfigs = lineConfigs.filter(lc => prefillData.some(r => r[lc.dataKey] != null));
     const aggLineConfigs = lineConfigs.filter(lc => aggData.some(r => r[lc.dataKey] != null));
     const ttftLineConfigs = lineConfigs.filter(lc => ttftData.some(r => r[lc.dataKey] != null));
 
@@ -44,11 +46,12 @@ export default function ConcurrencyPanel({ containerRef, files, sweetSpotFiles, 
       .map(f => ({ hostname: f.hostname, info: getConcurrencySweetSpot(f, section, model) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
 
-    const hasAny = tpsLineConfigs.length > 0 || aggLineConfigs.length > 0 || ttftLineConfigs.length > 0;
+    const hasAny = tpsLineConfigs.length > 0 || prefillLineConfigs.length > 0
+      || aggLineConfigs.length > 0 || ttftLineConfigs.length > 0;
     if (!hasAny && !skipEntries.length && !stopEntries.length) return null;
     return {
-      model, tpsData, aggData, ttftData,
-      tpsLineConfigs, aggLineConfigs, ttftLineConfigs,
+      model, tpsData, prefillData, aggData, ttftData,
+      tpsLineConfigs, prefillLineConfigs, aggLineConfigs, ttftLineConfigs,
       ttftUnit, ttftYLabel, skipEntries, stopEntries, sweetSpots,
     };
   }).filter(isNotNull);
@@ -112,6 +115,17 @@ export default function ConcurrencyPanel({ containerRef, files, sweetSpotFiles, 
               xKey="levelLabel" xLabel="Concurrency Level" yLabel="Tokens/sec" unit="tps"
               isMultiFile={isMultiFile}
               chartName={`${chartPrefix}_aggregate`} chartModel={g.model}
+              logoSrc={logoSrc} direction="higher"
+            />
+          )}
+          {g.prefillLineConfigs.length > 0 && (
+            <ChartCard
+              title="Prefill Tokens/sec"
+              modelName={modelLabel(g.model)}
+              data={g.prefillData} lineConfigs={g.prefillLineConfigs}
+              xKey="levelLabel" xLabel="Concurrency Level" yLabel="Tokens/sec" unit="tps"
+              isMultiFile={isMultiFile}
+              chartName={`${chartPrefix}_prefill`} chartModel={g.model}
               logoSrc={logoSrc} direction="higher"
             />
           )}

@@ -6,9 +6,11 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import urllib.request
 import uuid
+from typing import Callable
 
 import psutil
 
@@ -32,10 +34,25 @@ class RuntimeUpdateResult:
 
 
 class RuntimeUpdateControl:
-    def __init__(self):
+    def __init__(self, output: Callable[[str], None] | None = None):
         self._cancelled = threading.Event()
         self._lock = threading.Lock()
         self._process = None
+        self._output = output
+
+    def emit(self, text: str | bytes) -> None:
+        if self._output is not None and text:
+            decoded = text.decode("utf-8", errors="replace") if isinstance(text, bytes) else text
+            try:
+                sys.stdout.write(decoded)
+            except UnicodeEncodeError:
+                encoding = sys.stdout.encoding or "utf-8"
+                sys.stdout.write(decoded.encode(encoding, errors="replace").decode(encoding))
+            sys.stdout.flush()
+            self._output(decoded)
+
+    def log(self, text: str) -> None:
+        self.emit(f"{text}\n")
 
     @property
     def cancelled(self) -> bool:
@@ -67,16 +84,46 @@ class RuntimeUpdateControl:
         capture_output = kwargs.pop("capture_output", False)
         if capture_output:
             kwargs["stdout"], kwargs["stderr"] = subprocess.PIPE, subprocess.PIPE
+        stream_output = self._output is not None and "stdout" not in kwargs and "stderr" not in kwargs
+        if stream_output:
+            kwargs["stdout"], kwargs["stderr"] = subprocess.PIPE, subprocess.STDOUT
+            kwargs.setdefault("text", True)
+            if kwargs["text"]:
+                kwargs.setdefault("encoding", "utf-8")
+                kwargs.setdefault("errors", "replace")
+            kwargs.setdefault("bufsize", 1)
+            env = dict(kwargs.get("env") or os.environ)
+            env.setdefault("PYTHONIOENCODING", "utf-8")
+            kwargs["env"] = env
         if os.name == "nt":
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs.setdefault("start_new_session", True)
         process = subprocess.Popen(command, **kwargs)
         self.track_process(process)
+        output_parts = []
+        reader = None
+        if stream_output:
+            def read_output():
+                assert process.stdout is not None
+                for chunk in process.stdout:
+                    output_parts.append(chunk)
+                    self.emit(chunk)
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
         try:
             while True:
                 try:
-                    stdout, stderr = process.communicate(timeout=0.2)
+                    if stream_output:
+                        process.wait(timeout=0.2)
+                        assert reader is not None
+                        reader.join()
+                        stdout, stderr = "".join(output_parts), None
+                    else:
+                        stdout, stderr = process.communicate(timeout=0.2)
+                        if capture_output:
+                            self.emit(stdout or "")
+                            self.emit(stderr or "")
                     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
                 except subprocess.TimeoutExpired:
                     if self.cancelled:

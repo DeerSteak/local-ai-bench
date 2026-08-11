@@ -32,15 +32,12 @@
   margin-top: 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .fileIdentity {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  display: contents;
 }
 
 .tagHostname {

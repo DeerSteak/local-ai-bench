@@ -21,8 +21,8 @@ export function getAllConcurrencyModels(files: ResultsFile[], section: string): 
 }
 
 // Concurrency: one chart per model. X = concurrency level, lines = files.
-// metric: "tps" (per-request tokens/sec), "ttft", or "aggregate" (aggregate
-// tokens/sec across the whole concurrent batch).
+// metric: "tps" (per-request decode), "prefill" (server-reported prompt
+// processing), "ttft", or "aggregate" (whole concurrent batch).
 export function buildConcurrencyDataForModel(files: ResultsFile[], section: string, model: string, metric: string): ChartRow[] {
   const allLevels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
   const levelSet = new Set<string>();
@@ -36,6 +36,7 @@ export function buildConcurrencyDataForModel(files: ResultsFile[], section: stri
       const s = f.data[section]?.[model]?.[level];
       if (!s) return;
       row[`f${fi}`] = metric === "tps" ? s.tps_mean
+        : metric === "prefill" ? s.prefill_tps_mean
         : metric === "ttft" ? ttftMean(s)
         : s.aggregate_tps;
     });
@@ -93,6 +94,7 @@ export function flattenConcurrencyData(files: ResultsFile[], section: string) {
         return {
           _fileId: f.id, model, level,
           tps_mean: s.tps_mean, tps_stdev: s.tps_stdev,
+          prefill_tps_mean: s.prefill_tps_mean, prefill_tps_stdev: s.prefill_tps_stdev,
           aggregate_tps: s.aggregate_tps,
           ttft_mean: ttftMean(s),
           ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,

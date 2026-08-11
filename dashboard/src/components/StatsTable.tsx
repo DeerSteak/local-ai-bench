@@ -168,6 +168,8 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <SortTh label="Level" sortKey="level" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="TPS" sortKey="tps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
+          <SortTh label="Prefill TPS" sortKey="prefill_tps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <th className={styles.th}>± stdev</th>
           <SortTh label="Aggregate TPS" sortKey="aggregate_tps" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
@@ -179,7 +181,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={7}>
+            <td className={styles.td} colSpan={9}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -190,6 +192,8 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
             <td className={`${styles.td} ${styles.tdCtx}`}>{r.level}-way</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.tps_mean, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.tps_stdev, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.prefill_tps_mean, "tps")}</td>
+            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.prefill_tps_stdev, "tps")}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.aggregate_tps, "tps")}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>

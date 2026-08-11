@@ -74,7 +74,7 @@ describe("buildConcurrencyDataForModel", () => {
     data: {
       concurrency_chat: {
         m: {
-          "1": { tps_mean: 28.3, ttft_mean_sec: 31.35, aggregate_tps: 7.79, client_ttft_mean_sec: undefined as number | undefined },
+          "1": { tps_mean: 28.3, prefill_tps_mean: 412.6, ttft_mean_sec: 31.35, aggregate_tps: 7.79, client_ttft_mean_sec: undefined as number | undefined },
           "2": { tps_mean: 11.4, ttft_mean_sec: 36.29, aggregate_tps: 7.53 },
           "4": { tps_mean: 3.9, ttft_mean_sec: 45.29, aggregate_tps: 6.13 },
           stopped_at: "failed",
@@ -90,6 +90,11 @@ describe("buildConcurrencyDataForModel", () => {
   it("picks ttft_mean_sec for the ttft metric and aggregate_tps for the aggregate metric", () => {
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "ttft")[0].f0).toBe(31.35);
     expect(buildConcurrencyDataForModel(files, "concurrency_chat", "m", "aggregate")[0].f0).toBe(7.79);
+  });
+  it("uses only genuine server-reported prefill throughput and preserves missing values", () => {
+    const rows = buildConcurrencyDataForModel(files, "concurrency_chat", "m", "prefill");
+    expect(rows[0].f0).toBe(412.6);
+    expect(rows[1].f0).toBeUndefined();
   });
   it("prefers explicit client TTFT over the legacy field", () => {
     const explicit = structuredClone(files);
@@ -150,7 +155,7 @@ describe("flattenConcurrencyData", () => {
       data: {
         concurrency_chat: {
           m: {
-            "1": { tps_mean: 28.3, tps_stdev: 0, aggregate_tps: 7.79, ttft_mean_sec: 31.35, ttft_stdev_sec: 0, total_tokens: 337 },
+            "1": { tps_mean: 28.3, tps_stdev: 0, prefill_tps_mean: 412.6, prefill_tps_stdev: 8.2, aggregate_tps: 7.79, ttft_mean_sec: 31.35, ttft_stdev_sec: 0, total_tokens: 337 },
             stopped_at: "failed",
           },
         },
@@ -161,6 +166,7 @@ describe("flattenConcurrencyData", () => {
     expect(rows[0]).toEqual({
       _fileId: "f1", model: "m", level: "1",
       tps_mean: 28.3, tps_stdev: 0, aggregate_tps: 7.79,
+      prefill_tps_mean: 412.6, prefill_tps_stdev: 8.2,
       ttft_mean: 31.35, ttft_stdev: 0, total_tokens: 337,
     });
   });

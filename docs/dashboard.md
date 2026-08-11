@@ -82,6 +82,8 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 **Concurrency → Aggregate Tokens/sec.** Total tokens generated across every concurrent request in the batch, divided by that batch's real wall-clock duration (including each request's TTFT, not just decode time). Higher is better. This is the number that shows overall system capacity — on hardware with real batching headroom it climbs with concurrency before eventually plateauing or declining; on memory/bandwidth-constrained hardware with no spare headroom, it can decline from the very first step instead, meaning concurrency only adds contention rather than paying off.
 
+**Concurrency → Prefill Tokens/sec.** Per-request prompt-processing throughput calculated only from an engine-reported prompt token count and server-side prompt duration. Higher is better. The chart is omitted when no attributable server timing is available; it never estimates prefill throughput from client-observed TTFT. This normally provides llama.cpp data, while concurrent vLLM requests remain absent because its shared metrics histogram cannot safely attribute prompt time to one request.
+
 Each concurrency model group identifies its **sweet spot**: the lowest tested concurrency level that achieved the maximum aggregate throughput. The badge also reports the per-request throughput tradeoff relative to the one-request measurement when both values are available.
 
 **Concurrency → TTFT.** Time to first token for one request in the batch, including any contention from the other simultaneous requests. Lower is better. Rises with concurrency for the same reason Per-Request Tokens/sec falls — everything in the batch is competing for the same underlying resources.

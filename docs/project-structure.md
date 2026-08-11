@@ -84,7 +84,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
-| `app/engine_management.py` | Read-only Engine Management tab, runtime refresh, and copied diagnostics |
+| `app/engine_management.py` | Engine status, runtime updates, model verification, and mirrored operation output |
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |

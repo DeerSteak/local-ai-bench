@@ -1,5 +1,6 @@
 from pathlib import Path
 import subprocess
+import sys
 from types import SimpleNamespace
 
 from scripts.setup.runtime_update import (
@@ -21,6 +22,20 @@ def test_runtime_update_control_prevents_commands_after_cancellation():
     result = control.run(["never-run"])
     assert result.returncode == -1
     assert result.stderr == "update cancelled"
+
+
+def test_runtime_update_control_streams_utf8_output(capsys):
+    output = []
+    control = RuntimeUpdateControl(output.append)
+
+    result = control.run([
+        sys.executable, "-c", "print('Downloading â€” 50% âœ“')",
+    ])
+
+    assert result.returncode == 0
+    assert result.stdout == "Downloading â€” 50% âœ“\n"
+    assert output == ["Downloading â€” 50% âœ“\n"]
+    assert capsys.readouterr().out == "Downloading â€” 50% âœ“\n"
 
 
 def test_vllm_executable_uses_platform_venv_layout():

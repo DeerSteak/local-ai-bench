@@ -846,7 +846,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         support = vllm_update_support(status, setup, platform.machine())
         if support is None:
             return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
-        return update_managed_vllm(support, config.VLLM_VENV, control=control)
+        return update_managed_vllm(
+            support, config.VLLM_VENV, control=control, log=control.log,
+        )
 
     def perform_llamacpp_update(control):
         snapshot = collect_engine_management(get_engine, hardware_backend)
@@ -859,7 +861,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             )
         if not status.managed:
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
-        return rebuild_managed_llamacpp(config.LLAMACPP_DIR, status.backend, control=control)
+        return rebuild_managed_llamacpp(
+            config.LLAMACPP_DIR, status.backend, control=control, log=control.log,
+        )
 
     def perform_llamacpp_model_probe(tag, control):
         engine = get_engine("llamacpp")
