@@ -82,6 +82,8 @@ All model, file, category, context, image, embedding, and fallback data colors m
 
 **Concurrency → Aggregate Tokens/sec.** Total tokens generated across every concurrent request in the batch, divided by that batch's real wall-clock duration (including each request's TTFT, not just decode time). Higher is better. This is the number that shows overall system capacity — on hardware with real batching headroom it climbs with concurrency before eventually plateauing or declining; on memory/bandwidth-constrained hardware with no spare headroom, it can decline from the very first step instead, meaning concurrency only adds contention rather than paying off.
 
+Each concurrency model group identifies its **sweet spot**: the lowest tested concurrency level that achieved the maximum aggregate throughput. The badge also reports the per-request throughput tradeoff relative to the one-request measurement when both values are available.
+
 **Concurrency → TTFT.** Time to first token for one request in the batch, including any contention from the other simultaneous requests. Lower is better. Rises with concurrency for the same reason Per-Request Tokens/sec falls — everything in the batch is competing for the same underlying resources.
 
 A model's sweep can stop before reaching the highest configured level — a note above its charts explains why (load failure, engine crash, or failed/timed-out batch). Chat concurrency can also stop after a measured level of 8 or higher falls below the slow-model cutoff; tool concurrency has no slow-TPS soft exit. See [Concurrency](workloads.md#concurrency).

@@ -60,6 +60,24 @@ export function getConcurrencyStopInfo(file: ResultsFile, section: string, model
   return { reason: stoppedAt, label: lookup(CONCURRENCY_STOP_LABELS, stoppedAt) || stoppedAt, lastLevel, nextLevel };
 }
 
+export function getConcurrencySweetSpot(file: ResultsFile, section: string, model: string) {
+  const levels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
+  const data = file.data[section]?.[model];
+  const candidates = levels
+    .map(level => ({ level, aggregateTps: data?.[level]?.aggregate_tps }))
+    .filter((entry): entry is { level: string, aggregateTps: number } =>
+      typeof entry.aggregateTps === "number" && Number.isFinite(entry.aggregateTps));
+  if (!candidates.length) return null;
+  const best = candidates.reduce((winner, entry) =>
+    entry.aggregateTps > winner.aggregateTps ? entry : winner);
+  const baseTps = Number(data?.[levels[0]]?.tps_mean);
+  const bestTps = Number(data?.[best.level]?.tps_mean);
+  const sacrificePct = Number.isFinite(baseTps) && baseTps > 0 && Number.isFinite(bestTps)
+    ? Math.max(0, (1 - bestTps / baseTps) * 100)
+    : null;
+  return { ...best, sacrificePct };
+}
+
 export function flattenConcurrencyData(files: ResultsFile[], section: string) {
   const allLevels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
   return files.flatMap(f =>

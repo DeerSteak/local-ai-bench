@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { buildConcurrencyDataForModel, getAllConcurrencyModels, getConcurrencyStopInfo } from "../../utils/concurrency";
+import { buildConcurrencyDataForModel, getAllConcurrencyModels, getConcurrencyStopInfo, getConcurrencySweetSpot } from "../../utils/concurrency";
 import { buildFileLineConfigs, modelLabel, getSkipInfo, deriveTtftUnit, lookup, isNotNull } from "../../utils/shared";
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard } from "../charts/ChartCards";
@@ -39,13 +39,16 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
     const stopEntries = files
       .map(f => ({ hostname: f.hostname, info: getConcurrencyStopInfo(f, section, model) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
+    const sweetSpots = files
+      .map(f => ({ hostname: f.hostname, info: getConcurrencySweetSpot(f, section, model) }))
+      .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
 
     const hasAny = tpsLineConfigs.length > 0 || aggLineConfigs.length > 0 || ttftLineConfigs.length > 0;
     if (!hasAny && !skipEntries.length && !stopEntries.length) return null;
     return {
       model, tpsData, aggData, ttftData,
       tpsLineConfigs, aggLineConfigs, ttftLineConfigs,
-      ttftUnit, ttftYLabel, skipEntries, stopEntries,
+      ttftUnit, ttftYLabel, skipEntries, stopEntries, sweetSpots,
     };
   }).filter(isNotNull);
 
@@ -58,6 +61,16 @@ export default function ConcurrencyPanel({ containerRef, files, section, enabled
       {modelGroups.map(g => (
         <div key={g.model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(g.model)}</div>
+          {g.sweetSpots.length > 0 && (
+            <div className={styles.sweetSpotRow}>
+              {g.sweetSpots.map(e => (
+                <div key={e.hostname} className={styles.sweetSpotBadge}>
+                  {isMultiFile ? `${e.hostname}: ` : ""}Sweet spot {e.info.level}-way · {e.info.aggregateTps.toFixed(1)} aggregate tps
+                  {e.info.sacrificePct != null ? ` · ${e.info.sacrificePct.toFixed(0)}% per-request tradeoff` : ""}
+                </div>
+              ))}
+            </div>
+          )}
           {g.skipEntries.length > 0 && (
             <div className={styles.skipNote}>
               {g.skipEntries.map(e => (
