@@ -17,21 +17,21 @@ function arrayPeer(candidate: JsonRecord, baseline: JsonRecord[]): JsonRecord | 
   return baseline.find(peer => keys.every(key => peer?.[key] === candidate[key]));
 }
 
-function deltaNode(candidate: JsonRecord[string], baseline: JsonRecord[string], key = ""): JsonRecord[string] {
+function relativeNode(candidate: JsonRecord[string], baseline: JsonRecord[string], key = ""): JsonRecord[string] {
   if (DELTA_FIELDS.has(key)) {
     if (typeof candidate !== "number" || typeof baseline !== "number" || !Number.isFinite(candidate)
         || !Number.isFinite(baseline) || baseline === 0) return undefined;
-    return (candidate - baseline) / Math.abs(baseline) * 100;
+    return candidate / baseline * 100;
   }
   if (Array.isArray(candidate)) {
     const peers = Array.isArray(baseline) ? baseline : [];
     return candidate.map((value, index) =>
-      deltaNode(value, arrayPeer(value, peers) ?? peers[index], key));
+      relativeNode(value, arrayPeer(value, peers) ?? peers[index], key));
   }
   if (!candidate || typeof candidate !== "object") return candidate;
   const result: JsonRecord = {};
   for (const [childKey, value] of Object.entries(candidate)) {
-    const transformed = deltaNode(value, baseline?.[childKey], childKey);
+    const transformed = relativeNode(value, baseline?.[childKey], childKey);
     if (transformed !== undefined) result[childKey] = transformed;
   }
   return result;
@@ -44,6 +44,6 @@ export function applyBaselineDeltas<T extends ResultsFile>(files: T[], baselineI
   return files.map(file => ({
     ...file,
     hostname: file === baseline ? `${file.hostname ?? "Baseline"} (baseline)` : file.hostname,
-    data: deltaNode(file.data, baseline.data),
+    data: relativeNode(file.data, baseline.data),
   }));
 }

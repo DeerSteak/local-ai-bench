@@ -15,10 +15,10 @@ describe("applyBaselineDeltas", () => {
     { id: "b", hostname: "New", data: { llm: { m: { "2K": { tps_mean: 50, n_runs: 3 } } } } },
   ];
 
-  it("turns matching chart metrics into percentage changes and keeps metadata absolute", () => {
+  it("turns matching chart metrics into percentages of the baseline and keeps metadata absolute", () => {
     const result = applyBaselineDeltas(files, "a");
-    expect(result[0].data.llm.m["2K"].tps_mean).toBe(0);
-    expect(result[1].data.llm.m["2K"].tps_mean).toBe(25);
+    expect(result[0].data.llm.m["2K"].tps_mean).toBe(100);
+    expect(result[1].data.llm.m["2K"].tps_mean).toBe(125);
     expect(result[1].data.llm.m["2K"].n_runs).toBe(3);
     expect(result[0].hostname).toBe("Old (baseline)");
   });
@@ -31,7 +31,7 @@ describe("applyBaselineDeltas", () => {
       { n_prompt: 2048, n_gen: 0, avg_ts: 100 },
     ] } } } };
     const result = applyBaselineDeltas([baseline, candidate], "a");
-    expect(result[1].data.llamabench.m.entries[0].avg_ts).toBe(25);
+    expect(result[1].data.llamabench.m.entries[0].avg_ts).toBe(125);
   });
 
   it("drops a metric when the baseline is missing or zero and leaves files unchanged without a baseline", () => {

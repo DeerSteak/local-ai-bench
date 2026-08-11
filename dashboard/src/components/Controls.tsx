@@ -126,9 +126,9 @@ export default function Controls({
             onChange={event => setBaselineId(event.target.value || null)}
           >
             <option value="">Absolute values</option>
-            {files.map(file => <option key={file.id} value={String(file.id)}>Δ vs {file.hostname}</option>)}
+            {files.map(file => <option key={file.id} value={String(file.id)}>% of {file.hostname}</option>)}
           </select>
-          {baselineId && <div className={styles.baselineNote}>Charts show Δ%; raw tables stay absolute.</div>}
+          {baselineId && <div className={styles.baselineNote}>Baseline is 100%; raw tables stay absolute.</div>}
         </div>
       )}
 
