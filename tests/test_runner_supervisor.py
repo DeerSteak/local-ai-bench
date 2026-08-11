@@ -80,6 +80,9 @@ def test_supervisor_start_owns_process_group_and_private_token(tmp_path):
     supervisor.start()
     assert captured["options"]["start_new_session"] is True
     assert captured["options"]["env"]["LOCAL_AI_BENCH_RUNNER_TOKEN"] == supervisor.ownership_token
+    assert captured["options"]["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert captured["options"]["encoding"] == "utf-8"
+    assert captured["options"]["errors"] == "replace"
     assert supervisor.ownership_token not in captured["command"]
 
 

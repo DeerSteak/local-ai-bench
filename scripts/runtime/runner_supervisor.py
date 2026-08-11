@@ -114,9 +114,11 @@ class RunnerSupervisor:
             raise RuntimeError("runner already started")
         environment = dict(os.environ)
         environment["LOCAL_AI_BENCH_RUNNER_TOKEN"] = self.ownership_token
+        environment["PYTHONIOENCODING"] = "utf-8"
         options = {
             "cwd": config.SCRIPT_DIR, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
-            "text": True, "bufsize": 1, "env": environment,
+            "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
+            "env": environment,
         }
         if self.system == "Windows":
             options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
