@@ -38,6 +38,14 @@ def test_model_progress_reports_usable_saved_results(monkeypatch, capsys):
     assert '"usable":true' in capsys.readouterr().out
 
 
+def test_model_progress_carries_stable_id_separately_from_display_label(monkeypatch, capsys):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    emit_model_finished("llm", "Model (custom)", model_id="model:tag")
+    payload = json.loads(capsys.readouterr().out.strip().removeprefix(PROGRESS_PREFIX))
+    assert payload["model"] == "Model (custom)"
+    assert payload["model_id"] == "model:tag"
+
+
 def _emit(capsys, **kwargs):
     emit_progress(**kwargs)
     line = capsys.readouterr().out.strip()

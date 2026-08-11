@@ -37,7 +37,7 @@ class LLMPrefillBenchmark:
             if not engine.reachable_or_abort():
                 break
 
-            emit_progress("model", "llm", "running", label)
+            emit_progress("model", "llm", "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -181,7 +181,7 @@ class LLMPrefillBenchmark:
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
-                emit_model_finished("llm", label, results.get(short))
+                emit_model_finished("llm", label, results.get(short), model_id=tag)
 
         if journal:
             journal.finish()

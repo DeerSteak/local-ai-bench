@@ -936,7 +936,7 @@ class Shared:
                 break
 
             if progress_stage:
-                emit_progress("model", progress_stage, "running", label)
+                emit_progress("model", progress_stage, "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
@@ -1074,7 +1074,7 @@ class Shared:
                 if answers_path:
                     Shared.write_answers_sidecar(answers_path, answers_out)
                 if progress_stage:
-                    emit_model_finished(progress_stage, label, results.get(short))
+                    emit_model_finished(progress_stage, label, results.get(short), model_id=tag)
 
         return results
 

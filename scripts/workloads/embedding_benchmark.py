@@ -78,7 +78,7 @@ class EmbeddingBenchmark:
             if not engine.reachable_or_abort():
                 break
 
-            emit_progress("model", "emb", "running", label)
+            emit_progress("model", "emb", "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -175,6 +175,6 @@ class EmbeddingBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("emb", label, results.get(short))
+                emit_model_finished("emb", label, results.get(short), model_id=tag)
 
         return results

@@ -120,7 +120,7 @@ class ConcurrencyBenchmark:
                 break
 
             progress_stage = stage_name
-            emit_progress("model", progress_stage, "running", label)
+            emit_progress("model", progress_stage, "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -293,7 +293,7 @@ class ConcurrencyBenchmark:
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
-                emit_model_finished(progress_stage, label, results.get(short))
+                emit_model_finished(progress_stage, label, results.get(short), model_id=tag)
 
         if journal:
             journal.finish()

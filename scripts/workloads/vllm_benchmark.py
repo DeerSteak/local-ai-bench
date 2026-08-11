@@ -225,7 +225,7 @@ class VllmBenchBenchmark:
         for model in models:
             tag, label, short = model["tag"], model["label"], model["short"]
             Shared.section(f"vllm bench ({engine.name}): {label}")
-            emit_progress("model", "vllmbench", "running", label)
+            emit_progress("model", "vllmbench", "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -296,5 +296,5 @@ class VllmBenchBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("vllmbench", label, results.get(short))
+                emit_model_finished("vllmbench", label, results.get(short), model_id=tag)
         return results

@@ -232,7 +232,7 @@ class LlamaBenchBenchmark:
             tag, label, short = model["tag"], model["label"], model["short"]
             Shared.section(f"llama-bench ({engine.name}): {label}")
 
-            emit_progress("model", "llamabench", "running", label)
+            emit_progress("model", "llamabench", "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -336,7 +336,7 @@ class LlamaBenchBenchmark:
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
-                emit_model_finished("llamabench", label, results.get(short))
+                emit_model_finished("llamabench", label, results.get(short), model_id=tag)
 
         if journal:
             journal.finish()

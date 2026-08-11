@@ -190,7 +190,7 @@ class LlamaBenchConcurrencyBenchmark:
             tag, label, short = model["tag"], model["label"], model["short"]
             Shared.section(f"llama-batched-bench ({engine.name}): {label}")
 
-            emit_progress("model", "llamabenchconc", "running", label)
+            emit_progress("model", "llamabenchconc", "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -255,6 +255,6 @@ class LlamaBenchConcurrencyBenchmark:
             finally:
                 if save_fn:
                     save_fn(results)
-                emit_model_finished("llamabenchconc", label, results.get(short))
+                emit_model_finished("llamabenchconc", label, results.get(short), model_id=tag)
 
         return results

@@ -26,7 +26,7 @@ from scripts.app.benchmark_gui import (
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
-    progress_event_engine,
+    progress_event_engine, progress_model_identity,
     progress_summary_rows, recovery_executor_command, recovery_progress_entries,
     reconcile_imported_model_state,
     resolve_preset, retry_executor_command,
@@ -347,7 +347,9 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
         effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
     )
     entries = recovery_progress_entries(plan)
-    assert [(entry.kind, entry.label) for entry in entries] == [("llm", "Gemma 3 1B")]
+    assert [(entry.kind, entry.value, entry.label) for entry in entries] == [
+        ("llm", tag, "Gemma 3 1B"),
+    ]
     assert recovery_progress_entries(plan, {"other"}) == []
 
 
@@ -409,6 +411,11 @@ def test_progress_line_parser_accepts_only_supported_structured_events():
         '"status":"complete","path":"C:\\\\results\\\\run.json"}'
     )
     assert result_event is not None and result_event["path"] == "C:\\results\\run.json"
+
+
+def test_progress_model_identity_prefers_stable_id_over_custom_display_label():
+    event = {"model": "nemotron:30b (custom)", "model_id": "nemotron:30b"}
+    assert progress_model_identity(event) == "nemotron:30b"
 
 
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():

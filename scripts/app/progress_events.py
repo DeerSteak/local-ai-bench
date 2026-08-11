@@ -34,7 +34,8 @@ def emit_progress(kind: str, stage: str, status: str, model: str | None = None,
     sys.stdout.flush()
 
 
-def emit_model_finished(stage: str, model: str, result: dict | None = None) -> None:
+def emit_model_finished(stage: str, model: str, result: dict | None = None,
+                        model_id: str | None = None) -> None:
     exc_type = sys.exc_info()[0]
     if exc_type is None:
         status = "complete"
@@ -46,6 +47,8 @@ def emit_model_finished(stage: str, model: str, result: dict | None = None) -> N
     if result is not None:
         counts = model_counts({"model": result})
         details["usable"] = counts["models_with_results"] == 1
+    if model_id is not None:
+        details["model_id"] = model_id
     emit_progress("model", stage, status, model, **details)
 
 

@@ -291,11 +291,17 @@ def parse_progress_line(line: str) -> dict | None:
         return None
     if event["kind"] in {"model", "measurement"} and not isinstance(event.get("model"), str):
         return None
+    if "model_id" in event and not isinstance(event["model_id"], str):
+        return None
     if event["kind"] == "result" and not isinstance(event.get("path"), str):
         return None
     if "usable" in event and not isinstance(event["usable"], bool):
         return None
     return event
+
+
+def progress_model_identity(event: dict) -> str:
+    return event.get("model_id", event["model"])
 
 
 def update_progress_metrics(metrics: dict, event: dict) -> dict:
@@ -305,7 +311,7 @@ def update_progress_metrics(metrics: dict, event: dict) -> dict:
         updated[key] += 1
     elif event["kind"] == "model" and event["status"] in {
             "complete", "skipped", "failed", "interrupted"}:
-        identity = (event["stage"], event["model"])
+        identity = (event["stage"], progress_model_identity(event))
         finished = set(updated["finished_models"])
         finished.add(identity)
         updated["finished_models"] = finished
@@ -572,7 +578,7 @@ def recovery_progress_entries(plan, model_shorts=None) -> list:
                 continue
             seen.add(key)
             entries.append(SimpleNamespace(
-                checked=True, kind=kind,
+                checked=True, kind=kind, value=key[1],
                 label=labels.get(model.get("tag"), model.get("tag") or model.get("short")),
             ))
     return entries
@@ -2519,7 +2525,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                         side="left", anchor="w", fill="x", expand=True,
                     )
                     variable = tk.StringVar(value="○ Queued")
-                    model_progress_vars[(engine_name, stage, entry.label)] = variable
+                    model_progress_vars[(engine_name, stage, entry.value)] = variable
                     ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")
         progress_window.lift()
 
@@ -2535,7 +2541,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if engine_name is None:
             return
         if event["kind"] == "model":
-            variable = model_progress_vars.get((engine_name, event["stage"], event["model"]))
+            variable = model_progress_vars.get(
+                (engine_name, event["stage"], progress_model_identity(event)),
+            )
         else:
             variable = stage_progress_vars.get((engine_name, event["stage"]))
         if variable is None:
