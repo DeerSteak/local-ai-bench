@@ -35,7 +35,10 @@ def completed_run_duration_seconds(result: dict) -> float | None:
     started, finished = _timestamp(run.get("started_at")), _timestamp(run.get("finished_at"))
     if started is None or finished is None:
         return None
-    seconds = (finished - started).total_seconds()
+    try:
+        seconds = (finished - started).total_seconds()
+    except TypeError:
+        return None
     return seconds if seconds > 0 else None
 
 

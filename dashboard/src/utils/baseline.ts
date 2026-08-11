@@ -9,6 +9,7 @@ const DELTA_FIELDS = new Set([
 const IDENTITY_FIELDS = ["n_prompt", "n_depth", "n_gen", "pp", "tg", "pl", "input_len", "output_len"];
 
 function arrayPeer(candidate: JsonRecord, baseline: JsonRecord[]): JsonRecord | undefined {
+  if (!candidate || typeof candidate !== "object") return undefined;
   const keys = IDENTITY_FIELDS.filter(key => candidate[key] != null);
   if (!keys.length) return undefined;
   return baseline.find(peer => keys.every(key => peer?.[key] === candidate[key]));

@@ -33,4 +33,12 @@ describe("applyBaselineDeltas", () => {
     expect(applyBaselineDeltas([baseline, candidate], "a")[1].data.llm.m["2K"].tps_mean).toBeUndefined();
     expect(applyBaselineDeltas(files, null)).toBe(files);
   });
+
+  it("preserves nulls and primitives in unrelated evidence arrays", () => {
+    const baseline = { id: "a", data: { evidence: [null, 3, "legacy"] } };
+    const candidate = { id: "b", data: { evidence: [null, 4, "current"] } };
+    expect(applyBaselineDeltas([baseline, candidate], "a")[1].data.evidence).toEqual([
+      null, 4, "current",
+    ]);
+  });
 });

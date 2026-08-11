@@ -12,6 +12,9 @@ def test_completed_duration_requires_a_positive_completed_interval():
     assert completed_run_duration_seconds(result) == 150
     result["run"]["status"] = "interrupted"
     assert completed_run_duration_seconds(result) is None
+    result["run"].update(status="complete", started_at="2026-01-01T10:00:00",
+                         finished_at="2026-01-01T10:02:30Z")
+    assert completed_run_duration_seconds(result) is None
 
 
 def test_eta_uses_only_exact_completed_plan_matches(tmp_path):
