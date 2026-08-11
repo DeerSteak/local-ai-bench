@@ -14,7 +14,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
-from scripts.app.progress_events import PROGRESS_PREFIX, set_progress_engine
+from scripts.app.progress_events import PROGRESS_PREFIX, emit_result_saved, set_progress_engine
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
@@ -1264,6 +1264,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         finish_event_job(event_store_path(Path(out_path)), plan, "complete")
         apply_pause_evidence(results["run"])
         store.finish("complete")
+        emit_result_saved(out_path)
         Shared.ok(f"Results saved to: {out_path}")
 
     Shared.output("  Compare it against other machines in the dashboard:", leading_blank=True)

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from scripts.app.progress_events import (
-    PROGRESS_PREFIX, emit_model_finished, emit_progress, set_progress_engine,
+    PROGRESS_PREFIX, emit_model_finished, emit_progress, emit_result_saved, set_progress_engine,
 )
 
 
@@ -66,3 +66,14 @@ def test_engine_is_omitted_when_unset(monkeypatch, capsys):
     set_progress_engine(None)
     payload = _emit(capsys, kind="stage", stage="llm", status="running")
     assert payload is not None and "engine" not in payload
+
+
+def test_result_saved_uses_private_structured_progress_channel(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("LOCAL_AI_BENCH_PROGRESS", "1")
+    set_progress_engine(None)
+    result = tmp_path / "results_workstation.json"
+    emit_result_saved(result)
+    payload = json.loads(capsys.readouterr().out.strip().removeprefix(PROGRESS_PREFIX))
+    assert payload == {
+        "kind": "result", "stage": "run", "status": "complete", "path": str(result),
+    }

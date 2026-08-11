@@ -32,7 +32,8 @@ from scripts.app.benchmark_gui import (
     resolve_preset, retry_executor_command,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
-    resource_usage_rows, run_log_path, selected_result_paths, system_memory_usage,
+    record_result_path, resource_usage_rows, result_paths_for_log, run_log_path,
+    selected_result_paths, system_memory_usage,
     windows_host_utc_offset_minutes,
     write_run_logs,
     update_progress_metrics, workload_preflight_errors,
@@ -124,6 +125,29 @@ def test_run_log_sidecar_uses_result_suffix_and_completion_paths(tmp_path):
 
 def test_completed_result_paths_ignores_partial_save_messages():
     assert completed_result_paths("Partial results saved to /tmp/results_one.json (llm)\n") == []
+
+
+def test_completed_result_paths_rejects_redacted_home_placeholder():
+    log = r"Results saved to: <home>\projects\local-ai-bench\results\results_pc.json"
+    assert completed_result_paths(log) == []
+
+
+def test_trusted_result_paths_override_display_log_and_preserve_multiple(tmp_path):
+    trusted = [tmp_path / "results_pc_llamacpp.json", tmp_path / "results_pc_vllm.json"]
+    redacted = r"Results saved to: <home>\projects\results_pc_llamacpp.json"
+    paths = result_paths_for_log(redacted, trusted)
+    assert paths == [path.resolve() for path in trusted]
+    written = write_run_logs(redacted, paths)
+    assert written == [run_log_path(path) for path in trusted]
+    assert all(path.read_text(encoding="utf-8") == redacted for path in written)
+
+
+def test_structured_result_paths_accumulate_once_for_multi_engine_run(tmp_path):
+    first = tmp_path / "results_pc_llamacpp.json"
+    second = tmp_path / "results_pc_vllm.json"
+    paths = record_result_path([], str(first))
+    paths = record_result_path(paths, str(second))
+    assert record_result_path(paths, str(first)) == [first.resolve(), second.resolve()]
 
 
 def test_dashboard_launcher_command_passes_each_result_as_a_separate_argument(tmp_path):
@@ -363,7 +387,7 @@ def test_discovery_report_identifies_blockers_and_image_runtime_gap():
     assert report["issues"] == ["Image models are installed, but ComfyUI was not found."]
 
 
-def test_progress_line_parser_accepts_only_structured_stage_events():
+def test_progress_line_parser_accepts_only_supported_structured_events():
     assert parse_progress_line(
         '::local-ai-bench-progress::{"kind":"stage","stage":"llm","status":"running"}\n'
     ) == {"kind": "stage", "stage": "llm", "status": "running"}
@@ -380,6 +404,11 @@ def test_progress_line_parser_accepts_only_structured_stage_events():
         '"status":"retrying","model":"Qwen 2K run 1"}\n'
     )
     assert retrying_event is not None and retrying_event["status"] == "retrying"
+    result_event = parse_progress_line(
+        '::local-ai-bench-progress::{"kind":"result","stage":"run",'
+        '"status":"complete","path":"C:\\\\results\\\\run.json"}'
+    )
+    assert result_event is not None and result_event["path"] == "C:\\results\\run.json"
 
 
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():

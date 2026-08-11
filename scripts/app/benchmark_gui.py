@@ -158,9 +158,19 @@ def completed_result_paths(log: str) -> list[Path]:
     paths = []
     for line in log.splitlines():
         match = re.search(r"Results saved to:\s*(.+?)\s*$", line)
-        if match:
+        if match and "<home>" not in match.group(1).lower():
             paths.append(Path(match.group(1)).expanduser().resolve())
     return list(dict.fromkeys(paths))
+
+
+def result_paths_for_log(log: str, trusted_paths: list[Path]) -> list[Path]:
+    paths = trusted_paths or completed_result_paths(log)
+    return list(dict.fromkeys(Path(path).resolve() for path in paths))
+
+
+def record_result_path(paths: list[Path], value: str) -> list[Path]:
+    resolved = Path(value).resolve()
+    return paths if resolved in paths else [*paths, resolved]
 
 
 def write_run_logs(log: str, result_paths: list[Path]) -> list[Path]:
@@ -267,15 +277,21 @@ def parse_progress_line(line: str) -> dict | None:
         event = json.loads(line.removeprefix(PROGRESS_PREFIX))
     except json.JSONDecodeError:
         return None
-    if not isinstance(event, dict) or event.get("kind") not in {"stage", "model", "measurement"}:
+    if not isinstance(event, dict) or event.get("kind") not in {
+            "stage", "model", "measurement", "result"}:
         return None
-    statuses = ({"retrying", "valid", "invalid"} if event.get("kind") == "measurement"
-                else {"running", "complete", "skipped", "failed", "interrupted"})
+    statuses = (
+        {"retrying", "valid", "invalid"} if event.get("kind") == "measurement"
+        else {"complete"} if event.get("kind") == "result"
+        else {"running", "complete", "skipped", "failed", "interrupted"}
+    )
     if event.get("status") not in statuses:
         return None
     if not isinstance(event.get("stage"), str):
         return None
     if event["kind"] in {"model", "measurement"} and not isinstance(event.get("model"), str):
+        return None
+    if event["kind"] == "result" and not isinstance(event.get("path"), str):
         return None
     if "usable" in event and not isinstance(event["usable"], bool):
         return None
@@ -1464,7 +1480,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if not log:
             messagebox.showinfo("Export Log", "The Run Log is empty.", parent=root)
             return
-        known_results = completed_result_paths(log) or active_result_paths[:1]
+        known_results = result_paths_for_log(log, active_result_paths[:1])
         suggested = run_log_path(known_results[0]) if known_results else config.RESULTS_DIR / "run_log.txt"
         destination = filedialog.asksaveasfilename(
             title="Export Run Log", initialdir=str(suggested.parent),
@@ -2547,7 +2563,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if exit_code == 0:
             try:
                 write_run_logs(
-                    current_log(), completed_result_paths(current_log()) or active_result_paths,
+                    current_log(), result_paths_for_log(current_log(), active_result_paths),
                 )
             except OSError as exc:
                 append_log(f"\nCould not save Run Log: {exc}\n")
@@ -2587,7 +2603,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     append_log(value)
                 elif kind == "progress":
                     process_output_activity_at = time.monotonic()
-                    update_progress(value)
+                    if value["kind"] == "result":
+                        active_result_paths[:] = record_result_path(
+                            active_result_paths, value["path"],
+                        )
+                    else:
+                        update_progress(value)
                 elif process is not None:
                     finish_active_process(value)
         except queue.Empty:
@@ -2780,8 +2801,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         begin_process_control(control_path)
         pending_fork_source = None
         active_process_kind = "benchmark"
-        explicit_output = gui_options.get("out", "").strip()
-        active_result_paths = [Path(explicit_output).expanduser().resolve()] if explicit_output else []
+        active_result_paths = []
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")

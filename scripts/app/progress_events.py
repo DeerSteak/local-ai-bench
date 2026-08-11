@@ -47,3 +47,7 @@ def emit_model_finished(stage: str, model: str, result: dict | None = None) -> N
         counts = model_counts({"model": result})
         details["usable"] = counts["models_with_results"] == 1
     emit_progress("model", stage, status, model, **details)
+
+
+def emit_result_saved(path) -> None:
+    emit_progress("result", "run", "complete", path=str(path))
