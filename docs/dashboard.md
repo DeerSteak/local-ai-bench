@@ -138,7 +138,7 @@ llama3.1-8b-q4_llamabench_prefill.png # llama-bench prefill section
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
 
-Every loaded result also renders a **Shareable Run Card** with its system, runtime, RAM, suite version, and the fastest decode/lowest-TTFT model in each represented tier. Current results use the shared 2K cold-prefill checkpoint; historical files without 2K use that tier's shallowest recorded canonical checkpoint and label it explicitly. **Spec Card** exports these cards as `<system>_run_card.png`; an uploaded logo is included.
+Every loaded result also renders a **Shareable Run Card** with its system, runtime, RAM, suite version, and the fastest decode/lowest-TTFT model in each represented tier. Current results use the shared 2K single-shot checkpoint; historical files without 2K use that tier's shallowest recorded canonical checkpoint and label it explicitly. **Spec Card** exports these cards as `<system>_run_card.png`; an uploaded logo is included.
 
 A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.ts` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 

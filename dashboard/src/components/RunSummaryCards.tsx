@@ -26,7 +26,7 @@ export default function RunSummaryCards({ files, containerRef, logoSrc }: {
                 {file.engine && <span>{file.engine}{file.engineVersion ? ` ${file.engineVersion}` : ""}</span>}
                 {file.version && <span>suite v{file.version}</span>}
               </div>
-              <div className={styles.context}>Cold-prefill leaders by model tier</div>
+              <div className={styles.context}>Single-shot leaders by model tier</div>
               {tiers.length ? (
                 <div className={styles.tiers}>
                   {tiers.map(tier => (
