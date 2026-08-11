@@ -3,6 +3,8 @@
 import json
 import math
 import shutil
+import statistics
+from datetime import datetime
 from pathlib import Path
 
 from scripts.results.result_store import as_dict, validate_json_data
@@ -15,6 +17,56 @@ PERFORMANCE_METRICS = {
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }
 ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
+
+
+def _timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def completed_run_duration_seconds(result: dict) -> float | None:
+    run = as_dict(result.get("run"))
+    if run.get("status") != "complete":
+        return None
+    started, finished = _timestamp(run.get("started_at")), _timestamp(run.get("finished_at"))
+    if started is None or finished is None:
+        return None
+    seconds = (finished - started).total_seconds()
+    return seconds if seconds > 0 else None
+
+
+def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str],
+                                   models: dict[str, list[dict]]) -> float | None:
+    """Median duration for exact local plan matches; unmatched history is not an ETA."""
+    expected_models = {
+        family: sorted(str(model.get("short")) for model in entries)
+        for family, entries in models.items()
+    }
+    durations = []
+    for path in Path(directory).glob("*.json") if Path(directory).exists() else ():
+        try:
+            result = load_result(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        run = as_dict(result.get("run"))
+        plan = as_dict(run.get("plan"))
+        actual_models = {
+            family: sorted(str(model.get("short")) for model in entries)
+            for family, entries in as_dict(plan.get("models")).items()
+            if isinstance(entries, list)
+        }
+        if ((result.get("engine") or run.get("engine")) != engine
+                or plan.get("requested_tests") != tests
+                or actual_models != expected_models):
+            continue
+        duration = completed_run_duration_seconds(result)
+        if duration is not None:
+            durations.append(duration)
+    return statistics.median(durations) if durations else None
 
 
 def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]:

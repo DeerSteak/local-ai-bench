@@ -50,6 +50,7 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
+from scripts.results.result_history import estimate_matching_plan_seconds
 from typing import Callable, Protocol
 
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
@@ -177,6 +178,57 @@ def apply_quick_preset(args) -> None:
     args.max_prompt_tokens = 2048
     args.maxtier = "xsmall"
     args.llm_models = [LLM_MODELS_XSMALL[0]["tag"]]
+
+
+def format_duration_estimate(seconds: float | None) -> str:
+    if seconds is None:
+        return "unavailable — no exact completed local plan match"
+    minutes = max(1, round(seconds / 60))
+    return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
+
+
+def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
+                         estimate_seconds: float | None, *, runs: int, warmups: int,
+                         max_prompt_tokens: int | None, sample_size: int | None) -> str:
+    family_for = {
+        "emb": "embeddings", "img": "images", "conc_tool": "concurrency",
+        "conc_chat": "concurrency",
+    }
+    lines = [f"Engine: {engine}", f"Workloads: {', '.join(tests)}"]
+    for test in tests:
+        family = family_for.get(test, "llm")
+        labels = [str(model.get("label") or model.get("short") or "")
+                  for model in models[family]]
+        if test == "llm":
+            cases = f"contexts {', '.join(map(str, config.CONTEXT_LENGTHS))}"
+        elif test == "conv":
+            from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
+            cap = max_prompt_tokens or max(LLMConversationBenchmark.CONV_CHECKPOINTS)
+            checkpoints = [value for value in LLMConversationBenchmark.CONV_CHECKPOINTS if value <= cap]
+            cases = f"checkpoints {', '.join(map(str, checkpoints))}"
+        elif test == "llamabench":
+            cases = f"pp {config.LLAMABENCH_PP}; tg {config.LLAMABENCH_TG}"
+        elif test == "llamabenchconc":
+            cases = f"pp {config.LLAMABENCH_CONC_PP}; tg {config.LLAMABENCH_CONC_TG}; concurrency {config.LLAMABENCH_CONC_NPL}"
+        elif test == "vllmbench":
+            cases = f"input {config.VLLMBENCH_INPUT}; output {config.VLLMBENCH_OUTPUT}"
+        elif test == "conc_tool":
+            cases = f"levels {config.CONCURRENCY_TOOL_LEVELS}"
+        elif test == "conc_chat":
+            cases = f"levels {config.CONCURRENCY_CHAT_LEVELS}"
+        elif test == "img":
+            cases = "; ".join(
+                f"{model['short']}={model.get('resolutions', config.IMAGE_RESOLUTIONS)}"
+                for model in models[family]
+            )
+        elif test in ACCURACY_TESTS:
+            cases = "full question bank" if sample_size is None else f"{sample_size} sampled questions"
+        else:
+            cases = "one document"
+        lines.append(f"  {test}: {', '.join(labels) or '(no models)'} — {cases}")
+    lines.append(f"Runs: {runs} measured + {warmups} warmup")
+    lines.append(f"Estimated duration: {format_duration_estimate(estimate_seconds)}")
+    return "\n".join(lines)
 
 
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
@@ -504,6 +556,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and output-path options still apply.",
     )
     parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the fully resolved engines, models, workloads, checkpoints, and an "
+             "ETA from exact matching local result history, then exit without benchmarking.",
+    )
+    parser.add_argument(
         "--tests", nargs="+",
         choices=TEST_CHOICES,
         default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
@@ -747,6 +804,31 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         for error in validation_errors:
             Shared.err(error)
         sys.exit(2)
+
+    if args.dry_run:
+        for run_idx, engine_scope in enumerate(engine_scopes):
+            include_images = len(engine_scopes) == 1 or run_idx == 0
+            tests = engine_pass_tests(args.tests, engine_scope["name"], include_images=include_images)
+            if not tests:
+                continue
+            plan_models = selected_plan_models(
+                tests, engine_scope["llm_models"], engine_scope["concurrency_models"],
+                embedding_models, image_models,
+            )
+            estimate = estimate_matching_plan_seconds(
+                config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
+            )
+            display_models = {
+                "llm": engine_scope["llm_models"],
+                "concurrency": engine_scope["concurrency_models"],
+                "embeddings": embedding_models, "images": image_models,
+            }
+            Shared.output(format_resolved_plan(
+                engine_scope["name"], tests, display_models, estimate,
+                runs=args.runs, warmups=args.warmup,
+                max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
+            ))
+        return
 
     hardware_profile = Shared.build_profile()
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
