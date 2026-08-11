@@ -226,6 +226,15 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a (llamacpp -nr 7000)");
   });
 
+  it("omits no-repack from labels for workloads that do not consume it", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
+      data: { run: { effective_config: { llamacpp_no_repack: true } } },
+    }];
+    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a (llamacpp 7000)");
+    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a (llamacpp 7000)");
+  });
+
   it("labels a version even when an older result omitted its engine name", () => {
     const files: ResultsFile[] = [
       { id: 1, hostname: "host-a", engineVersion: "0.10.2", data: {} },

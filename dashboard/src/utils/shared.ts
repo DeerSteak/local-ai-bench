@@ -119,10 +119,11 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
 }
 
 // Runtime versions are always material comparison context.
-export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
+export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
     const noRepack = f.engine === "llamacpp"
+      && !["llamabench", "vllmbench"].includes(section || "")
       && f.data?.run?.effective_config?.llamacpp_no_repack === true;
     const engine = noRepack ? `${f.engine} -nr` : f.engine;
     if (f.engineVersion) {
@@ -140,7 +141,7 @@ export function applyEngineLabels<T extends ResultsFile>(files: T[]): T[] {
 }
 
 export function filesForSection<T extends ResultsFile>(files: T[], section: string): T[] {
-  return section === "images" ? files : applyEngineLabels(files);
+  return section === "images" ? files : applyEngineLabels(files, section);
 }
 
 export function fmt(v: number | null | undefined, unit: string): string {
