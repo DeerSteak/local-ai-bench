@@ -51,6 +51,26 @@ def _console_safe_text(value):
     return text.encode(encoding, errors="replace").decode(encoding)
 
 
+def _nvidia_gpu_summary(output):
+    devices = hardware.parse_nvidia_gpus(output)
+    if not devices:
+        return None, None
+    capacities = [device["vram_gb"] for device in devices if device["vram_gb"] is not None]
+    return devices[0]["name"], sum(capacities) if len(capacities) == len(devices) else None
+
+
+def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
+    lines = []
+    if cpu:
+        lines.append(f"{cpu} / {ram_gb:g} GB RAM")
+    elif ram_gb is not None:
+        lines.append(f"{ram_gb:g} GB RAM")
+    if gpu:
+        suffix = f" / {total_vram_gb:g} GB VRAM" if total_vram_gb is not None else ""
+        lines.append(f"{gpu}{suffix}")
+    return "\n".join(lines)
+
+
 class EngineTimeout(TimeoutError):
     """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
     had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
@@ -396,6 +416,7 @@ class Shared:
 
         elif system == "Windows":
             cpu = gpu = None
+            total_vram_gb = None
 
             def _ps_names(cim_class):
                 try:
@@ -416,12 +437,18 @@ class Shared:
             gpus = [n for n in _ps_names("Win32_VideoController") if n and n.lower() not in _skip]
             if gpus:
                 gpu = gpus[0]
-            if cpu and gpu:
-                return f"{cpu}\n{gpu} {ram_gb} GB"
-            elif cpu:
-                return f"{cpu}\n{ram_gb} GB"
-            elif gpu:
-                return f"{gpu} {ram_gb} GB"
+            try:
+                out = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+                     "--format=csv,noheader"],
+                    capture_output=True, text=True, timeout=10,
+                ).stdout
+                nvidia_gpu, total_vram_gb = _nvidia_gpu_summary(out)
+                gpu = nvidia_gpu or gpu
+            except Exception:
+                pass
+            if cpu or gpu:
+                return _machine_identity(cpu, gpu, ram_gb, total_vram_gb)
 
         elif system == "Linux":
             cpu = gpu = None
