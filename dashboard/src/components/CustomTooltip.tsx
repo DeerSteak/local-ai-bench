@@ -33,10 +33,12 @@ export default function CustomTooltip({ active = false, payload = null, label = 
       }));
   return (
     <div className={styles.tooltip}>
-      <div className={styles.xLabel}>{xPrefix ? `${xPrefix}: ` : ""}{groupLabel}</div>
+      <div className={`${styles.xLabel} ${String(groupLabel).includes("\n") ? styles.systemLabel : ""}`}>
+        {xPrefix ? `${xPrefix}: ` : ""}{groupLabel}
+      </div>
       {entries.map(entry => (
         <div key={`${entry.dataKey}-${entry.name}`} className={styles.row} style={{ color: entry.color }}>
-          <span style={{ whiteSpace: "pre-line" }}>{entry.name}</span>: <strong>{entry.status || fmt(entry.value, unit)}</strong>
+          <span className={String(entry.name).includes("\n") ? styles.systemLabel : ""} style={{ whiteSpace: "pre-line" }}>{entry.name}</span>: <strong>{entry.status || fmt(entry.value, unit)}</strong>
         </div>
       ))}
     </div>

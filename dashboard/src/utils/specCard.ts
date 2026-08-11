@@ -90,9 +90,9 @@ export function dashboardHostname(file: DisplayFile): string {
   };
   const ram = capacityLabel("RAM");
   const vram = capacityLabel("VRAM");
-  const cpuLabel = [runCardHostname(file), ram].filter(Boolean).join(" / ");
-  const gpuLabel = [runCardGpuLabels(file).join(", "), vram].filter(Boolean).join(" / ");
-  return [cpuLabel, gpuLabel].filter(Boolean).join("\n");
+  const capacity = [ram, vram].filter(Boolean).join(" / ");
+  return [runCardHostname(file), runCardGpuLabels(file).join(", "), capacity]
+    .filter(Boolean).join("\n");
 }
 
 function winner(entries: Winner[], direction: "max" | "min"): Winner | null {

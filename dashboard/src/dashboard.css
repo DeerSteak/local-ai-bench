@@ -4,6 +4,10 @@
 @import "@fontsource/ibm-plex-sans/600.css";
 @import "@fontsource/ibm-plex-sans/700.css";
 
+:root {
+  --chart-card-padding: 8px 12px;
+}
+
 * { box-sizing: border-box; }
 
 .pill {
@@ -26,6 +30,10 @@
   border: 1px solid #d0d7de;
   border-radius: 10px;
   padding: 20px 24px;
+}
+
+.chart-card {
+  padding: var(--chart-card-padding);
 }
 
 .tag {

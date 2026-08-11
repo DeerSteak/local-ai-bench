@@ -20,7 +20,7 @@ export default function CustomLegend({ payload = null, isMultiFile, sortOrder }:
       <div className={styles.wrapper}>
         <div className={styles.items}>
           {sorted.map(p => (
-            <div key={String(p.dataKey)} className={styles.item}>
+            <div key={String(p.dataKey)} className={`${styles.item} ${String(p.value).includes("\n") ? styles.systemItem : ""}`}>
               <svg width="24" height="12" style={{ flexShrink: 0 }}>
                 <line
                   x1="0" y1="6" x2="24" y2="6"
@@ -41,7 +41,7 @@ export default function CustomLegend({ payload = null, isMultiFile, sortOrder }:
     <div className={styles.wrapper}>
       <div className={styles.items}>
         {sorted.map(p => (
-          <div key={p.value} className={styles.item}>
+          <div key={p.value} className={`${styles.item} ${String(p.value).includes("\n") ? styles.systemItem : ""}`}>
             <span className={styles.swatch} style={{ background: p.color }} />
             <span style={{ whiteSpace: "pre-line" }}>{p.value}</span>
           </div>

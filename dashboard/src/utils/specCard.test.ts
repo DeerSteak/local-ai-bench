@@ -106,7 +106,7 @@ describe("dashboardHostname", () => {
       gpu_info: "NVIDIA GeForce RTX 5060 Ti, NVIDIA GeForce RTX 5060 Ti",
     }] } };
     expect(dashboardHostname(result)).toBe(
-      "Core Ultra 7 270K / 64 GB RAM\n2x GeForce RTX 5060 Ti / 32 GB VRAM",
+      "Core Ultra 7 270K\n2x GeForce RTX 5060 Ti\n64 GB RAM / 32 GB VRAM",
     );
   });
 

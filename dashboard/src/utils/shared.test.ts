@@ -3,10 +3,11 @@ import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, filesForSection, fmt, getCrossEngineWeightsWarning,
+  sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
+  measuredCategoryAxisWidth,
   entriesOf, valuesOf, isNotNull,
 } from "./shared";
 import { buildLLMBarData, buildLLMBarConfigs } from "./llm";
@@ -214,8 +215,19 @@ describe("applyEngineLabels", () => {
       { id: 2, hostname: "host-b", backend: "metal", engine: "llamacpp", engineVersion: "7001", data: {} },
     ];
     expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
-      "host-a\ncuda\nllamacpp 7000", "host-b\nmetal\nllamacpp 7001",
+      "host-a\nCUDA / llama.cpp 7000", "host-b\nMetal / llama.cpp 7001",
     ]);
+  });
+
+  it("combines the backend and runtime on one final identity line", () => {
+    const files: ResultsFile[] = [{
+      hostname: "Core Ultra 7 270K\n2x GeForce RTX 5060 Ti\n64 GB RAM / 32 GB VRAM",
+      backend: "cuda", engine: "llamacpp", engineVersion: "10107",
+      data: { profile: { os: "Windows 11" } },
+    }];
+    expect(applyEngineLabels(files)[0].hostname).toBe(
+      "Core Ultra 7 270K\n2x GeForce RTX 5060 Ti\n64 GB RAM / 32 GB VRAM\nCUDA / llama.cpp 10107",
+    );
   });
 
   it("marks llama.cpp no-repack runs in the engine label", () => {
@@ -223,7 +235,7 @@ describe("applyEngineLabels", () => {
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
-    expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllamacpp -nr 7000");
+    expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
   });
 
   it("omits no-repack from labels for workloads that do not consume it", () => {
@@ -231,8 +243,8 @@ describe("applyEngineLabels", () => {
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
-    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a\nllamacpp 7000");
-    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a\nllamacpp 7000");
+    expect(filesForSection(files, "llamabench")[0].hostname).toBe("host-a\nllama.cpp 7000");
+    expect(filesForSection(files, "vllmbench")[0].hostname).toBe("host-a\nllama.cpp 7000");
   });
 
   it("labels a version even when an older result omitted its engine name", () => {
@@ -246,14 +258,14 @@ describe("applyEngineLabels", () => {
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersionRecorded: false, data: {},
     }];
     expect(applyEngineLabels(files)[0].hostname)
-      .toBe("host-a\nllamacpp version not recorded");
+      .toBe("host-a\nllama.cpp version not recorded");
   });
   it("labels a current result whose runtime version could not be discovered", () => {
     const files: ResultsFile[] = [{
       id: 1, hostname: "host-a", engine: "vllm", engineVersionRecorded: true, data: {},
     }];
     expect(applyEngineLabels(files)[0].hostname)
-      .toBe("host-a\nvllm version unavailable");
+      .toBe("host-a\nvLLM version unavailable");
   });
   it("leaves hostnames untouched when no file has an engine field", () => {
     const files: ResultsFile[] = [{ id: 1, hostname: "host-a", engine: null, data: {} }];
@@ -265,7 +277,7 @@ describe("applyEngineLabels", () => {
       { id: 2, hostname: "host-a", engine: "mlx", data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a\nllamacpp", engine: "llamacpp", data: {} },
+      { id: 1, hostname: "host-a\nllama.cpp", engine: "llamacpp", data: {} },
       { id: 2, hostname: "host-a\nmlx", engine: "mlx", data: {} },
     ]);
   });
@@ -276,10 +288,38 @@ describe("applyEngineLabels", () => {
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ];
     expect(applyEngineLabels(files)).toEqual([
-      { id: 1, hostname: "host-a\nllamacpp", engine: "llamacpp", data: {} },
+      { id: 1, hostname: "host-a\nllama.cpp", engine: "llamacpp", data: {} },
       { id: 2, hostname: "host-b\nmlx", engine: "mlx", data: {} },
       { id: 3, hostname: "host-c", engine: null, data: {} },
     ]);
+  });
+});
+
+describe("backendLabel", () => {
+  it.each([
+    ["cuda", "CUDA"], ["vulkan", "Vulkan"], ["mlx", "MLX"],
+    ["rocm", "ROCm"], ["directml", "DirectML"], ["cpu", "CPU"],
+  ])("formats %s for display", (backend, expected) => {
+    expect(backendLabel(backend)).toBe(expected);
+  });
+});
+
+describe("engineLabel", () => {
+  it.each([["llamacpp", "llama.cpp"], ["vllm", "vLLM"]])(
+    "formats %s for display", (engine, expected) => {
+      expect(engineLabel(engine)).toBe(expected);
+    },
+  );
+});
+
+describe("measuredCategoryAxisWidth", () => {
+  it("uses the widest measured label line plus tick padding", () => {
+    const rows: ChartRow[] = [{ system: "CPU\nLong GPU name" }, { system: "RAM" }];
+    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(83);
+  });
+
+  it("returns tick padding for an empty dataset", () => {
+    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(11);
   });
 });
 
@@ -289,7 +329,7 @@ describe("filesForSection", () => {
   }];
 
   it("includes engine versions on engine-backed charts", () => {
-    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a\nllamacpp 7000");
+    expect(filesForSection(files, "llm")[0].hostname).toBe("host-a\nllama.cpp 7000");
   });
 
   it("does not associate LLM runtime versions with ComfyUI image charts", () => {

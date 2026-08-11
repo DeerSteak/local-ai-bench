@@ -118,6 +118,29 @@ export function sanitizeForFilename(raw: string | null | undefined): string {
     .replace(/^-|-$/g, "");
 }
 
+export function backendLabel(backend: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    cpu: "CPU", cuda: "CUDA", directml: "DirectML", hip: "HIP", metal: "Metal",
+    mlx: "MLX", mps: "MPS", opencl: "OpenCL", rocm: "ROCm", sycl: "SYCL", vulkan: "Vulkan",
+  };
+  const key = String(backend || "").toLowerCase();
+  return labels[key] || String(backend || "").replace(/(^|[-_])([a-z])/g,
+    (_match, separator: string, letter: string) => `${separator}${letter.toUpperCase()}`);
+}
+
+export function engineLabel(engine: string | null | undefined): string {
+  const labels: Record<string, string> = { llamacpp: "llama.cpp", vllm: "vLLM" };
+  const key = String(engine || "").toLowerCase();
+  return labels[key] || String(engine || "");
+}
+
+export function measuredCategoryAxisWidth(
+  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 11,
+): number {
+  const lines = rows.flatMap(row => String(row[key] ?? "").split("\n"));
+  return Math.ceil(Math.max(0, ...lines.map(measure))) + tickSpace;
+}
+
 // Runtime versions are always material comparison context.
 export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
@@ -125,8 +148,12 @@ export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: s
     const noRepack = f.engine === "llamacpp"
       && !["llamabench", "vllmbench"].includes(section || "")
       && f.data?.run?.effective_config?.llamacpp_no_repack === true;
-    const engine = noRepack ? `${f.engine} -nr` : f.engine;
-    const identity = (runtime: string) => [f.hostname, f.backend, runtime].filter(Boolean).join("\n");
+    const displayEngine = engineLabel(f.engine);
+    const engine = noRepack ? `${displayEngine} -nr` : displayEngine;
+    const identity = (runtime: string) => {
+  const runtimeLabel = [backendLabel(f.backend), runtime].filter(Boolean).join(" / ");
+      return [f.hostname, runtimeLabel].filter(Boolean).join("\n");
+    };
     if (f.engineVersion) {
       const runtime = [engine, f.engineVersion].filter(Boolean).join(" ");
       return { ...f, hostname: identity(runtime) };

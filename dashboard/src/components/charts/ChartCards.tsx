@@ -1,6 +1,6 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { useContext } from "react";
-import { prepareOrderedBarGroupData, fmt } from "../../utils/shared";
+import { useContext, useEffect, useState } from "react";
+import { measuredCategoryAxisWidth, prepareOrderedBarGroupData, fmt } from "../../utils/shared";
 import type { JsonRecord } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
 import type { ChartRow } from "../../types";
@@ -41,7 +41,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
   const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
   const yTickFormatter = (v: number) => fmt(v, effectiveUnit);
   return (
-    <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+    <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
         {modelName && <div className={styles.chartModelName}>{modelName}</div>}
         <div className={styles.chartTitleRow}>
@@ -97,12 +97,28 @@ function MultiLineTick({ x = 0, y = 0, payload = null }: { x?: number, y?: numbe
     <g transform={`translate(${x},${y})`}>
       {lines.map((line, i) => (
         <text key={i} x={0} y={(i - (lines.length - 1) / 2) * lineH} dy="0.35em"
-          textAnchor="end" fill="#57606a" fontSize={14}>
+          textAnchor="end" fill="#57606a" fontSize={13} fontFamily="'IBM Plex Sans', sans-serif">
           {line}
         </text>
       ))}
     </g>
   );
+}
+
+function useCategoryAxisWidth(rows: ChartRow[], key: string): number {
+  const [width, setWidth] = useState(60);
+  useEffect(() => {
+    let active = true;
+    document.fonts.ready.then(() => {
+      if (!active) return;
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return;
+      context.font = "13px 'IBM Plex Sans'";
+      setWidth(measuredCategoryAxisWidth(rows, key, label => context.measureText(label).width));
+    });
+    return () => { active = false; };
+  }, [rows, key]);
+  return width;
 }
 
 function BarLabel({ x = 0, y = 0, width = 0, height = 0, value = null, naKey, statusKey, rowData, formatter }: {
@@ -152,13 +168,6 @@ function OrderedBarGroup({ x = 0, y = 0, width = 0, height = 0, payload, barConf
   );
 }
 
-// Reserve enough Y-axis width for the longest category label (in a vertical-layout chart).
-function computeYAxisWidth(rows: ChartRow[], key: string): number {
-  const lines = rows.flatMap(row => String(row[key] ?? '').split('\n'));
-  const maxLabelChars = Math.max(1, ...lines.map(l => l.length));
-  return Math.min(260, Math.max(40, maxLabelChars * 7.2 + 26));
-}
-
 // Reserve enough right margin for the longest bar-end label, including any
 // "Timed Out" / "Skipped - ..." status text (which runs longer than a
 // formatted value or "N/A").
@@ -178,6 +187,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
   yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
   direction?: string, orderedSeries?: boolean,
 }) {
+  const yAxisWidth = useCategoryAxisWidth(data, xKey);
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
   const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
@@ -198,13 +208,12 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
   const maxLabelLines = Math.max(1, ...data.map(row => String(row[xKey] ?? '').split('\n').length));
   const rowH = Math.max(32, maxLabelLines * 16);
   const chartHeight = Math.max(280, data.length * barConfigs.length * rowH + 104);
-  const yAxisWidth = computeYAxisWidth(data, xKey);
   const rightMargin = computeRightMargin(data, barConfigs);
   const legendPayload = barConfigs.map(config => ({
     dataKey: config.dataKey, value: config.name, color: config.fill,
   }));
   return (
-    <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+    <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
         {modelName && <div className={styles.chartModelName}>{modelName}</div>}
         <div className={styles.chartTitleRow}>
@@ -229,6 +238,8 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             type="category"
             dataKey={xKey}
             tick={<MultiLineTick />}
+            tickSize={6}
+            tickMargin={5}
             width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={effectiveUnit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />

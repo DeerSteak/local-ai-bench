@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { BACKEND_COLORS, FILE_COLORS, MAX_FILES, SUITE_VERSION } from "../constants";
-import { lookup } from "../utils/shared";
+import { backendLabel, lookup } from "../utils/shared";
 import type { DisplayFile } from "../types";
 import styles from "./Header.module.css";
 
@@ -8,7 +8,7 @@ function BackendTag({ backend }: { backend: string }) {
   const style = lookup(BACKEND_COLORS, backend) || BACKEND_COLORS.cpu;
   return (
     <span className={`tag ${styles.tagBackend}`} style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}>
-      {backend}
+      {backendLabel(backend)}
     </span>
   );
 }
