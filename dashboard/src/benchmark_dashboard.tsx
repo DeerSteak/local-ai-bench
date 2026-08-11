@@ -6,6 +6,7 @@ import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
 import { getAccuracySettingsWarning } from "./utils/accuracy";
 import { fetchSelectedResultFiles } from "./utils/autoload";
+import { applyBaselineDeltas } from "./utils/baseline";
 import { MAX_FILES } from "./constants";
 import type { DisplayFile, SortConfig } from "./types";
 import Header from "./components/Header";
@@ -15,6 +16,7 @@ import StatsTable from "./components/StatsTable";
 import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
+import { DeltaModeContext } from "./components/DeltaModeContext";
 
 // The minimal shape both real File objects and autoload's staged-result
 // entries satisfy — this is all parseFile/processJsonFiles actually need.
@@ -39,6 +41,7 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false);
   const [filenameSuffix, setFilenameSuffix] = useState("");
   const [fileError, setFileError] = useState("");
+  const [baselineId, setBaselineId] = useState<string | null>(null);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -114,6 +117,9 @@ export default function Dashboard() {
 
   const effectiveFilesRef = useRef(effectiveFiles);
   useEffect(() => { effectiveFilesRef.current = effectiveFiles; }, [effectiveFiles]);
+  const chartFiles = useMemo(
+    () => applyBaselineDeltas(effectiveFiles, baselineId), [effectiveFiles, baselineId],
+  );
   const accuracySettingsWarning = useMemo(
     () => getAccuracySettingsWarning(effectiveFiles),
     [effectiveFiles],
@@ -146,6 +152,7 @@ export default function Dashboard() {
     setEnabledImageModels(new Set());
     setEnabledEmbedModels(new Set());
     setHostnameOverrides({});
+    setBaselineId(null);
   };
 
   const parseFile = async (file: NamedTextSource): Promise<{ entry: DisplayFile | null, error: string | null }> => {
@@ -222,6 +229,7 @@ export default function Dashboard() {
       return remaining;
     });
     setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId as string]; return n; });
+    setBaselineId(current => current === String(fileId) ? null : current);
   }, []);
 
   const handleLogoDrop = useCallback((e: React.DragEvent) => {
@@ -304,22 +312,25 @@ export default function Dashboard() {
         onLogoDragLeave={handleLogoDragLeave}
         saving={saving} onSaveChart={saveChart}
         filenameSuffix={filenameSuffix} setFilenameSuffix={setFilenameSuffix}
+        baselineId={baselineId} setBaselineId={setBaselineId}
       />
 
-      <ChartPanel
-        containerRef={chartRef}
-        files={effectiveFiles}
-        section={section}
-        accuracyTest={accuracyTest}
-        enabledModels={enabledModels}
-        enabledImageModels={enabledImageModels}
-        enabledEmbedModels={enabledEmbedModels}
-        chartWidth={chartWidth}
-        logoSrc={logoSrc}
-        chartStyle={chartStyle}
-        groupBy={groupBy}
-        sizeSplit={sizeSplit}
-      />
+      <DeltaModeContext.Provider value={baselineId != null}>
+        <ChartPanel
+          containerRef={chartRef}
+          files={chartFiles}
+          section={section}
+          accuracyTest={accuracyTest}
+          enabledModels={enabledModels}
+          enabledImageModels={enabledImageModels}
+          enabledEmbedModels={enabledEmbedModels}
+          chartWidth={chartWidth}
+          logoSrc={logoSrc}
+          chartStyle={chartStyle}
+          groupBy={groupBy}
+          sizeSplit={sizeSplit}
+        />
+      </DeltaModeContext.Provider>
 
       <StatsTable
         files={effectiveFiles}
