@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 
 import { SIZE_TIER_LABELS } from "../constants";
 import type { DisplayFile } from "../types";
-import { engineLabel, lookup } from "../utils/shared";
+import { backendLabel, engineLabel, lookup } from "../utils/shared";
 import { buildSpecCardSummary, runCardGpuLabels, runCardHostname } from "../utils/specCard";
 import styles from "./RunSummaryCards.module.css";
 
@@ -27,7 +27,7 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
               <div className={styles.eyebrow}>LOCAL AI BENCH · RUN CARD</div>
               <div className={styles.hostname}>{hostname}</div>
               <div className={styles.metadata}>
-                <span>{file.backend}</span><span>{file.os}</span>
+                <span>{backendLabel(file.backend)}</span><span>{file.os}</span>
                 {file.ram_gb != null && <span>{file.ram_gb} GB RAM</span>}
                 {file.engine && <span>{engineLabel(file.engine)}{file.engineVersion ? ` ${file.engineVersion}` : ""}</span>}
                 {file.version && <span>suite v{file.version}</span>}
