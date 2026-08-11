@@ -68,20 +68,29 @@ exit /b 1
 echo.
 echo [Virtual Environment]
 
+set RECREATE_VENV=
 if exist "%VENV_DIR%\Scripts\python.exe" (
     "%VENV_DIR%\Scripts\python.exe" -c "import sys; v=sys.version_info[:2]; raise SystemExit(v != max(v, (3,11)))"
     if !errorlevel! neq 0 (
-        echo   X  %VENV_DIR% uses Python older than 3.11.
-        echo      Move or remove it, then re-run setup.
+        echo   !  %VENV_DIR% is broken or uses Python older than 3.11; rebuilding it.
+        set RECREATE_VENV=1
+    )
+) else if exist "%VENV_DIR%" (
+    echo   !  %VENV_DIR% is not a usable virtual environment; rebuilding it.
+    set RECREATE_VENV=1
+)
+
+if defined RECREATE_VENV (
+    rmdir /s /q "%VENV_DIR%"
+    if exist "%VENV_DIR%" (
+        echo   X  Could not remove the unusable %VENV_DIR%. Close programs using it and re-run setup.
         pause
         exit /b 1
     )
+)
+
+if exist "%VENV_DIR%\Scripts\python.exe" (
     echo   OK  Venv already exists at %VENV_DIR%
-) else if exist "%VENV_DIR%" (
-    echo   X  %VENV_DIR% exists but is not a usable virtual environment.
-    echo      Move or remove it, then re-run setup.
-    pause
-    exit /b 1
 ) else (
     echo   -^>  Creating venv at %VENV_DIR%...
     %PYTHON% -m venv %VENV_DIR%

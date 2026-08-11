@@ -10,6 +10,7 @@ import tempfile
 
 
 TERMINAL_STATUSES = {"complete", "action_items", "stopped"}
+IS_WINDOWS = os.name == "nt"
 
 
 def read_progress_status(path: Path) -> str:
@@ -33,11 +34,13 @@ def start_setup_progress() -> tuple[subprocess.Popen, Path]:
     os.close(handle)
     path = Path(raw_path)
     path.write_text(json.dumps({"status": "running"}))
+    # Keep Ctrl+C in the installer console from interrupting the Tk helper too.
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
     try:
         process = subprocess.Popen([
             sys.executable, "-m", "scripts.setup.setup_progress",
             "--status-file", str(path), "--parent-pid", str(os.getpid()),
-        ])
+        ], creationflags=creationflags)
     except OSError:
         path.unlink(missing_ok=True)
         raise
@@ -52,11 +55,28 @@ def finish_setup_progress(path: Path, status: str) -> None:
 
 
 def process_is_running(pid: int) -> bool:
+    if IS_WINDOWS:
+        return windows_process_is_running(pid)
     try:
         os.kill(pid, 0)
     except OSError:
         return False
     return True
+
+
+def windows_process_is_running(pid: int) -> bool:
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == 5
+    try:
+        exit_code = ctypes.c_ulong()
+        return (bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))
+                and exit_code.value == 259)
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def run_progress_window(status_file: Path, parent_pid: int) -> None:  # pragma: no cover
@@ -115,7 +135,10 @@ def main() -> None:  # pragma: no cover
     parser.add_argument("--status-file", type=Path, required=True)
     parser.add_argument("--parent-pid", type=int, required=True)
     args = parser.parse_args()
-    run_progress_window(args.status_file, args.parent_pid)
+    try:
+        run_progress_window(args.status_file, args.parent_pid)
+    except KeyboardInterrupt:
+        args.status_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":  # pragma: no cover
