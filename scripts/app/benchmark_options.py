@@ -55,7 +55,7 @@ PUBLIC_OPTION_SCHEMA = {
     "--cpu-only": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--gpu-split-mode": _spec(
         "choice", "advanced", "exposed", "Graphical execution settings",
-        default="layer", choices=("layer", "tensor"),
+        default="layer", choices=("single", "layer", "tensor"),
     ),
     "--llamacpp-no-repack": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,

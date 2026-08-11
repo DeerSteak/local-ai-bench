@@ -29,7 +29,7 @@ def test_schema_validates_numeric_types_and_bounds():
     assert option_value_errors({"--runs": 11}) == ["--runs must be at most 10."]
     assert option_value_errors({"--timeout": True}) == ["--timeout must be a whole number."]
     assert option_value_errors({"--gpu-split-mode": "row"}) == [
-        "--gpu-split-mode must be one of: layer, tensor.",
+        "--gpu-split-mode must be one of: single, layer, tensor.",
     ]
 
 

@@ -9,6 +9,12 @@ ENGINE_STAGES = {
 }
 
 
+def effective_gpu_split_mode(cpu_only: bool) -> str:
+    if cpu_only or config.LLAMACPP_GPU_SPLIT_MODE == "single":
+        return "none"
+    return config.LLAMACPP_GPU_SPLIT_MODE
+
+
 def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
                                 vllm_kv_cache_dtype: str = "auto",
                                 vllm_launcher_args: list[str] | None = None) -> dict:
@@ -23,7 +29,7 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             f"{engine_name}:batch={config.LLAMACPP_NUM_BATCH}",
             f"{engine_name}:kv_cache={cache_type}",
             f"{engine_name}:gpu_layers={'0' if cpu_only else ('all' if config.LLAMACPP_GPU_SPLIT_MODE == 'tensor' else 'auto')}",
-            f"{engine_name}:gpu_split={'none' if cpu_only else config.LLAMACPP_GPU_SPLIT_MODE}",
+            f"{engine_name}:gpu_split={effective_gpu_split_mode(cpu_only)}",
             f"{engine_name}:flash_attention=on",
             f"{engine_name}:repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}",
         ))
@@ -41,7 +47,7 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
         optimizations.extend((
             f"llama.cpp:native_kv_cache={native_cache}",
             f"llama.cpp:native_gpu_layers={'0' if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL}",
-            f"llama.cpp:native_gpu_split={'none' if cpu_only else config.LLAMACPP_GPU_SPLIT_MODE}",
+            f"llama.cpp:native_gpu_split={effective_gpu_split_mode(cpu_only)}",
         ))
         if "llamabenchconc" in selected:
             optimizations.append(

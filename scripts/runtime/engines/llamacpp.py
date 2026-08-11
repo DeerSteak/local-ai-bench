@@ -44,7 +44,8 @@ class LlamaCppEngine(InferenceEngine):
 
     @staticmethod
     def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
-        mode = "none" if cpu_only else config.LLAMACPP_GPU_SPLIT_MODE
+        configured_mode = config.LLAMACPP_GPU_SPLIT_MODE
+        mode = "none" if cpu_only or configured_mode == "single" else configured_mode
         args = ["--split-mode", mode]
         if include_cache:
             cache_type = "f16" if mode == "tensor" else config.LLAMACPP_KV_CACHE_TYPE

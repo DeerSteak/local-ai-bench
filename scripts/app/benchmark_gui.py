@@ -90,6 +90,24 @@ from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 
 
+GPU_SPLIT_MODE_LABELS = {
+    "single": "Single GPU",
+    "layer": "Layer split (recommended)",
+    "tensor": "Tensor parallel (experimental)",
+}
+
+
+def gpu_split_mode_labels(modes) -> tuple[str, ...]:
+    return tuple(GPU_SPLIT_MODE_LABELS[mode] for mode in modes)
+
+
+def gpu_split_mode_value(label: str) -> str:
+    for mode, candidate in GPU_SPLIT_MODE_LABELS.items():
+        if candidate == label:
+            return mode
+    raise ValueError(f"Unknown GPU mode: {label}")
+
+
 def effective_gui_options(state: dict | None) -> dict:
     options = state.get("gui_options") if state else None
     return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
@@ -759,6 +777,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value)))
         for key, value in options.items()
     }
+    option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
 
@@ -1042,15 +1061,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-    split_label = "Multi-GPU mode (tensor is experimental)" if "tensor" in gpu_split_modes else "Multi-GPU mode"
-    ttk.Label(execution_box, text=split_label).grid(row=1, column=0, sticky="w", pady=2)
+    split_labels = gpu_split_mode_labels(gpu_split_modes)
+    ttk.Label(execution_box, text="GPU mode").grid(row=1, column=0, sticky="w", pady=2)
     ttk.Combobox(
         execution_box, state="readonly", textvariable=option_vars["gpu_split_mode"],
-        values=gpu_split_modes, width=16,
+        values=split_labels, width=30,
     ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
     ttk.Button(
         execution_box, text="Reset", width=6,
-        command=lambda: option_vars["gpu_split_mode"].set("layer"),
+        command=lambda: option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"]),
     ).grid(row=1, column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
@@ -1132,7 +1151,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "cpu_only", "force_all", "retry_crashed_models", "offline",
                     "llamacpp_no_repack"):
             variable = option_vars[key]
-            variable.set(defaults[key])
+            value = GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode" else defaults[key]
+            variable.set(value)
 
     def reset_paths():
         defaults = custom_option_defaults(detected_comfyui)
@@ -1204,7 +1224,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             for value, variable in tg_vars.items():
                 variable.set(value in selected_tg)
             for key, value in state.get("gui_options", {}).items():
-                option_vars[key].set(value if isinstance(value, bool) else str(value))
+                if key == "gpu_split_mode":
+                    option_vars[key].set(GPU_SPLIT_MODE_LABELS[value])
+                else:
+                    option_vars[key].set(value if isinstance(value, bool) else str(value))
         finally:
             applying_configuration[0] = False
         preset_var.set(CUSTOM_PRESET)
@@ -2600,7 +2623,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 values[key] = int(option_vars[key].get())
             except ValueError:
                 values[key] = option_vars[key].get()
-        values["gpu_split_mode"] = option_vars["gpu_split_mode"].get()
+        selected_split_label = option_vars["gpu_split_mode"].get()
+        values["gpu_split_mode"] = gpu_split_mode_value(selected_split_label)
         for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
                     "llamacpp_no_repack"):
             values[key] = option_vars[key].get()

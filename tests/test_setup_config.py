@@ -54,8 +54,8 @@ def test_tensor_split_requires_two_matching_cuda_or_rocm_devices():
         {"backend": "rocm"}, {"backend": "rocm"},
     ]}}
 
-    assert available_gpu_split_modes(cuda, "cuda") == ("layer", "tensor")
-    assert available_gpu_split_modes(rocm, "rocm") == ("layer", "tensor")
+    assert available_gpu_split_modes(cuda, "cuda") == ("single", "layer", "tensor")
+    assert available_gpu_split_modes(rocm, "rocm") == ("single", "layer", "tensor")
     assert available_gpu_split_modes(rocm, "vulkan") == ("layer",)
 
 

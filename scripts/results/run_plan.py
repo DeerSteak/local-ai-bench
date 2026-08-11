@@ -219,7 +219,7 @@ class RunPlan:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
-        if settings.get("gpu_split_mode", "layer") not in ("layer", "tensor"):
+        if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
             if settings["methodology_profile"] != "neutral-v1":

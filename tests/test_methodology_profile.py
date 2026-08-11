@@ -32,6 +32,16 @@ def test_tensor_profile_records_split_cache_and_full_offload(monkeypatch):
     assert "llamacpp:gpu_split=tensor" in optimizations
 
 
+def test_single_gpu_profile_records_no_split_with_gpu_offload(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    optimizations = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm", "llamabench"], cpu_only=False,
+    )["effective_optimizations"]
+    assert "llamacpp:gpu_layers=auto" in optimizations
+    assert "llamacpp:gpu_split=none" in optimizations
+    assert "llama.cpp:native_gpu_split=none" in optimizations
+
+
 def test_no_repack_profile_records_server_and_supported_native_path(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     optimizations = resolve_methodology_profile(

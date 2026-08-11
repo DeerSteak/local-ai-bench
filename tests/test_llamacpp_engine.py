@@ -1286,6 +1286,14 @@ def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch
     ]
 
 
+def test_single_gpu_mode_disables_splitting_but_keeps_normal_cache(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
+        "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
+        "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
+    ]
+
+
 # ── server identity on /props ──
 
 def test_serving_model_file_reads_the_modern_model_path_key():

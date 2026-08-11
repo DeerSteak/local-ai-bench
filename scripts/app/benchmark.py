@@ -689,8 +689,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "llama-bench/llama-batched-bench) though they don't go through the engine restart above.",
     )
     parser.add_argument(
-        "--gpu-split-mode", choices=("layer", "tensor"), default="layer",
-        help="llama.cpp multi-GPU execution mode: compatible layer splitting or experimental "
+        "--gpu-split-mode", choices=("single", "layer", "tensor"), default="layer",
+        help="llama.cpp GPU execution mode: one GPU, compatible layer splitting, or experimental "
              "tensor parallelism (default: layer). Tensor mode requires supported CUDA GPUs/models "
              "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
     )
@@ -919,8 +919,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(
-                "--gpu-split-mode tensor requires at least two GPUs recorded by setup "
-                "and a CUDA or ROCm/HIP llama.cpp runtime; rerun setup or use layer"
+                f"--gpu-split-mode {args.gpu_split_mode} requires at least two GPUs recorded by "
+                "setup and a CUDA or ROCm/HIP llama.cpp runtime; rerun setup or use layer"
             )
 
         Shared.output(f"{config.BOLD}LLM Benchmark Suite{config.RESET}", leading_blank=True)

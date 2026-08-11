@@ -21,6 +21,7 @@ from scripts.app.benchmark_gui import (
     completed_result_paths, dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
+    gpu_split_mode_labels, gpu_split_mode_value,
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
@@ -43,6 +44,17 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
+    modes = ("single", "layer", "tensor")
+    labels = gpu_split_mode_labels(modes)
+    assert labels == (
+        "Single GPU", "Layer split (recommended)", "Tensor parallel (experimental)",
+    )
+    assert tuple(gpu_split_mode_value(label) for label in labels) == modes
+    with pytest.raises(ValueError, match="Unknown GPU mode"):
+        gpu_split_mode_value("invalid")
 
 
 def test_process_exit_waits_for_reader_or_quiet_drain_period():
