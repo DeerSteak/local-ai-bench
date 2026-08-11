@@ -17,6 +17,7 @@ import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 import { DeltaModeContext } from "./components/DeltaModeContext";
+import RunSummaryCards from "./components/RunSummaryCards";
 
 // The minimal shape both real File objects and autoload's staged-result
 // entries satisfy — this is all parseFile/processJsonFiles actually need.
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [filenameSuffix, setFilenameSuffix] = useState("");
   const [fileError, setFileError] = useState("");
   const [baselineId, setBaselineId] = useState<string | null>(null);
+  const [savingSpecCard, setSavingSpecCard] = useState(false);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -50,6 +52,7 @@ export default function Dashboard() {
   useEffect(() => { sectionRef.current = section; }, [section]);
 
   const chartRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
@@ -268,6 +271,28 @@ export default function Dashboard() {
     }
   }, [saving, filenameSuffix]);
 
+  const saveSpecCards = useCallback(async () => {
+    if (!summaryRef.current || savingSpecCard) return;
+    setSavingSpecCard(true);
+    try {
+      await document.fonts.ready;
+      const cards = [...summaryRef.current.querySelectorAll<HTMLElement>("[data-spec-card]")];
+      for (let index = 0; index < cards.length; index++) {
+        const canvas = await html2canvas(cards[index], {
+          backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
+        });
+        const name = sanitizeForFilename(cards[index].dataset.specName || `run-${index + 1}`);
+        const link = document.createElement("a");
+        link.download = `${name}_run_card.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    } finally {
+      setSavingSpecCard(false);
+    }
+  }, [savingSpecCard]);
+
   const cycleSort = (key: string) => {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
   };
@@ -313,7 +338,10 @@ export default function Dashboard() {
         saving={saving} onSaveChart={saveChart}
         filenameSuffix={filenameSuffix} setFilenameSuffix={setFilenameSuffix}
         baselineId={baselineId} setBaselineId={setBaselineId}
+        savingSpecCard={savingSpecCard} onSaveSpecCard={saveSpecCards}
       />
+
+      <RunSummaryCards files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} />
 
       <DeltaModeContext.Provider value={baselineId != null}>
         <ChartPanel

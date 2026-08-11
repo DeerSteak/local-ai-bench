@@ -22,6 +22,7 @@ export default function Controls({
   saving, onSaveChart,
   filenameSuffix, setFilenameSuffix,
   baselineId, setBaselineId,
+  savingSpecCard, onSaveSpecCard,
 }: {
   section: string, setSection: (s: string) => void,
   accuracyTest: string, setAccuracyTest: (t: string) => void,
@@ -40,6 +41,7 @@ export default function Controls({
   saving: boolean, onSaveChart: () => void,
   filenameSuffix: string, setFilenameSuffix: (s: string) => void,
   baselineId: string | null, setBaselineId: (id: string | null) => void,
+  savingSpecCard: boolean, onSaveSpecCard: () => void,
 }) {
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
@@ -296,6 +298,12 @@ export default function Controls({
           >
             {saving ? "Saving…" : "⬇ Save PNG"}
           </button>
+          {files.length > 0 && (
+            <button onClick={onSaveSpecCard} disabled={savingSpecCard}
+              className={`pill inactive ${styles.exportBtn}`}>
+              {savingSpecCard ? "Saving…" : "⬇ Spec Card"}
+            </button>
+          )}
         </div>
       </div>
     </div>
