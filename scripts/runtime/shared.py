@@ -43,6 +43,14 @@ def _console_now():
     return datetime.now()
 
 
+def _console_safe_text(value):
+    text = str(value)
+    encoding = getattr(sys.stdout, "encoding", None)
+    if not encoding:
+        return text
+    return text.encode(encoding, errors="replace").decode(encoding)
+
+
 class EngineTimeout(TimeoutError):
     """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
     had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
@@ -94,7 +102,7 @@ class Shared:
     # ── logging ──
     @staticmethod
     def plain_output(msg="", *, end="\n"):
-        print(redact_log_text(msg), end=end)
+        print(_console_safe_text(redact_log_text(msg)), end=end)
 
     @staticmethod
     def clear_terminal():
@@ -109,7 +117,8 @@ class Shared:
             print()
         separator = "\n" if timestamp_newline else " "
         safe_message = redact_log_text(msg)
-        print(f"[{_console_now().strftime('%H:%M:%S')}]{separator}{safe_message}", end=end)
+        line = f"[{_console_now().strftime('%H:%M:%S')}]{separator}{safe_message}"
+        print(_console_safe_text(line), end=end)
 
     @staticmethod
     def log(msg):   Shared.output(f"  {config.CYAN}→{config.RESET}  {msg}")

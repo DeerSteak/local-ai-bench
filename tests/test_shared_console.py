@@ -1,3 +1,5 @@
+import io
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -70,6 +72,21 @@ def test_neutral_output_supports_multiline_block_and_custom_end(monkeypatch, cap
     monkeypatch.setattr(shared, "_console_now", fixed_now)
     Shared.output("first\nsecond", end="")
     assert capsys.readouterr().out == "[09:08:07] first\nsecond"
+
+
+def test_status_output_replaces_symbols_unsupported_by_console_encoding(monkeypatch):
+    output = io.BytesIO()
+    console = io.TextIOWrapper(output, encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", console)
+    monkeypatch.setattr(shared, "_console_now", fixed_now)
+
+    Shared.log("working ✓")
+    Shared.section("Models")
+    console.flush()
+
+    text = output.getvalue().decode("cp1252")
+    assert "working ?" in text
+    assert "?" * 50 in text
 
 
 def test_runtime_modules_do_not_bypass_shared_console_output():
