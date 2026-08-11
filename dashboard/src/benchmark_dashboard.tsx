@@ -18,6 +18,7 @@ import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
+import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 
 // The minimal shape both real File objects and autoload's staged-result
@@ -171,7 +172,7 @@ export default function Dashboard() {
     const data = parsed.data;
     const p = data.profile || {};
     const baseHostname = p.hostname || file.name.replace(".json", "");
-    return { entry: {
+    const entry: DisplayFile = {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
       hostname: baseHostname,
@@ -181,12 +182,14 @@ export default function Dashboard() {
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       wsl:      p.wsl === true,
-      ram_gb:   p.ram_gb   || null,
+      ram_gb:   typeof p.ram_gb === "number" ? Math.round(p.ram_gb) : null,
       version:  data.version || null,
       timestamp: p.timestamp || null,
       reliabilityWarning: getRunReliabilityWarning(data),
       data,
-    }, error: null };
+    };
+    entry.hostname = dashboardHostname(entry);
+    return { entry, error: null };
   };
 
   const processJsonFiles = useCallback(async (jsonFiles: NamedTextSource[]) => {
@@ -247,29 +250,48 @@ export default function Dashboard() {
   }, []);
 
   const saveChart = useCallback(async () => {
-    if (!chartRef.current || saving) return;
+    if (saving) return;
     setSaving(true);
     try {
       setFileError("");
       await document.fonts.ready;
-      const cards = [...chartRef.current.querySelectorAll<HTMLElement>("[data-chart-name]")];
-      if (!cards.length) return;
+      const runCards = summaryRef.current
+        ? [...summaryRef.current.querySelectorAll<HTMLElement>("[data-spec-card]")] : [];
+      const chartCards = chartRef.current
+        ? [...chartRef.current.querySelectorAll<HTMLElement>("[data-chart-name]")] : [];
+      if (!runCards.length && !chartCards.length) return;
+      const runCardNames = runCards.map((card, index) => card.dataset.specName || `run-${index + 1}`);
+      const exportCount = runCards.length + chartCards.length;
+      let exported = 0;
 
-      for (let i = 0; i < cards.length; i++) {
-        const canvas = await html2canvas(cards[i], {
+      for (let index = 0; index < runCards.length; index++) {
+        const canvas = await html2canvas(runCards[index], {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
-        const { chartName, chartModel } = cards[i].dataset;
+        const link = document.createElement("a");
+        link.download = buildRunCardFilename(runCardNames, index, filenameSuffix);
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        exported++;
+        if (exported < exportCount) await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      for (let index = 0; index < chartCards.length; index++) {
+        const canvas = await html2canvas(chartCards[index], {
+          backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
+        });
+        const { chartName, chartModel } = chartCards[index].dataset;
         const rawBase = [chartModel, chartName, filenameSuffix].filter(Boolean).join("_");
         const filename = `${sanitizeForFilename(rawBase)}.png`;
         const link = document.createElement("a");
         link.download = filename;
         link.href = canvas.toDataURL("image/png");
         link.click();
-        if (i < cards.length - 1) await new Promise(r => setTimeout(r, 300));
+        exported++;
+        if (exported < exportCount) await new Promise(resolve => setTimeout(resolve, 300));
       }
     } catch (error) {
-      setFileError(`Chart export failed: ${error instanceof Error ? error.message : String(error)}`);
+      setFileError(`PNG export failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSaving(false);
     }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { DisplayFile } from "../types";
-import { buildRunCardFilename, buildSpecCardSummary, runCardGpuLabels } from "./specCard";
+import {
+  buildRunCardFilename, buildSpecCardSummary, dashboardHostname, runCardGpuLabels, runCardHostname,
+} from "./specCard";
 
 function file(llm: object): DisplayFile {
   return {
@@ -52,14 +54,65 @@ describe("buildRunCardFilename", () => {
 describe("runCardGpuLabels", () => {
   it("prefers explicit multi-GPU profile metadata", () => {
     const result = file({});
-    result.data.profile = { gpu: ["RTX 5090", "RTX 5090", "RTX 5080"] };
-    expect(runCardGpuLabels(result)).toEqual(["RTX 5090", "RTX 5080"]);
+    result.data.profile = { gpu: ["NVIDIA RTX 5090", "RTX 5090", "AMD Radeon RX 9070 XT"] };
+    expect(runCardGpuLabels(result)).toEqual(["2x RTX 5090", "Radeon RX 9070 XT"]);
   });
 
   it("falls back to the hardware lines embedded in legacy hostnames", () => {
     const result = file({});
     result.hostname = "AMD Ryzen / 64 GB RAM\nNVIDIA RTX 5080 / 32 GB VRAM";
     result.data.profile = { hostname: result.hostname };
-    expect(runCardGpuLabels(result)).toEqual(["NVIDIA RTX 5080 / 32 GB VRAM"]);
+    expect(runCardGpuLabels(result)).toEqual(["RTX 5080"]);
+  });
+
+  it("uses legacy llama-bench device metadata before aggregated hostname VRAM", () => {
+    const result = file({});
+    result.hostname = "Core Ultra / 64 GB RAM\nNVIDIA GeForce RTX 5060 Ti / 31.8 GB VRAM";
+    result.data.profile = { hostname: result.hostname };
+    result.data.llamabench = {
+      model: { prefill_entries: [{
+        gpu_info: "NVIDIA GeForce RTX 5060 Ti, NVIDIA GeForce RTX 5060 Ti",
+      }] },
+    };
+    expect(runCardGpuLabels(result)).toEqual(["2x GeForce RTX 5060 Ti"]);
+  });
+});
+
+describe("runCardHostname", () => {
+  it.each([
+    ["Intel(R) Core(TM) Ultra 7 270K Plus / 64 GB RAM", "Core Ultra 7 270K"],
+    ["AMD Ryzen 7 9850X3D 8-Core Processor / 64 GB RAM", "Ryzen 7 9850X3D"],
+  ])("compacts Windows processor labels", (hostname, expected) => {
+    const result = file({});
+    result.os = "Windows 11";
+    result.hostname = hostname;
+    expect(runCardHostname(result)).toBe(expected);
+  });
+
+  it("preserves non-Windows hostnames", () => {
+    const result = file({});
+    result.hostname = "AMD Ryzen workstation / 64 GB RAM";
+    expect(runCardHostname(result)).toBe(result.hostname);
+  });
+});
+
+describe("dashboardHostname", () => {
+  it("compacts both lines of a Windows hardware label", () => {
+    const result = file({});
+    result.os = "Windows 11";
+    result.hostname = "Intel(R) Core(TM) Ultra 7 270K Plus / 64 GB RAM\nNVIDIA GeForce RTX 5060 Ti / 31.8 GB VRAM";
+    result.data.profile = { hostname: result.hostname };
+    result.data.llamabench = { model: { prefill_entries: [{
+      gpu_info: "NVIDIA GeForce RTX 5060 Ti, NVIDIA GeForce RTX 5060 Ti",
+    }] } };
+    expect(dashboardHostname(result)).toBe(
+      "Core Ultra 7 270K / 64 GB RAM\n2x GeForce RTX 5060 Ti / 32 GB VRAM",
+    );
+  });
+
+  it("preserves the complete non-Windows hostname", () => {
+    const result = file({});
+    result.hostname = "Linux host\nNVIDIA GPU";
+    expect(dashboardHostname(result)).toBe(result.hostname);
   });
 });

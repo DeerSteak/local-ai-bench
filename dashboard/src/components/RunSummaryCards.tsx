@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { SIZE_TIER_LABELS } from "../constants";
 import type { DisplayFile } from "../types";
 import { lookup } from "../utils/shared";
-import { buildSpecCardSummary, runCardGpuLabels } from "../utils/specCard";
+import { buildSpecCardSummary, runCardGpuLabels, runCardHostname } from "../utils/specCard";
 import styles from "./RunSummaryCards.module.css";
 
 export default function RunSummaryCards({ files, containerRef, logoSrc, chartWidth }: {
@@ -21,7 +21,7 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
         {files.map(file => {
           const tiers = buildSpecCardSummary(file);
           const gpuLabels = runCardGpuLabels(file);
-          const hostname = String(file.hostname || "").split("\n")[0];
+          const hostname = runCardHostname(file);
           return (
             <article key={file.id} className={styles.card} data-spec-card data-spec-name={hostname}>
               <div className={styles.eyebrow}>LOCAL AI BENCH · RUN CARD</div>

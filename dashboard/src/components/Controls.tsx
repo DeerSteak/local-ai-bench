@@ -296,7 +296,7 @@ export default function Controls({
             disabled={saving}
             className={`pill inactive ${styles.exportBtn}`}
           >
-            {saving ? "Saving…" : "⬇ Save PNG"}
+            {saving ? "Saving…" : "⬇ Save PNGs"}
           </button>
           {files.length > 0 && (
             <button onClick={onSaveSpecCard} disabled={savingSpecCard}
