@@ -21,7 +21,7 @@ from scripts.app.benchmark_gui import (
     completed_result_paths, dashboard_launcher_command,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
-    gpu_split_mode_labels, gpu_split_mode_value,
+    gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
@@ -416,6 +416,11 @@ def test_progress_line_parser_accepts_only_supported_structured_events():
 def test_progress_model_identity_prefers_stable_id_over_custom_display_label():
     event = {"model": "nemotron:30b (custom)", "model_id": "nemotron:30b"}
     assert progress_model_identity(event) == "nemotron:30b"
+
+
+@pytest.mark.parametrize(("line_height", "expected"), ((12, 38), (18, 46), (27, 64)))
+def test_history_row_height_tracks_scaled_font_height(line_height, expected):
+    assert history_row_height(line_height) == expected
 
 
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():

@@ -304,6 +304,10 @@ def progress_model_identity(event: dict) -> str:
     return event.get("model_id", event["model"])
 
 
+def history_row_height(font_line_height: int, vertical_padding: int = 10) -> int:
+    return max(38, font_line_height * 2 + vertical_padding)
+
+
 def update_progress_metrics(metrics: dict, event: dict) -> dict:
     updated = dict(metrics)
     if event["kind"] == "measurement":
@@ -756,7 +760,7 @@ def reconcile_imported_model_state(
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
-    from tkinter import filedialog, messagebox, simpledialog, ttk
+    from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
@@ -812,6 +816,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
     style.configure("Section.TLabel", font=("TkDefaultFont", 12, "bold"))
     style.configure("Start.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 9))
+    history_font = tkfont.nametofont("TkDefaultFont")
+    style.configure(
+        "History.Treeview",
+        rowheight=history_row_height(history_font.metrics("linespace")),
+    )
 
     advanced_var = tk.BooleanVar(value=False)
     engine_var = tk.StringVar(value=selected_engine)
@@ -1737,8 +1746,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_engine_combo.pack(side="left", padx=(8, 14))
     history_tree = ttk.Treeview(
         history_tab, columns=("date", "system", "status", "engine", "profile", "models"),
-        show="headings", selectmode="extended",
+        show="headings", selectmode="extended", style="History.Treeview",
     )
+    history_tree.tag_configure("history_even", background="#ffffff")
+    history_tree.tag_configure("history_odd", background="#edf2f7")
     for column, label, width in (
         ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
         ("engine", "Engine", 95), ("profile", "Profile", 110), ("models", "Models", 70),
@@ -1846,11 +1857,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         history_entries["visible"] = visible
         history_tree.delete(*history_tree.get_children())
         history_item_paths.clear()
-        for entry in visible:
+        for index, entry in enumerate(visible):
             item_id = history_tree.insert("", "end", values=(
                 entry["started_at"], entry["system"], entry["status"], entry["engine"],
                 entry["methodology_profile"], entry["models_with_results"],
-            ))
+            ), tags=("history_even" if index % 2 == 0 else "history_odd",))
             history_item_paths[item_id] = entry["path"]
         history_message.set(f"Showing {len(visible)} of {len(history_entries['all'])} local results.")
 
