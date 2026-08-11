@@ -1,6 +1,6 @@
 import json
 
-from scripts.app.benchmark import format_duration_estimate, format_resolved_plan
+from scripts.app.benchmark import format_dry_run_output, format_duration_estimate, format_resolved_plan
 from scripts.results.result_history import (
     completed_run_duration_seconds, estimate_matching_plan_seconds,
 )
@@ -30,6 +30,25 @@ def test_eta_uses_only_exact_completed_plan_matches(tmp_path):
         }
         (tmp_path / f"{name}.json").write_text(json.dumps(result), encoding="utf-8")
     assert estimate_matching_plan_seconds(tmp_path, "llamacpp", ["llm"], models) == 180
+
+
+def test_eta_treats_workload_order_as_plan_equivalent(tmp_path):
+    models = {"llm": [{"short": "tiny"}], "concurrency": [], "embeddings": [], "images": []}
+    result = {
+        "engine": "llamacpp",
+        "run": {
+            "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
+            "finished_at": "2026-01-01T10:01:00+00:00",
+            "plan": {"requested_tests": ["conv", "llm"], "models": models},
+        },
+    }
+    (tmp_path / "ordered.json").write_text(json.dumps(result), encoding="utf-8")
+    assert estimate_matching_plan_seconds(tmp_path, "llamacpp", ["llm", "conv"], models) == 60
+
+
+def test_dry_run_output_explains_an_empty_engine_selection():
+    assert format_dry_run_output([]) == "No workloads resolved for the selected engine pass(es)."
+    assert format_dry_run_output(["first", "second"]) == "first\n\nsecond"
 
 
 def test_resolved_plan_lists_models_cases_and_historical_eta(monkeypatch):

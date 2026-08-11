@@ -38,7 +38,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
 }) {
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
-  const effectiveYLabel = deltaMode ? "Change from baseline (%)" : yLabel;
+  const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
   const yTickFormatter = (v: number) => fmt(v, effectiveUnit);
   return (
     <div className="card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
@@ -180,7 +180,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
 }) {
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
-  const effectiveYLabel = deltaMode ? "Change from baseline (%)" : yLabel;
+  const effectiveYLabel = deltaMode ? "Relative change from baseline (%)" : yLabel;
   const valFormatter = (v: number) => fmt(v, effectiveUnit);
 
   // Replace nulls with 0 so recharts renders the bar slot; track which were null.

@@ -1,4 +1,4 @@
-import { CTX_ORDER, MODEL_SIZE_TIER, SIZE_TIER_ORDER } from "../constants";
+import { CTX_ORDER, MODEL_SIZE_TIER, SIZE_TIER_ORDER, SPEC_CARD_PREFERRED_CTX } from "../constants";
 import type { DisplayFile } from "../types";
 import { entriesOf, lookup, modelLabel } from "./shared";
 import type { JsonRecord } from "./shared";
@@ -31,7 +31,8 @@ export function buildSpecCardSummary(file: DisplayFile): TierSummary[] {
   }
   return SIZE_TIER_ORDER.flatMap(tier => {
     const models = tiers.get(tier) ?? [];
-    const checkpoints = ["2K", ...CTX_ORDER.filter(context => context !== "2K")];
+    const checkpoints = [SPEC_CARD_PREFERRED_CTX,
+      ...CTX_ORDER.filter(context => context !== SPEC_CARD_PREFERRED_CTX)];
     for (const checkpoint of checkpoints) {
       const tps: Winner[] = [];
       const ttft: Winner[] = [];

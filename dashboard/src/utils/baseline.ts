@@ -1,11 +1,13 @@
 import type { JsonRecord } from "./shared";
 import type { ResultsFile } from "../types";
 
-const DELTA_FIELDS = new Set([
+// Every numeric source field rendered by a chart must be registered and covered by the ratchet test.
+export const DELTA_FIELD_NAMES = [
   "tps_mean", "prefill_tps_mean", "client_ttft_mean_sec", "ttft_mean_sec",
   "aggregate_tps", "accuracy_pct", "chunks_per_sec_mean", "sec_per_image_mean",
   "avg_ts", "speed_tg", "avg_latency_sec", "output_tps",
-]);
+] as const;
+const DELTA_FIELDS = new Set<string>(DELTA_FIELD_NAMES);
 const IDENTITY_FIELDS = ["n_prompt", "n_depth", "n_gen", "pp", "tg", "pl", "input_len", "output_len"];
 
 function arrayPeer(candidate: JsonRecord, baseline: JsonRecord[]): JsonRecord | undefined {

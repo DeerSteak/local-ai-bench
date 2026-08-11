@@ -53,7 +53,7 @@ def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str
     for path in Path(directory).glob("*.json") if Path(directory).exists() else ():
         try:
             result = load_result(path)
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError):
             continue
         run = as_dict(result.get("run"))
         plan = as_dict(run.get("plan"))
@@ -62,8 +62,10 @@ def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str
             for family, entries in as_dict(plan.get("models")).items()
             if isinstance(entries, list)
         }
+        recorded_tests = plan.get("requested_tests")
         if ((result.get("engine") or run.get("engine")) != engine
-                or plan.get("requested_tests") != tests
+                or not isinstance(recorded_tests, list)
+                or sorted(recorded_tests) != sorted(tests)
                 or actual_models != expected_models):
             continue
         duration = completed_run_duration_seconds(result)

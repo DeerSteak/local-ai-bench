@@ -283,6 +283,7 @@ export const EMBED_BAR_COLORS = {
 // 80K checkpoints added between the wider steps (128K is kept here only so
 // older result files that still have a 128K checkpoint still render).
 export const CTX_ORDER = ["0K", "0.5K", "2K", "4K", "8K", "16K", "32K", "48K", "64K", "80K", "96K", "128K"];
+export const SPEC_CARD_PREFERRED_CTX = "2K";
 
 // Image resolution order
 export const RES_ORDER = ["512x512", "768x768", "1024x1024", "1536x1536"];

@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { applyBaselineDeltas } from "./baseline";
+import { applyBaselineDeltas, DELTA_FIELD_NAMES } from "./baseline";
 
 describe("applyBaselineDeltas", () => {
+  it("keeps the chart metric registry explicit", () => {
+    expect(DELTA_FIELD_NAMES).toEqual([
+      "tps_mean", "prefill_tps_mean", "client_ttft_mean_sec", "ttft_mean_sec",
+      "aggregate_tps", "accuracy_pct", "chunks_per_sec_mean", "sec_per_image_mean",
+      "avg_ts", "speed_tg", "avg_latency_sec", "output_tps",
+    ]);
+  });
   const files = [
     { id: "a", hostname: "Old", data: { llm: { m: { "2K": { tps_mean: 40, n_runs: 3 } } } } },
     { id: "b", hostname: "New", data: { llm: { m: { "2K": { tps_mean: 50, n_runs: 3 } } } } },

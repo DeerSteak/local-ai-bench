@@ -231,6 +231,11 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
     return "\n".join(lines)
 
 
+def format_dry_run_output(plans: list[str]) -> str:
+    """Join resolved engine passes or explain that selection resolved to no work."""
+    return "\n\n".join(plans) if plans else "No workloads resolved for the selected engine pass(es)."
+
+
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
     """Resolve --maxtier into (llm_models, tier_label, image_models) — see
     the `--maxtier` row in docs/cli-reference.md."""
@@ -806,6 +811,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         sys.exit(2)
 
     if args.dry_run:
+        previews = []
         for run_idx, engine_scope in enumerate(engine_scopes):
             include_images = len(engine_scopes) == 1 or run_idx == 0
             tests = engine_pass_tests(args.tests, engine_scope["name"], include_images=include_images)
@@ -823,11 +829,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "concurrency": engine_scope["concurrency_models"],
                 "embeddings": embedding_models, "images": image_models,
             }
-            Shared.output(format_resolved_plan(
+            previews.append(format_resolved_plan(
                 engine_scope["name"], tests, display_models, estimate,
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
             ))
+        Shared.output(format_dry_run_output(previews))
         return
 
     hardware_profile = Shared.build_profile()
