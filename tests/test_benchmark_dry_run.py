@@ -20,6 +20,14 @@ def eta_config(**overrides):
     return {**config, **overrides}
 
 
+def hardware_profile(**overrides):
+    profile = {
+        "hostname": "host", "os": "Linux 6.8", "arch": "x86_64",
+        "ram_gb": 32.0, "backend": "cuda",
+    }
+    return {**profile, **overrides}
+
+
 def test_completed_duration_requires_a_positive_completed_interval():
     result = {"run": {"status": "complete", "started_at": "2026-01-01T10:00:00Z",
                       "finished_at": "2026-01-01T10:02:30Z"}}
@@ -36,7 +44,7 @@ def test_eta_uses_only_exact_completed_plan_matches(tmp_path):
     config = eta_config()
     for name, seconds, engine in (("a", 120, "llamacpp"), ("b", 240, "llamacpp"), ("c", 9, "vllm")):
         result = {
-            "engine": engine, "profile": {"hostname": "host"},
+            "engine": engine, "profile": hardware_profile(),
             "run": {
                 "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
                 "finished_at": f"2026-01-01T10:{seconds // 60:02d}:{seconds % 60:02d}+00:00",
@@ -45,7 +53,9 @@ def test_eta_uses_only_exact_completed_plan_matches(tmp_path):
             },
         }
         (tmp_path / f"{name}.json").write_text(json.dumps(result), encoding="utf-8")
-    assert estimate_matching_plan_seconds(tmp_path, "llamacpp", ["llm"], models, config) == 180
+    assert estimate_matching_plan_seconds(
+        tmp_path, "llamacpp", ["llm"], models, config, hardware_profile(),
+    ) == 180
 
 
 def test_eta_rejects_history_with_different_runtime_shape(tmp_path):
@@ -53,7 +63,7 @@ def test_eta_rejects_history_with_different_runtime_shape(tmp_path):
     historical_config = eta_config(runs=3, warmup_runs=1, max_prompt_tokens=65536,
                                    context_lengths=[512, 2048, 8192, 32768, 65536])
     result = {
-        "engine": "llamacpp",
+        "engine": "llamacpp", "profile": hardware_profile(),
         "run": {
             "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
             "finished_at": "2026-01-01T10:30:00+00:00",
@@ -63,7 +73,7 @@ def test_eta_rejects_history_with_different_runtime_shape(tmp_path):
     }
     (tmp_path / "full.json").write_text(json.dumps(result), encoding="utf-8")
     assert estimate_matching_plan_seconds(
-        tmp_path, "llamacpp", ["llm"], models, eta_config(),
+        tmp_path, "llamacpp", ["llm"], models, eta_config(), hardware_profile(),
     ) is None
 
 
@@ -72,7 +82,7 @@ def test_eta_rejects_history_missing_a_runtime_shape_key(tmp_path):
     historical_config = eta_config()
     del historical_config["sample_size"]
     result = {
-        "engine": "llamacpp",
+        "engine": "llamacpp", "profile": hardware_profile(),
         "run": {
             "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
             "finished_at": "2026-01-01T10:01:00+00:00",
@@ -82,7 +92,7 @@ def test_eta_rejects_history_missing_a_runtime_shape_key(tmp_path):
     }
     (tmp_path / "legacy.json").write_text(json.dumps(result), encoding="utf-8")
     assert estimate_matching_plan_seconds(
-        tmp_path, "llamacpp", ["llm"], models, eta_config(),
+        tmp_path, "llamacpp", ["llm"], models, eta_config(), hardware_profile(),
     ) is None
 
 
@@ -90,7 +100,7 @@ def test_eta_treats_workload_order_as_plan_equivalent(tmp_path):
     models = {"llm": [{"short": "tiny"}], "concurrency": [], "embeddings": [], "images": []}
     config = eta_config()
     result = {
-        "engine": "llamacpp",
+        "engine": "llamacpp", "profile": hardware_profile(),
         "run": {
             "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
             "finished_at": "2026-01-01T10:01:00+00:00",
@@ -100,8 +110,26 @@ def test_eta_treats_workload_order_as_plan_equivalent(tmp_path):
     }
     (tmp_path / "ordered.json").write_text(json.dumps(result), encoding="utf-8")
     assert estimate_matching_plan_seconds(
-        tmp_path, "llamacpp", ["llm", "conv"], models, config,
+        tmp_path, "llamacpp", ["llm", "conv"], models, config, hardware_profile(),
     ) == 60
+
+
+def test_eta_rejects_history_from_different_hardware(tmp_path):
+    models = {"llm": [{"short": "tiny"}], "concurrency": [], "embeddings": [], "images": []}
+    config = eta_config()
+    result = {
+        "engine": "llamacpp", "profile": hardware_profile(ram_gb=64.0),
+        "run": {
+            "status": "complete", "started_at": "2026-01-01T10:00:00+00:00",
+            "finished_at": "2026-01-01T10:01:00+00:00",
+            "plan": {"requested_tests": ["llm"], "models": models,
+                     "effective_config": config},
+        },
+    }
+    (tmp_path / "other-hardware.json").write_text(json.dumps(result), encoding="utf-8")
+    assert estimate_matching_plan_seconds(
+        tmp_path, "llamacpp", ["llm"], models, config, hardware_profile(),
+    ) is None
 
 
 def test_dry_run_output_explains_an_empty_engine_selection():

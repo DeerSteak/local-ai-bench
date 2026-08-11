@@ -832,6 +832,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.err(error)
         sys.exit(2)
 
+    hardware_profile = Shared.build_profile()
     if args.dry_run:
         previews = []
         for run_idx, engine_scope in enumerate(engine_scopes):
@@ -845,7 +846,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
-                eta_match_config(args),
+                eta_match_config(args), hardware_profile,
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
@@ -860,7 +861,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(format_dry_run_output(previews))
         return
 
-    hardware_profile = Shared.build_profile()
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
