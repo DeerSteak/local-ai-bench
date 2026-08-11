@@ -18,7 +18,7 @@ from scripts.app.benchmark_frontend import (
 from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
-    completed_result_paths, dashboard_launcher_command,
+    completed_result_paths, dashboard_launcher_command, detected_process_exit_code,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     fork_executor_command, fork_review_report, format_recovery_inspection,
     launch_controlled_process, open_path_command, parse_progress_line,
@@ -43,6 +43,12 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_process_exit_is_detected_before_stdout_reader_reaches_eof():
+    process = type("Process", (), {"poll": lambda self: -2})()
+    assert detected_process_exit_code(process) == -2
+    assert detected_process_exit_code(process, 0) == 0
 
 
 def test_import_refresh_preserves_valid_selections_selects_import_and_prunes_stale_state():

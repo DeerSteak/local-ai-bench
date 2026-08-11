@@ -95,6 +95,13 @@ def effective_gui_options(state: dict | None) -> dict:
     return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
 
 
+def detected_process_exit_code(process, reader_exit_code: int | None = None) -> int | None:
+    """Detect parent exit even while a descendant keeps the stdout pipe open."""
+    if reader_exit_code is not None:
+        return reader_exit_code
+    return process.poll() if process is not None else None
+
+
 def open_path_command(path: Path, system: str) -> list[str]:
     if system == "Darwin":
         return ["open", str(path)]
@@ -2473,8 +2480,41 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         log_text.see("end")
         log_text.configure(state="disabled")
 
-    def poll_output():
+    def finish_active_process(exit_code):
         nonlocal process, active_process_kind
+        process = None
+        if exit_code == 0:
+            try:
+                write_run_logs(
+                    current_log(), completed_result_paths(current_log()) or active_result_paths,
+                )
+            except OSError as exc:
+                append_log(f"\nCould not save Run Log: {exc}\n")
+        finish_process_control()
+        stop_button.configure(state="disabled")
+        start_button.configure(state="normal")
+        if active_process_kind in {"recovery", "retry", "fork"}:
+            label = {
+                "recovery": "Recovery", "retry": "Selected retry",
+                "fork": "Forked run",
+            }[active_process_kind]
+            run_status.set(
+                f"{label} completed successfully. Results are ready to review."
+                if exit_code == 0 else
+                f"{label} stopped with exit code {exit_code}. Preserved evidence remains available."
+            )
+        else:
+            run_status.set(format_run_outcome(exit_code))
+        active_process_kind = None
+        refresh_history()
+        for variable in stage_progress_vars.values():
+            if variable.get() in {"○ Queued", "▶ Running"}:
+                variable.set("— Not run" if exit_code else "✓ Complete")
+        for variable in model_progress_vars.values():
+            if variable.get() in {"○ Queued", "▶ Running"}:
+                variable.set("— Not run")
+
+    def poll_output():
         try:
             while True:
                 kind, value = output_queue.get_nowait()
@@ -2482,40 +2522,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     append_log(value)
                 elif kind == "progress":
                     update_progress(value)
-                else:
-                    process = None
-                    if value == 0:
-                        try:
-                            write_run_logs(
-                                current_log(), completed_result_paths(current_log()) or active_result_paths,
-                            )
-                        except OSError as exc:
-                            append_log(f"\nCould not save Run Log: {exc}\n")
-                    finish_process_control()
-                    stop_button.configure(state="disabled")
-                    start_button.configure(state="normal")
-                    if active_process_kind in {"recovery", "retry", "fork"}:
-                        label = {
-                            "recovery": "Recovery", "retry": "Selected retry",
-                            "fork": "Forked run",
-                        }[active_process_kind]
-                        run_status.set(
-                            f"{label} completed successfully. Results are ready to review."
-                            if value == 0 else
-                            f"{label} stopped with exit code {value}. Preserved evidence remains available."
-                        )
-                    else:
-                        run_status.set(format_run_outcome(value))
-                    active_process_kind = None
-                    refresh_history()
-                    for variable in stage_progress_vars.values():
-                        if variable.get() in {"○ Queued", "▶ Running"}:
-                            variable.set("— Not run" if value else "✓ Complete")
-                    for variable in model_progress_vars.values():
-                        if variable.get() in {"○ Queued", "▶ Running"}:
-                            variable.set("— Not run")
+                elif process is not None:
+                    finish_active_process(detected_process_exit_code(process, value))
         except queue.Empty:
             pass
+        if process is not None:
+            exit_code = detected_process_exit_code(process)
+            if exit_code is not None:
+                finish_active_process(exit_code)
         if process is not None and process.poll() is None and progress_started_at is not None:
             now = time.monotonic()
             elapsed = now - progress_started_at
