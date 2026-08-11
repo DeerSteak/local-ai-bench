@@ -18,6 +18,7 @@ def test_schema_defines_every_gui_default_and_cli_choice_set():
     assert PUBLIC_OPTION_SCHEMA["--tests"].choices == TEST_CHOICES
     assert PUBLIC_OPTION_SCHEMA["--tg-tokens"].choices == TG_TOKEN_CHOICES
     assert PUBLIC_OPTION_SCHEMA["--maxtier"].choices == TIER_CHOICES
+    assert PUBLIC_OPTION_SCHEMA["--quick"].default is False
 
 
 def test_schema_validates_numeric_types_and_bounds():

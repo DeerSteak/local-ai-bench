@@ -167,6 +167,18 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def apply_quick_preset(args) -> None:
+    """Apply the fixed CLI smoke-test scope while preserving runtime/path options."""
+    if not args.quick:
+        return
+    args.tests = ["llm"]
+    args.warmup = 0
+    args.runs = 1
+    args.max_prompt_tokens = 2048
+    args.maxtier = "xsmall"
+    args.llm_models = [LLM_MODELS_XSMALL[0]["tag"]]
+
+
 def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, list]:
     """Resolve --maxtier into (llm_models, tier_label, image_models) — see
     the `--maxtier` row in docs/cli-reference.md."""
@@ -486,6 +498,12 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
 def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
+        "--quick", action="store_true",
+        help="Run a short pipeline smoke test: the smallest xsmall LLM at 512 and 2K, "
+             "one measured run, no warmups, and no other workloads. Runtime, engine, "
+             "and output-path options still apply.",
+    )
+    parser.add_argument(
         "--tests", nargs="+",
         choices=TEST_CHOICES,
         default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
@@ -654,6 +672,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+    apply_quick_preset(args)
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
     config.RETRY_CRASHED_MODELS = args.retry_crashed_models
