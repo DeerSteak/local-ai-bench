@@ -18,6 +18,7 @@ import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
+import { buildRunCardFilename } from "./utils/specCard";
 
 // The minimal shape both real File objects and autoload's staged-result
 // entries satisfy — this is all parseFile/processJsonFiles actually need.
@@ -282,13 +283,13 @@ export default function Dashboard() {
       await document.fonts.ready;
       const cards = [...summaryRef.current.querySelectorAll<HTMLElement>("[data-spec-card]")];
       if (!cards.length) throw new Error("no run cards are available");
+      const names = cards.map((card, index) => card.dataset.specName || `run-${index + 1}`);
       for (let index = 0; index < cards.length; index++) {
         const canvas = await html2canvas(cards[index], {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
-        const name = sanitizeForFilename(cards[index].dataset.specName || `run-${index + 1}`);
         const link = document.createElement("a");
-        link.download = `${name}_run_card.png`;
+        link.download = buildRunCardFilename(names, index, filenameSuffix);
         link.href = canvas.toDataURL("image/png");
         link.click();
         if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
@@ -298,7 +299,7 @@ export default function Dashboard() {
     } finally {
       setSavingSpecCard(false);
     }
-  }, [savingSpecCard]);
+  }, [savingSpecCard, filenameSuffix]);
 
   const cycleSort = (key: string) => {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });

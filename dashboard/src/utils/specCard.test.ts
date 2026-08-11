@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSpecCardSummary } from "./specCard";
+import { buildRunCardFilename, buildSpecCardSummary } from "./specCard";
 
 function file(llm: object) {
   return {
@@ -33,5 +33,17 @@ describe("buildSpecCardSummary", () => {
       fastest: { model: "Gemma 3 1B", value: 80 },
       lowestTtft: { model: "Gemma 3 1B", value: 0.4 },
     }]);
+  });
+});
+
+describe("buildRunCardFilename", () => {
+  it("uses the export suffix and disambiguates repeated hostnames", () => {
+    const names = ["My Host", "My Host"];
+    expect(buildRunCardFilename(names, 0, "before upgrade")).toBe(
+      "My-Host_before-upgrade_run-card.png",
+    );
+    expect(buildRunCardFilename(names, 1, "after upgrade")).toBe(
+      "My-Host_2_after-upgrade_run-card.png",
+    );
   });
 });

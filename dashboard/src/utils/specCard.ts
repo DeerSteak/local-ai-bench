@@ -1,6 +1,6 @@
 import { CTX_ORDER, MODEL_SIZE_TIER, SIZE_TIER_ORDER, SPEC_CARD_PREFERRED_CTX } from "../constants";
 import type { DisplayFile } from "../types";
-import { entriesOf, lookup, modelLabel } from "./shared";
+import { entriesOf, lookup, modelLabel, sanitizeForFilename } from "./shared";
 import type { JsonRecord } from "./shared";
 import { llmTTFTMean } from "./llm";
 
@@ -11,6 +11,14 @@ export interface TierSummary {
   checkpoint: string;
   fastest: Winner;
   lowestTtft: Winner;
+}
+
+export function buildRunCardFilename(names: string[], index: number, suffix: string): string {
+  const name = sanitizeForFilename(names[index] || `run-${index + 1}`);
+  const occurrence = names.slice(0, index + 1)
+    .filter(candidate => sanitizeForFilename(candidate) === name).length;
+  const parts = [name, occurrence > 1 ? String(occurrence) : "", sanitizeForFilename(suffix), "run-card"];
+  return `${parts.filter(Boolean).join("_")}.png`;
 }
 
 function winner(entries: Winner[], direction: "max" | "min"): Winner | null {
