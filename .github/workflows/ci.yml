@@ -49,7 +49,9 @@ jobs:
         with:
           node-version: "22"
       - name: Install Python dependencies
-        run: pip install -r requirements.txt -r tests/requirements.txt
+        run: |
+          python -m venv bench-env
+          bench-env/bin/pip install -r requirements.txt -r tests/requirements.txt
       - name: Run Pyright
         run: npx --yes pyright@latest
 
