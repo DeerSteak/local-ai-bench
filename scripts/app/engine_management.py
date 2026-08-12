@@ -27,6 +27,7 @@ OWNERSHIP_LABELS = {
     "external_server": "External server",
     "platform_launcher": "Platform launcher",
     "missing": "Not installed",
+    "inspecting": "Inspecting…",
 }
 
 
@@ -40,6 +41,12 @@ class EngineManagementSnapshot:
 class EngineManagementController:
     busy: Callable[[], bool]
     cancel: Callable[[], None]
+
+
+def inspection_placeholder(engine: str) -> EngineStatus:
+    return EngineStatus(
+        engine, "inspecting", "Inspecting…", "Inspecting…", "Inspecting…", "Inspecting…",
+    )
 
 
 def engine_status_lines(status: EngineStatus) -> list[tuple[str, str]]:
@@ -141,7 +148,12 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     header = ttk.Frame(parent)
     header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
     ttk.Label(header, text="Engine Management", style="Title.TLabel").pack(side="left")
-    state = {"snapshot": EngineManagementSnapshot([], []), "loading": False}
+    state = {
+        "snapshot": EngineManagementSnapshot(
+            [inspection_placeholder(engine) for engine in ("llamacpp", "vllm")], [],
+        ),
+        "loading": False,
+    }
     active_control: list[RuntimeUpdateControl | None] = [None]
     probe_results: dict[tuple[str, str], ModelCompatibility] = {}
     status_text = tk.StringVar(value="Select Refresh to inspect installed runtimes.")
@@ -203,7 +215,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                         command=lambda selected=model: start_model_probe(selected),
                     ).grid(row=row, column=1, sticky="e", padx=(12, 0))
 
-    def refresh_finished(snapshot=None, error=None):
+    def refresh_finished(snapshot=None, error=None, on_complete=None):
         state["loading"] = False
         refresh_button.configure(state="normal")
         if error is not None:
@@ -214,24 +226,37 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         render(snapshot)
         copy_button.configure(state="normal")
         status_text.set("Runtime inspection complete.")
+        if on_complete is not None:
+            on_complete()
 
-    def update_finished(engine, result=None, error=None):
+    def update_finished(engine_key, label, result=None, error=None):
         state["loading"] = False
         active_control[0] = None
         refresh_button.configure(state="normal")
         cancel_button.configure(state="disabled")
         if error is not None:
-            status_text.set(f"{engine} update failed: {error}")
+            status_text.set(f"{label} update failed: {error}")
             return
         assert result is not None
         if result.success:
             identity = f" ({result.version})" if result.version else ""
             append_output(f"\n{result.detail}{identity}\nRescanning installed runtimes…\n")
-            status_text.set(f"{engine} update complete; rescanning installed runtimes…")
-            messagebox.showinfo(f"{engine} update", result.detail, parent=root)
-            refresh()
+            status_text.set(f"{label} update complete; rescanning installed runtimes…")
+
+            def announce_success():
+                installed = next(
+                    (item for item in state["snapshot"].statuses if item.engine == engine_key),
+                    None,
+                )
+                version = f"\n\nInstalled version: {installed.version}" \
+                    if installed is not None and installed.version else ""
+                messagebox.showinfo(
+                    f"{label} update", f"{result.detail}{version}", parent=root,
+                )
+
+            refresh(on_complete=announce_success)
         else:
-            messagebox.showerror(f"{engine} update", result.detail, parent=root)
+            messagebox.showerror(f"{label} update", result.detail, parent=root)
             status_text.set(result.detail)
 
     def probe_finished(model, result=None, error=None):
@@ -247,7 +272,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         render(state["snapshot"])
         status_text.set(result.detail)
 
-    def refresh():
+    def refresh(on_complete=None):
         if state["loading"]:
             return
         state["loading"] = True
@@ -257,7 +282,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         def worker():
             try:
                 snapshot = status_loader()
-                root.after(0, lambda: refresh_finished(snapshot=snapshot))
+                root.after(
+                    0, lambda: refresh_finished(snapshot=snapshot, on_complete=on_complete),
+                )
             except Exception as exc:
                 root.after(0, lambda error=exc: refresh_finished(error=error))
         threading.Thread(target=worker, daemon=True).start()
@@ -295,9 +322,13 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         def worker():
             try:
                 result = updater(control)
-                root.after(0, lambda: update_finished(label, result=result))
+                root.after(
+                    0, lambda: update_finished(engine_key, label, result=result),
+                )
             except Exception as exc:
-                root.after(0, lambda error=exc: update_finished(label, error=error))
+                root.after(
+                    0, lambda error=exc: update_finished(engine_key, label, error=error),
+                )
         threading.Thread(target=worker, daemon=True).start()
 
     def cancel_update():
@@ -360,6 +391,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 allow_system=platform.system() == "Darwin",
             ),
         ).pack(side="right", padx=(0, 8))
+    render(state["snapshot"])
     refresh()
     return EngineManagementController(
         busy=lambda: active_control[0] is not None,

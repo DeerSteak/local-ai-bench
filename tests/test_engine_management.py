@@ -1,7 +1,8 @@
 import json
 
 from scripts.app.engine_management import (
-    engine_diagnostics_text, engine_status_lines, vllm_update_support,
+    engine_diagnostics_text, engine_status_lines, inspection_placeholder,
+    vllm_update_support,
 )
 from scripts.setup.runtime_status import EngineStatus
 
@@ -16,6 +17,17 @@ def test_engine_status_lines_include_identity_components_and_warnings():
     assert ("Torch", "2.11.0") in lines
     assert ("Kernel", "None") not in lines
     assert ("Warning", "Pinned memory disabled") in lines
+
+
+def test_inspection_placeholder_populates_every_visible_identity_field():
+    lines = dict(engine_status_lines(inspection_placeholder("llamacpp")))
+    assert lines == {
+        "Ownership": "Inspecting…",
+        "Location": "Inspecting…",
+        "Version": "Inspecting…",
+        "Backend": "Inspecting…",
+        "Health": "Inspecting…",
+    }
 
 
 def test_engine_diagnostics_are_stable_machine_readable_json():
