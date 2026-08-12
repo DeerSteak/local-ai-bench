@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.runtime.shared import Shared
+from scripts.workloads.accuracy_scoring import score_question_bank
 
 
 class ReasoningBenchmark:
@@ -156,44 +157,16 @@ class ReasoningBenchmark:
 
     @staticmethod
     def score(questions: list[dict], answers: dict) -> dict:
-        by_category: dict[str, dict] = {}
-        by_difficulty: dict[str, dict] = {}
-        incorrect = []
-        all_results = []
-        correct = 0
-        answered = 0
-
-        for question in questions:
-            question_id = question["id"]
-            category = question["category"]
-            difficulty = question["difficulty"]
-            expected = question["answer"]
-            given = answers.get(question_id)
-            category_score = by_category.setdefault(category, {"correct": 0, "total": 0})
-            difficulty_score = by_difficulty.setdefault(
-                difficulty, {"correct": 0, "total": 0},
-            )
-            category_score["total"] += 1
-            difficulty_score["total"] += 1
-            if given is not None:
-                answered += 1
-            is_correct = given == expected
-            entry = {
-                "id": question_id,
-                "category": category,
-                "difficulty": difficulty,
-                "given": given,
-                "expected": expected,
-            }
-            if Shared.tally_accuracy_entry(
-                entry, is_correct, category_score, all_results, incorrect,
-            ):
-                correct += 1
-                difficulty_score["correct"] += 1
-
-        return Shared.finalize_accuracy_score(len(questions), correct, answered, by_category,
-                                               incorrect, all_results,
-                                               extra={"by_difficulty": by_difficulty})
+        return score_question_bank(
+            questions, answers,
+            lambda question, given: (
+                given is not None, given == question["answer"],
+                {"id": question["id"], "category": question["category"],
+                 "difficulty": question["difficulty"], "given": given,
+                 "expected": question["answer"]},
+            ),
+            extra_groups=(("by_difficulty", "difficulty"),),
+        )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS,
             save_fn=None, answers_path: Path | None = None

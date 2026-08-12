@@ -7,7 +7,9 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.runtime.engines.base import embedding_validation_errors
 from scripts.runtime.shared import Shared
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 
 
 class EmbeddingBenchmark:
@@ -63,7 +65,7 @@ class EmbeddingBenchmark:
             Shared.err("Inference engine not running — skipping embedding benchmarks")
             return results
 
-        crash_cache = Shared.load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
+        crash_cache = load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
         chunks = EmbeddingBenchmark.chunk_document()
         Shared.log(f"Corpus: {len(chunks)} chunks from {EmbeddingBenchmark.EMBED_DOCUMENT_PATH.name} "
                    f"(max {EmbeddingBenchmark.EMBED_CHUNK_MAX_WORDS} words/chunk)")
@@ -87,8 +89,10 @@ class EmbeddingBenchmark:
 
                 Shared.ok(f"Using model: {tag}")
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
-                                       engine_name=engine.name)
+                skip_entry = check_crash_cache(
+                    tag, label, crash_cache, EmbeddingBenchmark.EMBED_CRASH_CACHE,
+                    engine_name=engine.name,
+                )
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
@@ -171,7 +175,7 @@ class EmbeddingBenchmark:
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running the embedding benchmark — {exc} — "
                            "skipping remaining work for this model")
-                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
+                results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

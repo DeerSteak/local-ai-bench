@@ -14,8 +14,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
-from scripts.app.progress_events import PROGRESS_PREFIX, emit_result_saved, set_progress_engine
-from scripts.runtime.log_redaction import redact_log_text
+from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
@@ -24,8 +23,7 @@ from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
-from scripts.results.llm_event_stage import LLMEventStage, event_store_path, export_llm_section
-from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.llm_event_stage import event_store_path
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
 from scripts.workloads.image_benchmark import ImageBenchmark
 from scripts.workloads.mcq_benchmark import MCQBenchmark
@@ -51,24 +49,14 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
-from typing import Callable, Protocol
-
-from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
+from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
 from scripts.setup.runtime_identity import engine_runtime_version
-
-
-def relay_runner_log(text: str) -> None:
-    """Relay a runner's line as-is. The runner already stamped it; stamping again would
-    report when the parent got round to printing, not when the event happened."""
-    if text.startswith(PROGRESS_PREFIX):
-        sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
-        sys.stdout.flush()
-        return
-    sys.stdout.write(f"{redact_log_text(text.rstrip())}\n")
-    sys.stdout.flush()
+from scripts.stage_registry import (
+    ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests,
+)
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -85,63 +73,6 @@ def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint)
     elif run["status"] == "interrupted":
         finish_active_stage(run, "interrupted", run.get("reason", "signal"))
         checkpoint("run interrupted")
-
-
-class _RunnerLike(Protocol):
-    """The only two methods run_supervised_stage calls on a supervisor."""
-    def run(self, on_event, /) -> int | None: ...
-    def cancel(self) -> None: ...
-
-
-def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
-                         supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
-                         resume_identity=None,
-                         resume=False, selected_case_ids=None) -> dict:
-    event_path = Path(event_path).resolve()
-    if stage_name == "llamabench":
-        journal = NativeBenchEventStage(
-            event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
-        )
-        project = lambda: export_native_bench_section(event_path, plan.job_id)
-    else:
-        model_family = "concurrency" if stage_name in {"conc_tool", "conc_chat"} else "llm"
-        journal = LLMEventStage(
-            event_path, plan, lambda _: None, stage_name=stage_name,
-            model_family=model_family, resume_identity=resume_identity, resume=resume,
-            selected_case_ids=selected_case_ids,
-        )
-        project = lambda: export_llm_section(
-            event_path, plan.job_id, stage_name, model_family,
-        )
-    journal.close()
-    supervisor = supervisor_factory(RunnerSpec(plan.job_id, stage_name, event_path))
-    terminal = []
-
-    def on_runner_event(event):
-        if event["kind"] == "event":
-            save_fn(project())
-        elif event["kind"] == "terminal":
-            terminal.append(event["status"])
-        elif event["kind"] == "log":
-            relay_runner_log(event["text"])
-
-    try:
-        return_code = supervisor.run(on_runner_event)
-    finally:
-        supervisor.cancel()
-    section = project()
-    save_fn(section)
-    if return_code or terminal != ["complete"]:
-        raise RuntimeError(f"{stage_name} runner failed with exit code {return_code}")
-    return section
-
-
-def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
-                       supervisor_factory: Callable[..., _RunnerLike] = RunnerSupervisor,
-                       resume_identity=None) -> dict:
-    return run_supervised_stage(
-        plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
-    )
 
 
 # Tier selection is cumulative: --maxtier caps at that tier and includes
@@ -383,32 +314,8 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
     return run_models, concurrency_models
 
 
-ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
-CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
-LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc", "vllmbench"]
-
-
 def engine_version_applies(tests: list[str]) -> bool:
     return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
-
-# Tests that shell out to one engine's own native benchmark binary rather than going
-# through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
-ENGINE_NATIVE_TESTS = {
-    "llamacpp": ("llamabench", "llamabenchconc"),
-    "vllm": ("vllmbench",),
-}
-
-
-def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
-    """Selected tests that are native to a *different* engine than `engine_name` and
-    would just warn and produce nothing if scheduled — see ENGINE_NATIVE_TESTS."""
-    native_here = set(ENGINE_NATIVE_TESTS.get(engine_name, ()))
-    other_engines_native = {
-        test for name, native_tests in ENGINE_NATIVE_TESTS.items()
-        if name != engine_name for test in native_tests
-    }
-    return [t for t in tests if t in other_engines_native and t not in native_here]
-
 
 def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
     """Workloads that produce results in one engine pass."""

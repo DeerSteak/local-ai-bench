@@ -7,16 +7,12 @@ from pathlib import Path
 from scripts.runtime import config, hardware
 from scripts.setup.custom_models import forget_custom_models
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.runtime.model_identity import model_tag_slug
 
 
 def sanitize_tag_to_short(tag: str) -> str:
     """Turn a raw tag into a filesystem/JSON-key-safe short identifier."""
     return re.sub(r"[:/]", "-", tag)
-
-
-def model_tag_slug(tag: str) -> str:
-    """Return the llama.cpp model-directory name for a catalog tag."""
-    return tag.replace(":", "_").replace("/", "_")
 
 
 def engine_model_dir(models_root: Path, engine: str, tag: str) -> Path:

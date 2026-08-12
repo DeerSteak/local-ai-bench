@@ -1,5 +1,4 @@
-"""Cross-cutting helpers shared by more than one workload: logging, ComfyUI
-lifecycle, machine profiling, crash caches, engine-agnostic orchestration."""
+"""Cross-workload logging, ComfyUI, profiling, and orchestration helpers."""
 
 import hashlib
 import json
@@ -34,7 +33,9 @@ from scripts.runtime.log_redaction import redact_log_text
 from scripts.workloads.models import IMAGE_MODELS
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.generation_guard import looks_like_loop
 
 if TYPE_CHECKING:
     from scripts.runtime.engines.base import InferenceEngine
@@ -658,108 +659,13 @@ class Shared:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
     @staticmethod
-    def load_crash_cache(path: Path) -> dict:
-        """Load a benchmark's engine -> tag -> crash record cache — see
-        docs/project-structure.md's *_crash_cache.json entries."""
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    @staticmethod
-    def save_crash_cache(path: Path, cache: dict) -> None:
-        try:
-            atomic_write_json(path, cache)
-        except Exception as e:
-            Shared.warn(f"Failed to save crash cache to {path}: {e}")
-
-    @staticmethod
-    def crash_cache_paths(root: Path) -> list[Path]:
-        """All current and future workload crash caches in the repository root."""
-        return sorted(
-            path for path in Path(root).glob(".*_crash_cache.json")
-            if path.is_file() or path.is_symlink()
-        )
-
-    @staticmethod
-    def clear_crash_caches(root: Path) -> tuple[list[Path], dict[Path, str]]:
-        removed = []
-        failures = {}
-        for path in Shared.crash_cache_paths(root):
-            try:
-                path.unlink()
-                removed.append(path)
-            except OSError as exc:
-                failures[path] = str(exc)
-        return removed, failures
-
-    @staticmethod
-    def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
-                           expected_bank_hash: str | None = None, *,
-                           engine_name: str) -> dict | None:
-        """Skip-result dict if `tag` is a known repeat-crasher on `engine_name`, else None.
-        Scoped per engine — a llama.cpp crash says nothing about vLLM's different weights
-        and runtime for the same catalog tag, and vice versa.
-        `expected_bank_hash` treats a crash cached against a stale bank version as not-crashed, without deleting it."""
-        detail = crash_cache.get(engine_name, {}).get(tag)
-        if detail is None:
-            return None
-        if config.RETRY_CRASHED_MODELS:
-            Shared.warn(f"{tag}: ignoring its prior crash record for this run")
-            return None
-        if expected_bank_hash is not None and detail.get("bank_hash") != expected_bank_hash:
-            Shared.warn(f"{tag}'s recorded crash is for a different question-bank version "
-                        "— ignoring stale entry and retrying")
-            return None
-        crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed {engine_name}'s runner repeatedly on "
-                    f"{crashed_at} — skipping (delete {cache_path} to retry)")
-        return {
-            "label": label,
-            "skipped": True,
-            "skip_reason": "known_crash",
-            "skip_detail": f"Crashed {engine_name}'s runner repeatedly on {crashed_at}",
-        }
-
-    @staticmethod
-    def unexpected_model_failure(label: str, exc: BaseException, *, crashed: bool | None = None) -> dict:
-        """A results entry for a model that raised outside the crash/timeout paths a
-        workload already understands (e.g. a bug in the runner itself) — every per-model
-        loop catches this at the top level so one model's failure can never abort the run.
-        `crashed` is a boolean only in accuracy sections; leave it None elsewhere — llm/
-        llm_conversation read `crashed` as a context-label string (see dashboard/src/utils/
-        llm.ts), so a bool there would corrupt any real checkpoint data already recorded."""
-        try:
-            detail = str(exc)
-        except Exception:
-            detail = "(exception could not be formatted)"
-        entry = {
-            "label": label,
-            "unexpected_error": True,
-            "crashed_at": datetime.now().isoformat(timespec="seconds"),
-            "error": f"{type(exc).__name__}: {detail}",
-        }
-        if crashed is not None:
-            entry["crashed"] = crashed
-        return entry
-
-    @staticmethod
-    def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
-                      extra: dict | None = None, *, engine_name: str) -> str:
-        """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
-        check_crash_cache later tell a stale record from a current one."""
-        crashed_at = datetime.now().isoformat(timespec="seconds")
-        crash_cache.setdefault(engine_name, {})[tag] = {"crashed_at": crashed_at, **(extra or {})}
-        Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"{engine_name}'s runner crashed repeatedly {what} — recorded to {cache_path}")
-        return crashed_at
-
-    @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str, engine: "InferenceEngine",
                             crash_extra: dict | None = None) -> tuple[list, str, str, dict]:
         """Shared "N measured runs" loop — see docs/workloads.md#timeouts-and-loop-detection
         and docs/project-structure.md's *_crash_cache.json entries. Returns (samples, status, partial_text, metadata)."""
+        from scripts.runtime.crash_cache import record_crash
+
         samples = []
         run_i = 0
         crash_retries = 0
@@ -790,14 +696,14 @@ class Shared:
                            f"— last server output:\n{engine.tail_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
-                    Shared.record_crash(tag, crash_cache, cache_path, what,
-                                        extra=crash_extra, engine_name=engine.name)
+                    record_crash(tag, crash_cache, cache_path, what,
+                                 extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not engine.wait_for_recovery():
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
-                    Shared.record_crash(tag, crash_cache, cache_path, what,
-                                        extra=crash_extra, engine_name=engine.name)
+                    record_crash(tag, crash_cache, cache_path, what,
+                                 extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
@@ -819,86 +725,6 @@ class Shared:
             emit_progress("measurement", progress_stage, "valid", tag)
         return measurement
 
-    # Common CoT filler — needs a higher repeat count to be diagnostic of a real loop.
-    _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
-        "wait,", "wait -", "actually,", "hold on,",
-    ]
-    # More specific phrases — a few repeats already signals a stuck loop.
-    _LOOP_HEDGE_PHRASES = [
-        "let me reconsider", "let me recalculate",
-        "let me re-check", "let me recheck", "let me recompute", "let me redo",
-        "let me try again", "let's try again", "let's recalculate",
-        "on second thought", "there seems to be a mistake",
-        "there seems to have been", "i made an error", "i made a mistake",
-        "that's not right", "this is incorrect", "let's start over",
-        "apolog",  # apologize / apologies / apologizing
-        "correcting myself", "let me reevaluate", "let me re-evaluate",
-    ]
-
-    @staticmethod
-    def _has_repeated_verbatim_ngram(text: str, ngram_words: int = 12, min_repeats: int = 3) -> bool:
-        """True if any run of `ngram_words` consecutive words recurs `min_repeats`+ times. Word-level, not character-level."""
-        words = text.split()
-        if len(words) < ngram_words * min_repeats:
-            return False
-        seen: dict[str, int] = {}
-        for i in range(len(words) - ngram_words + 1):
-            gram = " ".join(words[i:i + ngram_words])
-            count = seen.get(gram, 0) + 1
-            if count >= min_repeats:
-                return True
-            seen[gram] = count
-        return False
-
-    @staticmethod
-    def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3,
-                                      high_threshold_repeats: int = 5) -> bool:
-        """True if a _LOOP_HEDGE_PHRASES phrase recurs `min_repeats`+ times, or
-        a _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD one recurs `high_threshold_repeats`+."""
-        lowered = text.lower()
-        return (any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
-                or any(lowered.count(phrase) >= high_threshold_repeats
-                       for phrase in Shared._LOOP_HEDGE_PHRASES_HIGH_THRESHOLD))
-
-    @staticmethod
-    def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
-                         hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
-        """Heuristic for a degenerate generation loop — see docs/workloads.md#timeouts-and-loop-detection."""
-        return (Shared._has_repeated_verbatim_ngram(text, ngram_words, min_repeats)
-                or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
-
-    @staticmethod
-    def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
-                              all_results: list, incorrect: list) -> bool:
-        """Common tail of every accuracy benchmark's per-question scoring loop.
-        Returns `is_correct` so the caller can bump its own counter."""
-        all_results.append({**entry, "correct": is_correct})
-        if is_correct:
-            cat["correct"] += 1
-        else:
-            incorrect.append(entry)
-        return is_correct
-
-    @staticmethod
-    def finalize_accuracy_score(total: int, correct: int, answered: int, by_category: dict,
-                                 incorrect: list, all_results: list, extra: dict | None = None) -> dict:
-        """Common tail of every accuracy benchmark's score(): fills in each breakdown's
-        accuracy_pct and assembles the final result dict. `extra` adds further breakdowns
-        (e.g. reasoning's by_difficulty) alongside by_category, keyed by their result field name."""
-        for breakdown in (by_category, *(extra or {}).values()):
-            for cat in breakdown.values():
-                cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
-        return {
-            "correct":      correct,
-            "total":        total,
-            "answered":     answered,
-            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
-            "by_category":  by_category,
-            **(extra or {}),
-            "incorrect":    incorrect,
-            "all":          all_results,
-        }
-
     @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
         """Write an accuracy test's raw-answer sidecar — see docs/project-structure.md's "answers_*.json" section."""
@@ -915,6 +741,8 @@ class Shared:
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
+        from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
+
         results = {}
         answers_out: dict = {}
 
@@ -922,7 +750,7 @@ class Shared:
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
             return results
 
-        crash_cache = Shared.load_crash_cache(crash_cache_path)
+        crash_cache = load_crash_cache(crash_cache_path)
         bank_hash = Shared.file_hash(data_path)
 
         for model in models:
@@ -954,8 +782,10 @@ class Shared:
                     }
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
-                                                       expected_bank_hash=bank_hash, engine_name=engine.name)
+                skip_entry = check_crash_cache(
+                    tag, label, crash_cache, crash_cache_path,
+                    expected_bank_hash=bank_hash, engine_name=engine.name,
+                )
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue
@@ -1013,7 +843,7 @@ class Shared:
                         Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
                                     "scoring the partial response and continuing")
                         timed_out_ids.append(q["id"])
-                        if partial_text and Shared.looks_like_loop(partial_text):
+                        if partial_text and looks_like_loop(partial_text):
                             likely_loop_ids.append(q["id"])
                     elif status == "loop_detected":
                         Shared.warn(f"{q['id']}: response looks like a generation loop")
@@ -1067,7 +897,7 @@ class Shared:
                 Shared.err(f"{label}: unexpected error running the {skip_label} benchmark — {exc} — "
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(
-                    Shared.unexpected_model_failure(label, exc, crashed=True))
+                    unexpected_model_failure(label, exc, crashed=True))
             finally:
                 if save_fn:
                     save_fn(results)

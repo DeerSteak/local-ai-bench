@@ -22,14 +22,16 @@ from scripts.runtime import config
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
+from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
+from scripts.runtime.model_identity import model_tag_slug
+from scripts.runtime.generation_guard import looks_like_loop
+from scripts.runtime.crash_cache import record_crash
 from scripts.runtime.shared import (
-    EngineBudgetExceeded,
     EngineLoopDetected,
     EngineTimeout,
     Shared,
-    split_token_budget,
 )
 
 
@@ -95,7 +97,7 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _slug(tag: str) -> str:
         """Filesystem-safe per-tag directory name, e.g. "x:3b" -> "x_3b"."""
-        return tag.replace(":", "_").replace("/", "_")
+        return model_tag_slug(tag)
 
     @staticmethod
     def _catalog_entry(tag: str) -> dict | None:
@@ -348,9 +350,9 @@ class LlamaCppEngine(InferenceEngine):
                 if crash_cache is not None and cache_path is not None:
                     if self.is_connection_crash(e):
                         self.wait_for_recovery()
-                    Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}",
-                                         extra=crash_extra, engine_name=self.name)
+                    record_crash(tag, crash_cache, cache_path,
+                                 f"warming up at num_ctx={num_ctx}",
+                                 extra=crash_extra, engine_name=self.name)
                 return False
             Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
         return True
@@ -675,7 +677,7 @@ class LlamaCppEngine(InferenceEngine):
                     )
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
-                    if response_text and Shared.looks_like_loop(response_text):
+                    if response_text and looks_like_loop(response_text):
                         raise EngineLoopDetected(
                             f"llamacpp_chat detected a generation loop after "
                             f"{now - request_start:.0f}s",
@@ -726,93 +728,24 @@ class LlamaCppEngine(InferenceEngine):
             "server_tps_implausible": tps != raw_tps,
         }
 
-    @staticmethod
-    def _graded_response(result: dict, tools: list | None) -> str:
-        if tools is not None and result["tool_calls"]:
-            return json.dumps(result["tool_calls"])
-        return result["response_text"]
-
     def _chat_with_optional_finalize(
             self, tag: str, messages: list, tools: list | None, timeout: int,
             num_ctx: int | None, num_predict: int, check_loop: bool,
             token_budget: int | None):
-        if token_budget is not None and num_predict != -1:
-            raise ValueError("token_budget cannot be combined with finite num_predict")
+        validate_chat_budget(num_predict, token_budget)
         operation_start = time.perf_counter()
         deadline = operation_start + timeout
         self._ensure_model(tag, num_ctx, deadline=deadline)
         model_load_sec = time.perf_counter() - operation_start
-
-        if token_budget is None:
-            result = self._chat_request(
-                tag, messages, tools, deadline, num_predict, check_loop, False,
-            )
-            return result, None, False, model_load_sec
-
-        first_budget, second_budget = split_token_budget(
-            token_budget, config.ACC_FINALIZE_FRACTION,
+        first, second, budget_nudged = run_bounded_chat(
+            lambda req_messages, req_tools, req_deadline, req_predict, req_check, nudged:
+                self._chat_request(
+                    tag, req_messages, req_tools, req_deadline, req_predict, req_check, nudged,
+                ),
+            messages, tools, deadline, num_predict, check_loop, token_budget,
+            config.ACC_FINALIZE_FRACTION, config.ACC_FINALIZE_MESSAGE, "llamacpp_chat",
         )
-        first = self._chat_request(
-            tag, messages, tools, deadline, first_budget, check_loop, False,
-        )
-        if first["finish_reason"] != "length":
-            return first, None, False, model_load_sec
-        if second_budget == 0:
-            raise EngineBudgetExceeded(
-                "llamacpp_chat exhausted its completion-token budget",
-                partial_text=self._graded_response(first, tools),
-                budget_nudged=False,
-            )
-
-        first_response = self._graded_response(first, tools)
-        if time.perf_counter() >= deadline:
-            raise EngineTimeout(
-                "llamacpp_chat exceeded its wall-clock deadline before finalization",
-                partial_text=first_response,
-            )
-        followup = [dict(message) for message in messages]
-        followup.extend([
-            {"role": "assistant", "content": first_response},
-            {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
-        ])
-        second = self._chat_request(
-            tag, followup, tools, deadline, second_budget, check_loop, True,
-        )
-        if second["finish_reason"] == "length":
-            raise EngineBudgetExceeded(
-                "llamacpp_chat exhausted its completion-token budget",
-                partial_text=self._graded_response(second, tools),
-            )
-        return first, second, True, model_load_sec
-
-    @staticmethod
-    def _chat_measurement(first: dict, second: dict | None,
-                          graded: dict, budget_nudged: bool,
-                          model_load_sec: float) -> ChatMeasurement:
-        if second is None:
-            tokens = first["tokens"]
-            decode_seconds = first["decode_seconds"]
-            wall_seconds = first["wall_seconds"]
-        else:
-            tokens = first["tokens"] + second["tokens"]
-            decode_seconds = first["decode_seconds"] + second["decode_seconds"]
-            wall_seconds = first["wall_seconds"] + second["wall_seconds"]
-        return ChatMeasurement(
-            client_ttft_sec=first["ttft"],
-            generated_tokens=tokens,
-            tokens_per_sec=tokens / decode_seconds if decode_seconds else 0,
-            client_wall_sec=wall_seconds,
-            decode_sec=decode_seconds,
-            server_prompt_sec=first["server_prompt_sec"],
-            prompt_tokens=(second or first)["prompt_eval_count"],
-            response_text=graded["response_text"],
-            finish_reason=graded["finish_reason"],
-            tool_calls=graded["tool_calls"],
-            budget_nudged=budget_nudged,
-            model_load_sec=model_load_sec,
-            server_tps_implausible=(first.get("server_tps_implausible", False)
-                                    or bool(second and second.get("server_tps_implausible", False))),
-        )
+        return first, second, budget_nudged, model_load_sec
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
@@ -821,8 +754,7 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        graded = second or first
-        return self._chat_measurement(first, second, graded, budget_nudged, model_load_sec)
+        return chat_measurement(first, second, budget_nudged, model_load_sec)
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
@@ -831,8 +763,7 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        graded = second or first
-        return self._chat_measurement(first, second, graded, budget_nudged, model_load_sec)
+        return chat_measurement(first, second, budget_nudged, model_load_sec)
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:

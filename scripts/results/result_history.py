@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from scripts.results.result_store import as_dict, validate_json_data
+from scripts.stage_registry import ACCURACY_TESTS
 
 
 PERFORMANCE_METRICS = {
@@ -16,7 +17,7 @@ PERFORMANCE_METRICS = {
     "concurrency_tool": ("aggregate_tps", "ttft_mean_sec"),
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }
-ACCURACY_SECTIONS = ("mcq", "math", "reasoning", "code", "tool")
+ACCURACY_SECTIONS = tuple(ACCURACY_TESTS)
 ETA_MATCH_KEYS = (
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
     "accuracy_token_budget", "cpu_only", "force_all", "max_prompt_tokens",

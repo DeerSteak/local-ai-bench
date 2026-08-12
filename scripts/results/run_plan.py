@@ -1,10 +1,11 @@
 """Immutable, serializable benchmark execution plan."""
 
-import hashlib
 import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+from scripts.results.canonical_json import canonical_json, sha256_json
 
 
 PLAN_SCHEMA_VERSION = 3
@@ -31,13 +32,8 @@ EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
 }
 
 
-def _canonical_json(value) -> str:
-    return json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True)
-
-
 def _stable_id(kind: str, *parts) -> str:
-    payload = _canonical_json([kind, *parts]).encode("utf-8")
-    return f"{kind}_{hashlib.sha256(payload).hexdigest()}"
+    return f"{kind}_{sha256_json([kind, *parts])}"
 
 
 @dataclass(frozen=True)
@@ -94,8 +90,8 @@ class RunPlan:
             engine_name=str(engine_name),
             tests=tests,
             stage_order=stage_order,
-            _models_json=_canonical_json(models),
-            _config_json=_canonical_json(effective_config),
+            _models_json=canonical_json(models),
+            _config_json=canonical_json(effective_config),
         )
 
     @classmethod
@@ -259,7 +255,7 @@ class RunPlan:
     def plan_id(self) -> str:
         value = self.to_dict()
         value.pop("job_id", None)
-        return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+        return sha256_json(value)
 
     @property
     def job_id(self) -> str:

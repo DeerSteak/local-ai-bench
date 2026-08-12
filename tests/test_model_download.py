@@ -4,7 +4,11 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.custom_models import load_custom_models
-from scripts.setup.model_download import enough_disk_space, import_model
+from scripts.setup import model_download
+from scripts.setup.model_download import (
+    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    enough_disk_space, import_model, provision_catalog_models,
+)
 from scripts.setup.model_import import ImportVariant, inspect_repository
 
 
@@ -16,6 +20,86 @@ class FakeApi:
         siblings = [SimpleNamespace(rfilename=name, size=size, lfs=None)
                     for name, size in self.files.items()]
         return SimpleNamespace(siblings=siblings, sha="commit", gated=False)
+
+
+def test_download_hf_files_uses_cli_and_flattens_nested_file(monkeypatch, tmp_path):
+    destination = tmp_path / "models"
+    source = destination / "nested" / "model.gguf"
+
+    def run(_command, **_kwargs):
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b"weights")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(model_download.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(model_download.subprocess, "run", run)
+
+    assert download_hf_files("owner/model", "nested/model.gguf", destination)
+    assert (destination / "model.gguf").read_bytes() == b"weights"
+    assert not source.exists()
+
+
+def test_download_hf_files_falls_back_to_python_api(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(model_download.shutil, "which", lambda _name: None)
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda **kwargs: calls.append(kwargs))
+
+    assert download_hf_files(
+        "owner/model", ["one.gguf", "two.gguf"], tmp_path, token="secret",
+    )
+    assert [call["filename"] for call in calls] == ["one.gguf", "two.gguf"]
+    assert all(call["token"] == "secret" for call in calls)
+
+
+def test_download_hf_snapshot_reports_both_failures(monkeypatch, tmp_path):
+    warnings = []
+    monkeypatch.setattr(model_download.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        model_download.subprocess, "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr="cli failed", stdout=""),
+    )
+    import huggingface_hub
+    monkeypatch.setattr(
+        huggingface_hub, "snapshot_download",
+        lambda **_kwargs: (_ for _ in ()).throw(OSError("api failed")),
+    )
+
+    assert not download_hf_snapshot("owner/model", tmp_path, warn=warnings.append)
+    assert warnings == ["hf error: cli failed", "Python API download failed: api failed"]
+
+
+def test_catalog_model_downloaded_checks_llamacpp_files(monkeypatch, tmp_path):
+    model = {"tag": "model", "hf_file": "model.gguf"}
+    monkeypatch.setattr(model_download, "engine_model_complete", lambda *_args: True)
+
+    assert catalog_model_downloaded(
+        model, "llamacpp", models_dir=tmp_path / "models", vllm_cache=tmp_path / "cache",
+    )
+
+
+def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, tmp_path):
+    model = {
+        "tag": "model", "label": "Model", "hf_repo": "owner/model",
+        "hf_file": "model.gguf", "size": "1 GB",
+    }
+    downloads = []
+    monkeypatch.setattr(model_download, "models_missing_engine_support", lambda *_args: [])
+    monkeypatch.setattr(model_download, "engine_download_size", lambda *_args: "1 GB")
+    monkeypatch.setattr(model_download, "catalog_model_downloaded", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        model_download, "download_hf_files",
+        lambda *args, **kwargs: downloads.append((args, kwargs)) or True,
+    )
+
+    provision_catalog_models(
+        [model], ["llamacpp"], models_dir=tmp_path / "models",
+        vllm_cache=tmp_path / "cache", load_token=lambda: "token", issues=[],
+        info=lambda _msg: None, warn=lambda _msg: None,
+        fail=lambda _msg: None, ok=lambda _msg: None,
+    )
+
+    assert downloads[0][0][0:2] == ("owner/model", "model.gguf")
 
 
 def test_llamacpp_import_downloads_selected_files_and_registers(monkeypatch, tmp_path):

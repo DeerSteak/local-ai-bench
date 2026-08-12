@@ -59,7 +59,7 @@
 | `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths plus detected NVIDIA or ROCm GPU topology |
 | `.benchmark_frontend_state.json` | Gitignored GUI/terminal selection and execution settings plus the last GUI preset name; stale or invalid values fall back to current defaults |
 | `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
-| `.coveragerc` | Coverage config for the test suite — omits `setup/setup_check.py` (unsafe to import) and excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
+| `.coveragerc` | Coverage config for the test suite — excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Keyed `{engine_name: {tag: detail}}`: a crash is scoped to the engine that produced it, since the same catalog tag is a different runtime and a different weight file per engine (see [Engines](engines.md)) |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Same per-engine keying as `.llm_crash_cache.json` |
@@ -82,7 +82,10 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
 | `app/benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
-| `app/benchmark_gui.py` | Single-screen Tk benchmark configuration, subprocess log, and safe cancellation interface |
+| `app/benchmark_gui.py` | Tk application bootstrap, shared run state, controller wiring, and cross-screen orchestration |
+| `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers |
+| `app/benchmark_gui_support.py` | Pure GUI configuration, planning, and progress-state helpers |
+| `app/benchmark_gui_process.py` / `app/benchmark_gui_resources.py` | GUI subprocess coordination plus CPU, RAM, GPU, and VRAM monitoring |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
 | `app/engine_management.py` | Engine status, runtime updates, model verification, and mirrored operation output |
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
@@ -100,7 +103,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
-| `results/run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
 | `results/resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
@@ -111,26 +114,33 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
-| `runtime/workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |
+| `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
-| `app/orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
+| `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
+| `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |
+| `app/result_actions.py` / `app/recovery_actions.py` | GUI-facing result/log/dashboard commands and recovery review/command construction |
 | `results/result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
+| `runtime/model_identity.py` | Filesystem-safe normalization shared by engine and setup model paths |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
 | `setup/model_import.py` / `setup/model_download.py` | Hugging Face repository inspection and engine-specific artifact downloads |
 | `setup/runtime_identity.py` | Read-only engine runtime ownership classification and version inspection |
 | `setup/runtime_status.py` | Combined engine health, backend, dependency-stack, and WSL runtime status records |
 | `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
-| `setup/engine_selection.py` | Pure engine-picker rules: defaults, disabled engines, and which selected engines still need installing |
+| `setup/engine_selection.py` | Engine-picker rules and terminal interaction, including disabled engines and installation needs |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
-| `setup/runtime_update.py` | Transactional validation, replacement, and rollback for app-managed engine updates |
-| `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
-| `runtime/shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
+| `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
+| `setup/setup_selection.py` | Terminal model picker, fit-based defaults, input parsing, and destructive-cleanup isolation |
+| `runtime/shared.py` | Remaining cross-workload console, machine-profile, measured-run, accuracy-runner, and ComfyUI helpers pending narrow ownership |
+| `runtime/crash_cache.py` | Engine-scoped crash-cache persistence, retry policy, and cleanup |
+| `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
+| `runtime/generation_guard.py` / `runtime/failure_handling.py` | Generation-loop detection and consistent unexpected per-model failure records |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
-| `runtime/engines/base.py`, `runtime/engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
+| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/vllm.py` | Engine interface and engine-specific lifecycle/transport clients, see [Engines](engines.md) |
+| `runtime/engines/chat_flow.py` | Engine-neutral bounded chat finalization and measurement aggregation |
 | `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
 | `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
 | `workloads/conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
@@ -145,13 +155,21 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/code_benchmark.py` | Restricted Python code-generation accuracy test |
 | `workloads/code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
 | `workloads/tool_benchmark.py` | Tool-calling accuracy test |
+| `workloads/accuracy_scoring.py` | Shared accuracy-bank aggregation with workload-owned correctness callbacks |
 | `results/regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `workloads/llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `workloads/vllm_benchmark.py` | Opt-in `vllmbench` test — vLLM's own `vllm bench latency`/`throughput` sweep, bypassing the HTTP engine (see [Workloads](workloads.md#vllm-bench)) |
 | `workloads/llamabench_concurrency_benchmark.py` | Opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench-concurrency)) |
 | `workloads/models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `runtime/comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
-| `setup/setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup/setup_check.py` | Import-safe setup entrypoint and explicit orchestration across focused setup services |
+| `setup/setup_console.py` | Terminal status formatting, hyperlinks, and confirmation prompts |
+| `setup/setup_discovery.py` | Read-only host identity and memory discovery for setup |
+| `setup/llamacpp_install.py` | llama.cpp tool discovery and platform-specific installation execution |
+| `setup/hf_credentials.py` | Hugging Face token discovery, prompting, caching, and optional persistence |
+| `setup/comfyui_assets.py` | Selected checkpoint, encoder, and VAE provisioning for ComfyUI |
+| `setup/comfyui_runtime.py` | ComfyUI Python requirements, managed model paths, and accelerator-specific PyTorch preparation |
+| `setup/comfyui_install.py` | ComfyUI source/portable installation and Windows CUDA-wheel compatibility |
 | `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
 | `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |

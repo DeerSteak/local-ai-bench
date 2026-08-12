@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.results.run_plan import RunPlan
+from scripts.results.canonical_json import sha256_json
 from scripts.results.result_store import atomic_write_json
 
 
@@ -61,14 +62,10 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
     runtimes = dict(engine.resume_runtime_paths()) if include_engine_runtime else {}
     runtimes.update(extra_runtimes or {})
     methodology = {
-        "execution": hashlib.sha256(json.dumps(
-            plan.execution_identity, separators=(",", ":"), sort_keys=True,
-        ).encode("utf-8")).hexdigest(),
+        "execution": sha256_json(plan.execution_identity),
     }
     environment_identity = {
-        "profile_sha256": hashlib.sha256(json.dumps(
-            environment or {}, separators=(",", ":"), sort_keys=True,
-        ).encode("utf-8")).hexdigest(),
+        "profile_sha256": sha256_json(environment or {}),
     }
     cache = load_digest_cache(digest_cache_path) \
         if digest_cache_path and use_digest_cache else None

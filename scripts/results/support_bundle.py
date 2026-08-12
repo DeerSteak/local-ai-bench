@@ -1,10 +1,12 @@
 """Allowlisted, previewable support diagnostics without benchmark content."""
 
-import hashlib
 import json
 import re
 import zipfile
+from hashlib import sha256
 from pathlib import Path
+
+from scripts.results.canonical_json import canonical_json_bytes
 from scripts.results.result_store import as_dict
 
 
@@ -93,15 +95,13 @@ def preview_support_bundle(result_path: Path) -> dict:
 
 def export_support_bundle(result_path: Path, bundle_path: Path) -> dict:
     result = json.loads(Path(result_path).read_text(encoding="utf-8"))
-    support = json.dumps(
-        build_support_payload(result), allow_nan=False, separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
+    support = canonical_json_bytes(build_support_payload(result))
     manifest = {
         "schema_version": SUPPORT_SCHEMA_VERSION,
-        "files": {"support.json": {"sha256": hashlib.sha256(support).hexdigest(), "size": len(support)}},
+        "files": {"support.json": {"sha256": sha256(support).hexdigest(), "size": len(support)}},
     }
     entries = {
-        "manifest.json": json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode(),
+        "manifest.json": canonical_json_bytes(manifest),
         "support.json": support,
     }
     Path(bundle_path).parent.mkdir(parents=True, exist_ok=True)

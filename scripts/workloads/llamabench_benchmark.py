@@ -15,7 +15,8 @@ from scripts.runtime import config
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
 from scripts.runtime.shared import Shared
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
 
 
@@ -329,7 +330,7 @@ class LlamaBenchBenchmark:
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running llama-bench — {exc} — "
                            "skipping remaining work for this model")
-                entry = Shared.unexpected_model_failure(label, exc)
+                entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
                     journal.record_model_state(model, "crashed", entry)

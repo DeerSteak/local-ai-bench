@@ -12,6 +12,7 @@ from scripts.runtime.shared import (
     split_token_budget,
 )
 from scripts.runtime import config
+from scripts.runtime.crash_cache import load_crash_cache
 from scripts.runtime.engines.base import GenerationMeasurement
 
 
@@ -215,7 +216,7 @@ def test_run_measured_calls_crash_retries_then_gives_up(tmp_path):
     assert samples == []
     assert status == "crashed"
     assert "tag" in crash_cache["fake"]
-    assert (Shared.load_crash_cache(cache_path)["fake"]["tag"]["crashed_at"]
+    assert (load_crash_cache(cache_path)["fake"]["tag"]["crashed_at"]
             == crash_cache["fake"]["tag"]["crashed_at"])
 
 

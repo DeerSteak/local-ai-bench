@@ -347,7 +347,7 @@ def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_
     """A runner is a separate process, so it must set the progress engine itself —
     otherwise a multi-engine run's rows all land on the first engine."""
     from scripts.runtime import workload_runner
-    from scripts.app import progress_events
+    from scripts.runtime import progress_events
 
     recorded = []
     monkeypatch.setattr(workload_runner, "set_progress_engine", recorded.append)

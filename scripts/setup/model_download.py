@@ -2,13 +2,93 @@
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
 from scripts.setup.custom_models import custom_model, save_custom_model
 from scripts.setup.model_import import ImportVariant, RepositoryInspection, valid_custom_tag
 from scripts.setup.vllm_install import hf_cache_model_complete
+from scripts.setup.model_inventory import (
+    engine_download_size, engine_model_complete, engine_model_dir,
+    models_missing_engine_support,
+)
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+
+
+def download_hf_files(repo: str, filenames: str | list[str], destination: Path, *,
+                      token: str | None = None, save_as: str | None = None,
+                      warn=lambda _message: None) -> bool:
+    destination.mkdir(parents=True, exist_ok=True)
+    requested = filenames if isinstance(filenames, list) else [filenames]
+    env = {**os.environ, **({"HF_TOKEN": token} if token else {})}
+    success = True
+    for filename in requested:
+        downloaded = False
+        for cli in ("hf", "huggingface-cli"):
+            if not shutil.which(cli):
+                continue
+            result = subprocess.run(
+                [cli, "download", repo, filename, "--local-dir", str(destination)],
+                env=env, capture_output=True, text=True,
+            )
+            downloaded = result.returncode == 0
+            if not downloaded:
+                detail = (result.stderr or result.stdout or "").strip()
+                if detail:
+                    warn(f"{cli} error: {detail}")
+            break
+        if not downloaded:
+            try:
+                from huggingface_hub import hf_hub_download
+                hf_hub_download(
+                    repo_id=repo, filename=filename, local_dir=str(destination), token=token,
+                )
+                downloaded = True
+            except Exception as exc:
+                warn(f"Python API download failed: {exc}")
+        success = success and downloaded
+        if downloaded:
+            source = destination / filename
+            target_name = save_as if save_as and len(requested) == 1 else Path(filename).name
+            target = destination / target_name
+            if source.exists() and source != target:
+                shutil.move(str(source), str(target))
+                try:
+                    source.parent.rmdir()
+                except OSError:
+                    pass
+    return success
+
+
+def download_hf_snapshot(repo: str, cache_home: Path, *, token: str | None = None,
+                         warn=lambda _message: None) -> bool:
+    cache_home.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "HF_HOME": str(cache_home), **({"HF_TOKEN": token} if token else {})}
+    ignored = ["*.pth", "*.bin", "original/*"]
+    for cli in ("hf", "huggingface-cli"):
+        if not shutil.which(cli):
+            continue
+        command = [cli, "download", repo]
+        for pattern in ignored:
+            command += ["--exclude", pattern]
+        result = subprocess.run(command, env=env, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            warn(f"{cli} error: {detail}")
+        break
+    try:
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id=repo, token=token, ignore_patterns=ignored,
+            cache_dir=str(cache_home / "hub"),
+        )
+        return True
+    except Exception as exc:
+        warn(f"Python API download failed: {exc}")
+        return False
 
 
 def cancellable_tqdm(cancel_check):
@@ -189,3 +269,52 @@ def enough_disk_space(variant: ImportVariant, destination: Path) -> bool | None:
     while not probe.exists() and probe != probe.parent:
         probe = probe.parent
     return shutil.disk_usage(probe).free >= variant.size
+
+
+def catalog_model_downloaded(model: dict, engine: str, *, models_dir: Path,
+                             vllm_cache: Path) -> bool:
+    if engine == "vllm":
+        return hf_cache_model_complete(vllm_cache, model["vllm_repo"])
+    filenames = model["hf_file"] if isinstance(model["hf_file"], list) else [model["hf_file"]]
+    directory = engine_model_dir(models_dir, engine, model["tag"])
+    return engine_model_complete(directory, engine, filenames)
+
+
+def provision_catalog_models(models: list[dict], engines: list[str], *,
+                             models_dir: Path, vllm_cache: Path, load_token,
+                             issues: list[str], info, warn, fail, ok) -> None:
+    for engine in engines:
+        if len(engines) > 1:
+            info(f"Models for {engine} ...")
+        unsupported = models_missing_engine_support(models, engine)
+        for tag in unsupported:
+            warn(f"{tag} — no {engine} weights defined; skipping for this engine")
+            issues.append(f"No {engine} weights for {tag}")
+        for model in models:
+            tag, label = model["tag"], model["label"]
+            if tag in unsupported:
+                continue
+            size = engine_download_size(model, engine)
+            if catalog_model_downloaded(
+                model, engine, models_dir=models_dir, vllm_cache=vllm_cache,
+            ):
+                ok(f"{label} [{engine}] — already downloaded")
+                continue
+            warn(f"{label} [{engine}] ({size}) — downloading ...")
+            if engine == "vllm":
+                repository, destination = model["vllm_repo"], vllm_cache
+                success = download_hf_snapshot(
+                    repository, vllm_cache, token=load_token(), warn=warn,
+                )
+            else:
+                repository = model["hf_repo"]
+                destination = engine_model_dir(models_dir, engine, tag)
+                success = download_hf_files(
+                    repository, model["hf_file"], destination,
+                    token=load_token(), warn=warn,
+                )
+            if success:
+                ok(f"{label} [{engine}] — downloaded successfully")
+            else:
+                fail(f"{label} [{engine}] — download failed")
+                issues.append(f"Download {repository} manually into {destination}")

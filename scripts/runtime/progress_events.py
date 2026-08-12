@@ -1,4 +1,4 @@
-"""Opt-in structured progress events for the graphical launcher."""
+"""Opt-in structured progress events shared by workloads and frontends."""
 
 import json
 import os
@@ -8,14 +8,11 @@ from scripts.results.result_store import model_counts
 
 
 PROGRESS_PREFIX = "::local-ai-bench-progress::"
-
-
 _current_engine: str | None = None
 
 
 def set_progress_engine(name: str | None) -> None:
-    """Name every later event with the engine now running, so a multi-engine run's
-    passes stay distinguishable instead of overwriting each other's rows."""
+    """Attach the active engine name to later progress events."""
     global _current_engine
     _current_engine = name
 

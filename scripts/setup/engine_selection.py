@@ -1,5 +1,7 @@
 """Pure engine-picker rules shared by both setup interfaces — see docs/setup.md."""
 
+from scripts.setup.setup_console import section, warn
+
 LLAMACPP = "llamacpp"
 VLLM = "vllm"
 
@@ -79,3 +81,25 @@ def engine_summary_line(entry: dict) -> str:
     if not entry["enabled"]:
         label += " (unavailable)"
     return f"[{box}] {label} — {entry['note']}"
+
+
+def select_engines(entries: list[dict], *, input_fn=input) -> list[dict]:
+    section("Engines")
+    print("  Models selected later are downloaded for every checked engine.\n")
+    while True:
+        for index, entry in enumerate(entries, start=1):
+            print(f"   {index}. {engine_summary_line(entry)}")
+        choice = input_fn("\n  Number to toggle, Enter to continue, q to cancel: ").strip().lower()
+        if not choice:
+            return entries
+        if choice == "q":
+            print("\n  Setup cancelled — nothing was installed.\n")
+            raise SystemExit(0)
+        if choice.isdigit() and 1 <= int(choice) <= len(entries):
+            target = entries[int(choice) - 1]
+            if not toggle_engine(entries, target["name"]):
+                reason = target["note"] if not target["enabled"] else "At least one engine must stay selected"
+                warn(reason)
+        else:
+            warn("Enter a listed number, Enter, or q")
+        print()

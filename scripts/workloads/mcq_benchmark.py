@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
+from scripts.workloads.accuracy_scoring import score_question_bank
 
 
 class MCQBenchmark:
@@ -180,26 +181,14 @@ class MCQBenchmark:
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
         given_letter_or_None} map. Pure, so it's directly testable."""
-        by_category: dict[str, dict] = {}
-        incorrect = []
-        all_results = []
-        correct = 0
-        answered = 0
-
-        for q in questions:
-            qid, category, expected = q["id"], q["category"], q["answer"]
-            given = answers.get(qid)
-            cat = by_category.setdefault(category, {"correct": 0, "total": 0})
-            cat["total"] += 1
-            if given is not None:
-                answered += 1
-            is_correct = given == expected
-            entry = {"id": qid, "category": category, "given": given, "expected": expected}
-            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
-                correct += 1
-
-        return Shared.finalize_accuracy_score(len(questions), correct, answered, by_category,
-                                               incorrect, all_results)
+        return score_question_bank(
+            questions, answers,
+            lambda question, given: (
+                given is not None, given == question["answer"],
+                {"id": question["id"], "category": question["category"],
+                 "given": given, "expected": question["answer"]},
+            ),
+        )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
             answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs

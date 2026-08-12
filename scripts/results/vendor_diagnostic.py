@@ -1,10 +1,9 @@
 """Deterministic vendor-engineer discrepancy evidence from two local results."""
 
 import copy
-import hashlib
-import json
 from pathlib import Path
 
+from scripts.results.canonical_json import sha256_json
 from scripts.results.outbound_metadata import outbound_metadata_preview
 from scripts.results.result_history import compare_results, load_result
 from scripts.results.result_store import as_dict, atomic_write_json, validate_json_data
@@ -13,12 +12,8 @@ from scripts.results.result_store import as_dict, atomic_write_json, validate_js
 DIAGNOSTIC_SCHEMA_VERSION = 1
 
 
-def _canonical_bytes(value: dict) -> bytes:
-    return json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
-
-
 def _source_digest(result: dict) -> str:
-    return hashlib.sha256(_canonical_bytes(result)).hexdigest()
+    return sha256_json(result)
 
 
 def _run_plan(result: dict):

@@ -32,7 +32,7 @@ tests.bat tests/test_config.py
 tests.bat -k "select_tier"
 ```
 
-The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Do not import or execute `scripts/setup/setup_check.py` as a test shortcut: importing it starts the real interactive installation flow.
+The wrapper installs or updates [tests/requirements.txt](../tests/requirements.txt) before invoking pytest. If `bench-env/` does not exist, run the appropriate setup script first. Importing `scripts/setup/setup_check.py` is safe, but never call its `main()` as a test shortcut because that starts the real interactive installation flow.
 
 The scripts tree is a package rather than a flat import directory. A structural test parses every Python module and rejects bare imports of another project module, preventing delayed GUI/setup paths from passing unit collection and then failing only when launched through `python -m`.
 
@@ -51,7 +51,7 @@ bash tests.sh --cov=scripts --cov-report=term-missing
 
 On Windows, use `bench-env\Scripts\pip.exe` and `tests.bat`.
 
-[.coveragerc](../.coveragerc) omits `scripts/setup/setup_check.py`, which is unsafe to import, and live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
+Live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
 
 HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
 
@@ -75,7 +75,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | Interactive launchers, portable presets, recovery presentation/commands, and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_benchmark_presets.py](../tests/test_benchmark_presets.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
 | GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
 | Cross-process pause state, transition evidence, lost-control fallback, launch cleanup, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
-| Inventory and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
+| Inventory, model identity, and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_model_identity.py](../tests/test_model_identity.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
 | Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
 
 These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
@@ -112,17 +112,20 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
-| Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
+| Statistics, prompts, scoring, and loop detection | [test_shared_stats.py](../tests/test_shared_stats.py), [test_accuracy_scoring.py](../tests/test_accuracy_scoring.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
 | ComfyUI installation and managed-model path resolution | [test_comfyui_installation.py](../tests/test_comfyui_installation.py) |
+| ComfyUI setup services and directory transactions | [test_comfyui_assets.py](../tests/test_comfyui_assets.py), [test_comfyui_install.py](../tests/test_comfyui_install.py), [test_comfyui_runtime.py](../tests/test_comfyui_runtime.py), [test_directory_transaction.py](../tests/test_directory_transaction.py) |
 | Versioned setup configuration and path handoff | [test_setup_config.py](../tests/test_setup_config.py) |
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
+| Setup console, discovery, coordinator safety, credentials, and llama.cpp installation | [test_setup_console.py](../tests/test_setup_console.py), [test_setup_discovery.py](../tests/test_setup_discovery.py), [test_setup_coordinator_structure.py](../tests/test_setup_coordinator_structure.py), [test_hf_credentials.py](../tests/test_hf_credentials.py), [test_llamacpp_install.py](../tests/test_llamacpp_install.py) |
 | CUDA toolkit plan gating and install execution | [test_cuda_install.py](../tests/test_cuda_install.py) |
 | vLLM platform support, interpreter resolution, install commands | [test_vllm_install.py](../tests/test_vllm_install.py) |
 | Managed runtime update validation, replacement, rollback, and cancellation | [test_runtime_update.py](../tests/test_runtime_update.py) |
 | Engine picker defaults, disabled engines, install fan-out | [test_engine_selection.py](../tests/test_engine_selection.py) |
 | Atomic results, run/recovery state, terminal-history retention, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
 | Serializable plan identity and redaction | [test_run_plan.py](../tests/test_run_plan.py) |
+| Canonical JSON encoding and durable identity hashing | [test_canonical_json.py](../tests/test_canonical_json.py) |
 | Neutral methodology profile and effective optimization inventory | [test_methodology_profile.py](../tests/test_methodology_profile.py) |
 | Local project workflows, portability boundaries, validation, and round trips | [test_benchmark_project.py](../tests/test_benchmark_project.py) |
 | Local result discovery, filtering, metric extraction, and comparison compatibility | [test_result_history.py](../tests/test_result_history.py) |
@@ -146,7 +149,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Restricted planning-file privacy and ignore policy | [test_private_plan_privacy.py](../tests/test_private_plan_privacy.py) |
 | Fixed release scan commands, evidence, findings, and missing-tool failures | [test_release_scans.py](../tests/test_release_scans.py) |
 | Version-mirror sync, mirror-edit rejection, and drift repair for the pre-commit hook | [test_version_sync.py](../tests/test_version_sync.py) |
-| Stage ordering and lifecycle policy | [test_orchestration.py](../tests/test_orchestration.py) |
+| Stage registry, ordering, and lifecycle policy | [test_stage_registry.py](../tests/test_stage_registry.py), [test_orchestration.py](../tests/test_orchestration.py) |
 
 `LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Stage tests use fake runners and engines to cover fixed ordering, selection, preparation/execution/cleanup classification, state transitions, engine exclusivity, CPU-mode restoration, and cleanup after failure. Shared workload orchestration covers retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
 

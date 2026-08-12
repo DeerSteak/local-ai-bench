@@ -7,7 +7,7 @@ import requests
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
 
 

@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from scripts.app.benchmark import run_supervised_stage
+from scripts.runtime.supervised_stage import run_supervised_stage
 from scripts.results.event_store import EventStore
 from scripts.results.llm_event_stage import event_store_path
 from scripts.runtime.pause_control import apply_pause_evidence
@@ -13,16 +13,11 @@ from scripts.results.recovery_inspector import (
 )
 from scripts.results.result_store import ResultStore, build_run_manifest
 from scripts.results.run_plan import RunPlan, load_run_plan
+from scripts.stage_registry import stage_spec
 
 
-SECTION_BY_STAGE = {
-    "llm": "llm", "conv": "llm_conversation", "llamabench": "llamabench",
-    "conc_tool": "concurrency_tool", "conc_chat": "concurrency_chat",
-}
-FAMILY_BY_STAGE = {
-    "llm": "llm", "conv": "llm", "llamabench": "llm",
-    "conc_tool": "concurrency", "conc_chat": "concurrency",
-}
+SECTION_BY_STAGE = {key: stage_spec(key).section for key in JOURNAL_STAGES}
+FAMILY_BY_STAGE = {key: stage_spec(key).model_family for key in JOURNAL_STAGES}
 
 
 def _finish_result(store, data, status, reason=None):

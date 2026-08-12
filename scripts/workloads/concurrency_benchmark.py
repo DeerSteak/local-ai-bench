@@ -7,7 +7,9 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
 from scripts.runtime.shared import Shared
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache, record_crash
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
 
 
@@ -107,7 +109,7 @@ class ConcurrencyBenchmark:
             Shared.err(f"Inference engine not reachable — skipping {section_label} benchmark")
             return results
 
-        crash_cache = Shared.load_crash_cache(crash_cache_path)
+        crash_cache = load_crash_cache(crash_cache_path)
 
         for model in models:
             tag   = model["tag"]
@@ -131,8 +133,9 @@ class ConcurrencyBenchmark:
                         })
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
-                                       engine_name=engine.name)
+                skip_entry = check_crash_cache(
+                    tag, label, crash_cache, crash_cache_path, engine_name=engine.name,
+                )
                 if skip_entry is not None:
                     results[short] = skip_entry
                     if journal:
@@ -180,7 +183,7 @@ class ConcurrencyBenchmark:
                             if status == "crashed":
                                 Shared.err(f"{label}: engine crashed repeatedly warming up {level}-way "
                                            f"concurrency — last server output:\n{engine.tail_log()}")
-                                results[short]["crashed_at"] = Shared.record_crash(
+                                results[short]["crashed_at"] = record_crash(
                                     tag, crash_cache, crash_cache_path,
                                     f"warming up {level}-way concurrency", engine_name=engine.name)
                                 stopped_at = "crashed"
@@ -205,7 +208,7 @@ class ConcurrencyBenchmark:
                         if status == "crashed":
                             Shared.err(f"{label}: engine crashed repeatedly during the {level}-way batch — "
                                        f"last server output:\n{engine.tail_log()}")
-                            results[short]["crashed_at"] = Shared.record_crash(
+                            results[short]["crashed_at"] = record_crash(
                                 tag, crash_cache, crash_cache_path,
                                 f"running {level}-way concurrency", engine_name=engine.name)
                             stopped_at = "crashed"
@@ -286,7 +289,7 @@ class ConcurrencyBenchmark:
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running the {section_label} benchmark — {exc} — "
                            "skipping remaining work for this model")
-                entry = Shared.unexpected_model_failure(label, exc)
+                entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
                     journal.record_model_state(model, "crashed", entry)
