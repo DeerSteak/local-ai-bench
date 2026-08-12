@@ -31,18 +31,17 @@ class DirectorySwapError(RuntimeError):
 
 def swap_staged_directory(target: Path, staged: Path, backup: Path, *,
                           had_target: bool,
+                          replace: Callable[[Path, Path], object],
+                          remove: Callable[[Path], object],
                           validate: Callable[[Path], DirectoryValidation] | None = None,
-                          replace: Callable | None = None,
-                          remove: Callable | None = None) -> DirectorySwapOutcome:
-    if replace is None or remove is None:
-        raise ValueError("directory swap requires replace and remove operations")
+                          ) -> DirectorySwapOutcome:
     if had_target:
         replace(target, backup)
     try:
         replace(staged, target)
         validation = validate(target) if validate is not None else None
-        if validation is not None and not getattr(validation, "success", False):
-            raise RuntimeError(getattr(validation, "detail", "final validation failed"))
+        if validation is not None and not validation.success:
+            raise RuntimeError(validation.detail)
     except Exception as exc:
         try:
             if target.exists():
