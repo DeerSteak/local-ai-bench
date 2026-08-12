@@ -53,7 +53,7 @@ sudo apt update
 sudo apt install llama.cpp-tools-extra
 ```
 
-Downloaded llama.cpp ZIP and ComfyUI 7z archives are fully inspected before extraction. Setup rejects absolute paths, drive-qualified paths, parent traversal, ambiguous or duplicate normalized paths, and ZIP symbolic links, then stops with the extraction error instead of writing an unsafe or only partially validated archive.
+Downloaded llama.cpp and ComfyUI archives are fully inspected before extraction. Setup rejects absolute paths, drive-qualified paths, parent traversal, ambiguous or duplicate normalized paths, and ZIP symbolic links. A tar symbolic link is accepted only when it resolves to a regular file in the same archive and is materialized as a regular-file copy; other tar links and special members are rejected before anything is written.
 
 Direct runtime downloads use a sibling `.part` file, resume with an HTTPS Range request after interruption, validate the returned range and expected release-asset size, flush before atomically publishing the completed file, and retain an incomplete part for retry without replacing a known-good destination. If a server ignores the range, setup safely restarts that file instead of appending duplicate bytes. Python's standard proxy environment settings apply automatically. Hugging Face model downloads retain `huggingface_hub`'s own cache/resume behavior.
 

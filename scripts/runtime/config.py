@@ -3,7 +3,7 @@ need `config.NAME` access — `from config import NAME` binds a stale copy befor
 
 from pathlib import Path
 
-VERSION        = "5.1"
+VERSION        = "5.1.1"
 
 COMFYUI_URL  = "http://localhost:8188"
 

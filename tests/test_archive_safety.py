@@ -77,17 +77,82 @@ def test_safe_tar_preserves_executable_regular_files(tmp_path):
         assert tool.stat().st_mode & stat.S_IXUSR
 
 
-def test_safe_tar_rejects_links_before_extracting(tmp_path):
+def test_safe_tar_materializes_symlink_to_regular_archive_member(tmp_path):
+    archive = tmp_path / "safe-link.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        target = tarfile.TarInfo("llama/libggml-rpc.0.9.5.dylib")
+        target.size = 5
+        output.addfile(target, io.BytesIO(b"dylib"))
+        abi_link = tarfile.TarInfo("llama/libggml-rpc.0.dylib")
+        abi_link.type = tarfile.SYMTYPE
+        abi_link.linkname = "libggml-rpc.0.9.5.dylib"
+        output.addfile(abi_link)
+        link = tarfile.TarInfo("llama/libggml-rpc.dylib")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "libggml-rpc.0.dylib"
+        output.addfile(link)
+    destination = tmp_path / "destination"
+    safe_extract_tar(archive, destination)
+    materialized = destination / link.name
+    assert materialized.read_bytes() == b"dylib"
+    assert not materialized.is_symlink()
+
+
+def test_safe_tar_rejects_hard_links_before_extracting(tmp_path):
     archive = tmp_path / "unsafe.tar.gz"
     with tarfile.open(archive, "w:gz") as output:
         regular = tarfile.TarInfo("written-first")
         regular.size = 4
         output.addfile(regular, io.BytesIO(b"data"))
         link = tarfile.TarInfo("link")
-        link.type = tarfile.SYMTYPE
-        link.linkname = "../outside"
+        link.type = tarfile.LNKTYPE
+        link.linkname = "written-first"
         output.addfile(link)
     destination = tmp_path / "destination"
     with pytest.raises(ValueError, match="unsupported"):
+        safe_extract_tar(archive, destination)
+    assert not destination.exists()
+
+
+def test_safe_tar_rejects_symlink_cycles_before_extracting(tmp_path):
+    archive = tmp_path / "cycle.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        for name, target in (("folder/one", "two"), ("folder/two", "one")):
+            link = tarfile.TarInfo(name)
+            link.type = tarfile.SYMTYPE
+            link.linkname = target
+            output.addfile(link)
+    destination = tmp_path / "destination"
+    with pytest.raises(ValueError, match="cycle"):
+        safe_extract_tar(archive, destination)
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("linkname", ["../../outside", "/absolute"])
+def test_safe_tar_rejects_escaping_symlink_targets_before_extracting(tmp_path, linkname):
+    archive = tmp_path / "unsafe-link.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        regular = tarfile.TarInfo("folder/written-first")
+        regular.size = 4
+        output.addfile(regular, io.BytesIO(b"data"))
+        link = tarfile.TarInfo("folder/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = linkname
+        output.addfile(link)
+    destination = tmp_path / "destination"
+    with pytest.raises(ValueError, match="escapes"):
+        safe_extract_tar(archive, destination)
+    assert not destination.exists()
+
+
+def test_safe_tar_rejects_symlink_to_missing_member_before_extracting(tmp_path):
+    archive = tmp_path / "missing-link.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        link = tarfile.TarInfo("folder/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "missing"
+        output.addfile(link)
+    destination = tmp_path / "destination"
+    with pytest.raises(ValueError, match="regular member"):
         safe_extract_tar(archive, destination)
     assert not destination.exists()
