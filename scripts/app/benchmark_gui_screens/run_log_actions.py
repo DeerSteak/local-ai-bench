@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.app.benchmark_gui_support import open_path_command
+from scripts.app.benchmark_gui_process import open_path_command
 from scripts.app.result_actions import result_paths_for_log, run_log_path
 from scripts.results.acceptance_policy import load_policy
 from scripts.results.decision_report import (

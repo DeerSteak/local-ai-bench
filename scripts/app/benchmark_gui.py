@@ -79,12 +79,21 @@ from scripts.app.benchmark_gui_screens.configuration import (
 from scripts.app.benchmark_gui_screens.configuration_files import ConfigurationFileActions
 from scripts.app.benchmark_gui_screens.configuration_state import ConfigurationStateController
 from scripts.app.benchmark_gui_screens.progress import ProgressScreen
+from scripts.app.benchmark_gui_process import (
+    launch_controlled_process as _launch_controlled_process,
+    open_path_command, should_finalize_process_exit,
+    windows_host_utc_offset_minutes,
+)
+from scripts.app.benchmark_gui_resources import (
+    PsutilLike, parse_gpu_process_memory, parse_gpu_usage, process_resource_usage,
+    query_gpu_process_memory, query_gpu_usage, query_vram_usage,
+    resource_usage_rows, show_vram_usage, system_memory_usage,
+)
 
 from scripts.app.benchmark_gui_support import (
     BENCHMARK_PRESETS,
     CUSTOM_PRESET,
     GPU_SPLIT_MODE_LABELS,
-    PsutilLike,
     apply_hardware_model_defaults,
     build_discovery_report,
     build_plan_preview,
@@ -96,30 +105,17 @@ from scripts.app.benchmark_gui_support import (
     gpu_split_mode_labels,
     gpu_split_mode_value,
     history_row_height,
-    launch_controlled_process as _launch_controlled_process,
-    open_path_command,
-    parse_gpu_process_memory,
-    parse_gpu_usage,
     parse_progress_line,
     plan_preview_sections,
     preset_after_control_change,
     preset_control_values,
-    process_resource_usage,
     progress_event_engine,
     progress_model_identity,
     progress_summary_rows,
-    query_gpu_process_memory,
-    query_gpu_usage,
-    query_vram_usage,
     reconcile_imported_model_state,
     resolve_preset,
-    resource_usage_rows,
     restored_preset_name,
-    should_finalize_process_exit,
-    show_vram_usage,
-    system_memory_usage,
     update_progress_metrics,
-    windows_host_utc_offset_minutes,
     workload_preflight_errors,
 )
 
