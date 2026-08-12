@@ -99,6 +99,7 @@ from scripts.app.recovery_actions import (
 from scripts.app.benchmark_gui_screens.history import build_history_screen
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 from scripts.app.benchmark_gui_screens.engines import build_engine_screen
+from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
 
 
 GPU_SPLIT_MODE_LABELS = {
@@ -712,6 +713,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
+    preset_var = tk.StringVar(value=restored_preset_name(saved))
+    active_project: dict[str, dict | None] = {"value": None}
+    project_status = tk.StringVar(value="No project loaded")
 
     def perform_vllm_update(control):
         return perform_vllm_version_update(None, control)
@@ -770,8 +774,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
-    config_tab = ttk.Frame(notebook, padding=18)
-    notebook.add(config_tab, text="Configuration")
+    configuration_screen = build_configuration_screen(
+        notebook, tk=tk, ttk=ttk, discovery=discovery, advanced_var=advanced_var,
+        preset_var=preset_var, project_status=project_status,
+        preset_names=[*BENCHMARK_PRESETS, CUSTOM_PRESET], test_vars=test_vars,
+        test_defaults=custom_test_defaults, custom_tests=custom_tests,
+        model_vars=model_vars, model_defaults=custom_model_defaults,
+        custom_models=custom_models, cap_var=cap_var, tg_vars=tg_vars,
+    )
+    config_tab = configuration_screen.frame
     run_log_screen = build_run_log_screen(
         notebook, tk=tk, ttk=ttk, configuration_frame=config_tab,
     )
@@ -804,162 +815,23 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook.bind(
         "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
     )
-    config_tab.columnconfigure(0, weight=1)
-    config_tab.rowconfigure(2, weight=1)
-
-    ttk.Label(config_tab, text=f"Local AI Bench v{config.VERSION}", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-    ttk.Label(
-        config_tab,
-        text="Choose a ready-made preset or adjust any setting to create a remembered Custom configuration.",
-    ).grid(row=1, column=0, sticky="w", pady=(2, 12))
-
-    canvas = tk.Canvas(config_tab, highlightthickness=0)
-    scrollbar = ttk.Scrollbar(config_tab, orient="vertical", command=canvas.yview)
-    form = ttk.Frame(canvas)
-    form.columnconfigure(0, weight=1)
-    form.columnconfigure(1, weight=1)
-    window_id = canvas.create_window((0, 0), window=form, anchor="nw")
-    form.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=event.width))
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.grid(row=2, column=0, sticky="nsew")
-    scrollbar.grid(row=2, column=1, sticky="ns")
-
-    discovery_box = ttk.LabelFrame(form, text="System inventory and preflight", padding=12)
-    discovery_box.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
-    for row, (label, value) in enumerate((
-        ("System", discovery["system"]), ("Installed models", discovery["models"]),
-        ("Storage", discovery["storage"]), ("Memory-fit context", discovery["memory_risk"]),
-        ("llama.cpp tools", discovery["runtime"]), ("ComfyUI", discovery["comfyui"]),
-    )):
-        ttk.Label(discovery_box, text=f"{label}:", font=("TkDefaultFont", 10, "bold")).grid(
-            row=row, column=0, sticky="nw", padx=(0, 10), pady=2,
-        )
-        ttk.Label(discovery_box, text=value, wraplength=780).grid(row=row, column=1, sticky="w", pady=2)
-    issue_text = ("Ready to configure a benchmark." if not discovery["issues"] else
-                  "\n".join(f"• {issue}" for issue in discovery["issues"]))
-    ttk.Label(discovery_box, text=issue_text, wraplength=900).grid(
-        row=6, column=0, columnspan=2, sticky="w", pady=(8, 0),
-    )
-
-    configuration_frame = ttk.Frame(form)
-    configuration_frame.grid(row=1, column=0, columnspan=2, sticky="nsew")
-    configuration_frame.columnconfigure(0, weight=1, uniform="configuration")
-    configuration_frame.columnconfigure(1, weight=1, uniform="configuration")
-    header_frame = ttk.Frame(configuration_frame)
-    header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-    # Engine choice sits above the preset row: it changes what a run produces, and
-    # presets no longer carry it, so it has to be visible without scrolling.
-    engine_box = ttk.LabelFrame(header_frame, text="Inference engines", padding=12)
-    engine_box.pack(side="top", fill="x", pady=(0, 10))
-    preset_row = ttk.Frame(header_frame)
-    preset_row.pack(side="top", fill="x")
-    preset_var = tk.StringVar(value=restored_preset_name(saved))
-    ttk.Label(preset_row, text="Preset").pack(side="left")
-    ttk.Combobox(
-        preset_row, state="readonly", textvariable=preset_var,
-        values=[*BENCHMARK_PRESETS, CUSTOM_PRESET], width=24,
-    ).pack(side="left", padx=(8, 8))
-    project_row = ttk.Frame(configuration_frame)
-    project_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-    active_project: dict[str, dict | None] = {"value": None}
-    project_status = tk.StringVar(value="No project loaded")
-    ttk.Label(project_row, textvariable=project_status).pack(side="left", padx=(0, 12))
-    advanced_toggle = ttk.Checkbutton(
-        configuration_frame, text="Show advanced execution and path settings", variable=advanced_var,
-    )
-    advanced_toggle.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 10))
-
-    tests_box = ttk.LabelFrame(configuration_frame, text="Tests", padding=12)
-    tests_box.grid(row=3, column=0, sticky="nsew", padx=(0, 6), pady=(0, 10))
-    tests_box.columnconfigure(0, weight=1)
-    test_widgets = {}
-    test_labels = {}
-    for row, (name, label, _, _) in enumerate(TEST_DEFINITIONS):
-        entry = next(item for item in custom_tests if item.value == name)
-        text = label if entry.available else f"{label} (model not installed)"
-        option_row = ttk.Frame(tests_box)
-        option_row.grid(row=row, column=0, sticky="ew", pady=2)
-        option_row.columnconfigure(1, weight=1)
-        widget = ttk.Checkbutton(option_row, variable=test_vars[name])
-        widget.grid(row=0, column=0, sticky="nw")
-        option_label = ttk.Label(option_row, text=text, wraplength=280)
-        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
-        ttk.Button(
-            tests_box, text="Reset", width=6,
-            command=lambda key=name: test_vars[key].set(custom_test_defaults[key]),
-        ).grid(row=row, column=1, sticky="e", padx=(8, 0))
-        test_widgets[name] = widget
-        test_labels[name] = option_label
-    ttk.Label(
-        tests_box, text="Accuracy and concurrency add substantial runtime; native llama-bench tests require their matching tools.",
-        wraplength=330,
-    ).grid(row=len(TEST_DEFINITIONS), column=0, columnspan=2, sticky="w", pady=(8, 0))
-
-    models_box = ttk.LabelFrame(configuration_frame, text="Installed models", padding=12)
-    models_box.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(0, 10))
-    models_box.columnconfigure(0, weight=1)
-    model_rows = ttk.Frame(models_box)
-    model_rows.grid(row=0, column=0, columnspan=2, sticky="ew")
-    model_rows.columnconfigure(0, weight=1)
-    model_widgets = {}
+    form = configuration_screen.form
+    canvas = configuration_screen.canvas
+    configuration_frame = configuration_screen.configuration_frame
+    engine_box = configuration_screen.engine_box
+    preset_row = configuration_screen.preset_row
+    project_row = configuration_screen.project_row
+    advanced_toggle = configuration_screen.advanced_toggle
+    tests_box = configuration_screen.tests_box
+    test_widgets = configuration_screen.test_widgets
+    test_labels = configuration_screen.test_labels
+    models_box = configuration_screen.models_box
+    model_rows = configuration_screen.model_rows
+    model_widgets = configuration_screen.model_widgets
+    workload_box = configuration_screen.workload_box
 
     def render_model_rows():
-        for child in model_rows.winfo_children():
-            child.destroy()
-        model_widgets.clear()
-        previous = None
-        row = 0
-        for entry in custom_models:
-            if entry.section != previous:
-                ttk.Label(model_rows, text=entry.section, style="Section.TLabel").grid(
-                    row=row, column=0, sticky="w", pady=(7, 2),
-                )
-                row += 1
-                previous = entry.section
-            option_row = ttk.Frame(model_rows)
-            option_row.grid(row=row, column=0, sticky="ew", padx=(12, 0), pady=2)
-            option_row.columnconfigure(1, weight=1)
-            widget = ttk.Checkbutton(option_row, variable=model_vars[entry.value])
-            widget.grid(row=0, column=0, sticky="nw")
-            option_label = ttk.Label(option_row, text=entry.label, wraplength=280)
-            option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-            option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
-            ttk.Button(
-                model_rows, text="Reset", width=6,
-                command=lambda key=entry.value: model_vars[key].set(custom_model_defaults[key]),
-            ).grid(row=row, column=1, sticky="e", padx=(8, 0))
-            model_widgets[entry.value] = widget
-            row += 1
-
-    render_model_rows()
-    ttk.Label(
-        models_box, text="Each checked model runs once through every applicable selected workload. Larger models may exceed memory.",
-        wraplength=330,
-    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
-
-    workload_box = ttk.LabelFrame(configuration_frame, text="Workload sizes", padding=12)
-    workload_box.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-    ttk.Label(workload_box, text="Maximum prompt-processing size").grid(row=0, column=0, sticky="w")
-    cap_combo = ttk.Combobox(workload_box, state="readonly", textvariable=cap_var,
-                             values=["No cap", *[str(value) for value in MAX_PROMPT_TOKEN_OPTIONS]], width=18)
-    cap_combo.grid(row=0, column=1, sticky="w", padx=(10, 0))
-    ttk.Button(workload_box, text="Reset", width=6, command=lambda: cap_var.set("No cap")).grid(
-        row=0, column=2, padx=(8, 0),
-    )
-    ttk.Label(workload_box, text="llama-bench generation sizes").grid(row=1, column=0, sticky="w", pady=(10, 0))
-    tg_frame = ttk.Frame(workload_box)
-    tg_frame.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(10, 0))
-    for column, value in enumerate(TG_TOKEN_OPTIONS):
-        ttk.Checkbutton(tg_frame, text=str(value), variable=tg_vars[value]).grid(row=0, column=column, padx=(0, 8))
-    ttk.Button(workload_box, text="Reset", width=6, command=lambda: [
-        variable.set(value in config.LLAMABENCH_TG) for value, variable in tg_vars.items()
-    ]).grid(row=1, column=2, padx=(8, 0), pady=(10, 0))
-    ttk.Label(
-        workload_box, text="Prompt and generation values are tokens. No cap tests every configured depth; larger values increase time and memory.",
-        wraplength=430,
-    ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        configuration_screen.render_model_rows()
 
     engine_check_vars = {
         name: tk.BooleanVar(value=name in parse_engine_selection(selected_engine))
