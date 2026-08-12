@@ -19,16 +19,15 @@ from scripts.app.benchmark_gui import (
     BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    fork_executor_command, fork_review_report, format_recovery_inspection,
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
     progress_event_engine, progress_model_identity,
-    progress_summary_rows, recovery_executor_command, recovery_progress_entries,
+    progress_summary_rows,
     reconcile_imported_model_state,
-    resolve_preset, retry_executor_command,
+    resolve_preset,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
     resource_usage_rows, system_memory_usage,
@@ -38,6 +37,10 @@ from scripts.app.benchmark_gui import (
 from scripts.app.result_actions import (
     completed_result_paths, dashboard_launcher_command, record_result_path,
     result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
+)
+from scripts.app.recovery_actions import (
+    fork_executor_command, fork_review_report, format_recovery_inspection,
+    recovery_executor_command, recovery_progress_entries, retry_executor_command,
 )
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.shared import Shared

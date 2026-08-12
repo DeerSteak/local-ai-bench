@@ -12,7 +12,6 @@ import subprocess
 import sys
 import threading
 import time
-from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
@@ -78,7 +77,6 @@ from scripts.setup.runtime_update import (
     update_macos_llamacpp, update_managed_vllm, update_windows_llamacpp,
 )
 from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
-from scripts.workloads.models import LLM_MODELS
 from scripts.stage_registry import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
@@ -94,6 +92,10 @@ from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 from scripts.app.result_actions import (
     completed_result_paths, dashboard_launcher_command, record_result_path,
     result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
+)
+from scripts.app.recovery_actions import (
+    fork_executor_command, fork_review_report, format_recovery_inspection,
+    recovery_executor_command, recovery_progress_entries, retry_executor_command,
 )
 
 
@@ -455,83 +457,6 @@ def format_run_outcome(exit_code: int) -> str:
     return (f"Benchmark stopped with exit code {exit_code}. Checkpointed measurements from completed "
             "models remain usable; pending work was not fabricated. Automatic cleanup was requested. "
             "Review the final Run Log message, correct the reported cause, then start a new run.")
-
-
-def recovery_executor_command(result_path: Path, python_executable=sys.executable) -> list[str]:
-    return [python_executable, "-m", "scripts.results.recovery_executor",
-            str(Path(result_path).resolve())]
-
-
-def fork_executor_command(source_path: Path, output_path: Path,
-                          python_executable=sys.executable) -> list[str]:
-    return [
-        python_executable, "-m", "scripts.results.fork_executor",
-        str(Path(source_path).resolve()), str(Path(output_path).resolve()),
-    ]
-
-
-def retry_executor_command(result_path: Path, case_ids: list[str],
-                           python_executable=sys.executable) -> list[str]:
-    return [
-        python_executable, "-m", "scripts.results.retry_executor",
-        str(Path(result_path).resolve()), *case_ids,
-    ]
-
-
-def format_recovery_inspection(report: dict) -> str:
-    lines = [
-        f"Decision: {report['action'].upper()}",
-        f"Plan: {report['plan_id']}",
-        f"Interrupted attempts: {report['interrupted_attempts']}", "", "Stages:",
-    ]
-    lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
-    lines += ["", "Cases:"]
-    lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]
-    retryable = report.get("retryable_cases", [])
-    if retryable:
-        lines += ["", "Retry candidates:"]
-        lines += [
-            f"  {case['stage']}: {case['label']} ({case['state']})"
-            for case in retryable
-        ]
-    if report["reasons"]:
-        lines += ["", "Reasons:", *[f"  - {reason}" for reason in report["reasons"]]]
-    return "\n".join(lines)
-
-
-def fork_review_report(result_path: Path) -> dict:
-    data = json.loads(Path(result_path).read_text(encoding="utf-8"))
-    plan = load_run_plan(result_path)
-    run = data.get("run", {})
-    return {
-        "action": "fork", "can_resume": False, "plan_id": plan.plan_id,
-        "interrupted_attempts": 0,
-        "stage_states": {
-            stage: run.get("stages", {}).get(stage, {}).get("status", "pending")
-            for stage in plan.stage_order
-        },
-        "case_counts": {}, "retryable_cases": [],
-        "reasons": ["fork creates a new run and leaves the source unchanged"],
-    }
-
-
-def recovery_progress_entries(plan, model_shorts=None) -> list:
-    entries = []
-    seen = set()
-    labels = {model["tag"]: model["label"] for model in LLM_MODELS}
-    for family, kind in (("llm", "llm"), ("concurrency", "llm")):
-        for model in plan.models[family]:
-            if model_shorts is not None and model.get("short") not in model_shorts:
-                continue
-            key = (kind, model.get("tag") or model.get("short"))
-            if key in seen:
-                continue
-            seen.add(key)
-            entries.append(SimpleNamespace(
-                checked=True, kind=kind, value=key[1],
-                label=labels.get(model.get("tag"), model.get("tag") or model.get("short")),
-            ))
-    return entries
 
 
 def custom_option_defaults(comfyui_dir: Path) -> dict:
