@@ -45,6 +45,7 @@ from scripts.setup.model_download import download_hf_files, download_hf_snapshot
 from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
 from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
+from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, select_models
@@ -1116,98 +1117,11 @@ if selected_images:
         else:
             ok(f"ComfyUI found at {COMFYUI_DIR}")
 
-    if COMFYUI_DIR.exists():
-        comfy_req_file = COMFYUI_DIR / "requirements.txt"
-        if PORTABLE_PYTHON.exists():
-            ok("Windows portable build detected — skipping requirements install (uses bundled python_embeded)")
-        elif comfy_req_file.exists():
-            comfyui_python = find_comfyui_python(COMFYUI_DIR)
-            already_installed = subprocess.run(
-                [comfyui_python, "-m", "pip", "show", "aiohttp"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            ).returncode == 0
-
-            if already_installed:
-                ok("ComfyUI requirements already installed")
-            else:
-                info("Installing ComfyUI requirements ...")
-                result = subprocess.run(
-                    [comfyui_python, "-m", "pip", "install", "-r", str(comfy_req_file)]
-                )
-                if result.returncode == 0:
-                    ok("ComfyUI requirements installed")
-                else:
-                    fail("ComfyUI requirements install failed")
-                    issues.append(f"pip install -r {comfy_req_file}")
-        else:
-            warn("ComfyUI requirements.txt not found — clone may be incomplete")
-
-        write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR,
-                                legacy_models_dir_with_assets(COMFYUI_DIR))
-        try:
-            model_config = add_managed_models_to_comfyui(COMFYUI_DIR, config.COMFYUI_MODELS_DIR)
-            ok(f"ComfyUI model path configured in {model_config}")
-        except OSError as exc:
-            warn(f"Could not update ComfyUI's extra model paths: {exc}")
-            issues.append(f"Add {config.COMFYUI_MODELS_DIR} to ComfyUI's extra model paths")
-
-        # ComfyUI's requirements.txt pulls in plain (non-XPU) torch on Intel Arc — overwrite after. PyTorch >= 2.5, no IPEX.
-        if intel_linux and not PORTABLE_PYTHON.exists():
-            torch_show = subprocess.run(
-                [sys.executable, "-m", "pip", "show", "torch"],
-                capture_output=True, text=True
-            )
-            torch_is_xpu = torch_show.returncode == 0 and "+xpu" in torch_show.stdout.lower()
-
-            if torch_is_xpu:
-                ok("XPU-enabled PyTorch already installed")
-            else:
-                info("Intel Arc detected — installing XPU-enabled PyTorch "
-                     "(https://download.pytorch.org/whl/xpu) so ComfyUI uses the GPU ...")
-                result = subprocess.run([
-                    sys.executable, "-m", "pip", "install", "--upgrade",
-                    "--index-url", "https://download.pytorch.org/whl/xpu",
-                    "torch", "torchvision", "torchaudio",
-                ])
-                if result.returncode == 0:
-                    ok("XPU-enabled PyTorch installed")
-                else:
-                    fail("XPU-enabled PyTorch install failed — image tests will run on CPU")
-                    issues.append(
-                        "pip install --upgrade --index-url https://download.pytorch.org/whl/xpu "
-                        "torch torchvision torchaudio"
-                    )
-
-        # ComfyUI's requirements.txt pulls in plain (non-ROCm) torch on AMD/ROCm Linux — overwrite after.
-        if rocm_ok and not PORTABLE_PYTHON.exists():
-            torch_show = subprocess.run(
-                [sys.executable, "-m", "pip", "show", "torch"],
-                capture_output=True, text=True
-            )
-            torch_is_rocm = torch_show.returncode == 0 and "+rocm" in torch_show.stdout.lower()
-
-            if torch_is_rocm:
-                ok("ROCm-enabled PyTorch already installed")
-            else:
-                info("AMD/ROCm GPU detected — installing ROCm-enabled PyTorch "
-                     "(https://download.pytorch.org/whl/rocm6.4) so ComfyUI uses the GPU. "
-                     "Unverified on newer APU architectures (e.g. Strix Halo) — if no wheel "
-                     "matches your GPU, check https://download.pytorch.org/whl/ for a newer "
-                     "ROCm index ...")
-                result = subprocess.run([
-                    sys.executable, "-m", "pip", "install", "--upgrade",
-                    "--index-url", "https://download.pytorch.org/whl/rocm6.4",
-                    "torch", "torchvision", "torchaudio",
-                ])
-                if result.returncode == 0:
-                    ok("ROCm-enabled PyTorch installed")
-                else:
-                    fail("ROCm-enabled PyTorch install failed — image tests will run on CPU or may fail to start")
-                    issues.append(
-                        "pip install --upgrade --index-url https://download.pytorch.org/whl/rocm6.4 "
-                        "torch torchvision torchaudio"
-                    )
-
+    if prepare_comfyui_runtime(
+        COMFYUI_DIR, config.COMFYUI_MODELS_DIR, config.COMFYUI_EXTRA_MODEL_PATHS,
+        portable_python=PORTABLE_PYTHON, intel_xpu=intel_linux, rocm=rocm_ok,
+        issues=issues, info=info, warn=warn, fail=fail, ok=ok,
+    ):
         found_ckpts = provision_comfyui_assets(
             selected_images, config.COMFYUI_MODELS_DIR,
             find_asset=image_asset, download=hf_download, load_token=load_token,
