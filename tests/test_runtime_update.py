@@ -391,12 +391,13 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     result = rebuild_managed_llamacpp(
-        target, "cuda", run=run, token_factory=lambda: "test",
+        target, "cuda", run=run, os_name="posix", token_factory=lambda: "test",
     )
 
     assert result.success
     configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
     build = next(command for command in commands if command[:2] == ["cmake", "--build"])
+    assert "-DBUILD_SHARED_LIBS=OFF" in configure
     assert "-DCMAKE_CUDA_ARCHITECTURES=89" in configure
     assert all(name in build for name in ("llama-server", "llama-bench", "llama-batched-bench"))
     assert not (target / "old").exists()
@@ -416,3 +417,35 @@ def test_rebuild_managed_llamacpp_preserves_checkout_on_build_failure(tmp_path):
 
     assert not result.success
     assert marker.exists()
+
+
+def test_rebuild_managed_llamacpp_rolls_back_when_final_path_validation_fails(tmp_path):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    version_calls = 0
+
+    def run(command, **kwargs):
+        nonlocal version_calls
+        if command[:3] == ["git", "clone", "--depth"]:
+            staged = Path(command[-1])
+            for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+                tool = staged / "build" / "bin" / name
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.touch()
+        if "--version" in command:
+            version_calls += 1
+            if version_calls == 2:
+                return SimpleNamespace(returncode=127, stdout="", stderr="missing shared library")
+            return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    result = rebuild_managed_llamacpp(
+        target, "cpu", run=run, os_name="posix", token_factory=lambda: "test",
+    )
+
+    assert not result.success
+    assert "prior checkout was preserved" in result.detail
+    assert marker.exists()
+    assert not (target / "build" / "bin" / "llama-server").exists()

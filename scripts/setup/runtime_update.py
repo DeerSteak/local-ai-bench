@@ -389,12 +389,13 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
                              run=subprocess.run, replace=os.replace,
                              remove=shutil.rmtree,
                              control: RuntimeUpdateControl | None = None,
+                             os_name: str = os.name,
                              token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
     """Clone and build a sibling checkout, then swap it in with rollback."""
     target = Path(target)
     if not target.is_dir():
         return RuntimeUpdateResult(False, f"Managed llama.cpp checkout does not exist: {target}")
-    if os.name == "nt":
+    if os_name == "nt":
         return RuntimeUpdateResult(False, "Managed Windows release updates are not available yet.")
     nvcc = find_nvcc() if backend == "cuda" else None
     if backend == "cuda" and nvcc is None:
@@ -408,6 +409,7 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
         commands = [
             ["git", "clone", "--depth", "1", LLAMACPP_REPO, str(staged)],
             ["cmake", "-B", str(staged / "build"), "-S", str(staged),
+             "-DBUILD_SHARED_LIBS=OFF",
              *llamacpp_cmake_flags(backend, nvcc=nvcc, compute_capability=capability)],
             ["cmake", "--build", str(staged / "build"),
              *sum((["--target", name] for name in LLAMACPP_TARGETS), []),
@@ -439,14 +441,30 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
             return RuntimeUpdateResult(
                 False, f"llama.cpp update failed; the prior checkout was preserved: {exc}",
             )
+        final_validation = validate_llamacpp_build(target, run=active_run)
+        if not final_validation.success:
+            try:
+                remove(target)
+                replace(backup, target)
+            except Exception as rollback_exc:
+                return RuntimeUpdateResult(
+                    False, f"llama.cpp final validation and rollback failed: "
+                    f"{final_validation.detail}; rollback: {rollback_exc}",
+                )
+            return RuntimeUpdateResult(
+                False, f"llama.cpp update failed; the prior checkout was preserved: "
+                f"{final_validation.detail}",
+            )
         try:
             remove(backup)
         except OSError as exc:
             return RuntimeUpdateResult(
                 True, f"llama.cpp rebuilt, but its backup remains at {backup}: {exc}",
-                validation.version,
+                final_validation.version,
             )
-        return RuntimeUpdateResult(True, "llama.cpp updated and rebuilt successfully.", validation.version)
+        return RuntimeUpdateResult(
+            True, "llama.cpp updated and rebuilt successfully.", final_validation.version,
+        )
     except Exception as exc:
         return RuntimeUpdateResult(False, f"llama.cpp update failed: {exc}")
     finally:
