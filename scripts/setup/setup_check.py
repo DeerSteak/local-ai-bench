@@ -43,9 +43,10 @@ from scripts.setup.model_inventory import (
 )
 from scripts.setup.model_download import download_hf_files, download_hf_snapshot
 from scripts.setup import llamacpp_install
+from scripts.setup.hf_credentials import HfTokenProvider
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
-from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, select_models
+from scripts.setup.setup_selection import additional_disk_space_needed, select_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
@@ -587,67 +588,22 @@ if vllm_cleanup_names:
 
 # ── 7. HuggingFace token (only if a selected image model needs one) ───────────
 
-_hf_token_cache: list[str | None] = [None]
+token_provider = HfTokenProvider(
+    SCRIPT_DIR, bool(GATED_IMAGE_SHORTS & selected_image_shorts),
+)
+
 
 def load_token():
-    """Load HF token from env var, hf.txt, or prompt — cached after first load."""
-    if _hf_token_cache[0] is not None:
-        return _hf_token_cache[0]
-    token = os.environ.get("HF_TOKEN", "").strip()
-    if token:
-        ok("HuggingFace token loaded from HF_TOKEN env var")
-        _hf_token_cache[0] = token
-        return token
-    hf_txt = SCRIPT_DIR / "hf.txt"
-    if hf_txt.exists():
-        token = hf_txt.read_text().strip()
-        if token:
-            ok("HuggingFace token loaded from hf.txt")
-            _hf_token_cache[0] = token
-            return token
-    needs_gated = bool(GATED_IMAGE_SHORTS & selected_image_shorts)
-    print()
-    print(f"  {YELLOW}Models are downloaded from HuggingFace; an account is optional for public models.{RESET}")
-    print(f"  1. Create an account at {link('https://huggingface.co')}")
-    if needs_gated:
-        print(f"  2. Accept the licenses at:")
-        print(f"       {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
-        print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
-        print(f"       {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
-        print(f"  3. Generate a token at {link('https://huggingface.co/settings/tokens')}")
-    else:
-        print(f"  2. Generate a token at {link('https://huggingface.co/settings/tokens')}")
-    print()
-    try:
-        skip_hint = "skip gated models" if needs_gated else "skip and download without one"
-        token = input(
-            f"  {CYAN}Paste your HuggingFace token and press Enter{RESET}\n  (or press Enter to {skip_hint}): "
-        ).strip()
-    except EOFError:
-        token = ""
-    if token:
-        try:
-            if confirm("Save token to hf.txt for future runs?", default=True):
-                try:
-                    save_hf_token(SCRIPT_DIR / "hf.txt", token)
-                    ok("Token saved to hf.txt")
-                except OSError as exc:
-                    warn(f"Could not save hf.txt: {exc}")
-        except EOFError:
-            pass
-    _hf_token_cache[0] = token or ""
-    return token
+    return token_provider.load()
 
 if _gui_plan is not None:
     _gui_token = _gui_plan["hf_token"]
     if not _gui_token and _gui_plan["use_existing_hf_token"]:
-        _gui_token = os.environ.get("HF_TOKEN", "").strip()
-        if not _gui_token and (SCRIPT_DIR / "hf.txt").is_file():
-            _gui_token = (SCRIPT_DIR / "hf.txt").read_text().strip()
-    _hf_token_cache[0] = _gui_token
+        _gui_token = token_provider.load_existing()
+    token_provider.set(_gui_token)
     if _gui_token and _gui_plan["save_hf_token"]:
         try:
-            save_hf_token(SCRIPT_DIR / "hf.txt", _gui_token)
+            token_provider.save(_gui_token)
             ok("Hugging Face token saved to hf.txt")
         except OSError as exc:
             warn(f"Could not save hf.txt: {exc}")
