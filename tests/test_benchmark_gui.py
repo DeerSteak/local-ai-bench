@@ -22,6 +22,7 @@ from scripts.app.benchmark_gui import (
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch,
+    process_completion_state, resolve_engine_selection,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -239,6 +240,42 @@ def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path)
         found_comfyui=None, detected_comfyui=tmp_path,
     )
     assert "Select at least one llama-bench generation size." in preparation.errors
+
+
+def test_resolve_engine_selection_restores_default_and_gates_models():
+    models = [
+        MenuEntry("shared", "Shared", "llm", "LLM", True),
+        MenuEntry("vllm-only", "vLLM", "llm", "LLM", True),
+    ]
+    owners = {"shared": {"llamacpp", "vllm"}, "vllm-only": {"vllm"}}
+    defaulted = resolve_engine_selection([], ["llamacpp", "vllm"], models, owners)
+    assert defaulted.engines == ["llamacpp"]
+    assert defaulted.value == "llamacpp"
+    assert defaulted.model_availability == {"shared": True, "vllm-only": False}
+
+    combined = resolve_engine_selection(
+        ["vllm", "llamacpp"], ["llamacpp", "vllm"], models, owners,
+    )
+    assert combined.engines == ["llamacpp", "vllm"]
+    assert combined.model_availability == {"shared": True, "vllm-only": True}
+    assert "2 passes" in combined.note
+
+
+@pytest.mark.parametrize(("kind", "exit_code", "status"), [
+    ("recovery", 0, "Recovery completed successfully. Results are ready to review."),
+    ("retry", 7, "Selected retry stopped with exit code 7. Preserved evidence remains available."),
+    ("fork", 2, "Forked run stopped with exit code 2. Preserved evidence remains available."),
+])
+def test_process_completion_state_formats_history_outcomes(kind, exit_code, status):
+    completion = process_completion_state(kind, exit_code)
+    assert completion.status == status
+    assert completion.write_run_log is (exit_code == 0)
+
+
+def test_process_completion_state_uses_standard_benchmark_outcome():
+    completion = process_completion_state("benchmark", 0)
+    assert completion.status == "Benchmark completed successfully. Results are ready to review."
+    assert completion.write_run_log is True
 
 
 def test_build_command_includes_every_gui_execution_setting():

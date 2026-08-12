@@ -135,6 +135,51 @@ class BenchmarkLaunchPreparation:
     command: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class EngineSelectionState:
+    engines: list[str]
+    value: str
+    note: str
+    model_availability: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class ProcessCompletionState:
+    status: str
+    write_run_log: bool
+
+
+def resolve_engine_selection(selected: list[str], available: list[str],
+                             models: list[MenuEntry],
+                             model_owners: dict[str, set[str]]) -> EngineSelectionState:
+    chosen = [name for name in available if name in selected]
+    if not chosen:
+        chosen = [available[0]]
+    note = (
+        f"Runs the full selection once per engine ({len(chosen)} passes, "
+        f"{len(chosen)} results files)." if len(chosen) > 1
+        else "Only installed engines are listed. Models this engine cannot run are disabled."
+    )
+    runnable: dict[str, bool] = {}
+    for name in chosen:
+        for value, supported in models_runnable_by(models, name, model_owners).items():
+            runnable[value] = runnable.get(value, False) or supported
+    return EngineSelectionState(chosen, format_engine_selection(chosen), note, runnable)
+
+
+def process_completion_state(kind: str | None, exit_code: int) -> ProcessCompletionState:
+    if kind in {"recovery", "retry", "fork"}:
+        label = {"recovery": "Recovery", "retry": "Selected retry", "fork": "Forked run"}[kind]
+        status = (
+            f"{label} completed successfully. Results are ready to review."
+            if exit_code == 0 else
+            f"{label} stopped with exit code {exit_code}. Preserved evidence remains available."
+        )
+    else:
+        status = format_run_outcome(exit_code)
+    return ProcessCompletionState(status, exit_code == 0)
+
+
 def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options = dict(GUI_OPTION_DEFAULTS)
     for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
@@ -357,7 +402,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def set_selected_engines(names) -> None:
         """Point the checkboxes at `names`, ignoring any engine that isn't installed."""
-        wanted = [name for name in names if name in engine_check_vars] or [available_engines[0]]
+        wanted = resolve_engine_selection(
+            list(names), available_engines, custom_models, model_owners,
+        ).engines
         restoring_engines[0] = True
         try:
             for name, variable in engine_check_vars.items():
@@ -369,22 +416,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def apply_engine_availability(*_) -> None:
         if restoring_engines[0]:
             return
-        chosen = [name for name in available_engines if engine_check_vars[name].get()]
-        if not chosen:
-            chosen = [available_engines[0]]
-            engine_check_vars[chosen[0]].set(True)
-        engine_var.set(format_engine_selection(chosen))
-        engine_note.set(
-            f"Runs the full selection once per engine ({len(chosen)} passes, "
-            f"{len(chosen)} results files)." if len(chosen) > 1
-            else "Only installed engines are listed. Models this engine cannot run are disabled."
+        selection = resolve_engine_selection(
+            [name for name in available_engines if engine_check_vars[name].get()],
+            available_engines, custom_models, model_owners,
         )
-        runnable = {}
-        for name in chosen:
-            for value, ok_here in models_runnable_by(custom_models, name, model_owners).items():
-                runnable[value] = runnable.get(value, False) or ok_here
+        if not any(engine_check_vars[name].get() for name in selection.engines):
+            engine_check_vars[selection.engines[0]].set(True)
+        engine_var.set(selection.value)
+        engine_note.set(selection.note)
         for value, widget in model_widgets.items():
-            available = runnable.get(value, True)
+            available = selection.model_availability.get(value, True)
             widget.configure(state="normal" if available else "disabled")
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
@@ -778,8 +819,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def finish_active_process(exit_code):
         nonlocal process, active_process_kind
+        completion = process_completion_state(active_process_kind, exit_code)
         process = None
-        if exit_code == 0:
+        if completion.write_run_log:
             try:
                 write_run_logs(
                     current_log(), result_paths_for_log(current_log(), active_result_paths),
@@ -789,18 +831,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         finish_process_control()
         stop_button.configure(state="disabled")
         start_button.configure(state="normal")
-        if active_process_kind in {"recovery", "retry", "fork"}:
-            label = {
-                "recovery": "Recovery", "retry": "Selected retry",
-                "fork": "Forked run",
-            }[active_process_kind]
-            run_status.set(
-                f"{label} completed successfully. Results are ready to review."
-                if exit_code == 0 else
-                f"{label} stopped with exit code {exit_code}. Preserved evidence remains available."
-            )
-        else:
-            run_status.set(format_run_outcome(exit_code))
+        run_status.set(completion.status)
         active_process_kind = None
         refresh_history()
         progress_screen.finish_pending(exit_code)
