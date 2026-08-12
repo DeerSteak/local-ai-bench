@@ -4,11 +4,13 @@
 
 ## Purpose
 
-This contract freezes the commercially important result behavior at the boundary between the 4.1 benchmark and the planned execution-kernel rewrite. The rewrite may change internal orchestration, persistence, process isolation, and storage, but it must either preserve this exported behavior or identify a new schema/methodology boundary explicitly. The executable source of truth is `tests/fixtures/results_v4_1_complete.json` and `tests/fixtures/results_v4_1_interrupted.json`, consumed by both pytest and the dashboard's Vitest suite.
+This contract freezes the commercially important result behavior at the boundary between the 4.1 benchmark and the planned execution-kernel rewrite. The rewrite may change internal orchestration, persistence, process isolation, and storage, but it must either preserve this exported behavior or identify a new schema/methodology boundary explicitly. The executable source of truth is the immutable schema-2 through schema-4 fixtures under `tests/fixtures/`, consumed by both pytest and the dashboard's Vitest suite.
 
 ## Version identities
 
-Top-level `version` is the application release and remains `4.1` for work performed under this development version. `run.schema_version` is the result-schema compatibility axis. The original complete and interrupted fixtures use schema 2. Schema 3 adds the immutable `run.plan` and deterministic `run.plan_id` in `results_v4_1_schema3_plan.json` without editing the schema-2 fixtures. Schema 4 adds optional timestamped `run.pause` evidence without changing measurement fields or rewriting older fixtures. A future schema change likewise adds fixtures rather than rewriting an older producer contract to make it appear backward compatible.
+Top-level `version` is the application release and remains `4.1` for work performed under this development version. `run.schema_version` is the result-schema compatibility axis. The schema-1 fixture freezes legacy aggregate-only reads with absent newer sections. The original complete and interrupted fixtures use schema 2. Schema 3 adds the immutable `run.plan` and deterministic `run.plan_id` in `results_v4_1_schema3_plan.json` without editing the schema-2 fixtures. Schema 4 adds optional timestamped `run.pause` evidence without changing measurement fields or rewriting older fixtures. A future schema change likewise adds fixtures rather than rewriting an older producer contract to make it appear backward compatible.
+
+Version 6 introduces result schema 5 once the first memory field is written. Its additive field map is frozen in [Version 6 Foundation](version-6-foundation.md): per-case `memory` blocks retain lifecycle windows, normalized samples, summaries, headroom, and provenance, while `run.memory_summary` retains run-level peak and tightest-headroom evidence. Every new field is optional on read. A schema-4 or earlier file renders memory as not recorded, never zero, and remains comparable where its methodology identity permits.
 
 The embedded plan has its own compatibility axis. Existing golden results retain run-plan schema 1 and reproduce their original `plan_id`; schema 2 added the `sha256-v1` hierarchy and remains readable. Newly created 4.1 results use run-plan schema 3, which adds deterministic workload, runtime-adapter, privacy-handling, retry, timeout, and output-schema identities without changing the surrounding result schema. `plan_id` excludes only `job_id`, so separate executions of equivalent plans remain comparable while any measurement-policy identity change produces a different plan; descendant stage/model/case/attempt/sample IDs remain job-scoped.
 
@@ -78,7 +80,9 @@ The rewrite may use SQLite or another transactional internal store, but portable
 | Named measurements | Exact raw valid-sample field set | Explicit TTFT preferred with legacy fallback |
 | Native llama-bench | Separate prefill/decode entries and methodology identity | Correct prompt-depth and tg series |
 | Legacy result | Missing newer fields tolerated | Missing run metadata and sections do not block loading |
+| Schema-1 aggregate-only result | Existing aggregate fields remain readable without invented samples | Existing charts render while newer sections remain absent |
 | Schema-3 plan result | Embedded plan reproduces `plan_id` and compatibility manifest fields | Existing charts render unchanged while plan metadata remains available |
+| Schema-4 pause result | Timestamped pause transitions remain optional additive evidence | Existing charts render unchanged while pause evidence remains available |
 
 ## Rewrite acceptance
 

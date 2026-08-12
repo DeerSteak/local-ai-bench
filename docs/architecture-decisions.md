@@ -162,6 +162,14 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Follow-up: runner closures and mutable result JSON remain governed by the deletion ledger below. Revisit the GUI module only when a cohesive reusable component or a testability need justifies a boundary, not at an arbitrary line-count threshold.
 - Evidence: static module/import inspection, exact duplicate-body inspection, orchestration failure-path tests, and the full Python suite.
 
+### AD-019 — Predeclare Version 6 telemetry meaning and screening
+
+- Status: accepted
+- Requirement: telemetry sources must not acquire incompatible meanings or be approved after observing favorable results.
+- Decision: use the schema map, vocabulary, qualification set, observer bounds, and threshold derivation frozen in `docs/version-6-foundation.md`; schema 5 is additive and missing telemetry remains not recorded.
+- Methodology: the foundation screen may reject intrusive sampling but cannot approve default-on use; milestone 3 independent trials decide comparability for every source, interval, and combined sampler.
+- Privacy: persist only normalized allowlisted measurements and provenance through the outbound metadata policy; raw sensor output and private identity are excluded.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |

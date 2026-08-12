@@ -19,6 +19,15 @@ function loadGolden(name: string) {
 
 
 describe("4.1 golden result compatibility", () => {
+  it("renders a schema 1 aggregate-only result with missing newer sections", () => {
+    const data = loadGolden("results_v4_1_schema1_legacy.json");
+    const files = [{ id: "schema1", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(1);
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+  });
+
   it("renders complete LLM, conversation, and llama-bench measurements", () => {
     const data = loadGolden("results_v4_1_complete.json");
     const files = [{ id: "golden", hostname: "Golden", data }];
@@ -52,6 +61,17 @@ describe("4.1 golden result compatibility", () => {
 
     expect(data.run.plan.schema_version).toBe(1);
     expect(data.run.plan_id).toHaveLength(64);
+    expect(getRunReliabilityWarning(data)).toBe("");
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+  });
+
+  it("renders schema 4 pause-backed results without changing chart behavior", () => {
+    const data = loadGolden("results_v4_1_schema4_pause.json");
+    const files = [{ id: "schema4", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(4);
+    expect(data.run.pause.control_transitions).toHaveLength(2);
     expect(getRunReliabilityWarning(data)).toBe("");
     expect(buildLLMDataForModel(files, "golden", "tps"))
       .toEqual([{ ctxLabel: "2K", f0: 50 }]);
