@@ -211,6 +211,8 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding is deterministic (temperature 0), each workload makes one measured pass and ignores `--runs`.
 
+Question banks are validated when loaded, before any model inference begins: every question needs an ID and category, and IDs must be unique. Scoring repeats this common validation defensively for programmatically supplied questions, while workloads with richer schemas apply their additional field-specific validation at load time.
+
 ### MCQ
 
 Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer.

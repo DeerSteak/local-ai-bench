@@ -9,7 +9,7 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.workloads.code_sandbox import run_restricted_python, sandbox_prelude, validate_candidate_code
 from scripts.runtime.shared import Shared
-from scripts.workloads.accuracy_scoring import score_question_bank
+from scripts.workloads.accuracy_scoring import score_question_bank, validate_question_bank
 
 
 class CodeBenchmark:
@@ -29,7 +29,7 @@ class CodeBenchmark:
 
     @staticmethod
     def load_questions(path: Path = CODE_DATA_PATH) -> list[dict]:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        return validate_question_bank(json.loads(Path(path).read_text(encoding="utf-8")))
 
     @staticmethod
     def _format_function_example(function_name: str, test: dict) -> str:

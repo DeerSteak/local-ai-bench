@@ -4,10 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 
-def score_question_bank(questions: list[dict], answers: dict,
-                        evaluate: Callable[[dict, Any], tuple[bool, bool, dict]],
-                        extra_groups: tuple[tuple[str, str], ...] = ()) -> dict:
-    required = {"id", "category", *(question_key for _, question_key in extra_groups)}
+def validate_question_bank(questions: list[dict], required_fields=()) -> list[dict]:
+    required = {"id", "category", *required_fields}
     seen_ids = set()
     for index, question in enumerate(questions):
         missing = sorted(required - question.keys())
@@ -17,6 +15,13 @@ def score_question_bank(questions: list[dict], answers: dict,
         if question_id in seen_ids:
             raise ValueError(f"duplicate question id: {question_id}")
         seen_ids.add(question_id)
+    return questions
+
+
+def score_question_bank(questions: list[dict], answers: dict,
+                        evaluate: Callable[[dict, Any], tuple[bool, bool, dict]],
+                        extra_groups: tuple[tuple[str, str], ...] = ()) -> dict:
+    validate_question_bank(questions, (question_key for _, question_key in extra_groups))
     by_category: dict[str, dict] = {}
     extra = {result_key: {} for result_key, _ in extra_groups}
     incorrect = []

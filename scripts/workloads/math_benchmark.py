@@ -7,7 +7,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
-from scripts.workloads.accuracy_scoring import score_question_bank
+from scripts.workloads.accuracy_scoring import score_question_bank, validate_question_bank
 
 
 class MathBenchmark:
@@ -43,7 +43,7 @@ class MathBenchmark:
 
     @staticmethod
     def load_questions(path: Path = MATH_DATA_PATH) -> list[dict]:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        return validate_question_bank(json.loads(Path(path).read_text(encoding="utf-8")))
 
     @staticmethod
     def build_prompt(question: dict) -> str:
