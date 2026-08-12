@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.app.engine_management import EngineManagementSnapshot
+from scripts.runtime import config
 
 
 def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
@@ -66,7 +67,7 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
 
     assert benchmark_gui.run_benchmark_gui() == 0
     assert observed == {
-        "title": "Local AI Bench v5.1",
+        "title": f"Local AI Bench v{config.VERSION}",
         "tabs": ["Configuration", "Run Log", "Result History", "Engine Management"],
         "bindings": {"<MouseWheel>": True, "<Button-4>": True, "<Button-5>": True},
     }
