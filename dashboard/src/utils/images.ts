@@ -3,7 +3,10 @@ import {
   IMAGE_MODEL_ORDER, IMAGE_BAR_COLORS, RES_COLORS,
 } from "../constants";
 import { getImageModelColor, imageModelLabel, entriesOf, valuesOf, lookup } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
+
+const isKnownRes = (res: unknown): res is string =>
+  typeof res === "string" && RES_ORDER.includes(res);
 
 // Bar-chart status label for one (file, model, resolution) cell in the
 // Images charts, mirroring llm.js's getBarStatusLabel: "{res} - Timed Out" for
@@ -12,7 +15,7 @@ import type { ResultsFile, ChartRow } from "../types";
 // attempted. Returns null for cells with real data.
 export function getImageBarStatusLabel(file: ResultsFile, model: string, res: string): string | null {
   const timedOutRes = file.data.images?.[model]?.timed_out;
-  if (timedOutRes) {
+  if (isKnownRes(timedOutRes)) {
     const timedOutIdx = RES_ORDER.indexOf(timedOutRes);
     const resIdx = RES_ORDER.indexOf(res);
     if (resIdx === timedOutIdx) return `${res} - Timed Out`;
@@ -93,18 +96,14 @@ export function buildImagesData(files: ResultsFile[], enabledImageModels: Set<st
     .filter(row => Object.keys(row).some(k => k !== "resLabel"));
 }
 
-export function buildImagesLineConfigs(files: ResultsFile[], data: ChartRow[], enabledImageModels: Set<string>) {
+export function buildImagesLineConfigs(files: ResultsFile[], data: ChartRow[], enabledImageModels: Set<string>): LineConfig[] {
   const isSingle = files.length === 1;
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
-  const getLabel = (m: string): string => {
-    for (const f of files) { const d = f.data.images?.[m]; if (d?.label) return d.label; }
-    return m;
-  };
   const configs = [];
   if (isSingle) {
     for (const m of allModels) {
       if (data.some(d => d[m] != null))
-        configs.push({ dataKey: m, stroke: getImageModelColor(m), name: getLabel(m) });
+        configs.push({ dataKey: m, stroke: getImageModelColor(m), name: getImageLabel(files, m) });
     }
   } else {
     for (let fi = 0; fi < files.length; fi++) {
@@ -116,7 +115,7 @@ export function buildImagesLineConfigs(files: ResultsFile[], data: ChartRow[], e
             dataKey,
             stroke,
             strokeDasharray: MODEL_DASH_PATTERNS[mi % MODEL_DASH_PATTERNS.length],
-            name: `${files[fi].hostname} — ${getLabel(m)}`,
+            name: `${files[fi].hostname} — ${getImageLabel(files, m)}`,
           });
       });
     }
@@ -141,7 +140,7 @@ export function buildImagesGroupedBarDataForResolution(files: ResultsFile[], res
     .filter(row => allModels.some(m => row[m] != null || row[`_status_${m}`] != null));
 }
 
-export function buildImagesGroupedBarConfigs(files: ResultsFile[], enabledImageModels: Set<string>) {
+export function buildImagesGroupedBarConfigs(files: ResultsFile[], enabledImageModels: Set<string>): BarConfig[] {
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
   return allModels.map((m, i) => ({
     dataKey: m,
@@ -167,7 +166,7 @@ export function buildImagesBarDataByModel(file: ResultsFile, models: string[]): 
     .filter(row => RES_ORDER.some(res => row[res] != null || row[`_status_${res}`] != null));
 }
 
-export function buildImagesBarConfigsByModel(file: ResultsFile, models: string[]) {
+export function buildImagesBarConfigsByModel(file: ResultsFile, models: string[]): BarConfig[] {
   const resSet = new Set<string>();
   for (const model of models) {
     for (const res of Object.keys(file.data.images?.[model]?.resolutions || {})) resSet.add(res);
@@ -199,13 +198,13 @@ export function buildImagesLineDataByRes(file: ResultsFile, models: string[]): C
   });
 }
 
-export function buildImagesLineConfigsByRes(file: ResultsFile, models: string[], data: ChartRow[]) {
+export function buildImagesLineConfigsByRes(file: ResultsFile, models: string[], data: ChartRow[]): LineConfig[] {
   return models
     .filter(m => data.some(row => row[m] != null))
     .map(m => ({ dataKey: m, stroke: getImageModelColor(m), name: getImageLabel([file], m) }));
 }
 
-export function flattenImageData(files: ResultsFile[]) {
+export function flattenImageData(files: ResultsFile[]): ChartRow[] {
   return files.flatMap(f =>
     entriesOf(f.data.images).flatMap(([model, md]) =>
       entriesOf(md.resolutions).map(([res, s]) => ({

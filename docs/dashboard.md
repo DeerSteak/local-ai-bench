@@ -60,6 +60,8 @@ Both pills are hidden on **Accuracy**, HTTP **Concurrency**, and **llama-bench C
 
 A checkpoint past a slow-model cutoff (see [Concurrency](workloads.md#concurrency) and the LLM Conversation early-exit above) renders as a "Skipped (X Too Slow)" label instead of a bar, driven entirely by each checkpoint's position in `CTX_ORDER` — this is why the dashboard already handles the cutoff firing at any depth, not just the first one, with no special-casing per depth. Adding a new checkpoint to the suite's own checkpoint list only requires adding it to `CTX_ORDER` too; the rest follows automatically.
 
+The same position lookup drives the `crashed`, `timed_out`, and `slow_tps` cascades: the named checkpoint gets its own label and every deeper one is marked skipped, while shallower checkpoints keep the data they actually measured. A results file may name a checkpoint this dashboard build doesn't know — a depth from a newer or older schema — and an unrecognized name cascades nothing rather than being treated as shallower than every known checkpoint, which would otherwise mark every measured checkpoint as skipped. Image resolutions follow the identical rule against `RES_ORDER`.
+
 ## What the charts mean
 
 **LLM → Tokens/sec.** Decode throughput (tokens generated per second) for the single-shot test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
