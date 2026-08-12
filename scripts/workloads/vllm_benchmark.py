@@ -13,6 +13,7 @@ from typing import NotRequired, TypedDict
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.runtime.shared import Shared
+from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
 
@@ -292,7 +293,7 @@ class VllmBenchBenchmark:
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running vllm bench — {exc} — "
                            "skipping remaining work for this model")
-                results.setdefault(short, {}).update(Shared.unexpected_model_failure(label, exc))
+                results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
             finally:
                 if save_fn:
                     save_fn(results)

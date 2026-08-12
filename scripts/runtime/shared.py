@@ -35,6 +35,7 @@ from scripts.workloads.models import IMAGE_MODELS
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.failure_handling import unexpected_model_failure
 
 if TYPE_CHECKING:
     from scripts.runtime.engines.base import InferenceEngine
@@ -722,28 +723,6 @@ class Shared:
         }
 
     @staticmethod
-    def unexpected_model_failure(label: str, exc: BaseException, *, crashed: bool | None = None) -> dict:
-        """A results entry for a model that raised outside the crash/timeout paths a
-        workload already understands (e.g. a bug in the runner itself) — every per-model
-        loop catches this at the top level so one model's failure can never abort the run.
-        `crashed` is a boolean only in accuracy sections; leave it None elsewhere — llm/
-        llm_conversation read `crashed` as a context-label string (see dashboard/src/utils/
-        llm.ts), so a bool there would corrupt any real checkpoint data already recorded."""
-        try:
-            detail = str(exc)
-        except Exception:
-            detail = "(exception could not be formatted)"
-        entry = {
-            "label": label,
-            "unexpected_error": True,
-            "crashed_at": datetime.now().isoformat(timespec="seconds"),
-            "error": f"{type(exc).__name__}: {detail}",
-        }
-        if crashed is not None:
-            entry["crashed"] = crashed
-        return entry
-
-    @staticmethod
     def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
                       extra: dict | None = None, *, engine_name: str) -> str:
         """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
@@ -1067,7 +1046,7 @@ class Shared:
                 Shared.err(f"{label}: unexpected error running the {skip_label} benchmark — {exc} — "
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(
-                    Shared.unexpected_model_failure(label, exc, crashed=True))
+                    unexpected_model_failure(label, exc, crashed=True))
             finally:
                 if save_fn:
                     save_fn(results)
