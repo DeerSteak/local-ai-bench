@@ -78,7 +78,10 @@ class MCQBenchmark:
 
     @staticmethod
     def load_questions(path: Path = MCQ_DATA_PATH) -> list[dict]:
-        return validate_question_bank(json.loads(Path(path).read_text(encoding="utf-8")))
+        return validate_question_bank(
+            json.loads(Path(path).read_text(encoding="utf-8")),
+            ("prompt", "choices", "answer"),
+        )
 
     @staticmethod
     def build_prompt(question: dict) -> str:

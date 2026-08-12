@@ -5,9 +5,13 @@ from typing import Any
 
 
 def validate_question_bank(questions: list[dict], required_fields=()) -> list[dict]:
+    if not isinstance(questions, list):
+        raise ValueError("question bank must be a JSON array")
     required = {"id", "category", *required_fields}
     seen_ids = set()
     for index, question in enumerate(questions):
+        if not isinstance(question, dict):
+            raise ValueError(f"question {index} must be a JSON object")
         missing = sorted(required - question.keys())
         if missing:
             raise ValueError(f"question {index} is missing required fields: {', '.join(missing)}")
@@ -21,7 +25,7 @@ def validate_question_bank(questions: list[dict], required_fields=()) -> list[di
 def score_question_bank(questions: list[dict], answers: dict,
                         evaluate: Callable[[dict, Any], tuple[bool, bool, dict]],
                         extra_groups: tuple[tuple[str, str], ...] = ()) -> dict:
-    validate_question_bank(questions, (question_key for _, question_key in extra_groups))
+    validate_question_bank(questions)
     by_category: dict[str, dict] = {}
     extra = {result_key: {} for result_key, _ in extra_groups}
     incorrect = []
@@ -40,6 +44,8 @@ def score_question_bank(questions: list[dict], answers: dict,
         if not is_correct:
             incorrect.append(entry)
         for result_key, question_key in extra_groups:
+            if question_key not in question:
+                continue
             value = question[question_key]
             group = extra[result_key].setdefault(value, {"correct": 0, "total": 0})
             group["total"] += 1

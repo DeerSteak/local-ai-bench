@@ -18,7 +18,10 @@ class ToolBenchmark:
 
     @staticmethod
     def load_questions(path: Path = TOOL_DATA_PATH) -> list[dict]:
-        return validate_question_bank(json.loads(Path(path).read_text(encoding="utf-8")))
+        return validate_question_bank(
+            json.loads(Path(path).read_text(encoding="utf-8")),
+            ("prompt", "tools", "expected"),
+        )
 
     @staticmethod
     def _coerce(value):
