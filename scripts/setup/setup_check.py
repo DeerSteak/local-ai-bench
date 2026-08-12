@@ -44,6 +44,7 @@ from scripts.setup.model_inventory import (
 from scripts.setup.model_download import download_hf_files, download_hf_snapshot
 from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
+from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, select_models
@@ -1207,159 +1208,11 @@ if selected_images:
                         "torch torchvision torchaudio"
                     )
 
-        found_ckpts = []
-        for m in selected_images:
-            existing = image_asset(m["checkpoint"], "checkpoints")
-            if existing:
-                size_gb = existing.stat().st_size / (1024**3)
-                ok(f"Checkpoint found: {m['checkpoint']} ({size_gb:.1f} GB)")
-                found_ckpts.append(m["checkpoint"])
-
-        # ── Download missing checkpoints for the selected image models ────────
-        missing = [m for m in selected_images if m["checkpoint"] not in found_ckpts]
-        if missing:
-            info(f"Downloading {len(missing)} missing checkpoint(s): "
-                 f"{', '.join(m['checkpoint'] for m in missing)}")
-            CHECKPOINTS.mkdir(parents=True, exist_ok=True)
-
-            for m in missing:
-                short, ckpt = m["short"], m["checkpoint"]
-
-                if short == "sd15":
-                    info("Downloading Stable Diffusion 1.5 (no login required) ...")
-                    if hf_download("Comfy-Org/stable-diffusion-v1-5-archive", ckpt, token=load_token()):
-                        ok(f"{ckpt} downloaded")
-                        found_ckpts.append(ckpt)
-                    else:
-                        warn("SD1.5 download failed — image benchmarks will run without it")
-
-                elif short == "sdxl":
-                    info("Downloading SDXL base model (no login required) ...")
-                    if hf_download("stabilityai/stable-diffusion-xl-base-1.0", ckpt, token=load_token()):
-                        ok(f"{ckpt} downloaded")
-                        found_ckpts.append(ckpt)
-                    else:
-                        warn("SDXL download failed — image benchmarks will run without it")
-
-                elif short == "sd35-large":
-                    info("Downloading SD3.5 Large (requires HuggingFace token) ...")
-                    token = load_token()
-                    if token:
-                        if hf_download("stabilityai/stable-diffusion-3.5-large", ckpt, token=token):
-                            ok(f"{ckpt} downloaded")
-                            found_ckpts.append(ckpt)
-                        else:
-                            fail("SD3.5 Large download failed — check token and license acceptance")
-                            info(f"Accept license at: {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
-                    else:
-                        info("Skipping SD3.5 Large — no token provided")
-
-                elif short == "flux-dev":
-                    info("Downloading Flux.1-dev (requires HuggingFace token) ...")
-                    token = load_token()
-                    if token:
-                        if hf_download("black-forest-labs/FLUX.1-dev", ckpt, token=token):
-                            ok(f"{ckpt} downloaded")
-                            found_ckpts.append(ckpt)
-                        else:
-                            fail("Flux.1-dev download failed — check token and license acceptance")
-                            info(f"Accept license at: {link('https://huggingface.co/black-forest-labs/FLUX.1-dev')}")
-                    else:
-                        info("Skipping Flux.1-dev — no token provided")
-
-                elif short == "flux2-dev":
-                    info("Downloading Flux.2-dev (requires HuggingFace token) ...")
-                    token = load_token()
-                    if token:
-                        if hf_download("black-forest-labs/FLUX.2-dev", ckpt, token=token):
-                            ok(f"{ckpt} downloaded")
-                            found_ckpts.append(ckpt)
-                        else:
-                            fail("Flux.2-dev download failed — check token and license acceptance")
-                            info(f"Accept license at: {link('https://huggingface.co/black-forest-labs/FLUX.2-dev')}")
-                    else:
-                        info("Skipping Flux.2-dev — no token provided")
-
-        # Text encoders shared by Flux.1 and SD3.5 Large: T5-XXL + CLIP-L (public).
-        # Flux.2-dev uses a different (Mistral-3-24B) text encoder — handled below.
-        sd35_present  = any("sd3.5" in c for c in found_ckpts)
-        flux1_present = "flux1-dev.safetensors" in found_ckpts
-        flux2_present = "flux2-dev.safetensors" in found_ckpts
-
-        if flux1_present or sd35_present:
-            shared_clip_files = [
-                ("t5xxl_fp16.safetensors", CLIP_DIR),
-                ("clip_l.safetensors",     CLIP_DIR),
-            ]
-            for fname, dest in shared_clip_files:
-                if not image_asset(fname, "clip"):
-                    info(f"Downloading {fname} (public, no token required) ...")
-                    if hf_download("comfyanonymous/flux_text_encoders", fname, token=load_token(), dest_dir=dest):
-                        ok(f"{fname} downloaded")
-                    else:
-                        warn(f"{fname} download failed — image generation will error")
-                else:
-                    ok(f"{fname} already present")
-
-        # SD3.5 Large also needs CLIP-G (gated, same license as checkpoint)
-        if sd35_present:
-            if not image_asset("clip_g.safetensors", "clip"):
-                info("Downloading clip_g.safetensors for SD3.5 Large (requires HuggingFace token) ...")
-                token = load_token()
-                if token:
-                    if hf_download("stabilityai/stable-diffusion-3.5-large",
-                                   "text_encoders/clip_g.safetensors", token=token,
-                                   dest_dir=CLIP_DIR, save_as="clip_g.safetensors"):
-                        ok("clip_g.safetensors downloaded")
-                    else:
-                        warn("clip_g.safetensors download failed — SD3.5 image generation will error")
-                        info(f"Accept license at: {link('https://huggingface.co/stabilityai/stable-diffusion-3.5-large')}")
-                else:
-                    info("Skipping clip_g.safetensors — no token provided")
-            else:
-                ok("clip_g.safetensors already present")
-
-        if flux1_present:
-            if not image_asset("ae.safetensors", "vae"):
-                info("Downloading ae.safetensors (Flux VAE, requires HuggingFace token) ...")
-                token = load_token()
-                if token:
-                    if hf_download("black-forest-labs/FLUX.1-schnell", "ae.safetensors",
-                                   token=token, dest_dir=VAE_DIR):
-                        ok("ae.safetensors downloaded")
-                    else:
-                        warn("ae.safetensors download failed — Flux image generation will error")
-                else:
-                    info("Skipping ae.safetensors — no token provided")
-            else:
-                ok("ae.safetensors already present")
-
-        # Flux.2-dev needs its own (public, no token) text encoder + VAE —
-        # a different architecture from Flux.1/SD3.5, not interchangeable.
-        if flux2_present:
-            text_encoder_dir = config.COMFYUI_MODELS_DIR / "text_encoders"
-            mistral_file = "mistral_3_small_flux2_fp8.safetensors"
-            if not image_asset(mistral_file, "text_encoders"):
-                info(f"Downloading {mistral_file} for Flux.2-dev (public, no token required) ...")
-                if hf_download("Comfy-Org/flux2-dev",
-                               f"split_files/text_encoders/{mistral_file}",
-                               token=load_token(), dest_dir=text_encoder_dir, save_as=mistral_file):
-                    ok(f"{mistral_file} downloaded")
-                else:
-                    warn(f"{mistral_file} download failed — Flux.2-dev image generation will error")
-            else:
-                ok(f"{mistral_file} already present")
-
-            if not image_asset("flux2-vae.safetensors", "vae"):
-                info("Downloading flux2-vae.safetensors (Flux.2 VAE, public, no token required) ...")
-                if hf_download("Comfy-Org/flux2-dev", "split_files/vae/flux2-vae.safetensors",
-                               token=load_token(), dest_dir=VAE_DIR, save_as="flux2-vae.safetensors"):
-                    ok("flux2-vae.safetensors downloaded")
-                else:
-                    warn("flux2-vae.safetensors download failed — Flux.2-dev image generation will error")
-            else:
-                ok("flux2-vae.safetensors already present")
-
+        found_ckpts = provision_comfyui_assets(
+            selected_images, config.COMFYUI_MODELS_DIR,
+            find_asset=image_asset, download=hf_download, load_token=load_token,
+            info=info, warn=warn, fail=fail, ok=ok,
+        )
         n_expected = len(selected_images)
         if found_ckpts:
             ok(f"{len(found_ckpts)}/{n_expected} image checkpoints ready: "

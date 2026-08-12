@@ -163,6 +163,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/setup_discovery.py` | Read-only host identity and memory discovery for setup |
 | `setup/llamacpp_install.py` | llama.cpp tool discovery and platform-specific installation execution |
 | `setup/hf_credentials.py` | Hugging Face token discovery, prompting, caching, and optional persistence |
+| `setup/comfyui_assets.py` | Selected checkpoint, encoder, and VAE provisioning for ComfyUI |
 | `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
 | `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
