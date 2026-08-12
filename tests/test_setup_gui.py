@@ -5,6 +5,7 @@ import pytest
 
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
+    build_setup_plan,
     engine_checkbox_label,
     sudo_notice,
     model_row_label,
@@ -15,6 +16,7 @@ from scripts.setup.setup_gui import (
     refresh_tk_layout,
     run_setup_wizard_process,
     selected_gui_token,
+    setup_review_lines,
     should_save_gui_token,
     token_controls_enabled,
     next_page_index,
@@ -201,6 +203,65 @@ def test_gui_plan_requires_at_least_one_engine():
     assert validate_gui_plan({**base, "engines": []}) == ["Select at least one inference engine."]
     assert validate_gui_plan({**base, "engines": ["llamacpp"]}) == []
     assert validate_gui_plan(base) == []
+
+
+def test_build_setup_plan_filters_models_engines_and_cleanup():
+    from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_XSMALL
+
+    llm_tag = LLM_MODELS_XSMALL[0]["tag"]
+    embedding_tag = EMBED_MODELS[0]["tag"]
+    image_short = IMAGE_MODELS[0]["short"]
+    plan = build_setup_plan(
+        model_selection={llm_tag: True, embedding_tag: True, image_short: True},
+        cleanup_names=["old"], cleanup_selected=False,
+        vllm_cleanup_selection={"keep": False, "remove": True},
+        existing_hf_token=True, override_token=True, entered_token=" replacement ",
+        save_token=True, comfyui_mode="existing", comfyui_path=" /tmp/ComfyUI ",
+        engine_entries=[
+            {"name": "llamacpp", "enabled": True},
+            {"name": "vllm", "enabled": False},
+        ],
+        engine_selection={"llamacpp": True, "vllm": True},
+    )
+    assert plan["llm_tags"] == [llm_tag]
+    assert plan["embedding_tags"] == [embedding_tag]
+    assert plan["image_shorts"] == [image_short]
+    assert plan["cleanup_names"] == []
+    assert plan["vllm_cleanup_names"] == ["remove"]
+    assert plan["hf_token"] == "replacement"
+    assert plan["save_hf_token"] is True
+    assert plan["use_existing_hf_token"] is False
+    assert plan["comfyui_path"] == "/tmp/ComfyUI"
+    assert plan["engines"] == ["llamacpp"]
+
+
+def test_setup_review_lines_include_only_applicable_details():
+    plan = {
+        "llm_tags": ["llm"], "embedding_tags": [], "image_shorts": ["image"],
+        "cleanup_names": [], "vllm_cleanup_names": ["cached"], "hf_token": "",
+        "use_existing_hf_token": True, "comfyui_mode": "existing",
+        "comfyui_path": "/tmp/ComfyUI", "engines": ["vllm"],
+    }
+    lines = setup_review_lines(plan, show_engines=True, sudo_package="build-essential")
+    assert "LLM models: 1" in lines
+    assert "ComfyUI: existing" in lines
+    assert "Engines: vllm" in lines
+    assert "ComfyUI path: /tmp/ComfyUI" in lines
+    assert any("administrator rights" in line for line in lines)
+    assert lines[-1] == "Nothing will be downloaded until you click Install."
+
+
+def test_setup_review_lines_omit_image_engine_and_sudo_details():
+    plan = {
+        "llm_tags": [], "embedding_tags": [], "image_shorts": [],
+        "cleanup_names": [], "vllm_cleanup_names": [], "hf_token": "",
+        "use_existing_hf_token": False, "comfyui_mode": "existing",
+        "comfyui_path": "/tmp/ComfyUI", "engines": ["vllm"],
+    }
+    text = "\n".join(setup_review_lines(plan, show_engines=False, sudo_package=None))
+    assert "ComfyUI:" not in text
+    assert "ComfyUI path:" not in text
+    assert "Engines:" not in text
 
 
 def test_model_row_label_shows_one_size_for_one_engine():
