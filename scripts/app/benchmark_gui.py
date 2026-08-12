@@ -88,6 +88,7 @@ from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
 )
+from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 
@@ -842,13 +843,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         option_vars["comfyui"].set(str(detected_comfyui))
 
     def perform_vllm_update(control):
+        return perform_vllm_version_update(None, control)
+
+    def perform_vllm_version_update(version, control):
         snapshot = collect_engine_management(get_engine, hardware_backend)
         status = next(item for item in snapshot.statuses if item.engine == "vllm")
         support = vllm_update_support(status, setup, platform.machine())
         if support is None:
             return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
         return update_managed_vllm(
-            support, config.VLLM_VENV, control=control, log=control.log,
+            support, config.VLLM_VENV, control=control, log=control.log, version=version,
         )
 
     def perform_llamacpp_update(control):
@@ -907,6 +911,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
         vllm_updater=perform_vllm_update,
+        vllm_version_loader=(
+            None if is_dgx_spark(
+                platform.machine(),
+                [str(device.get("name", "")) for device in configured_gpu_devices(setup)],
+            ) else fetch_vllm_versions
+        ),
+        vllm_version_updater=(
+            None if is_dgx_spark(
+                platform.machine(),
+                [str(device.get("name", "")) for device in configured_gpu_devices(setup)],
+            ) else perform_vllm_version_update
+        ),
         llamacpp_updater=perform_llamacpp_update,
         llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
         llamacpp_release_loader=fetch_llamacpp_releases,

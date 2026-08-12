@@ -630,6 +630,7 @@ def validate_vllm_environment(venv_dir: Path, *, run=subprocess.run,
 def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
                         installer=install_vllm, run=subprocess.run,
                         replace=os.replace, remove=shutil.rmtree,
+                        version: str | None = None,
                         control: RuntimeUpdateControl | None = None,
                         token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
     """Validate a sibling venv, then recreate it at its final path with rollback."""
@@ -643,7 +644,8 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
     backup = target.with_name(f".{target.name}-backup-{token}")
     active_run = control.run if control is not None else run
     try:
-        if not installer(support, log=log, run=active_run, venv_dir=staged):
+        install_kwargs = {"version": version} if version else {}
+        if not installer(support, log=log, run=active_run, venv_dir=staged, **install_kwargs):
             if cancelled := _cancelled(control):
                 return cancelled
             return RuntimeUpdateResult(False, "The staged vLLM installation failed.")
@@ -657,7 +659,7 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
         remove(staged)
         replace(target, backup)
         try:
-            if not installer(support, log=log, run=active_run, venv_dir=target):
+            if not installer(support, log=log, run=active_run, venv_dir=target, **install_kwargs):
                 raise RuntimeError("The final vLLM installation failed.")
             final_validation = validate_vllm_environment(target, run=active_run)
             if not final_validation.success:

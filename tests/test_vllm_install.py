@@ -1,4 +1,5 @@
 import os
+import json
 import pytest
 import sys
 from pathlib import Path
@@ -31,6 +32,8 @@ from scripts.setup.vllm_install import (
     run_python_bootstrap,
     python_candidates,
     resolve_python,
+    fetch_vllm_versions,
+    normalize_vllm_version,
     vllm_install_command,
     vllm_platform_support,
 )
@@ -42,6 +45,28 @@ def support(**overrides):
               "which_fn": lambda _name: None}
     kwargs.update(overrides)
     return vllm_platform_support(**kwargs)
+
+
+def test_vllm_version_selection_accepts_stable_versions():
+    assert normalize_vllm_version(" 0.10.2 ") == "0.10.2"
+    with pytest.raises(ValueError, match="prereleases"):
+        normalize_vllm_version("0.11.0rc1")
+
+
+def test_vllm_release_history_omits_prerelease_and_yanked_versions():
+    payload = {"releases": {
+        "0.10.2": [{"yanked": False}], "0.10.1": [{"yanked": False}],
+        "0.11.0rc1": [{"yanked": False}], "0.9.0": [{"yanked": True}],
+    }}
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+        def read(self, *_args): return json.dumps(payload)
+
+    assert fetch_vllm_versions(opener=lambda *_args, **_kwargs: Response()) == [
+        "0.10.2", "0.10.1",
+    ]
 
 
 # ── platform matrix ──
@@ -346,6 +371,11 @@ def test_install_commands_target_the_venv_interpreter():
     pip = vllm_install_command("cuda_wheel", "/v/bin/python", uv_available=False)
     assert pip == ["/v/bin/python", "-m", "pip", "install", "vllm[bench]"]
     assert "--torch-backend=auto" not in pip  # a pip-only flag would fail the install
+
+    exact = vllm_install_command(
+        "cuda_wheel", "/v/bin/python", uv_available=False, version="0.10.2",
+    )
+    assert exact[-1] == "vllm[bench]==0.10.2"
 
 
 def test_every_install_method_requests_the_bench_extra():

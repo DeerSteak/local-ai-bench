@@ -116,17 +116,19 @@ def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path
     (target / "old").write_text("old", encoding="utf-8")
 
     installed_at = []
+    installed_versions = []
 
     def installer(_support, **kwargs):
         destination = kwargs["venv_dir"]
         installed_at.append(destination)
+        installed_versions.append(kwargs.get("version"))
         executable = vllm_executable(destination)
         executable.parent.mkdir(parents=True)
         executable.touch()
         return True
 
     result = update_managed_vllm(
-        SUPPORT, target, installer=installer,
+        SUPPORT, target, installer=installer, version="1.0",
         run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="vllm 1.0", stderr=""),
         token_factory=lambda: "test",
     )
@@ -137,6 +139,7 @@ def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path
     assert not (target / "old").exists()
     assert not (tmp_path / ".vllm-env-backup-test").exists()
     assert installed_at == [tmp_path / ".vllm-env-update-test", target]
+    assert installed_versions == ["1.0", "1.0"]
 
 
 def test_update_managed_vllm_preserves_target_when_staging_fails(tmp_path):

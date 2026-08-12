@@ -18,6 +18,7 @@ from scripts.setup.model_compatibility import (
 from scripts.setup.runtime_status import runtime_python
 from scripts.setup.setup_config import configured_gpu_devices
 from scripts.setup.vllm_install import PINNED_PYTHON, VllmSupport, is_dgx_spark
+from scripts.setup.vllm_install import normalize_vllm_version
 from scripts.setup.runtime_update import RuntimeUpdateControl
 from scripts.setup.runtime_update import normalize_llamacpp_release_tag
 
@@ -145,6 +146,8 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                                 llamacpp_update_prompt=None,
                                 llamacpp_release_loader=None,
                                 llamacpp_version_updater=None,
+                                vllm_version_loader=None,
+                                vllm_version_updater=None,
                                 llamacpp_model_probe=None,
                                 run_active=lambda: False) -> EngineManagementController:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
@@ -210,6 +213,11 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                         and llamacpp_version_updater is not None):
                     ttk.Button(
                         value_box, text="Change…", command=choose_llamacpp_version,
+                    ).pack(side="right", padx=(8, 0))
+                if (label == "Version" and status.engine == "vllm" and status.managed
+                        and vllm_version_updater is not None):
+                    ttk.Button(
+                        value_box, text="Change…", command=choose_vllm_version,
                     ).pack(side="right", padx=(8, 0))
         if snapshot.models:
             models_box = ttk.LabelFrame(body, text="Imported model compatibility", padding=12)
@@ -366,6 +374,61 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             threading.Thread(target=load_releases, daemon=True).start()
         else:
             selected.set("")
+        dialog.grab_set()
+        dialog.wait_visibility()
+        dialog.focus_set()
+
+    def choose_vllm_version():
+        if state["loading"] or vllm_version_updater is None or vllm_version_loader is None:
+            return
+        version_updater = vllm_version_updater
+        version_loader = vllm_version_loader
+        dialog = tk.Toplevel(root)
+        dialog.title("Choose vLLM Version")
+        dialog.transient(root)
+        dialog.resizable(False, False)
+        shell = ttk.Frame(dialog, padding=18)
+        shell.grid(sticky="nsew")
+        ttk.Label(shell, text="Stable release", font=("TkDefaultFont", 10, "bold")).grid(
+            row=0, column=0, sticky="w",
+        )
+        selected = tk.StringVar(value="Loading…")
+        versions = ttk.Combobox(shell, textvariable=selected, state="disabled", width=24)
+        versions.grid(row=1, column=0, sticky="ew", pady=(4, 12))
+        ttk.Label(shell, text="Specific version", font=("TkDefaultFont", 10, "bold")).grid(
+            row=2, column=0, sticky="w",
+        )
+        custom = tk.StringVar()
+        ttk.Entry(shell, textvariable=custom, width=27).grid(row=3, column=0, sticky="ew", pady=4)
+        buttons = ttk.Frame(shell)
+        buttons.grid(row=4, column=0, sticky="e", pady=(16, 0))
+
+        def install():
+            try:
+                version = normalize_vllm_version(custom.get().strip() or selected.get())
+            except ValueError as exc:
+                messagebox.showerror("Invalid vLLM version", str(exc), parent=dialog)
+                return
+            dialog.destroy()
+            update_engine(
+                "vllm", "vLLM", lambda control: version_updater(version, control),
+                f"Install vLLM {version}? The current environment will be retained for rollback.",
+            )
+
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="Install", command=install).pack(side="right", padx=(0, 8))
+
+        def load_versions():
+            try:
+                values = version_loader()
+                def loaded():
+                    versions.configure(values=values, state="readonly")
+                    selected.set(values[0] if values else "")
+                root.after(0, loaded)
+            except Exception as exc:
+                root.after(0, lambda error=exc: selected.set(f"Unable to load: {error}"))
+
+        threading.Thread(target=load_versions, daemon=True).start()
         dialog.grab_set()
         dialog.wait_visibility()
         dialog.focus_set()
