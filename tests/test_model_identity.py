@@ -1,4 +1,4 @@
-from scripts.model_identity import model_tag_slug
+from scripts.runtime.model_identity import model_tag_slug
 
 
 def test_model_tag_slug_normalizes_registry_and_repository_separators():

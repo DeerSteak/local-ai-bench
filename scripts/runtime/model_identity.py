@@ -1,4 +1,4 @@
-"""Shared normalization for model identifiers used as directory names."""
+"""Normalization for model identifiers used as directory names."""
 
 
 def model_tag_slug(tag: str) -> str:

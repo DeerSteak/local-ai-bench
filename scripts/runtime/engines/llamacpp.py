@@ -25,7 +25,7 @@ from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
-from scripts.model_identity import model_tag_slug
+from scripts.runtime.model_identity import model_tag_slug
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
 from scripts.runtime.shared import (

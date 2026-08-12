@@ -7,7 +7,7 @@ from pathlib import Path
 from scripts.runtime import config, hardware
 from scripts.setup.custom_models import forget_custom_models
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
-from scripts.model_identity import model_tag_slug
+from scripts.runtime.model_identity import model_tag_slug
 
 
 def sanitize_tag_to_short(tag: str) -> str:
