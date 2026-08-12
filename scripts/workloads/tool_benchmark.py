@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
+from scripts.workloads.accuracy_scoring import score_question_bank
 
 
 class ToolBenchmark:
@@ -169,26 +170,13 @@ class ToolBenchmark:
     def score(questions: list[dict], answers: dict) -> dict:
         """Tally correct/total overall and per category from a {question_id:
         evaluate_question_result_or_None} map."""
-        by_category: dict[str, dict] = {}
-        incorrect = []
-        all_results = []
-        correct = 0
-        answered = 0
-
-        for q in questions:
-            qid, category = q["id"], q["category"]
-            result = answers.get(qid)
-            cat = by_category.setdefault(category, {"correct": 0, "total": 0})
-            cat["total"] += 1
-            if result is not None:
-                answered += 1
-            is_correct = result is not None and result["correct"]
-            entry = {"id": qid, "category": category}
-            if Shared.tally_accuracy_entry(entry, is_correct, cat, all_results, incorrect):
-                correct += 1
-
-        return Shared.finalize_accuracy_score(len(questions), correct, answered, by_category,
-                                               incorrect, all_results)
+        return score_question_bank(
+            questions, answers,
+            lambda question, result: (
+                result is not None, result is not None and result["correct"],
+                {"id": question["id"], "category": question["category"]},
+            ),
+        )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
             answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
