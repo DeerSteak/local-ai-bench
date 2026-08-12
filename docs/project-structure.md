@@ -39,6 +39,7 @@
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
 | `docs/product-requirements.md` | Primary pre-launch hardware-validation decision, scope, outcomes, and product qualities |
+| `VERSION_6_PLAN.md` | Root-level implementation, qualification, pilot, rollback, and release plan for Version 6 |
 | `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
