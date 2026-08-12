@@ -37,6 +37,7 @@ from scripts.runtime.shared import (
     EngineTimeout,
     Shared,
 )
+from scripts.runtime.generation_guard import looks_like_loop
 
 
 class VllmEngine(InferenceEngine):
@@ -753,7 +754,7 @@ class VllmEngine(InferenceEngine):
                                         partial_text=partial_text, budget_nudged=budget_nudged)
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
-                    if response_text and Shared.looks_like_loop(response_text):
+                    if response_text and looks_like_loop(response_text):
                         raise EngineLoopDetected(
                             f"vllm_chat detected a generation loop after "
                             f"{now - request_start:.0f}s",

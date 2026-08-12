@@ -36,6 +36,7 @@ from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.generation_guard import looks_like_loop
 
 if TYPE_CHECKING:
     from scripts.runtime.engines.base import InferenceEngine
@@ -798,54 +799,6 @@ class Shared:
             emit_progress("measurement", progress_stage, "valid", tag)
         return measurement
 
-    # Common CoT filler — needs a higher repeat count to be diagnostic of a real loop.
-    _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD = [
-        "wait,", "wait -", "actually,", "hold on,",
-    ]
-    # More specific phrases — a few repeats already signals a stuck loop.
-    _LOOP_HEDGE_PHRASES = [
-        "let me reconsider", "let me recalculate",
-        "let me re-check", "let me recheck", "let me recompute", "let me redo",
-        "let me try again", "let's try again", "let's recalculate",
-        "on second thought", "there seems to be a mistake",
-        "there seems to have been", "i made an error", "i made a mistake",
-        "that's not right", "this is incorrect", "let's start over",
-        "apolog",  # apologize / apologies / apologizing
-        "correcting myself", "let me reevaluate", "let me re-evaluate",
-    ]
-
-    @staticmethod
-    def _has_repeated_verbatim_ngram(text: str, ngram_words: int = 12, min_repeats: int = 3) -> bool:
-        """True if any run of `ngram_words` consecutive words recurs `min_repeats`+ times. Word-level, not character-level."""
-        words = text.split()
-        if len(words) < ngram_words * min_repeats:
-            return False
-        seen: dict[str, int] = {}
-        for i in range(len(words) - ngram_words + 1):
-            gram = " ".join(words[i:i + ngram_words])
-            count = seen.get(gram, 0) + 1
-            if count >= min_repeats:
-                return True
-            seen[gram] = count
-        return False
-
-    @staticmethod
-    def _has_repeated_hedging_phrase(text: str, min_repeats: int = 3,
-                                      high_threshold_repeats: int = 5) -> bool:
-        """True if a _LOOP_HEDGE_PHRASES phrase recurs `min_repeats`+ times, or
-        a _LOOP_HEDGE_PHRASES_HIGH_THRESHOLD one recurs `high_threshold_repeats`+."""
-        lowered = text.lower()
-        return (any(lowered.count(phrase) >= min_repeats for phrase in Shared._LOOP_HEDGE_PHRASES)
-                or any(lowered.count(phrase) >= high_threshold_repeats
-                       for phrase in Shared._LOOP_HEDGE_PHRASES_HIGH_THRESHOLD))
-
-    @staticmethod
-    def looks_like_loop(text: str, ngram_words: int = 12, min_repeats: int = 3,
-                         hedge_min_repeats: int = 3, hedge_high_threshold_repeats: int = 5) -> bool:
-        """Heuristic for a degenerate generation loop — see docs/workloads.md#timeouts-and-loop-detection."""
-        return (Shared._has_repeated_verbatim_ngram(text, ngram_words, min_repeats)
-                or Shared._has_repeated_hedging_phrase(text, hedge_min_repeats, hedge_high_threshold_repeats))
-
     @staticmethod
     def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
                               all_results: list, incorrect: list) -> bool:
@@ -992,7 +945,7 @@ class Shared:
                         Shared.warn(f"{q['id']} timed out after {config.ACC_TIMEOUT}s — "
                                     "scoring the partial response and continuing")
                         timed_out_ids.append(q["id"])
-                        if partial_text and Shared.looks_like_loop(partial_text):
+                        if partial_text and looks_like_loop(partial_text):
                             likely_loop_ids.append(q["id"])
                     elif status == "loop_detected":
                         Shared.warn(f"{q['id']}: response looks like a generation loop")

@@ -88,7 +88,7 @@ ACC_FINALIZE_MESSAGE = (
     "previous fragment; provide the complete answer that should be graded."
 )
 
-# How often the accuracy tests re-check a streaming response for a degenerate loop (Shared.looks_like_loop),
+# How often accuracy streams are checked for a degenerate generation loop.
 # rather than waiting the full ACC_TIMEOUT to look.
 LOOP_CHECK_INTERVAL = 8
 

@@ -26,6 +26,7 @@ from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
 from scripts.model_identity import model_tag_slug
+from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.shared import (
     EngineLoopDetected,
     EngineTimeout,
@@ -675,7 +676,7 @@ class LlamaCppEngine(InferenceEngine):
                     )
                 if check_loop and now - last_loop_check >= config.LOOP_CHECK_INTERVAL:
                     last_loop_check = now
-                    if response_text and Shared.looks_like_loop(response_text):
+                    if response_text and looks_like_loop(response_text):
                         raise EngineLoopDetected(
                             f"llamacpp_chat detected a generation loop after "
                             f"{now - request_start:.0f}s",
