@@ -21,6 +21,7 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
+    normalize_gui_option_values, prepare_benchmark_launch,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -183,6 +184,61 @@ def test_validate_gui_options_rejects_bounds_types_and_missing_keys():
     assert validate_gui_options(dict(GUI_OPTION_DEFAULTS, timeout="300"))
     assert validate_gui_options({})
     assert validate_gui_options(GUI_OPTION_DEFAULTS) == []
+
+
+def test_normalize_gui_option_values_converts_controls_and_trims_paths():
+    raw = {
+        **GUI_OPTION_DEFAULTS, "runs": "5", "timeout": "bad",
+        "gpu_split_mode": "Tensor parallel (experimental)", "out": " result.json ",
+        "comfyui": " /ComfyUI ",
+    }
+    options = normalize_gui_option_values(raw)
+    assert options["runs"] == 5
+    assert options["timeout"] == "bad"
+    assert options["gpu_split_mode"] == "tensor"
+    assert options["out"] == "result.json"
+    assert options["comfyui"] == "/ComfyUI"
+
+
+def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(tmp_path):
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=[], entries=[], max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS), selected_preset="Custom",
+        detected_tools={}, found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert "Select at least one benchmark test." in preparation.errors
+    assert preparation.preview is None
+    assert preparation.state is None
+    assert preparation.command is None
+
+
+def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    options = dict(GUI_OPTION_DEFAULTS, runs=4, out="result.json")
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        max_prompt_tokens=8192, tg_tokens=[], gui_options=options,
+        selected_preset="Quick run", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert preparation.errors == []
+    assert preparation.preview is not None and "Measured runs: 4" in preparation.preview
+    assert preparation.state is not None
+    assert preparation.state["selected_preset"] == "Quick run"
+    assert preparation.command is not None
+    assert preparation.command[preparation.command.index("--max-prompt-tokens") + 1] == "8192"
+    assert preparation.command[preparation.command.index("--out") + 1] == "result.json"
+
+
+def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llamabench"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
+        selected_preset="Custom", detected_tools={"llama-bench": "/bin/bench"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert "Select at least one llama-bench generation size." in preparation.errors
 
 
 def test_build_command_includes_every_gui_execution_setting():
