@@ -78,7 +78,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
 | Cross-process pause state, transition evidence, lost-control fallback, launch cleanup, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
 | Inventory, model identity, and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_model_identity.py](../tests/test_model_identity.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
-| Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
+| Configuration, catalog, dashboard-boundary invariants, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_cross_boundary_invariants.py](../tests/test_cross_boundary_invariants.py), [test_hardware.py](../tests/test_hardware.py) |
 
 These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
 
@@ -110,7 +110,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 | Area | Test modules |
 |---|---|
-| Engine registry, shared llama.cpp tool discovery, and adapter | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
+| Engine registry, shared llama.cpp tool discovery, OpenAI-compatible HTTP/SSE parsing, and adapters | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
@@ -168,6 +168,8 @@ npx tsc --noEmit
 ```
 
 The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. `samples.test.ts` loads every bundled result and verifies that each populated section still produces rows, catching schema drift at the compatibility boundary. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
+
+Run `npm run test:coverage` to measure statement, branch, function, and line coverage across `src/constants.ts` and the pure utilities in `src/utils/`. CI publishes the text report for every protected-target pull request; coverage is diagnostic rather than a fixed percentage gate.
 
 ## What to run before submitting
 

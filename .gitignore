@@ -45,6 +45,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+dashboard/coverage/
 *.cover
 *.py,cover
 .hypothesis/
@@ -192,6 +193,10 @@ local_ai_bench_config.json
 /.omc
 /dashboard/.omc
 /results
+
+# Result files staged for the dashboard to serve — never source, always generated.
+/dashboard/public/__selected_results__/
+/dashboard/public/__selected_results__.json
 .embed_crash_cache.json
 .llm_crash_cache.json
 .conv_crash_cache.json

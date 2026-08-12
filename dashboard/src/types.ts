@@ -32,3 +32,19 @@ export interface SortConfig {
   key: string;
   dir: 1 | -1;
 }
+
+// One line series. `strokeDasharray` distinguishes models when several files are
+// compared, so it is absent on the single-file charts that color by model instead.
+export interface LineConfig {
+  dataKey: string;
+  stroke: string;
+  name: string;
+  strokeDasharray?: string;
+}
+
+// One bar series.
+export interface BarConfig {
+  dataKey: string;
+  name: string;
+  fill: string;
+}

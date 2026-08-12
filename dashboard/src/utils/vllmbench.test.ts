@@ -118,17 +118,17 @@ describe("flattenVllmBenchData", () => {
   it("joins latency and throughput on the same input/output shape", () => {
     const rows = flattenVllmBenchData([file("f0", "host", entries)]);
     const shape = rows.find(r => r.input_len === 512 && r.output_len === 128);
-    expect(shape.avg_latency_sec).toBe(1.0);
-    expect(shape.requests_per_sec).toBe(8);
-    expect(shape.throughput_output_tps).toBe(1024);
-    expect(shape.latency_output_tps).toBe(128);
+    expect(shape?.avg_latency_sec).toBe(1.0);
+    expect(shape?.requests_per_sec).toBe(8);
+    expect(shape?.throughput_output_tps).toBe(1024);
+    expect(shape?.latency_output_tps).toBe(128);
   });
 
   it("keeps a shape measured by only one of the two benchmarks", () => {
     const rows = flattenVllmBenchData([file("f0", "host", entries)]);
     const latencyOnly = rows.find(r => r.output_len === 512);
-    expect(latencyOnly.avg_latency_sec).toBe(3.0);
-    expect(latencyOnly.requests_per_sec).toBeUndefined();
+    expect(latencyOnly?.avg_latency_sec).toBe(3.0);
+    expect(latencyOnly?.requests_per_sec).toBeUndefined();
   });
 
   it("returns nothing for files without a vllmbench section", () => {

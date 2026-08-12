@@ -1,6 +1,6 @@
 import { LLM_DISPLAY_ORDER, CATEGORY_COLORS, FILE_COLORS } from "../constants";
 import { modelLabel, entriesOf } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { BarConfig, ChartRow, ResultsFile } from "../types";
 
 // Return all model keys present in a given accuracy test (mcq/math/code)
 // across files, in canonical order — the same LLM roster runs every
@@ -34,7 +34,7 @@ export function buildAccuracyGroupedBarData(files: ResultsFile[], testKey: strin
 // MODEL_COLORS — this chart's bars sit side by side as flat color swatches
 // (unlike the LLM line charts getModelColor is tuned for), so the pastel
 // palette read as washed-out/clashing here.
-export function buildAccuracyGroupedBarConfigs(files: ResultsFile[], testKey: string, enabledModels: Set<string>) {
+export function buildAccuracyGroupedBarConfigs(files: ResultsFile[], testKey: string, enabledModels: Set<string>): BarConfig[] {
   const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
   return allModels.map((m, i) => ({
     dataKey: m,
@@ -67,7 +67,7 @@ export function buildAccuracyCategoryData(files: ResultsFile[], testKey: string,
   });
 }
 
-export function buildAccuracyCategoryConfigs(files: ResultsFile[]) {
+export function buildAccuracyCategoryConfigs(files: ResultsFile[]): BarConfig[] {
   return files.map((f, fi) => ({
     dataKey: `f${fi}`,
     name: f.hostname ?? "Unknown",
@@ -127,7 +127,7 @@ export function buildAccuracyTimeoutData(files: ResultsFile[], testKey: string, 
   return hasIncident ? rows : [];
 }
 
-export function flattenAccuracyData(files: ResultsFile[], testKey: string) {
+export function flattenAccuracyData(files: ResultsFile[], testKey: string): ChartRow[] {
   return files.flatMap(f =>
     entriesOf(f.data[testKey]).map(([model, s]) => {
       if (s.skipped) {

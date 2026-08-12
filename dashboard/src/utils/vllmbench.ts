@@ -1,6 +1,6 @@
 import { buildFileLineConfigs, modelLabel, entriesOf } from "./shared";
 import type { JsonRecord } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
 // `vllm bench` results. Deliberately never share a chart with llamabench: different
 // weights (AWQ/GPTQ vs GGUF) and different metric definitions — see docs/workloads.md#vllm-bench.
@@ -56,7 +56,8 @@ function buildLineConfigs(
   files: ResultsFile[], model: string, data: ChartRow[],
   pick: (modelData: JsonRecord[string]) => JsonRecord[string][],
 ) {
-  const configs: { dataKey: string, name: string, stroke?: string }[] = [];
+  const configs: LineConfig[] = [];
+  // One config per file, indexed identically, so fileConfigs[fi] is always present.
   const fileConfigs = buildFileLineConfigs(files);
   files.forEach((file, fi) => {
     const outputs = new Set<number>(
@@ -68,20 +69,20 @@ function buildLineConfigs(
       configs.push({
         dataKey,
         name: files.length > 1
-          ? `${fileConfigs[fi]?.name ?? file.hostname} · out${output}`
+          ? `${fileConfigs[fi].name} · out${output}`
           : `out${output}`,
-        stroke: fileConfigs[fi]?.stroke,
+        stroke: fileConfigs[fi].stroke,
       });
     });
   });
   return configs;
 }
 
-export function buildVllmBenchLatencyConfigs(files: ResultsFile[], model: string, data: ChartRow[]) {
+export function buildVllmBenchLatencyConfigs(files: ResultsFile[], model: string, data: ChartRow[]): LineConfig[] {
   return buildLineConfigs(files, model, data, vllmBenchLatencyEntries);
 }
 
-export function buildVllmBenchThroughputConfigs(files: ResultsFile[], model: string, data: ChartRow[]) {
+export function buildVllmBenchThroughputConfigs(files: ResultsFile[], model: string, data: ChartRow[]): LineConfig[] {
   return buildLineConfigs(files, model, data, vllmBenchThroughputEntries);
 }
 
@@ -92,7 +93,7 @@ export function getVllmBenchModels(files: ResultsFile[]): string[] {
   return [...models];
 }
 
-export function flattenVllmBenchData(files: ResultsFile[]) {
+export function flattenVllmBenchData(files: ResultsFile[]): ChartRow[] {
   return files.flatMap(file =>
     entriesOf(file.data.vllmbench).flatMap(([model, modelData]) => {
       const byShape = new Map<string, JsonRecord[string]>();

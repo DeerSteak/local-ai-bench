@@ -29,6 +29,50 @@ def import_variants(inspection: RepositoryInspection, engine: str) -> tuple[Impo
     return ()
 
 
+def supported_import_engines(inspection: RepositoryInspection,
+                             engines: list[str]) -> list[str]:
+    supported = []
+    if inspection.llama_variants and "llamacpp" in engines:
+        supported.append("llamacpp")
+    if inspection.vllm_variant and "vllm" in engines:
+        supported.append("vllm")
+    return supported
+
+
+def import_validation_reason(*, busy: bool, inspection: RepositoryInspection | None,
+                             inspected_request: tuple[str, str] | None,
+                             current_request: tuple[str, str], engine: str,
+                             engines: list[str], variant: ImportVariant | None,
+                             tag: str, label: str, acknowledged: bool,
+                             vllm_cache: Path | None = None) -> str:
+    if busy:
+        return "Operation in progress."
+    if inspection is None:
+        return "Inspect a repository before importing."
+    if inspected_request != current_request:
+        return "Repository or revision changed; inspect it again."
+    if engine not in engines or variant is None:
+        return "Select an available engine and artifact variant."
+    if not valid_custom_tag(tag):
+        return "Tag must use only letters, numbers, dots, underscores, or hyphens."
+    if not label.strip():
+        return "Display name is required."
+    if tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
+        return "That tag belongs to a catalog model."
+    registered = custom_model(engine, tag)
+    destination = import_destination(engine, tag, vllm_cache)
+    if registered is not None and custom_model_artifacts_present(
+            registered, vllm_cache=destination if engine == "vllm" else None):
+        return "That custom tag is already registered for this engine."
+    if not acknowledged:
+        return "Acknowledge that runtime compatibility is unverified."
+    if destination is None:
+        return "No import destination is available for this engine."
+    if enough_disk_space(variant, destination) is False:
+        return "Not enough free disk space for this variant."
+    return ""
+
+
 def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
                              engine_factory, on_imported) -> None:  # pragma: no cover — interactive Tk UI
     engines = [
@@ -129,42 +173,24 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     def selected_variant():
         return state["variants"].get(variables["variant"].get())
 
+    def vllm_cache_home():
+        return engine_factory("vllm").cache_home()
+
     def destination(engine, tag):
-        cache = getattr(engine_factory("vllm"), "cache_home")() if engine == "vllm" else None
+        cache = vllm_cache_home() if engine == "vllm" else None
         return import_destination(engine, tag, cache)
 
     def validate(*_args):
         inspection, engine, variant = state["inspection"], variables["engine"].get(), selected_variant()
         tag, label = variables["tag"].get(), variables["label"].get().strip()
-        reason = ""
-        if state["busy"]:
-            reason = "Operation in progress."
-        elif inspection is None:
-            reason = "Inspect a repository before importing."
-        elif state["request"] != (variables["repo"].get(), variables["revision"].get()):
-            reason = "Repository or revision changed; inspect it again."
-        elif engine not in engines or variant is None:
-            reason = "Select an available engine and artifact variant."
-        elif not valid_custom_tag(tag):
-            reason = "Tag must use only letters, numbers, dots, underscores, or hyphens."
-        elif not label:
-            reason = "Display name is required."
-        elif tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
-            reason = "That tag belongs to a catalog model."
-        elif ((registered := custom_model(engine, tag)) is not None
-              and custom_model_artifacts_present(
-                  registered,
-                  vllm_cache=destination(engine, tag) if engine == "vllm" else None,
-              )):
-            reason = "That custom tag is already registered for this engine."
-        elif not variables["acknowledge"].get():
-            reason = "Acknowledge that runtime compatibility is unverified."
-        else:
-            target = destination(engine, tag)
-            if target is None:
-                reason = "No import destination is available for this engine."
-            elif enough_disk_space(variant, target) is False:
-                reason = "Not enough free disk space for this variant."
+        cache = vllm_cache_home() if engine == "vllm" else None
+        reason = import_validation_reason(
+            busy=state["busy"], inspection=inspection,
+            inspected_request=state["request"],
+            current_request=(variables["repo"].get(), variables["revision"].get()),
+            engine=engine, engines=engines, variant=variant, tag=tag, label=label,
+            acknowledged=variables["acknowledge"].get(), vllm_cache=cache,
+        )
         variables["validation"].set(reason or "Ready to import.")
         import_button.configure(state="disabled" if reason else "normal")
 
@@ -202,11 +228,7 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
             return
         assert result is not None
         state["inspection"] = result
-        supported = []
-        if result.llama_variants and "llamacpp" in engines:
-            supported.append("llamacpp")
-        if result.vllm_variant and "vllm" in engines:
-            supported.append("vllm")
+        supported = supported_import_engines(result, engines)
         variables["support"].set(
             f"llama.cpp: {len(result.llama_variants)} GGUF variant(s) · "
             + ("vLLM: safetensors snapshot" if result.vllm_variant else "vLLM: unavailable")

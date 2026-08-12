@@ -106,6 +106,7 @@ def _download_7zr(project_dir: Path, archive: Path, info, fail, ok) -> str | Non
             ok("7zr.exe downloaded")
         except Exception as exc:
             fail(f"Could not download 7zr.exe: {exc}")
+            executable.unlink(missing_ok=True)
             archive.unlink(missing_ok=True)
             return None
     return str(executable)

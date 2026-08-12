@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
@@ -124,6 +125,122 @@ def launch_controlled_process(command: list[str], **kwargs):
     return _launch_controlled_process(
         command, utc_offset_fn=windows_host_utc_offset_minutes, **kwargs,
     )
+
+
+@dataclass(frozen=True)
+class BenchmarkLaunchError:
+    errors: list[str]
+
+
+@dataclass(frozen=True)
+class BenchmarkLaunchReady:
+    preview: str
+    state: dict
+    command: list[str]
+
+
+@dataclass(frozen=True)
+class EngineSelectionState:
+    engines: list[str]
+    value: str
+    note: str
+    model_availability: dict[str, bool]
+
+
+@dataclass(frozen=True)
+class ProcessCompletionState:
+    status: str
+    write_run_log: bool
+
+
+def resolve_engine_names(selected: list[str], available: list[str]) -> list[str]:
+    return [name for name in available if name in selected] or [available[0]]
+
+
+def resolve_engine_selection(selected: list[str], available: list[str],
+                             models: list[MenuEntry],
+                             model_owners: dict[str, set[str]]) -> EngineSelectionState:
+    chosen = resolve_engine_names(selected, available)
+    note = (
+        f"Runs the full selection once per engine ({len(chosen)} passes, "
+        f"{len(chosen)} results files)." if len(chosen) > 1
+        else "Only installed engines are listed. Models this engine cannot run are disabled."
+    )
+    runnable: dict[str, bool] = {}
+    for name in chosen:
+        for value, supported in models_runnable_by(models, name, model_owners).items():
+            runnable[value] = runnable.get(value, False) or supported
+    return EngineSelectionState(chosen, format_engine_selection(chosen), note, runnable)
+
+
+def process_completion_state(kind: str | None, exit_code: int) -> ProcessCompletionState:
+    if kind in {"recovery", "retry", "fork"}:
+        label = {"recovery": "Recovery", "retry": "Selected retry", "fork": "Forked run"}[kind]
+        status = (
+            f"{label} completed successfully. Results are ready to review."
+            if exit_code == 0 else
+            f"{label} stopped with exit code {exit_code}. Preserved evidence remains available."
+        )
+    else:
+        status = format_run_outcome(exit_code)
+    return ProcessCompletionState(status, exit_code == 0)
+
+
+def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
+    options = dict(GUI_OPTION_DEFAULTS)
+    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
+        try:
+            options[key] = int(values[key])
+        except (TypeError, ValueError):
+            options[key] = values[key]
+    options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
+    for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
+                "llamacpp_no_repack"):
+        options[key] = values[key]
+    for key in ("out", "comfyui"):
+        options[key] = str(values[key]).strip()
+    return options
+
+
+def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
+                             max_prompt_tokens: int | None, tg_tokens: list[int],
+                             gui_options: dict[str, Any], selected_preset: str,
+                             detected_tools: dict[str, str | None],
+                             found_comfyui: Path | None,
+                             detected_comfyui: Path) -> BenchmarkLaunchError | BenchmarkLaunchReady:
+    errors = validate_gui_options(gui_options)
+    if not tests:
+        errors.append("Select at least one benchmark test.")
+    selection_error = model_selection_error(entries, tests)
+    if selection_error:
+        errors.append(selection_error)
+    if TG_TOKEN_TESTS & set(tests) and not tg_tokens:
+        errors.append("Select at least one llama-bench generation size.")
+    custom_comfyui = (
+        normalize_comfyui_dir(Path(gui_options["comfyui"]))
+        if gui_options.get("comfyui") else found_comfyui
+    )
+    errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
+    if errors:
+        return BenchmarkLaunchError(errors)
+    preview = build_plan_preview(
+        engine=engine, tests=tests, entries=entries, options=gui_options,
+        max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
+        comfyui_dir=custom_comfyui or detected_comfyui,
+    )
+    state = build_frontend_state(
+        engine, tests, entries, max_prompt_tokens=max_prompt_tokens,
+        tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
+        gui_options=gui_options, selected_preset=selected_preset,
+    )
+    command = build_benchmark_command(
+        engine, detected_comfyui, tests, entries,
+        max_prompt_tokens=(max_prompt_tokens
+                           if MAX_PROMPT_TOKEN_TESTS & set(tests) else None),
+        tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
+        gui_options=gui_options,
+    )
+    return BenchmarkLaunchReady(preview, state, command)
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -291,7 +408,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def set_selected_engines(names) -> None:
         """Point the checkboxes at `names`, ignoring any engine that isn't installed."""
-        wanted = [name for name in names if name in engine_check_vars] or [available_engines[0]]
+        wanted = resolve_engine_names(list(names), available_engines)
         restoring_engines[0] = True
         try:
             for name, variable in engine_check_vars.items():
@@ -303,22 +420,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def apply_engine_availability(*_) -> None:
         if restoring_engines[0]:
             return
-        chosen = [name for name in available_engines if engine_check_vars[name].get()]
-        if not chosen:
-            chosen = [available_engines[0]]
-            engine_check_vars[chosen[0]].set(True)
-        engine_var.set(format_engine_selection(chosen))
-        engine_note.set(
-            f"Runs the full selection once per engine ({len(chosen)} passes, "
-            f"{len(chosen)} results files)." if len(chosen) > 1
-            else "Only installed engines are listed. Models this engine cannot run are disabled."
+        selection = resolve_engine_selection(
+            [name for name in available_engines if engine_check_vars[name].get()],
+            available_engines, custom_models, model_owners,
         )
-        runnable = {}
-        for name in chosen:
-            for value, ok_here in models_runnable_by(custom_models, name, model_owners).items():
-                runnable[value] = runnable.get(value, False) or ok_here
+        if not any(engine_check_vars[name].get() for name in selection.engines):
+            engine_check_vars[selection.engines[0]].set(True)
+        engine_var.set(selection.value)
+        engine_note.set(selection.note)
         for value, widget in model_widgets.items():
-            available = runnable.get(value, True)
+            available = selection.model_availability.get(value, True)
             widget.configure(state="normal" if available else "disabled")
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
@@ -712,8 +823,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def finish_active_process(exit_code):
         nonlocal process, active_process_kind
+        completion = process_completion_state(active_process_kind, exit_code)
         process = None
-        if exit_code == 0:
+        if completion.write_run_log:
             try:
                 write_run_logs(
                     current_log(), result_paths_for_log(current_log(), active_result_paths),
@@ -723,18 +835,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         finish_process_control()
         stop_button.configure(state="disabled")
         start_button.configure(state="normal")
-        if active_process_kind in {"recovery", "retry", "fork"}:
-            label = {
-                "recovery": "Recovery", "retry": "Selected retry",
-                "fork": "Forked run",
-            }[active_process_kind]
-            run_status.set(
-                f"{label} completed successfully. Results are ready to review."
-                if exit_code == 0 else
-                f"{label} stopped with exit code {exit_code}. Preserved evidence remains available."
-            )
-        else:
-            run_status.set(format_run_outcome(exit_code))
+        run_status.set(completion.status)
         active_process_kind = None
         refresh_history()
         progress_screen.finish_pending(exit_code)
@@ -812,20 +913,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         output_queue.put(("done", proc.wait(), proc))
 
     def collect_options():
-        values = dict(GUI_OPTION_DEFAULTS)
-        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
-            try:
-                values[key] = int(option_vars[key].get())
-            except ValueError:
-                values[key] = option_vars[key].get()
-        selected_split_label = option_vars["gpu_split_mode"].get()
-        values["gpu_split_mode"] = gpu_split_mode_value(selected_split_label)
-        for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack"):
-            values[key] = option_vars[key].get()
-        for key in ("out", "comfyui"):
-            values[key] = option_vars[key].get().strip()
-        return values
+        return normalize_gui_option_values({
+            key: variable.get() for key, variable in option_vars.items()
+        })
 
     configuration_files = ConfigurationFileActions(
         configuration_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
@@ -845,43 +935,25 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         max_prompt = None if cap_var.get() == "No cap" else int(cap_var.get())
         tg_tokens = [value for value, variable in tg_vars.items() if variable.get()]
         gui_options = collect_options()
-        errors = validate_gui_options(gui_options)
-        if not tests:
-            errors.append("Select at least one benchmark test.")
-        selection_error = model_selection_error(entries, tests)
-        if selection_error:
-            errors.append(selection_error)
-        if TG_TOKEN_TESTS & set(tests) and not tg_tokens:
-            errors.append("Select at least one llama-bench generation size.")
-        custom_comfyui = (normalize_comfyui_dir(Path(gui_options["comfyui"]))
-                          if gui_options["comfyui"] else found_comfyui)
-        errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
-        if errors:
-            messagebox.showerror("Check benchmark options", "\n".join(errors), parent=root)
-            return
-        effective_options = gui_options or custom_option_defaults(detected_comfyui)
-        preview = build_plan_preview(
-            engine=engine_var.get(), tests=tests, entries=entries, options=effective_options,
+        preparation = prepare_benchmark_launch(
+            engine=engine_var.get(), tests=tests, entries=entries,
             max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
-            comfyui_dir=custom_comfyui or detected_comfyui,
+            gui_options=gui_options, selected_preset=preset_var.get(),
+            detected_tools=detected_tools, found_comfyui=found_comfyui,
+            detected_comfyui=detected_comfyui,
         )
-        if not show_plan_preview(root, tk, ttk, preview):
+        if isinstance(preparation, BenchmarkLaunchError):
+            messagebox.showerror(
+                "Check benchmark options", "\n".join(preparation.errors), parent=root,
+            )
+            return
+        if not show_plan_preview(root, tk, ttk, preparation.preview):
             pending_fork_source = None
             return
-        state = build_frontend_state(
-            engine_var.get(), tests, entries, max_prompt_tokens=max_prompt,
-            tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-            gui_options=gui_options, selected_preset=preset_var.get(),
-        )
-        if not save_frontend_state(state, FRONTEND_STATE_PATH):
+        if not save_frontend_state(preparation.state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
-        command = build_benchmark_command(
-            engine_var.get(), detected_comfyui, tests, entries,
-            max_prompt_tokens=max_prompt if MAX_PROMPT_TOKEN_TESTS & set(tests) else None,
-            tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-            gui_options=gui_options,
-        )
+        command = preparation.command
         if pending_fork_source is not None:
             command.extend(["--fork-plan", str(pending_fork_source)])
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0

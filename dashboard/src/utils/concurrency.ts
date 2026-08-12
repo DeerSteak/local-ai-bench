@@ -49,7 +49,7 @@ export function buildConcurrencyDataForModel(files: ResultsFile[], section: stri
 // or has no concurrency data at all). "slow" stops after recording the level
 // that triggered it (a real measurement), the other reasons stop before ever
 // recording that level's data, hence nextLevel vs lastLevel below.
-export function getConcurrencyStopInfo(file: ResultsFile, section: string, model: string) {
+export function getConcurrencyStopInfo(file: ResultsFile, section: string, model: string): { reason: string, label: string, lastLevel: string | null, nextLevel: string | null } | null {
   const allLevels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
   const d = file.data[section]?.[model];
   const stoppedAt = d?.stopped_at;
@@ -61,7 +61,7 @@ export function getConcurrencyStopInfo(file: ResultsFile, section: string, model
   return { reason: stoppedAt, label: lookup(CONCURRENCY_STOP_LABELS, stoppedAt) || stoppedAt, lastLevel, nextLevel };
 }
 
-export function getConcurrencySweetSpot(file: ResultsFile, section: string, model: string) {
+export function getConcurrencySweetSpot(file: ResultsFile, section: string, model: string): { level: string, aggregateTps: number, sacrificePct: number | null } | null {
   const levels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
   const data = file.data[section]?.[model];
   const candidates = levels
@@ -79,7 +79,7 @@ export function getConcurrencySweetSpot(file: ResultsFile, section: string, mode
   return { ...best, sacrificePct };
 }
 
-export function flattenConcurrencyData(files: ResultsFile[], section: string) {
+export function flattenConcurrencyData(files: ResultsFile[], section: string): ChartRow[] {
   const allLevels: string[] = CONCURRENCY_LEVELS[section as keyof typeof CONCURRENCY_LEVELS];
   return files.flatMap(f =>
     entriesOf(f.data[section]).flatMap(([model, d]): ChartRow[] => {
@@ -111,7 +111,7 @@ export function flattenConcurrencyData(files: ResultsFile[], section: string) {
 // row's level is "—" (non-numeric) — Number(NaN) compares false in both
 // directions, which breaks comparator consistency, so it's pinned to
 // +Infinity: last ascending and first descending.
-export function concurrencySortValue(row: ChartRow, key: string) {
+export function concurrencySortValue(row: ChartRow, key: string): JsonRecord[string] {
   if (key !== "level") return row[key] ?? "";
   const n = Number(row.level);
   return Number.isNaN(n) ? Infinity : n;

@@ -15,6 +15,13 @@ function suiteVersion() {
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/constants.ts', 'src/utils/**/*.ts'],
+    },
+  },
   define: {
     'import.meta.env.VITE_SUITE_VERSION': JSON.stringify(suiteVersion()),
   },

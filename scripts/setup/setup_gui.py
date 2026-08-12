@@ -132,6 +132,54 @@ def engine_checkbox_label(entry: dict) -> str:
     return f"{label} — {entry['note']}"
 
 
+def build_setup_plan(*, model_selection: dict[str, bool], cleanup_names: list[str],
+                     cleanup_selected: bool, vllm_cleanup_selection: dict[str, bool],
+                     existing_hf_token: bool, override_token: bool, entered_token: str,
+                     save_token: bool, comfyui_mode: str, comfyui_path: str,
+                     engine_entries: list[dict], engine_selection: dict[str, bool]) -> dict:
+    hf_token = selected_gui_token(existing_hf_token, override_token, entered_token)
+    return {
+        "llm_tags": [model["tag"] for _, group in LLM_GROUPS for model in group
+                     if model_selection.get(model["tag"], False)],
+        "embedding_tags": [model["tag"] for model in EMBED_MODELS
+                           if model_selection.get(model["tag"], False)],
+        "image_shorts": [model["short"] for model in IMAGE_MODELS
+                         if model_selection.get(model["short"], False)],
+        "cleanup_names": cleanup_names if cleanup_selected else [],
+        "vllm_cleanup_names": [name for name, selected in vllm_cleanup_selection.items()
+                               if selected],
+        "hf_token": hf_token,
+        "save_hf_token": should_save_gui_token(hf_token, save_token),
+        "use_existing_hf_token": existing_hf_token and not hf_token,
+        "comfyui_mode": comfyui_mode,
+        "comfyui_path": comfyui_path.strip(),
+        "engines": [entry["name"] for entry in engine_entries
+                    if entry["enabled"] and engine_selection.get(entry["name"], False)],
+    }
+
+
+def setup_review_lines(plan: dict, *, show_engines: bool,
+                       sudo_package: str | None) -> list[str]:
+    lines = [
+        f"LLM models: {len(plan['llm_tags'])}",
+        f"Embedding models: {len(plan['embedding_tags'])}",
+        f"Image models: {len(plan['image_shorts'])}",
+        f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
+        f"Delete cached vLLM weights: {len(plan['vllm_cleanup_names'])}",
+        f"Hugging Face token: {hf_token_review_label(plan)}",
+    ]
+    if plan["image_shorts"]:
+        lines.append(f"ComfyUI: {plan['comfyui_mode']}")
+    if show_engines:
+        lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
+    notice = sudo_notice(plan["engines"], sudo_package)
+    if notice:
+        lines.extend(["", notice])
+    if plan["image_shorts"] and plan["comfyui_path"]:
+        lines.append(f"ComfyUI path: {plan['comfyui_path']}")
+    return [*lines, "", "Nothing will be downloaded until you click Install."]
+
+
 def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              detected_comfyui: Path | None,
                              cleanup_names: list[str],
@@ -476,44 +524,24 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     next_button.pack(side="right", padx=(0, 8))
 
     def build_plan() -> dict:
-        hf_token = selected_gui_token(
-            existing_hf_token, override_token_var.get(), token_var.get(),
+        return build_setup_plan(
+            model_selection={name: variable.get() for name, variable in model_vars.items()},
+            cleanup_names=cleanup_names, cleanup_selected=cleanup_var.get(),
+            vllm_cleanup_selection={
+                name: variable.get() for name, variable in vllm_cleanup_vars.items()
+            },
+            existing_hf_token=existing_hf_token, override_token=override_token_var.get(),
+            entered_token=token_var.get(), save_token=save_token_var.get(),
+            comfyui_mode=comfy_mode_var.get(), comfyui_path=comfy_path_var.get(),
+            engine_entries=engine_entries,
+            engine_selection={name: variable.get() for name, variable in engine_vars.items()},
         )
-        return {
-            "llm_tags": [m["tag"] for _, group in LLM_GROUPS for m in group if model_vars[m["tag"]].get()],
-            "embedding_tags": [m["tag"] for m in EMBED_MODELS if model_vars[m["tag"]].get()],
-            "image_shorts": [m["short"] for m in IMAGE_MODELS if model_vars[m["short"]].get()],
-            "cleanup_names": cleanup_names if cleanup_var.get() else [],
-            "vllm_cleanup_names": [name for name, var in vllm_cleanup_vars.items() if var.get()],
-            "hf_token": hf_token,
-            "save_hf_token": should_save_gui_token(hf_token, save_token_var.get()),
-            "use_existing_hf_token": existing_hf_token and not hf_token,
-            "comfyui_mode": comfy_mode_var.get(),
-            "comfyui_path": comfy_path_var.get().strip(),
-            "engines": [entry["name"] for entry in engine_entries
-                        if entry["enabled"] and engine_vars[entry["name"]].get()],
-        }
 
     def refresh_review() -> None:
         plan = build_plan()
-        lines = [
-            f"LLM models: {len(plan['llm_tags'])}",
-            f"Embedding models: {len(plan['embedding_tags'])}",
-            f"Image models: {len(plan['image_shorts'])}",
-            f"Delete non-catalog folders: {len(plan['cleanup_names'])}",
-            f"Delete cached vLLM weights: {len(plan['vllm_cleanup_names'])}",
-            f"Hugging Face token: {hf_token_review_label(plan)}",
-        ]
-        if plan["image_shorts"]:
-            lines.append(f"ComfyUI: {plan['comfyui_mode']}")
-        if engine_entries:
-            lines.append(f"Engines: {', '.join(plan['engines']) or 'none selected'}")
-        notice = sudo_notice(plan["engines"], sudo_package)
-        if notice:
-            lines.extend(["", notice])
-        if plan["image_shorts"] and plan["comfyui_path"]:
-            lines.append(f"ComfyUI path: {plan['comfyui_path']}")
-        lines.extend(["", "Nothing will be downloaded until you click Install."])
+        lines = setup_review_lines(
+            plan, show_engines=bool(engine_entries), sudo_package=sudo_package,
+        )
         review_text.configure(state="normal")
         review_text.delete("1.0", "end")
         review_text.insert("1.0", "\n".join(lines))

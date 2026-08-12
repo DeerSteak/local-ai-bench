@@ -4,7 +4,7 @@ import {
 } from "../constants";
 import { getModelColor, modelLabel, getSkipInfo, entriesOf, valuesOf, lookup } from "./shared";
 import type { JsonRecord } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
 
 const SKIP_REASON_LABELS: Record<string, string> = {
   timed_out: "Skipped - LLM Timed Out",
@@ -19,12 +19,16 @@ export const llmTTFTMean = (sample: JsonRecord[string]) => sample?.client_ttft_m
 // on any run whose engine reported no prompt duration — see docs/engines.md#prefill-timing.
 export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps_mean;
 
-export function llmMetricValue(sample: JsonRecord[string], metric: string) {
+export function llmMetricValue(sample: JsonRecord[string], metric: string): JsonRecord[string] {
   if (metric === "tps") return sample?.tps_mean;
   if (metric === "prefill") return llmPrefillTPS(sample);
   return llmTTFTMean(sample);
 }
 export const llmValidRuns = (sample: JsonRecord[string]) => sample?.valid_runs ?? sample?.n_runs;
+
+// An unrecognized anchor would index to -1 and skip everything — see docs/dashboard.md.
+const isKnownCtx = (ctx: unknown): ctx is string =>
+  typeof ctx === "string" && CTX_ORDER.includes(ctx);
 
 // Bar-chart status label for one (file, model, context) cell: "{ctx} - Timed
 // Out" for the context at which benchmark.py's run itself timed out (llm or
@@ -46,21 +50,21 @@ export function getBarStatusLabel(file: ResultsFile, model: string, ctx: string,
   if (skip) return SKIP_REASON_LABELS[skip.reason] || `Skipped - ${skip.detail}`;
   const sectionData = file.data[section]?.[model];
   const crashedCtx = sectionData?.crashed;
-  if (crashedCtx) {
+  if (isKnownCtx(crashedCtx)) {
     const crashedIdx = CTX_ORDER.indexOf(crashedCtx);
     const ctxIdx = CTX_ORDER.indexOf(ctx);
     if (ctxIdx === crashedIdx) return `${ctx} - Crashed`;
     if (ctxIdx > crashedIdx) return `${ctx} - Skipped`;
   }
   const timedOutCtx = sectionData?.timed_out;
-  if (timedOutCtx) {
+  if (isKnownCtx(timedOutCtx)) {
     const timedOutIdx = CTX_ORDER.indexOf(timedOutCtx);
     const ctxIdx = CTX_ORDER.indexOf(ctx);
     if (ctxIdx === timedOutIdx) return `${ctx} - Timed Out`;
     if (ctxIdx > timedOutIdx) return `${ctx} - Skipped`;
   }
   const slowTpsCtx = sectionData?.slow_tps;
-  if (slowTpsCtx) {
+  if (isKnownCtx(slowTpsCtx)) {
     const slowIdx = CTX_ORDER.indexOf(slowTpsCtx);
     const ctxIdx = CTX_ORDER.indexOf(ctx);
     if (ctxIdx > slowIdx) return `${ctx} - Skipped (${slowTpsCtx} Too Slow)`;
@@ -144,7 +148,7 @@ export function buildLLMData(files: ResultsFile[], metric: string, enabledModels
   });
 }
 
-export function buildLLMLineConfigs(files: ResultsFile[], data: ChartRow[], enabledModels: Set<string>) {
+export function buildLLMLineConfigs(files: ResultsFile[], data: ChartRow[], enabledModels: Set<string>): LineConfig[] {
   const isSingle = files.length === 1;
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
   const configs = [];
@@ -186,7 +190,7 @@ export function buildLLMBarData(files: ResultsFile[], model: string, metric: str
   });
 }
 
-export function buildLLMBarConfigs(files: ResultsFile[], model: string, section = "llm") {
+export function buildLLMBarConfigs(files: ResultsFile[], model: string, section = "llm"): BarConfig[] {
   const ctxSet = new Set<string>();
   for (const f of files) {
     for (const ctx of Object.keys(f.data[section]?.[model] || {})) ctxSet.add(ctx);
@@ -221,7 +225,7 @@ export function buildLLMBarDataByModel(file: ResultsFile, models: string[], metr
   });
 }
 
-export function buildLLMBarConfigsByModel(file: ResultsFile, models: string[], section = "llm") {
+export function buildLLMBarConfigsByModel(file: ResultsFile, models: string[], section = "llm"): BarConfig[] {
   const ctxSet = new Set<string>();
   for (const model of models) {
     for (const ctx of Object.keys(file.data[section]?.[model] || {})) ctxSet.add(ctx);
@@ -257,13 +261,13 @@ export function buildLLMLineDataByCtx(file: ResultsFile, models: string[], metri
   });
 }
 
-export function buildLLMLineConfigsByCtx(models: string[], data: ChartRow[]) {
+export function buildLLMLineConfigsByCtx(models: string[], data: ChartRow[]): LineConfig[] {
   return models
     .filter(m => data.some(row => row[m] != null))
     .map(m => ({ dataKey: m, stroke: getModelColor(m), name: modelLabel(m) }));
 }
 
-export function flattenLLMData(files: ResultsFile[], section = "llm") {
+export function flattenLLMData(files: ResultsFile[], section = "llm"): ChartRow[] {
   return files.flatMap(f =>
     entriesOf(f.data[section]).flatMap(([model, ctxData]): ChartRow[] => {
       if (ctxData?.skipped) {

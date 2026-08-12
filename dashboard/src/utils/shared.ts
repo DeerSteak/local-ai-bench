@@ -1,6 +1,6 @@
 import { FILE_COLORS, MODEL_COLORS, IMAGE_MODEL_COLORS, EMBED_MODEL_COLORS, FALLBACK_COLORS,
   LLM_MODEL_LABELS, IMAGE_MODEL_LABELS, EMBED_MODEL_LABELS, MODEL_SIZE_TIER } from "../constants";
-import type { ResultsFile, ChartRow } from "../types";
+import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
 // The one sanctioned `any` in the dashboard — see AGENTS.md's TypeScript section.
 // Reference `JsonRecord`/`JsonRecord[string]` instead of writing `any` directly.
@@ -270,7 +270,7 @@ export function getSkipInfo(file: ResultsFile, model: string, section = "llm_con
 }
 
 // Per-file line configs: one line per file, color by file index. Used for all sections.
-export function buildFileLineConfigs(files: ResultsFile[]) {
+export function buildFileLineConfigs(files: ResultsFile[]): LineConfig[] {
   return files.map((f, fi) => ({
     dataKey: `f${fi}`,
     stroke: FILE_COLORS[fi % FILE_COLORS.length],
