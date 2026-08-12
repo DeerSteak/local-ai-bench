@@ -4,9 +4,25 @@ from pathlib import Path
 import pytest
 
 from scripts.results.result_history import (
-    compare_results, delete_run_artifacts, discover_results, existing_run_artifacts,
+    compare_results, delete_multiple_run_artifacts, delete_run_artifacts,
+    discover_results, existing_run_artifacts,
     extract_comparable_metrics, filter_results, run_artifact_paths, summarize_result,
 )
+
+
+def test_delete_multiple_runs_removes_each_exact_artifact_set(tmp_path):
+    first = tmp_path / "results_first.json"
+    second = tmp_path / "results_second.json"
+    neighbor = tmp_path / "results_neighbor.json"
+    log = tmp_path / "log_first.txt"
+    for path in (first, second, neighbor, log):
+        path.touch()
+
+    removed, failures = delete_multiple_run_artifacts([first, second], tmp_path)
+
+    assert not failures
+    assert set(removed) == {first, second, log}
+    assert neighbor.exists()
 
 
 def result(*, hostname="system", started="2026-01-01T00:00:00Z", tps=50.0):

@@ -160,6 +160,18 @@ def delete_run_artifacts(result_path: Path, results_dir: Path) -> tuple[list[Pat
     return removed, failures
 
 
+def delete_multiple_run_artifacts(result_paths: list[Path], results_dir: Path) -> \
+        tuple[list[Path], dict[Path, str]]:
+    """Delete selected runs independently so one failure does not block the rest."""
+    removed = []
+    failures = {}
+    for result_path in result_paths:
+        run_removed, run_failures = delete_run_artifacts(result_path, results_dir)
+        removed.extend(run_removed)
+        failures.update(run_failures)
+    return removed, failures
+
+
 def _run_settings(result: dict) -> dict:
     run = as_dict(result.get("run"))
     plan = as_dict(run.get("plan"))

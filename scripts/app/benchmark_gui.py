@@ -62,7 +62,7 @@ from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.run_plan import load_run_plan
 from scripts.results.result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
 from scripts.results.result_history import (
-    delete_run_artifacts, discover_results, existing_run_artifacts, filter_results,
+    delete_multiple_run_artifacts, discover_results, existing_run_artifacts, filter_results,
     load_result as load_history_result,
 )
 from scripts.results.recovery_inspector import inspect_recovery
@@ -1831,25 +1831,35 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
         try:
-            result_path = selected_history_path()
-            artifacts = existing_run_artifacts(result_path, config.RESULTS_DIR)
+            result_paths = selected_result_paths(selected_history_items(), history_item_paths)
+            artifact_sets = [
+                (result_path, existing_run_artifacts(result_path, config.RESULTS_DIR))
+                for result_path in result_paths
+            ]
         except (OSError, ValueError) as exc:
             messagebox.showerror("Delete run", str(exc), parent=root)
             return
-        if not artifacts:
+        artifact_sets = [(path, artifacts) for path, artifacts in artifact_sets if artifacts]
+        if not artifact_sets:
             refresh_history()
             messagebox.showinfo("Delete run", "The selected run no longer exists.", parent=root)
             return
-        names = "\n".join(f"  • {path.name}" for path in artifacts)
+        artifact_count = sum(len(artifacts) for _, artifacts in artifact_sets)
+        names = "\n".join(
+            f"  • {result_path.name} ({len(artifacts)} artifact(s))"
+            for result_path, artifacts in artifact_sets
+        )
         if not messagebox.askyesno(
-            "Delete benchmark run",
-            f"Permanently delete {result_path.name} and all {len(artifacts) - 1} "
-            f"associated artifact(s)?\n\n{names}\n\nThis cannot be undone. Separately "
+            "Delete benchmark runs",
+            f"Permanently delete {len(artifact_sets)} selected run(s) and all "
+            f"{artifact_count} artifact(s)?\n\n{names}\n\nThis cannot be undone. Separately "
             "exported bundles and reports are not deleted.",
             parent=root,
         ):
             return
-        removed, failures = delete_run_artifacts(result_path, config.RESULTS_DIR)
+        removed, failures = delete_multiple_run_artifacts(
+            [path for path, _ in artifact_sets], config.RESULTS_DIR,
+        )
         refresh_history()
         if failures:
             detail = "\n".join(f"{path.name}: {reason}" for path, reason in failures.items())
@@ -1860,7 +1870,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 parent=root,
             )
             return
-        history_message.set(f"Deleted {result_path.name} and {len(removed) - 1} associated artifact(s).")
+        history_message.set(
+            f"Deleted {len(artifact_sets)} run(s) and {len(removed)} artifact(s).",
+        )
 
     def show_history_details(title, content):
         dialog = tk.Toplevel(root)
