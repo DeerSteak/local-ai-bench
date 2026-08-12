@@ -6,4 +6,4 @@ huggingface_hub[cli]
 py7zr
 packaging
 gguf
-reportlab==4.4.10
+reportlab==5.0.0
