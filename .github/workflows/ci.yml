@@ -71,7 +71,7 @@ jobs:
       - name: Install dashboard dependencies
         run: npm ci
       - name: Run dashboard tests
-        run: npm test
+        run: npm run test:coverage
       - name: Run dashboard lint
         run: npm run lint
       - name: Run dashboard type check
