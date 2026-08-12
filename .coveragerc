@@ -1,8 +1,9 @@
 [run]
 source = scripts
 omit =
-    # The workflow intentionally runs at module scope in an isolated module.
-    scripts/setup/setup_workflow.py
+    # No __main__ guard — importing it runs the whole interactive setup flow
+    # (prompts, downloads), so it can't be safely covered by unit tests.
+    scripts/setup/setup_check.py
 
 [report]
 exclude_also =
