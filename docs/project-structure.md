@@ -82,7 +82,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark.py` | CLI entry point — argument parsing, scope resolution, and workload-stage wiring |
 | `app/benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
-| `app/benchmark_gui.py` | Tk application orchestration, navigation, shared run state, and cross-screen actions |
+| `app/benchmark_gui.py` | Tk application bootstrap, shared run state, controller wiring, and cross-screen orchestration |
 | `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers |
 | `app/benchmark_gui_support.py` | Pure GUI planning, progress, process-launch, and resource-monitoring helpers |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |

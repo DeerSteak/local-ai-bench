@@ -2,7 +2,6 @@
 """Single-screen Tk launcher for Local AI Bench."""
 
 import os
-import json
 import platform
 import queue
 import re
@@ -18,7 +17,6 @@ from typing import Any, Protocol, Sequence
 from scripts.runtime import config, hardware
 from scripts.runtime.shared import RUN_LOG_UTC_OFFSET_ENV
 import psutil
-from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.app.benchmark_frontend import (
     merge_model_inventories, models_runnable_by,
     parse_engine_selection, format_engine_selection,
@@ -47,31 +45,14 @@ from scripts.app.benchmark_frontend import (
     save_frontend_state,
     validate_gui_options,
 )
-from scripts.app.benchmark_presets import (
-    build_portable_preset, compare_portable_presets, load_portable_preset,
-    save_portable_preset,
-)
-from scripts.app.benchmark_project import (
-    PROJECT_WORKFLOWS, build_project, load_project, project_frontend_state, save_project,
-)
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.runtime.engines import engine_names, get_engine, installed_engine_names
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
-from scripts.results.run_plan import load_run_plan
-from scripts.results.result_history import (
-    delete_multiple_run_artifacts, discover_results, existing_run_artifacts, filter_results,
-    load_result as load_history_result,
-)
-from scripts.results.recovery_inspector import inspect_recovery
 from scripts.setup.model_inventory import build_model_inventory
-from scripts.app.model_import_dialog import show_model_import_dialog
-from scripts.app.engine_management import collect_engine_management, vllm_update_support
+from scripts.app.engine_management import collect_engine_management
 from scripts.setup.runtime_update import (
-    RuntimeUpdateResult, detect_nvidia_max_cuda_version, fetch_llamacpp_release,
-    fetch_llamacpp_release_tag, fetch_llamacpp_releases, rebuild_managed_llamacpp,
-    update_macos_llamacpp, update_managed_vllm, update_windows_llamacpp,
+    fetch_llamacpp_releases,
 )
-from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
@@ -82,22 +63,21 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
-from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
-from scripts.results.vendor_diagnostic import write_vendor_diagnostic
+from scripts.app.tk_utils import refresh_tk_layout
 from scripts.app.result_actions import (
-    completed_result_paths, dashboard_launcher_command, record_result_path,
-    result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
-)
-from scripts.app.recovery_actions import (
-    fork_executor_command, fork_review_report, format_recovery_inspection,
-    recovery_executor_command, recovery_progress_entries, retry_executor_command,
+    completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
 from scripts.app.benchmark_gui_screens.history import build_history_screen
 from scripts.app.benchmark_gui_screens.history_actions import HistoryActions
+from scripts.app.benchmark_gui_screens.history_process import HistoryProcessActions
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
-from scripts.app.benchmark_gui_screens.engines import build_engine_screen
-from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
+from scripts.app.benchmark_gui_screens.engines import EngineUpdateActions, build_engine_screen
+from scripts.app.benchmark_gui_screens.configuration import (
+    build_configuration_screen, confirm_plan_preview as show_plan_preview,
+)
+from scripts.app.benchmark_gui_screens.configuration_files import ConfigurationFileActions
+from scripts.app.benchmark_gui_screens.configuration_state import ConfigurationStateController
 from scripts.app.benchmark_gui_screens.progress import ProgressScreen
 
 from scripts.app.benchmark_gui_support import (
@@ -235,55 +215,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     active_project: dict[str, dict | None] = {"value": None}
     project_status = tk.StringVar(value="No project loaded")
 
-    def perform_vllm_update(control):
-        return perform_vllm_version_update(None, control)
-
-    def perform_vllm_version_update(version, control):
-        snapshot = collect_engine_management(get_engine, hardware_backend)
-        status = next(item for item in snapshot.statuses if item.engine == "vllm")
-        support = vllm_update_support(status, setup, platform.machine())
-        if support is None:
-            return RuntimeUpdateResult(False, "This vLLM runtime is not app managed or updateable.")
-        return update_managed_vllm(
-            support, config.VLLM_VENV, control=control, log=control.log, version=version,
-        )
-
-    def perform_llamacpp_update(control):
-        return perform_llamacpp_version_update(None, control)
-
-    def perform_llamacpp_version_update(tag, control):
-        release_fetcher = (lambda: fetch_llamacpp_release_tag(tag)) \
-            if tag else fetch_llamacpp_release
-        snapshot = collect_engine_management(get_engine, hardware_backend)
-        status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
-        if not status.managed and platform.system() != "Darwin":
-            return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
-        if platform.system() == "Darwin":
-            return update_macos_llamacpp(
-                config.LLAMACPP_DIR, platform.machine(), control=control,
-                release_fetcher=release_fetcher,
-            )
-        if platform.system() == "Windows":
-            return update_windows_llamacpp(
-                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
-                release_fetcher=release_fetcher,
-            )
-        return rebuild_managed_llamacpp(
-            config.LLAMACPP_DIR, status.backend, control=control, log=control.log,
-            release_fetcher=release_fetcher,
-        )
-
-    def perform_llamacpp_model_probe(tag, control):
-        engine = get_engine("llamacpp")
-        paths = getattr(engine, "model_paths", lambda _tag: ())(tag)
-        if not paths:
-            return ModelCompatibility(
-                "llamacpp", tag, None, "unavailable", f"Model files for {tag} were not found.",
-            )
-        return probe_llamacpp_load(
-            tag, paths[0], getattr(engine, "runtime_location", lambda: None)(), control=control,
-        )
-
+    engine_updates = EngineUpdateActions(setup, hardware_backend)
     llamacpp_update_prompts = {
         "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the current one?",
         "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
@@ -310,7 +242,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     engines_tab, engine_management = build_engine_screen(
         notebook, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
-        vllm_updater=perform_vllm_update,
+        vllm_updater=engine_updates.update_vllm,
         vllm_version_loader=(
             None if is_dgx_spark(
                 platform.machine(),
@@ -321,13 +253,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             None if is_dgx_spark(
                 platform.machine(),
                 [str(device.get("name", "")) for device in configured_gpu_devices(setup)],
-            ) else perform_vllm_version_update
+            ) else engine_updates.update_vllm_version
         ),
-        llamacpp_updater=perform_llamacpp_update,
+        llamacpp_updater=engine_updates.update_llamacpp,
         llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
         llamacpp_release_loader=fetch_llamacpp_releases,
-        llamacpp_version_updater=perform_llamacpp_version_update,
-        llamacpp_model_probe=perform_llamacpp_model_probe,
+        llamacpp_version_updater=engine_updates.update_llamacpp_version,
+        llamacpp_model_probe=engine_updates.probe_llamacpp_model,
         run_active=lambda: process is not None and process.poll() is None,
     )
     notebook.bind(
@@ -372,6 +304,29 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             restoring_engines[0] = False
         apply_engine_availability()
 
+    def apply_engine_availability(*_) -> None:
+        if restoring_engines[0]:
+            return
+        chosen = [name for name in available_engines if engine_check_vars[name].get()]
+        if not chosen:
+            chosen = [available_engines[0]]
+            engine_check_vars[chosen[0]].set(True)
+        engine_var.set(format_engine_selection(chosen))
+        engine_note.set(
+            f"Runs the full selection once per engine ({len(chosen)} passes, "
+            f"{len(chosen)} results files)." if len(chosen) > 1
+            else "Only installed engines are listed. Models this engine cannot run are disabled."
+        )
+        runnable = {}
+        for name in chosen:
+            for value, ok_here in models_runnable_by(custom_models, name, model_owners).items():
+                runnable[value] = runnable.get(value, False) or ok_here
+        for value, widget in model_widgets.items():
+            available = runnable.get(value, True)
+            widget.configure(state="normal" if available else "disabled")
+            if not available and model_vars[value].get():
+                model_vars[value].set(False)
+
     for index, name in enumerate(available_engines):
         ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
             row=0, column=index, sticky="w", padx=(0, 16))
@@ -382,6 +337,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     engine_box.columnconfigure(len(available_engines) + 1, weight=1)
     ttk.Label(engine_box, textvariable=engine_note).grid(
         row=1, column=0, columnspan=len(available_engines) + 2, sticky="w", pady=(8, 0))
+    for _engine_var in engine_check_vars.values():
+        _engine_var.trace_add("write", apply_engine_availability)
+    apply_engine_availability()
 
     def clear_all_crash_caches():
         if process is not None and process.poll() is None:
@@ -519,6 +477,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         reset_execution()
         reset_paths()
 
+    defaults_for_display = default_control_values(
+        default_tests, default_models, selected_engine, detected_comfyui,
+    )
+    applying_configuration = [False]
+
     def current_custom_state():
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
@@ -531,21 +494,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             engine_var.get(), tests, custom_models, max_prompt_tokens=cap,
             tg_tokens=tg, gui_options=options, selected_preset=preset_var.get(),
         )
-
-    def export_preset(preset=None):
-        if preset is None:
-            name = simpledialog.askstring("Preset name", "Name this portable preset:", parent=root)
-            if not name:
-                return
-            portable = build_portable_preset(name, current_custom_state())
-        else:
-            portable = preset
-        path = filedialog.asksaveasfilename(
-            title="Export benchmark preset", defaultextension=".json",
-            filetypes=[("Benchmark preset", "*.json")],
-        )
-        if path:
-            save_portable_preset(Path(path), portable)
 
     def apply_frontend_state(state):
         errors = frontend_state_availability_errors(
@@ -584,152 +532,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         finally:
             applying_configuration[0] = False
         preset_var.set(CUSTOM_PRESET)
-
-    def apply_portable_preset(portable):
-        configuration = portable["configuration"]
-        apply_frontend_state({
-            "tests": configuration["tests"],
-            "models": configuration["models"],
-            "max_prompt_tokens": configuration["max_prompt_tokens"],
-            "tg_tokens": configuration["tg_tokens"],
-            "gui_options": configuration["options"],
-        })
-
-    def import_preset():
-        path = filedialog.askopenfilename(
-            title="Import benchmark preset", filetypes=[("Benchmark preset", "*.json")],
-        )
-        if not path:
-            return
-        try:
-            apply_portable_preset(load_portable_preset(Path(path)))
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Preset import failed", str(exc), parent=root)
-
-    def compare_preset():
-        path = filedialog.askopenfilename(
-            title="Compare with preset", filetypes=[("Benchmark preset", "*.json")],
-        )
-        if not path:
-            return
-        try:
-            saved_preset = load_portable_preset(Path(path))
-            current = build_portable_preset("Current screen", current_custom_state())
-            differences = compare_portable_presets(current, saved_preset)
-            detail = ", ".join(differences) if differences else "No configuration differences."
-            messagebox.showinfo("Preset comparison", detail, parent=root)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Preset comparison failed", str(exc), parent=root)
-
-    def import_run_plan():
-        path = filedialog.askopenfilename(
-            title="Import CLI run plan or results", filetypes=[("Benchmark JSON", "*.json")],
-        )
-        if not path:
-            return
-        try:
-            local_options = collect_options()
-            apply_frontend_state(frontend_state_from_run_plan(load_run_plan(Path(path)), local_options))
-        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Run-plan import failed", str(exc), parent=root)
-
-    def choose_project_workflow():
-        selected: dict[str, str | None] = {"value": None}
-        dialog = tk.Toplevel(root)
-        dialog.title("Project workflow")
-        dialog.transient(root)
-        dialog.grab_set()
-        workflow_var = tk.StringVar(value=next(iter(PROJECT_WORKFLOWS)))
-        ttk.Label(dialog, text="What decision will this project support?").pack(
-            anchor="w", padx=18, pady=(18, 8),
-        )
-        combo = ttk.Combobox(
-            dialog, state="readonly", width=30,
-            values=list(PROJECT_WORKFLOWS.values()),
-        )
-        combo.current(0)
-        combo.pack(fill="x", padx=18)
-
-        def accept():
-            workflow_var.set(next(
-                key for key, label in PROJECT_WORKFLOWS.items() if label == combo.get()
-            ))
-            selected["value"] = workflow_var.get()
-            dialog.destroy()
-
-        actions = ttk.Frame(dialog)
-        actions.pack(fill="x", padx=18, pady=18)
-        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(actions, text="Continue", command=accept).pack(side="right", padx=(0, 8))
-        root.wait_window(dialog)
-        return selected["value"]
-
-    def save_current_project():
-        name = simpledialog.askstring("New project", "Project name:", parent=root)
-        if not name:
-            return
-        workflow = choose_project_workflow()
-        if not workflow:
-            return
-        baseline = None
-        if messagebox.askyesno("Baseline", "Attach an existing baseline result?", parent=root):
-            baseline = filedialog.askopenfilename(
-                title="Choose baseline result", initialdir=config.RESULTS_DIR,
-                filetypes=[("Benchmark result", "*.json")],
-            )
-            if not baseline:
-                return
-        acceptance = None
-        if messagebox.askyesno("Acceptance policy", "Attach an acceptance policy?", parent=root):
-            policy_path = filedialog.askopenfilename(
-                title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
-            )
-            if not policy_path:
-                return
-            try:
-                acceptance = load_policy(Path(policy_path))
-            except (OSError, ValueError, json.JSONDecodeError) as exc:
-                messagebox.showerror("Acceptance policy failed", str(exc), parent=root)
-                return
-        destination = filedialog.asksaveasfilename(
-            title="Save benchmark project", defaultextension=".labproject",
-            filetypes=[("Local AI Bench project", "*.labproject")],
-        )
-        if not destination:
-            return
-        try:
-            project = build_project(
-                name, workflow, current_custom_state(), baseline_result=baseline,
-                acceptance_policy=acceptance,
-            )
-            save_project(Path(destination), project)
-            active_project["value"] = project
-            project_status.set(f"Project: {project['name']} ({PROJECT_WORKFLOWS[workflow]})")
-        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Project creation failed", str(exc), parent=root)
-
-    def open_project():
-        path = filedialog.askopenfilename(
-            title="Open benchmark project", filetypes=[("Local AI Bench project", "*.labproject")],
-        )
-        if not path:
-            return
-        try:
-            project = load_project(Path(path))
-            apply_frontend_state(project_frontend_state(project, collect_options()))
-            active_project["value"] = project
-            project_status.set(
-                f"Project: {project['name']} ({PROJECT_WORKFLOWS[project['workflow']]})"
-            )
-        except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Project open failed", str(exc), parent=root)
-
-    ttk.Button(preset_row, text="Export", command=export_preset).pack(side="left", padx=(8, 0))
-    ttk.Button(preset_row, text="Import", command=import_preset).pack(side="left", padx=(8, 0))
-    ttk.Button(preset_row, text="Compare", command=compare_preset).pack(side="left", padx=(8, 0))
-    ttk.Button(preset_row, text="Import CLI Plan", command=import_run_plan).pack(side="left", padx=(8, 0))
-    ttk.Button(project_row, text="New Project", command=save_current_project).pack(side="left")
-    ttk.Button(project_row, text="Open Project", command=open_project).pack(side="left", padx=(8, 0))
 
     ttk.Button(tests_box, text="Reset Tests", command=reset_tests).grid(
         row=len(TEST_DEFINITIONS) + 1, column=0, sticky="w", pady=(8, 0),
@@ -773,332 +575,78 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     current_log = run_log_actions.current_log
     review_outbound_metadata = run_log_actions.review_outbound_metadata
 
-    def start_history_recovery(result_path, report):
+    def launch_history_process(
+            command, kind, result_paths, status, stages, entries, engines, error_title):
         nonlocal process, active_process_kind, active_result_paths
-        if process is not None and process.poll() is None:
-            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
-            return
-        plan = load_run_plan(result_path)
-        unsupported = [stage for stage in plan.stage_order if stage not in {
-            "llm", "conv", "llamabench", "conc_tool", "conc_chat",
-        }]
-        if unsupported:
-            messagebox.showerror(
-                "Recovery unavailable",
-                "This saved plan contains stages without durable recovery: "
-                + ", ".join(unsupported), parent=root,
-            )
-            return
-        detail = format_recovery_inspection(report)
-        if not messagebox.askyesno(
-            "Resume stopped benchmark",
-            f"{detail}\n\nResume the remaining journal-owned work in this result?",
-            parent=root,
-        ):
-            return
-        command = recovery_executor_command(result_path)
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
+        creationflags = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            if platform.system() == "Windows" else 0
+        )
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
             )
         except OSError as exc:
-            messagebox.showerror("Recovery could not start", str(exc), parent=root)
+            messagebox.showerror(error_title, str(exc), parent=root)
             return
         begin_process_control(control_path)
-        active_process_kind = "recovery"
-        active_result_paths = [Path(result_path).resolve()]
+        active_process_kind = kind
+        active_result_paths = result_paths
         log_text.configure(state="normal")
         log_text.delete("1.0", "end")
         log_text.configure(state="disabled")
-        run_status.set("Recovery is running. Completed evidence is preserved.")
+        run_status.set(status)
         start_button.configure(state="disabled")
         stop_button.configure(state="normal")
         notebook.select(log_tab)
-        show_progress_window(plan.stage_order, recovery_progress_entries(plan),
-                             engines=[plan.engine_name])
+        show_progress_window(stages, entries, engines=engines)
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    def start_history_fork(source_path, report):
-        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
-        if process is not None and process.poll() is None:
-            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
-            return
-        plan = load_run_plan(source_path)
-        unsupported = [stage for stage in plan.stage_order if stage not in {
-            "llm", "conv", "llamabench", "conc_tool", "conc_chat",
-        }]
-        destination = filedialog.asksaveasfilename(
-            title="Save forked benchmark", defaultextension=".json",
-            initialdir=str(config.RESULTS_DIR),
-            initialfile=f"{source_path.stem}_fork.json",
-            filetypes=[("JSON results", "*.json")],
-        )
-        if not destination:
-            return
-        output_path = Path(destination).resolve()
-        detail = format_recovery_inspection(report)
-        if not messagebox.askyesno(
-            "Fork benchmark plan",
-            f"{detail}\n\nRun this saved plan from the beginning as a new result? "
-            "The source result will not be changed.", parent=root,
-        ):
-            return
-        if unsupported:
-            try:
-                state = frontend_state_from_run_plan(plan, collect_options())
-                state["gui_options"]["out"] = str(output_path)
-                apply_frontend_state(state)
-            except (KeyError, ValueError) as exc:
-                messagebox.showerror("Fork unavailable", str(exc), parent=root)
-                return
-            pending_fork_source = source_path
-            notebook.select(config_tab)
-            root.after(0, start_run)
-            return
-        command = fork_executor_command(source_path, output_path)
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
+    def fallback_history_fork(source_path, output_path, plan):
+        nonlocal pending_fork_source
         try:
-            process, control_path = launch_controlled_process(
-                command, creationflags=creationflags,
-            )
-        except OSError as exc:
-            messagebox.showerror("Fork could not start", str(exc), parent=root)
+            state = frontend_state_from_run_plan(plan, collect_options())
+            state["gui_options"]["out"] = str(output_path)
+            apply_frontend_state(state)
+        except (KeyError, ValueError) as exc:
+            messagebox.showerror("Fork unavailable", str(exc), parent=root)
             return
-        begin_process_control(control_path)
-        active_process_kind = "fork"
-        active_result_paths = [output_path]
-        log_text.configure(state="normal")
-        log_text.delete("1.0", "end")
-        log_text.configure(state="disabled")
-        run_status.set("Forked run is active. The source evidence remains unchanged.")
-        start_button.configure(state="disabled")
-        stop_button.configure(state="normal")
-        notebook.select(log_tab)
-        show_progress_window(plan.stage_order, recovery_progress_entries(plan),
-                             engines=[plan.engine_name])
-        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+        pending_fork_source = source_path
+        notebook.select(config_tab)
+        root.after(0, start_run)
 
-    def start_history_retry(result_path, report, selected):
-        nonlocal process, active_process_kind, active_result_paths
-        if process is not None and process.poll() is None:
-            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
-            return
-        if not messagebox.askyesno(
-            "Retry selected cases",
-            f"Retry {len(selected)} selected case(s)? Completed and unselected evidence will not rerun.",
-            parent=root,
-        ):
-            return
-        plan = load_run_plan(result_path)
-        command = retry_executor_command(
-            result_path, [candidate["case_id"] for candidate in selected],
-        )
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
-        try:
-            process, control_path = launch_controlled_process(
-                command, creationflags=creationflags,
-            )
-        except OSError as exc:
-            messagebox.showerror("Selected retry could not start", str(exc), parent=root)
-            return
-        begin_process_control(control_path)
-        active_process_kind = "retry"
-        active_result_paths = [Path(result_path).resolve()]
-        log_text.configure(state="normal")
-        log_text.delete("1.0", "end")
-        log_text.configure(state="disabled")
-        run_status.set("Selected retry is running. Unselected evidence remains unchanged.")
-        start_button.configure(state="disabled")
-        stop_button.configure(state="normal")
-        notebook.select(log_tab)
-        show_progress_window(
-            [selected[0]["stage"]],
-            recovery_progress_entries(plan, {candidate["model"] for candidate in selected}),
-            engines=[plan.engine_name],
-        )
-        threading.Thread(target=read_process, args=(process,), daemon=True).start()
-
-    def start_history_action(action, result_path, report, selected):
-        if action == "resume":
-            start_history_recovery(result_path, report)
-        elif action == "retry":
-            start_history_retry(result_path, report, selected)
-        else:
-            start_history_fork(result_path, report)
-
+    history_process = HistoryProcessActions(
+        root=root, filedialog=filedialog, messagebox=messagebox,
+        process_active=lambda: process is not None and process.poll() is None,
+        launch=launch_history_process, fallback_fork=fallback_history_fork,
+    )
     history_actions = HistoryActions(
         history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
         messagebox=messagebox,
         process_active=lambda: process is not None and process.poll() is None,
         review_outbound_metadata=review_outbound_metadata,
-        start_recovery=start_history_action,
+        start_recovery=history_process.start,
     )
     history_actions.bind()
     refresh_history = history_actions.refresh
 
-    def apply_control_values(values: dict) -> None:
-        for name, variable in test_vars.items():
-            variable.set(values["tests"].get(name, False))
-        for name, variable in model_vars.items():
-            variable.set(values["models"].get(name, False))
-        if values.get("engine"):
-            set_selected_engines(parse_engine_selection(values["engine"]))
-        cap_var.set(values["max_prompt_tokens"])
-        for value, variable in tg_vars.items():
-            variable.set(value in values["tg_tokens"])
-        for key, value in values["options"].items():
-            option_vars[key].set(value)
-
-    defaults_for_display = default_control_values(
-        default_tests, default_models, selected_engine, detected_comfyui,
+    configuration_state = ConfigurationStateController(
+        configuration_screen, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+        advanced_var=advanced_var, engine_var=engine_var, test_vars=test_vars,
+        model_vars=model_vars, cap_var=cap_var, tg_vars=tg_vars,
+        option_vars=option_vars, preset_var=preset_var,
+        available_engines=available_engines, custom_tests=custom_tests,
+        custom_models=custom_models, defaults_for_display=defaults_for_display,
+        applying_configuration=applying_configuration,
+        engine_inventories=engine_inventories, inventory=inventory,
+        model_owners=model_owners, custom_model_defaults=custom_model_defaults,
+        set_selected_engines=set_selected_engines,
+        apply_engine_availability=apply_engine_availability,
+        execution_box=execution_box, paths_box=paths_box,
     )
-    applying_configuration = [False]
-
-    def control_signature() -> tuple:
-        return (
-            tuple(variable.get() for variable in test_vars.values()),
-            tuple(variable.get() for variable in model_vars.values()),
-            engine_var.get(), cap_var.get(),
-            tuple(variable.get() for variable in tg_vars.values()),
-            tuple(variable.get() for variable in option_vars.values()),
-        )
-
-    last_control_signature = [control_signature()]
-
-    def apply_named_preset(name: str) -> None:
-        if name == CUSTOM_PRESET:
-            return
-        available = {entry.value for entry in custom_tests if entry.available}
-        applying_configuration[0] = True
-        try:
-            apply_control_values(preset_control_values(name, available, defaults_for_display))
-        finally:
-            applying_configuration[0] = False
-
-    def mark_custom(*_) -> None:
-        signature = control_signature()
-        changed = signature != last_control_signature[0]
-        last_control_signature[0] = signature
-        if not changed:
-            return
-        updated = preset_after_control_change(preset_var.get(), applying_configuration[0])
-        if updated != preset_var.get():
-            preset_var.set(updated)
-
-    def select_preset(*_) -> None:
-        apply_named_preset(preset_var.get())
-
-    def update_advanced() -> None:
-        visible = advanced_var.get()
-        for box in (execution_box, paths_box):
-            box.grid() if visible else box.grid_remove()
-
-    def apply_engine_availability(*_) -> None:
-        """Mirror the engine checkboxes into engine_var, then disable and uncheck any
-        model none of the selected engines can run."""
-        if restoring_engines[0]:  # a batch update is mid-flight — set_selected_engines re-runs this once done
-            return
-        chosen = [name for name in available_engines if engine_check_vars[name].get()]
-        if not chosen:  # never leave a run with no engine at all
-            chosen = [available_engines[0]]
-            engine_check_vars[chosen[0]].set(True)
-        engine_var.set(format_engine_selection(chosen))
-        engine_note.set(
-            f"Runs the full selection once per engine ({len(chosen)} passes, "
-            f"{len(chosen)} results files)." if len(chosen) > 1
-            else "Only installed engines are listed. Models this engine cannot run are disabled."
-        )
-        runnable = {}
-        for name in chosen:
-            for value, ok_here in models_runnable_by(custom_models, name, model_owners).items():
-                runnable[value] = runnable.get(value, False) or ok_here
-        for value, widget in model_widgets.items():
-            available = runnable.get(value, True)
-            widget.configure(state="normal" if available else "disabled")
-            if not available and model_vars[value].get():
-                model_vars[value].set(False)
-
-    for _engine_var in engine_check_vars.values():
-        _engine_var.trace_add("write", apply_engine_availability)
-    apply_engine_availability()
-
-    def refresh_imported_models(selected_tag: str) -> None:
-        previous_values = set(model_vars)
-        previous_selected = {name for name, variable in model_vars.items() if variable.get()}
-        refreshed = {
-            name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
-            for name in available_engines
-        }
-        merged, owners = merge_model_inventories(refreshed)
-        engine_inventories.clear()
-        engine_inventories.update(refreshed)
-        inventory.clear()
-        inventory.update(merged)
-        model_owners.clear()
-        model_owners.update(owners)
-        refreshed_tests = {entry.value: entry for entry in build_test_entries(inventory)}
-        for entry in custom_tests:
-            entry.available = refreshed_tests[entry.value].available
-            test_widgets[entry.value].configure(state="normal" if entry.available else "disabled")
-            test_labels[entry.value].configure(
-                text=entry.label if entry.available else f"{entry.label} (model not installed)",
-            )
-        rebuilt = build_model_entries(
-            inventory, [entry.value for entry in custom_tests if entry.available],
-        )
-        custom_models[:] = rebuilt
-        selected, dropped, added, defaults = reconcile_imported_model_state(
-            previous_values, previous_selected, custom_model_defaults, rebuilt, selected_tag,
-        )
-        for value in dropped:
-            model_vars.pop(value)
-        custom_model_defaults.clear()
-        custom_model_defaults.update(defaults)
-        for entry in rebuilt:
-            if entry.value in added:
-                model_vars[entry.value] = tk.BooleanVar(value=False)
-                model_vars[entry.value].trace_add("write", mark_custom)
-            model_vars[entry.value].set(entry.value in selected)
-        render_model_rows()
-        apply_engine_availability()
-
-    def open_model_import_dialog() -> None:
-        show_model_import_dialog(
-            root=root, tk=tk, ttk=ttk, messagebox=messagebox,
-            available_engines=available_engines, engine_factory=get_engine,
-            on_imported=refresh_imported_models,
-        )
-    preset_var.trace_add("write", select_preset)
-    for variable in (
-            *test_vars.values(), *model_vars.values(), engine_var, cap_var,
-            *tg_vars.values(), *option_vars.values()):
-        variable.trace_add("write", mark_custom)
-    advanced_var.trace_add("write", lambda *_: update_advanced())
-    for entry in custom_tests:
-        if not entry.available:
-            test_widgets[entry.value].configure(state="disabled")
-    if preset_var.get() != CUSTOM_PRESET:
-        apply_named_preset(preset_var.get())
-
-    def scroll_form(event):
-        widget = root.winfo_containing(root.winfo_pointerx(), root.winfo_pointery())
-        current = widget
-        while current is not None and current not in {canvas, form}:
-            current = getattr(current, "master", None)
-        if current is None:
-            return None
-        units = mousewheel_scroll_units(
-            delta=getattr(event, "delta", 0), button=getattr(event, "num", 0),
-            platform_name=root.tk.call("tk", "windowingsystem"),
-        )
-        if units:
-            canvas.yview_scroll(units, "units")
-        return "break"
-
-    root.bind_all("<MouseWheel>", scroll_form)
-    root.bind_all("<Button-4>", scroll_form)
-    root.bind_all("<Button-5>", scroll_form)
+    configuration_state.bind()
+    open_model_import_dialog = configuration_state.open_model_import_dialog
+    update_advanced = configuration_state.update_advanced
 
     process = None
     active_process_kind = None
@@ -1283,64 +831,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             values[key] = option_vars[key].get().strip()
         return values
 
-    def confirm_plan_preview(preview: str) -> bool:
-        dialog = tk.Toplevel(root)
-        dialog.title("Review benchmark plan")
-        dialog.geometry("760x620")
-        dialog.minsize(620, 460)
-        dialog.transient(root)
-        dialog.columnconfigure(0, weight=1)
-        dialog.rowconfigure(1, weight=1)
-        header = ttk.Frame(dialog)
-        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 12))
-        ttk.Label(header, text="Review benchmark plan", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            header, text="Confirm the resolved workload, measurement settings, and output before starting.",
-        ).pack(anchor="w", pady=(4, 0))
-
-        body = ttk.Frame(dialog)
-        body.grid(row=1, column=0, sticky="nsew", padx=20)
-        body.columnconfigure(0, weight=1)
-        body.rowconfigure(0, weight=1)
-        text_widget = tk.Text(body, wrap="word", padx=14, pady=12, borderwidth=1, relief="solid")
-        scrollbar = ttk.Scrollbar(body, orient="vertical", command=text_widget.yview)
-        text_widget.configure(yscrollcommand=scrollbar.set)
-        text_widget.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        text_widget.tag_configure("heading", font=("TkDefaultFont", 12, "bold"), spacing1=10, spacing3=4)
-        text_widget.tag_configure("label", font=("TkDefaultFont", 10, "bold"))
-        text_widget.tag_configure("value", lmargin1=12, lmargin2=12, spacing3=5)
-        for title, lines in plan_preview_sections(preview):
-            text_widget.insert("end", f"{title}\n", "heading")
-            for line in lines:
-                label, separator, value = line.partition(":")
-                if separator:
-                    text_widget.insert("end", f"{label}: ", "label")
-                    text_widget.insert("end", f"{value.strip()}\n", "value")
-                else:
-                    text_widget.insert("end", f"{line}\n", "value")
-        text_widget.configure(state="disabled")
-
-        confirmed = [False]
-
-        def finish(value: bool) -> None:
-            confirmed[0] = value
-            dialog.destroy()
-
-        actions = ttk.Frame(dialog)
-        actions.grid(row=2, column=0, sticky="e", padx=20, pady=18)
-        ttk.Button(actions, text="Cancel", command=lambda: finish(False)).pack(side="left")
-        start = ttk.Button(actions, text="Start Benchmark", style="Start.TButton",
-                           command=lambda: finish(True))
-        start.pack(side="left", padx=(10, 0))
-        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
-        dialog.bind("<Escape>", lambda _event: finish(False))
-        dialog.bind("<Return>", lambda _event: finish(True))
-        dialog.grab_set()
-        start.focus_set()
-        dialog.lift()
-        root.wait_window(dialog)
-        return confirmed[0]
+    configuration_files = ConfigurationFileActions(
+        configuration_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
+        simpledialog=simpledialog, messagebox=messagebox, active_project=active_project,
+        project_status=project_status, current_state=current_custom_state,
+        apply_state=apply_frontend_state, collect_options=collect_options,
+    )
+    configuration_files.bind()
 
     def start_run():
         nonlocal process, active_process_kind, pending_fork_source, active_result_paths
@@ -1372,7 +869,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
             comfyui_dir=custom_comfyui or detected_comfyui,
         )
-        if not confirm_plan_preview(preview):
+        if not show_plan_preview(root, tk, ttk, preview):
             pending_fork_source = None
             return
         state = build_frontend_state(

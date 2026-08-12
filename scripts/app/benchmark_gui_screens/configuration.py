@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from scripts.app.benchmark_frontend import MAX_PROMPT_TOKEN_OPTIONS, TEST_DEFINITIONS, TG_TOKEN_OPTIONS
+from scripts.app.benchmark_gui_support import plan_preview_sections
 from scripts.runtime import config
 
 
@@ -191,3 +192,64 @@ def _build_workload(ttk, parent, cap_var, tg_vars):
             row=0, column=column, padx=(0, 8),
         )
     return box
+
+
+def confirm_plan_preview(root, tk, ttk, preview: str) -> bool:
+    dialog = tk.Toplevel(root)
+    dialog.title("Review benchmark plan")
+    dialog.geometry("760x620")
+    dialog.minsize(620, 460)
+    dialog.transient(root)
+    dialog.columnconfigure(0, weight=1)
+    dialog.rowconfigure(1, weight=1)
+    header = ttk.Frame(dialog)
+    header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 12))
+    ttk.Label(header, text="Review benchmark plan", style="Title.TLabel").pack(anchor="w")
+    ttk.Label(
+        header, text="Confirm the resolved workload, measurement settings, and output before starting.",
+    ).pack(anchor="w", pady=(4, 0))
+    body = ttk.Frame(dialog)
+    body.grid(row=1, column=0, sticky="nsew", padx=20)
+    body.columnconfigure(0, weight=1)
+    body.rowconfigure(0, weight=1)
+    text_widget = tk.Text(body, wrap="word", padx=14, pady=12, borderwidth=1, relief="solid")
+    scrollbar = ttk.Scrollbar(body, orient="vertical", command=text_widget.yview)
+    text_widget.configure(yscrollcommand=scrollbar.set)
+    text_widget.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    text_widget.tag_configure(
+        "heading", font=("TkDefaultFont", 12, "bold"), spacing1=10, spacing3=4,
+    )
+    text_widget.tag_configure("label", font=("TkDefaultFont", 10, "bold"))
+    text_widget.tag_configure("value", lmargin1=12, lmargin2=12, spacing3=5)
+    for title, lines in plan_preview_sections(preview):
+        text_widget.insert("end", f"{title}\n", "heading")
+        for line in lines:
+            label, separator, value = line.partition(":")
+            if separator:
+                text_widget.insert("end", f"{label}: ", "label")
+                text_widget.insert("end", f"{value.strip()}\n", "value")
+            else:
+                text_widget.insert("end", f"{line}\n", "value")
+    text_widget.configure(state="disabled")
+    confirmed = [False]
+
+    def finish(value: bool) -> None:
+        confirmed[0] = value
+        dialog.destroy()
+
+    actions = ttk.Frame(dialog)
+    actions.grid(row=2, column=0, sticky="e", padx=20, pady=18)
+    ttk.Button(actions, text="Cancel", command=lambda: finish(False)).pack(side="left")
+    start = ttk.Button(
+        actions, text="Start Benchmark", style="Start.TButton", command=lambda: finish(True),
+    )
+    start.pack(side="left", padx=(10, 0))
+    dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+    dialog.bind("<Escape>", lambda _event: finish(False))
+    dialog.bind("<Return>", lambda _event: finish(True))
+    dialog.grab_set()
+    start.focus_set()
+    dialog.lift()
+    root.wait_window(dialog)
+    return confirmed[0]
