@@ -128,11 +128,15 @@ def launch_controlled_process(command: list[str], **kwargs):
 
 
 @dataclass(frozen=True)
-class BenchmarkLaunchPreparation:
+class BenchmarkLaunchError:
     errors: list[str]
-    preview: str | None = None
-    state: dict | None = None
-    command: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class BenchmarkLaunchReady:
+    preview: str
+    state: dict
+    command: list[str]
 
 
 @dataclass(frozen=True)
@@ -149,12 +153,14 @@ class ProcessCompletionState:
     write_run_log: bool
 
 
+def resolve_engine_names(selected: list[str], available: list[str]) -> list[str]:
+    return [name for name in available if name in selected] or [available[0]]
+
+
 def resolve_engine_selection(selected: list[str], available: list[str],
                              models: list[MenuEntry],
                              model_owners: dict[str, set[str]]) -> EngineSelectionState:
-    chosen = [name for name in available if name in selected]
-    if not chosen:
-        chosen = [available[0]]
+    chosen = resolve_engine_names(selected, available)
     note = (
         f"Runs the full selection once per engine ({len(chosen)} passes, "
         f"{len(chosen)} results files)." if len(chosen) > 1
@@ -201,7 +207,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
                              gui_options: dict[str, Any], selected_preset: str,
                              detected_tools: dict[str, str | None],
                              found_comfyui: Path | None,
-                             detected_comfyui: Path) -> BenchmarkLaunchPreparation:
+                             detected_comfyui: Path) -> BenchmarkLaunchError | BenchmarkLaunchReady:
     errors = validate_gui_options(gui_options)
     if not tests:
         errors.append("Select at least one benchmark test.")
@@ -216,7 +222,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     )
     errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
     if errors:
-        return BenchmarkLaunchPreparation(errors)
+        return BenchmarkLaunchError(errors)
     preview = build_plan_preview(
         engine=engine, tests=tests, entries=entries, options=gui_options,
         max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
@@ -234,7 +240,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
         tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
         gui_options=gui_options,
     )
-    return BenchmarkLaunchPreparation([], preview, state, command)
+    return BenchmarkLaunchReady(preview, state, command)
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -402,9 +408,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def set_selected_engines(names) -> None:
         """Point the checkboxes at `names`, ignoring any engine that isn't installed."""
-        wanted = resolve_engine_selection(
-            list(names), available_engines, custom_models, model_owners,
-        ).engines
+        wanted = resolve_engine_names(list(names), available_engines)
         restoring_engines[0] = True
         try:
             for name, variable in engine_check_vars.items():
@@ -938,14 +942,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             detected_tools=detected_tools, found_comfyui=found_comfyui,
             detected_comfyui=detected_comfyui,
         )
-        if preparation.errors:
+        if isinstance(preparation, BenchmarkLaunchError):
             messagebox.showerror(
                 "Check benchmark options", "\n".join(preparation.errors), parent=root,
             )
             return
-        assert preparation.preview is not None
-        assert preparation.state is not None
-        assert preparation.command is not None
         if not show_plan_preview(root, tk, ttk, preparation.preview):
             pending_fork_source = None
             return

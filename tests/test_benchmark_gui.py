@@ -16,13 +16,15 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
-    BENCHMARK_PRESETS, CUSTOM_PRESET, PsutilLike, apply_hardware_model_defaults,
+    BENCHMARK_PRESETS, CUSTOM_PRESET, BenchmarkLaunchError, BenchmarkLaunchReady,
+    PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch,
     process_completion_state, resolve_engine_selection,
+    resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -207,10 +209,8 @@ def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(
         gui_options=dict(GUI_OPTION_DEFAULTS), selected_preset="Custom",
         detected_tools={}, found_comfyui=None, detected_comfyui=tmp_path,
     )
+    assert isinstance(preparation, BenchmarkLaunchError)
     assert "Select at least one benchmark test." in preparation.errors
-    assert preparation.preview is None
-    assert preparation.state is None
-    assert preparation.command is None
 
 
 def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
@@ -222,7 +222,7 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
         selected_preset="Quick run", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
-    assert preparation.errors == []
+    assert isinstance(preparation, BenchmarkLaunchReady)
     assert preparation.preview is not None and "Measured runs: 4" in preparation.preview
     assert preparation.state is not None
     assert preparation.state["selected_preset"] == "Quick run"
@@ -239,6 +239,7 @@ def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path)
         selected_preset="Custom", detected_tools={"llama-bench": "/bin/bench"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
+    assert isinstance(preparation, BenchmarkLaunchError)
     assert "Select at least one llama-bench generation size." in preparation.errors
 
 
@@ -250,7 +251,13 @@ def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
+    assert isinstance(preparation, BenchmarkLaunchError)
     assert any("model" in error.lower() for error in preparation.errors)
+
+
+def test_resolve_engine_names_restores_default_without_model_checks():
+    assert resolve_engine_names([], ["llamacpp", "vllm"]) == ["llamacpp"]
+    assert resolve_engine_names(["vllm"], ["llamacpp", "vllm"]) == ["vllm"]
 
 
 def test_resolve_engine_selection_restores_default_and_gates_models():
