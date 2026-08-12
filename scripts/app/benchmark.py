@@ -49,7 +49,7 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
-from scripts.app.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
+from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
