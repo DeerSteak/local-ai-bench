@@ -800,38 +800,6 @@ class Shared:
         return measurement
 
     @staticmethod
-    def tally_accuracy_entry(entry: dict, is_correct: bool, cat: dict,
-                              all_results: list, incorrect: list) -> bool:
-        """Common tail of every accuracy benchmark's per-question scoring loop.
-        Returns `is_correct` so the caller can bump its own counter."""
-        all_results.append({**entry, "correct": is_correct})
-        if is_correct:
-            cat["correct"] += 1
-        else:
-            incorrect.append(entry)
-        return is_correct
-
-    @staticmethod
-    def finalize_accuracy_score(total: int, correct: int, answered: int, by_category: dict,
-                                 incorrect: list, all_results: list, extra: dict | None = None) -> dict:
-        """Common tail of every accuracy benchmark's score(): fills in each breakdown's
-        accuracy_pct and assembles the final result dict. `extra` adds further breakdowns
-        (e.g. reasoning's by_difficulty) alongside by_category, keyed by their result field name."""
-        for breakdown in (by_category, *(extra or {}).values()):
-            for cat in breakdown.values():
-                cat["accuracy_pct"] = round(100 * cat["correct"] / cat["total"], 1) if cat["total"] else 0.0
-        return {
-            "correct":      correct,
-            "total":        total,
-            "answered":     answered,
-            "accuracy_pct": round(100 * correct / total, 1) if total else 0.0,
-            "by_category":  by_category,
-            **(extra or {}),
-            "incorrect":    incorrect,
-            "all":          all_results,
-        }
-
-    @staticmethod
     def write_answers_sidecar(path: Path, data: dict) -> None:
         """Write an accuracy test's raw-answer sidecar — see docs/project-structure.md's "answers_*.json" section."""
         atomic_write_json(path, data)
