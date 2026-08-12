@@ -13,14 +13,15 @@ class StageSpec:
     category: str
     default_enabled: bool = False
     menu_visible: bool = True
+    native_engine: str | None = None
 
 
 STAGE_SPECS = (
     StageSpec("llm", "Single-shot LLM", "llm", "llm", "llm", "llm", True),
     StageSpec("conv", "Conversation", "llm_conversation", "llm", "llm", "llm", True),
-    StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm"),
-    StageSpec("llamabenchconc", "llama-bench concurrency", "llamabenchconc", "llm", "llm", "llm", menu_visible=False),
-    StageSpec("vllmbench", "vllm bench (latency + throughput)", "vllmbench", "llm", "llm", "llm"),
+    StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm", native_engine="llamacpp"),
+    StageSpec("llamabenchconc", "llama-bench concurrency", "llamabenchconc", "llm", "llm", "llm", menu_visible=False, native_engine="llamacpp"),
+    StageSpec("vllmbench", "vllm bench (latency + throughput)", "vllmbench", "llm", "llm", "llm", native_engine="vllm"),
     StageSpec("emb", "Embeddings", "embeddings", "embeddings", "embedding", "embedding", True),
     StageSpec("mcq", "MCQ accuracy", "mcq", "llm", "llm", "accuracy"),
     StageSpec("math", "Math accuracy", "math", "llm", "llm", "accuracy"),
@@ -43,3 +44,11 @@ def stage_spec(key: str) -> StageSpec:
         return STAGE_BY_KEY[key]
     except KeyError as exc:
         raise ValueError(f"unknown benchmark stage: {key}") from exc
+
+
+def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
+    return [
+        key for key in tests
+        if (spec := STAGE_BY_KEY.get(key)) is not None
+        and spec.native_engine is not None and spec.native_engine != engine_name
+    ]

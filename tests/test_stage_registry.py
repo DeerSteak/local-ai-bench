@@ -2,7 +2,7 @@ import pytest
 
 from scripts.stage_registry import (
     ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, STAGE_BY_KEY, STAGE_ORDER, STAGE_SPECS,
-    stage_spec,
+    engine_incompatible_tests, stage_spec,
 )
 
 
@@ -25,3 +25,9 @@ def test_every_stage_has_result_and_model_ownership():
     assert stage_spec("conv").section == "llm_conversation"
     with pytest.raises(ValueError, match="unknown benchmark stage"):
         stage_spec("unknown")
+
+
+def test_native_stages_reject_only_the_wrong_engine():
+    tests = ["llm", "llamabench", "llamabenchconc", "vllmbench"]
+    assert engine_incompatible_tests(tests, "llamacpp") == ["vllmbench"]
+    assert engine_incompatible_tests(tests, "vllm") == ["llamabench", "llamabenchconc"]

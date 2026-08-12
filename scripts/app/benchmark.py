@@ -54,7 +54,9 @@ from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
 from scripts.setup.runtime_identity import engine_runtime_version
-from scripts.stage_registry import ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS
+from scripts.stage_registry import (
+    ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests,
+)
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -314,25 +316,6 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 
 def engine_version_applies(tests: list[str]) -> bool:
     return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
-
-# Tests that shell out to one engine's own native benchmark binary rather than going
-# through InferenceEngine, so they can never run under a different engine — see docs/engines.md.
-ENGINE_NATIVE_TESTS = {
-    "llamacpp": ("llamabench", "llamabenchconc"),
-    "vllm": ("vllmbench",),
-}
-
-
-def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
-    """Selected tests that are native to a *different* engine than `engine_name` and
-    would just warn and produce nothing if scheduled — see ENGINE_NATIVE_TESTS."""
-    native_here = set(ENGINE_NATIVE_TESTS.get(engine_name, ()))
-    other_engines_native = {
-        test for name, native_tests in ENGINE_NATIVE_TESTS.items()
-        if name != engine_name for test in native_tests
-    }
-    return [t for t in tests if t in other_engines_native and t not in native_here]
-
 
 def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
     """Workloads that produce results in one engine pass."""

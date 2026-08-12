@@ -17,13 +17,14 @@ from scripts.app.benchmark_options import (
 
 from scripts.runtime import config
 from scripts.runtime.comfyui_installation import find_comfyui_installation
-from scripts.app.benchmark import CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests
+from scripts.stage_registry import (
+    CONCURRENCY_TESTS, LLM_TESTS, STAGE_SPECS, engine_incompatible_tests,
+)
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
-from scripts.stage_registry import STAGE_SPECS
 
 
 TEST_DEFINITIONS = [
