@@ -3,9 +3,12 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
-    homebrew_llamacpp_prefix, llamacpp_cmake_flags, rebuild_managed_llamacpp,
+    homebrew_llamacpp_prefix, llamacpp_clone_command, llamacpp_cmake_flags,
+    llamacpp_source_release, rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_windows_llamacpp_assets, update_homebrew_llamacpp,
     update_windows_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
@@ -14,6 +17,21 @@ from scripts.setup.vllm_install import VllmSupport
 
 
 SUPPORT = VllmSupport("supported", "cuda_wheel", "supported")
+SOURCE_RELEASE = {"tag_name": "b10362"}
+
+
+def test_llamacpp_source_release_provides_tag_and_numeric_build():
+    assert llamacpp_source_release(SOURCE_RELEASE) == ("b10362", "10362")
+    with pytest.raises(ValueError, match="bNNNNN"):
+        llamacpp_source_release({"tag_name": "latest"})
+
+
+def test_llamacpp_clone_checks_out_exact_release_tag(tmp_path):
+    assert llamacpp_clone_command(tmp_path / "llama.cpp", "b10362") == [
+        "git", "clone", "--branch", "b10362", "--depth", "1",
+        "https://github.com/ggml-org/llama.cpp",
+        str(tmp_path / "llama.cpp"),
+    ]
 
 
 def test_runtime_update_control_prevents_commands_after_cancellation():
@@ -378,7 +396,7 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
 
     def run(command, **kwargs):
         commands.append(command)
-        if command[:3] == ["git", "clone", "--depth"]:
+        if command[:2] == ["git", "clone"]:
             staged = Path(command[-1])
             for name in ("llama-server", "llama-bench", "llama-batched-bench"):
                 tool = staged / "build" / "bin" / name
@@ -391,13 +409,15 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     result = rebuild_managed_llamacpp(
-        target, "cuda", run=run, os_name="posix", token_factory=lambda: "test",
+        target, "cuda", run=run, os_name="posix", release_fetcher=lambda: SOURCE_RELEASE,
+        token_factory=lambda: "test",
     )
 
     assert result.success
     configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
     build = next(command for command in commands if command[:2] == ["cmake", "--build"])
     assert "-DBUILD_SHARED_LIBS=OFF" in configure
+    assert "-DLLAMA_BUILD_NUMBER=10362" in configure
     assert "-DCMAKE_CUDA_ARCHITECTURES=89" in configure
     assert all(name in build for name in ("llama-server", "llama-bench", "llama-batched-bench"))
     assert not (target / "old").exists()
@@ -412,6 +432,7 @@ def test_rebuild_managed_llamacpp_preserves_checkout_on_build_failure(tmp_path):
     result = rebuild_managed_llamacpp(
         target, "cpu",
         run=lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="failed"),
+        release_fetcher=lambda: SOURCE_RELEASE,
         token_factory=lambda: "test",
     )
 
@@ -428,7 +449,7 @@ def test_rebuild_managed_llamacpp_rolls_back_when_final_path_validation_fails(tm
 
     def run(command, **kwargs):
         nonlocal version_calls
-        if command[:3] == ["git", "clone", "--depth"]:
+        if command[:2] == ["git", "clone"]:
             staged = Path(command[-1])
             for name in ("llama-server", "llama-bench", "llama-batched-bench"):
                 tool = staged / "build" / "bin" / name
@@ -442,7 +463,8 @@ def test_rebuild_managed_llamacpp_rolls_back_when_final_path_validation_fails(tm
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     result = rebuild_managed_llamacpp(
-        target, "cpu", run=run, os_name="posix", token_factory=lambda: "test",
+        target, "cpu", run=run, os_name="posix", release_fetcher=lambda: SOURCE_RELEASE,
+        token_factory=lambda: "test",
     )
 
     assert not result.success

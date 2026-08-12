@@ -19,6 +19,7 @@ from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.resumable_download import download_file
 from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
+from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_version, source_commit_version
 
 
 LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp"
@@ -137,6 +138,17 @@ class RuntimeUpdateControl:
             self.clear_process(process)
 
 
+def llamacpp_source_release(release: dict) -> tuple[str, str]:
+    tag = release.get("tag_name")
+    if not isinstance(tag, str) or not tag.startswith("b") or not tag[1:].isdigit():
+        raise ValueError("The latest llama.cpp release does not have a bNNNNN tag.")
+    return tag, tag[1:]
+
+
+def llamacpp_clone_command(destination: Path, tag: str) -> list[str]:
+    return ["git", "clone", "--branch", tag, "--depth", "1", LLAMACPP_REPO, str(destination)]
+
+
 def _terminate_process_tree(process) -> None:
     try:
         parent = psutil.Process(process.pid)
@@ -211,7 +223,12 @@ def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeU
     output = (result.stdout or result.stderr or "").strip()
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Staged llama.cpp returned no version.")
-    return RuntimeUpdateResult(True, "Staged llama.cpp build validated.", output.splitlines()[0])
+    identity = RuntimeIdentity(
+        "llamacpp", "app_managed", str(tools["llama-server"]),
+        parse_runtime_version(output), output,
+    )
+    version = source_commit_version(identity, source_dir, run=run)
+    return RuntimeUpdateResult(True, "Staged llama.cpp build validated.", version)
 
 
 def homebrew_llamacpp_prefix(*, run=subprocess.run) -> Path | None:
@@ -388,6 +405,7 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
 def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
                              run=subprocess.run, replace=os.replace,
                              remove=shutil.rmtree,
+                             release_fetcher=fetch_llamacpp_release,
                              control: RuntimeUpdateControl | None = None,
                              os_name: str = os.name,
                              token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
@@ -406,10 +424,12 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
     staged = target.with_name(f".{target.name}-update-{token}")
     backup = target.with_name(f".{target.name}-backup-{token}")
     try:
+        tag, build_number = llamacpp_source_release(release_fetcher())
         commands = [
-            ["git", "clone", "--depth", "1", LLAMACPP_REPO, str(staged)],
+            llamacpp_clone_command(staged, tag),
             ["cmake", "-B", str(staged / "build"), "-S", str(staged),
              "-DBUILD_SHARED_LIBS=OFF",
+             f"-DLLAMA_BUILD_NUMBER={build_number}",
              *llamacpp_cmake_flags(backend, nvcc=nvcc, compute_capability=capability)],
             ["cmake", "--build", str(staged / "build"),
              *sum((["--target", name] for name in LLAMACPP_TARGETS), []),

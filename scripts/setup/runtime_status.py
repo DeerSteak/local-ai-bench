@@ -8,7 +8,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from scripts.setup.runtime_identity import (
-    RuntimeIdentity, inspect_runtime, probe_vllm_server_health, probe_vllm_server_version,
+    RuntimeIdentity, inspect_runtime, parse_llamacpp_commit, probe_vllm_server_health,
+    probe_vllm_server_version, source_commit_version,
 )
 
 
@@ -82,9 +83,16 @@ def probe_vllm_environment(python_exe: Path | None, *, run=subprocess.run) -> tu
 def build_llamacpp_status(location: str | Path | None, managed_root: Path, backend: str,
                           *, run=subprocess.run) -> EngineStatus:
     identity = inspect_runtime("llamacpp", location, managed_root, run=run)
-    health = "ready" if identity.version else "unavailable" if not location else "unverified"
-    warnings = () if identity.version else ((identity.version_output or "Version unavailable"),)
-    return _status(identity, backend, health, {}, warnings)
+    version = source_commit_version(identity, managed_root, run=run)
+    health = "ready" if version else "unavailable" if not location else "unverified"
+    warnings = () if version else ((identity.version_output or "Version unavailable"),)
+    adjusted = RuntimeIdentity(
+        identity.engine, identity.ownership, identity.location, version, identity.version_output,
+    )
+    components = {}
+    if identity.managed and parse_llamacpp_commit(identity.version_output) and identity.version != "1":
+        components["build_number"] = identity.version
+    return _status(adjusted, backend, health, components, warnings)
 
 
 def build_vllm_status(location: str | Path | None, managed_root: Path, backend: str,

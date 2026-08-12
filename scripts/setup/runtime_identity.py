@@ -65,6 +65,13 @@ def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
     if not identity.managed or not commit or not (Path(managed_root) / ".git").exists():
         return identity.version
     try:
+        tag_result = run(
+            ["git", "-C", str(managed_root), "describe", "--tags", "--exact-match", commit],
+            capture_output=True, text=True, timeout=15,
+        )
+        tag = tag_result.stdout.strip()
+        if tag_result.returncode == 0 and re.fullmatch(r"b\d+", tag):
+            return tag[1:]
         result = run(
             ["git", "-C", str(managed_root), "show", "-s", "--format=%cd",
              "--date=format-local:%Y.%m.%d", commit],

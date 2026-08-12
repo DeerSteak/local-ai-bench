@@ -224,6 +224,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             return
         assert result is not None
         if result.success:
+            identity = f" ({result.version})" if result.version else ""
+            append_output(f"\n{result.detail}{identity}\nRescanning installed runtimes…\n")
+            status_text.set(f"{engine} update complete; rescanning installed runtimes…")
             messagebox.showinfo(f"{engine} update", result.detail, parent=root)
             refresh()
         else:

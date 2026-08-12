@@ -46,6 +46,27 @@ def test_llamacpp_status_combines_identity_backend_and_health(tmp_path):
     assert status.backend == "metal" and status.health == "ready"
 
 
+def test_managed_llamacpp_status_uses_source_commit_date_and_hash(tmp_path):
+    managed_root = tmp_path / "llama.cpp"
+    (managed_root / ".git").mkdir(parents=True)
+
+    def run(command, **_kwargs):
+        if command[-1] == "--version":
+            return SimpleNamespace(
+                stdout="version: 12345 (a1b2c3d4)\n", stderr="", returncode=0,
+            )
+        assert command[:3] == ["git", "-C", str(managed_root)]
+        return SimpleNamespace(stdout="2026.08.11\n", stderr="", returncode=0)
+
+    status = build_llamacpp_status(
+        managed_root / "build" / "bin" / "llama-server", managed_root, "cuda", run=run,
+    )
+
+    assert status.version == "2026.08.11-a1b2c3d"
+    assert status.health == "ready"
+    assert status.components["build_number"] == "12345"
+
+
 def test_vllm_status_reports_dependency_stack_and_wsl_policy(tmp_path):
     executable = tmp_path / "vllm-env" / "bin" / "vllm"
     python = executable.with_name("python")

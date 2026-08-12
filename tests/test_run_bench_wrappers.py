@@ -94,7 +94,7 @@ def test_batch_wrapper_uses_label_branches_and_preserves_exit_codes():
     assert 'if /i "%~1"=="--ui" goto frontend_with_args' in text
     assert 'if /i "%~1"=="--interface" goto frontend_with_args' in text
     assert ':frontend_with_args\npython -m scripts.app.benchmark_launcher %*' in text
-    assert ':finish\nif defined PAUSE_ON_EXIT pause\nexit /b %BENCH_EXIT_CODE%' in text
+    assert ':finish\nexit /b %BENCH_EXIT_CODE%' in text
 
 
 def test_batch_wrapper_missing_venv_message_has_timestamp():
@@ -102,19 +102,20 @@ def test_batch_wrapper_missing_venv_message_has_timestamp():
     assert 'for /f "tokens=1 delims=." %%T in ("%TIME: =0%") do echo [%%T]' in text
 
 
-def test_batch_wrapper_only_pauses_for_explorer_style_invocation():
+def test_batch_wrapper_does_not_guess_how_cmd_was_invoked():
     text = (ROOT / "run_bench.bat").read_text()
-    assert 'set "PAUSE_ON_EXIT="' in text
-    assert 'set CMDCMDLINE | %SystemRoot%\\System32\\findstr.exe /l /i /c:"%~f0" >nul' in text
-    assert 'if not errorlevel 1 set "PAUSE_ON_EXIT=1"' in text
-    assert text.count('if defined PAUSE_ON_EXIT pause') == 1
+    assert "CMDCMDLINE" not in text
+    assert "pause" not in text.lower()
 
 
 def test_double_click_benchmark_launchers_force_the_gui():
     command = (ROOT / "Run Local AI Bench.command").read_text()
     assert "bash run_bench.sh --ui gui" in command
     assert "osascript" not in command
-    assert "run_bench.bat --ui gui" in (ROOT / "Run Local AI Bench.bat").read_text()
+    windows = (ROOT / "Run Local AI Bench.bat").read_text()
+    assert "run_bench.bat --ui gui" in windows
+    assert "pause" in windows.lower()
+    assert 'exit /b %BENCH_EXIT_CODE%' in windows
     desktop = (ROOT / "Run Local AI Bench.desktop").read_text()
     assert "bash run_bench.sh --ui gui" in desktop
     assert os.access(ROOT / "Run Local AI Bench.command", os.X_OK)

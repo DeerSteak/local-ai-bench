@@ -33,6 +33,9 @@ from scripts.runtime.comfyui_installation import (
     write_extra_model_paths,
 )
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
+from scripts.setup.runtime_update import (
+    fetch_llamacpp_release, llamacpp_clone_command, llamacpp_source_release,
+)
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -694,13 +697,16 @@ def install_llamacpp():
                 warn("git pull failed — building from the existing checkout as-is")
         else:
             info("Cloning llama.cpp ...")
-            clone = subprocess.run([
-                "git", "clone", "--depth", "1",
-                "https://github.com/ggml-org/llama.cpp", str(LLAMACPP_DIR),
-            ])
+            try:
+                release_tag, release_build = llamacpp_source_release(fetch_llamacpp_release())
+            except Exception as exc:
+                fail(f"Could not resolve the latest llama.cpp source release: {exc}")
+                return False
+            clone = subprocess.run(llamacpp_clone_command(LLAMACPP_DIR, release_tag))
             if clone.returncode != 0:
                 fail("git clone failed")
                 return False
+            cmake_flags.append(f"-DLLAMA_BUILD_NUMBER={release_build}")
 
         build_dir = LLAMACPP_DIR / "build"
         info(f"Configuring build ({' '.join(cmake_flags) or 'CPU-only'}) ...")
