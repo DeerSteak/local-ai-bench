@@ -54,8 +54,8 @@ from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
 from scripts.setup.engine_selection import (
-    LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
-    needs_python_headers, selected_engine_names, toggle_engine,
+    LLAMACPP, VLLM, build_engine_entries, engines_needing_install,
+    needs_python_headers, select_engines, selected_engine_names,
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
@@ -457,31 +457,6 @@ def main() -> None:  # pragma: no cover - real interactive installer
         vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
         vllm_note=vllm_note,
     )
-
-    def select_engines(entries):
-        """Numbered toggle picker for engines — same plain-input style as the model picker."""
-        section("Engines")
-        print("  Models you select later are downloaded for every engine checked here.\n")
-        while True:
-            for index, entry in enumerate(entries, start=1):
-                print(f"   {index}. {engine_summary_line(entry)}")
-            print()
-            choice = input("  Number to toggle, Enter to continue, q to cancel: ").strip().lower()
-            if choice == "":
-                return entries
-            if choice == "q":
-                print("\n  Setup cancelled — nothing was installed.\n")
-                sys.exit(0)
-            if choice.isdigit() and 1 <= int(choice) <= len(entries):
-                target = entries[int(choice) - 1]
-                if not toggle_engine(entries, target["name"]):
-                    if not target["enabled"]:
-                        warn(f"{target['label']} can't be installed here — {target['note']}")
-                    else:
-                        warn("At least one engine must stay selected")
-            else:
-                warn("Enter a listed number, Enter, or q")
-            print()
 
     # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 

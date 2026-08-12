@@ -5,6 +5,7 @@ from scripts.setup.engine_selection import (
     engine_summary_line,
     engines_needing_install,
     needs_python_headers,
+    select_engines,
     find_entry as _find_entry,
     selected_engine_names,
     toggle_engine,
@@ -17,6 +18,25 @@ def find_entry(entries: list[dict], name: str) -> dict:
     entry = _find_entry(entries, name)
     assert entry is not None, f"no engine entry named {name!r}"
     return entry
+
+
+def test_terminal_picker_toggles_then_accepts():
+    entries = build_engine_entries(vllm_support=SUPPORTED)
+    replies = iter(["2", ""])
+
+    result = select_engines(entries, input_fn=lambda _prompt: next(replies))
+
+    assert selected_engine_names(result) == [LLAMACPP, VLLM]
+
+
+def test_terminal_picker_cancel_exits():
+    entries = build_engine_entries(vllm_support=SUPPORTED)
+
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        select_engines(entries, input_fn=lambda _prompt: "q")
+
+    assert exc.value.code == 0
 
 
 SUPPORTED = VllmSupport("supported", "cuda_wheel", "CUDA wheels available")
