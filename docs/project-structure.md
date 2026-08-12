@@ -165,6 +165,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/hf_credentials.py` | Hugging Face token discovery, prompting, caching, and optional persistence |
 | `setup/comfyui_assets.py` | Selected checkpoint, encoder, and VAE provisioning for ComfyUI |
 | `setup/comfyui_runtime.py` | ComfyUI Python requirements, managed model paths, and accelerator-specific PyTorch preparation |
+| `setup/comfyui_install.py` | ComfyUI source/portable installation and Windows CUDA-wheel compatibility |
 | `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
 | `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |

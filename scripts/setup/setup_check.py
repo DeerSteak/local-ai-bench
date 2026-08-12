@@ -46,6 +46,7 @@ from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
 from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
+from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, select_models
@@ -902,221 +903,15 @@ if selected_images:
     PORTABLE_PYTHON = COMFYUI_DIR.parent / "python_embeded" / "python.exe"
     nvidia_windows  = nvidia_ok and os_name == "Windows"
 
-    def check_and_fix_torch_cuda_arch(python_exe, compute_cap):
-        """Reinstall torch from cu128 if this GPU's compute capability isn't
-        supported by ComfyUI's bundled wheel — see docs/setup.md's Windows (NVIDIA) note."""
-        if not compute_cap:
-            return
-        major, minor = compute_cap.split(".")
-        sm = f"sm_{major}{minor}"
-        check_script = "import torch; print(','.join(torch.cuda.get_arch_list()))"
-        try:
-            out = subprocess.check_output(
-                [str(python_exe), "-c", check_script],
-                text=True, stderr=subprocess.DEVNULL,
-            ).strip()
-        except Exception as e:
-            warn(f"Could not check torch CUDA architecture support: {e}")
-            return
-        arch_list = out.split(",") if out else []
-        if sm in arch_list:
-            ok(f"torch build supports {sm} (GPU compute capability {compute_cap})")
-            return
-
-        warn(f"torch build does not support {sm} (GPU compute capability {compute_cap}) "
-             f"— reinstalling torch with Blackwell-compatible (cu128) wheels ...")
-        # --force-reinstall, not --upgrade — see docs/setup.md's Windows (NVIDIA) note.
-        proc = subprocess.Popen(
-            [str(python_exe), "-s", "-m", "pip", "install",
-             "--force-reinstall", "--no-deps", "--progress-bar", "raw",
-             "torch", "torchvision", "torchaudio",
-             "--index-url", "https://download.pytorch.org/whl/cu128"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
-        )
-        tail = []
-        for line in proc.stdout or ():
-            line = line.rstrip("\n")
-            if not line:
-                continue
-            print(f"      {line}")
-            tail.append(line)
-            tail = tail[-5:]
-        proc.wait()
-        if proc.returncode != 0:
-            fail("torch reinstall failed")
-            if tail:
-                info(tail[-1])
-            issues.append(
-                f"Reinstall torch manually: {python_exe} -s -m pip install --force-reinstall "
-                "--no-deps torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
-            )
-            return
-
-        try:
-            out2 = subprocess.check_output(
-                [str(python_exe), "-c", check_script],
-                text=True, stderr=subprocess.DEVNULL,
-            ).strip()
-            arch_list2 = out2.split(",") if out2 else []
-        except Exception:
-            arch_list2 = []
-
-        if sm in arch_list2:
-            ok(f"torch reinstalled — {sm} now supported")
-        else:
-            warn(f"torch reinstalled but {sm} still not listed — may need a newer/nightly build")
-            issues.append(
-                f"GPU compute capability {compute_cap} may need a PyTorch nightly build: "
-                f"{python_exe} -s -m pip install --pre --upgrade torch torchvision torchaudio "
-                "--index-url https://download.pytorch.org/whl/nightly/cu128"
-            )
-
-    def download_comfyui_portable(asset_filter, label):
-        """Download and extract an official ComfyUI Windows portable build."""
-        import urllib.request
-        import json as _json
-        info("Fetching latest ComfyUI release info ...")
-        try:
-            req = urllib.request.Request(
-                "https://api.github.com/repos/Comfy-Org/ComfyUI/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            with urllib.request.urlopen(req, timeout=15) as r:
-                release = _json.load(r)
-            asset = next(
-                (a for a in release["assets"]
-                 if asset_filter in a["name"].lower() and a["name"].endswith(".7z")),
-                None,
-            )
-            if not asset:
-                fail(f"No {label} portable build found in latest ComfyUI release")
-                return False
-            url  = asset["browser_download_url"]
-            size = asset["size"] // (1024 ** 2)
-            tag  = release["tag_name"]
-        except Exception as e:
-            fail(f"Could not fetch ComfyUI release info: {e}")
-            return False
-
-        info(f"Downloading ComfyUI {tag} {label} portable ({size} MB) — this may take a while ...")
-        tmp = SCRIPT_DIR / asset["name"]
-        try:
-            download_file(url, tmp, expected_size=asset["size"])
-        except Exception as e:
-            fail(f"Download failed: {e}")
-            tmp.unlink(missing_ok=True)
-            return False
-
-        info(f"Extracting {asset['name']} ...")
-        # py7zr doesn't support BCJ2 (used in ComfyUI portables); use a real 7-zip binary.
-        seven_zip = (shutil.which("7z") or shutil.which("7za") or shutil.which("7zr"))
-        if not seven_zip and os_name == "Windows":
-            szr = SCRIPT_DIR / "7zr.exe"
-            if not szr.exists():
-                info("Downloading 7zr.exe for extraction ...")
-                try:
-                    download_file(
-                        "https://github.com/ip7z/7zip/releases/download/26.02/7zr.exe",
-                        szr,
-                    )
-                    ok("7zr.exe downloaded")
-                except Exception as e:
-                    fail(f"Could not download 7zr.exe: {e}")
-                    tmp.unlink(missing_ok=True)
-                    return False
-            seven_zip = str(szr)
-
-        def _flatten_portable():
-            """Move ComfyUI_windows_portable/* up to SCRIPT_DIR if the wrapper folder exists."""
-            wrapper = SCRIPT_DIR / "ComfyUI_windows_portable"
-            if not wrapper.is_dir():
-                return
-            for child in wrapper.iterdir():
-                dest = SCRIPT_DIR / child.name
-                if dest.exists():
-                    shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
-                shutil.move(str(child), str(dest))
-            wrapper.rmdir()
-
-        try:
-            validate_7z_archive(tmp)
-        except Exception as e:
-            fail(f"Archive validation failed: {e}")
-            tmp.unlink(missing_ok=True)
-            return False
-
-        if seven_zip:
-            try:
-                result = subprocess.run(
-                    [seven_zip, "x", str(tmp), f"-o{SCRIPT_DIR}", "-y"],
-                    capture_output=True, text=True,
-                )
-                if result.returncode != 0:
-                    fail(f"Extraction failed:\n{result.stderr.strip()}")
-                    tmp.unlink(missing_ok=True)
-                    return False
-                tmp.unlink()
-                _flatten_portable()
-                ok(f"ComfyUI {tag} {label} portable extracted")
-                return True
-            except Exception as e:
-                fail(f"Extraction failed: {e}")
-                tmp.unlink(missing_ok=True)
-                return False
-        else:
-            # Last resort: py7zr (may fail on BCJ2-compressed archives)
-            try:
-                import py7zr
-                with py7zr.SevenZipFile(str(tmp), mode="r") as z:
-                    z.extractall(path=str(SCRIPT_DIR))
-                tmp.unlink()
-                _flatten_portable()
-                ok(f"ComfyUI {tag} {label} portable extracted")
-                return True
-            except Exception as e:
-                fail(f"Extraction failed (install 7-zip for best results): {e}")
-                tmp.unlink(missing_ok=True)
-                return False
-
-    if not COMFYUI_DIR.exists():
-        if amd_windows:
-            info("AMD GPU detected on Windows — downloading official ComfyUI AMD portable build ...")
-            if not download_comfyui_portable("amd", "AMD"):
-                issues.append("Download ComfyUI AMD portable from https://github.com/Comfy-Org/ComfyUI/releases")
-        elif nvidia_windows:
-            info("NVIDIA GPU detected on Windows — downloading official ComfyUI NVIDIA portable build ...")
-            if not download_comfyui_portable("nvidia_cu", "NVIDIA"):
-                issues.append("Download ComfyUI NVIDIA portable from https://github.com/Comfy-Org/ComfyUI/releases")
-            elif PORTABLE_PYTHON.exists():
-                check_and_fix_torch_cuda_arch(PORTABLE_PYTHON, nvidia_compute_cap)
-        elif intel_windows:
-            info("Intel Arc GPU detected on Windows — downloading official ComfyUI Intel portable build ...")
-            if not download_comfyui_portable("intel", "Intel"):
-                issues.append("Download ComfyUI Intel portable from https://github.com/Comfy-Org/ComfyUI/releases")
-        else:
-            comfyui_repo = "https://github.com/comfyanonymous/ComfyUI"
-            info(f"Cloning ComfyUI from {comfyui_repo} ...")
-            result = subprocess.run(["git", "clone", comfyui_repo, str(COMFYUI_DIR)])
-            if result.returncode == 0:
-                ok(f"ComfyUI cloned to {COMFYUI_DIR}")
-            else:
-                fail("ComfyUI clone failed — check your internet connection and git install")
-                issues.append(f"git clone {comfyui_repo}")
-    else:
-        if amd_windows or nvidia_windows or intel_windows:
-            gpu_label = "AMD" if amd_windows else ("Intel" if intel_windows else "NVIDIA")
-            if not PORTABLE_PYTHON.exists():
-                warn(f"ComfyUI found at {COMFYUI_DIR} but python_embeded is missing")
-                warn(f"Delete {COMFYUI_DIR} and re-run setup to download the {gpu_label} portable build")
-                issues.append(f"Delete {COMFYUI_DIR} and re-run setup ({gpu_label} portable build required)")
-            else:
-                ok(f"ComfyUI found at {COMFYUI_DIR} ({gpu_label} portable)")
-                if nvidia_windows:
-                    check_and_fix_torch_cuda_arch(PORTABLE_PYTHON, nvidia_compute_cap)
-        else:
-            ok(f"ComfyUI found at {COMFYUI_DIR}")
-
+    windows_gpu = (
+        "amd" if amd_windows else "nvidia" if nvidia_windows
+        else "intel" if intel_windows else None
+    )
+    ensure_comfyui(
+        COMFYUI_DIR, SCRIPT_DIR, os_name, windows_gpu,
+        compute_capability=nvidia_compute_cap, issues=issues,
+        info=info, warn=warn, fail=fail, ok=ok,
+    )
     if prepare_comfyui_runtime(
         COMFYUI_DIR, config.COMFYUI_MODELS_DIR, config.COMFYUI_EXTRA_MODEL_PATHS,
         portable_python=PORTABLE_PYTHON, intel_xpu=intel_linux, rocm=rocm_ok,
@@ -1127,9 +922,8 @@ if selected_images:
             find_asset=image_asset, download=hf_download, load_token=load_token,
             info=info, warn=warn, fail=fail, ok=ok,
         )
-        n_expected = len(selected_images)
         if found_ckpts:
-            ok(f"{len(found_ckpts)}/{n_expected} image checkpoints ready: "
+            ok(f"{len(found_ckpts)}/{len(selected_images)} image checkpoints ready: "
                f"{', '.join(found_ckpts)}")
             try:
                 with urllib.request.urlopen(
@@ -1139,8 +933,7 @@ if selected_images:
                 if managed_checkpoints_visible(available, set(found_ckpts)):
                     ok("Running ComfyUI already sees Local AI Bench's managed models")
                 else:
-                    warn("ComfyUI is running but has not loaded the managed model path yet")
-                    warn("Restart ComfyUI once before running image benchmarks")
+                    warn("Restart running ComfyUI once to load the managed model path")
             except (OSError, urllib.error.URLError, json.JSONDecodeError):
                 pass
         else:
