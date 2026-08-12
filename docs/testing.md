@@ -78,7 +78,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
 | Cross-process pause state, transition evidence, lost-control fallback, launch cleanup, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
 | Inventory, model identity, and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_model_identity.py](../tests/test_model_identity.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
-| Configuration, catalog, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_hardware.py](../tests/test_hardware.py) |
+| Configuration, catalog, dashboard-boundary invariants, and hardware | [test_config.py](../tests/test_config.py), [test_models.py](../tests/test_models.py), [test_cross_boundary_invariants.py](../tests/test_cross_boundary_invariants.py), [test_hardware.py](../tests/test_hardware.py) |
 
 These tests cover exact and wildcard matching, cumulative tier caps, custom-model discovery, validation before orchestration, saved launcher state, safe non-catalog cleanup targeting, platform wrapper behavior, and hardware memory-fit calculations.
 
