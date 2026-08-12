@@ -51,6 +51,7 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
+from scripts.setup.setup_discovery import discover_system
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
@@ -130,54 +131,16 @@ else:
 # ── 2. OS & hardware identity ──────────────────────────────────────────────────
 
 section("System")
-os_name = platform.system()
-print(f"  OS:       {platform.system()} {platform.release()}")
-print(f"  Machine:  {platform.machine()}")
-print(f"  Node:     {platform.node()}")
-
-total_ram_gb = None  # populated per-OS below; memory ceiling for Darwin/integrated-GPU/CPU-only machines
-
-if os_name == "Darwin":
-    try:
-        chip = subprocess.check_output(
-            ["sysctl", "-n", "machdep.cpu.brand_string"], text=True
-        ).strip()
-    except Exception:
-        chip = "unknown"
-    print(f"  Chip:     {chip}")
-    try:
-        mem_bytes = int(subprocess.check_output(
-            ["sysctl", "-n", "hw.memsize"], text=True
-        ).strip())
-        total_ram_gb = mem_bytes / (1024**3)
-        print(f"  RAM:      {mem_bytes // (1024**3)} GB")
-    except Exception:
-        pass
-
-elif os_name == "Linux":
-    try:
-        with open("/proc/meminfo") as f:
-            for line in f:
-                if line.startswith("MemTotal"):
-                    kb = int(line.split()[1])
-                    total_ram_gb = kb / (1024**2)
-                    print(f"  RAM:      {kb // (1024**2)} GB")
-                    break
-    except Exception:
-        pass
-
-elif os_name == "Windows":
-    try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command",
-             "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"],
-            text=True, stderr=subprocess.DEVNULL,
-        ).strip()
-        mem_bytes = int(out.splitlines()[-1].strip())
-        total_ram_gb = mem_bytes / (1024**3)
-        print(f"  RAM:      {mem_bytes // (1024**3)} GB")
-    except Exception:
-        pass
+system = discover_system()
+os_name = system.os_name
+total_ram_gb = system.total_ram_gb
+print(f"  OS:       {system.os_name} {system.release}")
+print(f"  Machine:  {system.machine}")
+print(f"  Node:     {system.node}")
+if system.chip is not None:
+    print(f"  Chip:     {system.chip}")
+if total_ram_gb is not None:
+    print(f"  RAM:      {total_ram_gb:.0f} GB")
 
 # ── 3. GPU / acceleration backend ─────────────────────────────────────────────
 
