@@ -4,7 +4,7 @@ import json
 import platform
 import threading
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from scripts.runtime import config
 from scripts.runtime.shared import Shared
@@ -43,6 +43,73 @@ class EngineManagementSnapshot:
 class EngineManagementController:
     busy: Callable[[], bool]
     cancel: Callable[[], None]
+
+
+@dataclass(frozen=True)
+class VersionDialogSpec:
+    title: str
+    release_label: str
+    custom_label: str
+    invalid_title: str
+    normalize: Callable[[str], str]
+    load_versions: Callable[[], list]
+    display_version: Callable[[Any], str] = str
+    example: str | None = None
+
+
+def show_version_dialog(*, root, tk, ttk, messagebox, spec: VersionDialogSpec,
+                        install: Callable[[str], None]) -> None:  # pragma: no cover
+    dialog = tk.Toplevel(root)
+    dialog.title(spec.title)
+    dialog.transient(root)
+    dialog.resizable(False, False)
+    shell = ttk.Frame(dialog, padding=18)
+    shell.grid(sticky="nsew")
+    ttk.Label(shell, text=spec.release_label, font=("TkDefaultFont", 10, "bold")).grid(
+        row=0, column=0, sticky="w",
+    )
+    selected = tk.StringVar(value="Loading…")
+    versions = ttk.Combobox(shell, textvariable=selected, state="disabled", width=24)
+    versions.grid(row=1, column=0, sticky="ew", pady=(4, 12))
+    ttk.Label(shell, text=spec.custom_label, font=("TkDefaultFont", 10, "bold")).grid(
+        row=2, column=0, sticky="w",
+    )
+    custom = tk.StringVar()
+    ttk.Entry(shell, textvariable=custom, width=27).grid(row=3, column=0, sticky="ew", pady=4)
+    button_row = 4
+    if spec.example:
+        ttk.Label(shell, text=spec.example).grid(row=4, column=0, sticky="w")
+        button_row = 5
+    buttons = ttk.Frame(shell)
+    buttons.grid(row=button_row, column=0, sticky="e", pady=(16, 0))
+
+    def submit():
+        try:
+            value = spec.normalize(custom.get().strip() or selected.get())
+        except ValueError as exc:
+            messagebox.showerror(spec.invalid_title, str(exc), parent=dialog)
+            return
+        dialog.destroy()
+        install(value)
+
+    ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+    ttk.Button(buttons, text="Install", command=submit).pack(side="right", padx=(0, 8))
+
+    def load():
+        try:
+            values = [spec.display_version(value) for value in spec.load_versions()]
+
+            def loaded():
+                versions.configure(values=values, state="readonly")
+                selected.set(values[0] if values else "")
+            root.after(0, loaded)
+        except Exception as exc:
+            root.after(0, lambda error=exc: selected.set(f"Unable to load: {error}"))
+
+    threading.Thread(target=load, daemon=True).start()
+    dialog.grab_set()
+    dialog.wait_visibility()
+    dialog.focus_set()
 
 
 def inspection_placeholder(engine: str) -> EngineStatus:
@@ -315,123 +382,47 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         status_text.set("Diagnostics copied to the clipboard.")
 
     def choose_llamacpp_version():
-        if state["loading"] or llamacpp_version_updater is None:
+        if (state["loading"] or llamacpp_version_updater is None
+                or llamacpp_release_loader is None):
             return
         version_updater = llamacpp_version_updater
-        release_loader = llamacpp_release_loader
-        dialog = tk.Toplevel(root)
-        dialog.title("Choose llama.cpp Version")
-        dialog.transient(root)
-        dialog.resizable(False, False)
-        shell = ttk.Frame(dialog, padding=18)
-        shell.grid(sticky="nsew")
-        ttk.Label(shell, text="Official release", font=("TkDefaultFont", 10, "bold")).grid(
-            row=0, column=0, sticky="w",
-        )
-        selected = tk.StringVar(value="Loading…")
-        releases = ttk.Combobox(shell, textvariable=selected, state="disabled", width=24)
-        releases.grid(row=1, column=0, sticky="ew", pady=(4, 12))
-        ttk.Label(shell, text="Specific tag", font=("TkDefaultFont", 10, "bold")).grid(
-            row=2, column=0, sticky="w",
-        )
-        custom = tk.StringVar()
-        ttk.Entry(shell, textvariable=custom, width=27).grid(
-            row=3, column=0, sticky="ew", pady=(4, 4),
-        )
-        ttk.Label(shell, text="Examples: b10362 or 10362").grid(row=4, column=0, sticky="w")
-        buttons = ttk.Frame(shell)
-        buttons.grid(row=5, column=0, sticky="e", pady=(16, 0))
 
-        def install():
-            value = custom.get().strip() or selected.get()
-            try:
-                tag = normalize_llamacpp_release_tag(value)
-            except ValueError as exc:
-                messagebox.showerror("Invalid llama.cpp tag", str(exc), parent=dialog)
-                return
-            dialog.destroy()
+        def install(tag):
             update_engine(
                 "llamacpp", "llama.cpp",
                 lambda control: version_updater(tag, control),
                 f"Install llama.cpp {tag}? The current runtime will be retained for rollback.",
             )
-
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(buttons, text="Install", command=install).pack(side="right", padx=(0, 8))
-
-        def load_releases():
-            try:
-                assert release_loader is not None
-                values = [release["tag_name"] for release in release_loader()]
-                def loaded():
-                    releases.configure(values=values, state="readonly")
-                    selected.set(values[0] if values else "")
-                root.after(0, loaded)
-            except Exception as exc:
-                root.after(0, lambda error=exc: selected.set(f"Unable to load: {error}"))
-
-        if release_loader is not None:
-            threading.Thread(target=load_releases, daemon=True).start()
-        else:
-            selected.set("")
-        dialog.grab_set()
-        dialog.wait_visibility()
-        dialog.focus_set()
+        show_version_dialog(
+            root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+            spec=VersionDialogSpec(
+                "Choose llama.cpp Version", "Official release", "Specific tag",
+                "Invalid llama.cpp tag", normalize_llamacpp_release_tag,
+                llamacpp_release_loader, lambda release: release["tag_name"],
+                "Examples: b10362 or 10362",
+            ),
+            install=install,
+        )
 
     def choose_vllm_version():
         if state["loading"] or vllm_version_updater is None or vllm_version_loader is None:
             return
         version_updater = vllm_version_updater
         version_loader = vllm_version_loader
-        dialog = tk.Toplevel(root)
-        dialog.title("Choose vLLM Version")
-        dialog.transient(root)
-        dialog.resizable(False, False)
-        shell = ttk.Frame(dialog, padding=18)
-        shell.grid(sticky="nsew")
-        ttk.Label(shell, text="Stable release", font=("TkDefaultFont", 10, "bold")).grid(
-            row=0, column=0, sticky="w",
-        )
-        selected = tk.StringVar(value="Loading…")
-        versions = ttk.Combobox(shell, textvariable=selected, state="disabled", width=24)
-        versions.grid(row=1, column=0, sticky="ew", pady=(4, 12))
-        ttk.Label(shell, text="Specific version", font=("TkDefaultFont", 10, "bold")).grid(
-            row=2, column=0, sticky="w",
-        )
-        custom = tk.StringVar()
-        ttk.Entry(shell, textvariable=custom, width=27).grid(row=3, column=0, sticky="ew", pady=4)
-        buttons = ttk.Frame(shell)
-        buttons.grid(row=4, column=0, sticky="e", pady=(16, 0))
 
-        def install():
-            try:
-                version = normalize_vllm_version(custom.get().strip() or selected.get())
-            except ValueError as exc:
-                messagebox.showerror("Invalid vLLM version", str(exc), parent=dialog)
-                return
-            dialog.destroy()
+        def install(version):
             update_engine(
                 "vllm", "vLLM", lambda control: version_updater(version, control),
                 f"Install vLLM {version}? The current environment will be retained for rollback.",
             )
-
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(buttons, text="Install", command=install).pack(side="right", padx=(0, 8))
-
-        def load_versions():
-            try:
-                values = version_loader()
-                def loaded():
-                    versions.configure(values=values, state="readonly")
-                    selected.set(values[0] if values else "")
-                root.after(0, loaded)
-            except Exception as exc:
-                root.after(0, lambda error=exc: selected.set(f"Unable to load: {error}"))
-
-        threading.Thread(target=load_versions, daemon=True).start()
-        dialog.grab_set()
-        dialog.wait_visibility()
-        dialog.focus_set()
+        show_version_dialog(
+            root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+            spec=VersionDialogSpec(
+                "Choose vLLM Version", "Stable release", "Specific version",
+                "Invalid vLLM version", normalize_vllm_version, version_loader,
+            ),
+            install=install,
+        )
 
     def update_engine(engine_key, label, updater, prompt, allow_system=False):
         if state["loading"] or updater is None:
