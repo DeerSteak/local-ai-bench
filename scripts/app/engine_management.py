@@ -137,7 +137,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                                 llamacpp_model_probe=None,
                                 run_active=lambda: False) -> EngineManagementController:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
-    parent.rowconfigure(1, weight=1)
+    parent.rowconfigure(3, weight=1)
     header = ttk.Frame(parent)
     header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
     ttk.Label(header, text="Engine Management", style="Title.TLabel").pack(side="left")
@@ -152,14 +152,15 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     body.columnconfigure(1, weight=1)
 
     output_box = ttk.LabelFrame(parent, text="Operation output", padding=8)
-    output_box.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+    output_box.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
     output_box.columnconfigure(0, weight=1)
+    output_box.rowconfigure(0, weight=1)
     output_text = tk.Text(
         output_box, height=10, wrap="word", state="disabled", font=("TkFixedFont", 10),
     )
     output_scroll = ttk.Scrollbar(output_box, orient="vertical", command=output_text.yview)
     output_text.configure(yscrollcommand=output_scroll.set)
-    output_text.grid(row=0, column=0, sticky="ew")
+    output_text.grid(row=0, column=0, sticky="nsew")
     output_scroll.grid(row=0, column=1, sticky="ns")
 
     def clear_output():
