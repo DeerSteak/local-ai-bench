@@ -9,11 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - name: Install Tk and virtual display
         run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
       - name: Install Python dependencies
         run: |
-          python3 -m venv bench-env
+          python -m venv bench-env
           bench-env/bin/pip install -r requirements.txt -r tests/requirements.txt
-      - name: Run Tk controller, screen, and application tests
-        run: xvfb-run -a bench-env/bin/python -m pytest -q tests/test_benchmark_gui_controllers.py tests/test_benchmark_gui_tk_screens.py tests/test_benchmark_gui_tk_smoke.py
+      - name: Run full Python suite with Tk enabled
+        run: xvfb-run -a bash tests.sh

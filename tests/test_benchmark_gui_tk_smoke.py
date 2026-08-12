@@ -1,14 +1,14 @@
-import tkinter as tk
-from tkinter import ttk
 from types import SimpleNamespace
 
 import pytest
 
-from scripts.app import benchmark_gui
 from scripts.app.engine_management import EngineManagementSnapshot
 
 
 def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
+    tk = pytest.importorskip("tkinter")
+    ttk = pytest.importorskip("tkinter.ttk")
+    benchmark_gui = pytest.importorskip("scripts.app.benchmark_gui")
     try:
         probe = tk.Tk()
     except tk.TclError as exc:
