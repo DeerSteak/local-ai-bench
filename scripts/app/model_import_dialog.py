@@ -173,14 +173,17 @@ def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
     def selected_variant():
         return state["variants"].get(variables["variant"].get())
 
+    def vllm_cache_home():
+        return engine_factory("vllm").cache_home()
+
     def destination(engine, tag):
-        cache = getattr(engine_factory("vllm"), "cache_home")() if engine == "vllm" else None
+        cache = vllm_cache_home() if engine == "vllm" else None
         return import_destination(engine, tag, cache)
 
     def validate(*_args):
         inspection, engine, variant = state["inspection"], variables["engine"].get(), selected_variant()
         tag, label = variables["tag"].get(), variables["label"].get().strip()
-        cache = getattr(engine_factory("vllm"), "cache_home")() if engine == "vllm" else None
+        cache = vllm_cache_home() if engine == "vllm" else None
         reason = import_validation_reason(
             busy=state["busy"], inspection=inspection,
             inspected_request=state["request"],
