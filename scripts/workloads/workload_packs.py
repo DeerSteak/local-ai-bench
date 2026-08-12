@@ -1,8 +1,8 @@
 """Immutable workload-pack identities and compatibility validation."""
 
-import hashlib
 import json
 
+from scripts.results.canonical_json import canonical_json, sha256_json
 from scripts.stage_registry import STAGE_ORDER
 
 
@@ -50,9 +50,8 @@ def validate_pack(pack, application_version="4.1"):
         raise ValueError(f"workload pack is incompatible with Local AI Bench {application_version}")
     if pack["origin"] not in {"builtin", "custom"}:
         raise ValueError("workload-pack origin must be builtin or custom")
-    normalized = json.loads(json.dumps(pack, sort_keys=True))
-    encoded = json.dumps(normalized, separators=(",", ":"), sort_keys=True).encode()
-    normalized["digest"] = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+    normalized = json.loads(canonical_json(pack))
+    normalized["digest"] = f"sha256:{sha256_json(normalized)}"
     return normalized
 
 
