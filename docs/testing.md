@@ -36,6 +36,8 @@ The wrapper installs or updates [tests/requirements.txt](../tests/requirements.t
 
 The scripts tree is a package rather than a flat import directory. A structural test parses every Python module and rejects bare imports of another project module, preventing delayed GUI/setup paths from passing unit collection and then failing only when launched through `python -m`.
 
+Tk controller tests use fake widgets and variables on every platform. Screen-construction and full-application smoke tests use real Tk, skip when no display is available locally, and run under Xvfb in the Linux `Python tests (Tk/Xvfb)` CI job.
+
 [tests/conftest.py](../tests/conftest.py) prevents llama.cpp discovery tests from reading the machine's real saved setup configuration, so running setup cannot change mocked discovery outcomes. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
 `conftest.py` also provides the `symlink_or_skip` fixture. Tests covering symlink-escape defenses need a real symlink, which Windows refuses without Developer Mode or administrator rights, so the fixture creates one and skips the test when the platform will not. Use it instead of calling `Path.symlink_to` directly. The skip is limited to platforms that cannot create the link: on Linux and macOS these tests always run, and a Windows skip is not a silent hole because the behavior under test is POSIX symlink semantics, which Windows junctions do not reproduce faithfully.
@@ -72,7 +74,7 @@ The Python modules are grouped by responsibility below. The test files themselve
 | Quick and dry-run plan resolution, formatting, and exact-history ETA | [test_benchmark_quick_preset.py](../tests/test_benchmark_quick_preset.py), [test_benchmark_dry_run.py](../tests/test_benchmark_dry_run.py) |
 | Tier, model, engine selection, and custom imports | [test_benchmark_select_tier.py](../tests/test_benchmark_select_tier.py), [test_benchmark_filter_models.py](../tests/test_benchmark_filter_models.py), [test_benchmark_model_selectors.py](../tests/test_benchmark_model_selectors.py), [test_benchmark_resolve_custom_models.py](../tests/test_benchmark_resolve_custom_models.py), [test_benchmark_downloaded_models.py](../tests/test_benchmark_downloaded_models.py), [test_benchmark_resolve_engine_names.py](../tests/test_benchmark_resolve_engine_names.py), [test_custom_models.py](../tests/test_custom_models.py), [test_model_import.py](../tests/test_model_import.py), [test_model_download.py](../tests/test_model_download.py) |
 | Conversation eligibility, output paths, interrupt exit status, and exact-plan fork provenance/overwrite guards | [test_benchmark_conv_skip.py](../tests/test_benchmark_conv_skip.py), [test_benchmark_sidecar_path.py](../tests/test_benchmark_sidecar_path.py), [test_benchmark_run_state.py](../tests/test_benchmark_run_state.py) |
-| Interactive launchers, portable presets, recovery presentation/commands, and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_benchmark_presets.py](../tests/test_benchmark_presets.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
+| Interactive launchers, GUI controllers/screens, portable presets, recovery presentation/commands, and wrappers | [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_benchmark_gui_controllers.py](../tests/test_benchmark_gui_controllers.py), [test_benchmark_gui_tk_screens.py](../tests/test_benchmark_gui_tk_screens.py), [test_benchmark_presets.py](../tests/test_benchmark_presets.py), [test_run_bench_wrappers.py](../tests/test_run_bench_wrappers.py), [test_shared_console.py](../tests/test_shared_console.py) |
 | GUI/terminal/headless mode selection | [test_interface_mode.py](../tests/test_interface_mode.py) |
 | Cross-process pause state, transition evidence, lost-control fallback, launch cleanup, blocking, and measured-call boundaries | [test_pause_control.py](../tests/test_pause_control.py), [test_benchmark_gui.py](../tests/test_benchmark_gui.py), [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py) |
 | Inventory, model identity, and setup-picker rules | [test_model_inventory.py](../tests/test_model_inventory.py), [test_model_identity.py](../tests/test_model_identity.py), [test_setup_selection.py](../tests/test_setup_selection.py) |
@@ -178,6 +180,8 @@ npx tsc --noEmit
 ```
 
 Run the dashboard commands whenever `dashboard/src` changed. For a Python-only change, the pytest suite is sufficient unless the results schema or documented dashboard behavior also changed.
+
+Pull requests targeting `develop`, `release/**`, or `main` run the full Python suite with Tk enabled under Xvfb, Pyright, and the dashboard's Vitest, ESLint, TypeScript, and `any`-ratchet checks. The jobs have stable names so repository rules can require each check independently.
 
 ---
 

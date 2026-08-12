@@ -1,5 +1,7 @@
 # Platform support and release policy
 
+Release source moves from `develop` through a versioned release branch into the stable `main` branch. See the [Contributor Workflow](contributor-workflow.md) for branch roles, pull requests, merge direction, tagging, hotfix handling, and repository protection.
+
 Local AI Bench 4.1 is a preview engineering build. A setup or runtime code path is not by itself a commercial support claim. No platform is labeled stable-supported until the qualification evidence below exists for the exact operating-system, architecture, accelerator/backend, runtime, and installer combination.
 
 ## Platform matrix

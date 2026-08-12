@@ -174,7 +174,8 @@ class CodeBenchmark:
             "        _result = {'index': _index, 'ok': True, 'got': _target(*_args)}\n"
             "        _encoded = json.dumps(_result)\n"
             "    except Exception as _e:\n"
-            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': str(_e)})\n"
+            "        _error = 'memory limit' if isinstance(_e, MemoryError) else str(_e)\n"
+            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': _error})\n"
             "    print('\\n' + __RESULT_PREFIX__ + _encoded, flush=True)\n"
         )
         payload = json.dumps([t["args"] for t in tests])
@@ -201,7 +202,8 @@ class CodeBenchmark:
             "        _result = {'index': _index, 'ok': True, 'got': _outputs}\n"
             "        _encoded = json.dumps(_result)\n"
             "    except Exception as _e:\n"
-            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': str(_e)})\n"
+            "        _error = 'memory limit' if isinstance(_e, MemoryError) else str(_e)\n"
+            "        _encoded = json.dumps({'index': _index, 'ok': False, 'error': _error})\n"
             "    print('\\n' + __RESULT_PREFIX__ + _encoded, flush=True)\n"
         )
         payload = json.dumps([{"init": t.get("init", []), "ops": t["ops"]} for t in tests])

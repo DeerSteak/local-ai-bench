@@ -2,6 +2,8 @@
 
 Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math, reasoning, code, and tool calling), and opt-in concurrency/load testing and llama.cpp-native throughput comparisons. Designed for hardware from 8GB GPUs to high-memory unified-memory systems; setup estimates model fit before download, while benchmark failures are isolated so completed measurements are preserved.
 
+> **Stable and development branches:** `main` is the public default branch and always represents the latest stable release. Ongoing work integrates through `develop`, and versioned release branches move forward from `develop` to `main`. Contributors should read the [Contributor Workflow](docs/contributor-workflow.md) before opening a pull request.
+
 ---
 
 ## Quick Start
@@ -78,6 +80,7 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 | [Coordinator API Contract](docs/coordinator-api.md) | Future authenticated localhost API, compatibility, validation, lifecycle, and artifact boundaries |
 | [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
 | [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
+| [Contributor Workflow](docs/contributor-workflow.md) | Branch roles, pull requests, validation, merge conventions, releases, hotfixes, and repository protection |
 | [Installation Maintenance](docs/maintenance.md) | Repair, upgrade, rollback, and safe project-owned uninstall boundaries |
 | [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
 | [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, report, and privacy-safe support guidance |
