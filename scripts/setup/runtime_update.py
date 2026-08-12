@@ -16,6 +16,7 @@ import psutil
 
 from scripts.setup.vllm_install import VllmSupport, install_vllm
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
+from scripts.setup.directory_transaction import DirectorySwapError, swap_staged_directory
 from scripts.setup.resumable_download import download_file
 from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
@@ -407,24 +408,24 @@ def update_macos_llamacpp(target: Path, machine: str, *,
         validation = validate_llamacpp_build(staged, run=active_run)
         if not validation.success:
             return validation
-        if had_target:
-            replace(target, backup)
         try:
-            replace(staged, target)
-            final_validation = validate_llamacpp_build(target, run=active_run)
-            if not final_validation.success:
-                raise RuntimeError(final_validation.detail)
-        except Exception as exc:
-            if target.exists():
-                remove(target)
-            if had_target:
-                replace(backup, target)
+            outcome = swap_staged_directory(
+                target, staged, backup, had_target=had_target,
+                validate=lambda path: validate_llamacpp_build(path, run=active_run),
+                replace=replace, remove=remove,
+            )
+        except DirectorySwapError as exc:
             return RuntimeUpdateResult(
                 False, f"macOS llama.cpp update failed"
                 f"{' and the prior release was preserved' if had_target else ''}: {exc}",
             )
-        if had_target:
-            remove(backup)
+        final_validation = outcome.validation
+        assert final_validation is not None
+        if outcome.backup_cleanup_error is not None:
+            return RuntimeUpdateResult(
+                True, f"llama.cpp updated, but its backup remains at {backup}: "
+                f"{outcome.backup_cleanup_error}", final_validation.version,
+            )
         return RuntimeUpdateResult(
             True, "macOS llama.cpp updated successfully.", final_validation.version,
         )
@@ -478,25 +479,22 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
             return cancelled
         if not validation.success:
             return validation
-        replace(target, backup)
         try:
-            replace(staged, target)
-        except Exception as exc:
-            try:
-                replace(backup, target)
-            except Exception as rollback_exc:
+            outcome = swap_staged_directory(
+                target, staged, backup, had_target=True, replace=replace, remove=remove,
+            )
+        except DirectorySwapError as exc:
+            if exc.rollback_error is not None:
                 return RuntimeUpdateResult(
-                    False, f"Windows llama.cpp swap and rollback failed: {exc}; "
-                    f"rollback: {rollback_exc}",
+                    False, f"Windows llama.cpp swap and rollback failed: {exc}",
                 )
             return RuntimeUpdateResult(
                 False, f"Windows llama.cpp update failed; the prior release was preserved: {exc}",
             )
-        try:
-            remove(backup)
-        except OSError as exc:
+        if outcome.backup_cleanup_error is not None:
             return RuntimeUpdateResult(
-                True, f"llama.cpp updated, but its backup remains at {backup}: {exc}",
+                True, f"llama.cpp updated, but its backup remains at {backup}: "
+                f"{outcome.backup_cleanup_error}",
                 validation.version,
             )
         return RuntimeUpdateResult(True, "Windows llama.cpp updated successfully.", validation.version)
@@ -559,38 +557,26 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
             return cancelled
         if not validation.success:
             return validation
-        replace(target, backup)
         try:
-            replace(staged, target)
-        except Exception as exc:
-            try:
-                replace(backup, target)
-            except Exception as rollback_exc:
+            outcome = swap_staged_directory(
+                target, staged, backup, had_target=True,
+                validate=lambda path: validate_llamacpp_build(path, run=active_run),
+                replace=replace, remove=remove,
+            )
+        except DirectorySwapError as exc:
+            if exc.rollback_error is not None:
                 return RuntimeUpdateResult(
-                    False, f"llama.cpp swap and rollback failed: {exc}; rollback: {rollback_exc}",
+                    False, f"llama.cpp update and rollback failed: {exc}",
                 )
             return RuntimeUpdateResult(
                 False, f"llama.cpp update failed; the prior checkout was preserved: {exc}",
             )
-        final_validation = validate_llamacpp_build(target, run=active_run)
-        if not final_validation.success:
-            try:
-                remove(target)
-                replace(backup, target)
-            except Exception as rollback_exc:
-                return RuntimeUpdateResult(
-                    False, f"llama.cpp final validation and rollback failed: "
-                    f"{final_validation.detail}; rollback: {rollback_exc}",
-                )
+        final_validation = outcome.validation
+        assert final_validation is not None
+        if outcome.backup_cleanup_error is not None:
             return RuntimeUpdateResult(
-                False, f"llama.cpp update failed; the prior checkout was preserved: "
-                f"{final_validation.detail}",
-            )
-        try:
-            remove(backup)
-        except OSError as exc:
-            return RuntimeUpdateResult(
-                True, f"llama.cpp rebuilt, but its backup remains at {backup}: {exc}",
+                True, f"llama.cpp rebuilt, but its backup remains at {backup}: "
+                f"{outcome.backup_cleanup_error}",
                 final_validation.version,
             )
         return RuntimeUpdateResult(
