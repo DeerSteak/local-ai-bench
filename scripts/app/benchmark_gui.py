@@ -100,6 +100,7 @@ from scripts.app.benchmark_gui_screens.history import build_history_screen
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 from scripts.app.benchmark_gui_screens.engines import build_engine_screen
 from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
+from scripts.app.benchmark_gui_screens.progress import ProgressScreen
 
 
 GPU_SPLIT_MODE_LABELS = {
@@ -2126,13 +2127,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         process_paused = False
         pause_button.configure(text="Pause", state="disabled")
     output_queue = queue.Queue()
-    progress_window = None
-    stage_progress_vars = {}
-    model_progress_vars = {}
-    progress_engines = [""]
-    progress_summary_vars = {}
-    progress_resource_vars = {}
-    progress_remaining_var = tk.StringVar(value="Remaining time: calibrating")
+    progress_screen = ProgressScreen(
+        root, tk, ttk, update_progress_metrics, progress_summary_rows,
+        progress_event_engine, progress_model_identity,
+    )
     progress_metrics = {}
     progress_started_at = None
     gpu_sample = {
@@ -2143,166 +2141,22 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     has_discrete_vram = [False]
 
     def show_progress_window(tests, entries, engines=None):
-        nonlocal progress_window, stage_progress_vars, model_progress_vars
         nonlocal progress_metrics, progress_started_at
         gpu_sample.update({
-            "usage": None, "memory": None, "vram": None, "next_at": 0.0, "running": False,
-            "generation": gpu_sample["generation"] + 1,
+            "usage": None, "memory": None, "vram": None, "next_at": 0.0,
+            "running": False, "generation": gpu_sample["generation"] + 1,
         })
         has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
         system_memory_baseline[0] = system_memory_usage()[0]
-        if progress_window is not None and progress_window.winfo_exists():
-            progress_window.destroy()
-        progress_window = tk.Toplevel(root)
-        progress_window.title(f"Local AI Bench v{config.VERSION} Progress")
-        progress_window.geometry("460x640")
-        progress_window.minsize(380, 300)
-        progress_window.attributes("-topmost", True)
-        progress_window.protocol("WM_DELETE_WINDOW", progress_window.withdraw)
-        shell = ttk.Frame(progress_window, padding=18)
-        shell.pack(fill="both", expand=True)
-        ttk.Label(shell, text="Benchmark progress", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            shell, text="Live workload/model status, measurement quality, resources, and estimated remaining time.",
-            wraplength=390,
-        ).pack(anchor="w", pady=(2, 12))
-        stage_progress_vars = {}
-        model_progress_vars = {}
-        labels = TEST_STAGE_LABELS
-        selected = [entry for entry in entries if entry.checked]
-        total_models = sum(
-            1 for stage in STAGE_ORDER if stage in tests for entry in selected
-            if ((stage == "emb" and entry.kind == "embedding")
-                or (stage == "img" and entry.kind == "image")
-                or (stage in LLM_BACKED_TESTS and entry.kind in {"llm", "custom"}))
-        )
-        progress_metrics = {
-            "total_models": total_models, "finished_models": set(), "usable_models": set(),
-            "retries": 0, "valid": 0, "invalid": 0,
-        }
-        progress_started_at = time.monotonic()
-        summary_box = ttk.LabelFrame(shell, text="Run summary", padding=(10, 6))
-        summary_box.pack(fill="x", pady=(0, 8))
-        summary_box.columnconfigure(1, weight=1)
-        progress_summary_vars.clear()
-        for row, (label, value) in enumerate(progress_summary_rows(progress_metrics).items()):
-            ttk.Label(summary_box, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=1)
-            variable = tk.StringVar(value=value)
-            progress_summary_vars[label] = variable
-            ttk.Label(summary_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
-        resource_box = ttk.LabelFrame(shell, text="Resources", padding=(10, 6))
-        resource_box.pack(fill="x", pady=(0, 8))
-        resource_box.columnconfigure(1, weight=1)
-        progress_resource_vars.clear()
-        resource_labels = ["CPU", "Process RAM", "System RAM", "GPU"]
-        if has_discrete_vram[0]:
-            resource_labels.append("VRAM")
-        for row, label in enumerate(resource_labels):
-            ttk.Label(resource_box, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=1)
-            variable = tk.StringVar(value="Starting…")
-            progress_resource_vars[label] = variable
-            ttk.Label(resource_box, textvariable=variable).grid(row=row, column=1, sticky="w", pady=1)
-        progress_remaining_var.set("Remaining time: calibrating")
-        ttk.Label(shell, textvariable=progress_remaining_var).pack(anchor="w", pady=(0, 8))
-        status_shell = ttk.Frame(shell)
-        status_shell.pack(fill="both", expand=True)
-        status_canvas = tk.Canvas(status_shell, highlightthickness=0)
-        status_scrollbar = ttk.Scrollbar(status_shell, orient="vertical", command=status_canvas.yview)
-        status_list = ttk.Frame(status_canvas)
-        status_window = status_canvas.create_window((0, 0), window=status_list, anchor="nw")
-        status_list.bind(
-            "<Configure>", lambda _event: status_canvas.configure(scrollregion=status_canvas.bbox("all")),
-        )
-        status_canvas.bind(
-            "<Configure>", lambda event: status_canvas.itemconfigure(status_window, width=event.width),
-        )
-        status_canvas.configure(yscrollcommand=status_scrollbar.set)
-        status_canvas.pack(side="left", fill="both", expand=True)
-        status_scrollbar.pack(side="right", fill="y")
-
-        def scroll_status(event):
-            units = mousewheel_scroll_units(
-                delta=getattr(event, "delta", 0), button=getattr(event, "num", 0),
-                platform_name=root.tk.call("tk", "windowingsystem"),
-            )
-            if units:
-                status_canvas.yview_scroll(units, "units")
-            return "break"
-
-        progress_window.bind("<MouseWheel>", scroll_status)
-        progress_window.bind("<Button-4>", scroll_status)
-        progress_window.bind("<Button-5>", scroll_status)
-        # One full section set per engine, in the order the run executes them.
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
-        progress_engines[:] = run_engines
-        for engine_index, engine_name in enumerate(run_engines):
-            skipped_here = set(engine_incompatible_tests(tests, engine_name))
-            for stage in (key for key in STAGE_ORDER if key in tests):
-                # Images don't depend on the engine — benchmark.py runs them on the first pass only.
-                if stage == "img" and engine_index > 0:
-                    continue
-                # llamabench/vllmbench shell out to one specific engine's own binary.
-                if stage in skipped_here:
-                    continue
-                row = ttk.Frame(status_list)
-                row.pack(fill="x", pady=(10, 2))
-                heading = labels.get(stage, stage)
-                if len(run_engines) > 1:
-                    heading = f"{heading} — {engine_name}"
-                ttk.Label(row, text=heading, font=("TkDefaultFont", 10, "bold")).pack(
-                    side="left", anchor="w",
-                )
-                stage_progress_vars[(engine_name, stage)] = tk.StringVar(value="○ Queued")
-                ttk.Label(row, textvariable=stage_progress_vars[(engine_name, stage)]).pack(
-                    side="right", anchor="e")
-                if stage == "emb":
-                    stage_models = [entry for entry in selected if entry.kind == "embedding"]
-                elif stage == "img":
-                    stage_models = [entry for entry in selected if entry.kind == "image"]
-                elif stage in LLM_BACKED_TESTS:
-                    stage_models = [entry for entry in selected if entry.kind in {"llm", "custom"}]
-                else:
-                    stage_models = []
-                for entry in stage_models:
-                    model_row = ttk.Frame(status_list)
-                    model_row.pack(fill="x", padx=(14, 0), pady=2)
-                    ttk.Label(model_row, text=entry.label).pack(
-                        side="left", anchor="w", fill="x", expand=True,
-                    )
-                    variable = tk.StringVar(value="○ Queued")
-                    model_progress_vars[(engine_name, stage, entry.value)] = variable
-                    ttk.Label(model_row, textvariable=variable).pack(side="right", anchor="e")
-        progress_window.lift()
+        progress_screen.show(tests, entries, run_engines, show_vram=has_discrete_vram[0])
+        progress_metrics = progress_screen.metrics
+        progress_started_at = progress_screen.started_at
 
     def update_progress(event):
         nonlocal progress_metrics
-        progress_metrics = update_progress_metrics(progress_metrics, event)
-        completed = len(progress_metrics["finished_models"])
-        for label, value in progress_summary_rows(progress_metrics).items():
-            progress_summary_vars[label].set(value)
-        if event["kind"] == "measurement":
-            return
-        engine_name = progress_event_engine(event, progress_engines)
-        if engine_name is None:
-            return
-        if event["kind"] == "model":
-            variable = model_progress_vars.get(
-                (engine_name, event["stage"], progress_model_identity(event)),
-            )
-        else:
-            variable = stage_progress_vars.get((engine_name, event["stage"]))
-        if variable is None:
-            return
-        variable.set({
-            "running": "▶ Running", "complete": "✓ Complete",
-            "skipped": "— Skipped",
-            "failed": "✕ Failed", "interrupted": "■ Interrupted",
-        }[event["status"]])
-        if event["kind"] == "stage" and event["status"] in {"complete", "failed", "interrupted"}:
-            for (row_engine, stage, _), model_var in model_progress_vars.items():
-                if (row_engine == engine_name and stage == event["stage"]
-                        and model_var.get() in {"○ Queued", "▶ Running"}):
-                    model_var.set("— Not run" if event["status"] != "interrupted" else "■ Interrupted")
+        progress_screen.update(event)
+        progress_metrics = progress_screen.metrics
 
     def append_log(text):
         log_text.configure(state="normal")
@@ -2337,12 +2191,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             run_status.set(format_run_outcome(exit_code))
         active_process_kind = None
         refresh_history()
-        for variable in stage_progress_vars.values():
-            if variable.get() in {"○ Queued", "▶ Running"}:
-                variable.set("— Not run" if exit_code else "✓ Complete")
-        for variable in model_progress_vars.values():
-            if variable.get() in {"○ Queued", "▶ Running"}:
-                variable.set("— Not run")
+        progress_screen.finish_pending(exit_code)
 
     def poll_output():
         nonlocal process_exit_observed_at, process_output_activity_at
@@ -2406,9 +2255,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 gpu_sample["usage"], gpu_sample["memory"], gpu_sample["vram"],
                 has_discrete_vram[0],
             )
-            for label, value in resources.items():
-                progress_resource_vars[label].set(value)
-            progress_remaining_var.set(f"Remaining time: {estimate}")
+            progress_screen.set_resources(resources, estimate)
         root.after(100, poll_output)
 
     def read_process(proc):
