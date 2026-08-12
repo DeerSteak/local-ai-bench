@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.app.model_import_dialog import import_destination, import_variants
+from scripts.app import model_import_dialog
+from scripts.app.model_import_dialog import (
+    import_destination, import_validation_reason, import_variants,
+    supported_import_engines,
+)
 from scripts.runtime import config
 from scripts.setup.model_import import (
     ImportVariant, default_custom_tag, inspect_repository, normalize_hf_repo,
@@ -193,3 +197,60 @@ def test_import_variants_requires_an_explicit_supported_engine():
     assert import_variants(inspection, "llamacpp") == inspection.llama_variants
     assert import_variants(inspection, "vllm") == (inspection.vllm_variant,)
     assert import_variants(inspection, "") == ()
+
+
+def test_supported_import_engines_respects_artifacts_and_installation():
+    inspection = inspect_repository("owner/model", api=FakeApi({
+        "config.json": 1, "model.safetensors": 10, "model.gguf": 11,
+    }))
+    assert supported_import_engines(inspection, ["vllm", "llamacpp"]) == ["llamacpp", "vllm"]
+    assert supported_import_engines(inspection, ["vllm"]) == ["vllm"]
+
+
+def test_import_validation_rejects_stale_inspection_before_selection(tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 11}))
+    reason = import_validation_reason(
+        busy=False, inspection=inspection, inspected_request=("owner/model", "old"),
+        current_request=("owner/model", "main"), engine="", engines=["llamacpp"],
+        variant=None, tag="", label="", acknowledged=False,
+    )
+    assert reason == "Repository or revision changed; inspect it again."
+
+
+def test_import_validation_accepts_available_selection(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 11}))
+    monkeypatch.setattr(model_import_dialog, "custom_model", lambda *_args: None)
+    monkeypatch.setattr(model_import_dialog, "import_destination", lambda *_args: tmp_path)
+    monkeypatch.setattr(model_import_dialog, "enough_disk_space", lambda *_args: True)
+    reason = import_validation_reason(
+        busy=False, inspection=inspection,
+        inspected_request=("owner/model", inspection.revision),
+        current_request=("owner/model", inspection.revision), engine="llamacpp",
+        engines=["llamacpp"], variant=inspection.llama_variants[0], tag="custom-model",
+        label="Custom Model", acknowledged=True,
+    )
+    assert reason == ""
+
+
+@pytest.mark.parametrize(("changes", "expected"), [
+    ({"busy": True}, "Operation in progress."),
+    ({"inspection": None}, "Inspect a repository before importing."),
+    ({"engine": "vllm"}, "Select an available engine and artifact variant."),
+    ({"tag": "bad/tag"}, "Tag must use only letters, numbers, dots, underscores, or hyphens."),
+    ({"label": " "}, "Display name is required."),
+    ({"acknowledged": False}, "Acknowledge that runtime compatibility is unverified."),
+])
+def test_import_validation_rejects_invalid_states(monkeypatch, tmp_path, changes, expected):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 11}))
+    monkeypatch.setattr(model_import_dialog, "custom_model", lambda *_args: None)
+    monkeypatch.setattr(model_import_dialog, "import_destination", lambda *_args: tmp_path)
+    monkeypatch.setattr(model_import_dialog, "enough_disk_space", lambda *_args: True)
+    values = {
+        "busy": False, "inspection": inspection,
+        "inspected_request": ("owner/model", inspection.revision),
+        "current_request": ("owner/model", inspection.revision), "engine": "llamacpp",
+        "engines": ["llamacpp"], "variant": inspection.llama_variants[0],
+        "tag": "custom-model", "label": "Custom Model", "acknowledged": True,
+    }
+    values.update(changes)
+    assert import_validation_reason(**values) == expected
