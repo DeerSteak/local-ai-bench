@@ -26,3 +26,27 @@ def test_score_question_bank_handles_an_empty_bank():
     result = score_question_bank([], {}, lambda _question, _given: (False, False, {}))
     assert result["accuracy_pct"] == 0.0
     assert result["by_category"] == {}
+
+
+def test_score_question_bank_preserves_incorrect_entry_shape():
+    question = {"id": "q2", "category": "science", "answer": "A"}
+    entry = {"id": "q2", "category": "science", "given": "C", "expected": "A"}
+
+    result = score_question_bank(
+        [question], {"q2": "C"}, lambda _question, _given: (True, False, entry),
+    )
+
+    assert result["incorrect"] == [entry]
+    assert "correct" not in result["incorrect"][0]
+    assert result["all"] == [{**entry, "correct": False}]
+
+
+def test_score_question_bank_does_not_mutate_scorer_entry():
+    entry = {"id": "q1", "category": "science"}
+
+    score_question_bank(
+        [{"id": "q1", "category": "science"}], {"q1": "A"},
+        lambda _question, _given: (True, True, entry),
+    )
+
+    assert entry == {"id": "q1", "category": "science"}
