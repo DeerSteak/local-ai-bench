@@ -1,0 +1,15 @@
+# Default ownership keeps every reviewed path covered.
+* @DeerSteak
+
+# Release, automation, and security controls require maintainer review.
+/.github/ @DeerSteak
+/.githooks/ @DeerSteak
+/scripts/release/ @DeerSteak
+/docs/security-and-privacy.md @DeerSteak
+/docs/release-policy.md @DeerSteak
+/SECURITY.md @DeerSteak
+
+# Methodology and bundled question banks are compatibility boundaries.
+/scripts/workloads/ @DeerSteak
+/docs/methodology-contract.md @DeerSteak
+/docs/workloads.md @DeerSteak
