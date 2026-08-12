@@ -36,7 +36,7 @@ The wrapper installs or updates [tests/requirements.txt](../tests/requirements.t
 
 The scripts tree is a package rather than a flat import directory. A structural test parses every Python module and rejects bare imports of another project module, preventing delayed GUI/setup paths from passing unit collection and then failing only when launched through `python -m`.
 
-Tk controller tests use fake widgets and variables on every platform. Screen-construction and full-application smoke tests use real Tk, skip when no display is available locally, and run under Xvfb in the Linux `Tk GUI smoke` CI workflow.
+Tk controller tests use fake widgets and variables on every platform. Screen-construction and full-application smoke tests use real Tk, skip when no display is available locally, and run under Xvfb in the Linux `Python tests (Tk/Xvfb)` CI job.
 
 [tests/conftest.py](../tests/conftest.py) prevents llama.cpp discovery tests from reading the machine's real saved setup configuration, so running setup cannot change mocked discovery outcomes. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
@@ -180,6 +180,8 @@ npx tsc --noEmit
 ```
 
 Run the dashboard commands whenever `dashboard/src` changed. For a Python-only change, the pytest suite is sufficient unless the results schema or documented dashboard behavior also changed.
+
+Pull requests targeting `develop`, `release/**`, or `main` run the full Python suite with Tk enabled under Xvfb, Pyright, and the dashboard's Vitest, ESLint, TypeScript, and `any`-ratchet checks. The jobs have stable names so repository rules can require each check independently.
 
 ---
 

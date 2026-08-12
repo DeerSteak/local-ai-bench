@@ -1,0 +1,78 @@
+name: Pull request CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - "release/**"
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python tests (Tk/Xvfb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            tests/requirements.txt
+      - name: Install Tk and virtual display
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+      - name: Install Python dependencies
+        run: |
+          python -m venv bench-env
+          bench-env/bin/pip install -r requirements.txt -r tests/requirements.txt
+      - name: Run Python suite with Tk enabled
+        run: xvfb-run -a bash tests.sh
+
+  python-types:
+    name: Pyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            tests/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt -r tests/requirements.txt
+      - name: Run Pyright
+        run: npx --yes pyright@latest
+
+  dashboard:
+    name: Dashboard tests, lint, and types
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        run: npm ci
+      - name: Run dashboard tests
+        run: npm test
+      - name: Run dashboard lint
+        run: npm run lint
+      - name: Run dashboard type check
+        run: npx tsc --noEmit
+      - name: Enforce dashboard any ratchet
+        run: node check_any_ratchet.mjs

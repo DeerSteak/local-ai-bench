@@ -83,7 +83,7 @@ npm run lint
 npx tsc --noEmit
 ```
 
-Tkinter controller tests run without a display. Real screen-construction and application-smoke tests run locally when a display is available and under Xvfb in Linux CI. Changes to GUI composition should keep the `Tk GUI smoke` workflow green.
+Tkinter controller tests run without a display. Real screen-construction and application-smoke tests run locally when a display is available and under Xvfb in Linux CI. Pull requests targeting `develop`, `release/**`, or `main` run the Python suite, Pyright, and all dashboard gates; keep every `Pull request CI` job green.
 
 Follow the stronger release gates in [Release Policy](release-policy.md) when preparing a stable version. Passing the ordinary unit suite alone is not stable-release approval.
 
@@ -163,14 +163,14 @@ Use separate rulesets because normal integration and release publication need di
 
 - Block deletion and force pushes.
 - Require a pull request, one approval, Code Owner review, approval after the latest push, and resolved review threads.
-- Require the Python suite, Pyright, Tk GUI smoke, release/security gates, and applicable dashboard checks.
+- Require `Python tests (Tk/Xvfb)`, `Pyright`, `Dashboard tests, lint, and types`, release/security gates, and any future applicable checks.
 - Allow merge commits for `release/X.Y` into `main` and for release reconciliation.
 - Restrict bypass to explicit repository administrators for emergencies, with the bypass reason recorded.
 
 ### `develop`
 
 - Block deletion and force pushes.
-- Require pull requests and the standard Python, Pyright, Tk, and applicable dashboard checks.
+- Require pull requests and the `Python tests (Tk/Xvfb)`, `Pyright`, and `Dashboard tests, lint, and types` checks.
 - Require review-thread resolution; require an approval when more than one contributor is active.
 - Allow squash merges for ordinary `feature/*`, `fix/*`, and `chore/*` pull requests.
 
