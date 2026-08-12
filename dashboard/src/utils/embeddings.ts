@@ -1,6 +1,6 @@
 import { FALLBACK_COLORS, EMBED_MODEL_ORDER, EMBED_BAR_COLORS } from "../constants";
 import { embedModelLabel, entriesOf, lookup } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { BarConfig, ChartRow, ResultsFile } from "../types";
 
 // Return all embedding model keys from the loaded files, in canonical order
 export function getAllEmbedModels(files: ResultsFile[]): string[] {
@@ -34,7 +34,7 @@ export function buildEmbedGroupedBarData(files: ResultsFile[], enabledEmbedModel
     .filter(row => allModels.some(m => row[m] != null));
 }
 
-export function buildEmbedGroupedBarConfigs(files: ResultsFile[], enabledEmbedModels: Set<string>) {
+export function buildEmbedGroupedBarConfigs(files: ResultsFile[], enabledEmbedModels: Set<string>): BarConfig[] {
   const allModels = getAllEmbedModels(files).filter(m => enabledEmbedModels.has(m));
   return allModels.map((m, i) => ({
     dataKey: m,
@@ -44,7 +44,7 @@ export function buildEmbedGroupedBarConfigs(files: ResultsFile[], enabledEmbedMo
 }
 
 // Embeddings bar chart by system: rows = models, single throughput value, for one file
-export function buildEmbedBarDataByModel(file: ResultsFile, models: string[]) {
+export function buildEmbedBarDataByModel(file: ResultsFile, models: string[]): { modelLabel: string, throughput?: number }[] {
   return models
     .map(model => {
       const s = file.data.embeddings?.[model];
@@ -55,12 +55,12 @@ export function buildEmbedBarDataByModel(file: ResultsFile, models: string[]) {
     .filter(row => row.throughput != null);
 }
 
-export function buildEmbedBarConfigsByModel(file: ResultsFile, models: string[]) {
+export function buildEmbedBarConfigsByModel(file: ResultsFile, models: string[]): BarConfig[] {
   const hasAny = models.some(model => file.data.embeddings?.[model] && !file.data.embeddings[model].skipped);
   return hasAny ? [{ dataKey: "throughput", name: "Chunks/sec", fill: FALLBACK_COLORS[0] }] : [];
 }
 
-export function flattenEmbedData(files: ResultsFile[]) {
+export function flattenEmbedData(files: ResultsFile[]): ChartRow[] {
   return files.flatMap(f =>
     entriesOf(f.data.embeddings).map(([model, s]) => {
       const modelLabel = s.label || model;
