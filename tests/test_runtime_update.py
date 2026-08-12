@@ -12,8 +12,8 @@ from scripts.setup.runtime_update import (
     fetch_llamacpp_releases, homebrew_llamacpp_prefix, llamacpp_clone_command,
     llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
-    RuntimeUpdateControl, select_windows_llamacpp_assets, update_homebrew_llamacpp,
-    update_windows_llamacpp,
+    RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
+    update_homebrew_llamacpp, update_macos_llamacpp, update_windows_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
 )
 from scripts.setup.vllm_install import VllmSupport
@@ -366,6 +366,46 @@ def test_select_windows_assets_prefers_compatible_cuda_pair():
         "llama-b1-bin-win-cuda-12.4-x64.zip",
         "cudart-llama-bin-win-cuda-12.4-x64.zip",
     ]
+
+
+def test_select_macos_asset_matches_machine_architecture():
+    assets = [
+        {"name": "llama-b10362-bin-macos-arm64.tar.gz"},
+        {"name": "llama-b10362-bin-macos-x64.tar.gz"},
+    ]
+    release = {"assets": assets}
+    assert select_macos_llamacpp_asset(release, "arm64") == assets[0]
+    assert select_macos_llamacpp_asset(release, "x86_64") == assets[1]
+    assert select_macos_llamacpp_asset(release, "ppc64") is None
+
+
+def test_update_macos_llamacpp_installs_and_validates_managed_release(tmp_path):
+    target = tmp_path / "llama.cpp"
+    asset = {
+        "name": "llama-b10362-bin-macos-arm64.tar.gz",
+        "browser_download_url": "https://x/release.tar.gz", "size": 10,
+    }
+
+    def downloader(_url, destination, **_kwargs):
+        destination.touch()
+        return destination
+
+    def extractor(_archive, destination):
+        for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+            tool = destination / "bin" / name
+            tool.parent.mkdir(parents=True, exist_ok=True)
+            tool.touch()
+
+    result = update_macos_llamacpp(
+        target, "arm64", release_fetcher=lambda: {"assets": [asset]},
+        downloader=downloader, extractor=extractor,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout="version: 10362", stderr="",
+        ), token_factory=lambda: "test",
+    )
+
+    assert result.success and result.version == "10362"
+    assert (target / "bin" / "llama-server").is_file()
 
 
 def test_update_windows_llamacpp_stages_validates_and_swaps(tmp_path):

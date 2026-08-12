@@ -52,6 +52,16 @@ def test_project_binary_is_a_fallback_when_system_tool_is_missing(tmp_path):
     ) == str(binary)
 
 
+def test_macos_managed_binary_wins_over_homebrew_or_path(tmp_path):
+    binary = tmp_path / "managed" / "bin" / "llama-server"
+    binary.parent.mkdir(parents=True)
+    binary.touch()
+    assert find_llamacpp_tool(
+        "llama-server", vendored_dir=tmp_path / "managed", platform_name="Darwin",
+        which_fn=lambda _: "/opt/homebrew/bin/llama-server",
+    ) == str(binary)
+
+
 def test_source_directory_is_not_mistaken_for_a_binary(tmp_path):
     (tmp_path / "tools" / "llama-batched-bench").mkdir(parents=True)
     assert find_llamacpp_tool(

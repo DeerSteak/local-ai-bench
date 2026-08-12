@@ -746,7 +746,10 @@ section("llama.cpp")
 
 LLAMACPP_BIN = find_llamacpp_binary()
 llamacpp_found = LLAMACPP_BIN is not None
-needs_llamacpp_install = not llamacpp_found
+managed_mac_runtime = os_name == "Darwin" and LLAMACPP_DIR.is_dir() and any(
+    path.is_file() for path in LLAMACPP_DIR.rglob("llama-server")
+)
+needs_llamacpp_install = not llamacpp_found or (os_name == "Darwin" and not managed_mac_runtime)
 if llamacpp_found:
     ok(f"llama-server found: {LLAMACPP_BIN}")
 else:

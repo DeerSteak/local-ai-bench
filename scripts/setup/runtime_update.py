@@ -217,7 +217,7 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
 def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
     for name in LLAMACPP_TARGETS:
-        matches = [path for path in (source_dir / "build").rglob(name) if path.is_file()]
+        matches = [path for path in source_dir.rglob(name) if path.is_file()]
         if not matches:
             return RuntimeUpdateResult(False, f"Staged llama.cpp build is missing {name}.")
         tools[name] = matches[0]
