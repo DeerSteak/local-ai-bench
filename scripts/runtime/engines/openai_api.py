@@ -14,7 +14,8 @@ def urlopen_with_detail(req, timeout, server_label: str):
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         try:
-            detail = json.loads(body).get("error", body)
+            parsed = json.loads(body)
+            detail = parsed.get("error", body) if isinstance(parsed, dict) else body
         except json.JSONDecodeError:
             detail = body
         raise RuntimeError(f"{server_label} returned HTTP {e.code}: {str(detail)[:500]}") from None
