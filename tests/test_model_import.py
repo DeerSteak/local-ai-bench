@@ -254,3 +254,42 @@ def test_import_validation_rejects_invalid_states(monkeypatch, tmp_path, changes
     }
     values.update(changes)
     assert import_validation_reason(**values) == expected
+
+
+def test_import_validation_rejects_catalog_and_installed_custom_tags(monkeypatch, tmp_path):
+    from scripts.workloads.models import EMBED_MODELS
+
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 11}))
+    values = {
+        "busy": False, "inspection": inspection,
+        "inspected_request": ("owner/model", inspection.revision),
+        "current_request": ("owner/model", inspection.revision), "engine": "llamacpp",
+        "engines": ["llamacpp"], "variant": inspection.llama_variants[0],
+        "label": "Custom Model", "acknowledged": True,
+    }
+    assert import_validation_reason(tag=EMBED_MODELS[0]["tag"], **values) == (
+        "That tag belongs to a catalog model."
+    )
+    monkeypatch.setattr(model_import_dialog, "custom_model", lambda *_args: {"tag": "custom"})
+    monkeypatch.setattr(model_import_dialog, "custom_model_artifacts_present", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(model_import_dialog, "import_destination", lambda *_args: tmp_path)
+    assert import_validation_reason(tag="custom", **values) == (
+        "That custom tag is already registered for this engine."
+    )
+
+
+def test_import_validation_rejects_missing_destination_and_disk_space(monkeypatch, tmp_path):
+    inspection = inspect_repository("owner/model", api=FakeApi({"model.gguf": 11}))
+    values = {
+        "busy": False, "inspection": inspection,
+        "inspected_request": ("owner/model", inspection.revision),
+        "current_request": ("owner/model", inspection.revision), "engine": "llamacpp",
+        "engines": ["llamacpp"], "variant": inspection.llama_variants[0],
+        "tag": "custom", "label": "Custom Model", "acknowledged": True,
+    }
+    monkeypatch.setattr(model_import_dialog, "custom_model", lambda *_args: None)
+    monkeypatch.setattr(model_import_dialog, "import_destination", lambda *_args: None)
+    assert import_validation_reason(**values) == "No import destination is available for this engine."
+    monkeypatch.setattr(model_import_dialog, "import_destination", lambda *_args: tmp_path)
+    monkeypatch.setattr(model_import_dialog, "enough_disk_space", lambda *_args: False)
+    assert import_validation_reason(**values) == "Not enough free disk space for this variant."

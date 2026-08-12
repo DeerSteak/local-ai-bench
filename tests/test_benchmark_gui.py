@@ -242,6 +242,17 @@ def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path)
     assert "Select at least one llama-bench generation size." in preparation.errors
 
 
+def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", False)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert any("model" in error.lower() for error in preparation.errors)
+
+
 def test_resolve_engine_selection_restores_default_and_gates_models():
     models = [
         MenuEntry("shared", "Shared", "llm", "LLM", True),
