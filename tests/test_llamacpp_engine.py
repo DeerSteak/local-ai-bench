@@ -68,12 +68,12 @@ def test_binary_path_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
 
-    real_exists = llamacpp_module.Path.exists
+    real_is_file = llamacpp_module.Path.is_file
 
-    def fake_exists(self):
-        return str(self) == "/opt/homebrew/bin/llama-server" or real_exists(self)
+    def fake_is_file(self):
+        return str(self) == "/opt/homebrew/bin/llama-server" or real_is_file(self)
 
-    monkeypatch.setattr(llamacpp_module.Path, "exists", fake_exists)
+    monkeypatch.setattr(llamacpp_module.Path, "is_file", fake_is_file)
     assert LlamaCppEngine._binary_path() == "/opt/homebrew/bin/llama-server"
 
 

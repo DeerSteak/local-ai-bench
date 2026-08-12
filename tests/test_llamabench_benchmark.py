@@ -53,12 +53,12 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
 
-    real_exists = Path.exists
+    real_is_file = Path.is_file
 
-    def fake_exists(self):
-        return str(self) == "/opt/homebrew/bin/llama-bench" or real_exists(self)
+    def fake_is_file(self):
+        return str(self) == "/opt/homebrew/bin/llama-bench" or real_is_file(self)
 
-    monkeypatch.setattr(Path, "exists", fake_exists)
+    monkeypatch.setattr(Path, "is_file", fake_is_file)
     assert LlamaBenchBenchmark.find_binary() == "/opt/homebrew/bin/llama-bench"
 
 
