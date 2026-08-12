@@ -25,6 +25,7 @@ from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
+from scripts.model_identity import model_tag_slug
 from scripts.runtime.shared import (
     EngineLoopDetected,
     EngineTimeout,
@@ -94,7 +95,7 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _slug(tag: str) -> str:
         """Filesystem-safe per-tag directory name, e.g. "x:3b" -> "x_3b"."""
-        return tag.replace(":", "_").replace("/", "_")
+        return model_tag_slug(tag)
 
     @staticmethod
     def _catalog_entry(tag: str) -> dict | None:
