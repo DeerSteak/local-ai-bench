@@ -29,13 +29,13 @@ def test_runtime_update_control_streams_utf8_output(capsys):
     control = RuntimeUpdateControl(output.append)
 
     result = control.run([
-        sys.executable, "-c", "print('Downloading â€” 50% âœ“')",
+        sys.executable, "-c", "print('Downloading — 50% ✓')",
     ])
 
     assert result.returncode == 0
-    assert result.stdout == "Downloading â€” 50% âœ“\n"
-    assert output == ["Downloading â€” 50% âœ“\n"]
-    assert capsys.readouterr().out == "Downloading â€” 50% âœ“\n"
+    assert result.stdout == "Downloading — 50% ✓\n"
+    assert output == ["Downloading — 50% ✓\n"]
+    assert capsys.readouterr().out == "Downloading — 50% ✓\n"
 
 
 def test_vllm_executable_uses_platform_venv_layout():

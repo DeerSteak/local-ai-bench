@@ -281,7 +281,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             return
         state["loading"] = True
         clear_output()
-        append_output(f"Starting {label} updateâ€¦\n")
+        append_output(f"Starting {label} update…\n")
         control = RuntimeUpdateControl(append_output)
         active_control[0] = control
         refresh_button.configure(state="disabled")
@@ -318,7 +318,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             return
         state["loading"] = True
         clear_output()
-        append_output(f"Starting verification for {model.tag}â€¦\n")
+        append_output(f"Starting verification for {model.tag}…\n")
         control = RuntimeUpdateControl(append_output)
         active_control[0] = control
         refresh_button.configure(state="disabled")
