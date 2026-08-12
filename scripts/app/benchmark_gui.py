@@ -98,6 +98,8 @@ from scripts.app.recovery_actions import (
     fork_executor_command, fork_review_report, format_recovery_inspection,
     recovery_executor_command, recovery_progress_entries, retry_executor_command,
 )
+from scripts.app.benchmark_gui_screens.history import build_history_screen
+from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 
 
 GPU_SPLIT_MODE_LABELS = {
@@ -770,12 +772,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
     config_tab = ttk.Frame(notebook, padding=18)
-    log_tab = ttk.Frame(notebook, padding=18)
-    history_tab = ttk.Frame(notebook, padding=18)
-    engines_tab = ttk.Frame(notebook, padding=18)
     notebook.add(config_tab, text="Configuration")
-    notebook.add(log_tab, text="Run Log")
-    notebook.add(history_tab, text="Result History")
+    run_log_screen = build_run_log_screen(
+        notebook, tk=tk, ttk=ttk, configuration_frame=config_tab,
+    )
+    history_screen = build_history_screen(notebook, tk=tk, ttk=ttk)
+    log_tab = run_log_screen.frame
+    history_tab = history_screen.frame
+    engines_tab = ttk.Frame(notebook, padding=18)
     notebook.add(engines_tab, text="Engine Management")
     engine_management = build_engine_management_tab(
         parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
@@ -1368,30 +1372,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     start_button.pack(side="right")
     ttk.Button(footer, text="Reset All Options", command=reset_all).pack(side="right", padx=(0, 10))
 
-    log_tab.columnconfigure(0, weight=1)
-    log_tab.rowconfigure(2, weight=1)
-    ttk.Label(log_tab, text="Benchmark run", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-    run_status = tk.StringVar(value="No benchmark is running.")
-    ttk.Label(log_tab, textvariable=run_status).grid(row=1, column=0, sticky="w", pady=(2, 10))
-    log_text = tk.Text(log_tab, wrap="word", state="disabled", font=("TkFixedFont", 10))
-    log_scroll = ttk.Scrollbar(log_tab, orient="vertical", command=log_text.yview)
-    log_text.configure(yscrollcommand=log_scroll.set)
-    log_text.grid(row=2, column=0, sticky="nsew")
-    log_scroll.grid(row=2, column=1, sticky="ns")
-    log_actions = ttk.Frame(log_tab)
-    log_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-    log_run_actions = ttk.Frame(log_actions)
-    log_run_actions.pack(fill="x")
-    log_result_actions = ttk.Frame(log_actions)
-    log_result_actions.pack(fill="x", pady=(8, 0))
-    stop_button = ttk.Button(log_run_actions, text="Stop Benchmark", state="disabled")
-    stop_button.pack(side="right")
-    pause_button = ttk.Button(log_run_actions, text="Pause", state="disabled")
-    pause_button.pack(side="right", padx=(0, 8))
-    ttk.Button(log_run_actions, text="Back to Configuration", command=lambda: notebook.select(config_tab)).pack(side="left")
+    run_status = run_log_screen.status
+    log_text = run_log_screen.text
+    log_result_actions = run_log_screen.result_actions
+    stop_button = run_log_screen.stop_button
+    pause_button = run_log_screen.pause_button
 
     def current_log() -> str:
-        return log_text.get("1.0", "end-1c")
+        return run_log_screen.current_log()
 
     def export_log():
         log = current_log()
@@ -1624,53 +1612,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(log_result_actions, text="Create Report", command=create_report).pack(side="left", padx=(8, 0))
     ttk.Button(log_result_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(8, 0))
 
-    history_tab.columnconfigure(0, weight=1)
-    history_tab.rowconfigure(2, weight=1)
-    ttk.Label(history_tab, text="Local result history", style="Title.TLabel").grid(
-        row=0, column=0, sticky="w",
-    )
-    history_filters = ttk.Frame(history_tab)
-    history_filters.grid(row=1, column=0, sticky="ew", pady=(8, 10))
-    history_query = tk.StringVar()
-    history_status_filter = tk.StringVar(value="all")
-    history_engine_filter = tk.StringVar(value="all")
-    ttk.Label(history_filters, text="Search").pack(side="left")
-    ttk.Entry(history_filters, textvariable=history_query, width=26).pack(side="left", padx=(8, 14))
-    ttk.Label(history_filters, text="Status").pack(side="left")
-    ttk.Combobox(
-        history_filters, state="readonly", width=12, textvariable=history_status_filter,
-        values=("all", "complete", "partial", "interrupted", "failed", "running", "legacy"),
-    ).pack(side="left", padx=(8, 14))
-    ttk.Label(history_filters, text="Engine").pack(side="left")
-    history_engine_combo = ttk.Combobox(
-        history_filters, state="readonly", width=14, textvariable=history_engine_filter,
-        values=("all",),
-    )
-    history_engine_combo.pack(side="left", padx=(8, 14))
-    history_tree = ttk.Treeview(
-        history_tab, columns=("date", "system", "status", "engine", "profile", "models"),
-        show="headings", selectmode="extended", style="History.Treeview",
-    )
-    history_tree.tag_configure("history_even", background="#ffffff")
-    history_tree.tag_configure("history_odd", background="#edf2f7")
-    for column, label, width in (
-        ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
-        ("engine", "Engine", 95), ("profile", "Profile", 110), ("models", "Models", 70),
-    ):
-        history_tree.heading(column, text=label)
-        history_tree.column(column, width=width, anchor="w")
-    history_scroll = ttk.Scrollbar(history_tab, orient="vertical", command=history_tree.yview)
-    history_tree.configure(yscrollcommand=history_scroll.set)
-    history_tree.grid(row=2, column=0, sticky="nsew")
-    history_scroll.grid(row=2, column=1, sticky="ns")
-    history_actions = ttk.Frame(history_tab)
-    history_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-    history_review_actions = ttk.Frame(history_actions)
-    history_review_actions.pack(fill="x")
-    history_recovery_actions = ttk.Frame(history_actions)
-    history_recovery_actions.pack(fill="x", pady=(8, 0))
-    history_message = tk.StringVar(value="History has not been loaded.")
-    ttk.Label(history_tab, textvariable=history_message).grid(row=4, column=0, sticky="w", pady=(8, 0))
+    history_query = history_screen.query
+    history_filters = history_screen.filters
+    history_status_filter = history_screen.status_filter
+    history_engine_filter = history_screen.engine_filter
+    history_engine_combo = history_screen.engine_combo
+    history_tree = history_screen.tree
+    history_review_actions = history_screen.review_actions
+    history_recovery_actions = history_screen.recovery_actions
+    history_message = history_screen.message
     history_entries = {"all": [], "visible": []}
     history_item_paths = {}
 
