@@ -55,17 +55,14 @@ from scripts.app.benchmark_project import (
     PROJECT_WORKFLOWS, build_project, load_project, project_frontend_state, save_project,
 )
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
-from scripts.results.decision_report import load_result, report_output_paths, write_html_report, write_pdf_report
 from scripts.runtime.engines import engine_names, get_engine, installed_engine_names
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.run_plan import load_run_plan
-from scripts.results.result_bundle import export_result_bundle, import_result_bundle, verify_result_bundle
 from scripts.results.result_history import (
     delete_multiple_run_artifacts, discover_results, existing_run_artifacts, filter_results,
     load_result as load_history_result,
 )
 from scripts.results.recovery_inspector import inspect_recovery
-from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.model_import_dialog import show_model_import_dialog
 from scripts.app.engine_management import collect_engine_management, vllm_update_support
@@ -76,7 +73,6 @@ from scripts.setup.runtime_update import (
 )
 from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.stage_registry import STAGE_ORDER
-from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
@@ -97,7 +93,9 @@ from scripts.app.recovery_actions import (
     recovery_executor_command, recovery_progress_entries, retry_executor_command,
 )
 from scripts.app.benchmark_gui_screens.history import build_history_screen
+from scripts.app.benchmark_gui_screens.history_actions import HistoryActions
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
+from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
 from scripts.app.benchmark_gui_screens.engines import build_engine_screen
 from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
 from scripts.app.benchmark_gui_screens.progress import ProgressScreen
@@ -763,465 +761,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     run_status = run_log_screen.status
     log_text = run_log_screen.text
-    log_result_actions = run_log_screen.result_actions
     stop_button = run_log_screen.stop_button
     pause_button = run_log_screen.pause_button
 
-    def current_log() -> str:
-        return run_log_screen.current_log()
-
-    def export_log():
-        log = current_log()
-        if not log:
-            messagebox.showinfo("Export Log", "The Run Log is empty.", parent=root)
-            return
-        known_results = result_paths_for_log(log, active_result_paths[:1])
-        suggested = run_log_path(known_results[0]) if known_results else config.RESULTS_DIR / "run_log.txt"
-        destination = filedialog.asksaveasfilename(
-            title="Export Run Log", initialdir=str(suggested.parent),
-            initialfile=suggested.name, defaultextension=".txt",
-            filetypes=[("Text log", "*.txt"), ("All files", "*")],
-        )
-        if not destination:
-            return
-        try:
-            Path(destination).write_text(log, encoding="utf-8")
-            messagebox.showinfo("Log exported", f"Run Log saved to:\n{destination}", parent=root)
-        except OSError as exc:
-            messagebox.showerror("Log export failed", str(exc), parent=root)
-
-    def open_results_folder():
-        output = option_vars["out"].get().strip()
-        folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
-        subprocess.Popen(open_path_command(folder, platform.system()))
-
-    def review_outbound_metadata(result, purpose, *, allow_aliases=True):
-        decision: dict[str, dict | None] = {"value": None}
-        dialog = tk.Toplevel(root)
-        dialog.title(f"Review metadata for {purpose}")
-        dialog.geometry("760x600")
-        dialog.transient(root)
-        dialog.grab_set()
-        ttk.Label(
-            dialog,
-            text="Review every identity field before it leaves this machine. Optional aliases replace exported names only; the source result is unchanged.",
-            wraplength=710,
-        ).pack(anchor="w", padx=16, pady=(16, 8))
-        preview_frame = ttk.Frame(dialog)
-        preview_frame.pack(fill="both", expand=True, padx=16)
-        text_widget = tk.Text(preview_frame, wrap="none", height=20)
-        scroll = ttk.Scrollbar(preview_frame, orient="vertical", command=text_widget.yview)
-        text_widget.configure(yscrollcommand=scroll.set)
-        text_widget.insert("1.0", "\n".join(
-            f"{label}: {value}" for label, value in outbound_metadata_preview(result)
-        ))
-        text_widget.configure(state="disabled")
-        text_widget.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="left", fill="y")
-        aliases = ttk.LabelFrame(dialog, text="Optional private aliases", padding=10)
-        if allow_aliases:
-            aliases.pack(fill="x", padx=16, pady=(10, 0))
-        system_alias = tk.StringVar()
-        hardware_alias = tk.StringVar()
-        ttk.Label(aliases, text="System name").grid(row=0, column=0, sticky="w")
-        ttk.Entry(aliases, textvariable=system_alias).grid(row=0, column=1, sticky="ew", padx=(10, 0))
-        ttk.Label(aliases, text="Hardware name").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(aliases, textvariable=hardware_alias).grid(
-            row=1, column=1, sticky="ew", padx=(10, 0), pady=(8, 0),
-        )
-        aliases.columnconfigure(1, weight=1)
-        actions = ttk.Frame(dialog)
-        actions.pack(fill="x", padx=16, pady=16)
-
-        def approve():
-            decision["value"] = {
-                "system_alias": system_alias.get().strip() or None,
-                "hardware_alias": hardware_alias.get().strip() or None,
-            }
-            dialog.destroy()
-
-        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(actions, text="Approve Export", command=approve).pack(side="right", padx=(0, 8))
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-        root.wait_window(dialog)
-        return decision["value"]
-
-    def export_bundle():
-        result = filedialog.askopenfilename(
-            title="Choose result JSON", initialdir=config.RESULTS_DIR,
-            filetypes=[("Benchmark result", "*.json")],
-        )
-        if not result:
-            return
-        try:
-            source = load_result(Path(result))
-            aliases = review_outbound_metadata(source, "result bundle")
-            if aliases is None:
-                return
-        except (OSError, ValueError, KeyError) as exc:
-            messagebox.showerror("Bundle export failed", str(exc), parent=root)
-            return
-        bundle = filedialog.asksaveasfilename(
-            title="Export verified result bundle", defaultextension=".labresult",
-            filetypes=[("Local AI Bench result", "*.labresult")],
-        )
-        if not bundle:
-            return
-        try:
-            export_result_bundle(Path(result), Path(bundle), **aliases)
-            messagebox.showinfo("Bundle exported", f"Verified bundle saved to:\n{bundle}", parent=root)
-        except (OSError, ValueError, KeyError) as exc:
-            messagebox.showerror("Bundle export failed", str(exc), parent=root)
-
-    def import_bundle():
-        bundle = filedialog.askopenfilename(
-            title="Import and verify result bundle",
-            filetypes=[("Local AI Bench result", "*.labresult")],
-        )
-        if not bundle:
-            return
-        destination = filedialog.asksaveasfilename(
-            title="Save verified result JSON", initialdir=config.RESULTS_DIR,
-            defaultextension=".json", filetypes=[("Benchmark result", "*.json")],
-        )
-        if not destination:
-            return
-        try:
-            verify_result_bundle(Path(bundle))
-            import_result_bundle(Path(bundle), Path(destination), Path(destination).with_suffix(""))
-            messagebox.showinfo(
-                "Bundle verified and imported", f"Verified result saved to:\n{destination}", parent=root,
-            )
-        except (OSError, ValueError, KeyError) as exc:
-            messagebox.showerror("Bundle verification failed", str(exc), parent=root)
-
-    def create_report():
-        result_path = filedialog.askopenfilename(
-            title="Choose result JSON", initialdir=config.RESULTS_DIR,
-            filetypes=[("Benchmark result", "*.json")],
-        )
-        if not result_path:
-            return
-        try:
-            source_result = load_result(Path(result_path))
-            aliases = review_outbound_metadata(source_result, "decision report")
-            if aliases is None:
-                return
-        except (OSError, ValueError, KeyError) as exc:
-            messagebox.showerror("Report creation failed", str(exc), parent=root)
-            return
-        destination = filedialog.asksaveasfilename(
-            title="Save decision report", initialdir=config.RESULTS_DIR,
-            defaultextension=".html", filetypes=[("Decision report", "*.html")],
-        )
-        if not destination:
-            return
-        try:
-            html_path, pdf_path = report_output_paths(Path(destination))
-            result = prepare_outbound_result(source_result, **aliases)
-            project_policy = (active_project["value"] or {}).get("acceptance_policy")
-            policy = project_policy
-            if project_policy is None and messagebox.askyesno(
-                    "Acceptance policy", "Apply an acceptance policy to this report?", parent=root):
-                policy_path = filedialog.askopenfilename(
-                    title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
-                )
-                if not policy_path:
-                    return
-                policy = load_policy(Path(policy_path))
-            write_html_report(result, html_path, policy)
-            write_pdf_report(result, pdf_path, policy)
-            messagebox.showinfo(
-                "Decision report created",
-                f"HTML and PDF reports saved to:\n{html_path.parent}", parent=root,
-            )
-        except (OSError, ValueError, KeyError) as exc:
-            messagebox.showerror("Report creation failed", str(exc), parent=root)
-
-    def confirm_support_preview(preview):
-        accepted = {"value": False}
-        dialog = tk.Toplevel(root)
-        dialog.title("Review redacted support bundle")
-        dialog.geometry("720x520")
-        dialog.transient(root)
-        dialog.grab_set()
-        ttk.Label(
-            dialog, text="Review every file and field before export. Raw results and logs are not included.",
-            wraplength=680,
-        ).pack(anchor="w", padx=16, pady=(16, 8))
-        text_widget = tk.Text(dialog, wrap="none", height=22)
-        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=text_widget.yview)
-        text_widget.configure(yscrollcommand=scrollbar.set)
-        text_widget.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=(0, 16))
-        scrollbar.pack(side="left", fill="y", pady=(0, 16))
-        details = "Files:\n" + "\n".join(f"  {name}" for name in preview["files"])
-        details += "\n\nFields:\n" + "\n".join(f"  {field}" for field in preview["fields"])
-        text_widget.insert("1.0", details)
-        text_widget.configure(state="disabled")
-        actions = ttk.Frame(dialog, padding=(8, 16))
-        actions.pack(side="right", fill="y")
-
-        def accept():
-            accepted["value"] = True
-            dialog.destroy()
-
-        ttk.Button(actions, text="Export", command=accept).pack(fill="x", pady=(0, 8))
-        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(fill="x")
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-        root.wait_window(dialog)
-        return accepted["value"]
-
-    def export_support():
-        result = filedialog.askopenfilename(
-            title="Choose result for support bundle", initialdir=config.RESULTS_DIR,
-            filetypes=[("Benchmark result", "*.json")],
-        )
-        if not result:
-            return
-        try:
-            preview = preview_support_bundle(Path(result))
-            if not confirm_support_preview(preview):
-                return
-            destination = filedialog.asksaveasfilename(
-                title="Export redacted support bundle", defaultextension=".labsupport",
-                filetypes=[("Local AI Bench support", "*.labsupport")],
-            )
-            if destination:
-                export_support_bundle(Path(result), Path(destination))
-                messagebox.showinfo("Support bundle exported", destination, parent=root)
-        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Support bundle failed", str(exc), parent=root)
-
-    ttk.Button(log_result_actions, text="Open Results Folder", command=open_results_folder).pack(
-        side="left",
+    run_log_actions = RunLogActions(
+        run_log_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
+        messagebox=messagebox, option_vars=option_vars, active_project=active_project,
+        active_result_paths=lambda: active_result_paths,
     )
-    ttk.Button(log_result_actions, text="Export Log", command=export_log).pack(side="left", padx=(8, 0))
-    ttk.Button(log_result_actions, text="Export Bundle", command=export_bundle).pack(side="left", padx=(8, 0))
-    ttk.Button(log_result_actions, text="Import / Verify", command=import_bundle).pack(side="left", padx=(8, 0))
-    ttk.Button(log_result_actions, text="Create Report", command=create_report).pack(side="left", padx=(8, 0))
-    ttk.Button(log_result_actions, text="Support Bundle", command=export_support).pack(side="left", padx=(8, 0))
-
-    history_query = history_screen.query
-    history_filters = history_screen.filters
-    history_status_filter = history_screen.status_filter
-    history_engine_filter = history_screen.engine_filter
-    history_engine_combo = history_screen.engine_combo
-    history_tree = history_screen.tree
-    history_review_actions = history_screen.review_actions
-    history_recovery_actions = history_screen.recovery_actions
-    history_message = history_screen.message
-    history_entries = {"all": [], "visible": []}
-    history_item_paths = {}
-
-    def selected_history_items():
-        return sorted(history_tree.selection(), key=history_tree.index)
-
-    def selected_history_path():
-        return selected_result_paths(selected_history_items(), history_item_paths, exact=1)[0]
-
-    def open_history_in_dashboard():
-        try:
-            paths = selected_result_paths(
-                selected_history_items(), history_item_paths, maximum=6,
-            )
-            command = dashboard_launcher_command(paths, platform.system())
-            subprocess.Popen(
-                command, cwd=config.SCRIPT_DIR,
-                creationflags=(getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-                               if platform.system() == "Windows" else 0))
-            history_message.set(
-                f"Opening {len(paths)} selected result{'s' if len(paths) != 1 else ''} in the dashboard."
-            )
-        except (OSError, ValueError) as exc:
-            messagebox.showerror("Dashboard launch failed", str(exc), parent=root)
-
-    def delete_history_selection():
-        if process is not None and process.poll() is None:
-            messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
-            return
-        try:
-            result_paths = selected_result_paths(selected_history_items(), history_item_paths)
-            artifact_sets = [
-                (result_path, existing_run_artifacts(result_path, config.RESULTS_DIR))
-                for result_path in result_paths
-            ]
-        except (OSError, ValueError) as exc:
-            messagebox.showerror("Delete run", str(exc), parent=root)
-            return
-        artifact_sets = [(path, artifacts) for path, artifacts in artifact_sets if artifacts]
-        if not artifact_sets:
-            refresh_history()
-            messagebox.showinfo("Delete run", "The selected run no longer exists.", parent=root)
-            return
-        artifact_count = sum(len(artifacts) for _, artifacts in artifact_sets)
-        names = "\n".join(
-            f"  • {result_path.name} ({len(artifacts)} artifact(s))"
-            for result_path, artifacts in artifact_sets
-        )
-        if not messagebox.askyesno(
-            "Delete benchmark runs",
-            f"Permanently delete {len(artifact_sets)} selected run(s) and all "
-            f"{artifact_count} artifact(s)?\n\n{names}\n\nThis cannot be undone. Separately "
-            "exported bundles and reports are not deleted.",
-            parent=root,
-        ):
-            return
-        removed, failures = delete_multiple_run_artifacts(
-            [path for path, _ in artifact_sets], config.RESULTS_DIR,
-        )
-        refresh_history()
-        if failures:
-            detail = "\n".join(f"{path.name}: {reason}" for path, reason in failures.items())
-            messagebox.showerror(
-                "Run deletion incomplete",
-                f"Deleted {len(removed)} artifact(s), but some could not be removed. "
-                f"The main result was retained when possible so deletion can be retried.\n\n{detail}",
-                parent=root,
-            )
-            return
-        history_message.set(
-            f"Deleted {len(artifact_sets)} run(s) and {len(removed)} artifact(s).",
-        )
-
-    def show_history_details(title, content):
-        dialog = tk.Toplevel(root)
-        dialog.title(title)
-        dialog.geometry("920x620")
-        dialog.transient(root)
-        text_widget = tk.Text(dialog, wrap="none", font=("TkFixedFont", 10))
-        y_scroll = ttk.Scrollbar(dialog, orient="vertical", command=text_widget.yview)
-        x_scroll = ttk.Scrollbar(dialog, orient="horizontal", command=text_widget.xview)
-        text_widget.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
-        text_widget.insert("1.0", content)
-        text_widget.configure(state="disabled")
-        text_widget.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=(12, 0))
-        y_scroll.grid(row=0, column=1, sticky="ns", pady=(12, 0))
-        x_scroll.grid(row=1, column=0, sticky="ew", padx=(12, 0))
-        ttk.Button(dialog, text="Close", command=dialog.destroy).grid(
-            row=2, column=0, columnspan=2, pady=12,
-        )
-        dialog.columnconfigure(0, weight=1)
-        dialog.rowconfigure(0, weight=1)
-
-    def apply_history_filters(*_):
-        visible = filter_results(
-            history_entries["all"], query=history_query.get(),
-            status=history_status_filter.get(), engine=history_engine_filter.get(),
-        )
-        history_entries["visible"] = visible
-        history_tree.delete(*history_tree.get_children())
-        history_item_paths.clear()
-        for index, entry in enumerate(visible):
-            item_id = history_tree.insert("", "end", values=(
-                entry["started_at"], entry["system"], entry["status"], entry["engine"],
-                entry["methodology_profile"], entry["models_with_results"],
-            ), tags=("history_even" if index % 2 == 0 else "history_odd",))
-            history_item_paths[item_id] = entry["path"]
-        history_message.set(f"Showing {len(visible)} of {len(history_entries['all'])} local results.")
-
-    def refresh_history():
-        entries, skipped = discover_results(config.RESULTS_DIR)
-        history_entries["all"] = entries
-        engines = sorted({entry["engine"] for entry in entries})
-        history_engine_combo.configure(values=("all", *engines))
-        if history_engine_filter.get() not in {"all", *engines}:
-            history_engine_filter.set("all")
-        apply_history_filters()
-        if skipped:
-            history_message.set(
-                f"Showing {len(history_entries['visible'])} results; ignored {len(skipped)} unreadable/non-result JSON files."
-            )
-
-    def evaluate_history_selection():
-        try:
-            result_path = selected_history_path()
-            policy_path = filedialog.askopenfilename(
-                title="Choose acceptance policy", filetypes=[("Acceptance policy", "*.json")],
-            )
-            if not policy_path:
-                return
-            evaluation = evaluate_policy(
-                load_history_result(result_path), load_policy(Path(policy_path)),
-            )
-            lines = [f"Decision: {evaluation['decision'].upper()}", ""]
-            lines.extend(
-                f"{item['id']}: {item['status']} (actual={item['actual']}, threshold={item['threshold']}, evidence={item['evidence']})"
-                for item in evaluation["rules"]
-            )
-            show_history_details("Acceptance evaluation", "\n".join(lines))
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Acceptance evaluation failed", str(exc), parent=root)
-
-    def export_history_diagnostic():
-        try:
-            baseline_path, candidate_path = selected_result_paths(
-                selected_history_items(), history_item_paths, exact=2,
-            )
-            baseline = load_history_result(baseline_path)
-            candidate = load_history_result(candidate_path)
-            if review_outbound_metadata(
-                    baseline, "diagnostic baseline", allow_aliases=False) is None:
-                return
-            if review_outbound_metadata(
-                    candidate, "diagnostic candidate", allow_aliases=False) is None:
-                return
-            destination = filedialog.asksaveasfilename(
-                title="Export vendor diagnostic", defaultextension=".labdiag",
-                filetypes=[("Local AI Bench diagnostic", "*.labdiag")],
-            )
-            if not destination:
-                return
-            write_vendor_diagnostic(baseline_path, candidate_path, Path(destination))
-            messagebox.showinfo("Vendor diagnostic created", destination, parent=root)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            messagebox.showerror("Vendor diagnostic failed", str(exc), parent=root)
-
-    def inspect_history_recovery(action="inspect"):
-        try:
-            result_path = selected_history_path()
-        except ValueError as exc:
-            messagebox.showerror("Recovery selection", str(exc), parent=root)
-            return
-        history_message.set(f"Verifying recovery identity for {result_path.name}…")
-
-        def worker():
-            try:
-                report = inspect_recovery(result_path)
-                error = None
-            except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-                if action == "fork":
-                    try:
-                        report, error = fork_review_report(result_path), None
-                    except (OSError, KeyError, ValueError, json.JSONDecodeError) as fork_exc:
-                        report, error = None, str(fork_exc)
-                else:
-                    report, error = None, str(exc)
-
-            def finish():
-                if error or report is None:
-                    history_message.set("Recovery inspection failed.")
-                    messagebox.showerror("Recovery inspection failed",
-                                         error or "No recovery report was produced.", parent=root)
-                    return
-                history_message.set(
-                    f"Recovery decision for {result_path.name}: {report['action']}"
-                )
-                if action == "inspect":
-                    show_history_details("Recovery inspection", format_recovery_inspection(report))
-                    return
-                if action in {"resume", "retry"} and not report["can_resume"]:
-                    show_history_details("Fork required", format_recovery_inspection(report))
-                    return
-                if action == "resume":
-                    start_history_recovery(result_path, report)
-                elif action == "retry":
-                    start_history_retry(result_path, report)
-                else:
-                    start_history_fork(result_path, report)
-
-            root.after(0, finish)
-
-        threading.Thread(target=worker, daemon=True).start()
+    run_log_actions.bind()
+    current_log = run_log_actions.current_log
+    review_outbound_metadata = run_log_actions.review_outbound_metadata
 
     def start_history_recovery(result_path, report):
         nonlocal process, active_process_kind, active_result_paths
@@ -1329,64 +879,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                              engines=[plan.engine_name])
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    def choose_retry_cases(candidates):
-        by_stage = {}
-        for candidate in candidates:
-            by_stage.setdefault(candidate["stage"], []).append(candidate)
-        if not by_stage:
-            messagebox.showinfo("Selected retry", "No cases are retry-eligible.", parent=root)
-            return []
-        dialog = tk.Toplevel(root)
-        dialog.title("Select cases to retry")
-        dialog.transient(root)
-        dialog.grab_set()
-        shell = ttk.Frame(dialog, padding=16)
-        shell.pack(fill="both", expand=True)
-        ttk.Label(
-            shell, text="Retry only the chosen cases. Other incomplete evidence remains unchanged.",
-            wraplength=520,
-        ).pack(anchor="w", pady=(0, 8))
-        stage_var = tk.StringVar(value=next(iter(by_stage)))
-        stage_picker = ttk.Combobox(
-            shell, textvariable=stage_var, values=list(by_stage), state="readonly",
-        )
-        stage_picker.pack(fill="x", pady=(0, 8))
-        case_list = tk.Listbox(shell, selectmode="extended", width=72, height=12)
-        case_list.pack(fill="both", expand=True)
-
-        def refresh_cases(_event=None):
-            case_list.delete(0, "end")
-            for candidate in by_stage[stage_var.get()]:
-                case_list.insert("end", f"{candidate['label']} — {candidate['state']}")
-
-        selected = []
-
-        def accept():
-            selected.extend(
-                by_stage[stage_var.get()][index] for index in case_list.curselection()
-            )
-            if not selected:
-                messagebox.showerror("Selected retry", "Select at least one case.", parent=dialog)
-                return
-            dialog.destroy()
-
-        stage_picker.bind("<<ComboboxSelected>>", refresh_cases)
-        refresh_cases()
-        buttons = ttk.Frame(shell)
-        buttons.pack(fill="x", pady=(10, 0))
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(buttons, text="Retry Selected", command=accept).pack(side="right", padx=(0, 8))
-        dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-        root.wait_window(dialog)
-        return selected
-
-    def start_history_retry(result_path, report):
+    def start_history_retry(result_path, report, selected):
         nonlocal process, active_process_kind, active_result_paths
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
-            return
-        selected = choose_retry_cases(report.get("retryable_cases", []))
-        if not selected:
             return
         if not messagebox.askyesno(
             "Retry selected cases",
@@ -1423,36 +919,23 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    ttk.Button(history_filters, text="Refresh", command=refresh_history).pack(side="right")
-    ttk.Button(
-        history_review_actions, text="Open in Dashboard", command=open_history_in_dashboard,
-    ).pack(side="left")
-    ttk.Button(
-        history_review_actions, text="Delete", command=delete_history_selection,
-    ).pack(side="left", padx=(8, 0))
-    ttk.Button(history_review_actions, text="Evaluate Policy", command=evaluate_history_selection).pack(
-        side="left", padx=(8, 0),
+    def start_history_action(action, result_path, report, selected):
+        if action == "resume":
+            start_history_recovery(result_path, report)
+        elif action == "retry":
+            start_history_retry(result_path, report, selected)
+        else:
+            start_history_fork(result_path, report)
+
+    history_actions = HistoryActions(
+        history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
+        messagebox=messagebox,
+        process_active=lambda: process is not None and process.poll() is None,
+        review_outbound_metadata=review_outbound_metadata,
+        start_recovery=start_history_action,
     )
-    ttk.Button(history_review_actions, text="Export Diagnostic", command=export_history_diagnostic).pack(
-        side="left", padx=(8, 0),
-    )
-    ttk.Button(
-        history_recovery_actions, text="Inspect Recovery",
-        command=lambda: inspect_history_recovery("inspect"),
-    ).pack(side="left")
-    ttk.Button(
-        history_recovery_actions, text="Resume", command=lambda: inspect_history_recovery("resume"),
-    ).pack(side="left", padx=(8, 0))
-    ttk.Button(
-        history_recovery_actions, text="Retry Cases", command=lambda: inspect_history_recovery("retry"),
-    ).pack(side="left", padx=(8, 0))
-    ttk.Button(
-        history_recovery_actions, text="Fork", command=lambda: inspect_history_recovery("fork"),
-    ).pack(side="left", padx=(8, 0))
-    history_query.trace_add("write", apply_history_filters)
-    history_status_filter.trace_add("write", apply_history_filters)
-    history_engine_filter.trace_add("write", apply_history_filters)
-    refresh_history()
+    history_actions.bind()
+    refresh_history = history_actions.refresh
 
     def apply_control_values(values: dict) -> None:
         for name, variable in test_vars.items():
