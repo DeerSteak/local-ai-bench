@@ -1,11 +1,18 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from scripts.app.benchmark_gui_screens.configuration_files import ConfigurationFileActions
 from scripts.app.benchmark_gui_screens.configuration_state import ConfigurationStateController
+from scripts.app.benchmark_gui_screens.engines import EngineUpdateActions
 from scripts.app.benchmark_gui_screens.history_actions import HistoryActions
 from scripts.app.benchmark_gui_screens.history_process import HistoryProcessActions
 from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
+from scripts.app.benchmark_frontend import MenuEntry
+from scripts.app.benchmark_gui_resources import (
+    process_resource_usage, query_gpu_process_memory, query_gpu_usage,
+)
 
 
 class FakeVariable:
@@ -17,6 +24,17 @@ class FakeVariable:
 
     def set(self, value):
         self.value = value
+
+    def trace_add(self, _mode, callback):
+        self.callback = callback
+
+
+class FakeWidget:
+    def __init__(self):
+        self.configuration = {}
+
+    def configure(self, **kwargs):
+        self.configuration.update(kwargs)
 
 
 class FakeTree:
@@ -281,6 +299,265 @@ def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
         "Recovery is running. Completed evidence is preserved.",
         ["llm", "conv"], ["llamacpp"], ["llamacpp"], "Recovery could not start",
     )]
+
+
+def build_history_process_controller(tmp_path, *, stages, destination="fork.json"):
+    plan = SimpleNamespace(stage_order=stages, engine_name="llamacpp")
+    launches, fallbacks = [], []
+    controller = HistoryProcessActions(
+        root=object(),
+        filedialog=SimpleNamespace(
+            asksaveasfilename=lambda **_kwargs: str(tmp_path / destination),
+        ),
+        messagebox=MessageRecorder(), process_active=lambda: False,
+        launch=lambda *args: launches.append(args),
+        fallback_fork=lambda *args: fallbacks.append(args),
+    )
+    return controller, plan, launches, fallbacks
+
+
+def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
+    controller, plan, launches, fallbacks = build_history_process_controller(
+        tmp_path, stages=["llm", "conv"],
+    )
+    source = tmp_path / "source.json"
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.fork_executor_command",
+        lambda source_path, output_path: ["fork", str(source_path), str(output_path)],
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.recovery_progress_entries",
+        lambda loaded: [*loaded.stage_order],
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.format_recovery_inspection",
+        lambda _report: "inspection",
+    )
+
+    controller.start("fork", source, {"action": "fork"})
+
+    output = (tmp_path / "fork.json").resolve()
+    assert launches == [(
+        ["fork", str(source), str(output)], "fork", [output],
+        "Forked run is active. The source evidence remains unchanged.",
+        ["llm", "conv"], ["llm", "conv"], ["llamacpp"], "Fork could not start",
+    )]
+    assert not fallbacks
+
+
+def test_history_process_fork_routes_unsupported_plan_to_frontend(monkeypatch, tmp_path):
+    controller, plan, launches, fallbacks = build_history_process_controller(
+        tmp_path, stages=["img"],
+    )
+    source = tmp_path / "source.json"
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.format_recovery_inspection",
+        lambda _report: "inspection",
+    )
+
+    controller.start("fork", source, {"action": "fork"})
+
+    assert fallbacks == [(source, (tmp_path / "fork.json").resolve(), plan)]
+    assert not launches
+
+
+def test_history_process_retry_launches_only_selected_cases(monkeypatch, tmp_path):
+    controller, plan, launches, _fallbacks = build_history_process_controller(
+        tmp_path, stages=["llm"],
+    )
+    result = tmp_path / "result.json"
+    selected = [
+        {"case_id": "case-a", "model": "model-a", "stage": "llm"},
+        {"case_id": "case-b", "model": "model-b", "stage": "llm"},
+    ]
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.retry_executor_command",
+        lambda path, cases: ["retry", str(path), *cases],
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_process.recovery_progress_entries",
+        lambda _plan, models: sorted(models),
+    )
+
+    controller.start("retry", result, {}, selected)
+
+    assert launches == [(
+        ["retry", str(result), "case-a", "case-b"], "retry", [result.resolve()],
+        "Selected retry is running. Unselected evidence remains unchanged.",
+        ["llm"], ["model-a", "model-b"], ["llamacpp"],
+        "Selected retry could not start",
+    )]
+
+
+def test_llamacpp_update_rejects_unmanaged_non_macos_runtime(monkeypatch):
+    actions = EngineUpdateActions({}, "cuda")
+    status = SimpleNamespace(engine="llamacpp", managed=False, backend="cuda")
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=[status]),
+    )
+    monkeypatch.setattr("scripts.app.benchmark_gui_screens.engines.platform.system", lambda: "Linux")
+
+    result = actions.update_llamacpp_version(None, SimpleNamespace(log=lambda _text: None))
+
+    assert result.success is False
+    assert result.detail == "This llama.cpp runtime is not app managed."
+
+
+@pytest.mark.parametrize("platform_name", ["Darwin", "Windows", "Linux"])
+@pytest.mark.parametrize("tag", [None, "b1234"])
+def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_name, tag):
+    actions = EngineUpdateActions({}, "cuda")
+    status = SimpleNamespace(engine="llamacpp", managed=True, backend="cuda")
+    calls = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=[status]),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.system", lambda: platform_name,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.machine", lambda: "arm64",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.detect_nvidia_max_cuda_version",
+        lambda: "13.0",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.fetch_llamacpp_release",
+        lambda: "latest",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.fetch_llamacpp_release_tag",
+        lambda selected: f"tag:{selected}",
+    )
+
+    def capture(name):
+        def updater(*_args, release_fetcher, **_kwargs):
+            calls.append((name, release_fetcher()))
+            return name
+        return updater
+
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.update_macos_llamacpp", capture("mac"),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp", capture("windows"),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp", capture("linux"),
+    )
+
+    result = actions.update_llamacpp_version(tag, SimpleNamespace(log=lambda _text: None))
+
+    expected_platform = {"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]
+    assert result == expected_platform
+    assert calls == [(expected_platform, "latest" if tag is None else f"tag:{tag}")]
+
+
+def test_configuration_refresh_imported_models_updates_screen_state(monkeypatch):
+    tests = [MenuEntry("llm", "LLM", "llm", "Tests", True)]
+    models = [MenuEntry("kept", "Kept", "llm", "Small", True)]
+    test_widget, test_label = FakeWidget(), FakeWidget()
+    rerenders, availability_updates = [], []
+    screen = SimpleNamespace(
+        test_widgets={"llm": test_widget}, test_labels={"llm": test_label},
+        render_model_rows=lambda: rerenders.append(True),
+    )
+    controller = ConfigurationStateController(
+        screen, root=object(), tk=SimpleNamespace(
+            BooleanVar=lambda value=False: FakeVariable(value),
+        ), ttk=object(), messagebox=object(), advanced_var=FakeVariable(False),
+        engine_var=FakeVariable("llamacpp"), test_vars={"llm": FakeVariable(True)},
+        model_vars={"kept": FakeVariable(True), "removed": FakeVariable(True)},
+        cap_var=FakeVariable("No cap"), tg_vars={}, option_vars={},
+        preset_var=FakeVariable("Custom"), available_engines=["llamacpp"],
+        custom_tests=tests, custom_models=models, defaults_for_display={},
+        applying_configuration=[False], engine_inventories={"old": {}},
+        inventory={"old": []}, model_owners={"old": {"llamacpp"}},
+        custom_model_defaults={"kept": True, "removed": True},
+        set_selected_engines=lambda _names: None,
+        apply_engine_availability=lambda: availability_updates.append(True),
+        execution_box=object(), paths_box=object(),
+    )
+    refreshed_inventory = {"llm": [], "custom": [], "embedding": [], "image": []}
+    rebuilt = [
+        MenuEntry("kept", "Kept", "llm", "Small", False),
+        MenuEntry("imported", "Imported", "llm", "Small", False),
+    ]
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.configuration_state.get_engine", lambda name: name,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.configuration_state.build_model_inventory",
+        lambda *_args: refreshed_inventory,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.configuration_state.merge_model_inventories",
+        lambda _inventories: (refreshed_inventory, {"kept": {"llamacpp"}, "imported": {"llamacpp"}}),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.configuration_state.build_test_entries",
+        lambda _inventory: tests,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.configuration_state.build_model_entries",
+        lambda _inventory, _tests: rebuilt,
+    )
+
+    controller.refresh_imported_models("imported")
+
+    assert set(controller.model_vars) == {"kept", "imported"}
+    assert controller.model_vars["kept"].get() is True
+    assert controller.model_vars["imported"].get() is True
+    assert controller.custom_model_defaults == {"kept": True, "imported": False}
+    assert test_widget.configuration == {"state": "normal"}
+    assert test_label.configuration == {"text": "LLM"}
+    assert rerenders == [True]
+    assert availability_updates == [True]
+
+
+class ResourceError(Exception):
+    pass
+
+
+class FailingPsutil:
+    Error = ResourceError
+
+    @staticmethod
+    def Process(_pid):
+        raise ResourceError("gone")
+
+    @staticmethod
+    def virtual_memory():
+        raise ResourceError("gone")
+
+
+def test_process_resource_usage_contains_psutil_errors():
+    assert process_resource_usage(123, FailingPsutil()) is None
+
+
+def test_gpu_usage_query_contains_command_errors():
+    assert query_gpu_usage(
+        "Linux", run_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("gone")),
+        which_fn=lambda name: name if name == "nvidia-smi" else None,
+    ) is None
+
+
+def test_gpu_process_memory_query_contains_psutil_errors():
+    assert query_gpu_process_memory(
+        123, which_fn=lambda _name: "/usr/bin/nvidia-smi", psutil_module=FailingPsutil(),
+    ) is None
 
 
 def test_run_log_export_writes_current_text(monkeypatch, tmp_path):
