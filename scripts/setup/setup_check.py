@@ -19,27 +19,22 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime import hardware
-from scripts.setup.archive_safety import safe_extract_zip, validate_7z_archive
 from scripts.runtime.comfyui_installation import (
-    add_managed_models_to_comfyui,
     checkpoint_names_from_object_info,
     find_comfyui_installation,
-    find_comfyui_python,
     find_image_asset,
-    legacy_models_dir_with_assets,
     managed_checkpoints_visible,
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
-    write_extra_model_paths,
 )
 from scripts.runtime.llamacpp_tools import find_nvcc
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
-    engine_download_size, engine_fit_report, find_non_catalog_vllm_repos,
+    engine_download_size, find_non_catalog_vllm_repos,
     hf_cache_repo_id,
-    engine_fit_warnings, engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
-    fits_any_engine, format_engine_sizes, models_missing_engine_support,
+    engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
+    models_missing_engine_support,
 )
 from scripts.setup.model_download import download_hf_files, download_hf_snapshot
 from scripts.setup import llamacpp_install
@@ -48,7 +43,6 @@ from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
-from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, select_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
