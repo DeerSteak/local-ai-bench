@@ -45,6 +45,7 @@ from scripts.setup.model_inventory import (
     engine_fit_warnings, engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
     fits_any_engine, format_engine_sizes, models_missing_engine_support,
 )
+from scripts.setup.model_download import download_hf_files, download_hf_snapshot
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
@@ -97,83 +98,16 @@ def cancel_setup(*_args):
 
 signal.signal(signal.SIGINT, cancel_setup)
 
-def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
-    """Download `filename` (or every file, if a list) from a HuggingFace repo,
-    trying the `hf` CLI, then `huggingface-cli`, then the Python API."""
-    if dest_dir is None:
-        dest_dir = CHECKPOINTS
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    filenames = filename if isinstance(filename, list) else [filename]
 
-    env = os.environ.copy()
-    if token:
-        env["HF_TOKEN"] = token
+def hf_download(repo, filenames, token=None, dest_dir=None, save_as=None):
+    return download_hf_files(
+        repo, filenames, dest_dir or CHECKPOINTS, token=token, save_as=save_as, warn=warn,
+    )
 
-    success = True
-    for fname in filenames:
-        file_success = False
-        for cli in ["hf", "huggingface-cli"]:
-            if shutil.which(cli):
-                result = subprocess.run(
-                    [cli, "download", repo, fname, "--local-dir", str(dest_dir)],
-                    env=env, capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    file_success = True
-                else:
-                    stderr = (result.stderr or result.stdout or "").strip()
-                    if stderr:
-                        warn(f"{cli} error: {stderr}")
-                break
-        if not file_success:
-            try:
-                from huggingface_hub import hf_hub_download  # type: ignore
-                hf_hub_download(repo_id=repo, filename=fname,
-                                local_dir=str(dest_dir), token=token)
-                file_success = True
-            except Exception as e:
-                warn(f"Python API download failed: {e}")
-        success = success and file_success
-
-        # Flatten a subdirectory-nested remote file into dest_dir — LlamaCppEngine resolves by basename.
-        if file_success:
-            src = dest_dir / fname
-            dst = dest_dir / (save_as if save_as and len(filenames) == 1 else Path(fname).name)
-            if src.exists() and src != dst:
-                shutil.move(str(src), str(dst))
-                try:
-                    src.parent.rmdir()
-                except OSError:
-                    pass
-    return success
 
 def hf_snapshot_download(repo, cache_home, token=None):
-    """Download a whole HF repo into the cache vLLM reads, so it resolves by repo id."""
-    cache_home.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "HF_HOME": str(cache_home)}
-    if token:
-        env["HF_TOKEN"] = token
-    ignore = ["*.pth", "*.bin", "original/*"]  # duplicate formats of the same weights
-    for cli in ["hf", "huggingface-cli"]:
-        if shutil.which(cli):
-            command = [cli, "download", repo]
-            for pattern in ignore:
-                command += ["--exclude", pattern]
-            result = subprocess.run(command, env=env, capture_output=True, text=True)
-            if result.returncode == 0:
-                return True
-            stderr = (result.stderr or result.stdout or "").strip()
-            if stderr:
-                warn(f"{cli} error: {stderr}")
-            break
-    try:
-        from huggingface_hub import snapshot_download  # type: ignore
-        snapshot_download(repo_id=repo, token=token, ignore_patterns=ignore,
-                          cache_dir=str(cache_home / "hub"))
-        return True
-    except Exception as e:
-        warn(f"Python API download failed: {e}")
-        return False
+    return download_hf_snapshot(repo, cache_home, token=token, warn=warn)
+
 
 issues = []
 
