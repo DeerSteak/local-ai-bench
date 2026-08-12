@@ -33,10 +33,12 @@ from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
     engine_download_size, find_non_catalog_vllm_repos,
     hf_cache_repo_id,
-    engine_model_complete, engine_model_dir, find_non_catalog_model_dirs,
-    models_missing_engine_support,
+    find_non_catalog_model_dirs,
 )
-from scripts.setup.model_download import download_hf_files, download_hf_snapshot
+from scripts.setup.model_download import (
+    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    provision_catalog_models,
+)
 from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
 from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
@@ -58,7 +60,7 @@ from scripts.setup.engine_selection import (
     needs_python_headers, select_engines, selected_engine_names,
 )
 from scripts.setup.vllm_install import (
-    find_vllm_binary, find_vllm_launcher, find_vllm_server, hf_cache_model_complete,
+    find_vllm_binary, find_vllm_launcher, find_vllm_server,
     build_tools_command, install_vllm, missing_build_tools, missing_python_headers,
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
     read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
@@ -734,18 +736,12 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     remaining_gb = 0.0
 
-    def model_downloaded(m, engine=LLAMACPP):
-        """True if `engine`'s weights for `m` are already present."""
-        if engine == VLLM:
-            return hf_cache_model_complete(VLLM_CACHE_HOME, m["vllm_repo"])
-        filenames = m["hf_file"] if isinstance(m["hf_file"], list) else [m["hf_file"]]
-        model_dir = engine_model_dir(config.MODELS_DIR, engine, m["tag"])
-        return engine_model_complete(model_dir, engine, filenames)
-
     all_llm = selected_embed + selected_llm
     for engine in selected_engines:
         for m in all_llm:
-            if not model_downloaded(m, engine):
+            if not catalog_model_downloaded(
+                m, engine, models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
+            ):
                 remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
 
     sd35_selected  = "sd35-large" in selected_image_shorts
@@ -837,34 +833,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
     for m in deselected_llm:
         info(f"{m['label']} — skipped (not selected)")
 
-    for engine in selected_engines:
-        if len(selected_engines) > 1:
-            info(f"Models for {engine} ...")
-        unsupported = models_missing_engine_support(selected_embed + selected_llm, engine)
-        for tag in unsupported:
-            warn(f"{tag} — no {engine} weights defined in the catalog, skipping for this engine")
-            issues.append(f"No {engine} weights for {tag} — it will only be benchmarked on other engines")
-        for m in selected_embed + selected_llm:
-            tag, label = m["tag"], m["label"]
-            if tag in unsupported:
-                continue
-            size = engine_download_size(m, engine)
-            if model_downloaded(m, engine):
-                ok(f"{label} [{engine}] — already downloaded")
-                continue
-            warn(f"{label} [{engine}] ({size}) — not found, downloading now ...")
-            if engine == VLLM:
-                repo, dest = m["vllm_repo"], VLLM_CACHE_HOME
-                success = hf_snapshot_download(repo, VLLM_CACHE_HOME, token=load_token())
-            else:
-                repo = m["hf_repo"]
-                dest = engine_model_dir(config.MODELS_DIR, engine, tag)
-                success = hf_download(repo, m["hf_file"], token=load_token(), dest_dir=dest)
-            if success:
-                ok(f"{label} [{engine}] — downloaded successfully")
-            else:
-                fail(f"{label} [{engine}] — download failed")
-                issues.append(f"Download {repo} manually into {dest}")
+    provision_catalog_models(
+        selected_embed + selected_llm, selected_engines,
+        models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
+        load_token=load_token, issues=issues, info=info, warn=warn, fail=fail, ok=ok,
+    )
 
     # ── 8c. ComfyUI — only if at least one image model was selected ───────────────
 

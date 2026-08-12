@@ -6,7 +6,8 @@ import pytest
 from scripts.setup.custom_models import load_custom_models
 from scripts.setup import model_download
 from scripts.setup.model_download import (
-    download_hf_files, download_hf_snapshot, enough_disk_space, import_model,
+    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    enough_disk_space, import_model, provision_catalog_models,
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
 
@@ -66,6 +67,39 @@ def test_download_hf_snapshot_reports_both_failures(monkeypatch, tmp_path):
 
     assert not download_hf_snapshot("owner/model", tmp_path, warn=warnings.append)
     assert warnings == ["hf error: cli failed", "Python API download failed: api failed"]
+
+
+def test_catalog_model_downloaded_checks_llamacpp_files(monkeypatch, tmp_path):
+    model = {"tag": "model", "hf_file": "model.gguf"}
+    monkeypatch.setattr(model_download, "engine_model_complete", lambda *_args: True)
+
+    assert catalog_model_downloaded(
+        model, "llamacpp", models_dir=tmp_path / "models", vllm_cache=tmp_path / "cache",
+    )
+
+
+def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, tmp_path):
+    model = {
+        "tag": "model", "label": "Model", "hf_repo": "owner/model",
+        "hf_file": "model.gguf", "size": "1 GB",
+    }
+    downloads = []
+    monkeypatch.setattr(model_download, "models_missing_engine_support", lambda *_args: [])
+    monkeypatch.setattr(model_download, "engine_download_size", lambda *_args: "1 GB")
+    monkeypatch.setattr(model_download, "catalog_model_downloaded", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        model_download, "download_hf_files",
+        lambda *args, **kwargs: downloads.append((args, kwargs)) or True,
+    )
+
+    provision_catalog_models(
+        [model], ["llamacpp"], models_dir=tmp_path / "models",
+        vllm_cache=tmp_path / "cache", load_token=lambda: "token", issues=[],
+        info=lambda _msg: None, warn=lambda _msg: None,
+        fail=lambda _msg: None, ok=lambda _msg: None,
+    )
+
+    assert downloads[0][0][0:2] == ("owner/model", "model.gguf")
 
 
 def test_llamacpp_import_downloads_selected_files_and_registers(monkeypatch, tmp_path):
