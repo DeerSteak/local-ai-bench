@@ -84,7 +84,8 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Tk application bootstrap, shared run state, controller wiring, and cross-screen orchestration |
 | `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers |
-| `app/benchmark_gui_support.py` | Pure GUI planning, progress, process-launch, and resource-monitoring helpers |
+| `app/benchmark_gui_support.py` | Pure GUI configuration, planning, and progress-state helpers |
+| `app/benchmark_gui_process.py` / `app/benchmark_gui_resources.py` | GUI subprocess coordination plus CPU, RAM, GPU, and VRAM monitoring |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
 | `app/engine_management.py` | Engine status, runtime updates, model verification, and mirrored operation output |
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
@@ -121,6 +122,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
+| `runtime/model_identity.py` | Filesystem-safe normalization shared by engine and setup model paths |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
 | `setup/model_import.py` / `setup/model_download.py` | Hugging Face repository inspection and engine-specific artifact downloads |
