@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from scripts.app.progress_events import (
+from scripts.runtime.progress_events import (
     PROGRESS_PREFIX, emit_model_finished, emit_progress, emit_result_saved, set_progress_engine,
 )
 

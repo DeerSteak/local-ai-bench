@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Protocol
 
-from scripts.app.progress_events import PROGRESS_PREFIX
+from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from scripts.results.run_plan import RunPlan

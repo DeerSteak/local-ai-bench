@@ -82,7 +82,7 @@ from scripts.workloads.models import LLM_MODELS
 from scripts.stage_registry import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
-from scripts.app.progress_events import PROGRESS_PREFIX
+from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,

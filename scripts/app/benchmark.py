@@ -14,7 +14,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
-from scripts.app.progress_events import emit_result_saved, set_progress_engine
+from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared

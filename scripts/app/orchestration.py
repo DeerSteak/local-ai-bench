@@ -6,7 +6,7 @@ from typing import Callable, Protocol
 
 from scripts.results.result_store import ResultStore
 from scripts.results.run_plan import RunPlan
-from scripts.app.progress_events import emit_progress
+from scripts.runtime.progress_events import emit_progress
 from scripts.runtime.shared import Shared
 from scripts.stage_registry import STAGE_ORDER
 
