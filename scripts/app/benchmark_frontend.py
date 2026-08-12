@@ -23,22 +23,13 @@ from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
+from scripts.stage_registry import STAGE_SPECS
 
 
 TEST_DEFINITIONS = [
-    ("llm", "Single-shot LLM", "llm", True),
-    ("conv", "Conversation", "llm", True),
-    ("llamabench", "llama-bench (throughput + concurrency)", "llm", False),
-    ("vllmbench", "vllm bench (latency + throughput)", "llm", False),
-    ("emb", "Embeddings", "embedding", True),
-    ("mcq", "MCQ accuracy", "llm", False),
-    ("math", "Math accuracy", "llm", False),
-    ("reasoning", "Reasoning accuracy", "llm", False),
-    ("code", "Code accuracy", "llm", False),
-    ("tool", "Tool accuracy", "llm", False),
-    ("conc_tool", "Tool concurrency", "llm", False),
-    ("conc_chat", "Chat concurrency", "llm", False),
-    ("img", "Image generation", "image", True),
+    (spec.key, "llama-bench (throughput + concurrency)" if spec.key == "llamabench"
+     else spec.label, spec.ui_family, spec.default_enabled)
+    for spec in STAGE_SPECS if spec.menu_visible
 ]
 # One frontend toggle can cover several CLI tests. The CLI keeps them separate so
 # `--tests llamabenchconc` alone still works; only the menus combine them.
@@ -46,9 +37,7 @@ TEST_ENTRY_TESTS = {"llamabench": ("llamabench", "llamabenchconc")}
 # Every CLI test name a menu toggle can produce, including ones folded into another
 # toggle, so the progress window can title their rows.
 TEST_STAGE_LABELS = {
-    **{name: label for name, label, _, _ in TEST_DEFINITIONS},
-    "llamabench": "llama-bench throughput",
-    "llamabenchconc": "llama-bench concurrency",
+    spec.key: spec.label for spec in STAGE_SPECS
 }
 TEST_SHORTCUT_GROUPS = {
     "l": {"llm", "conv", "llamabench", "vllmbench"},

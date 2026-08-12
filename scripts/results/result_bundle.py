@@ -6,6 +6,7 @@ import statistics
 import zipfile
 from pathlib import Path
 
+from scripts.results.canonical_json import canonical_json_bytes
 from scripts.results.result_store import atomic_write_json, validate_json_data
 from scripts.results.run_plan import RunPlan
 from scripts.results.outbound_metadata import prepare_outbound_result
@@ -21,12 +22,6 @@ BANK_PATHS = {
         "tool": "tool_questions.json",
     }.items()
 }
-
-
-def _canonical_bytes(value: dict) -> bytes:
-    return json.dumps(
-        value, allow_nan=False, separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
 
 
 def _digest(data: bytes) -> str:
@@ -49,7 +44,7 @@ def export_result_bundle(result_path: Path, bundle_path: Path,
     result = prepare_outbound_result(
         result, system_alias=system_alias, hardware_alias=hardware_alias,
     )
-    files = {"result.json": _canonical_bytes(result)}
+    files = {"result.json": canonical_json_bytes(result)}
     artifact_records = []
     for artifact in artifacts or []:
         data = Path(artifact).read_bytes()
@@ -70,7 +65,7 @@ def export_result_bundle(result_path: Path, bundle_path: Path,
         },
         "artifacts": artifact_records,
     }
-    files["manifest.json"] = _canonical_bytes(manifest)
+    files["manifest.json"] = canonical_json_bytes(manifest)
     Path(bundle_path).parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(bundle_path, "w") as archive:
         for name, data in sorted(files.items()):

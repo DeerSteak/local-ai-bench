@@ -79,7 +79,7 @@ from scripts.setup.runtime_update import (
 )
 from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.workloads.models import LLM_MODELS
-from scripts.app.orchestration import STAGE_ORDER
+from scripts.stage_registry import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.app.progress_events import PROGRESS_PREFIX

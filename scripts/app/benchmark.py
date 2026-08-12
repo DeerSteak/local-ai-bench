@@ -54,6 +54,7 @@ from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
 from scripts.setup.runtime_identity import engine_runtime_version
+from scripts.stage_registry import ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -309,11 +310,6 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                 patterns, concurrency_models, installed_tags,
             )
     return run_models, concurrency_models
-
-
-ACCURACY_TESTS = ["mcq", "math", "reasoning", "code", "tool"]
-CONCURRENCY_TESTS = ["conc_tool", "conc_chat"]
-LLM_TESTS = ["llm", "conv", *ACCURACY_TESTS, "llamabench", "llamabenchconc", "vllmbench"]
 
 
 def engine_version_applies(tests: list[str]) -> bool:

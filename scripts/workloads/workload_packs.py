@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from scripts.app.orchestration import STAGE_ORDER
+from scripts.stage_registry import STAGE_ORDER
 
 
 PACK_SCHEMA_VERSION = 1

@@ -1,6 +1,5 @@
 """Transactional append-only job events and rebuildable state projections."""
 
-import hashlib
 import json
 import sqlite3
 import statistics
@@ -9,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scripts.results.canonical_json import canonical_json, sha256_json
 from scripts.results.result_store import validate_json_data
 from scripts.results.run_plan import RunPlan
 
@@ -24,13 +24,8 @@ STATE_TRANSITIONS = {
 RECOVERABLE_STATES = {"failed", "interrupted", "invalid", "timed_out"}
 
 
-def _canonical_json(value) -> str:
-    return json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True)
-
-
 def _event_digest(previous_digest: str, values: list) -> str:
-    payload = _canonical_json([previous_digest, *values]).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+    return sha256_json([previous_digest, *values])
 
 
 @dataclass(frozen=True)
@@ -75,7 +70,7 @@ class JournalEvent:
         validate_json_data(self.payload)
         return JournalEvent(
             self.entity_type, self.entity_id, self.state,
-            json.loads(_canonical_json(self.payload)),
+            json.loads(canonical_json(self.payload)),
             self.event_id or str(uuid.uuid4()),
             self.occurred_at or datetime.now(timezone.utc).isoformat(timespec="microseconds"),
             self.parent_id,
@@ -168,12 +163,12 @@ class EventStore:
         self.connection.close()
 
     def create_job(self, plan: RunPlan, resume_identity: dict | None = None) -> str:
-        plan_json = _canonical_json(plan.to_dict())
+        plan_json = canonical_json(plan.to_dict())
         resume_identity = resume_identity or {
             "plan_id": plan.plan_id, "artifacts": {}, "runtimes": {}, "methodology": {},
         }
         validate_json_data(resume_identity)
-        resume_identity_json = _canonical_json(resume_identity)
+        resume_identity_json = canonical_json(resume_identity)
         with self.connection:
             self.connection.execute(
                 """INSERT INTO jobs(
@@ -237,7 +232,7 @@ class EventStore:
         previous = row["digest"] if row else "0" * 64
         with self.connection:
             for event in normalized:
-                payload_json = _canonical_json(event.payload)
+                payload_json = canonical_json(event.payload)
                 values = [
                     event.event_id, job_id, event.entity_type, event.entity_id,
                     event.state, payload_json, event.occurred_at, event.parent_id,

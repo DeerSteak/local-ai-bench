@@ -1,9 +1,8 @@
 """Outbound metadata preview and aliasing without modifying source results."""
 
 import copy
-import hashlib
-import json
 
+from scripts.results.canonical_json import sha256_json
 from scripts.results.result_store import as_dict, validate_json_data
 
 
@@ -47,10 +46,7 @@ def _source_identity(result: dict) -> dict:
 
 
 def source_identity_digest(result: dict) -> str:
-    payload = json.dumps(
-        _source_identity(result), allow_nan=False, separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+    return sha256_json(_source_identity(result))
 
 
 def prepare_outbound_result(result: dict, *, system_alias: str | None = None,

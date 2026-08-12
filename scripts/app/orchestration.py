@@ -8,12 +8,9 @@ from scripts.results.result_store import ResultStore
 from scripts.results.run_plan import RunPlan
 from scripts.app.progress_events import emit_progress
 from scripts.runtime.shared import Shared
+from scripts.stage_registry import STAGE_ORDER
 
 
-STAGE_ORDER = (
-    "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb",
-    "mcq", "math", "reasoning", "code", "tool", "conc_tool", "conc_chat", "img",
-)
 def emit_stage_progress(stage: str, status: str) -> None:
     emit_progress("stage", stage, status)
 
