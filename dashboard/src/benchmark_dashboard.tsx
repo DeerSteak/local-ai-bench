@@ -20,6 +20,7 @@ import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
+import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
 
 // The minimal shape both real File objects and autoload's staged-result
 // entries satisfy — this is all parseFile/processJsonFiles actually need.
@@ -29,9 +30,6 @@ export default function Dashboard() {
   const [files, setFiles] = useState<DisplayFile[]>([]);
   const [section, setSection] = useState("llm");
   const [accuracyTest, setAccuracyTest] = useState("mcq");
-  const [enabledModels, setEnabledModels] = useState<Set<string>>(new Set());
-  const [enabledImageModels, setEnabledImageModels] = useState<Set<string>>(new Set());
-  const [enabledEmbedModels, setEnabledEmbedModels] = useState<Set<string>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
@@ -59,58 +57,15 @@ export default function Dashboard() {
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
   const allEmbedModels = useMemo(() => getAllEmbedModels(files), [files]);
-
-  // Auto-enable newly appearing models
-  const prevModelsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const newOnes = allModels.filter(m => !prevModelsRef.current.has(m));
-    if (newOnes.length) {
-      setEnabledModels(prev => { const n = new Set(prev); newOnes.forEach(m => n.add(m)); return n; });
-      newOnes.forEach(m => prevModelsRef.current.add(m));
-    }
-  }, [allModels]);
-
-  const prevImageModelsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const newOnes = allImageModels.filter(m => !prevImageModelsRef.current.has(m));
-    if (newOnes.length) {
-      setEnabledImageModels(prev => { const n = new Set(prev); newOnes.forEach(m => n.add(m)); return n; });
-      newOnes.forEach(m => prevImageModelsRef.current.add(m));
-    }
-  }, [allImageModels]);
-
-  const prevEmbedModelsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const newOnes = allEmbedModels.filter(m => !prevEmbedModelsRef.current.has(m));
-    if (newOnes.length) {
-      setEnabledEmbedModels(prev => { const n = new Set(prev); newOnes.forEach(m => n.add(m)); return n; });
-      newOnes.forEach(m => prevEmbedModelsRef.current.add(m));
-    }
-  }, [allEmbedModels]);
-
-  const toggleModel = useCallback((m: string) => {
-    setEnabledModels(prev => {
-      const n = new Set(prev);
-      if (n.has(m)) n.delete(m); else n.add(m);
-      return n;
-    });
-  }, []);
-
-  const toggleImageModel = useCallback((m: string) => {
-    setEnabledImageModels(prev => {
-      const n = new Set(prev);
-      if (n.has(m)) n.delete(m); else n.add(m);
-      return n;
-    });
-  }, []);
-
-  const toggleEmbedModel = useCallback((m: string) => {
-    setEnabledEmbedModels(prev => {
-      const n = new Set(prev);
-      if (n.has(m)) n.delete(m); else n.add(m);
-      return n;
-    });
-  }, []);
+  const {
+    enabled: enabledModels, toggle: toggleModel, reset: resetLlmSelection,
+  } = useAutoEnabledSelection(allModels);
+  const {
+    enabled: enabledImageModels, toggle: toggleImageModel, reset: resetImageSelection,
+  } = useAutoEnabledSelection(allImageModels);
+  const {
+    enabled: enabledEmbedModels, toggle: toggleEmbedModel, reset: resetEmbedSelection,
+  } = useAutoEnabledSelection(allEmbedModels);
 
   const displayFiles = useMemo(() => filesForSection(files, section), [files, section]);
 
@@ -149,16 +104,13 @@ export default function Dashboard() {
     setHostnameOverrides(prev => ({ ...prev, [fileId as string]: value }));
   }, []);
 
-  const resetModelState = () => {
-    prevModelsRef.current = new Set();
-    prevImageModelsRef.current = new Set();
-    prevEmbedModelsRef.current = new Set();
-    setEnabledModels(new Set());
-    setEnabledImageModels(new Set());
-    setEnabledEmbedModels(new Set());
+  const resetModelState = useCallback(() => {
+    resetLlmSelection();
+    resetImageSelection();
+    resetEmbedSelection();
     setHostnameOverrides({});
     setBaselineId(null);
-  };
+  }, [resetLlmSelection, resetImageSelection, resetEmbedSelection]);
 
   const parseFile = async (file: NamedTextSource): Promise<{ entry: DisplayFile | null, error: string | null }> => {
     let text;
@@ -206,7 +158,7 @@ export default function Dashboard() {
     } else {
       setFiles(prev => [...prev, entries[0]]);
     }
-  }, []);
+  }, [resetModelState]);
 
   useEffect(() => {
     if (autoloadStartedRef.current) return;
@@ -237,7 +189,7 @@ export default function Dashboard() {
     });
     setHostnameOverrides(prev => { const n = { ...prev }; delete n[fileId as string]; return n; });
     setBaselineId(current => current === String(fileId) ? null : current);
-  }, []);
+  }, [resetModelState]);
 
   const handleLogoDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
