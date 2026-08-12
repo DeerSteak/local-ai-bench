@@ -4,9 +4,6 @@ setlocal
 set SCRIPT_DIR=%~dp0
 set VENV=%SCRIPT_DIR%bench-env
 cd /d "%SCRIPT_DIR%"
-set "PAUSE_ON_EXIT="
-set CMDCMDLINE | %SystemRoot%\System32\findstr.exe /l /i /c:"%~f0" >nul
-if not errorlevel 1 set "PAUSE_ON_EXIT=1"
 
 if not exist "%VENV%\Scripts\activate.bat" (
     for /f "tokens=1 delims=." %%T in ("%TIME: =0%") do echo [%%T] Virtual environment not found at %VENV% -- run setup.bat first.
@@ -32,5 +29,4 @@ python -m scripts.app.benchmark_launcher %*
 set "BENCH_EXIT_CODE=%errorlevel%"
 
 :finish
-if defined PAUSE_ON_EXIT pause
 exit /b %BENCH_EXIT_CODE%
