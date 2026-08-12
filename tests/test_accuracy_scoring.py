@@ -1,3 +1,5 @@
+import pytest
+
 from scripts.workloads.accuracy_scoring import score_question_bank
 
 
@@ -50,3 +52,29 @@ def test_score_question_bank_does_not_mutate_scorer_entry():
     )
 
     assert entry == {"id": "q1", "category": "science"}
+
+
+@pytest.mark.parametrize(("question", "extra_groups", "missing"), [
+    ({"category": "logic"}, (), "id"),
+    ({"id": "q1"}, (), "category"),
+    ({"id": "q1", "category": "logic"}, (("by_difficulty", "difficulty"),), "difficulty"),
+])
+def test_score_question_bank_rejects_missing_required_fields(question, extra_groups, missing):
+    with pytest.raises(ValueError, match=rf"question 0.*{missing}"):
+        score_question_bank(
+            [question], {}, lambda *_args: (False, False, {}), extra_groups=extra_groups,
+        )
+
+
+def test_score_question_bank_rejects_duplicate_question_ids_before_evaluation():
+    questions = [
+        {"id": "duplicate", "category": "first"},
+        {"id": "duplicate", "category": "second"},
+    ]
+    evaluated = []
+    with pytest.raises(ValueError, match="duplicate question id: duplicate"):
+        score_question_bank(
+            questions, {"duplicate": "A"},
+            lambda question, _given: evaluated.append(question) or (True, True, {}),
+        )
+    assert evaluated == []

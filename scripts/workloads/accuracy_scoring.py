@@ -7,6 +7,16 @@ from typing import Any
 def score_question_bank(questions: list[dict], answers: dict,
                         evaluate: Callable[[dict, Any], tuple[bool, bool, dict]],
                         extra_groups: tuple[tuple[str, str], ...] = ()) -> dict:
+    required = {"id", "category", *(question_key for _, question_key in extra_groups)}
+    seen_ids = set()
+    for index, question in enumerate(questions):
+        missing = sorted(required - question.keys())
+        if missing:
+            raise ValueError(f"question {index} is missing required fields: {', '.join(missing)}")
+        question_id = question["id"]
+        if question_id in seen_ids:
+            raise ValueError(f"duplicate question id: {question_id}")
+        seen_ids.add(question_id)
     by_category: dict[str, dict] = {}
     extra = {result_key: {} for result_key, _ in extra_groups}
     incorrect = []
