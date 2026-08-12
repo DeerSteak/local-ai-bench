@@ -38,3 +38,28 @@ def test_missing_memory_is_nonfatal(monkeypatch, tmp_path):
     result = setup_discovery.discover_system(tmp_path / "missing")
 
     assert result.total_ram_gb is None
+
+
+def test_discovers_nvidia_inventory_and_capabilities(monkeypatch):
+    outputs = iter([
+        "RTX 5090, 32768 MiB, 600.1\n", "12.0\n", "CUDA Version: 13.0\n",
+    ])
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output", lambda *_args, **_kwargs: next(outputs),
+    )
+
+    result = setup_discovery.discover_nvidia()
+
+    assert result.available
+    assert result.total_vram_gb == 32
+    assert result.compute_capability == "12.0"
+    assert result.max_cuda_version == "13.0"
+
+
+def test_missing_nvidia_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+    )
+
+    assert not setup_discovery.discover_nvidia().available

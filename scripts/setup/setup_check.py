@@ -51,7 +51,7 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
-from scripts.setup.setup_discovery import discover_system
+from scripts.setup.setup_discovery import discover_nvidia, discover_system
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
@@ -146,50 +146,14 @@ if total_ram_gb is not None:
 
 section("GPU / Acceleration Backend")
 
-nvidia_gpus = []
-nvidia_vram_gb = 0.0
-
-def check_nvidia():
-    global nvidia_gpus, nvidia_vram_gb
-    try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
-             "--format=csv,noheader"],
-            text=True, stderr=subprocess.DEVNULL
-        )
-        nvidia_gpus = hardware.parse_nvidia_gpus(out)
-        nvidia_vram_gb = sum(device["vram_gb"] or 0.0 for device in nvidia_gpus)
-        for device in nvidia_gpus:
-            print(f"  GPU:     {device['name']}")
-            vram = device["vram_gb"]
-            # Unified-memory parts report no dedicated VRAM; the RAM ceiling applies instead.
-            print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unified with system RAM'}")
-            print(f"  Driver:  {device['driver']}")
-        return bool(nvidia_gpus)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-
-def get_nvidia_max_cuda_version():
-    """Max CUDA version the installed NVIDIA driver supports, or None —
-    see docs/setup.md's Windows (NVIDIA) note."""
-    try:
-        out = subprocess.check_output(
-            ["nvidia-smi"], text=True, stderr=subprocess.DEVNULL
-        )
-        return hardware.parse_nvidia_max_cuda_version(out)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
-
-def get_nvidia_compute_cap():
-    """Return the GPU's CUDA compute capability (e.g. '12.0'), or None."""
-    try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
-            text=True, stderr=subprocess.DEVNULL
-        )
-        return out.strip().splitlines()[0].strip()
-    except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
-        return None
+nvidia = discover_nvidia()
+nvidia_gpus = nvidia.gpus
+nvidia_vram_gb = nvidia.total_vram_gb
+for device in nvidia_gpus:
+    print(f"  GPU:     {device['name']}")
+    vram = device["vram_gb"]
+    print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unified with system RAM'}")
+    print(f"  Driver:  {device['driver']}")
 
 rocm_gfx = []         # gfx targets, set by check_rocm() — vLLM's wheels are per-target
 rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
@@ -326,9 +290,9 @@ def check_linux_intel_gpu_runtime():
             return False
     return True
 
-nvidia_ok               = check_nvidia()
-nvidia_compute_cap      = get_nvidia_compute_cap() if nvidia_ok else None
-nvidia_max_cuda_version = get_nvidia_max_cuda_version() if nvidia_ok else None
+nvidia_ok = nvidia.available
+nvidia_compute_cap = nvidia.compute_capability
+nvidia_max_cuda_version = nvidia.max_cuda_version
 rocm_ok             = False
 metal_ok            = False
 amd_windows         = False

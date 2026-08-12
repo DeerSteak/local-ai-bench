@@ -5,6 +5,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.runtime import hardware
+
 
 @dataclass(frozen=True)
 class SystemDiscovery:
@@ -14,6 +16,21 @@ class SystemDiscovery:
     node: str
     total_ram_gb: float | None
     chip: str | None = None
+
+
+@dataclass(frozen=True)
+class NvidiaDiscovery:
+    gpus: list[dict]
+    compute_capability: str | None
+    max_cuda_version: str | None
+
+    @property
+    def available(self) -> bool:
+        return bool(self.gpus)
+
+    @property
+    def total_vram_gb(self) -> float:
+        return sum(device["vram_gb"] or 0.0 for device in self.gpus)
 
 
 def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscovery:
@@ -56,3 +73,29 @@ def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscove
         os_name=os_name, release=platform.release(), machine=platform.machine(),
         node=platform.node(), total_ram_gb=total_ram_gb, chip=chip,
     )
+
+
+def discover_nvidia() -> NvidiaDiscovery:
+    try:
+        inventory = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+             "--format=csv,noheader"], text=True, stderr=subprocess.DEVNULL,
+        )
+        gpus = hardware.parse_nvidia_gpus(inventory)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return NvidiaDiscovery([], None, None)
+    try:
+        capability = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip().splitlines()[0].strip()
+    except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
+        capability = None
+    try:
+        summary = subprocess.check_output(
+            ["nvidia-smi"], text=True, stderr=subprocess.DEVNULL,
+        )
+        max_cuda = hardware.parse_nvidia_max_cuda_version(summary)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        max_cuda = None
+    return NvidiaDiscovery(gpus, capability, max_cuda)
