@@ -100,7 +100,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
-| `results/run_plan.py` | Immutable, serializable, path-free execution plan and deterministic plan identity |
+| `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
 | `results/resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
@@ -111,9 +111,11 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
-| `runtime/workload_runner.py` | Owned internal single-shot runner; reconstructs its immutable plan from the journal and exposes no general command surface |
+| `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
-| `app/orchestration.py` | Local run paths, fixed stage ordering/execution, and engine/ComfyUI lifecycle coordination |
+| `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
+| `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |
+| `app/result_actions.py` / `app/recovery_actions.py` | GUI-facing result/log/dashboard commands and recovery review/command construction |
 | `results/result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
@@ -126,11 +128,14 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/engine_selection.py` | Pure engine-picker rules: defaults, disabled engines, and which selected engines still need installing |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
-| `setup/runtime_update.py` | Transactional validation, replacement, and rollback for app-managed engine updates |
+| `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
 | `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
-| `runtime/shared.py` | Cross-cutting helpers: plain frontend and timestamped benchmark console output, machine profiling, engine-agnostic run/crash orchestration, ComfyUI server lifecycle/HTTP client |
+| `runtime/shared.py` | Remaining cross-workload console, machine-profile, crash/retry, accuracy-runner, and ComfyUI helpers pending narrow ownership |
+| `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
+| `runtime/generation_guard.py` / `runtime/failure_handling.py` | Generation-loop detection and consistent unexpected per-model failure records |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
-| `runtime/engines/base.py`, `runtime/engines/llamacpp.py` | `InferenceEngine` interface and `LlamaCppEngine` — server lifecycle + HTTP/process client, see [Engines](engines.md) |
+| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/vllm.py` | Engine interface and engine-specific lifecycle/transport clients, see [Engines](engines.md) |
+| `runtime/engines/chat_flow.py` | Engine-neutral bounded chat finalization and measurement aggregation |
 | `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
 | `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
 | `workloads/conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
@@ -145,6 +150,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/code_benchmark.py` | Restricted Python code-generation accuracy test |
 | `workloads/code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
 | `workloads/tool_benchmark.py` | Tool-calling accuracy test |
+| `workloads/accuracy_scoring.py` | Shared accuracy-bank aggregation with workload-owned correctness callbacks |
 | `results/regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `workloads/llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `workloads/vllm_benchmark.py` | Opt-in `vllmbench` test — vLLM's own `vllm bench latency`/`throughput` sweep, bypassing the HTTP engine (see [Workloads](workloads.md#vllm-bench)) |

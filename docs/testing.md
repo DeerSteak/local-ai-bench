@@ -112,7 +112,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
-| Statistics, prompts, and scoring | [test_shared_stats.py](../tests/test_shared_stats.py), [test_shared_tally_accuracy_entry.py](../tests/test_shared_tally_accuracy_entry.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
+| Statistics, prompts, scoring, and loop detection | [test_shared_stats.py](../tests/test_shared_stats.py), [test_accuracy_scoring.py](../tests/test_accuracy_scoring.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
 | ComfyUI installation and managed-model path resolution | [test_comfyui_installation.py](../tests/test_comfyui_installation.py) |
 | Versioned setup configuration and path handoff | [test_setup_config.py](../tests/test_setup_config.py) |
