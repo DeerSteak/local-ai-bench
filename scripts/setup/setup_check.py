@@ -32,11 +32,7 @@ from scripts.runtime.comfyui_installation import (
     resolve_comfyui_setup_choice,
     write_extra_model_paths,
 )
-from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
-from scripts.setup.runtime_update import (
-    fetch_llamacpp_release, llamacpp_clone_command, llamacpp_source_release,
-    update_macos_llamacpp,
-)
+from scripts.runtime.llamacpp_tools import find_nvcc
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -46,6 +42,7 @@ from scripts.setup.model_inventory import (
     fits_any_engine, format_engine_sizes, models_missing_engine_support,
 )
 from scripts.setup.model_download import download_hf_files, download_hf_snapshot
+from scripts.setup import llamacpp_install
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
@@ -299,184 +296,22 @@ if hardware.detect_wsl(os_name, platform.release()):
     info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
          "then run 'wsl --shutdown' — see docs/setup.md")
 
-def _find_llamacpp_exe(base_name):
-    """Locate one llama.cpp tool using the runtime's system-first policy."""
-    return find_llamacpp_tool(
-        base_name, vendored_dir=LLAMACPP_DIR,
-        platform_name=os_name, which_fn=shutil.which,
-    )
-
 def find_llamacpp_binary():
-    return _find_llamacpp_exe("llama-server")
+    return llamacpp_install.find_tool("llama-server", LLAMACPP_DIR, os_name)
 
 def find_llamacpp_bench_binary():
-    return _find_llamacpp_exe("llama-bench")
+    return llamacpp_install.find_tool("llama-bench", LLAMACPP_DIR, os_name)
 
 def find_llamacpp_batched_bench_binary():
-    return _find_llamacpp_exe("llama-batched-bench")
-
-def download_llamacpp_windows(max_cuda_version=None):
-    """Download the latest llama.cpp Windows release into LLAMACPP_DIR,
-    preferring CUDA over Vulkan — see docs/setup.md's Windows (NVIDIA) note."""
-    import urllib.request
-    import zipfile
-
-    info("Fetching latest llama.cpp release info ...")
-    try:
-        req = urllib.request.Request(
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
-            headers={"Accept": "application/vnd.github+json"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            release = json.load(r)
-        tag = release["tag_name"]
-    except Exception as e:
-        fail(f"Could not fetch llama.cpp release info: {e}")
-        return False
-
-    cuda_pair = hardware.select_cuda_release_assets(release["assets"], max_cuda_version)
-    if cuda_pair is not None:
-        bin_asset, cudart_asset, cuda_ver = cuda_pair
-        label = f"CUDA {cuda_ver}"
-        assets = [bin_asset, cudart_asset]
-    else:
-        vulkan_asset = next(
-            (a for a in release["assets"]
-             if "win-vulkan-x64" in a["name"].lower() and a["name"].endswith(".zip")),
-            None,
-        )
-        if not vulkan_asset:
-            fail("No Windows Vulkan build found in the latest llama.cpp release")
-            return False
-        label = "Vulkan"
-        assets = [vulkan_asset]
-
-    total_size_mb = sum(a["size"] for a in assets) // (1024 ** 2)
-    info(f"Downloading llama.cpp {tag} ({label}, {total_size_mb} MB) ...")
-    tmp_paths = [SCRIPT_DIR / a["name"] for a in assets]
-    try:
-        for asset, tmp in zip(assets, tmp_paths):
-            download_file(asset["browser_download_url"], tmp, expected_size=asset["size"])
-    except Exception as e:
-        fail(f"Download failed: {e}")
-        for tmp in tmp_paths:
-            tmp.unlink(missing_ok=True)
-        return False
-
-    info(f"Extracting {', '.join(a['name'] for a in assets)} ...")
-    try:
-        LLAMACPP_DIR.mkdir(parents=True, exist_ok=True)
-        for tmp in tmp_paths:
-            safe_extract_zip(tmp, LLAMACPP_DIR)
-            tmp.unlink()
-    except Exception as e:
-        fail(f"Extraction failed: {e}")
-        for tmp in tmp_paths:
-            tmp.unlink(missing_ok=True)
-        return False
-
-    if not any(LLAMACPP_DIR.rglob("llama-server.exe")):
-        fail(f"Extracted llama.cpp {tag} ({label}) but llama-server.exe wasn't found inside it")
-        return False
-    if not any(LLAMACPP_DIR.rglob("llama-bench.exe")):
-        warn(f"Extracted llama.cpp {tag} ({label}) but llama-bench.exe wasn't found inside it — "
-             "llama-bench-based tests won't be available")
-    if not any(LLAMACPP_DIR.rglob("llama-batched-bench.exe")):
-        warn(f"Extracted llama.cpp {tag} ({label}) but llama-batched-bench.exe wasn't found inside it — "
-             "the llamabenchconc test won't be available")
-    ok(f"llama.cpp {tag} ({label}) extracted to {LLAMACPP_DIR}")
-    return True
+    return llamacpp_install.find_tool("llama-batched-bench", LLAMACPP_DIR, os_name)
 
 def install_llamacpp():
-    """Install llama-server for this OS, using the GPU backend already
-    detected above — see docs/setup.md's DGX Spark platform note."""
-    if os_name == "Darwin":
-        info("Downloading the latest official llama.cpp macOS release ...")
-        result = update_macos_llamacpp(LLAMACPP_DIR, platform.machine())
-        if not result.success:
-            fail(result.detail)
-        return result.success
-
-    elif os_name == "Linux":
-        if not shutil.which("git") or not shutil.which("cmake"):
-            fail("git and cmake are required to build llama.cpp from source — "
-                 "install them (e.g. sudo apt install git cmake build-essential) and re-run")
-            return False
-
-        cmake_flags = []
-        if nvidia_ok:
-            nvcc_path = find_nvcc()
-            if not nvcc_path:
-                warn("NVIDIA GPU detected but the CUDA toolkit (nvcc) isn't installed — "
-                     "building CPU-only. Install the CUDA toolkit and re-run for GPU support.")
-            else:
-                info(f"Building with CUDA support ({nvcc_path}) ...")
-                # Named explicitly so a toolkit that is off PATH still configures.
-                cmake_flags += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc_path}"]
-                cuda_arch = cuda_architecture(nvidia_compute_cap)
-                if cuda_arch:
-                    cmake_flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={cuda_arch}")
-                else:
-                    warn("Could not read this GPU's compute capability — cmake will probe for it, "
-                         "which fails under WSL2 and yields a CUDA build with no usable kernels")
-        elif rocm_ok:
-            info("Building with ROCm/HIP support ...")
-            cmake_flags += ["-DGGML_HIP=ON"]
-        else:
-            info("No GPU backend detected — building CPU-only ...")
-
-        if LLAMACPP_DIR.exists():
-            info("Updating existing llama.cpp checkout ...")
-            pull = subprocess.run(["git", "pull"], cwd=str(LLAMACPP_DIR))
-            if pull.returncode != 0:
-                warn("git pull failed — building from the existing checkout as-is")
-        else:
-            info("Cloning llama.cpp ...")
-            try:
-                release_tag, release_build = llamacpp_source_release(fetch_llamacpp_release())
-            except Exception as exc:
-                fail(f"Could not resolve the latest llama.cpp source release: {exc}")
-                return False
-            clone = subprocess.run(llamacpp_clone_command(LLAMACPP_DIR, release_tag))
-            if clone.returncode != 0:
-                fail("git clone failed")
-                return False
-            cmake_flags.append(f"-DLLAMA_BUILD_NUMBER={release_build}")
-
-        build_dir = LLAMACPP_DIR / "build"
-        info(f"Configuring build ({' '.join(cmake_flags) or 'CPU-only'}) ...")
-        configure = subprocess.run(
-            ["cmake", "-B", str(build_dir), "-S", str(LLAMACPP_DIR)] + cmake_flags
-        )
-        if configure.returncode != 0:
-            fail("cmake configure failed")
-            return False
-
-        info("Building llama-server, llama-bench, and llama-batched-bench — this can take several minutes ...")
-        build = subprocess.run([
-            "cmake", "--build", str(build_dir),
-            "--target", "llama-server", "--target", "llama-bench", "--target", "llama-batched-bench",
-            "--config", "Release", "-j",
-        ])
-        if build.returncode != 0:
-            fail("Build failed")
-            return False
-
-        if not any(build_dir.rglob("llama-server")):
-            fail(f"Build finished but llama-server wasn't found under {build_dir}")
-            return False
-        if not any(build_dir.rglob("llama-bench")):
-            warn(f"Build finished but llama-bench wasn't found under {build_dir} — "
-                 "llama-bench-based tests won't be available")
-        if not any(build_dir.rglob("llama-batched-bench")):
-            warn(f"Build finished but llama-batched-bench wasn't found under {build_dir} — "
-                 "the llamabenchconc test won't be available")
-        return True
-
-    elif os_name == "Windows":
-        return download_llamacpp_windows(nvidia_max_cuda_version)
-
-    return False
+    return llamacpp_install.install(
+        LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
+        compute_capability=nvidia_compute_cap,
+        max_cuda_version=nvidia_max_cuda_version,
+        info=info, warn=warn, fail=fail, ok=ok,
+    )
 
 # ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
 
