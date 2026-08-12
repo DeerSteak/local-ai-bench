@@ -5,7 +5,7 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
 from scripts.runtime.shared import Shared
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 
 
 class LLMPrefillBenchmark:

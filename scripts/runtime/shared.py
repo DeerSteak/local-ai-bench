@@ -34,7 +34,7 @@ from scripts.runtime.log_redaction import redact_log_text
 from scripts.workloads.models import IMAGE_MODELS
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
-from scripts.app.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.progress_events import emit_model_finished, emit_progress
 
 if TYPE_CHECKING:
     from scripts.runtime.engines.base import InferenceEngine

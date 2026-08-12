@@ -20,7 +20,7 @@ from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
-from scripts.app.progress_events import emit_progress, set_progress_engine
+from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
