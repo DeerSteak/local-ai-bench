@@ -68,9 +68,7 @@ from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.support_bundle import export_support_bundle, preview_support_bundle
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.model_import_dialog import show_model_import_dialog
-from scripts.app.engine_management import (
-    build_engine_management_tab, collect_engine_management, vllm_update_support,
-)
+from scripts.app.engine_management import collect_engine_management, vllm_update_support
 from scripts.setup.runtime_update import (
     RuntimeUpdateResult, detect_nvidia_max_cuda_version, fetch_llamacpp_release,
     fetch_llamacpp_release_tag, fetch_llamacpp_releases, rebuild_managed_llamacpp,
@@ -100,6 +98,7 @@ from scripts.app.recovery_actions import (
 )
 from scripts.app.benchmark_gui_screens.history import build_history_screen
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
+from scripts.app.benchmark_gui_screens.engines import build_engine_screen
 
 
 GPU_SPLIT_MODE_LABELS = {
@@ -779,10 +778,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_screen = build_history_screen(notebook, tk=tk, ttk=ttk)
     log_tab = run_log_screen.frame
     history_tab = history_screen.frame
-    engines_tab = ttk.Frame(notebook, padding=18)
-    notebook.add(engines_tab, text="Engine Management")
-    engine_management = build_engine_management_tab(
-        parent=engines_tab, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
+    engines_tab, engine_management = build_engine_screen(
+        notebook, root=root, tk=tk, ttk=ttk, messagebox=messagebox,
         status_loader=lambda: collect_engine_management(get_engine, hardware_backend),
         vllm_updater=perform_vllm_update,
         vllm_version_loader=(
