@@ -27,6 +27,7 @@ def test_inspection_placeholder_populates_every_visible_identity_field():
         "Version": "Inspecting…",
         "Backend": "Inspecting…",
         "Health": "Inspecting…",
+        "Install Type": "Inspecting…",
     }
 
 

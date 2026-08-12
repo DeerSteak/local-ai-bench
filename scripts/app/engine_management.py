@@ -46,6 +46,7 @@ class EngineManagementController:
 def inspection_placeholder(engine: str) -> EngineStatus:
     return EngineStatus(
         engine, "inspecting", "Inspecting…", "Inspecting…", "Inspecting…", "Inspecting…",
+        {"install_type": "Inspecting…"} if engine == "llamacpp" else {},
     )
 
 

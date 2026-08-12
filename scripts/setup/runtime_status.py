@@ -89,10 +89,20 @@ def build_llamacpp_status(location: str | Path | None, managed_root: Path, backe
     adjusted = RuntimeIdentity(
         identity.engine, identity.ownership, identity.location, version, identity.version_output,
     )
-    components = {}
-    if identity.managed and parse_llamacpp_commit(identity.version_output) and identity.version != "1":
+    components = {"install_type": llamacpp_install_type(identity, managed_root)}
+    if (identity.managed and identity.version and identity.version != "1"
+            and parse_llamacpp_commit(identity.version_output)):
         components["build_number"] = identity.version
     return _status(adjusted, backend, health, components, warnings)
+
+
+def llamacpp_install_type(identity: RuntimeIdentity, managed_root: Path) -> str:
+    if identity.managed:
+        return "Built from source" if (Path(managed_root) / ".git").is_dir() \
+            else "Binary download"
+    if identity.ownership == "missing":
+        return "Not installed"
+    return "System installation"
 
 
 def build_vllm_status(location: str | Path | None, managed_root: Path, backend: str,

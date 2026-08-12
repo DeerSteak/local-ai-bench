@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from scripts.setup.runtime_identity import RuntimeIdentity
 from scripts.setup.runtime_status import (
-    build_llamacpp_status, build_vllm_status, parse_vllm_environment,
+    build_llamacpp_status, build_vllm_status, llamacpp_install_type, parse_vllm_environment,
     probe_vllm_environment, runtime_python,
 )
 
@@ -44,6 +45,16 @@ def test_llamacpp_status_combines_identity_backend_and_health(tmp_path):
     )
     assert status.managed and status.version == "6527"
     assert status.backend == "metal" and status.health == "ready"
+    assert status.components["install_type"] == "Binary download"
+
+
+def test_llamacpp_install_type_distinguishes_source_binary_and_system(tmp_path):
+    managed = RuntimeIdentity("llamacpp", "app_managed", "/runtime", "1", "")
+    system = RuntimeIdentity("llamacpp", "system_managed", "/usr/bin/llama-server", "1", "")
+    assert llamacpp_install_type(managed, tmp_path) == "Binary download"
+    (tmp_path / ".git").mkdir()
+    assert llamacpp_install_type(managed, tmp_path) == "Built from source"
+    assert llamacpp_install_type(system, tmp_path) == "System installation"
 
 
 def test_managed_llamacpp_status_uses_source_commit_date_and_hash(tmp_path):
@@ -65,6 +76,7 @@ def test_managed_llamacpp_status_uses_source_commit_date_and_hash(tmp_path):
     assert status.version == "2026.08.11-a1b2c3d"
     assert status.health == "ready"
     assert status.components["build_number"] == "12345"
+    assert status.components["install_type"] == "Built from source"
 
 
 def test_vllm_status_reports_dependency_stack_and_wsl_policy(tmp_path):
