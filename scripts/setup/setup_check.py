@@ -50,6 +50,9 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
+from scripts.setup.setup_console import (
+    BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
+)
 from scripts.setup.engine_selection import (
     LLAMACPP, VLLM, build_engine_entries, engine_summary_line, engines_needing_install,
     needs_python_headers, selected_engine_names, toggle_engine,
@@ -81,23 +84,6 @@ _detected_comfyui = find_comfyui_installation(
 )
 COMFYUI_DIR: Path = _detected_comfyui or config.COMFYUI_DIR
 
-# ── Formatting helpers ─────────────────────────────────────────────────────────
-
-GREEN, YELLOW, RED, CYAN, RESET, BOLD = (
-    config.GREEN, config.YELLOW, config.RED, config.CYAN, config.RESET, config.BOLD
-)
-
-def ok(msg):    print(f"  {GREEN}✓{RESET}  {msg}")
-def warn(msg):  print(f"  {YELLOW}!{RESET}  {msg}")
-def fail(msg):  print(f"  {RED}✗{RESET}  {msg}")
-def info(msg):  print(f"  {CYAN}→{RESET}  {msg}")
-def section(title): print(f"\n{BOLD}{title}{RESET}\n" + "─" * 50)
-
-def link(url, text=None):
-    """OSC 8 terminal hyperlink. Terminals without support swallow the escape
-    codes as an unrecognized control sequence, leaving just the visible text."""
-    return f"\033]8;;{url}\033\\{text or url}\033]8;;\033\\"
-
 INSTALL_STARTED = False  # flipped True once the unattended install phase begins
 GUI_CANCEL_EXIT = 10
 
@@ -110,18 +96,6 @@ def cancel_setup(*_args):
     sys.exit(130)
 
 signal.signal(signal.SIGINT, cancel_setup)
-
-def confirm(prompt, default=True):
-    """Plain y/n prompt via input() — see docs/setup.md's picker-design note."""
-    hint = "[Y/n]" if default else "[y/N]"
-    try:
-        reply = input(f"  {CYAN}{prompt} {hint}{RESET} ").strip().lower()
-    except EOFError:
-        print()
-        return default
-    if reply == "":
-        return default
-    return reply in ("y", "yes")
 
 def hf_download(repo, filename, token=None, dest_dir=None, save_as=None):
     """Download `filename` (or every file, if a list) from a HuggingFace repo,

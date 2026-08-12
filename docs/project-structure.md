@@ -159,6 +159,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `runtime/comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
 | `setup/setup_check.py` | Hardware detection, model picker, unattended install |
+| `setup/setup_console.py` | Terminal status formatting, hyperlinks, and confirmation prompts |
 | `setup/setup_gui.py` | Tkinter setup wizard that produces the same pre-download setup plan as the terminal interface |
 | `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
