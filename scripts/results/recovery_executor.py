@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from scripts.app.benchmark import run_supervised_stage
+from scripts.app.supervised_stage import run_supervised_stage
 from scripts.results.event_store import EventStore
 from scripts.results.llm_event_stage import event_store_path
 from scripts.runtime.pause_control import apply_pause_evidence
