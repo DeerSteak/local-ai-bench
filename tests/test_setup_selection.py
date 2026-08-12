@@ -2,7 +2,11 @@ import os
 
 import pytest
 
-from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
+from scripts.setup import setup_selection
+from scripts.setup.setup_selection import (
+    additional_disk_space_needed, save_hf_token, select_models,
+    selected_cleanup_names, toggle_all_models,
+)
 
 
 def test_toggle_all_models_selects_models_without_enabling_cleanup():
@@ -63,3 +67,34 @@ def test_save_hf_token_rejects_empty_or_multiline_values(tmp_path, token):
 )
 def test_additional_disk_space_needed(free_gb, download_gb, expected):
     assert additional_disk_space_needed(free_gb, download_gb) == expected
+
+
+def test_select_models_accepts_default_catalog_selection(monkeypatch, tmp_path):
+    monkeypatch.setattr(setup_selection, "find_non_catalog_model_dirs", lambda _path: [])
+    monkeypatch.setattr(setup_selection, "find_non_catalog_vllm_repos", lambda _path: [])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    llms, images, embeddings, cleanup, vllm_cleanup = select_models(
+        engines=("llamacpp",), vllm_cache_home=tmp_path, cancel=lambda: None,
+    )
+
+    assert llms
+    assert images
+    assert embeddings
+    assert cleanup == []
+    assert vllm_cleanup == []
+
+
+def test_select_models_delegates_cancel(monkeypatch, tmp_path):
+    cancelled = []
+    replies = iter(["q", ""])
+    monkeypatch.setattr(setup_selection, "find_non_catalog_model_dirs", lambda _path: [])
+    monkeypatch.setattr(setup_selection, "find_non_catalog_vllm_repos", lambda _path: [])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(replies))
+
+    select_models(
+        engines=("llamacpp",), vllm_cache_home=tmp_path,
+        cancel=lambda: cancelled.append(True),
+    )
+
+    assert cancelled == [True]

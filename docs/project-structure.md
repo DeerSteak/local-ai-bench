@@ -129,7 +129,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
 | `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
-| `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
+| `setup/setup_selection.py` | Terminal model picker, fit-based defaults, input parsing, and destructive-cleanup isolation |
 | `runtime/shared.py` | Remaining cross-workload console, machine-profile, measured-run, accuracy-runner, and ComfyUI helpers pending narrow ownership |
 | `runtime/crash_cache.py` | Engine-scoped crash-cache persistence, retry policy, and cleanup |
 | `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
