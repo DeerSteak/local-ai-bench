@@ -28,8 +28,7 @@ from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 
 
 TEST_DEFINITIONS = [
-    (spec.key, "llama-bench (throughput + concurrency)" if spec.key == "llamabench"
-     else spec.label, spec.ui_family, spec.default_enabled)
+    (spec.key, spec.menu_label or spec.label, spec.ui_family, spec.default_enabled)
     for spec in STAGE_SPECS if spec.menu_visible
 ]
 # One frontend toggle can cover several CLI tests. The CLI keeps them separate so

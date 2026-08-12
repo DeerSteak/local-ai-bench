@@ -23,6 +23,7 @@ def test_stage_groups_are_derived_from_categories():
 def test_every_stage_has_result_and_model_ownership():
     assert all(spec.section and spec.model_family and spec.ui_family for spec in STAGE_SPECS)
     assert stage_spec("conv").section == "llm_conversation"
+    assert stage_spec("llamabench").menu_label == "llama-bench (throughput + concurrency)"
     with pytest.raises(ValueError, match="unknown benchmark stage"):
         stage_spec("unknown")
 
