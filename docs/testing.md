@@ -155,6 +155,8 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 `LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Stage tests use fake runners and engines to cover fixed ordering, selection, preparation/execution/cleanup classification, state transitions, engine exclusivity, CPU-mode restoration, and cleanup after failure. Shared workload orchestration covers retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
 
+Telemetry tests cover empty and failed channels, retained lifecycle sub-windows, weighted case aggregation, every headroom threshold boundary, sampler failure containment, window changes, and thread cleanup after exceptions. Existing GUI resource-query tests exercise the same functions through imports from the shared runtime module.
+
 ## Dashboard tests
 
 The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:

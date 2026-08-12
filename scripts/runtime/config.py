@@ -94,6 +94,9 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
+TELEMETRY_INTERVAL_SEC = 1.0
+MEMORY_HEADROOM_COMFORTABLE_FRACTION = 0.20
+
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
 # Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
 # (conversation) so llama-bench numbers can stand in for both as they're phased out.
