@@ -50,6 +50,13 @@ class RocmDiscovery:
         return sum(device["vram_gb"] for device in self.gpus) if self.gpus else None
 
 
+@dataclass(frozen=True)
+class DisplayDiscovery:
+    vendor: str | None
+    kind: str | None
+    name: str | None
+
+
 def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscovery:
     os_name = platform.system()
     total_ram_gb = None
@@ -159,3 +166,54 @@ def rocm_version(version_path: Path = Path("/opt/rocm/.info/version")) -> tuple[
         return hardware.parse_rocm_version(version_path.read_text(encoding="utf-8"))
     except OSError:
         return None
+
+
+def discover_metal() -> tuple[bool, list[str]]:
+    if platform.system() != "Darwin":
+        return False, []
+    try:
+        output = subprocess.check_output(
+            ["system_profiler", "SPDisplaysDataType"], text=True,
+        )
+    except Exception:
+        return False, []
+    available = "Metal" in output or "Apple" in output
+    details = [
+        line.strip() for line in output.splitlines()
+        if "Chipset Model" in line or "Metal" in line
+    ]
+    return available, details if available else []
+
+
+def discover_windows_gpu() -> DisplayDiscovery:
+    if platform.system() != "Windows":
+        return DisplayDiscovery(None, None, None)
+    try:
+        output = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_VideoController).Name"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return DisplayDiscovery(None, None, None)
+    for name in (line.strip() for line in output.splitlines() if line.strip()):
+        if "AMD" in name or "Radeon" in name:
+            return DisplayDiscovery("amd", hardware.classify_gpu(name), name)
+        if "Intel" in name and "Arc" in name:
+            return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
+    return DisplayDiscovery(None, None, None)
+
+
+def discover_linux_intel_gpu() -> DisplayDiscovery:
+    if platform.system() != "Linux":
+        return DisplayDiscovery(None, None, None)
+    try:
+        output = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return DisplayDiscovery(None, None, None)
+    for line in output.splitlines():
+        if (any(key in line for key in ("VGA", "3D controller", "Display"))
+                and "Intel" in line and "Arc" in line):
+            name = line.split(":", 2)[-1].strip()
+            return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
+    return DisplayDiscovery(None, None, None)

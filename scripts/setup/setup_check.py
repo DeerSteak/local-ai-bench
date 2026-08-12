@@ -51,7 +51,10 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
-from scripts.setup.setup_discovery import discover_nvidia, discover_rocm, discover_system, rocm_version
+from scripts.setup.setup_discovery import (
+    discover_linux_intel_gpu, discover_metal, discover_nvidia, discover_rocm,
+    discover_system, discover_windows_gpu, rocm_version,
+)
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
@@ -163,74 +166,6 @@ rocm_gpus = rocm.gpus if rocm else []
 for name in rocm.names[:3] if rocm else []:
     print(f"  ROCm GPU: {name}")
 
-def check_metal():
-    if platform.system() != "Darwin":
-        return False
-    try:
-        result = subprocess.check_output(
-            ["system_profiler", "SPDisplaysDataType"], text=True
-        )
-        if "Metal" in result or "Apple" in result:
-            for line in result.splitlines():
-                if "Chipset Model" in line or "Metal" in line:
-                    print(f"  {line.strip()}")
-            return True
-    except Exception:
-        pass
-    return False
-
-windows_gpu_kind = None  # "discrete" or "integrated", set by check_windows_gpu()
-
-def check_windows_gpu():
-    """Detect GPU vendor on Windows via PowerShell. Returns 'amd', 'intel', or None."""
-    global windows_gpu_kind
-    if platform.system() != "Windows":
-        return None
-
-    names = []
-    try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command",
-             "(Get-CimInstance Win32_VideoController).Name"],
-            text=True, stderr=subprocess.DEVNULL,
-        )
-        names = [n.strip() for n in out.splitlines() if n.strip()]
-    except Exception:
-        pass
-
-    for name in names:
-        if "AMD" in name or "Radeon" in name:
-            print(f"  GPU:     {name}")
-            windows_gpu_kind = hardware.classify_gpu(name)
-            return "amd"
-        if "Intel" in name and "Arc" in name:
-            print(f"  GPU:     {name}")
-            windows_gpu_kind = hardware.classify_gpu(name)
-            return "intel"
-
-    return None
-
-linux_intel_gpu_kind = None  # "discrete" or "integrated", set by check_linux_intel_gpu()
-
-def check_linux_intel_gpu():
-    """Detect an Intel Arc GPU on Linux via lspci — detection/labeling only,
-    see docs/setup.md's Intel Arc platform notes."""
-    global linux_intel_gpu_kind
-    if platform.system() != "Linux":
-        return False
-    try:
-        out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
-        for line in out.splitlines():
-            if (any(k in line for k in ("VGA", "3D controller", "Display"))
-                    and "Intel" in line and "Arc" in line):
-                name = line.split(":", 2)[-1].strip()
-                print(f"  GPU:     {name}")
-                linux_intel_gpu_kind = hardware.classify_gpu(name)
-                return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
-    return False
-
 # See docs/setup.md's Intel Arc platform notes.
 INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
 
@@ -258,16 +193,28 @@ intel_linux_runtime = False
 
 if not nvidia_ok:
     rocm_ok = bool(rocm and rocm.available)
-if not nvidia_ok and not rocm_ok:
-    metal_ok = check_metal()
+metal_ok, metal_details = discover_metal() if not nvidia_ok and not rocm_ok else (False, [])
+for detail in metal_details:
+    print(f"  {detail}")
 if not nvidia_ok and os_name == "Windows":
-    _win_vendor   = check_windows_gpu()
-    amd_windows   = _win_vendor == "amd"
-    intel_windows = _win_vendor == "intel"
+    windows_gpu = discover_windows_gpu()
+    windows_gpu_kind = windows_gpu.kind
+    amd_windows = windows_gpu.vendor == "amd"
+    intel_windows = windows_gpu.vendor == "intel"
+    if windows_gpu.name:
+        print(f"  GPU:     {windows_gpu.name}")
+else:
+    windows_gpu_kind = None
 if not nvidia_ok and not rocm_ok and os_name == "Linux":
-    intel_linux = check_linux_intel_gpu()
+    linux_gpu = discover_linux_intel_gpu()
+    linux_intel_gpu_kind = linux_gpu.kind
+    intel_linux = linux_gpu.vendor == "intel"
+    if linux_gpu.name:
+        print(f"  GPU:     {linux_gpu.name}")
     if intel_linux:
         intel_linux_runtime = check_linux_intel_gpu_runtime()
+else:
+    linux_intel_gpu_kind = None
 
 if nvidia_ok:
     ok("CUDA / Nvidia GPU detected")

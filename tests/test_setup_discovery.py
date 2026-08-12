@@ -90,3 +90,29 @@ def test_missing_rocm_is_empty(monkeypatch):
     )
 
     assert not setup_discovery.discover_rocm().available
+
+
+def test_discovers_windows_amd_gpu(monkeypatch):
+    _platform(monkeypatch, "Windows")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: "AMD Radeon RX 7900 XTX\n",
+    )
+
+    result = setup_discovery.discover_windows_gpu()
+
+    assert result.vendor == "amd"
+    assert result.kind == "discrete"
+
+
+def test_discovers_linux_intel_arc(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: "00:02.0 VGA compatible controller: Intel Arc A770\n",
+    )
+
+    result = setup_discovery.discover_linux_intel_gpu()
+
+    assert result.vendor == "intel"
+    assert result.name == "Intel Arc A770"
