@@ -20,7 +20,7 @@ if git diff --cached --name-only --diff-filter=ACM | grep -q '\.py$'; then
   if command -v pyright >/dev/null 2>&1; then
     pyright_cmd="pyright"
   else
-    pyright_cmd="npx --yes pyright@latest"
+    pyright_cmd="npx --yes pyright@1.1.411"
   fi
   if ! $pyright_cmd; then
     echo "pyright found type errors — fix them or, for a false positive only, commit with --no-verify." >&2
@@ -35,7 +35,7 @@ if git diff --cached --name-only --diff-filter=ACM | grep -q '^dashboard/src/.*\
       tsc_failed=1
     fi
   else
-    if ! (cd "$root/dashboard" && npx --yes typescript@latest tsc --noEmit); then
+    if ! (cd "$root/dashboard" && npx --yes typescript@6.0.3 tsc --noEmit); then
       tsc_failed=1
     fi
   fi

@@ -83,7 +83,7 @@ npm run lint
 npx tsc --noEmit
 ```
 
-Tkinter controller tests run without a display. Real screen-construction and application-smoke tests run locally when a display is available and under Xvfb in Linux CI. Pull requests targeting `develop`, `release/**`, or `main` run the Python suite, Pyright, and all dashboard gates; keep every `Pull request CI` job green.
+Tkinter controller tests run without a display. Real screen-construction and application-smoke tests run locally when a display is available and under Xvfb in Linux CI. Pull requests targeting `develop`, `release/**`, or `main` run dependency review, the Python suite, Pyright, and all dashboard gates; keep every `Pull request CI` job green.
 
 Follow the stronger release gates in [Release Policy](release-policy.md) when preparing a stable version. Passing the ordinary unit suite alone is not stable-release approval.
 
@@ -146,11 +146,10 @@ As inspected on August 12, 2026, GitHub is configured with:
 - `main` as the default branch;
 - repository-level support for squash, merge-commit, and rebase merging;
 - automatic source-branch deletion disabled;
-- an active `protect main and release` ruleset targeting the default branch and `release/**`;
+- an active `protect main, develop, and release` ruleset targeting the default branch, `develop`, and `release/**`;
 - deletion and non-fast-forward updates blocked on those branches;
 - one approving review, stale-review dismissal, Code Owner review, and approval after the latest push required;
 - only squash merges allowed by that ruleset;
-- no equivalent protection on `develop`;
 - no required status checks in that ruleset.
 
 The squash-only rule conflicts with the release ancestry policy above. Before using this workflow for the next release, update repository enforcement so release pull requests can use merge commits while ordinary feature pull requests remain squash merges.
@@ -163,14 +162,14 @@ Use separate rulesets because normal integration and release publication need di
 
 - Block deletion and force pushes.
 - Require a pull request, one approval, Code Owner review, approval after the latest push, and resolved review threads.
-- Require `Python tests (Tk/Xvfb)`, `Pyright`, `Dashboard tests, lint, and types`, release/security gates, and any future applicable checks.
+- Require `Dependency review`, `Python tests (Tk/Xvfb)`, `Pyright`, `Dashboard tests, lint, and types`, release/security gates, and any future applicable checks.
 - Allow merge commits for `release/X.Y` into `main` and for release reconciliation.
 - Restrict bypass to explicit repository administrators for emergencies, with the bypass reason recorded.
 
 ### `develop`
 
 - Block deletion and force pushes.
-- Require pull requests and the `Python tests (Tk/Xvfb)`, `Pyright`, and `Dashboard tests, lint, and types` checks.
+- Require pull requests and the `Dependency review`, `Python tests (Tk/Xvfb)`, `Pyright`, and `Dashboard tests, lint, and types` checks.
 - Require review-thread resolution; require an approval when more than one contributor is active.
 - Allow squash merges for ordinary `feature/*`, `fix/*`, and `chore/*` pull requests.
 
