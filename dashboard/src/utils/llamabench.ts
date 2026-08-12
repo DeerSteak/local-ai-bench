@@ -1,7 +1,7 @@
 import { FILE_COLORS, MODEL_DASH_PATTERNS } from "../constants";
 import { buildFileLineConfigs, getModelColor, modelLabel, entriesOf } from "./shared";
 import type { JsonRecord } from "./shared";
-import type { ResultsFile, ChartRow } from "../types";
+import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
 export function llamaBenchPromptLabel(tokens: number): string {
   const k = (tokens ?? 0) / 1024;
@@ -61,8 +61,8 @@ export function buildLlamaBenchDecodeLineData(files: ResultsFile[], model: strin
   });
 }
 
-export function buildLlamaBenchDecodeLineConfigs(files: ResultsFile[], model: string, data: ChartRow[]) {
-  const configs: { dataKey: string, stroke: string, strokeDasharray?: string, name: string }[] = [];
+export function buildLlamaBenchDecodeLineConfigs(files: ResultsFile[], model: string, data: ChartRow[]): LineConfig[] {
+  const configs: LineConfig[] = [];
   files.forEach((file, fi) => {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
@@ -107,14 +107,14 @@ export function buildLlamaBenchDecodeLineDataByModel(file: ResultsFile, models: 
   });
 }
 
-export function buildLlamaBenchPrefillLineConfigsByModel(models: string[], data: ChartRow[]) {
+export function buildLlamaBenchPrefillLineConfigsByModel(models: string[], data: ChartRow[]): LineConfig[] {
   return models
     .filter(model => data.some(row => row[model] != null))
     .map(model => ({ dataKey: model, stroke: getModelColor(model), name: modelLabel(model) }));
 }
 
-export function buildLlamaBenchDecodeLineConfigsByModel(file: ResultsFile, models: string[], data: ChartRow[]) {
-  const configs: { dataKey: string, stroke: string, strokeDasharray?: string, name: string }[] = [];
+export function buildLlamaBenchDecodeLineConfigsByModel(file: ResultsFile, models: string[], data: ChartRow[]): LineConfig[] {
+  const configs: LineConfig[] = [];
   for (const model of models) {
     const tgValues = [...new Set<number>(
       llamaBenchDecodeEntries(file.data.llamabench?.[model]).map(entry => entry.n_gen),
@@ -133,11 +133,11 @@ export function buildLlamaBenchDecodeLineConfigsByModel(file: ResultsFile, model
   return configs;
 }
 
-export function buildLlamaBenchPrefillLineConfigs(files: ResultsFile[], data: ChartRow[]) {
+export function buildLlamaBenchPrefillLineConfigs(files: ResultsFile[], data: ChartRow[]): LineConfig[] {
   return buildFileLineConfigs(files).filter(config => data.some(row => row[config.dataKey] != null));
 }
 
-export function flattenLlamaBenchData(files: ResultsFile[]) {
+export function flattenLlamaBenchData(files: ResultsFile[]): ChartRow[] {
   return files.flatMap(file =>
     entriesOf(file.data.llamabench).flatMap(([model, modelData]) => {
       if (modelData?.error) {

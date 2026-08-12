@@ -96,7 +96,7 @@ function scalarRunRows(file: ResultsFile, section: string) {
   return rows;
 }
 
-export function buildValidityRows(files: ResultsFile[] | null, section: string) {
+export function buildValidityRows(files: ResultsFile[] | null, section: string): ValidityRow[] {
   if (!Array.isArray(files)) return [];
   if (GENERATION_SECTIONS.has(section)) {
     return files.flatMap(file => generationRows(file, section));
@@ -108,7 +108,7 @@ export function buildValidityRows(files: ResultsFile[] | null, section: string) 
   return [];
 }
 
-export function validitySummary(rows: { status: string }[]) {
+export function validitySummary(rows: { status: string }[]): Record<string, number> {
   return rows.reduce((summary, row) => {
     summary.total += 1;
     summary[row.status] = (summary[row.status] || 0) + 1;
@@ -121,7 +121,7 @@ const timestampMs = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export function buildPauseSummaries(files: ResultsFile[] | null) {
+export function buildPauseSummaries(files: ResultsFile[] | null): { fileId: ResultsFile["id"], system: string | undefined, count: number, totalPausedSeconds: number, incomplete: boolean }[] {
   if (!Array.isArray(files)) return [];
   return files.flatMap(file => {
     const run = file?.data?.run;

@@ -42,7 +42,7 @@ export function llamaBenchConcPromptDepth(file: ResultsFile, model: string): num
   return file.data.llamabenchconc?.[model]?.pp ?? null;
 }
 
-export function flattenLlamaBenchConcData(files: ResultsFile[]) {
+export function flattenLlamaBenchConcData(files: ResultsFile[]): ChartRow[] {
   return files.flatMap(f =>
     entriesOf(f.data.llamabenchconc).flatMap(([model, modelData]) => {
       if (modelData?.error) {
@@ -63,7 +63,7 @@ export function flattenLlamaBenchConcData(files: ResultsFile[]) {
 
 // `level` is numeric, so it must sort numerically; a skipped row's "—" is pinned to
 // +Infinity for comparator consistency — same rule as concurrency.js's own sort value.
-export function llamaBenchConcSortValue(row: ChartRow, key: string) {
+export function llamaBenchConcSortValue(row: ChartRow, key: string): JsonRecord[string] {
   if (key !== "level") return row[key] ?? "";
   const n = Number(row.level);
   return Number.isNaN(n) ? Infinity : n;
