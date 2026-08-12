@@ -8,6 +8,7 @@ from scripts.app.benchmark_gui_screens.engines import build_engine_screen
 from scripts.app.benchmark_gui_screens.history import build_history_screen
 from scripts.app.benchmark_gui_screens.progress import ProgressScreen
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
+from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
 from scripts.app.benchmark_gui_support import (
     progress_event_engine, progress_model_identity, progress_summary_rows,
     update_progress_metrics,
@@ -143,3 +144,100 @@ def test_progress_screen_constructs_and_updates_real_tk_variables(tk_shell):
     assert screen.resource_vars["CPU"].get() == "25%"
     assert screen.remaining_var.get() == "Remaining time: about 1m"
     screen.window.destroy()
+
+
+def descendants(widget):
+    children = list(widget.winfo_children())
+    return [*children, *(item for child in children for item in descendants(child))]
+
+
+def build_run_log_actions(root, tk, ttk):
+    return RunLogActions(
+        SimpleNamespace(current_log=lambda: "", result_actions=ttk.Frame(root)),
+        root=root, tk=tk, ttk=ttk, filedialog=SimpleNamespace(),
+        messagebox=SimpleNamespace(), option_vars={}, active_project={"value": None},
+        active_result_paths=lambda: [],
+    )
+
+
+def test_outbound_metadata_review_returns_private_aliases(tk_shell, monkeypatch):
+    root, _notebook, tk, ttk = tk_shell
+    controller = build_run_log_actions(root, tk, ttk)
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.outbound_metadata_preview",
+        lambda _result: [("System", "Private Host"), ("Hardware", "Private GPU")],
+    )
+    observed = {}
+
+    def approve_dialog():
+        dialog = next(child for child in root.winfo_children() if isinstance(child, tk.Toplevel))
+        widgets = descendants(dialog)
+        preview = next(widget for widget in widgets if isinstance(widget, tk.Text))
+        entries = [widget for widget in widgets if isinstance(widget, ttk.Entry)]
+        observed["preview"] = preview.get("1.0", "end-1c")
+        entries[0].insert(0, "Published System")
+        entries[1].insert(0, "Published Hardware")
+        next(
+            widget for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") == "Approve Export"
+        ).invoke()
+
+    root.after(0, approve_dialog)
+    aliases = controller.review_outbound_metadata({}, "result bundle")
+
+    assert observed["preview"] == "System: Private Host\nHardware: Private GPU"
+    assert aliases == {
+        "system_alias": "Published System", "hardware_alias": "Published Hardware",
+    }
+
+
+def test_outbound_metadata_review_hides_alias_controls_when_disallowed(tk_shell):
+    root, _notebook, tk, ttk = tk_shell
+    controller = build_run_log_actions(root, tk, ttk)
+    observed = {}
+
+    def cancel_dialog():
+        dialog = next(child for child in root.winfo_children() if isinstance(child, tk.Toplevel))
+        widgets = descendants(dialog)
+        alias_box = next(widget for widget in widgets if isinstance(widget, ttk.LabelFrame))
+        observed["manager"] = alias_box.winfo_manager()
+        next(
+            widget for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") == "Cancel"
+        ).invoke()
+
+    root.after(0, cancel_dialog)
+    decision = controller.review_outbound_metadata(
+        {"run": {}}, "diagnostic", allow_aliases=False,
+    )
+
+    assert observed["manager"] == ""
+    assert decision is None
+
+
+def test_support_preview_requires_explicit_export_approval(tk_shell):
+    root, _notebook, tk, ttk = tk_shell
+    controller = build_run_log_actions(root, tk, ttk)
+    observed = {}
+
+    def approve_dialog():
+        dialog = next(child for child in root.winfo_children() if isinstance(child, tk.Toplevel))
+        widgets = descendants(dialog)
+        preview = next(widget for widget in widgets if isinstance(widget, tk.Text))
+        observed["preview"] = preview.get("1.0", "end-1c")
+        next(
+            widget for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") == "Export"
+        ).invoke()
+
+    root.after(0, approve_dialog)
+    accepted = controller.confirm_support_preview({
+        "files": ["support.json", "manifest.json"],
+        "fields": ["system.os", "diagnostics.error"],
+    })
+
+    assert accepted is True
+    assert observed["preview"] == (
+        "Files:\n  support.json\n  manifest.json\n\n"
+        "Fields:\n  system.os\n  diagnostics.error"
+    )

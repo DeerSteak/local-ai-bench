@@ -23,6 +23,7 @@ class FakeTree:
     def __init__(self):
         self.rows = {}
         self.deleted = []
+        self.selected: tuple[str, ...] = ()
 
     def get_children(self):
         return tuple(self.rows)
@@ -35,6 +36,49 @@ class FakeTree:
         item = f"row-{len(self.rows)}"
         self.rows[item] = {"values": values, "tags": tags}
         return item
+
+    def selection(self):
+        return self.selected
+
+    def index(self, item):
+        return self.selected.index(item)
+
+
+class MessageRecorder:
+    def __init__(self, *, confirm=True):
+        self.confirm = confirm
+        self.errors = []
+        self.infos = []
+        self.confirmations = []
+
+    def showerror(self, *args, **kwargs):
+        self.errors.append((args, kwargs))
+
+    def showinfo(self, *args, **kwargs):
+        self.infos.append((args, kwargs))
+
+    def askyesno(self, *args, **kwargs):
+        self.confirmations.append((args, kwargs))
+        return self.confirm
+
+
+def build_history_delete_controller(*, active=False, confirm=True):
+    tree = FakeTree()
+    tree.selected = ("one", "two")
+    screen = SimpleNamespace(tree=tree, message=FakeVariable())
+    messages = MessageRecorder(confirm=confirm)
+    refreshes = []
+    controller = HistoryActions(
+        screen, root=object(), tk=object(), ttk=object(), filedialog=object(),
+        messagebox=messages, process_active=lambda: active,
+        review_outbound_metadata=lambda *_args, **_kwargs: None,
+        start_recovery=lambda *_args: None,
+    )
+    controller.item_paths = {
+        "one": Path("one.json"), "two": Path("two.json"),
+    }
+    controller.refresh = lambda: refreshes.append(True)
+    return controller, messages, refreshes
 
 
 def test_configuration_state_applies_imported_controls():
@@ -116,6 +160,90 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     assert controller.item_paths == {"row-0": Path("result.json")}
     assert tree.rows["row-0"]["tags"] == ("history_even",)
     assert screen.message.get() == "Showing 1 of 1 local results."
+
+
+def test_history_delete_refuses_while_process_is_active(monkeypatch):
+    controller, messages, refreshes = build_history_delete_controller(active=True)
+    deleted = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.delete_multiple_run_artifacts",
+        lambda *_args: deleted.append(True),
+    )
+
+    controller.delete_selection()
+
+    assert messages.errors[0][0][:2] == (
+        "Benchmark active", "Stop the active process first.",
+    )
+    assert not messages.confirmations
+    assert not deleted
+    assert not refreshes
+
+
+def test_history_delete_handles_results_that_no_longer_exist(monkeypatch):
+    controller, messages, refreshes = build_history_delete_controller()
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.existing_run_artifacts",
+        lambda *_args: [],
+    )
+
+    controller.delete_selection()
+
+    assert refreshes == [True]
+    assert messages.infos[0][0][:2] == (
+        "Delete run", "The selected run no longer exists.",
+    )
+    assert not messages.confirmations
+
+
+def test_history_delete_cancel_preserves_all_artifacts(monkeypatch):
+    controller, messages, refreshes = build_history_delete_controller(confirm=False)
+    artifacts = {
+        "one.json": [Path("one.json"), Path("one.sqlite")],
+        "two.json": [Path("two.json"), Path("two.log"), Path("two.plan")],
+    }
+    deleted = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.existing_run_artifacts",
+        lambda path, _root: artifacts[path.name],
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.delete_multiple_run_artifacts",
+        lambda *_args: deleted.append(True),
+    )
+
+    controller.delete_selection()
+
+    prompt = messages.confirmations[0][0][1]
+    assert "delete 2 selected run(s)" in prompt
+    assert "all 5 artifact(s)" in prompt
+    assert "one.json (2 artifact(s))" in prompt
+    assert "two.json (3 artifact(s))" in prompt
+    assert not deleted
+    assert not refreshes
+
+
+def test_history_delete_partial_failure_reports_retained_result(monkeypatch):
+    controller, messages, refreshes = build_history_delete_controller()
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.existing_run_artifacts",
+        lambda path, _root: [path, path.with_suffix(".sqlite")],
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.history_actions.delete_multiple_run_artifacts",
+        lambda *_args: (
+            [Path("one.sqlite")], {Path("two.json"): "permission denied"},
+        ),
+    )
+
+    controller.delete_selection()
+
+    assert refreshes == [True]
+    title, detail = messages.errors[0][0][:2]
+    assert title == "Run deletion incomplete"
+    assert "Deleted 1 artifact(s)" in detail
+    assert "main result was retained" in detail
+    assert "two.json: permission denied" in detail
 
 
 def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
