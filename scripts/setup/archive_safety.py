@@ -3,6 +3,7 @@
 import re
 import shutil
 import stat
+import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -50,6 +51,30 @@ def safe_extract_zip(archive_path, destination):
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(member) as source, target.open("wb") as output:
                 shutil.copyfileobj(source, output)
+
+
+def safe_extract_tar(archive_path, destination):
+    """Extract regular tar members without links, devices, or escaping paths."""
+    destination = Path(destination)
+    with tarfile.open(archive_path, mode="r:gz") as archive:
+        members = archive.getmembers()
+        validate_archive_names(member.name for member in members)
+        for member in members:
+            if not (member.isdir() or member.isfile()):
+                raise ValueError(f"archive contains an unsupported member: {member.name}")
+        destination.mkdir(parents=True, exist_ok=True)
+        for member in members:
+            target = destination / member.name
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError(f"archive member could not be read: {member.name}")
+            with source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            target.chmod(member.mode & 0o777)
 
 
 def validate_7z_archive(archive_path):

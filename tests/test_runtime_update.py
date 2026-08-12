@@ -1,4 +1,6 @@
 from pathlib import Path
+import io
+import json
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -7,8 +9,9 @@ import pytest
 
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
-    homebrew_llamacpp_prefix, llamacpp_clone_command, llamacpp_cmake_flags,
-    llamacpp_source_release, rebuild_managed_llamacpp,
+    fetch_llamacpp_releases, homebrew_llamacpp_prefix, llamacpp_clone_command,
+    llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
+    rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_windows_llamacpp_assets, update_homebrew_llamacpp,
     update_windows_llamacpp,
     update_managed_vllm, validate_vllm_environment, vllm_executable,
@@ -22,8 +25,36 @@ SOURCE_RELEASE = {"tag_name": "b10362"}
 
 def test_llamacpp_source_release_provides_tag_and_numeric_build():
     assert llamacpp_source_release(SOURCE_RELEASE) == ("b10362", "10362")
-    with pytest.raises(ValueError, match="bNNNNN"):
+    with pytest.raises(ValueError, match="release tag"):
         llamacpp_source_release({"tag_name": "latest"})
+
+
+def test_llamacpp_release_tag_accepts_prefixed_or_numeric_values():
+    assert normalize_llamacpp_release_tag("b10362") == "b10362"
+    assert normalize_llamacpp_release_tag(" 10362 ") == "b10362"
+    with pytest.raises(ValueError, match="release tag"):
+        normalize_llamacpp_release_tag("main")
+
+
+def test_release_history_keeps_recent_published_build_tags():
+    payload = [
+        {"tag_name": "b10362", "draft": False, "prerelease": False},
+        {"tag_name": "b10361", "draft": False, "prerelease": False},
+        {"tag_name": "b10360", "draft": True, "prerelease": False},
+        {"tag_name": "nightly", "draft": False, "prerelease": False},
+    ]
+
+    class Response:
+        def __init__(self, text): self.stream = io.StringIO(text)
+        def read(self, *args): return self.stream.read(*args)
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+
+    releases = fetch_llamacpp_releases(
+        opener=lambda *_args, **_kwargs: Response(json.dumps(payload)),
+    )
+
+    assert [release["tag_name"] for release in releases] == ["b10362", "b10361"]
 
 
 def test_llamacpp_clone_checks_out_exact_release_tag(tmp_path):

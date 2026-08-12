@@ -19,6 +19,7 @@ from scripts.setup.runtime_status import runtime_python
 from scripts.setup.setup_config import configured_gpu_devices
 from scripts.setup.vllm_install import PINNED_PYTHON, VllmSupport, is_dgx_spark
 from scripts.setup.runtime_update import RuntimeUpdateControl
+from scripts.setup.runtime_update import normalize_llamacpp_release_tag
 
 
 OWNERSHIP_LABELS = {
@@ -142,6 +143,8 @@ def collect_engine_management(engine_factory, hardware_backend: str) -> EngineMa
 def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loader,
                                 vllm_updater=None, llamacpp_updater=None,
                                 llamacpp_update_prompt=None,
+                                llamacpp_release_loader=None,
+                                llamacpp_version_updater=None,
                                 llamacpp_model_probe=None,
                                 run_active=lambda: False) -> EngineManagementController:  # pragma: no cover
     parent.columnconfigure(0, weight=1)
@@ -200,7 +203,14 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 ttk.Label(box, text=f"{label}:", font=("TkDefaultFont", 10, "bold")).grid(
                     row=row, column=0, sticky="nw", padx=(0, 8), pady=2,
                 )
-                ttk.Label(box, text=value, wraplength=380).grid(row=row, column=1, sticky="nw", pady=2)
+                value_box = ttk.Frame(box)
+                value_box.grid(row=row, column=1, sticky="ew", pady=2)
+                ttk.Label(value_box, text=value, wraplength=300).pack(side="left", anchor="w")
+                if (label == "Version" and status.engine == "llamacpp" and status.managed
+                        and llamacpp_version_updater is not None):
+                    ttk.Button(
+                        value_box, text="Change…", command=choose_llamacpp_version,
+                    ).pack(side="right", padx=(8, 0))
         if snapshot.models:
             models_box = ttk.LabelFrame(body, text="Imported model compatibility", padding=12)
             models_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -295,6 +305,70 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
         snapshot = state["snapshot"]
         root.clipboard_append(engine_diagnostics_text(snapshot.statuses, snapshot.models))
         status_text.set("Diagnostics copied to the clipboard.")
+
+    def choose_llamacpp_version():
+        if state["loading"] or llamacpp_version_updater is None:
+            return
+        version_updater = llamacpp_version_updater
+        release_loader = llamacpp_release_loader
+        dialog = tk.Toplevel(root)
+        dialog.title("Choose llama.cpp Version")
+        dialog.transient(root)
+        dialog.resizable(False, False)
+        shell = ttk.Frame(dialog, padding=18)
+        shell.grid(sticky="nsew")
+        ttk.Label(shell, text="Official release", font=("TkDefaultFont", 10, "bold")).grid(
+            row=0, column=0, sticky="w",
+        )
+        selected = tk.StringVar(value="Loading…")
+        releases = ttk.Combobox(shell, textvariable=selected, state="disabled", width=24)
+        releases.grid(row=1, column=0, sticky="ew", pady=(4, 12))
+        ttk.Label(shell, text="Specific tag", font=("TkDefaultFont", 10, "bold")).grid(
+            row=2, column=0, sticky="w",
+        )
+        custom = tk.StringVar()
+        ttk.Entry(shell, textvariable=custom, width=27).grid(
+            row=3, column=0, sticky="ew", pady=(4, 4),
+        )
+        ttk.Label(shell, text="Examples: b10362 or 10362").grid(row=4, column=0, sticky="w")
+        buttons = ttk.Frame(shell)
+        buttons.grid(row=5, column=0, sticky="e", pady=(16, 0))
+
+        def install():
+            value = custom.get().strip() or selected.get()
+            try:
+                tag = normalize_llamacpp_release_tag(value)
+            except ValueError as exc:
+                messagebox.showerror("Invalid llama.cpp tag", str(exc), parent=dialog)
+                return
+            dialog.destroy()
+            update_engine(
+                "llamacpp", "llama.cpp",
+                lambda control: version_updater(tag, control),
+                f"Install llama.cpp {tag}? The current runtime will be retained for rollback.",
+            )
+
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
+        ttk.Button(buttons, text="Install", command=install).pack(side="right", padx=(0, 8))
+
+        def load_releases():
+            try:
+                assert release_loader is not None
+                values = [release["tag_name"] for release in release_loader()]
+                def loaded():
+                    releases.configure(values=values, state="readonly")
+                    selected.set(values[0] if values else "")
+                root.after(0, loaded)
+            except Exception as exc:
+                root.after(0, lambda error=exc: selected.set(f"Unable to load: {error}"))
+
+        if release_loader is not None:
+            threading.Thread(target=load_releases, daemon=True).start()
+        else:
+            selected.set("")
+        dialog.grab_set()
+        dialog.wait_visibility()
+        dialog.focus_set()
 
     def update_engine(engine_key, label, updater, prompt, allow_system=False):
         if state["loading"] or updater is None:

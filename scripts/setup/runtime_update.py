@@ -15,7 +15,7 @@ from typing import Callable
 import psutil
 
 from scripts.setup.vllm_install import VllmSupport, install_vllm
-from scripts.setup.archive_safety import safe_extract_zip
+from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
 from scripts.setup.resumable_download import download_file
 from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
@@ -25,6 +25,7 @@ from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_versio
 LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp"
 LLAMACPP_TARGETS = ("llama-server", "llama-bench", "llama-batched-bench")
 LLAMACPP_RELEASE_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+LLAMACPP_RELEASES_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
 
 
 @dataclass(frozen=True)
@@ -139,10 +140,17 @@ class RuntimeUpdateControl:
 
 
 def llamacpp_source_release(release: dict) -> tuple[str, str]:
-    tag = release.get("tag_name")
-    if not isinstance(tag, str) or not tag.startswith("b") or not tag[1:].isdigit():
-        raise ValueError("The latest llama.cpp release does not have a bNNNNN tag.")
+    tag = normalize_llamacpp_release_tag(release.get("tag_name"))
     return tag, tag[1:]
+
+
+def normalize_llamacpp_release_tag(value) -> str:
+    text = str(value or "").strip().lower()
+    if text.isdigit():
+        text = f"b{text}"
+    if not text.startswith("b") or not text[1:].isdigit():
+        raise ValueError("Enter a llama.cpp release tag such as b10362 or 10362.")
+    return text
 
 
 def llamacpp_clone_command(destination: Path, tag: str) -> list[str]:
@@ -297,6 +305,36 @@ def fetch_llamacpp_release(*, opener=urllib.request.urlopen) -> dict:
     return payload
 
 
+def fetch_llamacpp_releases(*, opener=urllib.request.urlopen) -> list[dict]:
+    request = urllib.request.Request(
+        LLAMACPP_RELEASES_URL, headers={"Accept": "application/vnd.github+json"},
+    )
+    with opener(request, timeout=15) as response:
+        payload = json.load(response)
+    if not isinstance(payload, list):
+        raise ValueError("GitHub returned invalid llama.cpp release history")
+    return [
+        release for release in payload
+        if isinstance(release, dict) and not release.get("draft") and not release.get("prerelease")
+        and isinstance(release.get("tag_name"), str)
+        and release["tag_name"].startswith("b") and release["tag_name"][1:].isdigit()
+    ]
+
+
+def fetch_llamacpp_release_tag(tag: str, *, opener=urllib.request.urlopen) -> dict:
+    normalized = normalize_llamacpp_release_tag(tag)
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/{normalized}",
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    with opener(request, timeout=15) as response:
+        payload = json.load(response)
+    if not isinstance(payload, dict):
+        raise ValueError(f"GitHub returned invalid metadata for {normalized}")
+    llamacpp_source_release(payload)
+    return payload
+
+
 def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None) -> list[dict]:
     assets = release.get("assets", [])
     cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
@@ -306,6 +344,16 @@ def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None) 
                    if "win-vulkan-x64" in str(asset.get("name", "")).lower()
                    and str(asset.get("name", "")).endswith(".zip")), None)
     return [vulkan] if vulkan is not None else []
+
+
+def select_macos_llamacpp_asset(release: dict, machine: str) -> dict | None:
+    architecture = "arm64" if machine.lower() in {"arm64", "aarch64"} else "x64" \
+        if machine.lower() in {"x86_64", "amd64"} else None
+    if architecture is None:
+        return None
+    suffix = f"-bin-macos-{architecture}.tar.gz"
+    return next((asset for asset in release.get("assets", [])
+                 if str(asset.get("name", "")).endswith(suffix)), None)
 
 
 def validate_windows_llamacpp(directory: Path, *, run=subprocess.run) -> RuntimeUpdateResult:
@@ -326,6 +374,69 @@ def validate_windows_llamacpp(directory: Path, *, run=subprocess.run) -> Runtime
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Staged Windows llama.cpp returned no version.")
     return RuntimeUpdateResult(True, "Staged Windows llama.cpp validated.", output.splitlines()[0])
+
+
+def update_macos_llamacpp(target: Path, machine: str, *,
+                          release_fetcher=fetch_llamacpp_release,
+                          downloader=download_file, extractor=safe_extract_tar,
+                          run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
+                          control: RuntimeUpdateControl | None = None,
+                          token_factory=lambda: uuid.uuid4().hex) -> RuntimeUpdateResult:
+    """Stage an official macOS archive, then replace with final-path validation."""
+    target = Path(target)
+    had_target = target.is_dir()
+    token = token_factory()
+    staged = target.with_name(f".{target.name}-update-{token}")
+    downloads = target.with_name(f".{target.name}-downloads-{token}")
+    backup = target.with_name(f".{target.name}-backup-{token}")
+    active_run = control.run if control is not None else run
+    try:
+        release = release_fetcher()
+        asset = select_macos_llamacpp_asset(release, machine)
+        if asset is None:
+            return RuntimeUpdateResult(False, "The selected release has no compatible macOS asset.")
+        name, url, size = asset.get("name"), asset.get("browser_download_url"), asset.get("size")
+        if not isinstance(name, str) or not isinstance(url, str) or not isinstance(size, int):
+            return RuntimeUpdateResult(False, "The selected macOS release asset metadata is invalid.")
+        downloads.mkdir(parents=True)
+        kwargs: dict[str, object] = {"expected_size": size}
+        if control is not None:
+            kwargs["cancel_check"] = lambda: control.cancelled
+        archive = downloader(url, downloads / name, **kwargs)
+        extractor(archive, staged)
+        validation = validate_llamacpp_build(staged, run=active_run)
+        if not validation.success:
+            return validation
+        if had_target:
+            replace(target, backup)
+        try:
+            replace(staged, target)
+            final_validation = validate_llamacpp_build(target, run=active_run)
+            if not final_validation.success:
+                raise RuntimeError(final_validation.detail)
+        except Exception as exc:
+            if target.exists():
+                remove(target)
+            if had_target:
+                replace(backup, target)
+            return RuntimeUpdateResult(
+                False, f"macOS llama.cpp update failed"
+                f"{' and the prior release was preserved' if had_target else ''}: {exc}",
+            )
+        if had_target:
+            remove(backup)
+        return RuntimeUpdateResult(
+            True, "macOS llama.cpp updated successfully.", final_validation.version,
+        )
+    except Exception as exc:
+        return RuntimeUpdateResult(False, f"macOS llama.cpp update failed: {exc}")
+    finally:
+        for path in (staged, downloads):
+            if path.exists():
+                try:
+                    remove(path)
+                except OSError:
+                    pass
 
 
 def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,

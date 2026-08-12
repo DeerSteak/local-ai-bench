@@ -73,8 +73,9 @@ from scripts.app.engine_management import (
     build_engine_management_tab, collect_engine_management, vllm_update_support,
 )
 from scripts.setup.runtime_update import (
-    RuntimeUpdateResult, detect_nvidia_max_cuda_version, rebuild_managed_llamacpp,
-    update_homebrew_llamacpp, update_managed_vllm, update_windows_llamacpp,
+    RuntimeUpdateResult, detect_nvidia_max_cuda_version, fetch_llamacpp_release,
+    fetch_llamacpp_release_tag, fetch_llamacpp_releases, rebuild_managed_llamacpp,
+    update_macos_llamacpp, update_managed_vllm, update_windows_llamacpp,
 )
 from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.workloads.models import LLM_MODELS
@@ -851,18 +852,28 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
 
     def perform_llamacpp_update(control):
+        return perform_llamacpp_version_update(None, control)
+
+    def perform_llamacpp_version_update(tag, control):
+        release_fetcher = (lambda: fetch_llamacpp_release_tag(tag)) \
+            if tag else fetch_llamacpp_release
         snapshot = collect_engine_management(get_engine, hardware_backend)
         status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
+        if not status.managed and platform.system() != "Darwin":
+            return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
         if platform.system() == "Darwin":
-            return update_homebrew_llamacpp(status.location, control=control)
+            return update_macos_llamacpp(
+                config.LLAMACPP_DIR, platform.machine(), control=control,
+                release_fetcher=release_fetcher,
+            )
         if platform.system() == "Windows":
             return update_windows_llamacpp(
                 config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
+                release_fetcher=release_fetcher,
             )
-        if not status.managed:
-            return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
         return rebuild_managed_llamacpp(
             config.LLAMACPP_DIR, status.backend, control=control, log=control.log,
+            release_fetcher=release_fetcher,
         )
 
     def perform_llamacpp_model_probe(tag, control):
@@ -877,7 +888,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
 
     llamacpp_update_prompts = {
-        "Darwin": "Ask Homebrew to update llama.cpp, then validate the installed tools?",
+        "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the current one?",
         "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
         "Linux": "Clone and build the latest llama.cpp, then replace the current checkout?",
     }
@@ -898,6 +909,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         vllm_updater=perform_vllm_update,
         llamacpp_updater=perform_llamacpp_update,
         llamacpp_update_prompt=llamacpp_update_prompts.get(platform.system()),
+        llamacpp_release_loader=fetch_llamacpp_releases,
+        llamacpp_version_updater=perform_llamacpp_version_update,
         llamacpp_model_probe=perform_llamacpp_model_probe,
         run_active=lambda: process is not None and process.poll() is None,
     )

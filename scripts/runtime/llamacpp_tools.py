@@ -39,10 +39,14 @@ def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
     platform_name = platform_name or platform.system()
     vendored_dir = Path(vendored_dir) if vendored_dir is not None else config.LLAMACPP_DIR
     which_fn = which_fn or shutil.which
+    exe_name = f"{base_name}.exe" if platform_name == "Windows" else base_name
+    if platform_name == "Darwin" and vendored_dir.exists():
+        managed = next((path for path in vendored_dir.rglob(exe_name) if path.is_file()), None)
+        if managed is not None:
+            return str(managed)
     found = which_fn(base_name)
     if found:
         return found
-    exe_name = f"{base_name}.exe" if platform_name == "Windows" else base_name
     if platform_name == "Darwin":
         for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
             candidate = Path(prefix) / exe_name

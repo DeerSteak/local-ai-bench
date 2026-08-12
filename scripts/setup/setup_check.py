@@ -35,6 +35,7 @@ from scripts.runtime.comfyui_installation import (
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
 from scripts.setup.runtime_update import (
     fetch_llamacpp_release, llamacpp_clone_command, llamacpp_source_release,
+    update_macos_llamacpp,
 )
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
 from scripts.setup.model_inventory import (
@@ -652,15 +653,11 @@ def install_llamacpp():
     """Install llama-server for this OS, using the GPU backend already
     detected above — see docs/setup.md's DGX Spark platform note."""
     if os_name == "Darwin":
-        if shutil.which("brew"):
-            info("Installing llama.cpp via Homebrew (includes Metal support) ...")
-            result = subprocess.run(
-                ["brew", "install", "--no-ask", "llama.cpp"],
-                env={**os.environ, "HOMEBREW_NO_ASK": "1", "NONINTERACTIVE": "1"},
-            )
-            return result.returncode == 0
-        fail("Homebrew not found — install llama.cpp manually: https://github.com/ggml-org/llama.cpp")
-        return False
+        info("Downloading the latest official llama.cpp macOS release ...")
+        result = update_macos_llamacpp(LLAMACPP_DIR, platform.machine())
+        if not result.success:
+            fail(result.detail)
+        return result.success
 
     elif os_name == "Linux":
         if not shutil.which("git") or not shutil.which("cmake"):
