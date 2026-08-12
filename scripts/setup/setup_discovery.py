@@ -1,6 +1,7 @@
 """Read-only host and accelerator discovery for setup."""
 
 import platform
+import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,22 @@ class NvidiaDiscovery:
     @property
     def total_vram_gb(self) -> float:
         return sum(device["vram_gb"] or 0.0 for device in self.gpus)
+
+
+@dataclass(frozen=True)
+class RocmDiscovery:
+    names: list[str]
+    gfx_targets: list[str]
+    kind: str | None
+    gpus: list[dict]
+
+    @property
+    def available(self) -> bool:
+        return bool(self.names)
+
+    @property
+    def total_vram_gb(self) -> float | None:
+        return sum(device["vram_gb"] for device in self.gpus) if self.gpus else None
 
 
 def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscovery:
@@ -99,3 +116,46 @@ def discover_nvidia() -> NvidiaDiscovery:
     except (FileNotFoundError, subprocess.CalledProcessError):
         max_cuda = None
     return NvidiaDiscovery(gpus, capability, max_cuda)
+
+
+def discover_rocm() -> RocmDiscovery:
+    try:
+        output = subprocess.check_output(
+            ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return RocmDiscovery([], [], None, [])
+    names = hardware.rocminfo_gpu_names(output)
+    targets = hardware.rocminfo_gfx_targets(output)
+    kind = None
+    gpus = []
+    if names:
+        kind = (
+            "discrete" if any(hardware.classify_gpu(name) == "discrete" for name in names)
+            else "integrated"
+        )
+    if kind == "discrete":
+        try:
+            memory = subprocess.check_output(
+                ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            gpus = hardware.parse_rocm_smi_gpus(memory, names)
+        except (FileNotFoundError, subprocess.CalledProcessError,
+                json.JSONDecodeError, ValueError):
+            pass
+    return RocmDiscovery(names, targets, kind, gpus)
+
+
+def rocm_version(version_path: Path = Path("/opt/rocm/.info/version")) -> tuple[int, int] | None:
+    try:
+        output = subprocess.check_output(
+            ["hipconfig", "--version"], text=True, stderr=subprocess.DEVNULL,
+        )
+        return hardware.parse_rocm_version(output)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    try:
+        return hardware.parse_rocm_version(version_path.read_text(encoding="utf-8"))
+    except OSError:
+        return None

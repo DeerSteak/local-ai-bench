@@ -51,7 +51,7 @@ from scripts.setup.resumable_download import download_file
 from scripts.setup.setup_selection import additional_disk_space_needed, save_hf_token, selected_cleanup_names, toggle_all_models
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
-from scripts.setup.setup_discovery import discover_nvidia, discover_system
+from scripts.setup.setup_discovery import discover_nvidia, discover_rocm, discover_system, rocm_version
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
@@ -155,57 +155,13 @@ for device in nvidia_gpus:
     print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unified with system RAM'}")
     print(f"  Driver:  {device['driver']}")
 
-rocm_gfx = []         # gfx targets, set by check_rocm() — vLLM's wheels are per-target
-rocm_gpu_kind = None  # "discrete" or "integrated", set by check_rocm()
-rocm_vram_gb  = None  # only queried for a discrete GPU — see compute_memory_ceiling_gb
-rocm_gpus = []
-
-def check_rocm():
-    global rocm_gpu_kind, rocm_vram_gb, rocm_gpus, rocm_gfx
-    try:
-        out = subprocess.check_output(
-            ["rocminfo"], text=True, stderr=subprocess.DEVNULL
-        )
-        gpu_names = hardware.rocminfo_gpu_names(out)
-        rocm_gfx = hardware.rocminfo_gfx_targets(out)
-        for name in gpu_names[:3]:
-            print(f"  ROCm GPU: {name}")
-        if gpu_names:
-            rocm_gpu_kind = (
-                "discrete" if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names)
-                else "integrated"
-            )
-            if rocm_gpu_kind == "discrete":
-                # Only trust rocm-smi's VRAM figure for a confirmed-discrete card —
-                # an APU's is often just a small BIOS-fixed carve-out, not the real usable pool.
-                try:
-                    mem_out = subprocess.check_output(
-                        ["rocm-smi", "--showmeminfo", "vram", "--json"],
-                        text=True, stderr=subprocess.DEVNULL,
-                    )
-                    rocm_gpus = hardware.parse_rocm_smi_gpus(mem_out, gpu_names)
-                    if rocm_gpus:
-                        rocm_vram_gb = sum(device["vram_gb"] for device in rocm_gpus)
-                except (FileNotFoundError, subprocess.CalledProcessError,
-                        json.JSONDecodeError, ValueError):
-                    pass
-        return bool(gpu_names)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-
-def get_rocm_version():
-    """Installed ROCm major/minor, or None — vLLM's wheels need 6.3+."""
-    try:
-        out = subprocess.check_output(["hipconfig", "--version"],
-                                       text=True, stderr=subprocess.DEVNULL)
-        return hardware.parse_rocm_version(out)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
-    version_file = Path("/opt/rocm/.info/version")
-    try:
-        return hardware.parse_rocm_version(version_file.read_text())
-    except OSError:
-        return None
+rocm = discover_rocm() if not nvidia.available else None
+rocm_gfx = rocm.gfx_targets if rocm else []
+rocm_gpu_kind = rocm.kind if rocm else None
+rocm_vram_gb = rocm.total_vram_gb if rocm else None
+rocm_gpus = rocm.gpus if rocm else []
+for name in rocm.names[:3] if rocm else []:
+    print(f"  ROCm GPU: {name}")
 
 def check_metal():
     if platform.system() != "Darwin":
@@ -301,7 +257,7 @@ intel_linux         = False
 intel_linux_runtime = False
 
 if not nvidia_ok:
-    rocm_ok = check_rocm()
+    rocm_ok = bool(rocm and rocm.available)
 if not nvidia_ok and not rocm_ok:
     metal_ok = check_metal()
 if not nvidia_ok and os_name == "Windows":
@@ -662,7 +618,7 @@ vllm_support = vllm_platform_support(
     os_name=os_name, machine=platform.machine(), python_version=sys.version_info[:2],
     nvidia_ok=nvidia_ok, rocm_ok=rocm_ok, intel_gpu=intel_linux or intel_windows,
     gpu_names=[device["name"] for device in nvidia_gpus],
-    compute_cap=nvidia_compute_cap, rocm_version=get_rocm_version() if rocm_ok else None,
+    compute_cap=nvidia_compute_cap, rocm_version=rocm_version() if rocm_ok else None,
     rocm_gfx_targets=rocm_gfx,
 )
 if not vllm_found and vllm_support.needs_python_bootstrap:
@@ -684,7 +640,7 @@ if not vllm_found and vllm_support.needs_python_bootstrap:
                     intel_gpu=intel_linux or intel_windows,
                     gpu_names=[device["name"] for device in nvidia_gpus],
                     compute_cap=nvidia_compute_cap,
-                    rocm_version=get_rocm_version() if rocm_ok else None,
+                    rocm_version=rocm_version() if rocm_ok else None,
                     rocm_gfx_targets=rocm_gfx,
                 )
         else:

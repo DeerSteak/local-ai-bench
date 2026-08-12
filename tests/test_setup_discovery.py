@@ -63,3 +63,30 @@ def test_missing_nvidia_is_empty(monkeypatch):
     )
 
     assert not setup_discovery.discover_nvidia().available
+
+
+def test_discovers_discrete_rocm_memory(monkeypatch):
+    outputs = iter([
+        "Agent 1\n  Name: gfx1100\n  Marketing Name: AMD Radeon RX 7900 XTX\n"
+        "  Device Type: GPU\n",
+        '{"card0": {"VRAM Total Memory (B)": "25769803776"}}',
+    ])
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output", lambda *_args, **_kwargs: next(outputs),
+    )
+
+    result = setup_discovery.discover_rocm()
+
+    assert result.available
+    assert result.kind == "discrete"
+    assert result.gfx_targets == ["gfx1100"]
+    assert result.total_vram_gb == 24
+
+
+def test_missing_rocm_is_empty(monkeypatch):
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()),
+    )
+
+    assert not setup_discovery.discover_rocm().available
