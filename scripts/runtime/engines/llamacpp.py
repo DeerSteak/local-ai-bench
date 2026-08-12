@@ -27,6 +27,7 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
 from scripts.model_identity import model_tag_slug
 from scripts.runtime.generation_guard import looks_like_loop
+from scripts.runtime.crash_cache import record_crash
 from scripts.runtime.shared import (
     EngineLoopDetected,
     EngineTimeout,
@@ -349,9 +350,9 @@ class LlamaCppEngine(InferenceEngine):
                 if crash_cache is not None and cache_path is not None:
                     if self.is_connection_crash(e):
                         self.wait_for_recovery()
-                    Shared.record_crash(tag, crash_cache, cache_path,
-                                         f"warming up at num_ctx={num_ctx}",
-                                         extra=crash_extra, engine_name=self.name)
+                    record_crash(tag, crash_cache, cache_path,
+                                 f"warming up at num_ctx={num_ctx}",
+                                 extra=crash_extra, engine_name=self.name)
                 return False
             Shared.log(f"Warmup run {warmup_i+1}/{warmup_runs} done")
         return True

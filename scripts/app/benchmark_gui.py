@@ -81,6 +81,7 @@ from scripts.stage_registry import STAGE_ORDER
 from scripts.results.outbound_metadata import outbound_metadata_preview, prepare_outbound_result
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
+from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
@@ -995,7 +996,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if process is not None and process.poll() is None:
             messagebox.showerror("Benchmark active", "Stop the active process first.", parent=root)
             return
-        caches = Shared.crash_cache_paths(config.SCRIPT_DIR)
+        caches = crash_cache_paths(config.SCRIPT_DIR)
         if not caches:
             messagebox.showinfo("Clear crash caches", "No crash caches were found.", parent=root)
             return
@@ -1007,7 +1008,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             parent=root,
         ):
             return
-        removed, failures = Shared.clear_crash_caches(config.SCRIPT_DIR)
+        removed, failures = clear_crash_caches(config.SCRIPT_DIR)
         if failures:
             detail = "\n".join(f"{path.name}: {reason}" for path, reason in failures.items())
             messagebox.showerror(

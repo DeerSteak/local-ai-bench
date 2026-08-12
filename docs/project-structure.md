@@ -130,7 +130,8 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
 | `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
 | `setup/setup_selection.py` | Pure setup-picker state rules, including destructive-cleanup isolation from broad model toggles |
-| `runtime/shared.py` | Remaining cross-workload console, machine-profile, crash/retry, accuracy-runner, and ComfyUI helpers pending narrow ownership |
+| `runtime/shared.py` | Remaining cross-workload console, machine-profile, measured-run, accuracy-runner, and ComfyUI helpers pending narrow ownership |
+| `runtime/crash_cache.py` | Engine-scoped crash-cache persistence, retry policy, and cleanup |
 | `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
 | `runtime/generation_guard.py` / `runtime/failure_handling.py` | Generation-loop detection and consistent unexpected per-model failure records |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |

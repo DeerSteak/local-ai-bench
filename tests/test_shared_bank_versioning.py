@@ -1,4 +1,5 @@
 from scripts.runtime.shared import Shared
+from scripts.runtime.crash_cache import check_crash_cache, record_crash
 
 
 # ── file_hash ──
@@ -71,16 +72,16 @@ def test_stratified_sample_no_duplicate_ids():
 def test_check_crash_cache_ignores_stale_entry_from_different_bank(tmp_path):
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00", "bank_hash": "old-hash"}}}
-    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path,
-                                     expected_bank_hash="new-hash", engine_name="llamacpp")
+    entry = check_crash_cache("some-tag", "Some Model", cache, path,
+                              expected_bank_hash="new-hash", engine_name="llamacpp")
     assert entry is None
 
 
 def test_check_crash_cache_honors_entry_matching_current_bank(tmp_path):
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00", "bank_hash": "current-hash"}}}
-    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path,
-                                     expected_bank_hash="current-hash", engine_name="llamacpp")
+    entry = check_crash_cache("some-tag", "Some Model", cache, path,
+                              expected_bank_hash="current-hash", engine_name="llamacpp")
     assert entry is not None
     assert entry["skipped"] is True
 
@@ -90,7 +91,7 @@ def test_check_crash_cache_without_expected_hash_ignores_bank_field(tmp_path):
     # a record with a bank_hash field must still be honored for them.
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00", "bank_hash": "whatever"}}}
-    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp")
+    entry = check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp")
     assert entry is not None
 
 
@@ -98,15 +99,15 @@ def test_check_crash_cache_is_scoped_per_engine(tmp_path):
     """A crash recorded for llama.cpp's GGUF must not skip vLLM's own, different weights."""
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00"}}}
-    assert Shared.check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp") is not None
-    assert Shared.check_crash_cache("some-tag", "Some Model", cache, path, engine_name="vllm") is None
+    assert check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp") is not None
+    assert check_crash_cache("some-tag", "Some Model", cache, path, engine_name="vllm") is None
 
 
 def test_record_crash_stores_extra_fields(tmp_path):
     path = tmp_path / "crash.json"
     cache = {}
-    Shared.record_crash("some-tag", cache, path, "answering q1",
-                        extra={"bank_hash": "abc123"}, engine_name="llamacpp")
+    record_crash("some-tag", cache, path, "answering q1",
+                 extra={"bank_hash": "abc123"}, engine_name="llamacpp")
     assert cache["llamacpp"]["some-tag"]["bank_hash"] == "abc123"
     assert "crashed_at" in cache["llamacpp"]["some-tag"]
 
@@ -114,14 +115,14 @@ def test_record_crash_stores_extra_fields(tmp_path):
 def test_record_crash_without_extra_omits_bank_hash(tmp_path):
     path = tmp_path / "crash.json"
     cache = {}
-    Shared.record_crash("some-tag", cache, path, "warming up", engine_name="llamacpp")
+    record_crash("some-tag", cache, path, "warming up", engine_name="llamacpp")
     assert "bank_hash" not in cache["llamacpp"]["some-tag"]
 
 
 def test_record_crash_keeps_each_engine_in_its_own_namespace(tmp_path):
     path = tmp_path / "crash.json"
     cache = {}
-    Shared.record_crash("some-tag", cache, path, "running", engine_name="llamacpp")
-    Shared.record_crash("some-tag", cache, path, "running", engine_name="vllm")
+    record_crash("some-tag", cache, path, "running", engine_name="llamacpp")
+    record_crash("some-tag", cache, path, "running", engine_name="vllm")
     assert set(cache) == {"llamacpp", "vllm"}
     assert "some-tag" in cache["llamacpp"] and "some-tag" in cache["vllm"]

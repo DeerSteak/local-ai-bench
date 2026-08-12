@@ -1,5 +1,4 @@
-"""Cross-cutting helpers shared by more than one workload: logging, ComfyUI
-lifecycle, machine profiling, crash caches, engine-agnostic orchestration."""
+"""Cross-workload logging, ComfyUI, profiling, and orchestration helpers."""
 
 import hashlib
 import json
@@ -660,86 +659,13 @@ class Shared:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
     @staticmethod
-    def load_crash_cache(path: Path) -> dict:
-        """Load a benchmark's engine -> tag -> crash record cache — see
-        docs/project-structure.md's *_crash_cache.json entries."""
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    @staticmethod
-    def save_crash_cache(path: Path, cache: dict) -> None:
-        try:
-            atomic_write_json(path, cache)
-        except Exception as e:
-            Shared.warn(f"Failed to save crash cache to {path}: {e}")
-
-    @staticmethod
-    def crash_cache_paths(root: Path) -> list[Path]:
-        """All current and future workload crash caches in the repository root."""
-        return sorted(
-            path for path in Path(root).glob(".*_crash_cache.json")
-            if path.is_file() or path.is_symlink()
-        )
-
-    @staticmethod
-    def clear_crash_caches(root: Path) -> tuple[list[Path], dict[Path, str]]:
-        removed = []
-        failures = {}
-        for path in Shared.crash_cache_paths(root):
-            try:
-                path.unlink()
-                removed.append(path)
-            except OSError as exc:
-                failures[path] = str(exc)
-        return removed, failures
-
-    @staticmethod
-    def check_crash_cache(tag: str, label: str, crash_cache: dict, cache_path: Path,
-                           expected_bank_hash: str | None = None, *,
-                           engine_name: str) -> dict | None:
-        """Skip-result dict if `tag` is a known repeat-crasher on `engine_name`, else None.
-        Scoped per engine — a llama.cpp crash says nothing about vLLM's different weights
-        and runtime for the same catalog tag, and vice versa.
-        `expected_bank_hash` treats a crash cached against a stale bank version as not-crashed, without deleting it."""
-        detail = crash_cache.get(engine_name, {}).get(tag)
-        if detail is None:
-            return None
-        if config.RETRY_CRASHED_MODELS:
-            Shared.warn(f"{tag}: ignoring its prior crash record for this run")
-            return None
-        if expected_bank_hash is not None and detail.get("bank_hash") != expected_bank_hash:
-            Shared.warn(f"{tag}'s recorded crash is for a different question-bank version "
-                        "— ignoring stale entry and retrying")
-            return None
-        crashed_at = detail.get("crashed_at", "an earlier run")
-        Shared.warn(f"{tag} previously crashed {engine_name}'s runner repeatedly on "
-                    f"{crashed_at} — skipping (delete {cache_path} to retry)")
-        return {
-            "label": label,
-            "skipped": True,
-            "skip_reason": "known_crash",
-            "skip_detail": f"Crashed {engine_name}'s runner repeatedly on {crashed_at}",
-        }
-
-    @staticmethod
-    def record_crash(tag: str, crash_cache: dict, cache_path: Path, what: str,
-                      extra: dict | None = None, *, engine_name: str) -> str:
-        """Record a crash for `tag` on `engine_name`; `extra` (e.g. {"bank_hash": ...}) lets
-        check_crash_cache later tell a stale record from a current one."""
-        crashed_at = datetime.now().isoformat(timespec="seconds")
-        crash_cache.setdefault(engine_name, {})[tag] = {"crashed_at": crashed_at, **(extra or {})}
-        Shared.save_crash_cache(cache_path, crash_cache)
-        Shared.err(f"{engine_name}'s runner crashed repeatedly {what} — recorded to {cache_path}")
-        return crashed_at
-
-    @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,
                             what: str, engine: "InferenceEngine",
                             crash_extra: dict | None = None) -> tuple[list, str, str, dict]:
         """Shared "N measured runs" loop — see docs/workloads.md#timeouts-and-loop-detection
         and docs/project-structure.md's *_crash_cache.json entries. Returns (samples, status, partial_text, metadata)."""
+        from scripts.runtime.crash_cache import record_crash
+
         samples = []
         run_i = 0
         crash_retries = 0
@@ -770,14 +696,14 @@ class Shared:
                            f"— last server output:\n{engine.tail_log()}")
                 if crash_retries > Shared.CRASH_RETRY_MAX:
                     Shared.err(f"The engine's model runner crashed {crash_retries} times — giving up on {tag}")
-                    Shared.record_crash(tag, crash_cache, cache_path, what,
-                                        extra=crash_extra, engine_name=engine.name)
+                    record_crash(tag, crash_cache, cache_path, what,
+                                 extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 Shared.warn(f"Waiting for recovery, retry {crash_retries}/{Shared.CRASH_RETRY_MAX} ...")
                 if not engine.wait_for_recovery():
                     Shared.warn("The engine did not become reachable again within 30s — giving up on this model")
-                    Shared.record_crash(tag, crash_cache, cache_path, what,
-                                        extra=crash_extra, engine_name=engine.name)
+                    record_crash(tag, crash_cache, cache_path, what,
+                                 extra=crash_extra, engine_name=engine.name)
                     return samples, "crashed", "", metadata
                 # don't advance run_i — retry the same run now that the engine is back
         return samples, "ok", "", {"budget_nudged": False}
@@ -815,6 +741,8 @@ class Shared:
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
+        from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
+
         results = {}
         answers_out: dict = {}
 
@@ -822,7 +750,7 @@ class Shared:
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
             return results
 
-        crash_cache = Shared.load_crash_cache(crash_cache_path)
+        crash_cache = load_crash_cache(crash_cache_path)
         bank_hash = Shared.file_hash(data_path)
 
         for model in models:
@@ -854,8 +782,10 @@ class Shared:
                     }
                     continue
 
-                skip_entry = Shared.check_crash_cache(tag, label, crash_cache, crash_cache_path,
-                                                       expected_bank_hash=bank_hash, engine_name=engine.name)
+                skip_entry = check_crash_cache(
+                    tag, label, crash_cache, crash_cache_path,
+                    expected_bank_hash=bank_hash, engine_name=engine.name,
+                )
                 if skip_entry is not None:
                     results[short] = skip_entry
                     continue

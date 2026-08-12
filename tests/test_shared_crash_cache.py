@@ -6,12 +6,15 @@ import requests
 
 from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
-from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
+from scripts.runtime.crash_cache import (
+    check_crash_cache, clear_crash_caches, crash_cache_paths, load_crash_cache,
+    record_crash, save_crash_cache,
+)
 
 
 def test_load_crash_cache_missing_file_returns_empty(tmp_path):
-    assert Shared.load_crash_cache(tmp_path / "does_not_exist.json") == {}
+    assert load_crash_cache(tmp_path / "does_not_exist.json") == {}
 
 
 def test_unexpected_model_failure_carries_the_label_and_exception_detail():
@@ -60,14 +63,14 @@ def test_unexpected_model_failure_never_raises_even_on_a_weird_exception():
 def test_load_crash_cache_invalid_json_returns_empty(tmp_path):
     path = tmp_path / "crash.json"
     path.write_text("not json")
-    assert Shared.load_crash_cache(path) == {}
+    assert load_crash_cache(path) == {}
 
 
 def test_save_and_load_crash_cache_roundtrip(tmp_path):
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"llama3.2:3b": {"crashed_at": "2026-01-01T00:00:00"}}}
-    Shared.save_crash_cache(path, cache)
-    assert Shared.load_crash_cache(path) == cache
+    save_crash_cache(path, cache)
+    assert load_crash_cache(path) == cache
 
 
 def test_crash_cache_paths_discovers_every_cache_type_only(tmp_path):
@@ -79,7 +82,7 @@ def test_crash_cache_paths_discovers_every_cache_type_only(tmp_path):
         path.write_text("{}", encoding="utf-8")
     directory.mkdir()
 
-    assert Shared.crash_cache_paths(tmp_path) == [future, llm]
+    assert crash_cache_paths(tmp_path) == [future, llm]
 
 
 def test_clear_crash_caches_removes_all_types_and_preserves_unrelated_files(tmp_path):
@@ -89,7 +92,7 @@ def test_clear_crash_caches_removes_all_types_and_preserves_unrelated_files(tmp_
     unrelated = tmp_path / ".benchmark_frontend_state.json"
     unrelated.write_text("{}", encoding="utf-8")
 
-    removed, failures = Shared.clear_crash_caches(tmp_path)
+    removed, failures = clear_crash_caches(tmp_path)
 
     assert removed == caches
     assert failures == {}
@@ -105,7 +108,7 @@ def test_clear_crash_caches_unlinks_symlink_without_touching_target(tmp_path):
     except OSError:
         pytest.skip("symlinks unavailable")
 
-    removed, failures = Shared.clear_crash_caches(tmp_path)
+    removed, failures = clear_crash_caches(tmp_path)
 
     assert removed == [link]
     assert failures == {}
@@ -126,7 +129,7 @@ def test_clear_crash_caches_continues_after_one_file_fails(tmp_path, monkeypatch
 
     monkeypatch.setattr(type(blocked), "unlink", selective_unlink)
 
-    removed, failures = Shared.clear_crash_caches(tmp_path)
+    removed, failures = clear_crash_caches(tmp_path)
 
     assert removed == [removable]
     assert failures == {blocked: "locked"}
@@ -138,18 +141,18 @@ def test_save_crash_cache_swallows_write_failures(tmp_path):
     # should warn and not propagate the exception.
     unwritable = tmp_path / "not_a_file"
     unwritable.mkdir()
-    Shared.save_crash_cache(unwritable, {"tag": {"crashed_at": "now"}})  # should not raise
+    save_crash_cache(unwritable, {"tag": {"crashed_at": "now"}})
 
 
 def test_check_crash_cache_returns_none_when_not_present(tmp_path):
     path = tmp_path / "crash.json"
-    assert Shared.check_crash_cache("some-tag", "Some Model", {}, path, engine_name="llamacpp") is None
+    assert check_crash_cache("some-tag", "Some Model", {}, path, engine_name="llamacpp") is None
 
 
 def test_check_crash_cache_returns_skip_entry_when_present(tmp_path):
     path = tmp_path / "crash.json"
     cache = {"llamacpp": {"some-tag": {"crashed_at": "2026-01-01T00:00:00"}}}
-    entry = Shared.check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp")
+    entry = check_crash_cache("some-tag", "Some Model", cache, path, engine_name="llamacpp")
     assert entry is not None
     assert entry["skipped"] is True
     assert entry["skip_reason"] == "known_crash"
@@ -159,16 +162,16 @@ def test_check_crash_cache_returns_skip_entry_when_present(tmp_path):
 def test_check_crash_cache_can_be_bypassed_for_current_run(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RETRY_CRASHED_MODELS", True)
     cache = {"llamacpp": {"some-tag": {"crashed_at": "yesterday"}}}
-    assert Shared.check_crash_cache(
+    assert check_crash_cache(
         "some-tag", "Some Model", cache, tmp_path / "cache", engine_name="llamacpp") is None
 
 
 def test_record_crash_persists_to_cache(tmp_path):
     path = tmp_path / "crash.json"
     cache = {}
-    crashed_at = Shared.record_crash("some-tag", cache, path, "running Some Model", engine_name="llamacpp")
+    crashed_at = record_crash("some-tag", cache, path, "running Some Model", engine_name="llamacpp")
     assert cache["llamacpp"]["some-tag"]["crashed_at"] == crashed_at
-    assert Shared.load_crash_cache(path)["llamacpp"]["some-tag"]["crashed_at"] == crashed_at
+    assert load_crash_cache(path)["llamacpp"]["some-tag"]["crashed_at"] == crashed_at
 
 
 @pytest.mark.parametrize("exc", [
@@ -180,7 +183,7 @@ def test_record_crash_persists_to_cache(tmp_path):
     BrokenPipeError("boom"),
 ])
 def test_is_connection_crash_true_for_connection_errors(exc):
-    # is_connection_crash lives on the engine now, not Shared — same cases, retargeted.
+    # Connection classification belongs to the engine rather than crash-cache policy.
     assert LlamaCppEngine().is_connection_crash(exc) is True
 
 
