@@ -172,7 +172,7 @@ class LlamaBenchConcurrencyBenchmark:
         return (f"pp{entry.get('pp', 0)}+tg{entry.get('tg', 0)} @ {entry.get('pl', 0)}-way: "
                 f"{entry.get('speed_tg', 0.0):.1f} tok/s aggregate")
 
-    def run(self, engine, models, cpu_only=False, save_fn=None):
+    def run(self, engine, models, cpu_only=False, save_fn=None, telemetry=None):
         results = {}
 
         if not isinstance(engine, LlamaCppEngine):
@@ -222,6 +222,11 @@ class LlamaBenchConcurrencyBenchmark:
                 }
 
                 def _record_entry(entry):
+                    if telemetry:
+                        telemetry.begin_measured(
+                            f"measured:pp{entry.get('pp', 0)}:tg{entry.get('tg', 0)}:pl{entry.get('pl', 0)}",
+                        )
+                        entry["memory"] = telemetry.finish_case()
                     entries.append(entry)
                     results[short]["completed_cases"] = len(entries)
                     if save_fn:
@@ -229,6 +234,8 @@ class LlamaBenchConcurrencyBenchmark:
 
                 try:
                     wait_if_paused()
+                    if telemetry:
+                        telemetry.begin_model_load()
                     returned_entries = self.run_one(
                         binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
                         config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,

@@ -208,7 +208,8 @@ class VllmBenchBenchmark:
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"vllm bench wrote no readable JSON: {exc}") from None
 
-    def run(self, engine, models, save_fn=None):  # pragma: no cover — spawns real subprocesses
+    def run(self, engine, models, save_fn=None,
+            telemetry=None):  # pragma: no cover — spawns real subprocesses
         results = {}
         if not isinstance(engine, VllmEngine):
             Shared.warn(f"vllm bench only supports the vllm engine — skipping for {engine.name}")
@@ -265,6 +266,8 @@ class VllmBenchBenchmark:
                                 engine.kv_cache_dtype,
                             )
                             try:
+                                if telemetry:
+                                    telemetry.begin_model_load()
                                 payload = self.run_one(
                                     command, out, config.VLLMBENCH_TIMEOUT, env,
                                 )
@@ -283,6 +286,11 @@ class VllmBenchBenchmark:
                         if entry is None:
                             Shared.warn(f"{label}: {kind} at in{input_len} reported no usable result")
                             continue
+                        if telemetry:
+                            telemetry.begin_measured(
+                                f"measured:{kind}:in{input_len}:out{output_len}",
+                            )
+                            entry["memory"] = telemetry.finish_case()
                         bucket.append(entry)
                         model_result["completed_cases"] += 1
                         Shared.ok(self.format_entry(kind, entry))

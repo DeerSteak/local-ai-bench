@@ -1082,15 +1082,26 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         def run_llamabench_concurrency(_context):
-            return LlamaBenchConcurrencyBenchmark().run(
-                engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
-                save_fn=make_save("llamabenchconc"),
-            )
+            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            try:
+                return LlamaBenchConcurrencyBenchmark().run(
+                    engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
+                    save_fn=make_save("llamabenchconc"), telemetry=telemetry,
+                )
+            finally:
+                if telemetry:
+                    telemetry.stop()
 
         def run_vllmbench(_context):
-            return VllmBenchBenchmark().run(
-                engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
-            )
+            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            try:
+                return VllmBenchBenchmark().run(
+                    engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
+                    telemetry=telemetry,
+                )
+            finally:
+                if telemetry:
+                    telemetry.stop()
 
         def run_embeddings(_context):
             telemetry = CaseTelemetry().start() if args.memory_telemetry else None
