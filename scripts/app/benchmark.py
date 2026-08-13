@@ -30,7 +30,7 @@ from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
-from scripts.runtime.telemetry import derive_run_memory_summary
+from scripts.runtime.telemetry import CaseTelemetry, derive_run_memory_summary
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
@@ -1093,10 +1093,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         def run_embeddings(_context):
-            return EmbeddingBenchmark().run(
-                engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
-                save_fn=make_save("embeddings", "emb"),
-            )
+            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            try:
+                return EmbeddingBenchmark().run(
+                    engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
+                    save_fn=make_save("embeddings", "emb"), telemetry=telemetry,
+                )
+            finally:
+                if telemetry:
+                    telemetry.stop()
 
         def accuracy_stage(test_name, Bench):
             def runner(_context):

@@ -58,7 +58,8 @@ class EmbeddingBenchmark:
 
         return chunks
 
-    def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real engine runs
+    def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            telemetry=None):  # pragma: no cover — orchestrates real engine runs
         results = {}
 
         if not engine.ensure_running():
@@ -81,6 +82,7 @@ class EmbeddingBenchmark:
                 break
 
             emit_progress("model", "emb", "running", label, model_id=tag)
+            telemetry_active = False
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -97,6 +99,9 @@ class EmbeddingBenchmark:
                     results[short] = skip_entry
                     continue
 
+                if telemetry:
+                    telemetry.begin_model_load()
+                    telemetry_active = True
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:
@@ -108,6 +113,8 @@ class EmbeddingBenchmark:
                             engine.wait_for_recovery()
 
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
+                if telemetry:
+                    telemetry.begin_measured("measured:embedding")
 
                 def _embed_once(run_i):
                     measurement = engine.embed(tag, chunks)
@@ -177,6 +184,10 @@ class EmbeddingBenchmark:
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
             finally:
+                if telemetry_active and telemetry:
+                    memory = telemetry.finish_case()
+                    if isinstance(results.get(short), dict):
+                        results[short]["memory"] = memory
                 if save_fn:
                     save_fn(results)
                 emit_model_finished("emb", label, results.get(short), model_id=tag)
