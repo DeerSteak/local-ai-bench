@@ -36,6 +36,7 @@
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `tests/fixtures/` | Immutable compatibility results that freeze commercially important application/schema behavior before execution-kernel migration |
 | `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
+| `docs/README.md` | Audience- and status-oriented documentation index |
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
 | `docs/product-requirements.md` | Primary pre-launch hardware-validation decision, scope, outcomes, and product qualities |
