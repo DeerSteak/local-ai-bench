@@ -64,6 +64,18 @@ def test_schema_4_fixture_preserves_pause_evidence_and_measurements():
     assert result["llm"]["golden"]["2K"]["tps_mean"] == 50.0
 
 
+def test_schema_5_fixture_retains_memory_samples_and_run_summary():
+    result = load_fixture("results_v6_schema5_memory.json")
+    validate_json_data(result)
+    memory = result["llm"]["golden"]["2K"]["memory"]
+    assert result["run"]["schema_version"] == 5
+    assert [window["name"] for window in memory["windows"]] == [
+        "idle", "model_load", "measured",
+    ]
+    assert memory["windows"][2]["samples"][0]["process_rss_gb"] == 5.0
+    assert result["run"]["memory_summary"]["tightest_headroom"]["case_id"] == "golden-memory-case"
+
+
 def test_v4_1_complete_fixture_freezes_coverage_and_measurement_contract():
     result = load_fixture("results_v4_1_complete.json")
     assert result["run"]["status"] == "complete"

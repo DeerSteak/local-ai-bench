@@ -7,6 +7,7 @@ import {
   buildLlamaBenchPrefillLineData,
 } from "./llamabench";
 import { getRunReliabilityWarning, parseResultsJSON } from "./shared";
+import { getMemoryRecordingState, runHeadroomSummary } from "./memory";
 
 
 function loadGolden(name: string) {
@@ -26,6 +27,20 @@ describe("4.1 golden result compatibility", () => {
     expect(data.run.schema_version).toBe(1);
     expect(buildLLMDataForModel(files, "golden", "tps"))
       .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+    expect(getMemoryRecordingState(files[0])).toBe("not_recorded");
+  });
+
+  it("renders schema 5 memory while preserving the benchmark measurement", () => {
+    const data = loadGolden("results_v6_schema5_memory.json");
+    const files = [{ id: "schema5", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(5);
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+    expect(getMemoryRecordingState(files[0])).toBe("recorded");
+    expect(runHeadroomSummary(files[0])).toEqual({
+      state: "comfortable", absoluteGb: 12, casePath: "llm/golden/2K",
+    });
   });
 
   it("renders complete LLM, conversation, and llama-bench measurements", () => {
