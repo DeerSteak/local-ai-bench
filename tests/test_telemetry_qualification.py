@@ -1,6 +1,10 @@
 import json
+from pathlib import Path
 
 import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 from scripts.release.telemetry_qualification import (
     analyze_manifest, analyze_pairs, extract_case_metrics, metric_impacts, percentile,
@@ -67,3 +71,13 @@ def test_extracts_case_metrics_and_manifest_paths(tmp_path):
 def test_extract_rejects_missing_or_nonpositive_metrics():
     with pytest.raises(ValueError, match="lacks"):
         extract_case_metrics({"llm": {"m": {"2K": {"tps_mean": 1}}}}, "llm", "m", "2K")
+
+
+def test_windows_launcher_delegates_pair_ordering_to_powershell():
+    batch = (ROOT / "qual_windows.bat").read_text()
+    powershell = (ROOT / "qual_windows.ps1").read_text()
+    assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File' in batch
+    assert '$order = if ($pair % 2 -eq 1) { @("off", "on") } else { @("on", "off") }' in powershell
+    assert 'Invoke-BenchmarkCase -Mode $order[0]' in powershell
+    assert 'Invoke-BenchmarkCase -Mode $order[1]' in powershell
+    assert 'Start-Sleep -Seconds 30' in powershell
