@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 
+HISTORY_FOREGROUND = "#17202a"
+HISTORY_EVEN_BACKGROUND = "#ffffff"
+HISTORY_ODD_BACKGROUND = "#e8f1fa"
+HISTORY_SELECTED_BACKGROUND = "#245b85"
+
+
 @dataclass
 class HistoryScreen:
     frame: Any
@@ -47,8 +53,22 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
         frame, columns=("date", "system", "status", "engine", "profile", "models"),
         show="headings", selectmode="extended", style="History.Treeview",
     )
-    tree.tag_configure("history_even", background="#ffffff")
-    tree.tag_configure("history_odd", background="#edf2f7")
+    style = ttk.Style(tree)
+    style.configure(
+        "History.Treeview", background=HISTORY_EVEN_BACKGROUND,
+        fieldbackground=HISTORY_EVEN_BACKGROUND, foreground=HISTORY_FOREGROUND,
+    )
+    style.map(
+        "History.Treeview",
+        background=[("selected", HISTORY_SELECTED_BACKGROUND)],
+        foreground=[("selected", "#ffffff")],
+    )
+    tree.tag_configure(
+        "history_even", background=HISTORY_EVEN_BACKGROUND, foreground=HISTORY_FOREGROUND,
+    )
+    tree.tag_configure(
+        "history_odd", background=HISTORY_ODD_BACKGROUND, foreground=HISTORY_FOREGROUND,
+    )
     for column, label, width in (
         ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
         ("engine", "Engine", 95), ("profile", "Profile", 110), ("models", "Models", 70),
