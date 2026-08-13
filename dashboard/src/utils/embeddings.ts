@@ -1,5 +1,6 @@
 import { FALLBACK_COLORS, EMBED_MODEL_ORDER, EMBED_BAR_COLORS } from "../constants";
 import { embedModelLabel, entriesOf, lookup } from "./shared";
+import { memoryFields } from "./memory";
 import type { BarConfig, ChartRow, ResultsFile } from "../types";
 
 // Return all embedding model keys from the loaded files, in canonical order
@@ -77,6 +78,7 @@ export function flattenEmbedData(files: ResultsFile[]): ChartRow[] {
         n_chunks: s.n_chunks,
         device: s.device,
         n_runs: s.valid_runs ?? s.n_runs,
+        ...memoryFields(s),
       };
     })
   );

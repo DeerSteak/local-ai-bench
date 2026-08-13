@@ -18,6 +18,14 @@ export const memoryHeadroomState = (sample: JsonRecord[string]): string => {
   return typeof state === "string" ? state : "not_recorded";
 };
 
+export const memoryFields = (sample: JsonRecord[string]): ChartRow => sample?.memory ? ({
+    host_ram_peak_gb: memoryChannelPeak(sample, "host_ram_used_gb"),
+    process_rss_peak_gb: memoryChannelPeak(sample, "process_rss_gb"),
+    accelerator_memory_peak_gb: memoryChannelPeak(sample, "accelerator_memory_used_gb"),
+    headroom_gb: memoryHeadroom(sample),
+    headroom_state: memoryHeadroomState(sample),
+  }) : ({});
+
 export function buildProcessMemoryDataForModel(
   files: ResultsFile[], model: string, section = "llm",
 ): ChartRow[] {

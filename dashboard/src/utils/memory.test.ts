@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildProcessMemoryDataForModel, getMemoryRecordingState, memoryChannelPeak,
-  memoryHeadroom, memoryHeadroomState, runHeadroomSummary,
+  memoryFields, memoryHeadroom, memoryHeadroomState, runHeadroomSummary,
 } from "./memory";
 
 const memory = {
@@ -20,6 +20,14 @@ describe("memory telemetry", () => {
     expect(memoryChannelPeak(sample, "host_ram_used_gb")).toBe(20);
     expect(memoryHeadroom(sample)).toBe(14);
     expect(memoryHeadroomState(sample)).toBe("comfortable");
+    expect(memoryFields(sample)).toEqual({
+      host_ram_peak_gb: 20,
+      process_rss_peak_gb: 4,
+      accelerator_memory_peak_gb: 8,
+      headroom_gb: 14,
+      headroom_state: "comfortable",
+    });
+    expect(memoryFields({})).toEqual({});
   });
 
   it("treats missing, malformed, and non-finite values as not recorded", () => {

@@ -35,6 +35,29 @@ function MachineTd({ fileId, files }: { fileId: ResultsFile["id"], files: Result
   );
 }
 
+function MemoryHeaders({ sortConfig, onCycleSort }: {
+  sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
+  return <>
+    <SortTh label="Host RAM peak" sortKey="host_ram_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+    <SortTh label="Process RSS peak" sortKey="process_rss_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+    <SortTh label="Accelerator peak" sortKey="accelerator_memory_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+    <SortTh label="Headroom" sortKey="headroom_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+  </>;
+}
+
+function MemoryCells({ row }: { row: Record<string, unknown> }) {
+  const value = (key: string) => typeof row[key] === "number" ? `${fmt(row[key], "gb")} GB` : "Not recorded";
+  return <>
+    <td className={`${styles.td} ${styles.tdNum}`}>{value("host_ram_peak_gb")}</td>
+    <td className={`${styles.td} ${styles.tdNum}`}>{value("process_rss_peak_gb")}</td>
+    <td className={`${styles.td} ${styles.tdNum}`}>{value("accelerator_memory_peak_gb")}</td>
+    <td className={`${styles.td} ${styles.tdNum}`}>
+      {typeof row.headroom_gb === "number" ? `${fmt(row.headroom_gb, "gb")} GB · ${row.headroom_state}` : "Not recorded"}
+    </td>
+  </>;
+}
+
 function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenLLMData(files, section), sortConfig);
@@ -101,6 +124,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
           <th className={styles.th}>± stdev</th>
           <SortTh label="Chunks" sortKey="n_chunks" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Device</th>
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -109,7 +133,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{r.modelLabel}</td>
-            <td className={styles.td} colSpan={5}>
+            <td className={styles.td} colSpan={9}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -121,6 +145,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.cps_stdev, "sps")}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.n_chunks ?? "—"}</td>
             <td className={`${styles.td} ${styles.tdDevice}`}>{r.device || "—"}</td>
+            <MemoryCells row={r} />
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}
@@ -143,6 +168,7 @@ function ImagesTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[
           <SortTh label="Resolution" sortKey="res" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Sec/image" sortKey="sec_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -155,6 +181,7 @@ function ImagesTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[
             <td className={`${styles.td} ${styles.tdCtx}`}>{r.res}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.sec_mean, "sec")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.sec_stdev, "sec")}</td>
+            <MemoryCells row={r} />
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}
@@ -182,6 +209,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
           <SortTh label="Total Tokens" sortKey="total_tokens" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -189,7 +217,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={9}>
+            <td className={styles.td} colSpan={13}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -206,6 +234,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.total_tokens}</td>
+            <MemoryCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -229,6 +258,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
           <SortTh label="Tokens/sec" sortKey="avg_ts" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
           <th className={styles.th}>GPU Layers</th>
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -236,7 +266,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={6}>
+            <td className={styles.td} colSpan={10}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -250,6 +280,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.avg_ts, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.stddev_ts, "tps")}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_gpu_layers ?? "—"}</td>
+            <MemoryCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -272,6 +303,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
           <SortTh label="Gen" sortKey="tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Aggregate TPS" sortKey="speed_tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Prefill TPS" sortKey="speed_pp" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -279,7 +311,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={5}>
+            <td className={styles.td} colSpan={9}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -292,6 +324,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.tg ?? "—"}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.speed_tg, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.speed_pp, "tps")}</td>
+            <MemoryCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -319,6 +352,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
           <SortTh label="Likely Loop" sortKey="likely_loop_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Nudged" sortKey="budget_nudged_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Budget Exhausted" sortKey="budget_exceeded_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -326,7 +360,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={8}>
+            <td className={styles.td} colSpan={12}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -344,6 +378,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.likely_loop_count || "—"}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_nudged_count || "—"}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_exceeded_count || "—"}</td>
+            <MemoryCells row={r} />
           </tr>
         ))}
       </tbody>
