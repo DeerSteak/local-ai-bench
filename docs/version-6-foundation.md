@@ -20,9 +20,10 @@ Schema 5 is introduced by the first writer that adds memory telemetry. Every fie
 | Window sample count | Count | Lifecycle window | Sampler | Recorded | Case telemetry | Case `memory.windows[].summary.sample_count` | Not recorded |
 | Window duration | Seconds | Lifecycle window | Monotonic clock | Recorded | Case telemetry | Case `memory.windows[].summary.duration_sec` | Not recorded |
 | Case peak, mean, and final | GB | Channel across retained sub-windows | Derived from window summaries | Recorded or unknown | Case telemetry | Case `memory.summary.<channel>` | Not recorded |
-| Absolute headroom | GB | Case against memory ceiling | Derived | Recorded or unknown | Case telemetry | Case `memory.headroom.absolute_gb` | Not recorded |
-| Fractional headroom | Fraction | Case against memory ceiling | Derived | Recorded or unknown | Case telemetry | Case `memory.headroom.fraction` | Not recorded |
+| Absolute headroom | GB | Case model footprint against memory ceiling | Derived | Recorded or unknown | Case telemetry | Case `memory.headroom.absolute_gb` | Not recorded |
+| Fractional headroom | Fraction | Case model footprint against memory ceiling | Derived | Recorded or unknown | Case telemetry | Case `memory.headroom.fraction` | Not recorded |
 | Headroom state | Enum | Case | Derived thresholds | Comfortable, tight, exceeded, or unknown | Case telemetry | Case `memory.headroom.state` | Not recorded |
+| Headroom basis | Channel name | Case | Derived from memory architecture | Accelerator use or process-tree RSS | Case telemetry | Case `memory.headroom.basis_channel` | Not recorded |
 | Sampling interval | Seconds | Case | Sampler configuration | Recorded | Case telemetry | Case `memory.provenance.interval_sec` | Not recorded |
 | Channel source | Identifier | Channel | Sampler discovery | Recorded or unavailable | Case telemetry | Case `memory.provenance.channels.<channel>.source` | Not recorded |
 | Failed samples | Count | Channel | Sampler | Recorded | Case telemetry | Case `memory.provenance.channels.<channel>.failed_samples` | Not recorded |

@@ -15,7 +15,7 @@ TELEMETRY_SAMPLE_FIELDS = {
     "timestamp_sec", "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 }
-TELEMETRY_HEADROOM_FIELDS = {"absolute_gb", "fraction", "state"}
+TELEMETRY_HEADROOM_FIELDS = {"absolute_gb", "fraction", "state", "basis_channel"}
 TELEMETRY_PROVENANCE_FIELDS = {"interval_sec", "failed_samples", "channels"}
 TELEMETRY_SOURCE_FIELDS = {"source", "failed_samples"}
 

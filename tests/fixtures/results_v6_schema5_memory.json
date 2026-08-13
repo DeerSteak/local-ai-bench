@@ -19,7 +19,7 @@
         "accelerator_memory_used_gb": {"peak_gb": 10.0, "mean_gb": 6.67, "final_gb": 10.0, "valid_samples": 3},
         "accelerator_memory_total_gb": {"peak_gb": 24.0, "mean_gb": 24.0, "final_gb": 24.0, "valid_samples": 3}
       },
-      "headroom": {"absolute_gb": 12.0, "fraction": 0.5, "state": "comfortable"},
+      "headroom": {"absolute_gb": 12.0, "fraction": 0.5, "state": "comfortable", "basis_channel": "accelerator_memory_used_gb"},
       "provenance": {"interval_sec": 1.0, "failed_samples": 0, "channels": {
         "host_ram_used_gb": {"source": "psutil", "failed_samples": 0},
         "process_rss_gb": {"source": "psutil", "failed_samples": 0},
@@ -34,7 +34,7 @@
     "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 1.0},
     "memory_summary": {
       "channels": {"process_rss_gb": {"peak_gb": 5.0}, "accelerator_memory_used_gb": {"peak_gb": 10.0}},
-      "tightest_headroom": {"absolute_gb": 12.0, "fraction": 0.5, "state": "comfortable", "case_id": "golden-memory-case", "case_path": "llm/golden/2K"}
+      "tightest_headroom": {"absolute_gb": 12.0, "fraction": 0.5, "state": "comfortable", "basis_channel": "accelerator_memory_used_gb", "case_id": "golden-memory-case", "case_path": "llm/golden/2K"}
     }
   }
 }

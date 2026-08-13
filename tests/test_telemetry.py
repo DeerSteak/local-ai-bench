@@ -72,6 +72,7 @@ def test_memory_block_records_provenance_and_unknown_headroom():
     assert block["summary"]["host_ram_used_gb"]["peak_gb"] == 12
     assert block["headroom"] == {
         "absolute_gb": None, "fraction": None, "state": "unknown",
+        "basis_channel": "process_rss_gb",
     }
     assert block["provenance"]["failed_samples"] == 2
     assert block["provenance"]["channels"]["host_ram_used_gb"] == {
@@ -82,17 +83,42 @@ def test_memory_block_records_provenance_and_unknown_headroom():
     }
 
 
+def test_memory_block_uses_process_rss_for_unified_memory_headroom():
+    block = memory_block(
+        [sample(0, "measured", host=14, rss=4)], 0.5, 0, {},
+        {"host_ram_used_gb": "psutil", "process_rss_gb": "psutil",
+         "accelerator_memory_used_gb": "unsupported"}, 16,
+    )
+    assert block["headroom"] == {
+        "absolute_gb": 12, "fraction": 0.75, "state": "comfortable",
+        "basis_channel": "process_rss_gb",
+    }
+
+
+def test_memory_block_does_not_hide_failed_accelerator_reading_with_rss():
+    block = memory_block(
+        [sample(0, "measured", host=14, rss=4)], 0.5, 0, {},
+        {"process_rss_gb": "psutil", "accelerator_memory_used_gb": "nvidia-smi"}, 16,
+    )
+    assert block["headroom"] == {
+        "absolute_gb": None, "fraction": None, "state": "unknown",
+        "basis_channel": "accelerator_memory_used_gb",
+    }
+
+
 def test_run_summary_reports_each_peak_and_tightest_case():
     sections = {"llm": {"model": {
         "2K": {"memory": {
             "case_id": "case-a", "summary": {
                 "process_rss_gb": {"peak_gb": 4}, "host_ram_used_gb": {"peak_gb": 20},
-            }, "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable"},
+            }, "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable",
+                            "basis_channel": "process_rss_gb"},
         }},
         "8K": {"memory": {
             "case_id": "case-b", "summary": {
                 "process_rss_gb": {"peak_gb": 7}, "host_ram_used_gb": {"peak_gb": 25},
-            }, "headroom": {"absolute_gb": 2, "fraction": 0.125, "state": "tight"},
+            }, "headroom": {"absolute_gb": 2, "fraction": 0.125, "state": "tight",
+                            "basis_channel": "process_rss_gb"},
         }},
     }}}
     assert derive_run_memory_summary(sections) == {
@@ -101,6 +127,7 @@ def test_run_summary_reports_each_peak_and_tightest_case():
         },
         "tightest_headroom": {
             "absolute_gb": 2, "fraction": 0.125, "state": "tight",
+            "basis_channel": "process_rss_gb",
             "case_id": "case-b", "case_path": "llm/model/8K",
         },
     }

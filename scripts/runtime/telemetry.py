@@ -270,9 +270,12 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
                  ceiling_gb: float | None = None) -> dict[str, Any]:
     windows = summarize_windows(samples)
     case = summarize_case(windows)
-    peak = case["accelerator_memory_used_gb"].peak_gb
-    if peak is None:
-        peak = case["host_ram_used_gb"].peak_gb
+    basis_channel = "accelerator_memory_used_gb"
+    if sources.get(basis_channel, "unsupported") == "unsupported":
+        basis_channel = "process_rss_gb"
+    peak = case[basis_channel].peak_gb
+    headroom = asdict(calculate_headroom(peak, ceiling_gb))
+    headroom["basis_channel"] = basis_channel
     return {
         "windows": [
             window_summary_dict(
@@ -281,7 +284,7 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
             for window in windows
         ],
         "summary": {name: asdict(summary) for name, summary in case.items()},
-        "headroom": asdict(calculate_headroom(peak, ceiling_gb)),
+        "headroom": headroom,
         "provenance": {
             "interval_sec": interval_sec,
             "failed_samples": failed_samples,
@@ -371,6 +374,8 @@ def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] 
                     "case_id": memory.get("case_id"),
                     "case_path": "/".join(path),
                 }
+                if isinstance(headroom.get("basis_channel"), str):
+                    tightest["basis_channel"] = headroom["basis_channel"]
         for key, child in value.items():
             if key != "memory":
                 visit(child, (*path, str(key)))

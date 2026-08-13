@@ -27,7 +27,7 @@
             "process_rss_gb": {"peak_gb": 4.2, "mean_gb": 3.9, "final_gb": 4.0, "valid_samples": 12},
             "accelerator_memory_used_gb": {"peak_gb": null, "mean_gb": null, "final_gb": null, "valid_samples": 0}
           },
-          "headroom": {"absolute_gb": 3.2, "fraction": 0.2, "state": "comfortable"},
+          "headroom": {"absolute_gb": 11.8, "fraction": 0.7375, "state": "comfortable", "basis_channel": "process_rss_gb"},
           "provenance": {"interval_sec": 1, "failed_samples": 0, "channels": {}}
         }
       },
@@ -49,7 +49,7 @@
             "process_rss_gb": {"peak_gb": 5.8, "mean_gb": 5.3, "final_gb": 5.6, "valid_samples": 14},
             "accelerator_memory_used_gb": {"peak_gb": null, "mean_gb": null, "final_gb": null, "valid_samples": 0}
           },
-          "headroom": {"absolute_gb": 1.5, "fraction": 0.094, "state": "tight"},
+          "headroom": {"absolute_gb": 10.2, "fraction": 0.6375, "state": "comfortable", "basis_channel": "process_rss_gb"},
           "provenance": {"interval_sec": 1, "failed_samples": 1, "channels": {}}
         }
       }
@@ -78,9 +78,10 @@
         "process_rss_gb": {"peak_gb": 5.8}
       },
       "tightest_headroom": {
-        "absolute_gb": 1.5,
-        "fraction": 0.094,
-        "state": "tight",
+        "absolute_gb": 10.2,
+        "fraction": 0.6375,
+        "state": "comfortable",
+        "basis_channel": "process_rss_gb",
         "case_id": "case_preview_8k",
         "case_path": "llm/qwen3.5-4b-q4/8K"
       }

@@ -66,7 +66,8 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
             }],
         }],
         "summary": {"process_rss_gb": {"peak_gb": 4, "arguments": "--secret"}},
-        "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable"},
+        "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable",
+                     "basis_channel": "process_rss_gb", "private_note": "secret"},
         "provenance": {
             "interval_sec": 1, "failed_samples": 0,
             "channels": {"process_rss_gb": {
@@ -82,6 +83,7 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
     assert memory["provenance"]["channels"]["process_rss_gb"] == {
         "source": "psutil", "failed_samples": 2,
     }
+    assert memory["headroom"]["basis_channel"] == "process_rss_gb"
     assert memory["windows"][0]["samples"] == [{
         "timestamp_sec": 0.25, "process_rss_gb": 4,
     }]
