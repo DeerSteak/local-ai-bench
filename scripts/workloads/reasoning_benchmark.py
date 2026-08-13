@@ -169,7 +169,7 @@ class ReasoningBenchmark:
         )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS,
-            save_fn=None, answers_path: Path | None = None
+            save_fn=None, answers_path: Path | None = None, telemetry=None
             ):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else ReasoningBenchmark.load_questions()
         return Shared.run_accuracy_benchmark(
@@ -190,4 +190,5 @@ class ReasoningBenchmark:
             save_fn=save_fn,
             answers_path=answers_path,
             progress_stage="reasoning",
+            telemetry=telemetry,
         )

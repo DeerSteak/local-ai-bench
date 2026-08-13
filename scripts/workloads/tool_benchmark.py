@@ -182,7 +182,8 @@ class ToolBenchmark:
         )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
+            answers_path: Path | None = None,
+            telemetry=None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else ToolBenchmark.load_questions()
         return Shared.run_accuracy_benchmark(
             section_label="Tool", skip_label="tool", question_noun="tool question",
@@ -192,5 +193,5 @@ class ToolBenchmark:
             rescore_partial_fn=ToolBenchmark.rescore_partial_fn,
             score_fn=ToolBenchmark.score,
             save_fn=save_fn, answers_path=answers_path, progress_stage="tool",
-            requires_tool_calls=True,
+            requires_tool_calls=True, telemetry=telemetry,
         )

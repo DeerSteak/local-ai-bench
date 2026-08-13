@@ -194,7 +194,8 @@ class MCQBenchmark:
         )
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
+            answers_path: Path | None = None,
+            telemetry=None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else MCQBenchmark.load_questions()
         return Shared.run_accuracy_benchmark(
             section_label="MCQ", skip_label="MCQ", question_noun="MCQ questions",
@@ -203,5 +204,5 @@ class MCQBenchmark:
             ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
             rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
             score_fn=MCQBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path, progress_stage="mcq",
+            save_fn=save_fn, answers_path=answers_path, progress_stage="mcq", telemetry=telemetry,
         )

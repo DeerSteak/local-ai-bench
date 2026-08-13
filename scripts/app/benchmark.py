@@ -1110,11 +1110,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
-                section = Bench().run(
-                    engine=engine, models=llm_models, questions=questions,
-                    warmup_runs=_context.plan.warmup_runs, save_fn=make_save(test_name),
-                    answers_path=answers_path,
-                )
+                telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+                try:
+                    section = Bench().run(
+                        engine=engine, models=llm_models, questions=questions,
+                        warmup_runs=_context.plan.warmup_runs, save_fn=make_save(test_name),
+                        answers_path=answers_path, telemetry=telemetry,
+                    )
+                finally:
+                    if telemetry:
+                        telemetry.stop()
                 Shared.ok(f"Answers saved to: {answers_path}")
                 return section
             return StageDefinition(
