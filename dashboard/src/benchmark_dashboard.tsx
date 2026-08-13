@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning } from "./utils/shared";
+import { parseResultsJSON, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -98,6 +98,9 @@ export default function Dashboard() {
   );
   const crossEngineWeightsWarning = useMemo(
     () => getCrossEngineWeightsWarning(effectiveFiles), [effectiveFiles],
+  );
+  const memoryTelemetryMethodologyWarning = useMemo(
+    () => getMemoryTelemetryMethodologyWarning(effectiveFiles), [effectiveFiles],
   );
 
   const updateHostnameOverride = useCallback((fileId: DisplayFile["id"], value: string) => {
@@ -298,6 +301,7 @@ export default function Dashboard() {
           fileError, accuracySettingsWarning, llamaBenchMethodologyWarning,
           conversationTTFTMethodologyWarning, gpuSplitMethodologyWarning,
           noRepackMethodologyWarning, crossEngineWeightsWarning,
+          memoryTelemetryMethodologyWarning,
         ].filter(Boolean).join(" ")}
       />
 

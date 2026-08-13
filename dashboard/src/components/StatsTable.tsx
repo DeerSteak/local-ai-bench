@@ -50,6 +50,10 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <th className={styles.th}>± stdev</th>
           <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
+          <SortTh label="Host RAM peak" sortKey="host_ram_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Process RSS peak" sortKey="process_rss_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Accelerator peak" sortKey="accelerator_memory_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Headroom" sortKey="headroom_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -58,7 +62,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={6}>
+            <td className={styles.td} colSpan={10}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -71,6 +75,10 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.tps_stdev, "tps")}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.host_ram_peak_gb == null ? "Not recorded" : `${fmt(r.host_ram_peak_gb, "gb")} GB`}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.process_rss_peak_gb == null ? "Not recorded" : `${fmt(r.process_rss_peak_gb, "gb")} GB`}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.accelerator_memory_peak_gb == null ? "Not recorded" : `${fmt(r.accelerator_memory_peak_gb, "gb")} GB`}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.headroom_gb == null ? "Not recorded" : `${fmt(r.headroom_gb, "gb")} GB · ${r.headroom_state}`}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}

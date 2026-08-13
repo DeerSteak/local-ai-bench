@@ -8,6 +8,7 @@ import {
   FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
   EMBED_BAR_COLORS, BACKEND_COLORS, ACCURACY_TIMEOUT_BAR_CONFIGS,
   ACCURACY_TESTS, ACCURACY_TEST_LABELS, CTX_ORDER, SPEC_CARD_PREFERRED_CTX,
+  MEMORY_CHANNEL_LABELS, MEMORY_HEADROOM_LABELS,
 } from "./constants";
 import { lookup } from "./utils/shared";
 
@@ -103,6 +104,17 @@ describe("accuracy registry", () => {
 describe("context registry", () => {
   it("contains the preferred run-card checkpoint", () => {
     expect(CTX_ORDER).toContain(SPEC_CARD_PREFERRED_CTX);
+  });
+});
+
+describe("memory telemetry registry", () => {
+  it("labels every exported memory channel and availability state", () => {
+    expect(Object.keys(MEMORY_CHANNEL_LABELS)).toEqual([
+      "host_ram_used_gb", "process_rss_gb", "accelerator_memory_used_gb",
+    ]);
+    expect(Object.keys(MEMORY_HEADROOM_LABELS)).toEqual([
+      "comfortable", "tight", "exceeded", "unknown", "not_recorded",
+    ]);
   });
 });
 

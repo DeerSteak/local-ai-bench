@@ -3,6 +3,7 @@ import {
   parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
+  getMemoryTelemetryMethodologyWarning,
   sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
@@ -177,6 +178,27 @@ describe("getNoRepackMethodologyWarning", () => {
     expect(getNoRepackMethodologyWarning([enabled, disabled], "images")).toBe("");
     expect(getNoRepackMethodologyWarning([enabled, disabled], "llamabench")).toBe("");
     expect(getNoRepackMethodologyWarning([enabled, disabled], "vllmbench")).toBe("");
+  });
+});
+
+describe("getMemoryTelemetryMethodologyWarning", () => {
+  const off = { data: { run: { effective_config: { memory_telemetry: false } } } };
+  const oneSecond = { data: { run: { effective_config: {
+    memory_telemetry: true, memory_telemetry_interval_sec: 1,
+  } } } };
+  const halfSecond = { data: { run: { effective_config: {
+    memory_telemetry: true, memory_telemetry_interval_sec: 0.5,
+  } } } };
+
+  it("warns across telemetry modes and intervals", () => {
+    expect(getMemoryTelemetryMethodologyWarning([off, oneSecond])).toContain("incompatible");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond, halfSecond])).toContain("intervals");
+  });
+
+  it("allows matching or single-file identities", () => {
+    expect(getMemoryTelemetryMethodologyWarning([off, off])).toBe("");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond, oneSecond])).toBe("");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond])).toBe("");
   });
 });
 

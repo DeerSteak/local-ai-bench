@@ -1,0 +1,89 @@
+{
+  "version": "5.1.1",
+  "engine": "llamacpp",
+  "profile": {
+    "hostname": "Memory Telemetry Preview",
+    "os": "macOS 26",
+    "backend": "Metal",
+    "ram_gb": 24
+  },
+  "llm": {
+    "qwen3.5-4b-q4": {
+      "2K": {
+        "tps_mean": 74.2,
+        "tps_stdev": 1.1,
+        "ttft_mean_sec": 0.31,
+        "ttft_stdev_sec": 0.02,
+        "valid_runs": 3,
+        "memory": {
+          "case_id": "case_preview_2k",
+          "windows": [
+            {"name": "idle", "sample_count": 3, "duration_sec": 2, "channels": {}},
+            {"name": "model_load", "sample_count": 5, "duration_sec": 4, "channels": {}},
+            {"name": "measured", "sample_count": 4, "duration_sec": 3, "channels": {}}
+          ],
+          "summary": {
+            "host_ram_used_gb": {"peak_gb": 12.8, "mean_gb": 12.1, "final_gb": 12.5, "valid_samples": 12},
+            "process_rss_gb": {"peak_gb": 4.2, "mean_gb": 3.9, "final_gb": 4.0, "valid_samples": 12},
+            "accelerator_memory_used_gb": {"peak_gb": null, "mean_gb": null, "final_gb": null, "valid_samples": 0}
+          },
+          "headroom": {"absolute_gb": 3.2, "fraction": 0.2, "state": "comfortable"},
+          "provenance": {"interval_sec": 1, "failed_samples": 0, "channels": {}}
+        }
+      },
+      "8K": {
+        "tps_mean": 61.5,
+        "tps_stdev": 0.9,
+        "ttft_mean_sec": 0.72,
+        "ttft_stdev_sec": 0.04,
+        "valid_runs": 3,
+        "memory": {
+          "case_id": "case_preview_8k",
+          "windows": [
+            {"name": "idle", "sample_count": 3, "duration_sec": 2, "channels": {}},
+            {"name": "model_load", "sample_count": 6, "duration_sec": 5, "channels": {}},
+            {"name": "measured", "sample_count": 5, "duration_sec": 4, "channels": {}}
+          ],
+          "summary": {
+            "host_ram_used_gb": {"peak_gb": 14.5, "mean_gb": 13.7, "final_gb": 14.1, "valid_samples": 14},
+            "process_rss_gb": {"peak_gb": 5.8, "mean_gb": 5.3, "final_gb": 5.6, "valid_samples": 14},
+            "accelerator_memory_used_gb": {"peak_gb": null, "mean_gb": null, "final_gb": null, "valid_samples": 0}
+          },
+          "headroom": {"absolute_gb": 1.5, "fraction": 0.094, "state": "tight"},
+          "provenance": {"interval_sec": 1, "failed_samples": 1, "channels": {}}
+        }
+      }
+    }
+  },
+  "llm_conversation": {},
+  "embeddings": {},
+  "images": {},
+  "mcq": {},
+  "math": {},
+  "reasoning": {},
+  "code": {},
+  "tool": {},
+  "concurrency_tool": {},
+  "concurrency_chat": {},
+  "llamabench": {},
+  "llamabenchconc": {},
+  "vllmbench": {},
+  "run": {
+    "schema_version": 5,
+    "status": "complete",
+    "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 1},
+    "memory_summary": {
+      "channels": {
+        "host_ram_used_gb": {"peak_gb": 14.5},
+        "process_rss_gb": {"peak_gb": 5.8}
+      },
+      "tightest_headroom": {
+        "absolute_gb": 1.5,
+        "fraction": 0.094,
+        "state": "tight",
+        "case_id": "case_preview_8k",
+        "case_path": "llm/qwen3.5-4b-q4/8K"
+      }
+    }
+  }
+}

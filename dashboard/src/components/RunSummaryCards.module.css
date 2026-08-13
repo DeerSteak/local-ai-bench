@@ -52,6 +52,25 @@
 .gpuMetadata { margin-top: 6px; }
 .gpuMetadata span { background: #dcecff; color: #174a82; }
 
+.headroom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .72);
+  color: #57606a;
+  font: 12px 'IBM Plex Mono', monospace;
+}
+
+.headroom strong { color: #25344b; }
+.headroom small { flex-basis: 100%; color: #6e7781; overflow-wrap: anywhere; }
+.headroom[data-state="tight"] strong { color: #b54708; }
+.headroom[data-state="exceeded"] strong { color: #cf222e; }
+
 .context {
   margin: 20px 0 8px;
   color: #57606a;

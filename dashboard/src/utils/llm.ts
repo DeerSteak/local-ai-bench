@@ -5,6 +5,7 @@ import {
 import { getModelColor, modelLabel, getSkipInfo, entriesOf, valuesOf, lookup } from "./shared";
 import type { JsonRecord } from "./shared";
 import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
+import { memoryChannelPeak } from "./memory";
 
 const SKIP_REASON_LABELS: Record<string, string> = {
   timed_out: "Skipped - LLM Timed Out",
@@ -22,6 +23,7 @@ export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps
 export function llmMetricValue(sample: JsonRecord[string], metric: string): JsonRecord[string] {
   if (metric === "tps") return sample?.tps_mean;
   if (metric === "prefill") return llmPrefillTPS(sample);
+  if (metric === "memory") return memoryChannelPeak(sample, "process_rss_gb");
   return llmTTFTMean(sample);
 }
 export const llmValidRuns = (sample: JsonRecord[string]) => sample?.valid_runs ?? sample?.n_runs;
@@ -284,6 +286,11 @@ export function flattenLLMData(files: ResultsFile[], section = "llm"): ChartRow[
           ttft_mean: llmTTFTMean(s),
           ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,
           prefill_tps: llmPrefillTPS(s), prefill_tps_stdev: s.prefill_tps_stdev,
+          host_ram_peak_gb: memoryChannelPeak(s, "host_ram_used_gb"),
+          process_rss_peak_gb: memoryChannelPeak(s, "process_rss_gb"),
+          accelerator_memory_peak_gb: memoryChannelPeak(s, "accelerator_memory_used_gb"),
+          headroom_gb: s?.memory?.headroom?.absolute_gb ?? null,
+          headroom_state: s?.memory?.headroom?.state ?? "not_recorded",
           n_runs: llmValidRuns(s),
         }));
     })
