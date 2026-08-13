@@ -1148,13 +1148,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             out_stem = _context.paths.output_path.stem
             images_name = ("images_" + out_stem[len("results_"):]
                            if out_stem.startswith("results_") else f"images_{out_stem}")
-            return ImageBenchmark().run(
-                image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
-                seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
-                comfyui_dir=_context.paths.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
-                save_fn=make_save("images", "img"),
-                images_dir=config.RESULTS_DIR / images_name,
-            )
+            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            try:
+                return ImageBenchmark().run(
+                    image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
+                    seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
+                    comfyui_dir=_context.paths.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
+                    save_fn=make_save("images", "img"),
+                    images_dir=config.RESULTS_DIR / images_name, telemetry=telemetry,
+                )
+            finally:
+                if telemetry:
+                    telemetry.stop()
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,

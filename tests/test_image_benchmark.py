@@ -137,6 +137,38 @@ def test_comfyui_free_models_swallows_request_errors(monkeypatch):
     ImageBenchmark.comfyui_free_models()
 
 
+def test_run_attaches_model_memory_with_resolution_subwindows(monkeypatch, tmp_path):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_model_load(self): self.calls.append("load")
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"windows": [{"name": name} for name in self.calls if name.startswith("measured:")]}
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    checkpoint_dir.mkdir()
+    (checkpoint_dir / "model.safetensors").write_bytes(b"model")
+    monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(config, "N_RUNS", 1)
+    monkeypatch.setattr(ImageBenchmark, "comfyui_submit", staticmethod(lambda *_a, **_k: (1.0, [])))
+    monkeypatch.setattr(ImageBenchmark, "comfyui_free_models", staticmethod(lambda: None))
+    telemetry = Telemetry()
+    model = {
+        "label": "Image", "checkpoint": "model.safetensors", "workflow": "sdxl",
+        "steps": 1, "cfg": 1.0, "sampler": "euler", "scheduler": "normal",
+        "short": "image", "resolutions": [(64, 64), (128, 128)],
+    }
+    result = ImageBenchmark().run(
+        [model], [(64, 64)], 1, "prompt", tmp_path,
+        images_dir=tmp_path / "images", telemetry=telemetry,
+    )
+    assert telemetry.calls == ["load", "measured:64x64", "measured:128x128", "finish"]
+    assert [window["name"] for window in result["image"]["memory"]["windows"]] == [
+        "measured:64x64", "measured:128x128",
+    ]
+
+
 def test_comfyui_interrupt_and_clear_stops_once_queue_is_empty(monkeypatch):
     posts = []
 
