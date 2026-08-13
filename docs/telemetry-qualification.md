@@ -4,7 +4,7 @@ The milestone-1 observer screen is a supervised real-hardware procedure. The ana
 
 Use one installed xsmall LLM model and the single-shot `2K` case for every trial on a platform. Keep the model tag, engine/runtime versions, power mode, driver, background workload, warmups, measured runs, and prompt cap fixed. Run at least 20 pairs for each 0.25, 0.5, and 1.0 second candidate interval. Set `LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC` to the candidate value for both runs in a pair; telemetry-off does not sample or retain the interval, but the environment and commands remain otherwise identical. Do not mix files from different intervals in one manifest.
 
-Within pair 1 run telemetry off and then on; within pair 2 run on and then off; continue alternating pair order. Use explicit output paths and the same command except for `--memory-telemetry`. For example, substitute the exact installed model tag and pair number:
+Within pair 1 run telemetry off and then on; within pair 2 run on and then off; continue alternating pair order. Keep the machine otherwise idle and wait a fixed 30 seconds between invocations, including between pairs. Use explicit output paths and the same command except for `--memory-telemetry`. For example, substitute the exact installed model tag and pair number:
 
 ```bash
 LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=1.0 bash run_bench.sh --ui none --tests llm --llm-models MODEL_TAG --max-prompt-tokens 2048 --warmup 2 --runs 3 --out qualification/off-01.json
