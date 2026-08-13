@@ -2,7 +2,7 @@
 
 Release source moves from `develop` through a versioned release branch into the stable `main` branch. See the [Contributor Workflow](contributor-workflow.md) for branch roles, pull requests, merge direction, tagging, hotfix handling, and repository protection.
 
-Local AI Bench 4.1 is a preview engineering build. A setup or runtime code path is not by itself a commercial support claim. No platform is labeled stable-supported until the qualification evidence below exists for the exact operating-system, architecture, accelerator/backend, runtime, and installer combination.
+Local AI Bench 5.1.1 is a preview engineering build. A setup or runtime code path is not by itself a commercial support claim. No platform is labeled stable-supported until the qualification evidence below exists for the exact operating-system, architecture, accelerator/backend, runtime, and installer combination.
 
 ## Platform matrix
 
@@ -48,7 +48,9 @@ Hooks are not cloned with a repository, so enable the hook once per working copy
 git config core.hooksPath .githooks
 ```
 
-To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing whitespace as groups 1–3.
+Mirrors include the README title and the doc sentences that state the application version in prose (`docs/telemetry.md`, `docs/security-and-privacy.md`, `docs/maintenance.md`, `docs/release-policy.md`, `docs/product-requirements.md`). Each doc mirror is registered as an explicitly anchored prefix/suffix pair rather than a bare version match, because the docs also carry frozen non-application versions — the 4.1 methodology baseline, the result/run-plan schema axes, `result-compatibility-v4.1.md`, workload-pack and API contract versions — which must never be rewritten by a release bump. Registering a mirror is therefore a deliberate act: a new doc sentence that names the application version is not synced until it is added.
+
+To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing text as groups 1–3, or use the `_prose(path, prefix, suffix, description)` helper (a leading `^` in the prefix anchors it to the start of a line). Several targets may share one file.
 
 ## Pyright hook
 

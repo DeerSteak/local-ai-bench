@@ -1,6 +1,6 @@
 # Telemetry contract
 
-Local AI Bench 4.1 sends no product telemetry, crash uploads, hosted sync, or background analytics. The event dictionary below is the maximum initial contract for a future opt-in implementation; documenting an event does not mean it is currently collected.
+Local AI Bench 5.1.1 sends no product telemetry, crash uploads, hosted sync, or background analytics. The event dictionary below is the maximum initial contract for a future opt-in implementation; documenting an event does not mean it is currently collected.
 
 ## Consent and control
 
