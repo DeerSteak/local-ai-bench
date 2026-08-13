@@ -72,6 +72,8 @@ Use qualified telemetry-off repeated trials and calculate the between-trial pair
 | Discrete NVIDIA GPU on Windows | Ryzen 7 9850X3D, RTX 5090, 64 GB | Host RAM, process RSS, GPU used and total | `psutil`, `nvidia-smi` |
 | Discrete multi-GPU NVIDIA on Windows | Core Ultra 7 270K, two RTX 5060 Ti, 64 GB | Host RAM, process RSS, per-device GPU used and total | `psutil`, `nvidia-smi` |
 | Discrete NVIDIA GPU under WSL | Either Windows NVIDIA system under WSL | Host RAM, process RSS, visible GPU used and total | `psutil`, `nvidia-smi` |
+| Discrete AMD GPU on Windows | Ryzen 7 5800XT, Radeon RX 9060 XT 16 GB, 32 GB | Host RAM, process RSS, GPU used and total where readable | `psutil`; native accelerator source not yet implemented |
+| Discrete AMD GPU under WSL | Same Radeon system if WSL is installed and the GPU/runtime is exposed | Host RAM, process RSS, visible GPU used and total where readable | `psutil`, qualified AMD source |
 | Coherent unified NVIDIA | DGX Spark, 128 GB | Host/process and applicable accelerator or unified-memory channel | `psutil`, qualified NVIDIA source |
 | Unified AMD | Ryzen AI Max+ 395, 128 GB | Host RAM, process RSS, applicable unified-memory channel | `psutil`, qualified AMD source |
 | Unified Apple | Mac mini M4 Pro, 24 GB; MacBook Pro M5 Pro, 48 GB | Host RAM, process RSS, applicable unified-memory channel | `psutil`, qualified macOS source |
