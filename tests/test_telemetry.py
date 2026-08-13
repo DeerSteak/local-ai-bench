@@ -5,7 +5,7 @@ import pytest
 from scripts.runtime import config
 from scripts.runtime.telemetry import (
     CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
-    derive_run_memory_summary, memory_block, memory_ceiling_gb,
+    default_memory_sources, derive_run_memory_summary, memory_block, memory_ceiling_gb,
     query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
 )
@@ -133,6 +133,17 @@ def test_memory_ceiling_preserves_per_gpu_reserve():
         which_fn=lambda _name: "/usr/bin/nvidia-smi",
     )
     assert ceiling == 22
+
+
+def test_macos_uses_host_pool_without_claiming_separate_accelerator_counters(monkeypatch):
+    monkeypatch.setattr("scripts.runtime.telemetry.platform.system", lambda: "Darwin")
+    sources = default_memory_sources(which_fn=lambda _name: None)
+    assert sources == {
+        "host_ram_used_gb": "psutil",
+        "process_rss_gb": "psutil",
+        "accelerator_memory_used_gb": "unsupported",
+        "accelerator_memory_total_gb": "unsupported",
+    }
 
 
 def test_sampler_vram_query_aggregates_nvidia_devices_and_rejects_bad_output():

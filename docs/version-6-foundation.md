@@ -76,7 +76,7 @@ Use qualified telemetry-off repeated trials and calculate the between-trial pair
 | Discrete AMD GPU under WSL | Same Radeon system if WSL is installed and the GPU/runtime is exposed | Host RAM, process RSS, visible GPU used and total where readable | `psutil`, qualified AMD source |
 | Coherent unified NVIDIA | DGX Spark, 128 GB | Host/process and applicable accelerator or unified-memory channel | `psutil`, qualified NVIDIA source |
 | Unified AMD | Ryzen AI Max+ 395, 128 GB | Host RAM, process RSS, applicable unified-memory channel | `psutil`, qualified AMD source |
-| Unified Apple | Mac mini M4 Pro, 24 GB; MacBook Pro M5 Pro, 48 GB | Host RAM, process RSS, applicable unified-memory channel | `psutil`, qualified macOS source |
+| Unified Apple | Mac mini M4 Pro, 24 GB; MacBook Pro M5 Pro, 48 GB | Unified host RAM pool and process RSS; separate accelerator occupancy is unsupported | `psutil` |
 
 Parser fixtures prove normalization and redaction only. Qualification also records permissions, timing, process ownership, sensor scope, OS and source versions, sampling interval, failure counts, and the observer-effect result. The minimum Version 6 claim requires at least one qualified discrete-GPU platform and one qualified unified-memory platform; broader rows remain unverified until their own evidence exists.
 

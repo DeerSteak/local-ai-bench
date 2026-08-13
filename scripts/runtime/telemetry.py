@@ -300,8 +300,6 @@ def default_memory_sources(which_fn=shutil.which) -> dict[str, str]:
         accelerator = "nvidia-smi"
     elif which_fn("rocm-smi"):
         accelerator = "rocm-smi"
-    elif platform.system() == "Darwin":
-        accelerator = "unified-memory"
     return {
         "host_ram_used_gb": "psutil",
         "process_rss_gb": "psutil",
