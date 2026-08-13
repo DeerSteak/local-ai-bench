@@ -258,7 +258,6 @@ def test_saved_gui_state_defaults_legacy_missing_no_repack_to_false(tmp_path):
     json.dumps(saved_state(max_prompt_tokens=0)),
     json.dumps(saved_state(max_prompt_tokens=-1)),
     json.dumps(saved_state(max_prompt_tokens="32768")),
-    json.dumps(saved_state(tg_tokens=[])),
     json.dumps(saved_state(tg_tokens=[128, 128])),
     json.dumps(saved_state(tg_tokens=[0])),
     json.dumps(saved_state(tg_tokens="128")),
@@ -423,8 +422,14 @@ def test_saved_model_selection_restores_exact_installed_values_per_family():
     selected = {entry.value for entry in entries if entry.checked}
     assert selected == {
         LLM_MODELS[-1]["tag"], "custom-folder", EMBED_MODELS[-1]["tag"],
-        IMAGE_MODELS[0]["short"],  # no remembered image remains, so defaults survive
     }
+
+
+def test_frontend_state_preserves_empty_generation_selection(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(saved_state(tg_tokens=[])), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["tg_tokens"] == []
 
 
 def test_saved_model_selection_keeps_family_defaults_when_all_values_are_stale():

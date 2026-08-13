@@ -202,6 +202,12 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     return options
 
 
+def restored_tg_tokens(state: dict[str, Any] | None) -> set[int]:
+    if state is None or state["tg_tokens"] is None:
+        return set(config.LLAMABENCH_TG)
+    return set(state["tg_tokens"])
+
+
 def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
                              max_prompt_tokens: int | None, tg_tokens: list[int],
                              gui_options: dict[str, Any], selected_preset: str,
@@ -230,7 +236,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     )
     state = build_frontend_state(
         engine, tests, entries, max_prompt_tokens=max_prompt_tokens,
-        tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
+        tg_tokens=tg_tokens,
         gui_options=gui_options, selected_preset=selected_preset,
     )
     command = build_benchmark_command(
@@ -312,7 +318,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     test_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_tests}
     model_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_models}
     cap_var = tk.StringVar(value=str(saved["max_prompt_tokens"]) if saved and saved["max_prompt_tokens"] else "No cap")
-    saved_tg = set(saved["tg_tokens"] or config.LLAMABENCH_TG) if saved else set(config.LLAMABENCH_TG)
+    saved_tg = restored_tg_tokens(saved)
     tg_vars = {value: tk.BooleanVar(value=value in saved_tg) for value in TG_TOKEN_OPTIONS}
     options = effective_gui_options(saved)
     if options["gpu_split_mode"] not in gpu_split_modes:
