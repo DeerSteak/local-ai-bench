@@ -210,7 +210,10 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
             store.close()
         emit("event", sequence=sequence, event={"stage": "llamabench", "committed": True})
 
-    journal = NativeBenchEventStage(path, plan, notify, initialize=False)
+    telemetry = CaseTelemetry().start() if settings.get("memory_telemetry") else None
+    journal = NativeBenchEventStage(
+        path, plan, notify, initialize=False, telemetry=telemetry,
+    )
     try:
         benchmark_factory().run(
             engine=engine, models=models, reps=settings["runs"],
@@ -218,6 +221,8 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         )
     finally:
         journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         Shared.shutdown_managed()
 
 

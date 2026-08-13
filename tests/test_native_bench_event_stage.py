@@ -88,6 +88,34 @@ def test_native_commit_survives_export_callback_failure(tmp_path):
     assert export_native_bench_section(path, plan.job_id)["model"]["completed_cases"] == 1
 
 
+def test_native_case_memory_survives_projection(tmp_path):
+    memory = {
+        "windows": [{"name": "measured", "sample_count": 1}],
+        "summary": {"process_rss_gb": {"peak_gb": 3}},
+        "headroom": {"absolute_gb": 5, "fraction": 0.5, "state": "comfortable"},
+        "provenance": {"interval_sec": 1, "failed_samples": 0},
+    }
+
+    class Telemetry:
+        def begin_model_load(self):
+            pass
+
+        def begin_measured(self, subwindow="measured"):
+            pass
+
+        def finish_case(self, ceiling_gb=None):
+            return memory
+
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    stage = NativeBenchEventStage(path, plan, lambda _: None, telemetry=Telemetry())
+    stage.record_entry(MODEL, entry())
+    stage.close()
+    projected = export_native_bench_section(path, plan.job_id)["model"]["prefill_entries"][0]
+    assert {key: projected["memory"][key] for key in memory} == memory
+    assert projected["memory"]["case_id"].startswith("case_")
+
+
 def test_native_recovery_omits_completed_rows_and_reuses_model_plan(tmp_path):
     path = tmp_path / "events.sqlite3"
     plan = make_plan()
