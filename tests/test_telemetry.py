@@ -6,6 +6,7 @@ from scripts.runtime import config
 from scripts.runtime.telemetry import (
     CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
     derive_run_memory_summary, memory_block, memory_ceiling_gb,
+    query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
 )
 
@@ -132,6 +133,30 @@ def test_memory_ceiling_preserves_per_gpu_reserve():
         which_fn=lambda _name: "/usr/bin/nvidia-smi",
     )
     assert ceiling == 22
+
+
+def test_sampler_vram_query_aggregates_nvidia_devices_and_rejects_bad_output():
+    result = type("Result", (), {"returncode": 0, "stdout": "1024, 8192\n2048, 16384\n"})()
+    assert query_sampler_vram_usage(
+        run_fn=lambda *_args, **_kwargs: result,
+        which_fn=lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+    ) == (3, 24)
+    bad = type("Result", (), {"returncode": 0, "stdout": "not memory"})()
+    assert query_sampler_vram_usage(
+        run_fn=lambda *_args, **_kwargs: bad,
+        which_fn=lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+    ) is None
+
+
+def test_sampler_vram_query_normalizes_rocm_bytes():
+    result = type("Result", (), {"returncode": 0, "stdout": (
+        '{"card0":{"VRAM Total Used Memory (B)":1073741824,'
+        '"VRAM Total Memory (B)":8589934592}}'
+    )})()
+    assert query_sampler_vram_usage(
+        run_fn=lambda *_args, **_kwargs: result,
+        which_fn=lambda name: "/usr/bin/rocm-smi" if name == "rocm-smi" else None,
+    ) == (1, 8)
 
 
 @pytest.mark.parametrize(("peak", "ceiling", "absolute", "fraction", "state"), [

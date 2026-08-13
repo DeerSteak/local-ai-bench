@@ -2,7 +2,7 @@
 
 The milestone-1 observer screen is a supervised real-hardware procedure. The analyzer is read-only and never launches a benchmark: `python -m scripts.release.telemetry_qualification MANIFEST.json --output REPORT.json` reads paired result files, emits descriptive impacts, and exits nonzero when a predeclared bound fails.
 
-Use one installed xsmall LLM model and the single-shot `2K` case for every trial on a platform. Keep the model tag, engine/runtime versions, power mode, driver, background workload, warmups, measured runs, and prompt cap fixed. Run at least 20 pairs for each 0.25, 0.5, and 1.0 second candidate interval. Set `LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC` to the candidate value for both runs in a pair; telemetry-off records the setting without sampling, which keeps the paired commands otherwise identical. Do not mix files from different intervals in one manifest.
+Use one installed xsmall LLM model and the single-shot `2K` case for every trial on a platform. Keep the model tag, engine/runtime versions, power mode, driver, background workload, warmups, measured runs, and prompt cap fixed. Run at least 20 pairs for each 0.25, 0.5, and 1.0 second candidate interval. Set `LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC` to the candidate value for both runs in a pair; telemetry-off does not sample or retain the interval, but the environment and commands remain otherwise identical. Do not mix files from different intervals in one manifest.
 
 Within pair 1 run telemetry off and then on; within pair 2 run on and then off; continue alternating pair order. Use explicit output paths and the same command except for `--memory-telemetry`. For example, substitute the exact installed model tag and pair number:
 

@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 import platform
+import json
 import os
 import re
 import shutil
@@ -164,6 +165,32 @@ def query_vram_usage() -> tuple[float, float] | None:
     used = snapshot["gpu_vram_used_gb"]
     total = snapshot["gpu_vram_total_gb"]
     return (used, total) if used is not None and total is not None else None
+
+
+def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tuple[float, float] | None:
+    if executable := which_fn("nvidia-smi"):
+        command = [executable, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
+        source = "nvidia"
+    elif executable := which_fn("rocm-smi"):
+        command = [executable, "--showmeminfo", "vram", "--json"]
+        source = "rocm"
+    else:
+        return None
+    try:
+        result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
+        if result.returncode:
+            return None
+        if source == "nvidia":
+            pairs = [line.split(",") for line in result.stdout.splitlines() if "," in line]
+            used = sum(float(pair[0].strip()) for pair in pairs) / 1024
+            total = sum(float(pair[1].strip()) for pair in pairs) / 1024
+        else:
+            payload = json.loads(result.stdout)
+            used = sum(float(card.get("VRAM Total Used Memory (B)", 0)) for card in payload.values()) / (1024 ** 3)
+            total = sum(float(card.get("VRAM Total Memory (B)", 0)) for card in payload.values()) / (1024 ** 3)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, subprocess.SubprocessError):
+        return None
+    return (used, total) if total > 0 else None
 
 
 def summarize_samples(name: str, samples: Sequence[TelemetrySample]) -> WindowSummary:
@@ -419,7 +446,7 @@ class TelemetrySampler:
     def stop(self) -> tuple[TelemetrySample, ...]:
         self._stop_event.set()
         if self._thread:
-            self._thread.join(timeout=max(1.0, self.interval_sec * 2))
+            self._thread.join(timeout=max(3.0, self.interval_sec * 2))
         return self.samples
 
     def __enter__(self) -> "TelemetrySampler":
@@ -431,7 +458,7 @@ class TelemetrySampler:
     def _sample(self, timestamp_sec: float, window: str) -> TelemetrySample:
         host_used, _ = system_memory_usage()
         process = process_resource_usage(self.pid)
-        vram = query_vram_usage()
+        vram = query_sampler_vram_usage()
         return TelemetrySample(
             timestamp_sec=timestamp_sec,
             window=window,
