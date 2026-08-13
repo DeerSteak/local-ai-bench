@@ -7,6 +7,7 @@ from typing import Any
 HISTORY_FOREGROUND = "#17202a"
 HISTORY_EVEN_BACKGROUND = "#ffffff"
 HISTORY_ODD_BACKGROUND = "#e8f1fa"
+HISTORY_HEADING_BACKGROUND = "#dce8f3"
 HISTORY_SELECTED_BACKGROUND = "#245b85"
 
 
@@ -57,6 +58,15 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
     style.configure(
         "History.Treeview", background=HISTORY_EVEN_BACKGROUND,
         fieldbackground=HISTORY_EVEN_BACKGROUND, foreground=HISTORY_FOREGROUND,
+    )
+    style.configure(
+        "History.Treeview.Heading", background=HISTORY_HEADING_BACKGROUND,
+        foreground=HISTORY_FOREGROUND,
+    )
+    style.map(
+        "History.Treeview.Heading",
+        background=[("active", HISTORY_ODD_BACKGROUND), ("!disabled", HISTORY_HEADING_BACKGROUND)],
+        foreground=[("!disabled", HISTORY_FOREGROUND)],
     )
     style.map(
         "History.Treeview",

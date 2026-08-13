@@ -114,6 +114,9 @@ def test_history_rows_keep_dark_text_on_light_fills_in_dark_mode(tk_shell):
     assert str(screen.tree.tag_configure("history_odd", "background")) == "#e8f1fa"
     style = ttk.Style(root)
     assert style.lookup("History.Treeview", "foreground", ("!selected",)) == "#17202a"
+    assert style.lookup("History.Treeview.Heading", "foreground", ("!disabled",)) == "#17202a"
+    assert style.lookup("History.Treeview.Heading", "background", ("!disabled",)) == "#dce8f3"
+    assert style.lookup("History.Treeview.Heading", "foreground", ("active",)) == "#17202a"
 
 
 def test_engine_screen_constructs_with_management_controller(tk_shell, monkeypatch):
