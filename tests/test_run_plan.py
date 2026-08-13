@@ -136,6 +136,37 @@ def test_retry_crashed_models_is_recorded_and_legacy_defaults_false():
     ).plan_id
 
 
+def test_memory_telemetry_settings_are_optional_identity_bearing_inputs():
+    legacy = complete_plan()
+    off_config = dict(
+        legacy.effective_config, memory_telemetry=False,
+        memory_telemetry_interval_sec=None,
+    )
+    on_config = dict(
+        legacy.effective_config, memory_telemetry=True,
+        memory_telemetry_interval_sec=1.0,
+    )
+    off = make_plan(effective_config=off_config)
+    on = make_plan(effective_config=on_config)
+    legacy.validate_for_execution()
+    off.validate_for_execution()
+    on.validate_for_execution()
+    assert len({legacy.plan_id, off.plan_id, on.plan_id}) == 3
+
+
+@pytest.mark.parametrize(("enabled", "interval"), [
+    (True, None), (True, 0), (True, True), (False, 1.0),
+])
+def test_memory_telemetry_settings_reject_invalid_combinations(enabled, interval):
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=enabled,
+        memory_telemetry_interval_sec=interval,
+    )
+    with pytest.raises(ValueError, match="memory[_ ]telemetry"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
 def test_returned_models_and_config_cannot_mutate_the_plan():
     plan = make_plan()
     plan.models["llm"].append({"tag": "injected"})

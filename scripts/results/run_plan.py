@@ -1,6 +1,7 @@
 """Immutable, serializable benchmark execution plan."""
 
 import json
+import math
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ SAFE_CONFIG_KEYS = {
     "methodology_profile", "effective_optimizations", "offline",
     "gpu_split_mode",
     "llamacpp_no_repack",
+    "memory_telemetry", "memory_telemetry_interval_sec",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
@@ -29,6 +31,7 @@ SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
     "retry_crashed_models", "llamacpp_no_repack",
+    "memory_telemetry", "memory_telemetry_interval_sec",
 }
 
 
@@ -208,13 +211,20 @@ class RunPlan:
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
         for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack"):
+                    "llamacpp_no_repack", "memory_telemetry"):
             if key == "retry_crashed_models" and key not in settings:
                 continue
-            if key not in settings and key in {"offline", "llamacpp_no_repack"}:
+            if key not in settings and key in {"offline", "llamacpp_no_repack", "memory_telemetry"}:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
+        interval = settings.get("memory_telemetry_interval_sec")
+        if settings.get("memory_telemetry"):
+            if (isinstance(interval, bool) or not isinstance(interval, (int, float))
+                    or not math.isfinite(interval) or interval <= 0):
+                raise ValueError("invalid execution setting: memory_telemetry_interval_sec")
+        elif interval is not None:
+            raise ValueError("memory telemetry interval requires memory telemetry")
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
