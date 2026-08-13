@@ -60,6 +60,10 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
                 "device_uuid": "GPU-secret",
             }},
             "raw_output": "serial=secret path=/private/model.gguf",
+            "samples": [{
+                "timestamp_sec": 0.25, "process_rss_gb": 4,
+                "device_uuid": "GPU-secret", "model_path": "/private/model.gguf",
+            }],
         }],
         "summary": {"process_rss_gb": {"peak_gb": 4, "arguments": "--secret"}},
         "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable"},
@@ -78,6 +82,9 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
     assert memory["provenance"]["channels"]["process_rss_gb"] == {
         "source": "psutil", "failed_samples": 2,
     }
+    assert memory["windows"][0]["samples"] == [{
+        "timestamp_sec": 0.25, "process_rss_gb": 4,
+    }]
     for forbidden in ("secret", "private", "arguments", "raw_output", "command_output"):
         assert forbidden not in serialized.lower()
 

@@ -59,6 +59,14 @@ def test_memory_block_records_provenance_and_unknown_headroom():
         0.5, 2, {"host_ram_used_gb": 1}, {"host_ram_used_gb": "psutil"},
     )
     assert [window["name"] for window in block["windows"]] == ["idle", "measured"]
+    assert block["windows"][0]["samples"] == [{
+        "timestamp_sec": 0,
+        "host_ram_used_gb": 10,
+        "process_rss_gb": None,
+        "accelerator_memory_used_gb": None,
+        "accelerator_memory_total_gb": None,
+    }]
+    assert block["windows"][1]["samples"][0]["timestamp_sec"] == 1
     assert block["summary"]["host_ram_used_gb"]["peak_gb"] == 12
     assert block["headroom"] == {
         "absolute_gb": None, "fraction": None, "state": "unknown",
@@ -95,6 +103,25 @@ def test_run_summary_reports_each_peak_and_tightest_case():
         },
     }
     assert derive_run_memory_summary({"llm": {"legacy": {"2K": {"tps_mean": 4}}}}) is None
+
+
+def test_run_summary_finds_memory_nested_in_native_entry_lists():
+    sections = {"llamabench": {"model": {"prefill_entries": [{
+        "n_prompt": 512,
+        "memory": {
+            "case_id": "native-a",
+            "summary": {"process_rss_gb": {"peak_gb": 6}},
+            "headroom": {"absolute_gb": 3, "fraction": 0.2, "state": "comfortable"},
+        },
+    }]}}}
+    summary = derive_run_memory_summary(sections)
+    assert summary == {
+        "channels": {"process_rss_gb": {"peak_gb": 6}},
+        "tightest_headroom": {
+            "absolute_gb": 3, "fraction": 0.2, "state": "comfortable",
+            "case_id": "native-a", "case_path": "llamabench/model/prefill_entries/0",
+        },
+    }
 
 
 def test_memory_ceiling_preserves_per_gpu_reserve():

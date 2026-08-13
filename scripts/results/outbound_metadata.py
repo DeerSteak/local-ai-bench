@@ -9,8 +9,12 @@ from scripts.results.result_store import as_dict, validate_json_data
 PROFILE_FIELDS = ("hostname", "hardware", "gpu", "cpu", "chip", "processor", "os", "arch", "ram_gb", "backend")
 HARDWARE_FIELDS = ("hardware", "gpu", "cpu", "chip", "processor")
 TELEMETRY_BLOCK_FIELDS = {"windows", "summary", "headroom", "provenance", "case_id"}
-TELEMETRY_WINDOW_FIELDS = {"name", "sample_count", "duration_sec", "channels"}
+TELEMETRY_WINDOW_FIELDS = {"name", "sample_count", "duration_sec", "channels", "samples"}
 TELEMETRY_CHANNEL_FIELDS = {"peak_gb", "mean_gb", "final_gb", "valid_samples"}
+TELEMETRY_SAMPLE_FIELDS = {
+    "timestamp_sec", "host_ram_used_gb", "process_rss_gb",
+    "accelerator_memory_used_gb", "accelerator_memory_total_gb",
+}
 TELEMETRY_HEADROOM_FIELDS = {"absolute_gb", "fraction", "state"}
 TELEMETRY_PROVENANCE_FIELDS = {"interval_sec", "failed_samples", "channels"}
 TELEMETRY_SOURCE_FIELDS = {"source", "failed_samples"}
@@ -37,6 +41,10 @@ def _sanitize_telemetry_block(value: dict) -> dict:
             continue
         clean = _allow_fields(window, TELEMETRY_WINDOW_FIELDS)
         clean["channels"] = _sanitize_channel_map(clean.get("channels"))
+        clean["samples"] = [
+            _allow_fields(sample, TELEMETRY_SAMPLE_FIELDS)
+            for sample in clean.get("samples", []) if isinstance(sample, dict)
+        ]
         windows.append(clean)
     block["windows"] = windows
     block["summary"] = _sanitize_channel_map(block.get("summary"))

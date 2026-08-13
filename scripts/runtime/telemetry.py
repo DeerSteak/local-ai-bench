@@ -219,12 +219,21 @@ def calculate_headroom(peak_used_gb: float | None, ceiling_gb: float | None) -> 
     return Headroom(absolute, fraction, state)
 
 
-def window_summary_dict(summary: WindowSummary) -> dict[str, Any]:
+def sample_dict(sample: TelemetrySample) -> dict[str, Any]:
+    return {
+        "timestamp_sec": sample.timestamp_sec,
+        **{channel: getattr(sample, channel) for channel in MEMORY_CHANNELS},
+    }
+
+
+def window_summary_dict(summary: WindowSummary,
+                        samples: Sequence[TelemetrySample]) -> dict[str, Any]:
     return {
         "name": summary.name,
         "sample_count": summary.sample_count,
         "duration_sec": summary.duration_sec,
         "channels": {name: asdict(channel) for name, channel in summary.channels.items()},
+        "samples": [sample_dict(sample) for sample in samples],
     }
 
 
@@ -238,7 +247,12 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
     if peak is None:
         peak = case["host_ram_used_gb"].peak_gb
     return {
-        "windows": [window_summary_dict(window) for window in windows],
+        "windows": [
+            window_summary_dict(
+                window, [sample for sample in samples if sample.window == window.name],
+            )
+            for window in windows
+        ],
         "summary": {name: asdict(summary) for name, summary in case.items()},
         "headroom": asdict(calculate_headroom(peak, ceiling_gb)),
         "provenance": {
@@ -302,34 +316,41 @@ def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
 def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
     channels: dict[str, dict[str, Any]] = {}
     tightest = None
-    for section_name, section in sections.items():
-        if not isinstance(section, dict):
-            continue
-        for model_name, model in section.items():
-            if not isinstance(model, dict):
-                continue
-            for case_name, case in model.items():
-                if not isinstance(case, dict) or not isinstance(case.get("memory"), dict):
-                    continue
-                memory = case["memory"]
-                summary = memory.get("summary", {})
-                if isinstance(summary, dict):
-                    for channel, values in summary.items():
-                        if not isinstance(values, dict) or not isinstance(values.get("peak_gb"), (int, float)):
-                            continue
-                        current = channels.setdefault(channel, {"peak_gb": values["peak_gb"]})
-                        current["peak_gb"] = max(current["peak_gb"], values["peak_gb"])
-                headroom = memory.get("headroom", {})
-                absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
-                if isinstance(absolute, (int, float)) and (
-                        tightest is None or absolute < tightest["absolute_gb"]):
-                    tightest = {
-                        "absolute_gb": absolute,
-                        "fraction": headroom.get("fraction"),
-                        "state": headroom.get("state"),
-                        "case_id": memory.get("case_id"),
-                        "case_path": f"{section_name}/{model_name}/{case_name}",
-                    }
+
+    def visit(value: object, path: tuple[str, ...]) -> None:
+        nonlocal tightest
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, (*path, str(index)))
+            return
+        if not isinstance(value, dict):
+            return
+        memory = value.get("memory")
+        if isinstance(memory, dict):
+            summary = memory.get("summary", {})
+            if isinstance(summary, dict):
+                for channel, values in summary.items():
+                    peak = values.get("peak_gb") if isinstance(values, dict) else None
+                    if not isinstance(peak, (int, float)):
+                        continue
+                    current = channels.setdefault(channel, {"peak_gb": peak})
+                    current["peak_gb"] = max(current["peak_gb"], peak)
+            headroom = memory.get("headroom", {})
+            absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
+            if isinstance(absolute, (int, float)) and (
+                    tightest is None or absolute < tightest["absolute_gb"]):
+                tightest = {
+                    "absolute_gb": absolute,
+                    "fraction": headroom.get("fraction"),
+                    "state": headroom.get("state"),
+                    "case_id": memory.get("case_id"),
+                    "case_path": "/".join(path),
+                }
+        for key, child in value.items():
+            if key != "memory":
+                visit(child, (*path, str(key)))
+
+    visit(dict(sections), ())
     if not channels and tightest is None:
         return None
     return {"channels": channels, "tightest_headroom": tightest}
