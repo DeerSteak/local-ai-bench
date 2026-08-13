@@ -30,6 +30,7 @@ from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
+from scripts.runtime.telemetry import derive_run_memory_summary
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
@@ -651,6 +652,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "offline/telemetry-disabled environment settings to managed runtimes. Local "
              "llama.cpp and ComfyUI HTTP connections remain available.",
     )
+    parser.add_argument(
+        "--memory-telemetry", action="store_true",
+        help="Opt in to provisional memory sampling. This mode has a distinct methodology "
+             "identity and is not comparable to telemetry-off results until Version 6 "
+             "qualification is complete (default: false).",
+    )
     _engines = registered_engine_names()
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
@@ -921,6 +928,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
             "sample_size": args.sample,
             "offline": args.offline,
+            "memory_telemetry": args.memory_telemetry,
+            "memory_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if args.memory_telemetry else None
+            ),
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
         }
@@ -1009,7 +1020,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         store = ResultStore(Path(out_path), results)
 
+        def update_memory_summary():
+            memory_summary = derive_run_memory_summary({
+                key: results.get(key) for key in (
+                    "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
+                    "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
+                    "llamabench", "llamabenchconc", "vllmbench",
+                )
+            })
+            if memory_summary is not None:
+                results["run"]["memory_summary"] = memory_summary
+
         def _checkpoint(label=""):
+            update_memory_summary()
             apply_pause_evidence(results["run"])
             store.checkpoint()
             if label:
@@ -1018,6 +1041,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def make_save(key, stage_key=None):
             def _save(partial):
                 store.update_section(key, partial, stage_key or key)
+                update_memory_summary()
+                store.checkpoint()
             return _save
 
         _checkpoint("run started")

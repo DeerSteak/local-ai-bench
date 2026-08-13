@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 import platform
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from typing import Any, Callable, Mapping, Protocol, Sequence
 import psutil
 
 from scripts.runtime import config
+from scripts.runtime import hardware
 from scripts.runtime.shared import Shared
 
 
@@ -226,6 +228,109 @@ def window_summary_dict(summary: WindowSummary) -> dict[str, Any]:
     }
 
 
+def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
+                 failed_samples: int, sources: Mapping[str, str],
+                 ceiling_gb: float | None = None) -> dict[str, Any]:
+    windows = summarize_windows(samples)
+    case = summarize_case(windows)
+    peak = case["accelerator_memory_used_gb"].peak_gb
+    if peak is None:
+        peak = case["host_ram_used_gb"].peak_gb
+    return {
+        "windows": [window_summary_dict(window) for window in windows],
+        "summary": {name: asdict(summary) for name, summary in case.items()},
+        "headroom": asdict(calculate_headroom(peak, ceiling_gb)),
+        "provenance": {
+            "interval_sec": interval_sec,
+            "failed_samples": failed_samples,
+            "channels": {name: {"source": sources.get(name, "unsupported")}
+                         for name in MEMORY_CHANNELS},
+        },
+    }
+
+
+def default_memory_sources(which_fn=shutil.which) -> dict[str, str]:
+    accelerator = "unsupported"
+    if which_fn("nvidia-smi"):
+        accelerator = "nvidia-smi"
+    elif which_fn("rocm-smi"):
+        accelerator = "rocm-smi"
+    elif platform.system() == "Darwin":
+        accelerator = "unified-memory"
+    return {
+        "host_ram_used_gb": "psutil",
+        "process_rss_gb": "psutil",
+        "accelerator_memory_used_gb": accelerator,
+        "accelerator_memory_total_gb": accelerator,
+    }
+
+
+def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
+                      psutil_module: PsutilLike = psutil,
+                      which_fn=shutil.which) -> float | None:
+    accelerator = sources.get("accelerator_memory_total_gb")
+    if accelerator == "nvidia-smi":
+        executable = which_fn("nvidia-smi")
+        if not executable:
+            return None
+        try:
+            result = run_fn(
+                [executable, "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            totals = [float(line.strip()) / 1024 for line in result.stdout.splitlines()
+                      if line.strip()]
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+        if result.returncode or not totals:
+            return None
+        return sum(max(0.0, total - hardware.VRAM_RESERVE_GB) for total in totals)
+    if accelerator == "rocm-smi":
+        snapshot = query_vram_usage()
+        return (snapshot[1] - hardware.VRAM_RESERVE_GB) if snapshot else None
+    try:
+        total = psutil_module.virtual_memory().total / (1024 ** 3)
+    except (psutil_module.Error, OSError):
+        return None
+    return max(0.0, total - hardware.RAM_RESERVE_GB)
+
+
+def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
+    channels: dict[str, dict[str, Any]] = {}
+    tightest = None
+    for section_name, section in sections.items():
+        if not isinstance(section, dict):
+            continue
+        for model_name, model in section.items():
+            if not isinstance(model, dict):
+                continue
+            for case_name, case in model.items():
+                if not isinstance(case, dict) or not isinstance(case.get("memory"), dict):
+                    continue
+                memory = case["memory"]
+                summary = memory.get("summary", {})
+                if isinstance(summary, dict):
+                    for channel, values in summary.items():
+                        if not isinstance(values, dict) or not isinstance(values.get("peak_gb"), (int, float)):
+                            continue
+                        current = channels.setdefault(channel, {"peak_gb": values["peak_gb"]})
+                        current["peak_gb"] = max(current["peak_gb"], values["peak_gb"])
+                headroom = memory.get("headroom", {})
+                absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
+                if isinstance(absolute, (int, float)) and (
+                        tightest is None or absolute < tightest["absolute_gb"]):
+                    tightest = {
+                        "absolute_gb": absolute,
+                        "fraction": headroom.get("fraction"),
+                        "state": headroom.get("state"),
+                        "case_id": memory.get("case_id"),
+                        "case_path": f"{section_name}/{model_name}/{case_name}",
+                    }
+    if not channels and tightest is None:
+        return None
+    return {"channels": channels, "tightest_headroom": tightest}
+
+
 class TelemetrySampler:
     def __init__(self, pid: int, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
                  sample_fn: Callable[[float, str], TelemetrySample] | None = None):
@@ -257,6 +362,19 @@ class TelemetrySampler:
             raise ValueError("telemetry window must not be empty")
         with self._lock:
             self._window = name
+
+    def mark_window(self, name: str) -> None:
+        self.set_window(name)
+        self.capture()
+
+    def capture(self) -> TelemetrySample:
+        timestamp = time.monotonic() - self._started_at
+        with self._lock:
+            window = self._window
+        sample = self._capture(timestamp, window)
+        with self._lock:
+            self._samples.append(sample)
+        return sample
 
     def start(self) -> "TelemetrySampler":
         if self._thread and self._thread.is_alive():
@@ -297,12 +415,50 @@ class TelemetrySampler:
             timestamp = time.monotonic() - self._started_at
             with self._lock:
                 window = self._window
-            try:
-                sample = self._sample_fn(timestamp, window)
-            except Exception:
-                sample = TelemetrySample(timestamp, window)
-                with self._lock:
-                    self._failed_samples += 1
+            sample = self._capture(timestamp, window)
             with self._lock:
                 self._samples.append(sample)
             self._stop_event.wait(self.interval_sec)
+
+    def _capture(self, timestamp: float, window: str) -> TelemetrySample:
+        try:
+            return self._sample_fn(timestamp, window)
+        except Exception:
+            with self._lock:
+                self._failed_samples += 1
+            return TelemetrySample(timestamp, window)
+
+
+class CaseTelemetry:
+    def __init__(self, pid: int | None = None, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
+                 sampler: TelemetrySampler | None = None, sources: Mapping[str, str] | None = None):
+        self.sampler = sampler or TelemetrySampler(pid or os.getpid(), interval_sec)
+        self.sources = dict(sources or default_memory_sources())
+        self.ceiling_gb = memory_ceiling_gb(self.sources)
+        self._cursor = 0
+
+    def start(self) -> "CaseTelemetry":
+        self.sampler.start()
+        self.sampler.mark_window("idle")
+        self._cursor = 0
+        return self
+
+    def stop(self) -> None:
+        self.sampler.stop()
+
+    def begin_model_load(self) -> None:
+        self.sampler.mark_window("model_load")
+
+    def begin_measured(self, subwindow: str = "measured") -> None:
+        self.sampler.mark_window(subwindow)
+
+    def finish_case(self, ceiling_gb: float | None = None) -> dict[str, Any]:
+        self.sampler.capture()
+        samples = self.sampler.samples[self._cursor:]
+        self._cursor = len(self.sampler.samples)
+        block = memory_block(
+            samples, self.sampler.interval_sec, self.sampler.failed_samples,
+            self.sources, self.ceiling_gb if ceiling_gb is None else ceiling_gb,
+        )
+        self.sampler.mark_window("idle")
+        return block

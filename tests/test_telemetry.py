@@ -4,7 +4,8 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.telemetry import (
-    TelemetrySample, TelemetrySampler, calculate_headroom,
+    CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
+    derive_run_memory_summary, memory_block, memory_ceiling_gb,
     summarize_case, summarize_samples, summarize_windows,
 )
 
@@ -50,6 +51,56 @@ def test_many_windows_are_retained_and_case_summary_is_weighted():
     assert summary["host_ram_used_gb"].peak_gb == 20
     assert summary["host_ram_used_gb"].mean_gb == pytest.approx(15.2)
     assert summary["process_rss_gb"].final_gb == 5
+
+
+def test_memory_block_records_provenance_and_unknown_headroom():
+    block = memory_block(
+        [sample(0, "idle", host=10), sample(1, "measured", host=12)],
+        0.5, 2, {"host_ram_used_gb": "psutil"},
+    )
+    assert [window["name"] for window in block["windows"]] == ["idle", "measured"]
+    assert block["summary"]["host_ram_used_gb"]["peak_gb"] == 12
+    assert block["headroom"] == {
+        "absolute_gb": None, "fraction": None, "state": "unknown",
+    }
+    assert block["provenance"]["failed_samples"] == 2
+    assert block["provenance"]["channels"]["host_ram_used_gb"] == {"source": "psutil"}
+    assert block["provenance"]["channels"]["process_rss_gb"] == {"source": "unsupported"}
+
+
+def test_run_summary_reports_each_peak_and_tightest_case():
+    sections = {"llm": {"model": {
+        "2K": {"memory": {
+            "case_id": "case-a", "summary": {
+                "process_rss_gb": {"peak_gb": 4}, "host_ram_used_gb": {"peak_gb": 20},
+            }, "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable"},
+        }},
+        "8K": {"memory": {
+            "case_id": "case-b", "summary": {
+                "process_rss_gb": {"peak_gb": 7}, "host_ram_used_gb": {"peak_gb": 25},
+            }, "headroom": {"absolute_gb": 2, "fraction": 0.125, "state": "tight"},
+        }},
+    }}}
+    assert derive_run_memory_summary(sections) == {
+        "channels": {
+            "process_rss_gb": {"peak_gb": 7}, "host_ram_used_gb": {"peak_gb": 25},
+        },
+        "tightest_headroom": {
+            "absolute_gb": 2, "fraction": 0.125, "state": "tight",
+            "case_id": "case-b", "case_path": "llm/model/8K",
+        },
+    }
+    assert derive_run_memory_summary({"llm": {"legacy": {"2K": {"tps_mean": 4}}}}) is None
+
+
+def test_memory_ceiling_preserves_per_gpu_reserve():
+    result = type("Result", (), {"returncode": 0, "stdout": "16384\n8192\n"})()
+    ceiling = memory_ceiling_gb(
+        {"accelerator_memory_total_gb": "nvidia-smi"},
+        run_fn=lambda *_args, **_kwargs: result,
+        which_fn=lambda _name: "/usr/bin/nvidia-smi",
+    )
+    assert ceiling == 22
 
 
 @pytest.mark.parametrize(("peak", "ceiling", "absolute", "fraction", "state"), [
@@ -113,6 +164,27 @@ def test_sampler_switches_windows_without_losing_samples():
     time.sleep(0.003)
     windows = {item.window for item in sampler.stop()}
     assert windows == {"idle", "model_load", "measured"}
+
+
+def test_case_telemetry_does_not_reuse_prior_case_measurements():
+    sampler = TelemetrySampler(
+        42, interval_sec=10,
+        sample_fn=lambda timestamp, window: sample(timestamp, window, rss=2),
+    )
+    telemetry = CaseTelemetry(sampler=sampler, sources={"process_rss_gb": "psutil"}).start()
+    telemetry.begin_model_load()
+    telemetry.begin_measured("measured:prefill")
+    first = telemetry.finish_case()
+    telemetry.begin_model_load()
+    telemetry.begin_measured("measured:decode")
+    second = telemetry.finish_case()
+    telemetry.stop()
+    assert [window["name"] for window in first["windows"]] == [
+        "idle", "model_load", "measured:prefill",
+    ]
+    assert [window["name"] for window in second["windows"]] == [
+        "idle", "model_load", "measured:decode",
+    ]
 
 
 @pytest.mark.parametrize("interval", [0, -0.1])

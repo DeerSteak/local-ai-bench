@@ -65,6 +65,9 @@ PUBLIC_OPTION_SCHEMA = {
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
     "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
+    "--memory-telemetry": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+    ),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
 }
@@ -76,7 +79,7 @@ GUI_OPTION_FLAGS = {
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
     "llamacpp_no_repack": "--llamacpp-no-repack",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
-    "offline": "--offline", "out": "--out",
+    "offline": "--offline", "memory_telemetry": "--memory-telemetry", "out": "--out",
     "comfyui": "--comfyui",
 }
 

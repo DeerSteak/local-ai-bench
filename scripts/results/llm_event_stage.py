@@ -2,12 +2,19 @@
 
 from dataclasses import asdict
 from pathlib import Path
+from typing import Protocol
 
 from scripts.runtime.engines.base import (
     GenerationMeasurement, aggregate_generation_measurements, measurement_validation_errors,
 )
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
+
+
+class CaseTelemetryLike(Protocol):
+    def begin_model_load(self) -> None: ...
+    def begin_measured(self, subwindow: str = "measured") -> None: ...
+    def finish_case(self, ceiling_gb: float | None = None) -> dict: ...
 
 
 MEASUREMENT_FIELDS = {
@@ -36,7 +43,8 @@ class LLMEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, stage_name: str = "llm",
                  model_family: str = "llm", initialize: bool = True,
                  resume_identity: dict | None = None, resume: bool = False,
-                 selected_case_ids: list[str] | None = None):
+                 selected_case_ids: list[str] | None = None,
+                 telemetry: CaseTelemetryLike | None = None):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
@@ -45,6 +53,7 @@ class LLMEventStage:
         self.stage_id = plan.stage_id(stage_name)
         self.model_identities = {model.get("tag"): model for model in plan.models[model_family]}
         self.recovery_attempts = {}
+        self.telemetry = telemetry
         if resume:
             if not initialize:
                 raise ValueError("resume requires an initializing stage owner")
@@ -62,6 +71,14 @@ class LLMEventStage:
 
     def close(self):
         self.store.close()
+
+    def begin_model_load(self) -> None:
+        if self.telemetry:
+            self.telemetry.begin_model_load()
+
+    def begin_measured(self, subwindow: str = "measured") -> None:
+        if self.telemetry:
+            self.telemetry.begin_measured(subwindow)
 
     def _model_id(self, model: dict) -> str:
         identity = self.model_identities.get(model["tag"])
@@ -125,6 +142,7 @@ class LLMEventStage:
             self.stage_name, model_id, {"context_tokens": context_tokens},
         )
         attempt_id = self.plan.attempt_id(case_id, attempt_number)
+        memory = self.telemetry.finish_case() if self.telemetry else None
         projection = self.store.rebuild(self.plan.job_id)
         events = []
         if case_id not in projection["cases"]:
@@ -155,7 +173,7 @@ class LLMEventStage:
             JournalEvent("attempt", attempt_id, attempt_state, {}, parent_id=case_id),
             JournalEvent("case", case_id, case_state, {
                 "run_status": status, "model_markers": model_markers or {},
-                "result_fields": result_fields or {},
+                "result_fields": result_fields or {}, "memory": memory,
             }, parent_id=self.stage_id),
         ])
         self.store.append(self.plan.job_id, events)
@@ -228,6 +246,8 @@ class LLMEventStage:
                 if case.get("depth_tokens") is not None:
                     context_result["depth_tokens"] = case["depth_tokens"]
                 context_result.update(case.get("result_fields", {}))
+                if case.get("memory") is not None:
+                    context_result["memory"] = {**case["memory"], "case_id": case_id}
                 results.setdefault(short, {})[case["context_label"]] = context_result
             results.setdefault(short, {}).update(case.get("model_markers", {}))
         return results

@@ -24,6 +24,7 @@ from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
+from scripts.runtime.telemetry import CaseTelemetry
 
 
 _emit_lock = threading.Lock()
@@ -97,10 +98,13 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         emit("event", sequence=sequence, event={"stage": "llm", "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        if settings.get("memory_telemetry"):
+            telemetry = CaseTelemetry().start()
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
-        journal = LLMEventStage(path, plan, notify, initialize=False)
+        journal = LLMEventStage(path, plan, notify, initialize=False, telemetry=telemetry)
         benchmark_factory().run(
             engine=engine, models=models, context_lengths=settings["context_lengths"],
             warmup_runs=plan.warmup_runs, force_all=plan.force_all, journal=journal,
@@ -108,6 +112,8 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
         Shared.shutdown_managed()
@@ -140,11 +146,14 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
         emit("event", sequence=sequence, event={"stage": "conv", "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        if settings.get("memory_telemetry"):
+            telemetry = CaseTelemetry().start()
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
-            path, plan, notify, stage_name="conv", initialize=False,
+            path, plan, notify, stage_name="conv", initialize=False, telemetry=telemetry,
         )
         if "llm" in plan.tests:
             llm_results = export_llm_section(path, job_id)
@@ -168,6 +177,8 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
         Shared.shutdown_managed()
@@ -246,12 +257,15 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
         emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        if settings.get("memory_telemetry"):
+            telemetry = CaseTelemetry().start()
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
             path, plan, notify, stage_name=stage_name,
-            model_family="concurrency", initialize=False,
+            model_family="concurrency", initialize=False, telemetry=telemetry,
         )
         benchmark_factory().run(
             engine=engine, models=models, levels=levels,
@@ -262,6 +276,8 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
         Shared.shutdown_managed()

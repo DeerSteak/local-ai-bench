@@ -194,7 +194,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             options[key] = values[key]
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
-    for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
+    for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                 "llamacpp_no_repack"):
         options[key] = values[key]
     for key in ("out", "comfyui"):
@@ -509,18 +509,20 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["retry_crashed_models"].set(False)).grid(row=10, column=2, padx=(8, 0))
     ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=11, column=0, columnspan=2, sticky="w")
     ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=11, column=2, padx=(8, 0))
+    ttk.Checkbutton(execution_box, text="Provisional memory telemetry", variable=option_vars["memory_telemetry"]).grid(row=12, column=0, columnspan=2, sticky="w")
+    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["memory_telemetry"].set(False)).grid(row=12, column=2, padx=(8, 0))
     ttk.Checkbutton(
         execution_box, text="Disable llama.cpp weight repacking (-nr)",
         variable=option_vars["llamacpp_no_repack"],
-    ).grid(row=12, column=0, columnspan=2, sticky="w")
+    ).grid(row=13, column=0, columnspan=2, sticky="w")
     ttk.Button(
         execution_box, text="Reset", width=6,
         command=lambda: option_vars["llamacpp_no_repack"].set(False),
-    ).grid(row=12, column=2, padx=(8, 0))
+    ).grid(row=13, column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=14, column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
     ).grid(row=16, column=0, sticky="w", pady=(8, 0))
@@ -566,7 +568,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
-                    "cpu_only", "force_all", "retry_crashed_models", "offline",
+                    "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                     "llamacpp_no_repack"):
             variable = option_vars[key]
             value = GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode" else defaults[key]
