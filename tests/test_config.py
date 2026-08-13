@@ -14,6 +14,10 @@ def test_memory_interval_environment_override_is_positive():
     assert result.stdout.strip() == "0.25"
 
 
+def test_memory_interval_defaults_to_qualified_half_second_cadence():
+    assert config.TELEMETRY_INTERVAL_SEC == 0.5
+
+
 def test_context_lengths_ascending():
     assert config.CONTEXT_LENGTHS == sorted(config.CONTEXT_LENGTHS)
     assert len(config.CONTEXT_LENGTHS) == len(set(config.CONTEXT_LENGTHS))

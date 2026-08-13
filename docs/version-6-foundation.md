@@ -61,6 +61,8 @@ The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds usi
 
 Passing this screen cannot approve default-on telemetry or establish scientific comparability. After milestone 3, qualified independent trials must evaluate each source, interval, and combined sampler under its own methodology identity.
 
+The Mac mini M4 Pro coarse screens passed at all three candidate intervals. Version 6 selects 0.5 seconds as the practical memory-only default: it roughly doubles the sample density of 1 second, while 0.25 seconds nearly doubles retained samples and result size again for a small additional peak-capture benefit in the screened workload. The detailed records are indexed under `docs/qualification/`.
+
 ## Practical-threshold derivation
 
 Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the provisional floors are 5% for TTFT, 3% for throughput, and 3% for wall time. Evidence below the interval method's eventual minimum trial count remains inconclusive.

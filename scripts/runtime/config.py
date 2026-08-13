@@ -96,7 +96,7 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
-TELEMETRY_INTERVAL_SEC = float(os.environ.get("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC", "1.0"))
+TELEMETRY_INTERVAL_SEC = float(os.environ.get("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC", "0.5"))
 if not math.isfinite(TELEMETRY_INTERVAL_SEC) or TELEMETRY_INTERVAL_SEC <= 0:
     raise ValueError("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC must be positive")
 MEMORY_HEADROOM_COMFORTABLE_FRACTION = 0.20
