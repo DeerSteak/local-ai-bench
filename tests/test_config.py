@@ -1,6 +1,19 @@
 from scripts.runtime import config
 
 
+def test_memory_interval_environment_override_is_positive():
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC": "0.25"}
+    result = subprocess.run(
+        [sys.executable, "-c", "from scripts.runtime import config; print(config.TELEMETRY_INTERVAL_SEC)"],
+        capture_output=True, text=True, check=True, env=env,
+    )
+    assert result.stdout.strip() == "0.25"
+
+
 def test_context_lengths_ascending():
     assert config.CONTEXT_LENGTHS == sorted(config.CONTEXT_LENGTHS)
     assert len(config.CONTEXT_LENGTHS) == len(set(config.CONTEXT_LENGTHS))
