@@ -244,6 +244,27 @@ def test_case_telemetry_does_not_reuse_prior_case_measurements():
     ]
 
 
+def test_case_telemetry_failure_provenance_is_case_local():
+    counter = {"value": 0}
+
+    def changing_sample(timestamp, window):
+        counter["value"] += 1
+        return sample(timestamp, window, host=10 if counter["value"] != 2 else None)
+
+    sampler = TelemetrySampler(42, interval_sec=100, sample_fn=changing_sample)
+    telemetry = CaseTelemetry(
+        sampler=sampler,
+        sources={"host_ram_used_gb": "psutil", "process_rss_gb": "unsupported",
+                 "accelerator_memory_used_gb": "unsupported",
+                 "accelerator_memory_total_gb": "unsupported"},
+    ).start()
+    first = telemetry.finish_case()
+    second = telemetry.finish_case()
+    telemetry.stop()
+    assert first["provenance"]["channels"]["host_ram_used_gb"]["failed_samples"] == 1
+    assert second["provenance"]["channels"]["host_ram_used_gb"]["failed_samples"] == 0
+
+
 @pytest.mark.parametrize("interval", [0, -0.1])
 def test_sampler_rejects_nonpositive_intervals(interval):
     with pytest.raises(ValueError, match="positive"):

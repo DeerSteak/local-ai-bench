@@ -501,11 +501,15 @@ class CaseTelemetry:
         self.sources = dict(sources or default_memory_sources())
         self.ceiling_gb = memory_ceiling_gb(self.sources)
         self._cursor = 0
+        self._failed_cursor = 0
+        self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
 
     def start(self) -> "CaseTelemetry":
         self.sampler.start()
         self.sampler.mark_window("idle")
         self._cursor = 0
+        self._failed_cursor = 0
+        self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
         return self
 
     def stop(self) -> None:
@@ -521,10 +525,18 @@ class CaseTelemetry:
         self.sampler.capture()
         samples = self.sampler.samples[self._cursor:]
         self._cursor = len(self.sampler.samples)
+        failed_samples = self.sampler.failed_samples - self._failed_cursor
+        self._failed_cursor = self.sampler.failed_samples
+        current_failures = self.sampler.channel_failures
+        case_failures = {
+            channel: current_failures[channel] - self._channel_failure_cursor[channel]
+            for channel in MEMORY_CHANNELS
+        }
+        self._channel_failure_cursor = dict(current_failures)
         block = memory_block(
-            samples, self.sampler.interval_sec, self.sampler.failed_samples,
+            samples, self.sampler.interval_sec, failed_samples,
             {
-                channel: (self.sampler.channel_failures[channel]
+                channel: (case_failures[channel]
                           if self.sources.get(channel) != "unsupported" else 0)
                 for channel in MEMORY_CHANNELS
             },
