@@ -103,7 +103,7 @@ from scripts.app.benchmark_gui_support import (
     effective_gui_options,
     estimate_remaining_seconds,
     format_run_outcome,
-    gpu_split_mode_labels,
+    gpu_split_mode_labels, execution_grid_rows,
     gpu_split_mode_value,
     history_row_height,
     parse_progress_line,
@@ -479,53 +479,61 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+    execution_rows = execution_grid_rows()
     split_labels = gpu_split_mode_labels(gpu_split_modes)
-    ttk.Label(execution_box, text="GPU mode").grid(row=1, column=0, sticky="w", pady=2)
+    ttk.Label(execution_box, text="GPU mode").grid(
+        row=execution_rows["gpu_split_mode"], column=0, sticky="w", pady=2)
     ttk.Combobox(
         execution_box, state="readonly", textvariable=option_vars["gpu_split_mode"],
         values=split_labels, width=30,
-    ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
+    ).grid(row=execution_rows["gpu_split_mode"], column=1, sticky="w", padx=(10, 0), pady=2)
     ttk.Button(
         execution_box, text="Reset", width=6,
         command=lambda: option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"]),
-    ).grid(row=1, column=2, padx=(8, 0))
+    ).grid(row=execution_rows["gpu_split_mode"], column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
               ("acc_timeout", f"Accuracy timeout, seconds (default {config.ACC_TIMEOUT})"),
               ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"))
-    for row, (key, label) in enumerate(labels, 2):
+    for key, label in labels:
+        row = execution_rows[key]
         ttk.Label(execution_box, text=label).grid(row=row, column=0, sticky="w", pady=2)
         ttk.Entry(execution_box, textvariable=option_vars[key], width=12).grid(row=row, column=1, sticky="w", padx=(10, 0), pady=2)
         ttk.Button(
             execution_box, text="Reset", width=6,
             command=lambda option=key: option_vars[option].set(str(GUI_OPTION_DEFAULTS[option])),
         ).grid(row=row, column=2, padx=(8, 0), pady=2)
-    ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=8, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=9, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=9, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Retry models that crashed previously", variable=option_vars["retry_crashed_models"]).grid(row=10, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["retry_crashed_models"].set(False)).grid(row=10, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=11, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=11, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Provisional memory telemetry", variable=option_vars["memory_telemetry"]).grid(row=12, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["memory_telemetry"].set(False)).grid(row=12, column=2, padx=(8, 0))
+    checkboxes = (
+        ("cpu_only", "CPU-only inference", (8, 0)),
+        ("force_all", "Run slow models instead of skipping", 0),
+        ("retry_crashed_models", "Retry models that crashed previously", 0),
+        ("offline", "Offline mode (loopback only)", 0),
+        ("memory_telemetry", "Provisional memory telemetry", 0),
+    )
+    for key, text, pady in checkboxes:
+        row = execution_rows[key]
+        ttk.Checkbutton(execution_box, text=text, variable=option_vars[key]).grid(
+            row=row, column=0, columnspan=2, sticky="w", pady=pady)
+        ttk.Button(
+            execution_box, text="Reset", width=6,
+            command=lambda option=key: option_vars[option].set(False),
+        ).grid(row=row, column=2, padx=(8, 0))
     ttk.Checkbutton(
         execution_box, text="Disable llama.cpp weight repacking (-nr)",
         variable=option_vars["llamacpp_no_repack"],
-    ).grid(row=13, column=0, columnspan=2, sticky="w")
+    ).grid(row=execution_rows["llamacpp_no_repack"], column=0, columnspan=2, sticky="w")
     ttk.Button(
         execution_box, text="Reset", width=6,
         command=lambda: option_vars["llamacpp_no_repack"].set(False),
-    ).grid(row=13, column=2, padx=(8, 0))
+    ).grid(row=execution_rows["llamacpp_no_repack"], column=2, padx=(8, 0))
     ttk.Label(
         execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=14, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=execution_rows["note"], column=0, columnspan=2, sticky="w", pady=(8, 0))
     ttk.Button(
         execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=16, column=0, sticky="w", pady=(8, 0))
+    ).grid(row=execution_rows["clear_caches"], column=0, sticky="w", pady=(8, 0))
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -656,7 +664,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=14, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=execution_rows["reset"], column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),

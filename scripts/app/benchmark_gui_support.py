@@ -14,6 +14,18 @@ GPU_SPLIT_MODE_LABELS = {
     "tensor": "Tensor parallel (experimental)",
 }
 
+EXECUTION_ENTRY_KEYS = (
+    "gpu_split_mode", "warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+    "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
+    "llamacpp_no_repack",
+)
+
+
+def execution_grid_rows() -> dict[str, int]:
+    rows = {key: index + 1 for index, key in enumerate(EXECUTION_ENTRY_KEYS)}
+    rows.update(note=len(rows) + 1, reset=len(rows) + 2, clear_caches=len(rows) + 3)
+    return rows
+
 
 def gpu_split_mode_labels(modes) -> tuple[str, ...]:
     return tuple(GPU_SPLIT_MODE_LABELS[mode] for mode in modes)

@@ -20,7 +20,7 @@ from scripts.app.benchmark_gui import (
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
+    execution_grid_rows, gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch,
     process_completion_state, resolve_engine_selection,
@@ -830,6 +830,15 @@ def test_hardware_defaults_uncheck_models_that_exceed_usable_ram():
     entries[1].checked = True
     apply_hardware_model_defaults(entries, inventory, ram_gb=64)
     assert entries[1].checked
+
+
+def test_execution_grid_actions_follow_every_control_without_row_collisions():
+    rows = execution_grid_rows()
+    control_rows = [row for key, row in rows.items() if key not in {"note", "reset", "clear_caches"}]
+    assert len(control_rows) == len(set(control_rows))
+    assert rows["note"] == max(control_rows) + 1
+    assert rows["reset"] == rows["note"] + 1
+    assert rows["clear_caches"] == rows["reset"] + 1
 
 
 def test_plan_preview_shows_resolved_measurement_values_and_destinations():
