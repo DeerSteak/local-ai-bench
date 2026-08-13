@@ -1,4 +1,5 @@
 import time
+import threading
 
 import pytest
 
@@ -232,6 +233,33 @@ def test_sampler_switches_windows_without_losing_samples():
     time.sleep(0.003)
     windows = {item.window for item in sampler.stop()}
     assert windows == {"idle", "model_load", "measured"}
+
+
+def test_concurrent_boundary_capture_cannot_append_a_later_window_first():
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocking_sample(timestamp, window):
+        if window == "idle":
+            entered.set()
+            release.wait(timeout=1)
+        return sample(timestamp, window, rss=2)
+
+    sampler = TelemetrySampler(42, interval_sec=100, sample_fn=blocking_sample)
+    sampler._started_at = time.monotonic()
+    first = threading.Thread(target=sampler.capture)
+    first.start()
+    assert entered.wait(timeout=1)
+    sampler.set_window("model_load")
+    second = threading.Thread(target=sampler.capture)
+    second.start()
+    release.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+    assert [item.window for item in sampler.samples] == ["idle", "model_load"]
+    assert [item.timestamp_sec for item in sampler.samples] == sorted(
+        item.timestamp_sec for item in sampler.samples
+    )
 
 
 def test_case_telemetry_does_not_reuse_prior_case_measurements():

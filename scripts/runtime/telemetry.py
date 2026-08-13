@@ -397,6 +397,7 @@ class TelemetrySampler:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._capture_lock = threading.Lock()
 
     @property
     def samples(self) -> tuple[TelemetrySample, ...]:
@@ -424,13 +425,14 @@ class TelemetrySampler:
         self.capture()
 
     def capture(self) -> TelemetrySample:
-        timestamp = time.monotonic() - self._started_at
-        with self._lock:
-            window = self._window
-        sample = self._capture(timestamp, window)
-        with self._lock:
-            self._samples.append(sample)
-        return sample
+        with self._capture_lock:
+            timestamp = time.monotonic() - self._started_at
+            with self._lock:
+                window = self._window
+            sample = self._capture(timestamp, window)
+            with self._lock:
+                self._samples.append(sample)
+            return sample
 
     def start(self) -> "TelemetrySampler":
         if self._thread and self._thread.is_alive():
@@ -468,12 +470,7 @@ class TelemetrySampler:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
-            timestamp = time.monotonic() - self._started_at
-            with self._lock:
-                window = self._window
-            sample = self._capture(timestamp, window)
-            with self._lock:
-                self._samples.append(sample)
+            self.capture()
             self._stop_event.wait(self.interval_sec)
 
     def _capture(self, timestamp: float, window: str) -> TelemetrySample:
