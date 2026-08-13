@@ -13,7 +13,7 @@ TELEMETRY_WINDOW_FIELDS = {"name", "sample_count", "duration_sec", "channels"}
 TELEMETRY_CHANNEL_FIELDS = {"peak_gb", "mean_gb", "final_gb", "valid_samples"}
 TELEMETRY_HEADROOM_FIELDS = {"absolute_gb", "fraction", "state"}
 TELEMETRY_PROVENANCE_FIELDS = {"interval_sec", "failed_samples", "channels"}
-TELEMETRY_SOURCE_FIELDS = {"source"}
+TELEMETRY_SOURCE_FIELDS = {"source", "failed_samples"}
 
 
 def _allow_fields(value, allowed):

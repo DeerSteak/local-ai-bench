@@ -229,7 +229,8 @@ def window_summary_dict(summary: WindowSummary) -> dict[str, Any]:
 
 
 def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
-                 failed_samples: int, sources: Mapping[str, str],
+                 failed_samples: int, channel_failures: Mapping[str, int],
+                 sources: Mapping[str, str],
                  ceiling_gb: float | None = None) -> dict[str, Any]:
     windows = summarize_windows(samples)
     case = summarize_case(windows)
@@ -243,7 +244,10 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
         "provenance": {
             "interval_sec": interval_sec,
             "failed_samples": failed_samples,
-            "channels": {name: {"source": sources.get(name, "unsupported")}
+            "channels": {name: {
+                "source": sources.get(name, "unsupported"),
+                "failed_samples": channel_failures.get(name, 0),
+            }
                          for name in MEMORY_CHANNELS},
         },
     }
@@ -341,6 +345,7 @@ class TelemetrySampler:
         self._sample_fn = sample_fn or self._sample
         self._samples: list[TelemetrySample] = []
         self._failed_samples = 0
+        self._channel_failures = {channel: 0 for channel in MEMORY_CHANNELS}
         self._window = "idle"
         self._started_at = 0.0
         self._stop_event = threading.Event()
@@ -356,6 +361,11 @@ class TelemetrySampler:
     def failed_samples(self) -> int:
         with self._lock:
             return self._failed_samples
+
+    @property
+    def channel_failures(self) -> Mapping[str, int]:
+        with self._lock:
+            return dict(self._channel_failures)
 
     def set_window(self, name: str) -> None:
         if not name:
@@ -422,11 +432,18 @@ class TelemetrySampler:
 
     def _capture(self, timestamp: float, window: str) -> TelemetrySample:
         try:
-            return self._sample_fn(timestamp, window)
+            sample = self._sample_fn(timestamp, window)
         except Exception:
             with self._lock:
                 self._failed_samples += 1
+                for channel in MEMORY_CHANNELS:
+                    self._channel_failures[channel] += 1
             return TelemetrySample(timestamp, window)
+        with self._lock:
+            for channel in MEMORY_CHANNELS:
+                if getattr(sample, channel) is None:
+                    self._channel_failures[channel] += 1
+        return sample
 
 
 class CaseTelemetry:
@@ -458,7 +475,13 @@ class CaseTelemetry:
         self._cursor = len(self.sampler.samples)
         block = memory_block(
             samples, self.sampler.interval_sec, self.sampler.failed_samples,
-            self.sources, self.ceiling_gb if ceiling_gb is None else ceiling_gb,
+            {
+                channel: (self.sampler.channel_failures[channel]
+                          if self.sources.get(channel) != "unsupported" else 0)
+                for channel in MEMORY_CHANNELS
+            },
+            self.sources,
+            self.ceiling_gb if ceiling_gb is None else ceiling_gb,
         )
         self.sampler.mark_window("idle")
         return block

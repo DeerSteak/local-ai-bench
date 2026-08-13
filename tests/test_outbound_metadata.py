@@ -66,7 +66,7 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
         "provenance": {
             "interval_sec": 1, "failed_samples": 0,
             "channels": {"process_rss_gb": {
-                "source": "psutil", "serial_number": "secret",
+                "source": "psutil", "failed_samples": 2, "serial_number": "secret",
             }},
             "private_path": "/private/model.gguf",
         },
@@ -75,7 +75,9 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
     memory = prepare_outbound_result(source)["llm"]["model"]["2K"]["memory"]
     serialized = str(memory)
     assert memory["case_id"] == "case-1"
-    assert memory["provenance"]["channels"]["process_rss_gb"] == {"source": "psutil"}
+    assert memory["provenance"]["channels"]["process_rss_gb"] == {
+        "source": "psutil", "failed_samples": 2,
+    }
     for forbidden in ("secret", "private", "arguments", "raw_output", "command_output"):
         assert forbidden not in serialized.lower()
 

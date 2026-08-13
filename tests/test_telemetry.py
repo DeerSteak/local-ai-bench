@@ -56,7 +56,7 @@ def test_many_windows_are_retained_and_case_summary_is_weighted():
 def test_memory_block_records_provenance_and_unknown_headroom():
     block = memory_block(
         [sample(0, "idle", host=10), sample(1, "measured", host=12)],
-        0.5, 2, {"host_ram_used_gb": "psutil"},
+        0.5, 2, {"host_ram_used_gb": 1}, {"host_ram_used_gb": "psutil"},
     )
     assert [window["name"] for window in block["windows"]] == ["idle", "measured"]
     assert block["summary"]["host_ram_used_gb"]["peak_gb"] == 12
@@ -64,8 +64,12 @@ def test_memory_block_records_provenance_and_unknown_headroom():
         "absolute_gb": None, "fraction": None, "state": "unknown",
     }
     assert block["provenance"]["failed_samples"] == 2
-    assert block["provenance"]["channels"]["host_ram_used_gb"] == {"source": "psutil"}
-    assert block["provenance"]["channels"]["process_rss_gb"] == {"source": "unsupported"}
+    assert block["provenance"]["channels"]["host_ram_used_gb"] == {
+        "source": "psutil", "failed_samples": 1,
+    }
+    assert block["provenance"]["channels"]["process_rss_gb"] == {
+        "source": "unsupported", "failed_samples": 0,
+    }
 
 
 def test_run_summary_reports_each_peak_and_tightest_case():
@@ -150,6 +154,7 @@ def test_sampler_failure_records_unknown_and_continues():
     assert sampler.failed_samples == 1
     assert samples[0].host_ram_used_gb is None
     assert any(item.host_ram_used_gb == 12 for item in samples[1:])
+    assert sampler.channel_failures["process_rss_gb"] == len(samples)
 
 
 def test_sampler_switches_windows_without_losing_samples():
