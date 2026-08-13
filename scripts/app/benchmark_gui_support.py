@@ -19,6 +19,8 @@ def gpu_split_mode_labels(modes) -> tuple[str, ...]:
 
 
 def gpu_split_mode_value(label: str) -> str:
+    if label in GPU_SPLIT_MODE_LABELS:
+        return label
     for mode, candidate in GPU_SPLIT_MODE_LABELS.items():
         if candidate == label:
             return mode

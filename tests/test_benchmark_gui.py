@@ -63,6 +63,7 @@ def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
         "Single GPU", "Layer split (recommended)", "Tensor parallel (experimental)",
     )
     assert tuple(gpu_split_mode_value(label) for label in labels) == modes
+    assert tuple(gpu_split_mode_value(mode) for mode in modes) == modes
     with pytest.raises(ValueError, match="Unknown GPU mode"):
         gpu_split_mode_value("invalid")
 
@@ -201,6 +202,11 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     assert options["gpu_split_mode"] == "tensor"
     assert options["out"] == "result.json"
     assert options["comfyui"] == "/ComfyUI"
+
+
+def test_normalize_gui_option_values_accepts_canonical_gpu_mode():
+    options = normalize_gui_option_values(dict(GUI_OPTION_DEFAULTS, gpu_split_mode="layer"))
+    assert options["gpu_split_mode"] == "layer"
 
 
 def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(tmp_path):
