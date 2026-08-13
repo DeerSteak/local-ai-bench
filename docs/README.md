@@ -82,5 +82,6 @@ This index separates current user guidance, scientific contracts, developer refe
 | [Version 6 Foundation](version-6-foundation.md) | Frozen definitions and predeclared qualification rules for Version 6 |
 | [Memory Telemetry Qualification](telemetry-qualification.md) | Milestone-1 supervised observer-screen procedure |
 | [macOS M4 Pro Memory Screen](qualification/memory-macos-m4-pro-1s.md) | Completed 1-second memory observer-effect evidence and limitations |
+| [macOS M4 Pro 500 ms Memory Screen](qualification/memory-macos-m4-pro-500ms.md) | Completed half-second memory observer-effect evidence |
 | [Reliability Architecture Plan](reliability-architecture-plan.md) | Forward-looking reliability migration plan |
 | [vLLM Engine Plan](vllm-engine-plan.md) | Forward-looking vLLM adapter and packaging plan |
