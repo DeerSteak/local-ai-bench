@@ -727,7 +727,8 @@ def test_launcher_shutdown_refuses_to_continue_while_container_is_reachable(
 
 
 @pytest.mark.parametrize("operation", ["generate", "chat"])
-def test_model_load_uses_startup_timeout_not_request_timeout(engine, monkeypatch, operation):
+def test_model_load_uses_calibration_timeout_not_request_timeout(
+        engine, monkeypatch, operation):
     deadlines = []
 
     def ensure(*_args, **kwargs):
@@ -743,7 +744,8 @@ def test_model_load_uses_startup_timeout_not_request_timeout(engine, monkeypatch
         else:
             engine.chat(TEST_TAG, [{"role": "user", "content": "hello"}], timeout=3)
 
-    assert deadlines == [100.0 + engine.LOAD_TIMEOUT]
+    expected = engine.LOAD_TIMEOUT * (config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1)
+    assert deadlines == [100.0 + expected]
 
 
 def test_stop_falls_back_when_the_group_is_gone(engine, monkeypatch):

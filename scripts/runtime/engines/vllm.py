@@ -840,9 +840,10 @@ class VllmEngine(InferenceEngine):
                  num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
         """Generate via /v1/completions; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
+        load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, self.LOAD_TIMEOUT)
         self._ensure_model(
             tag, num_ctx, n_parallel=n_parallel,
-            deadline=operation_start + self.LOAD_TIMEOUT,
+            deadline=operation_start + load_timeout,
         )
         model_load_sec = time.perf_counter() - operation_start
 
@@ -1004,8 +1005,9 @@ class VllmEngine(InferenceEngine):
                 f"no vLLM tool-call parser is configured for {tag}; vLLM returns no tool_calls "
                 "without --tool-call-parser, so a tool result here would be wrong, not zero")
         operation_start = time.perf_counter()
+        load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, self.LOAD_TIMEOUT)
         self._ensure_model(
-            tag, num_ctx, deadline=operation_start + self.LOAD_TIMEOUT,
+            tag, num_ctx, deadline=operation_start + load_timeout,
             tool_parser=tool_parser,
         )
         model_load_sec = time.perf_counter() - operation_start
