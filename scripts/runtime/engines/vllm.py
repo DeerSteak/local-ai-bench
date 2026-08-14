@@ -103,13 +103,26 @@ def offload_stop_reason(retry_gb: int | None, host_limit_gb: int, attempts: int)
     return None
 
 
-def offload_timeout_message(tag: str, cpu_offload_gb: int, attempts: int,
-                            timeout: int) -> str:
-    """Describe which bounded calibration load exhausted its time budget."""
+def offload_timeout_message(tag: str, cpu_offload_gb: int, attempts: int) -> str:
+    """Describe which calibration load exhausted its caller budget."""
     total = config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1
-    return (f"loading {tag} exceeded the {timeout}s vLLM load timeout during CPU-offload "
+    return (f"loading {tag} exceeded the request wall-clock timeout during CPU-offload "
             f"calibration attempt {attempts + 1}/{total} "
             f"(--cpu-offload-gb {cpu_offload_gb})")
+
+
+def load_attempt_deadline(now: float, caller_deadline: float | None, timeout: int) -> float:
+    """Bound one load attempt by both its own window and its caller's budget."""
+    attempt_deadline = now + timeout
+    return min(attempt_deadline, caller_deadline) if caller_deadline is not None else attempt_deadline
+
+
+def load_timeout_error(tag: str, cpu_offload_gb: int, attempts: int,
+                       timeout: int, caller_expired: bool) -> Exception:
+    """Keep caller exhaustion distinct from an unhealthy server."""
+    if caller_expired:
+        return EngineTimeout(offload_timeout_message(tag, cpu_offload_gb, attempts))
+    return RuntimeError(f"vLLM did not become healthy within {timeout}s loading {tag}")
 
 
 class VllmEngine(InferenceEngine):
@@ -713,6 +726,9 @@ class VllmEngine(InferenceEngine):
             offload_attempts = 0
             while True:
                 self.stop()
+                if deadline is not None and time.perf_counter() >= deadline:
+                    raise EngineTimeout(
+                        offload_timeout_message(tag, cpu_offload_gb, offload_attempts))
                 if cpu_offload_gb:
                     Shared.warn(f"Loading {tag} with {cpu_offload_gb} GiB CPU offload")
                 args = self.server_command(
@@ -742,7 +758,10 @@ class VllmEngine(InferenceEngine):
                 self._proc = proc
                 Shared._managed_procs.append(proc)
 
-                attempt_deadline = time.perf_counter() + self.LOAD_TIMEOUT
+                attempt_started = time.perf_counter()
+                attempt_timeout = attempt_started + self.LOAD_TIMEOUT
+                attempt_deadline = load_attempt_deadline(
+                    attempt_started, deadline, self.LOAD_TIMEOUT)
                 while time.perf_counter() < attempt_deadline:
                     if self.available():
                         self._loaded_tag = tag
@@ -775,9 +794,9 @@ class VllmEngine(InferenceEngine):
                     time.sleep(1)
                 else:
                     self._stop_process()
-                    raise EngineTimeout(
-                        offload_timeout_message(
-                            tag, cpu_offload_gb, offload_attempts, self.LOAD_TIMEOUT))
+                    raise load_timeout_error(
+                        tag, cpu_offload_gb, offload_attempts, self.LOAD_TIMEOUT,
+                        deadline is not None and deadline <= attempt_timeout)
 
     def runtime_environment(self) -> dict:
         """Environment shared by serving and offline vLLM commands."""

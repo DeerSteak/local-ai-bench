@@ -8,8 +8,9 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import (
-    VllmEngine, available_kv_cache_gib, next_cpu_offload_gb, offload_retry_allowed,
-    offload_stop_reason, offload_timeout_message, tensor_parallel_size,
+    VllmEngine, available_kv_cache_gib, load_attempt_deadline, load_timeout_error,
+    next_cpu_offload_gb, offload_retry_allowed, offload_stop_reason, offload_timeout_message,
+    tensor_parallel_size,
 )
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
@@ -180,9 +181,23 @@ def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
 
 def test_offload_timeout_identifies_attempt_and_value(monkeypatch):
     monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
-    message = offload_timeout_message("large:model", 10, 2, 900)
+    message = offload_timeout_message("large:model", 10, 2)
     assert "attempt 3/5" in message
     assert "--cpu-offload-gb 10" in message
+
+
+def test_load_attempt_deadline_preserves_the_caller_bound():
+    assert load_attempt_deadline(100.0, 400.0, 900) == 400.0
+    assert load_attempt_deadline(100.0, 1200.0, 900) == 1000.0
+    assert load_attempt_deadline(100.0, None, 900) == 1000.0
+
+
+def test_load_timeout_classification_distinguishes_caller_from_server():
+    caller_error = load_timeout_error("large:model", 10, 2, 900, True)
+    server_error = load_timeout_error("large:model", 10, 2, 900, False)
+    assert isinstance(caller_error, EngineTimeout)
+    assert isinstance(server_error, RuntimeError)
+    assert not isinstance(server_error, EngineTimeout)
 
 
 def test_offload_cache_rejects_malformed_values(engine):
