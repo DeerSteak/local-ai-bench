@@ -41,6 +41,10 @@ from scripts.runtime.shared import EngineLoopDetected, EngineTimeout, Shared
 
 
 _KV_MEMORY_RE = re.compile(r"Available KV cache memory:\s*(-?\d+(?:\.\d+)?)\s*GiB", re.I)
+_KV_REQUIRED_RE = re.compile(
+    r"\(?([\d.]+)\s*GiB KV cache is needed, which is larger than "
+    r"the available KV cache memory \(([\d.]+)\s*GiB\)", re.I,
+)
 
 
 def available_kv_cache_gib(log_text: str) -> float | None:
@@ -52,12 +56,40 @@ def available_kv_cache_gib(log_text: str) -> float | None:
 def next_cpu_offload_gb(log_text: str, current_gb: int = 0) -> int | None:
     """Choose a 2 GiB-aligned retry from vLLM's measured KV-cache deficit."""
     available = available_kv_cache_gib(log_text)
-    memory_failure = "No available memory for the cache blocks" in log_text
-    if available is None or not memory_failure:
+    required = _KV_REQUIRED_RE.findall(log_text or "")
+    if required:
+        needed_gib, available_gib = map(float, required[-1])
+        shortfall = max(0.0, needed_gib - available_gib)
+    elif available is not None and "No available memory for the cache blocks" in log_text:
+        shortfall = max(0.0, -available)
+    else:
         return None
-    needed = max(0.0, -available) + config.VLLM_OFFLOAD_RESERVE_GB
+    needed = shortfall + config.VLLM_OFFLOAD_RESERVE_GB
     calculated = math.ceil(needed / config.VLLM_OFFLOAD_STEP_GB) * config.VLLM_OFFLOAD_STEP_GB
-    return max(current_gb + config.VLLM_OFFLOAD_STEP_GB, calculated)
+    return current_gb + max(config.VLLM_OFFLOAD_STEP_GB, calculated)
+
+
+def tensor_parallel_size(args: list[str]) -> int:
+    """Read vLLM's per-worker CPU-offload multiplier from launcher arguments."""
+    for index, value in enumerate(args):
+        if value in {"--tensor-parallel-size", "-tp"} and index + 1 < len(args):
+            try:
+                return max(1, int(args[index + 1]))
+            except ValueError:
+                return 1
+        for prefix in ("--tensor-parallel-size=", "-tp="):
+            if value.startswith(prefix):
+                try:
+                    return max(1, int(value.removeprefix(prefix)))
+                except ValueError:
+                    return 1
+    return 1
+
+
+def offload_retry_allowed(retry_gb: int | None, host_limit_gb: int, attempts: int) -> bool:
+    """Bound adaptive retries by current host capacity and attempt count."""
+    return (retry_gb is not None and retry_gb <= host_limit_gb
+            and attempts < config.VLLM_OFFLOAD_MAX_ATTEMPTS)
 
 
 class VllmEngine(InferenceEngine):
@@ -134,11 +166,11 @@ class VllmEngine(InferenceEngine):
         return "|".join((repo, revision, self._kv_cache_dtype, str(runtime),
                          str(runtime_mtime), self._gpu_fingerprint, visible))
 
-    @staticmethod
-    def _host_offload_limit_gb() -> int:
+    def _host_offload_limit_gb(self) -> int:
         available = psutil.virtual_memory().available / (1024 ** 3)
         usable = max(0, int(available - config.VLLM_OFFLOAD_HOST_RESERVE_GB))
-        return usable // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
+        per_worker = usable // tensor_parallel_size(self._launcher_extra_args)
+        return per_worker // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
 
     @staticmethod
     def supported_kv_cache_dtype(runtime_backend: str) -> str:
@@ -654,6 +686,12 @@ class VllmEngine(InferenceEngine):
             offload_key = self._offload_key(tag, repo)
             cpu_offload_gb = self._cpu_offload_gb.get(offload_key, 0)
             host_limit_gb = self._host_offload_limit_gb()
+            if cpu_offload_gb > host_limit_gb:
+                raise RuntimeError(
+                    f"cached vLLM CPU offload for {tag} is {cpu_offload_gb} GiB per worker, "
+                    f"but current free host RAM permits at most {host_limit_gb} GiB")
+            load_deadline = deadline or time.perf_counter() + self.LOAD_TIMEOUT
+            offload_attempts = 0
             while True:
                 self.stop()
                 if cpu_offload_gb:
@@ -687,7 +725,7 @@ class VllmEngine(InferenceEngine):
 
                 t0 = time.perf_counter()
                 while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
-                    if deadline is not None and time.perf_counter() >= deadline:
+                    if time.perf_counter() >= load_deadline:
                         self._stop_process()
                         raise EngineTimeout(
                             f"loading {tag} exceeded the request wall-clock timeout")
@@ -706,14 +744,24 @@ class VllmEngine(InferenceEngine):
                     if proc.poll() is not None:
                         output = self.tail_log(self.SPAWN_LOG_LINES)
                         retry_gb = next_cpu_offload_gb(output, cpu_offload_gb)
-                        if retry_gb is None or retry_gb > host_limit_gb:
+                        if not offload_retry_allowed(retry_gb, host_limit_gb, offload_attempts):
+                            if retry_gb is not None and retry_gb > host_limit_gb:
+                                reason = (f"CPU offload retry needs {retry_gb} GiB per worker, "
+                                          f"above the {host_limit_gb} GiB host-RAM limit")
+                            elif offload_attempts >= config.VLLM_OFFLOAD_MAX_ATTEMPTS:
+                                reason = (f"CPU offload calibration reached its "
+                                          f"{config.VLLM_OFFLOAD_MAX_ATTEMPTS}-retry limit")
+                            else:
+                                reason = "failure was not a recognized KV-cache memory shortage"
                             raise RuntimeError(
-                                f"vLLM exited unexpectedly (code {proc.returncode}) "
-                                f"loading {tag} — last output:\n{output}")
+                                f"vLLM exited unexpectedly (code {proc.returncode}) loading {tag}; "
+                                f"{reason} — last output:\n{output}")
+                        assert retry_gb is not None
                         Shared.warn(
                             f"vLLM measured insufficient KV-cache memory; retrying {tag} "
                             f"with {retry_gb} GiB CPU offload")
                         cpu_offload_gb = retry_gb
+                        offload_attempts += 1
                         break
                     time.sleep(1)
                 else:

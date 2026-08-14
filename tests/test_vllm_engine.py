@@ -7,7 +7,10 @@ from typing import cast
 import pytest
 
 from scripts.runtime import config
-from scripts.runtime.engines.vllm import VllmEngine, available_kv_cache_gib, next_cpu_offload_gb
+from scripts.runtime.engines.vllm import (
+    VllmEngine, available_kv_cache_gib, next_cpu_offload_gb, offload_retry_allowed,
+    tensor_parallel_size,
+)
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
 from scripts.runtime.shared import EngineTimeout
@@ -128,10 +131,37 @@ def test_offload_calculation_uses_deficit_reserve_and_two_gib_steps(available, e
     assert next_cpu_offload_gb(log) == expected
 
 
-def test_offload_retry_advances_by_two_gib_after_a_calculated_attempt():
+def test_offload_retry_adds_the_new_shortfall_to_the_current_value():
     log = ("Available KV cache memory: -0.25 GiB\n"
            "No available memory for the cache blocks")
-    assert next_cpu_offload_gb(log, current_gb=8) == 10
+    assert next_cpu_offload_gb(log, current_gb=8) == 12
+
+
+def test_offload_calculation_handles_positive_but_insufficient_kv_memory():
+    log = ("To serve at least one request with the model's max seq len (262144), "
+           "(27.45 GiB KV cache is needed, which is larger than the available "
+           "KV cache memory (23.43 GiB).")
+    assert next_cpu_offload_gb(log) == 8
+
+
+@pytest.mark.parametrize(("args", "expected"), [
+    (["--tensor-parallel-size", "4"], 4),
+    (["--tensor-parallel-size=2"], 2),
+    (["-tp", "8"], 8),
+    (["-tp=3"], 3),
+    (["--other", "2"], 1),
+    (["-tp", "bad"], 1),
+])
+def test_tensor_parallel_size_parses_launcher_forms(args, expected):
+    assert tensor_parallel_size(args) == expected
+
+
+def test_offload_retry_guard_caps_attempts_and_host_use(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    assert offload_retry_allowed(8, 10, 3)
+    assert not offload_retry_allowed(12, 10, 3)
+    assert not offload_retry_allowed(8, 10, 4)
+    assert not offload_retry_allowed(None, 10, 0)
 
 
 def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
@@ -157,6 +187,14 @@ def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, mon
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
     second = engine._offload_key(TEST_TAG, TEST_REPO)
     assert first != second
+
+
+def test_host_offload_limit_accounts_for_per_worker_tensor_parallel_allocation(
+        engine, monkeypatch):
+    engine._launcher_extra_args = ["--tensor-parallel-size", "4"]
+    memory = type("Memory", (), {"available": 72 * 1024 ** 3})()
+    monkeypatch.setattr(vllm_module.psutil, "virtual_memory", lambda: memory)
+    assert engine._host_offload_limit_gb() == 16
 
 
 def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, tmp_path):
