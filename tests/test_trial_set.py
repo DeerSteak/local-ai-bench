@@ -79,6 +79,19 @@ def test_build_trial_set_pairs_identical_case_sequences_and_rejects_incompatible
         build_trial_set(trials([50, 51, 49, 50.5, 49.5]), bad)
 
 
+def test_trial_set_rejects_duplicate_files_and_no_common_metrics():
+    duplicate = trials([50])[0]
+    with pytest.raises(ValueError, match="distinct independent"):
+        build_trial_set([duplicate], [duplicate])
+    baseline, candidate = trials([50])[0], trials([55])[0]
+    candidate["llm"]["other"] = candidate["llm"].pop("model")
+    candidate["embeddings"] = {}
+    candidate["images"] = {}
+    candidate["mcq"] = {}
+    with pytest.raises(ValueError, match="no common comparable metrics"):
+        build_trial_set([baseline], [candidate])
+
+
 def test_trial_set_cli_writes_a_versioned_artifact(tmp_path):
     baseline_paths = []
     candidate_paths = []

@@ -149,6 +149,9 @@ def analyze_trial_metric(metric: str, baseline: list[float], candidate: list[flo
 
 def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
     """Build a versioned comparison artifact from two compatible trial groups."""
+    digests = [sha256_json(result) for result in [*baseline, *candidate]]
+    if len(digests) != len(set(digests)):
+        raise ValueError("trial sets must contain distinct independent result files")
     baseline_compatibility = trial_set_compatibility(baseline)
     candidate_compatibility = trial_set_compatibility(candidate)
     cross = trial_set_compatibility([*baseline, *candidate])
@@ -164,6 +167,8 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
     candidate_keys = [tuple(metrics) for metrics in candidate_metrics]
     paired = len(baseline) == len(candidate) and baseline_keys == candidate_keys
     keys = sorted(set.intersection(*(set(metrics) for metrics in [*baseline_metrics, *candidate_metrics])))
+    if not keys:
+        raise ValueError("trial sets have no common comparable metrics")
     rows = []
     for key in keys:
         metric = key.rsplit("/", 1)[-1]
@@ -183,8 +188,8 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
             "methodology_profile"),
         "hardware_identity": hardware_identity(baseline[0].get("profile") or {}),
         "source_sha256": {
-            "baseline": [sha256_json(result) for result in baseline],
-            "candidate": [sha256_json(result) for result in candidate],
+            "baseline": digests[:len(baseline)],
+            "candidate": digests[len(baseline):],
         },
         "rows": rows,
     }
