@@ -4,6 +4,7 @@ import {
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
   buildAccuracyDifficultyData,
   buildAccuracyTimeoutData,
+  modelHasTemplateWarning,
 } from "../../utils/accuracy";
 import { modelLabel, sortBarData, findMostStrenuousKey, lookup } from "../../utils/shared";
 import { ACCURACY_TEST_LABELS, ACCURACY_TIMEOUT_BAR_CONFIGS } from "../../constants";
@@ -60,7 +61,9 @@ export default function AccuracyPanel({ containerRef, files, accuracyTest, enabl
         if (!catData.length) return null;
         return (
           <div key={model} className={styles.modelGroup}>
-            <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
+            <div className={styles.modelGroupTitle}>
+              {modelLabel(model)}{modelHasTemplateWarning(files, model) ? " ⚠ template warning" : ""}
+            </div>
             <GroupedBarCard
               title={`${testLabel} Accuracy by Category`}
               modelName={modelLabel(model)}

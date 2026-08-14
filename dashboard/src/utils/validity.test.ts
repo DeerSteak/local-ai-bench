@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildPauseSummaries, buildValidityRows, formatPausedDuration, validitySummary,
+  buildPauseSummaries, buildPreflightWarnings, buildValidityRows,
+  formatPausedDuration, validitySummary,
 } from "./validity";
 
 const file = {
@@ -75,5 +76,19 @@ describe("validity inspection", () => {
       count: 1, totalPausedSeconds: 0, incomplete: true,
     })]);
     expect(buildPauseSummaries(null)).toEqual([]);
+  });
+
+  it("exposes preflight warnings while retaining passing checks only in raw data", () => {
+    const preflight = { ...file, data: { preflight: { models: { model: { checks: [
+      { name: "weights", severity: "info", detail: "complete" },
+      { name: "chat_template", severity: "warning", detail: "No embedded template." },
+      { name: "tool_calls", severity: "workload_blocking", detail: "Unsupported." },
+    ] } } } } };
+    expect(buildPreflightWarnings([preflight])).toEqual([
+      expect.objectContaining({ model: "model", check: "chat_template", severity: "warning" }),
+      expect.objectContaining({ model: "model", check: "tool_calls", severity: "workload_blocking" }),
+    ]);
+    expect(buildPreflightWarnings([{ ...file, data: {} }])).toEqual([]);
+    expect(buildPreflightWarnings(null)).toEqual([]);
   });
 });

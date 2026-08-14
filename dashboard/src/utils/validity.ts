@@ -108,6 +108,24 @@ export function buildValidityRows(files: ResultsFile[] | null, section: string):
   return [];
 }
 
+export interface PreflightWarning {
+  fileId: ResultsFile["id"], system: ResultsFile["hostname"], model: string,
+  check: string, severity: string, detail: string,
+}
+
+export function buildPreflightWarnings(files: ResultsFile[] | null): PreflightWarning[] {
+  if (!Array.isArray(files)) return [];
+  return files.flatMap(file => entriesOf(file.data.preflight?.models).flatMap(([model, report]) =>
+    (Array.isArray(report?.checks) ? report.checks : []).flatMap((check: JsonRecord[string]) =>
+      ["warning", "workload_blocking", "hard_failure"].includes(String(check?.severity)) ? [{
+        fileId: file.id, system: file.hostname, model,
+        check: String(check.name || "compatibility"), severity: String(check.severity),
+        detail: String(check.detail || "Compatibility check requires attention."),
+      }] : []
+    )
+  ));
+}
+
 export function validitySummary(rows: { status: string }[]): Record<string, number> {
   return rows.reduce((summary, row) => {
     summary.total += 1;

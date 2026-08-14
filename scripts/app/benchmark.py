@@ -22,6 +22,7 @@ from scripts.runtime.engines import get_engine, engine_names as registered_engin
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
+from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.llm_event_stage import event_store_path
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
@@ -48,6 +49,9 @@ from scripts.app.orchestration import (
 from scripts.results.result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
+from scripts.runtime.model_preflight import (
+    filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
+)
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
@@ -944,20 +948,64 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             effective_config=effective_config,
         )
         plan.validate_for_execution()
+        context_cap = args.max_prompt_tokens or max(LLMConversationBenchmark.CONV_CHECKPOINTS)
+        contexts_by_test = {
+            "llm": config.CONTEXT_LENGTHS,
+            "conv": [value for value in LLMConversationBenchmark.CONV_CHECKPOINTS
+                     if value <= context_cap],
+            "llamabench": config.LLAMABENCH_PP,
+            "llamabenchconc": [config.LLAMABENCH_CONC_PP],
+            "vllmbench": config.LLAMABENCH_PP,
+            "mcq": [config.ACCURACY_CONTEXT], "math": [config.ACCURACY_CONTEXT],
+            "reasoning": [config.ACCURACY_CONTEXT], "code": [config.ACCURACY_CONTEXT],
+            "tool": [config.ACCURACY_CONTEXT],
+            "conc_tool": [config.CONCURRENCY_TOOL_CONTEXT],
+            "conc_chat": [config.CONCURRENCY_CHAT_CONTEXT],
+        }
+        preflight_models = list({
+            model["tag"]: model for model in [*llm_models, *conc_models]
+        }.values())
+        preflight = run_static_preflight(
+            engine, preflight_models, tests,
+            maximum_requested_context(tests, contexts_by_test), args.force_all,
+        )
+        for report in preflight.reports:
+            if report.status == "excluded":
+                Shared.err(f"Preflight excluded {report.tag}: {report.detail}")
+            elif report.status in {"warning", "workload_limited"}:
+                Shared.warn(f"Preflight {report.tag}: {report.detail}")
+            else:
+                Shared.log(f"Preflight {report.tag}: passed")
+        Shared.log(
+            f"Static model preflight completed in {preflight.elapsed_seconds:.2f}s "
+            f"({len(preflight.reports)} model(s))"
+        )
+        llm_models = filter_models(llm_models, preflight.runnable_tags)
+        conc_models = filter_models(conc_models, preflight.runnable_tags)
+        if any(report.status == "excluded" for report in preflight.reports):
+            plan = RunPlan.create(
+                application_version=config.VERSION, engine_name=engine_name,
+                tests=tests, stage_order=stage_order,
+                models=selected_plan_models(
+                    tests, llm_models, conc_models, embedding_models, image_models,
+                ),
+                effective_config=effective_config, job_id=plan.job_id,
+            )
+            plan.validate_for_execution()
         forked_from = (
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
         )
         journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
         resume_identity = None
+        extra_resume_runtimes = {}
+        model_families = []
         if journal_stages:
-            extra_resume_runtimes = {}
             if "llamabench" in tests:
                 llama_bench_path = find_llamacpp_tool("llama-bench")
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
-            model_families = []
             if journal_stages & {"llm", "conv", "llamabench"}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
@@ -995,6 +1043,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
+            "preflight":       preflight.to_dict(),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
@@ -1053,6 +1102,46 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
             Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
         )
+        if engine_backed_tests and preflight.runnable_tags:
+            lifecycle.prepare_engine(args.cpu_only)
+            preflight = run_runtime_preflight(
+                preflight, engine, min(maximum_requested_context(tests, contexts_by_test) or 512, 4096),
+                config.RUN_TIMEOUT,
+            )
+            for report in preflight.reports:
+                runtime_check = next(
+                    (check for check in report.checks if check.name == "formatting_probe"), None,
+                )
+                if runtime_check is not None and runtime_check.severity == "hard_failure":
+                    Shared.err(f"Preflight excluded {report.tag}: {runtime_check.detail}")
+            Shared.log(
+                f"Model preflight completed in {preflight.elapsed_seconds:.2f}s "
+                f"({len(preflight.reports)} model(s))"
+            )
+            llm_models = filter_models(llm_models, preflight.runnable_tags)
+            conc_models = filter_models(conc_models, preflight.runnable_tags)
+            plan = RunPlan.create(
+                application_version=config.VERSION, engine_name=engine_name,
+                tests=tests, stage_order=stage_order,
+                models=selected_plan_models(
+                    tests, llm_models, conc_models, embedding_models, image_models,
+                ),
+                effective_config=effective_config, job_id=plan.job_id,
+            )
+            plan.validate_for_execution()
+            results["preflight"] = preflight.to_dict()
+            results["run"].update(
+                models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
+            )
+            if journal_stages:
+                resume_identity = build_engine_resume_identity(
+                    plan, engine, model_families=model_families,
+                    include_engine_runtime=bool(journal_stages - {"llamabench"}),
+                    extra_runtimes=extra_resume_runtimes,
+                    digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
+                    environment=profile,
+                )
+            _checkpoint("runtime preflight complete")
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )

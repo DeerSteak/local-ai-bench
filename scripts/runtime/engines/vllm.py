@@ -368,6 +368,42 @@ class VllmEngine(InferenceEngine):
         repo = self._repo(tag)
         return repo is not None and hf_cache_model_complete(self._cache_home, repo)
 
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None:
+            return ()
+        patterns = ("*.safetensors", "*.bin", "*.pt")
+        return tuple(sorted(path for pattern in patterns for path in snapshot.glob(pattern)))
+
+    def model_artifacts_are_local(self) -> bool:
+        return self._server_url is None
+
+    def can_reset_model_state(self) -> bool:
+        return self._server_url is None
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None:
+            return {}, "The local model snapshot was not found."
+        try:
+            config_data = json.loads((snapshot / "config.json").read_text(encoding="utf-8"))
+            tokenizer_data = json.loads(
+                (snapshot / "tokenizer_config.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            return {}, str(exc)
+        architecture = next(iter(config_data.get("architectures") or []), None)
+        context = next((
+            config_data.get(key) or (config_data.get("text_config") or {}).get(key)
+            for key in ("max_position_embeddings", "max_seq_len", "n_positions")
+            if config_data.get(key) or (config_data.get("text_config") or {}).get(key)
+        ), None)
+        return {
+            "general.architecture": architecture,
+            "tokenizer.chat_template": tokenizer_data.get("chat_template"),
+            "model.context_length": context,
+        }, None
+
     def list_installed_models(self) -> list[dict]:
         """Catalog and registered custom tags available from the server or cache."""
         served = self._served_model_ids() if self._server_url else None

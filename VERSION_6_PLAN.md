@@ -219,15 +219,15 @@ This is an extension of existing, already-tested code, and it protects the valid
 
 ## Acceptance criteria
 
-- [ ] Every model is checked for chat template, context capacity, tool support, weight completeness, and formatting round-trip before the first measured case runs.
-- [ ] A missing chat template produces a visible warning recorded in the results and shown next to that model's accuracy in the dashboard.
-- [ ] A hard failure excludes only that model, with a recorded reason, and never aborts the run or discards other models' evidence.
-- [ ] Preflight results are recorded for passing checks too, not only failures.
-- [ ] `--force-all` may bypass documented warnings but cannot bypass corrupt artifacts or an unloadable model; tests cover both paths.
-- [ ] The formatting probe contributes to no performance metric; a test asserts its measurements are absent from every exported section.
-- [ ] The formatting probe cannot warm the measured request; a test verifies the engine's clean-state seam runs after the probe.
-- [ ] Total preflight time for a full catalog is small relative to a run and is reported before execution begins.
-- [ ] [engines.md](docs/engines.md) no longer describes this as an unimplemented gap.
+- [x] Every model is checked for chat template, context capacity, tool support, weight completeness, and formatting round-trip before the first measured case runs.
+- [x] A missing chat template produces a visible warning recorded in the results and shown next to that model's accuracy in the dashboard.
+- [x] A hard failure excludes only that model, with a recorded reason, and never aborts the run or discards other models' evidence.
+- [x] Preflight results are recorded for passing checks too, not only failures.
+- [x] `--force-all` may bypass documented warnings but cannot bypass corrupt artifacts or an unloadable model; tests cover both paths.
+- [x] The formatting probe contributes to no performance metric; a test asserts its measurements are absent from every exported section.
+- [x] The formatting probe cannot warm the measured request; a test verifies the engine's clean-state seam runs after the probe.
+- [x] Total preflight time for a full catalog is small relative to a run and is reported before execution begins. Qualified on an RTX 5090 WSL run across llama.cpp and vLLM: 25m 56s combined preflight against 6h 44m total execution (6.4%), compared with 87m 48s of existing workload warmup time.
+- [x] [engines.md](docs/engines.md) no longer describes this as an unimplemented gap.
 
 ---
 

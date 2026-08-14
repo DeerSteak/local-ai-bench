@@ -4,7 +4,8 @@ import {
   buildAccuracyGroupedBarData, buildAccuracyGroupedBarConfigs,
   buildAccuracyCategoryData, buildAccuracyCategoryConfigs,
   buildAccuracyDifficultyData, buildAccuracyTimeoutData,
-  flattenAccuracyData, getAccuracySettingsWarning,
+  flattenAccuracyData, getAccuracySettingsWarning, getTemplateWarning,
+  modelHasTemplateWarning,
 } from "./accuracy";
 
 describe("getAllAccuracyModels", () => {
@@ -44,6 +45,19 @@ describe("buildAccuracyGroupedBarData / buildAccuracyGroupedBarConfigs", () => {
       "mcq", new Set(["phi4-mini"]),
     );
     expect(configs.map(c => c.dataKey)).toEqual(["phi4-mini"]);
+  });
+  it("marks a model whose preflight recorded a chat-template warning", () => {
+    const files = [{ data: {
+      mcq: { "phi4-mini": {} },
+      preflight: { models: { "phi4-mini": { checks: [{
+        name: "chat_template", severity: "warning", detail: "No embedded template.",
+      }] } } },
+    } }];
+    const configs = buildAccuracyGroupedBarConfigs(files, "mcq", new Set(["phi4-mini"]));
+    expect(configs[0].name).toContain("⚠ template");
+    expect(getTemplateWarning(files[0], "phi4-mini")).toBe("No embedded template.");
+    expect(modelHasTemplateWarning(files, "phi4-mini")).toBe(true);
+    expect(modelHasTemplateWarning([{ data: {} }], "phi4-mini")).toBe(false);
   });
 });
 
@@ -150,7 +164,17 @@ describe("flattenAccuracyData", () => {
       _fileId: "f1", model: "m", correct: 10, total: 20, answered: 20, accuracy_pct: 50,
       timed_out_count: 0, likely_loop_count: 0,
       budget_nudged_count: 0, budget_exceeded_count: 0, crashed: false,
+      preflight_warning: "",
     });
+  });
+  it("attaches a template warning to the matching file and model only", () => {
+    const files = [{ id: "f1", data: {
+      mcq: { m: { accuracy_pct: 50 } },
+      preflight: { models: { m: { checks: [{
+        name: "chat_template", severity: "warning", detail: "Fallback formatting.",
+      }] } } },
+    } }];
+    expect(flattenAccuracyData(files, "mcq")[0].preflight_warning).toBe("Fallback formatting.");
   });
   it("passes through timed_out_count/likely_loop_count/crashed when present", () => {
     const files = [{ id: "f1", data: { mcq: { m: {

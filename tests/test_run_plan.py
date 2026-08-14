@@ -304,6 +304,13 @@ def test_complete_plan_validation_accepts_resolved_execution_inputs():
     complete_plan().validate_for_execution()
 
 
+def test_complete_plan_validation_accepts_no_runnable_models_after_preflight():
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = []
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
+
+
 @pytest.mark.parametrize(("key", "value"), [
     ("runs", 0), ("warmup_runs", -1), ("cpu_only", 1),
     ("context_lengths", [512, 512]), ("llamabench_pp", []),
