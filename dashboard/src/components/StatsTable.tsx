@@ -369,6 +369,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>
               {modelLabel(r.model)}{r.crashed ? " (crashed)" : ""}
+              {r.preflight_warning ? <span title={String(r.preflight_warning)}> ⚠ template</span> : null}
             </td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.accuracy_pct, "pct")}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.correct}</td>

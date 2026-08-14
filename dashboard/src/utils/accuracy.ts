@@ -14,6 +14,19 @@ export function getAllAccuracyModels(files: ResultsFile[], testKey: string): str
   return [...known, ...unknown];
 }
 
+export function getTemplateWarning(file: ResultsFile, model: string): string {
+  const checks = file.data.preflight?.models?.[model]?.checks;
+  if (!Array.isArray(checks)) return "";
+  const warning = checks.find(check =>
+    check?.name === "chat_template" && check?.severity === "warning"
+  );
+  return warning?.detail ? String(warning.detail) : "";
+}
+
+export function modelHasTemplateWarning(files: ResultsFile[], model: string): boolean {
+  return files.some(file => getTemplateWarning(file, model) !== "");
+}
+
 // Accuracy overall-score bar chart: rows = files/systems, cols = models,
 // value = accuracy_pct. A skipped model (crashed repeatedly, no score at
 // all) is simply absent from that file's row rather than shown as 0%.
@@ -39,7 +52,7 @@ export function buildAccuracyGroupedBarConfigs(files: ResultsFile[], testKey: st
   const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
   return allModels.map((m, i) => ({
     dataKey: m,
-    name: modelLabel(m),
+    name: `${modelLabel(m)}${modelHasTemplateWarning(files, m) ? " ⚠ template" : ""}`,
     fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
   }));
 }
@@ -146,6 +159,7 @@ export function flattenAccuracyData(files: ResultsFile[], testKey: string): Char
         budget_nudged_count: s.budget_nudged_count || 0,
         budget_exceeded_count: s.budget_exceeded_count || 0,
         crashed: s.crashed || false,
+        preflight_warning: getTemplateWarning(f, model),
         ...memoryFields(s),
       };
     })

@@ -32,6 +32,9 @@
 .pauseList { display: grid; gap: 8px; margin: 0 0 14px; }
 .pauseNotice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #d4a72c; border-radius: 7px; background: #fff8c5; color: #633c01; }
 .pauseBadge { padding: 2px 7px; border-radius: 999px; background: #bf8700; color: white; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.preflightList { display: grid; gap: 8px; margin: 0 0 14px; }
+.preflightNotice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #d1242f; border-radius: 7px; background: #ffebe9; color: #82071e; }
+.preflightBadge { padding: 2px 7px; border-radius: 999px; background: #cf222e; color: white; font-size: 12px; font-weight: 700; text-transform: uppercase; }
 
 .filterLabel {
   display: flex;
