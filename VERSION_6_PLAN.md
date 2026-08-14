@@ -226,7 +226,7 @@ This is an extension of existing, already-tested code, and it protects the valid
 - [x] `--force-all` may bypass documented warnings but cannot bypass corrupt artifacts or an unloadable model; tests cover both paths.
 - [x] The formatting probe contributes to no performance metric; a test asserts its measurements are absent from every exported section.
 - [x] The formatting probe cannot warm the measured request; a test verifies the engine's clean-state seam runs after the probe.
-- [ ] Total preflight time for a full catalog is small relative to a run and is reported before execution begins.
+- [x] Total preflight time for a full catalog is small relative to a run and is reported before execution begins. Qualified on an RTX 5090 WSL run across llama.cpp and vLLM: 25m 56s combined preflight against 6h 44m total execution (6.4%), compared with 87m 48s of existing workload warmup time.
 - [x] [engines.md](docs/engines.md) no longer describes this as an unimplemented gap.
 
 ---
