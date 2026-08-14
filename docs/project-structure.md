@@ -100,6 +100,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
 | `results/significance.py` | Practical-threshold, uncertainty-availability, and repeated-trial comparison mathematics |
 | `results/trial_set.py` / `results/trial_set_cli.py` | Compatible independent-trial aggregation, drift detection, uncertainty intervals, verdicts, and artifact CLI |
+| `results/trial_set_report.py` | Auditable Markdown presentation of repeated-trial evidence and inconclusive states |
 | `results/outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
 | `runtime/network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
 | `results/vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |

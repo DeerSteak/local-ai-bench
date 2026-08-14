@@ -20,10 +20,11 @@ Build a durable trial-set artifact from two groups of compatible independent run
 python -m scripts.results.trial_set_cli \
   --baseline results/baseline-1.json results/baseline-2.json results/baseline-3.json results/baseline-4.json results/baseline-5.json \
   --candidate results/candidate-1.json results/candidate-2.json results/candidate-3.json results/candidate-4.json results/candidate-5.json \
-  --out results/runtime-upgrade.trials.json
+  --out results/runtime-upgrade.trials.json \
+  --report results/runtime-upgrade.trials.md
 ```
 
-Pooling requires the existing methodology compatibility gate and the same hardware identity. Five trials per side are required before an interval or regression verdict is emitted. Identical case sequences use paired relative changes and a 95% Student-t interval; unequal sequences or counts use a 95% Welch interval. Monotonic ordinal drift forces an inconclusive verdict. The artifact records source digests, descriptive statistics, interval method, comparison mode, practical threshold, drift state, and one of `improved`, `regressed`, `unchanged`, or `inconclusive` for every common metric.
+Pooling requires the existing methodology compatibility gate and the same hardware identity. Five trials per side are required before an interval or regression verdict is emitted. Identical case sequences use paired relative changes and a 95% Student-t interval; unequal sequences or counts use a 95% Welch interval. Monotonic ordinal drift forces an inconclusive verdict. The artifact records source digests, descriptive statistics, interval method, comparison mode, practical threshold, drift state, and one of `improved`, `regressed`, `unchanged`, or `inconclusive` for every common metric. The optional Markdown report renders the same evidence and explicitly labels undersized sets as requiring repeated trials.
 
 ## Acceptance evaluation
 

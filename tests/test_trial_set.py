@@ -7,6 +7,7 @@ from scripts.results.trial_set import (
     trial_set_compatibility,
 )
 from scripts.results.trial_set_cli import main
+from scripts.results.trial_set_report import render_trial_set_markdown
 from tests.test_result_history import result
 
 
@@ -90,10 +91,20 @@ def test_trial_set_cli_writes_a_versioned_artifact(tmp_path):
             path.write_text(json.dumps(trial), encoding="utf-8")
             paths.append(path)
     output = tmp_path / "trials.json"
+    report = tmp_path / "trials.md"
     argv = ["--baseline", *(str(path) for path in baseline_paths),
-            "--candidate", *(str(path) for path in candidate_paths), "--out", str(output)]
+            "--candidate", *(str(path) for path in candidate_paths), "--out", str(output),
+            "--report", str(report)]
     assert main(argv) == 0
     artifact = json.loads(output.read_text(encoding="utf-8"))
     assert artifact["schema_version"] == 1
     assert artifact["comparison_mode"] == "paired"
     assert len(artifact["source_sha256"]["baseline"]) == 5
+    assert "95% change interval" in report.read_text(encoding="utf-8")
+
+
+def test_trial_report_never_calls_a_missing_interval_reproducible():
+    artifact = build_trial_set(trials([50]), trials([55]))
+    report = render_trial_set_markdown(artifact)
+    assert "unavailable" in report
+    assert "Repeated trials required for a regression verdict." in report
