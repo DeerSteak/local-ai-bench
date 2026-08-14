@@ -30,3 +30,15 @@ The manifest records the physical execution order even though `off` and `on` alw
 Continue the array through pair 20. Paths are resolved relative to the manifest. The analyzer uses each run's recorded mean TTFT, mean throughput, and median valid-sample client wall time. Positive impact means telemetry made latency/wall time worse or throughput lower. A source passes only when median TTFT impact is at most 2%, median throughput impact at most 1%, median wall impact at most 1%, and each metric's 90th-percentile impact is at most twice its median bound.
 
 Archive the manifest, report, all referenced result files, exact OS/driver/runtime/source versions, sensor permissions, process ownership and scope notes, telemetry failure counts, and the commit tested. A parser fixture is not hardware qualification, and a passing coarse screen does not make telemetry default-on or establish scientific comparability.
+
+## Milestone 3 runner
+
+`run_m3_memory_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
+
+```bash
+bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
+bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp \
+  --out-dir qualification/m3-memory-this-machine
+```
+
+Use `--pairs 5` only for a workflow smoke test; it does not meet the 20-pair qualification minimum. The script intentionally runs one engine and one installed xsmall model at 2K so model/runtime changes are not mixed into the observer comparison.
