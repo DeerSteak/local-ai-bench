@@ -54,6 +54,11 @@ def build_static_report(engine, model: dict, tests: list[str] | tuple[str, ...],
             "weights", "unavailable", "warning",
             "An external runtime does not expose local weight files for inspection.",
         )
+    if read_error and engine.model_artifacts_are_local():
+        weight_check = CompatibilityCheck(
+            "weights", "unreadable", "hard_failure",
+            f"Model metadata is unreadable: {read_error}",
+        )
     checks = (
         weight_check,
         chat_template_check(metadata, read_error),
@@ -65,7 +70,8 @@ def build_static_report(engine, model: dict, tests: list[str] | tuple[str, ...],
     )
     status = preflight_verdict(checks, force_all)
     detail = next(
-        (check.detail for check in checks if check.severity in {"hard_failure", "warning"}),
+        (check.detail for check in checks
+         if check.severity in {"hard_failure", "workload_blocking", "warning"}),
         "All static compatibility checks passed.",
     )
     return ModelCompatibility(engine.name, tag, architecture, status, detail, checks)

@@ -1114,6 +1114,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
                 if runtime_check is not None and runtime_check.severity == "hard_failure":
                     Shared.err(f"Preflight excluded {report.tag}: {runtime_check.detail}")
+            Shared.log(
+                f"Model preflight completed in {preflight.elapsed_seconds:.2f}s "
+                f"({len(preflight.reports)} model(s))"
+            )
             llm_models = filter_models(llm_models, preflight.runnable_tags)
             conc_models = filter_models(conc_models, preflight.runnable_tags)
             plan = RunPlan.create(

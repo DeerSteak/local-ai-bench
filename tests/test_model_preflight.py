@@ -19,7 +19,8 @@ class FakeEngine:
         self.tools = tools
         self.max_context = max_context
 
-    def compatibility_metadata(self, _tag): return self.metadata, None
+    def compatibility_metadata(self, _tag) -> tuple[dict, str | None]:
+        return self.metadata, None
     def model_pulled(self, _tag): return self.pulled
     def model_paths(self, _tag): return self.paths
     def model_artifacts_are_local(self) -> bool: return True
@@ -66,6 +67,7 @@ def test_unsupported_tools_limit_workload_without_excluding_model(tmp_path):
     assert outcome.runnable_tags == {"muse"}
     assert outcome.blocked_workloads["tool"] == {"muse"}
     assert outcome.reports[0].status == "workload_limited"
+    assert "Tool-call support" in outcome.reports[0].detail
 
 
 def test_force_all_bypasses_context_warning(tmp_path):
@@ -74,6 +76,20 @@ def test_force_all_bypasses_context_warning(tmp_path):
     engine = FakeEngine(paths=(weight,), max_context=4096)
     assert build_static_report(engine, {"tag": "muse"}, ["llm"], 8192, False).status == "warning"
     assert build_static_report(engine, {"tag": "muse"}, ["llm"], 8192, True).status == "passed"
+
+
+def test_force_all_cannot_bypass_unreadable_local_artifact(tmp_path):
+    weight = tmp_path / "model.gguf"
+    weight.write_bytes(b"corrupt")
+
+    class UnreadableEngine(FakeEngine):
+        def compatibility_metadata(self, _tag) -> tuple[dict, str | None]:
+            return {}, "invalid GGUF header"
+
+    report = build_static_report(
+        UnreadableEngine(paths=(weight,)), {"tag": "muse"}, ["llm"], 4096, True,
+    )
+    assert (report.status, report.checks[0].status) == ("excluded", "unreadable")
 
 
 def test_external_runtime_records_unavailable_weights_without_hard_failure():
