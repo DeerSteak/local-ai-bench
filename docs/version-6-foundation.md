@@ -62,7 +62,7 @@ The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds usi
 
 Passing this screen cannot approve default-on telemetry or establish scientific comparability. After milestone 3, qualified independent trials must evaluate each source, interval, and combined sampler under its own methodology identity.
 
-The Mac mini M4 Pro coarse screens passed at all three candidate intervals. Version 6 selects 0.5 seconds as the practical memory-only default: it roughly doubles the sample density of 1 second, while 0.25 seconds nearly doubles retained samples and result size again for a small additional peak-capture benefit in the screened workload. The detailed records are indexed under `docs/qualification/`.
+The Mac mini M4 Pro and native-Windows RTX 5090 coarse screens passed at all three candidate intervals. Version 6 selects 0.5 seconds as the practical memory-only default: it roughly doubles the sample density of 1 second, while 0.25 seconds nearly doubles retained samples and result size again for a small additional peak-capture benefit in the screened workloads. The detailed records are indexed under `docs/qualification/`.
 
 ## Practical-threshold derivation
 

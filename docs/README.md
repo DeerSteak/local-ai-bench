@@ -84,5 +84,8 @@ This index separates current user guidance, scientific contracts, developer refe
 | [macOS M4 Pro Memory Screen](qualification/memory-macos-m4-pro-1s.md) | Completed 1-second memory observer-effect evidence and limitations |
 | [macOS M4 Pro 500 ms Memory Screen](qualification/memory-macos-m4-pro-500ms.md) | Completed half-second memory observer-effect evidence |
 | [macOS M4 Pro 250 ms Memory Screen](qualification/memory-macos-m4-pro-250ms.md) | Completed quarter-second evidence and interval decision |
+| [Windows RTX 5090 Memory Screen](qualification/memory-windows-rtx-5090-1s.md) | Completed 1-second discrete-NVIDIA observer-effect evidence |
+| [Windows RTX 5090 500 ms Memory Screen](qualification/memory-windows-rtx-5090-500ms.md) | Completed half-second discrete-NVIDIA observer-effect evidence |
+| [Windows RTX 5090 250 ms Memory Screen](qualification/memory-windows-rtx-5090-250ms.md) | Completed quarter-second discrete-NVIDIA observer-effect evidence |
 | [Reliability Architecture Plan](reliability-architecture-plan.md) | Forward-looking reliability migration plan |
 | [vLLM Engine Plan](vllm-engine-plan.md) | Forward-looking vLLM adapter and packaging plan |
