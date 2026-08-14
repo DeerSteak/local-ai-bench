@@ -249,6 +249,9 @@ class InferenceEngine(ABC):
         """Normalized model metadata for read-only compatibility checks."""
         return {}, "This engine does not expose local model metadata."
 
+    def can_reset_model_state(self) -> bool:
+        return True
+
     @abstractmethod
     def list_installed_models(self) -> list[dict]:
         """Every model installed locally, as [{"tag": ..., "size": ...}]."""

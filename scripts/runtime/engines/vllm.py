@@ -378,6 +378,9 @@ class VllmEngine(InferenceEngine):
     def model_artifacts_are_local(self) -> bool:
         return self._server_url is None
 
+    def can_reset_model_state(self) -> bool:
+        return self._server_url is None
+
     def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
         snapshot = self._snapshot_dir(tag)
         if snapshot is None:

@@ -125,6 +125,11 @@ def formatting_response_check(response_text: str, finish_reason: str | None) -> 
 
 
 def run_formatting_probe(engine, tag: str, num_ctx: int, timeout: int) -> CompatibilityCheck:
+    if not getattr(engine, "can_reset_model_state", lambda: True)():
+        return CompatibilityCheck(
+            "formatting_probe", "clean_state_unavailable", "hard_failure",
+            "The engine cannot reset externally managed model state after the probe.",
+        )
     try:
         measurement = engine.chat(
             tag, FORMAT_PROBE_MESSAGES, timeout=timeout, num_ctx=num_ctx, num_predict=8,
@@ -157,4 +162,19 @@ def add_runtime_check(report: ModelCompatibility,
     detail = check.detail if check.severity == "hard_failure" else report.detail
     return ModelCompatibility(
         report.engine, report.tag, report.architecture, status, detail, checks,
+    )
+
+
+def run_runtime_preflight(outcome: PreflightOutcome, engine, num_ctx: int, timeout: int,
+                          *, monotonic=time.monotonic) -> PreflightOutcome:
+    started = monotonic()
+    reports = tuple(
+        add_runtime_check(report, run_formatting_probe(engine, report.tag, num_ctx, timeout))
+        if report.tag in outcome.runnable_tags else report
+        for report in outcome.reports
+    )
+    runnable = frozenset(report.tag for report in reports if report.status != "excluded")
+    return PreflightOutcome(
+        reports, runnable, outcome.blocked_workloads,
+        outcome.elapsed_seconds + monotonic() - started,
     )

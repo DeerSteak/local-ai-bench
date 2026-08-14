@@ -50,7 +50,7 @@ from scripts.results.result_store import (ResultStore, atomic_write_json, build_
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.runtime.model_preflight import (
-    filter_models, maximum_requested_context, run_static_preflight,
+    filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
 )
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
@@ -998,14 +998,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         )
         journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
         resume_identity = None
+        extra_resume_runtimes = {}
+        model_families = []
         if journal_stages:
-            extra_resume_runtimes = {}
             if "llamabench" in tests:
                 llama_bench_path = find_llamacpp_tool("llama-bench")
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
-            model_families = []
             if journal_stages & {"llm", "conv", "llamabench"}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
@@ -1102,6 +1102,42 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
             Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
         )
+        if engine_backed_tests and preflight.runnable_tags:
+            lifecycle.prepare_engine(args.cpu_only)
+            preflight = run_runtime_preflight(
+                preflight, engine, min(maximum_requested_context(tests, contexts_by_test) or 512, 4096),
+                config.RUN_TIMEOUT,
+            )
+            for report in preflight.reports:
+                runtime_check = next(
+                    (check for check in report.checks if check.name == "formatting_probe"), None,
+                )
+                if runtime_check is not None and runtime_check.severity == "hard_failure":
+                    Shared.err(f"Preflight excluded {report.tag}: {runtime_check.detail}")
+            llm_models = filter_models(llm_models, preflight.runnable_tags)
+            conc_models = filter_models(conc_models, preflight.runnable_tags)
+            plan = RunPlan.create(
+                application_version=config.VERSION, engine_name=engine_name,
+                tests=tests, stage_order=stage_order,
+                models=selected_plan_models(
+                    tests, llm_models, conc_models, embedding_models, image_models,
+                ),
+                effective_config=effective_config, job_id=plan.job_id,
+            )
+            plan.validate_for_execution()
+            results["preflight"] = preflight.to_dict()
+            results["run"].update(
+                models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
+            )
+            if journal_stages:
+                resume_identity = build_engine_resume_identity(
+                    plan, engine, model_families=model_families,
+                    include_engine_runtime=bool(journal_stages - {"llamabench"}),
+                    extra_runtimes=extra_resume_runtimes,
+                    digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
+                    environment=profile,
+                )
+            _checkpoint("runtime preflight complete")
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )

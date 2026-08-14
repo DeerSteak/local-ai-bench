@@ -1,7 +1,8 @@
 from scripts.runtime.engines.base import ChatMeasurement
 from scripts.runtime.model_preflight import (
     add_runtime_check, build_static_report, filter_models, formatting_response_check,
-    maximum_requested_context, run_formatting_probe, run_static_preflight,
+    maximum_requested_context, run_formatting_probe, run_runtime_preflight,
+    run_static_preflight,
 )
 
 
@@ -134,8 +135,40 @@ def test_formatting_probe_cleans_after_request_failure_and_records_no_metrics():
     assert set(check.evidence) == set()
 
 
+def test_formatting_probe_does_not_warm_engine_without_clean_state_seam():
+    class ExternalEngine:
+        def can_reset_model_state(self): return False
+        def chat(self, *_args, **_kwargs): raise AssertionError("must not warm external state")
+
+    check = run_formatting_probe(ExternalEngine(), "remote", 4096, 30)
+    assert (check.status, check.severity) == ("clean_state_unavailable", "hard_failure")
+
+
 def test_runtime_failure_changes_report_to_excluded():
     report = build_static_report(FakeEngine(), {"tag": "muse"}, ["llm"], 4096, True)
     failed = add_runtime_check(report, formatting_response_check("", "stop"))
     assert failed.status == "excluded"
     assert failed.checks[-1].name == "formatting_probe"
+
+
+def test_runtime_preflight_excludes_failed_model_and_keeps_static_failure():
+    class PerModelEngine(FakeEngine):
+        def chat(self, tag, *_args, **_kwargs):
+            if tag == "bad-runtime":
+                raise RuntimeError("cannot load")
+            return ChatMeasurement(0, 1, 1, 1, 1, response_text="ready", finish_reason="stop")
+        def unload(self, _tag): pass
+        def wait_until_unloaded(self, _tag): return True
+        def model_pulled(self, tag): return tag != "bad-static"
+
+    engine = PerModelEngine(paths=(__file__,))
+    static = run_static_preflight(
+        engine, [{"tag": "good"}, {"tag": "bad-runtime"}, {"tag": "bad-static"}],
+        ["llm"], 4096, True, monotonic=iter((1.0, 1.1)).__next__,
+    )
+    runtime = run_runtime_preflight(
+        static, engine, 4096, 30, monotonic=iter((2.0, 2.4)).__next__,
+    )
+    assert runtime.runnable_tags == {"good"}
+    assert runtime.elapsed_seconds == 0.5
+    assert len(runtime.reports[2].checks) == 4
