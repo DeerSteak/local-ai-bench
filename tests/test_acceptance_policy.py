@@ -18,6 +18,16 @@ def policy(**rule_changes):
             "methodology_profile": "neutral-v1", "rules": [rule]}
 
 
+def policy_v2(**rule_changes):
+    candidate = policy(**rule_changes)
+    candidate["schema_version"] = 2
+    candidate["rules"][0].update({
+        "tolerance_pct": 3.0,
+        "evidence_requirement": "single_run",
+    })
+    return candidate
+
+
 def result():
     return {
         "run": {"plan": {"effective_config": {"methodology_profile": "neutral-v1"}}},
@@ -75,7 +85,7 @@ def test_accuracy_and_image_rules_use_their_real_evidence_shapes():
 
 
 @pytest.mark.parametrize("mutation", [
-    lambda p: p.update(schema_version=2),
+    lambda p: p.update(schema_version=3),
     lambda p: p.update(rules=[]),
     lambda p: p["rules"][0].update(metric="unknown"),
     lambda p: p["rules"][0].update(threshold=float("nan")),
@@ -96,3 +106,30 @@ def test_policy_loader_and_cli_use_deterministic_machine_readable_result(tmp_pat
     assert load_policy(policy_path)["name"] == "Vendor launch gate"
     assert main([str(result_path), str(policy_path)]) == 0
     assert '"decision": "accepted"' in capsys.readouterr().out
+
+
+def test_schema_two_accepts_a_value_inside_practical_tolerance():
+    candidate = result()
+    candidate["llm"]["golden"]["2K"]["tps_mean"] = 48.0
+    evaluation = evaluate_policy(candidate, policy_v2())
+    assert evaluation["decision"] == "accepted"
+    assert evaluation["rules"][0]["status"] == "pass_within_tolerance"
+
+
+def test_reproducible_evidence_requirement_is_inconclusive_for_one_run():
+    candidate = policy_v2()
+    candidate["rules"][0]["evidence_requirement"] = "repeated_trials"
+    evaluation = evaluate_policy(result(), candidate)
+    assert evaluation["decision"] == "inconclusive"
+    assert evaluation["rules"][0]["status"] == "inconclusive"
+
+
+@pytest.mark.parametrize("change", [
+    {"tolerance_pct": -1},
+    {"evidence_requirement": "pretend_significant"},
+])
+def test_schema_two_rejects_invalid_noise_policy_fields(change):
+    candidate = policy_v2()
+    candidate["rules"][0].update(change)
+    with pytest.raises(ValueError):
+        validate_policy(candidate)

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Example interactive performance gate",
   "methodology_profile": "neutral-v1",
   "rules": [
@@ -11,7 +11,9 @@
       "metric": "tps_mean",
       "operator": "at_least",
       "threshold": 30.0,
-      "minimum_evidence": 3
+      "minimum_evidence": 3,
+      "tolerance_pct": 3.0,
+      "evidence_requirement": "single_run"
     },
     {
       "id": "small-model-2k-latency",
@@ -21,7 +23,9 @@
       "metric": "ttft_mean_sec",
       "operator": "at_most",
       "threshold": 1.0,
-      "minimum_evidence": 3
+      "minimum_evidence": 3,
+      "tolerance_pct": 5.0,
+      "evidence_requirement": "single_run"
     }
   ]
 }
