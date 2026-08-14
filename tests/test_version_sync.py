@@ -110,6 +110,42 @@ def test_multiple_targets_are_planned_independently():
     assert plan.updates == {"VERSION.txt": "v4.1\n"}
 
 
+TELEMETRY = next(t for t in TARGETS if t.path == "docs/telemetry.md")
+
+
+def test_doc_prose_target_matches_only_its_anchored_sentence():
+    text = (
+        "Local AI Bench 4.1 sends no product telemetry, crash uploads.\n"
+        "This defines the Local AI Bench 4.1 neutral methodology.\n"
+        "See Local AI Bench 4.1 sends no product telemetry mid-line.\n"
+    )
+    assert find_versions(text, TELEMETRY) == ["4.1"]
+    assert apply_version(text, TELEMETRY, "5.1.1").splitlines()[0].startswith("Local AI Bench 5.1.1 sends")
+
+
+def test_two_targets_in_one_file_both_apply():
+    targets = tuple(t for t in TARGETS if t.path == "docs/product-requirements.md")
+    assert len(targets) == 2
+    text = "The primary 4.1 product workflow helps.\n\n## Supported 4.1 scope\n\nbody\n"
+    sources = {"docs/product-requirements.md": text}
+    plan = plan_sync(sources, sources, "5.1.1", "5.1.1", targets=targets)
+    assert plan.ok
+    assert plan.updates["docs/product-requirements.md"] == (
+        "The primary 5.1.1 product workflow helps.\n\n## Supported 5.1.1 scope\n\nbody\n"
+    )
+
+
+@pytest.mark.parametrize("path", sorted({t.path for t in TARGETS}))
+def test_every_repo_mirror_agrees_with_config_today(path):
+    from pathlib import Path
+
+    root = Path(vs.__file__).resolve().parents[2]
+    config_version = parse_version((root / vs.CONFIG_PATH).read_text(encoding="utf-8"))
+    text = (root / path).read_text(encoding="utf-8")
+    for target in (t for t in TARGETS if t.path == path):
+        assert find_versions(text, target) == [config_version], target.description
+
+
 def test_format_conflicts_names_the_source_of_truth_and_each_offender():
     message = format_conflicts([("README.md", "README title", "5.0")], "4.1")
     assert vs.CONFIG_PATH in message

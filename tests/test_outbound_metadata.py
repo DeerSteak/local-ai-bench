@@ -49,6 +49,48 @@ def test_unaliased_export_still_records_verifiable_source_identity():
     assert outbound["run"]["export_identity"]["aliases_applied"] == []
 
 
+def test_outbound_telemetry_omits_raw_and_identity_fields():
+    source = result()
+    source["llm"] = {"model": {"2K": {"memory": {
+        "case_id": "case-1",
+        "windows": [{
+            "name": "measured", "sample_count": 1, "duration_sec": 1,
+            "channels": {"process_rss_gb": {
+                "peak_gb": 4, "mean_gb": 4, "final_gb": 4, "valid_samples": 1,
+                "device_uuid": "GPU-secret",
+            }},
+            "raw_output": "serial=secret path=/private/model.gguf",
+            "samples": [{
+                "timestamp_sec": 0.25, "process_rss_gb": 4,
+                "device_uuid": "GPU-secret", "model_path": "/private/model.gguf",
+            }],
+        }],
+        "summary": {"process_rss_gb": {"peak_gb": 4, "arguments": "--secret"}},
+        "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable",
+                     "basis_channel": "process_rss_gb", "private_note": "secret"},
+        "provenance": {
+            "interval_sec": 1, "failed_samples": 0,
+            "channels": {"process_rss_gb": {
+                "source": "psutil", "failed_samples": 2, "serial_number": "secret",
+            }},
+            "private_path": "/private/model.gguf",
+        },
+        "command_output": "forbidden",
+    }}}}
+    memory = prepare_outbound_result(source)["llm"]["model"]["2K"]["memory"]
+    serialized = str(memory)
+    assert memory["case_id"] == "case-1"
+    assert memory["provenance"]["channels"]["process_rss_gb"] == {
+        "source": "psutil", "failed_samples": 2,
+    }
+    assert memory["headroom"]["basis_channel"] == "process_rss_gb"
+    assert memory["windows"][0]["samples"] == [{
+        "timestamp_sec": 0.25, "process_rss_gb": 4,
+    }]
+    for forbidden in ("secret", "private", "arguments", "raw_output", "command_output"):
+        assert forbidden not in serialized.lower()
+
+
 @pytest.mark.parametrize(("field", "value"), [("system_alias", ""), ("hardware_alias", "  ")])
 def test_aliases_reject_empty_values(field, value):
     with pytest.raises(ValueError, match="alias"):

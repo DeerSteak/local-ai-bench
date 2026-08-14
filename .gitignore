@@ -193,6 +193,7 @@ local_ai_bench_config.json
 /.omc
 /dashboard/.omc
 /results
+/.artifacts
 
 # Result files staged for the dashboard to serve — never source, always generated.
 /dashboard/public/__selected_results__/
@@ -222,3 +223,4 @@ README_VERY_IMPORTANT.txt
 /advanced
 /update
 vllm-env/
+.vscode

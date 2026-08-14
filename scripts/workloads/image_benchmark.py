@@ -339,7 +339,7 @@ class ImageBenchmark:
         dest.write_bytes(resp.content)
 
     def run(self, image_models, resolutions, seed, prompt,  # pragma: no cover — orchestrates real ComfyUI runs
-            comfyui_dir, timeout=None, save_fn=None, images_dir=None):
+            comfyui_dir, timeout=None, save_fn=None, images_dir=None, telemetry=None):
         if timeout is None:
             timeout = config.RUN_TIMEOUT
         if images_dir is None:
@@ -361,6 +361,7 @@ class ImageBenchmark:
             model_resolutions = model.get("resolutions", resolutions)
 
             emit_progress("model", "img", "running", label, model_id=short)
+            telemetry_active = False
             try:
                 ckpt_path = checkpoints_dir / checkpoint
                 if not ckpt_path.exists():
@@ -372,6 +373,9 @@ class ImageBenchmark:
                 results[short] = {"label": label, "checkpoint": checkpoint,
                                   "steps": steps, "resolutions": {}}
 
+                if telemetry:
+                    telemetry.begin_model_load()
+                    telemetry_active = True
                 # Warmup: one generation at the smallest resolution to trigger Metal/CUDA
                 # shader compilation before timing starts.
                 w0, h0 = model_resolutions[0]
@@ -399,6 +403,8 @@ class ImageBenchmark:
                 model_timed_out = False
                 for (w, h) in model_resolutions:
                     res_label = f"{w}x{h}"
+                    if telemetry:
+                        telemetry.begin_measured(f"measured:{res_label}")
                     Shared.log(f"{label} @ {res_label} — {config.N_RUNS} runs ...")
                     times = []
                     last_images: list[dict] = []
@@ -464,6 +470,10 @@ class ImageBenchmark:
                         break
 
             finally:
+                if telemetry_active and telemetry:
+                    memory = telemetry.finish_case()
+                    if isinstance(results.get(short), dict):
+                        results[short]["memory"] = memory
                 if save_fn:
                     save_fn(results)
                 Shared.log(f"Unloading {label} from VRAM ...")

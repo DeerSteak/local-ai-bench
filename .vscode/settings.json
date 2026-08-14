@@ -1,5 +1,0 @@
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}/bench-env/bin/python",
-  "python.analysis.extraPaths": ["${workspaceFolder}/scripts"],
-  "python.autoComplete.extraPaths": ["${workspaceFolder}/scripts"]
-}

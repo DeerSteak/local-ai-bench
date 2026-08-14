@@ -486,6 +486,10 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             self.entries = []
             self.states = []
             self.finished = False
+            self.telemetry_calls = []
+
+        def begin_measured(self, subwindow="measured"):
+            self.telemetry_calls.append(subwindow)
 
         def record_model_plan(self, model, requested_cases, reps):
             assert (requested_cases, reps) == (2, 3)
@@ -495,6 +499,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             return [("prefill", pp, []), ("decode", pp, tg)]
 
         def record_entry(self, model, entry):
+            self.telemetry_calls.append("record")
             self.entries.append(entry)
 
         def record_model_state(self, model, state, result):
@@ -508,6 +513,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             return {"projected": True}
 
     def fake_run_one(cls, command, *args, **kwargs):
+        assert journal.telemetry_calls == ["measured:native-sweep-includes-load"]
         kwargs["on_result"]({
             "n_prompt": 512, "n_gen": 0, "avg_ts": 123.0,
             "samples_ts": [122.0, 123.0, 124.0],
@@ -520,6 +526,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
     assert result == {"projected": True}
     assert len(journal.entries) == 1
     assert journal.entries[0]["completed_reps"] == 3
+    assert journal.telemetry_calls == ["measured:native-sweep-includes-load", "record"]
     assert journal.states[0][0] == "timed_out"
     assert journal.finished is True
 

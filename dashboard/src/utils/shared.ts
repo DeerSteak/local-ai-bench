@@ -93,6 +93,18 @@ export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: st
     : "";
 }
 
+export function getMemoryTelemetryMethodologyWarning(files: ResultsFile[]): string {
+  if (files.length < 2) return "";
+  const identities = new Set(files.map(file => {
+    const config = file.data?.run?.effective_config;
+    if (config?.memory_telemetry !== true) return "off";
+    return `memory:${config.memory_telemetry_interval_sec ?? "unknown"}`;
+  }));
+  return identities.size > 1
+    ? "Loaded files use incompatible telemetry modes or memory sampling intervals."
+    : "";
+}
+
 // Cross-engine comparison compares different weight files, not just different
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.

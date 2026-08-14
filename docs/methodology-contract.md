@@ -53,6 +53,8 @@ Accuracy parsing and scoring use the immutable bank version recorded in the resu
 
 Acceptance is evaluated per required workload/model/case, never by one hidden composite score. A policy must name its required cases, direction, threshold or baseline tolerance, minimum valid repetitions, and permitted partial coverage before execution.
 
+Version 6 uses the distinct comparison terms and predeclared practical-threshold derivation in [Version 6 Foundation](version-6-foundation.md). Within-case or within-run dispersion may describe available evidence but cannot establish a reproducibility verdict; that verdict requires qualified compatible independent trials, and insufficient evidence is inconclusive.
+
 - Missing required data fails acceptance as insufficient evidence; it does not equal zero and cannot silently pass.
 - A required case with zero valid samples fails as invalid evidence.
 - Partial coverage may pass only when the policy explicitly marks omitted cases optional and the report lists them.

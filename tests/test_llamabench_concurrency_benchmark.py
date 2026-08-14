@@ -370,6 +370,50 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
     assert result["m1"]["ctx_size"] == expected_ctx
 
 
+def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypatch):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_model_load(self): self.calls.append("load")
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"summary": {"process_rss_gb": {"peak_gb": len(self.calls)}}}
+
+    telemetry = Telemetry()
+
+    def fake_run_one(cls, *args, on_entry=None, **kwargs):
+        assert telemetry.calls == ["measured:native-sweep-includes-load"]
+        assert on_entry is not None
+        for row in (_row(1), _row(2)):
+            on_entry(row)
+        return []
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
+    result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
+    assert telemetry.calls == [
+        "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
+        "finish", "measured:native-sweep", "finish",
+    ]
+    assert telemetry.calls.count("finish") == 3
+    assert all("memory" in entry for entry in result["m1"]["entries"])
+
+
+def test_run_discards_failed_native_window(fake_engine, monkeypatch):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    def fail(cls, *args, **kwargs):
+        raise subprocess.TimeoutExpired("llama-batched-bench", 1)
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fail))
+    telemetry = Telemetry()
+    result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
+    assert result["m1"]["timed_out"] is True
+    assert telemetry.calls == ["measured:native-sweep-includes-load", "finish"]
+
+
 def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):
     monkeypatch.setattr(LlamaCppEngine, "max_context_length", lambda self, tag: 32768)
     captured = {}

@@ -298,6 +298,8 @@ class LlamaBenchBenchmark:
                             save_fn(results)
 
                     try:
+                        if journal and (begin_measured := getattr(journal, "begin_measured", None)):
+                            begin_measured("measured:native-sweep-includes-load")
                         self.run_one(
                             command, config.LLAMABENCH_TIMEOUT,
                             on_progress=Shared.log, on_result=record_row,
@@ -323,6 +325,9 @@ class LlamaBenchBenchmark:
                             )
                         stopped = True
                         break
+                    finally:
+                        if journal and (discard_case := getattr(journal, "discard_case", None)):
+                            discard_case()
                 if stopped:
                     reason = model_result.get("error")
                     Shared.err(f"{label}: native benchmark stopped with partial results"

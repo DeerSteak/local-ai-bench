@@ -738,6 +738,7 @@ class Shared:
                                 save_fn=None, answers_path: Path | None = None,
                                 progress_stage: str | None = None,
                                 requires_tool_calls: bool = False,
+                                telemetry=None,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
@@ -765,6 +766,7 @@ class Shared:
 
             if progress_stage:
                 emit_progress("model", progress_stage, "running", label, model_id=tag)
+            telemetry_active = False
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
@@ -790,6 +792,9 @@ class Shared:
                     results[short] = skip_entry
                     continue
 
+                if telemetry:
+                    telemetry.begin_model_load()
+                    telemetry_active = True
                 if not engine.warmup(tag, label, config.ACCURACY_CONTEXT, warmup_runs,
                                      crash_cache, crash_cache_path,
                                      crash_extra={"bank_hash": bank_hash}):
@@ -811,6 +816,8 @@ class Shared:
                 results[short] = {"label": label, "partial": True, "answered": 0, "total": len(questions)}
 
                 for i, q in enumerate(questions):
+                    if telemetry:
+                        telemetry.begin_measured(f"measured:{q['id']}")
                     samples, status, partial_text, metadata = Shared.run_measured_calls(
                         1, lambda run_i, q=q: ask_fn(tag, q), tag, crash_cache,
                         crash_cache_path, f"answering {q['id']}", engine,
@@ -899,6 +906,10 @@ class Shared:
                 results.setdefault(short, {}).update(
                     unexpected_model_failure(label, exc, crashed=True))
             finally:
+                if telemetry_active and telemetry:
+                    memory = telemetry.finish_case()
+                    if isinstance(results.get(short), dict):
+                        results[short]["memory"] = memory
                 if save_fn:
                     save_fn(results)
                 if answers_path:

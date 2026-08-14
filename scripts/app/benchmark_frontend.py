@@ -154,7 +154,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         return None
     tg_tokens = state["tg_tokens"]
     if tg_tokens is not None and (
-            not isinstance(tg_tokens, list) or not tg_tokens
+            not isinstance(tg_tokens, list)
             or not all(isinstance(v, int) and v > 0 for v in tg_tokens)
             or len(tg_tokens) != len(set(tg_tokens))):
         return None
@@ -163,7 +163,8 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         if isinstance(options, dict):
             missing = set(GUI_OPTION_DEFAULTS) - set(options)
             if missing <= {
-                "offline", "gpu_split_mode", "retry_crashed_models", "llamacpp_no_repack",
+                "offline", "memory_telemetry", "gpu_split_mode", "retry_crashed_models",
+                "llamacpp_no_repack",
             }:
                 for key in missing:
                     options[key] = GUI_OPTION_DEFAULTS[key]
@@ -181,7 +182,7 @@ def validate_gui_options(options: object) -> list[str]:
         return ["GUI settings are incomplete."]
     errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
     if any(not isinstance(options[key], bool) for key in (
-            "cpu_only", "force_all", "retry_crashed_models", "offline",
+            "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
             "llamacpp_no_repack")):
         errors.append("Execution mode settings must be true or false.")
     if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
@@ -236,6 +237,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "gpu_split_mode": "gpu_split_mode", "force_all": "force_all",
         "llamacpp_no_repack": "llamacpp_no_repack",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
+        "memory_telemetry": "memory_telemetry",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
@@ -311,7 +313,7 @@ def apply_saved_model_selection(entries: list[MenuEntry], state: dict | None) ->
     for family, kinds in FRONTEND_MODEL_FAMILIES.items():
         family_entries = [entry for entry in entries if entry.kind in kinds]
         saved = set(state["models"][family])
-        if not any(entry.value in saved for entry in family_entries):
+        if saved and not any(entry.value in saved for entry in family_entries):
             continue
         for entry in family_entries:
             entry.checked = entry.value in saved
@@ -744,6 +746,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--retry-crashed-models")
         if gui_options["offline"]:
             command.append("--offline")
+        if gui_options["memory_telemetry"]:
+            command.append("--memory-telemetry")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"] and "--comfyui" in command:

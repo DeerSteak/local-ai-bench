@@ -73,6 +73,8 @@ class LLMPrefillBenchmark:
                     if server_ctx <= ctx_len:
                         Shared.warn(f"{label}: no headroom left for generation at {label_ctx} "
                                     f"(model max {model_max}) — TPS at this depth may read as ~0")
+                    if journal:
+                        journal.begin_model_load()
                     if not engine.warmup(tag, label, server_ctx, warmup_runs,
                                          crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
                         results[short]["crashed"] = label_ctx
@@ -87,6 +89,8 @@ class LLMPrefillBenchmark:
                             )
                         engine.unload(tag)
                         break
+                    if journal:
+                        journal.begin_measured()
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
 
                     def _prefill_once(run_i):

@@ -91,6 +91,20 @@ export const MODEL_DASH_PATTERNS = [
 
 export const MAX_FILES = 6;
 
+export const MEMORY_CHANNEL_LABELS = {
+  host_ram_used_gb: "Host RAM",
+  process_rss_gb: "Process RSS",
+  accelerator_memory_used_gb: "Accelerator memory",
+};
+
+export const MEMORY_HEADROOM_LABELS = {
+  comfortable: "Comfortable",
+  tight: "Tight",
+  exceeded: "Exceeded",
+  unknown: "Unknown",
+  not_recorded: "Not recorded",
+};
+
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {

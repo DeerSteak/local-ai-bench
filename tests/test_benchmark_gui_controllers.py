@@ -105,14 +105,16 @@ def test_configuration_state_applies_imported_controls():
     controller.model_vars = {"small": FakeVariable(), "large": FakeVariable(True)}
     controller.cap_var = FakeVariable()
     controller.tg_vars = {64: FakeVariable(), 128: FakeVariable(True)}
-    controller.option_vars = {"runs": FakeVariable(), "offline": FakeVariable()}
+    controller.option_vars = {
+        "runs": FakeVariable(), "offline": FakeVariable(), "gpu_split_mode": FakeVariable(),
+    }
     selected_engines = []
     controller.set_selected_engines = selected_engines.append
 
     controller.apply_control_values({
         "tests": {"llm": True}, "models": {"small": True}, "engine": "llamacpp,vllm",
         "max_prompt_tokens": "8192", "tg_tokens": [128],
-        "options": {"runs": "5", "offline": True},
+        "options": {"runs": "5", "offline": True, "gpu_split_mode": "layer"},
     })
 
     assert {name: var.get() for name, var in controller.test_vars.items()} == {
@@ -126,6 +128,7 @@ def test_configuration_state_applies_imported_controls():
     assert [value for value, var in controller.tg_vars.items() if var.get()] == [128]
     assert controller.option_vars["runs"].get() == "5"
     assert controller.option_vars["offline"].get() is True
+    assert controller.option_vars["gpu_split_mode"].get() == "Layer split (recommended)"
 
 
 def test_configuration_file_action_translates_portable_preset():

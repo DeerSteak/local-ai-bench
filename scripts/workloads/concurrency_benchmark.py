@@ -155,6 +155,8 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
+                    if journal:
+                        journal.begin_model_load()
                     if not engine.prepare_concurrency(
                         tag, level, self.slot_ctx_for(per_request_context), warmup_runs,
                         timeout=config.RUN_TIMEOUT,
@@ -195,6 +197,8 @@ class ConcurrencyBenchmark:
                     if warmup_failed:
                         break
 
+                    if journal:
+                        journal.begin_measured()
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
                     samples, status, error, batch_elapsed = self._fire_measured_batch(
                         engine, tag, level, per_request_context, label, progress_stage,

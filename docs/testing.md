@@ -155,6 +155,8 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 `LlamaCppEngine` HTTP behavior is tested with mocked requests and streams. Measurement tests cover named records, separate timing sources, invalid-sample exclusion, completed-versus-valid counts, medians, and coefficients of variation. Stage tests use fake runners and engines to cover fixed ordering, selection, preparation/execution/cleanup classification, state transitions, engine exclusivity, CPU-mode restoration, and cleanup after failure. Shared workload orchestration covers retries, partial responses, token budgets, loop detection, timeouts, crash-cache behavior, and result diagnostics without network access.
 
+Telemetry tests cover empty and failed channels, retained lifecycle sub-windows, weighted case aggregation, every headroom threshold boundary, sampler failure containment, window changes, and thread cleanup after exceptions. Existing GUI resource-query tests exercise the same functions through imports from the shared runtime module.
+
 ## Dashboard tests
 
 The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:
@@ -167,7 +169,7 @@ npm run lint
 npx tsc --noEmit
 ```
 
-The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. `samples.test.ts` loads every bundled result and verifies that each populated section still produces rows, catching schema drift at the compatibility boundary. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
+The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, memory telemetry and missing states, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. `samples.test.ts` loads every bundled result and verifies that each populated section still produces rows, catching schema drift at the compatibility boundary. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
 
 Run `npm run test:coverage` to measure statement, branch, function, and line coverage across `src/constants.ts` and the pure utilities in `src/utils/`. CI publishes the text report for every protected-target pull request; coverage is diagnostic rather than a fixed percentage gate.
 

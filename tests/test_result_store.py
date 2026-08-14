@@ -96,7 +96,7 @@ def test_run_manifest_identifies_streamed_internal_llamabench_methodology(
     run = result_store.build_run_manifest(
         plan=plan, repo_root=tmp_path,
     )
-    assert run["schema_version"] == 4
+    assert run["schema_version"] == 5
     assert run["llamabench_repetition_mode"] == "streamed_internal_repetitions"
     assert run["plan_id"] == plan.plan_id
     assert run["job_id"] == plan.job_id

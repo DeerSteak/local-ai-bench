@@ -14,12 +14,13 @@ GPU_SPLIT_MODE_LABELS = {
     "tensor": "Tensor parallel (experimental)",
 }
 
-
 def gpu_split_mode_labels(modes) -> tuple[str, ...]:
     return tuple(GPU_SPLIT_MODE_LABELS[mode] for mode in modes)
 
 
 def gpu_split_mode_value(label: str) -> str:
+    if label in GPU_SPLIT_MODE_LABELS:
+        return label
     for mode, candidate in GPU_SPLIT_MODE_LABELS.items():
         if candidate == label:
             return mode
@@ -282,6 +283,7 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
         f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
         f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
         f"Offline: {'Yes' if options['offline'] else 'No'}",
+        f"Memory telemetry: {'Provisional' if options['memory_telemetry'] else 'Off'}",
         f"Force slow models: {'Yes' if options['force_all'] else 'No'}",
         f"Retry prior crashes: {'Yes' if options['retry_crashed_models'] else 'No'}",
         f"Broad cases: {model_passes} model-workload passes; contexts, questions, and levels expand within them.",

@@ -22,7 +22,7 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
-    normalize_gui_option_values, prepare_benchmark_launch,
+    normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -63,6 +63,7 @@ def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
         "Single GPU", "Layer split (recommended)", "Tensor parallel (experimental)",
     )
     assert tuple(gpu_split_mode_value(label) for label in labels) == modes
+    assert tuple(gpu_split_mode_value(mode) for mode in modes) == modes
     with pytest.raises(ValueError, match="Unknown GPU mode"):
         gpu_split_mode_value("invalid")
 
@@ -203,6 +204,18 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     assert options["comfyui"] == "/ComfyUI"
 
 
+def test_normalize_gui_option_values_accepts_canonical_gpu_mode():
+    options = normalize_gui_option_values(dict(GUI_OPTION_DEFAULTS, gpu_split_mode="layer"))
+    assert options["gpu_split_mode"] == "layer"
+
+
+def test_restored_tg_tokens_distinguishes_empty_selection_from_legacy_default():
+    assert restored_tg_tokens({"tg_tokens": []}) == set()
+    assert restored_tg_tokens({"tg_tokens": [128, 1024]}) == {128, 1024}
+    assert restored_tg_tokens({"tg_tokens": None}) == set(config.LLAMABENCH_TG)
+    assert restored_tg_tokens(None) == set(config.LLAMABENCH_TG)
+
+
 def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(tmp_path):
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=[], entries=[], max_prompt_tokens=None, tg_tokens=[],
@@ -218,7 +231,7 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS, runs=4, out="result.json")
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
-        max_prompt_tokens=8192, tg_tokens=[], gui_options=options,
+        max_prompt_tokens=8192, tg_tokens=[1024], gui_options=options,
         selected_preset="Quick run", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
@@ -226,7 +239,9 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     assert preparation.preview is not None and "Measured runs: 4" in preparation.preview
     assert preparation.state is not None
     assert preparation.state["selected_preset"] == "Quick run"
+    assert preparation.state["tg_tokens"] == [1024]
     assert preparation.command is not None
+    assert "--tg-tokens" not in preparation.command
     assert preparation.command[preparation.command.index("--max-prompt-tokens") + 1] == "8192"
     assert preparation.command[preparation.command.index("--out") + 1] == "result.json"
 

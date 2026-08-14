@@ -36,10 +36,13 @@
 | `tests/` | The unit and integration test suite — see [Testing](testing.md) |
 | `tests/fixtures/` | Immutable compatibility results that freeze commercially important application/schema behavior before execution-kernel migration |
 | `docs/result-compatibility-v4.1.md` | Export and dashboard behavior the commercial execution-kernel rewrite must preserve or version explicitly |
+| `docs/README.md` | Audience- and status-oriented documentation index |
 | `docs/architecture-decisions.md` | Simplicity gate, accepted architecture decisions, and compatibility-layer deletion ledger |
 | `docs/methodology-contract.md` | Neutral 4.1 metric, cache, retry, timeout, validity, aggregation, acceptance, and change-control contract |
 | `docs/product-requirements.md` | Primary pre-launch hardware-validation decision, scope, outcomes, and product qualities |
 | `VERSION_6_PLAN.md` | Root-level implementation, qualification, pilot, rollback, and release plan for Version 6 |
+| `docs/version-6-foundation.md` | Frozen schema-5 map, vocabulary, telemetry screening rules, and qualification set |
+| `docs/telemetry-qualification.md` | Supervised memory observer-screen procedure and analyzer manifest format |
 | `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
@@ -116,6 +119,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
+| `runtime/telemetry.py` | Shared resource queries, background memory sampler, aggregation, and headroom classification |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |

@@ -4,6 +4,7 @@ import { SIZE_TIER_LABELS } from "../constants";
 import type { DisplayFile } from "../types";
 import { backendLabel, engineLabel, lookup } from "../utils/shared";
 import { buildSpecCardSummary, runCardGpuLabels, runCardHostname } from "../utils/specCard";
+import { runHeadroomSummary } from "../utils/memory";
 import styles from "./RunSummaryCards.module.css";
 
 export default function RunSummaryCards({ files, containerRef, logoSrc, chartWidth }: {
@@ -22,6 +23,7 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
           const tiers = buildSpecCardSummary(file);
           const gpuLabels = runCardGpuLabels(file);
           const hostname = runCardHostname(file);
+          const headroom = runHeadroomSummary(file);
           return (
             <article key={file.id} className={styles.card} data-spec-card data-spec-name={hostname}>
               <div className={styles.eyebrow}>LOCAL AI BENCH · RUN CARD</div>
@@ -37,6 +39,13 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
                   {gpuLabels.map(gpu => <span key={gpu}>{gpu}</span>)}
                 </div>
               )}
+              <div className={styles.headroom} data-state={headroom.state}>
+                <span>Memory headroom</span>
+                <strong>{headroom.absoluteGb == null
+                  ? "Not recorded"
+                  : `${headroom.absoluteGb.toFixed(1)} GB · ${headroom.state}`}</strong>
+                {headroom.casePath && <small>{headroom.casePath}</small>}
+              </div>
               <div className={styles.context}>Single-shot leaders by model tier</div>
               {tiers.length ? (
                 <div className={styles.tiers}>

@@ -59,6 +59,34 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
+def test_case_memory_survives_journal_reopen_and_projection(tmp_path):
+    memory = {
+        "windows": [{"name": "measured", "sample_count": 1}],
+        "summary": {"process_rss_gb": {"peak_gb": 4.0}},
+        "headroom": {"absolute_gb": 8.0, "fraction": 0.5, "state": "comfortable"},
+        "provenance": {"interval_sec": 1.0, "failed_samples": 0},
+    }
+
+    class Telemetry:
+        def begin_model_load(self):
+            pass
+
+        def begin_measured(self, subwindow="measured"):
+            pass
+
+        def finish_case(self, ceiling_gb=None):
+            return memory
+
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    stage = LLMEventStage(path, plan, lambda _: None, telemetry=Telemetry())
+    stage.record_case(MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "ok", 1)
+    stage.close()
+    projected = export_llm_section(path, plan.job_id)["model"]["2K"]["memory"]
+    assert {key: projected[key] for key in memory} == memory
+    assert projected["case_id"].startswith("case_")
+
+
 def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):
     plan = RunPlan.create(
         application_version="4.1", engine_name="llamacpp", tests=["llm", "conv"],

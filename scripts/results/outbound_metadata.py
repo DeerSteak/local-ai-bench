@@ -8,6 +8,71 @@ from scripts.results.result_store import as_dict, validate_json_data
 
 PROFILE_FIELDS = ("hostname", "hardware", "gpu", "cpu", "chip", "processor", "os", "arch", "ram_gb", "backend")
 HARDWARE_FIELDS = ("hardware", "gpu", "cpu", "chip", "processor")
+TELEMETRY_BLOCK_FIELDS = {"windows", "summary", "headroom", "provenance", "case_id"}
+TELEMETRY_WINDOW_FIELDS = {"name", "sample_count", "duration_sec", "channels", "samples"}
+TELEMETRY_CHANNEL_FIELDS = {"peak_gb", "mean_gb", "final_gb", "valid_samples"}
+TELEMETRY_SAMPLE_FIELDS = {
+    "timestamp_sec", "host_ram_used_gb", "process_rss_gb",
+    "accelerator_memory_used_gb", "accelerator_memory_total_gb",
+}
+TELEMETRY_HEADROOM_FIELDS = {"absolute_gb", "fraction", "state", "basis_channel"}
+TELEMETRY_PROVENANCE_FIELDS = {"interval_sec", "failed_samples", "channels"}
+TELEMETRY_SOURCE_FIELDS = {"source", "failed_samples"}
+
+
+def _allow_fields(value, allowed):
+    return {key: value[key] for key in allowed if key in value}
+
+
+def _sanitize_channel_map(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: _allow_fields(channel, TELEMETRY_CHANNEL_FIELDS)
+        for key, channel in value.items() if isinstance(channel, dict)
+    }
+
+
+def _sanitize_telemetry_block(value: dict) -> dict:
+    block = _allow_fields(value, TELEMETRY_BLOCK_FIELDS)
+    windows = []
+    for window in block.get("windows", []):
+        if not isinstance(window, dict):
+            continue
+        clean = _allow_fields(window, TELEMETRY_WINDOW_FIELDS)
+        clean["channels"] = _sanitize_channel_map(clean.get("channels"))
+        clean["samples"] = [
+            _allow_fields(sample, TELEMETRY_SAMPLE_FIELDS)
+            for sample in clean.get("samples", []) if isinstance(sample, dict)
+        ]
+        windows.append(clean)
+    block["windows"] = windows
+    block["summary"] = _sanitize_channel_map(block.get("summary"))
+    if isinstance(block.get("headroom"), dict):
+        block["headroom"] = _allow_fields(block["headroom"], TELEMETRY_HEADROOM_FIELDS)
+    if isinstance(block.get("provenance"), dict):
+        provenance = _allow_fields(block["provenance"], TELEMETRY_PROVENANCE_FIELDS)
+        sources = provenance.get("channels")
+        provenance["channels"] = {
+            key: _allow_fields(channel, TELEMETRY_SOURCE_FIELDS)
+            for key, channel in sources.items()
+            if isinstance(sources, dict) and isinstance(channel, dict)
+        } if isinstance(sources, dict) else {}
+        block["provenance"] = provenance
+    return block
+
+
+def _sanitize_telemetry(value: object) -> None:
+    if isinstance(value, dict):
+        for key, child in list(value.items()):
+            if (key == "memory" and isinstance(child, dict)
+                    and ("windows" in child or "provenance" in child)):
+                value[key] = _sanitize_telemetry_block(child)
+            else:
+                _sanitize_telemetry(child)
+    elif isinstance(value, list):
+        for child in value:
+            _sanitize_telemetry(child)
 
 
 def outbound_metadata_preview(result: dict) -> tuple[tuple[str, str], ...]:
@@ -58,6 +123,7 @@ def prepare_outbound_result(result: dict, *, system_alias: str | None = None,
         if alias is not None and (not isinstance(alias, str) or not alias.strip()):
             raise ValueError(f"{label} alias must be non-empty text")
     outbound = copy.deepcopy(result)
+    _sanitize_telemetry(outbound)
     profile = outbound.setdefault("profile", {})
     aliases = []
     if system_alias is not None:

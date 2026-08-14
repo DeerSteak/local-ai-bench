@@ -177,18 +177,18 @@ This ranks first because it is the cheapest of the four measurement items, needs
 
 ## Acceptance criteria
 
-- [ ] A completed run records, for every model and case, peak and mean host RAM, process RSS, and GPU VRAM where a counter is readable.
-- [ ] Idle, model-load, and measured-case windows are stored separately; loading is never silently included in request efficiency.
-- [ ] Every recorded figure carries its source, sample count, and sampler interval; an unreadable channel records `unknown` and is visually distinct from zero in the dashboard.
-- [ ] Run-level summary reports the peak observed and the tightest headroom, naming the case that produced it.
-- [ ] Headroom classification is a pure, unit-tested function with tests at every threshold boundary.
-- [ ] A sampler failure never fails, aborts, or invalidates a case; a test asserts this by injecting a raising query function.
-- [ ] Sub-window evidence is retained and case summaries are derived from it; a many-window test proves the series is not collapsed prematurely.
-- [ ] Memory-only sampling passes the shared observer-effect policy before it is default-on or treated as comparable.
-- [ ] Memory telemetry passes the shared privacy and outbound policy.
-- [ ] Telemetry survives interruption and resume on the same terms as the measurements it accompanies.
-- [ ] A schema-4 results file loads and renders with memory columns explicitly marked not recorded.
-- [ ] `benchmark_gui_resources.py` consumes the shared sampler rather than duplicating query logic; no query function exists in two places.
+- [x] A completed run records, for every model and case, peak and mean host RAM, process RSS, and GPU VRAM where a counter is readable.
+- [x] Idle, model-load, and measured-case windows are stored separately; loading is never silently included in request efficiency.
+- [x] Every recorded figure carries its source, sample count, and sampler interval; an unreadable channel records `unknown` and is visually distinct from zero in the dashboard.
+- [x] Run-level summary reports the peak observed and the tightest headroom, naming the case that produced it.
+- [x] Headroom classification is a pure, unit-tested function with tests at every threshold boundary.
+- [x] A sampler failure never fails, aborts, or invalidates a case; a test asserts this by injecting a raising query function.
+- [x] Sub-window evidence is retained and case summaries are derived from it; a many-window test proves the series is not collapsed prematurely.
+- [x] Memory-only sampling passes the shared observer-effect policy before it is default-on or treated as comparable.
+- [x] Memory telemetry passes the shared privacy and outbound policy.
+- [x] Telemetry survives interruption and resume on the same terms as the measurements it accompanies.
+- [x] A schema-4 results file loads and renders with memory columns explicitly marked not recorded.
+- [x] `benchmark_gui_resources.py` consumes the shared sampler rather than duplicating query logic; no query function exists in two places.
 
 ---
 

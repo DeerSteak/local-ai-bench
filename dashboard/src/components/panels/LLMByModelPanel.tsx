@@ -7,6 +7,7 @@ import { SECTION_LABELS, CTX_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
+import { buildProcessMemoryDataForModel } from "../../utils/memory";
 import styles from "../ChartPanel.module.css";
 
 // Group By: Model, LLM / LLM Conversation section — one card group per model,
@@ -30,6 +31,8 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const rawTpsBarData = buildLLMBarData(files, model, "tps", section);
     const rawTtftBarData = buildLLMBarData(files, model, "ttft", section);
     const prefillData = buildLLMDataForModel(files, model, "prefill", section);
+    const memoryData = buildProcessMemoryDataForModel(files, model, section);
+    const memoryLineConfigs = lineConfigs.filter(lc => memoryData.some(r => r[lc.dataKey] != null));
     const prefillLineConfigs = lineConfigs.filter(lc => prefillData.some(r => r[lc.dataKey] != null));
     const rawPrefillBarConfigs = buildLLMBarConfigs(files, model, section);
     const rawPrefillBarData = buildLLMBarData(files, model, "prefill", section);
@@ -50,8 +53,8 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
-    if (!hasTps && !hasTtft && !hasPrefill && !skipEntries.length) return null;
-    return { model, tpsData, ttftData, prefillData, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries };
+    if (!hasTps && !hasTtft && !hasPrefill && !memoryLineConfigs.length && !skipEntries.length) return null;
+    return { model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries };
   }).filter(isNotNull);
 
   if (!modelGroups.length) {
@@ -63,7 +66,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {modelGroups.map(({ model, tpsData, ttftData, prefillData, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries }) => (
+      {modelGroups.map(({ model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries }) => (
         <div key={model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
           {skipEntries.length > 0 && (
@@ -138,6 +141,17 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               logoSrc={logoSrc} direction="higher"
             />
           ))}
+          {memoryLineConfigs.length > 0 && (
+            <ChartCard
+              title={`Peak Process Memory${titleSuffix}`}
+              modelName={modelLabel(model)}
+              data={memoryData} lineConfigs={memoryLineConfigs}
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Process RSS (GB)" unit="gb"
+              isMultiFile={isMultiFile}
+              chartName={`${chartNamePrefix}process_memory`} chartModel={model}
+              logoSrc={logoSrc} direction="lower"
+            />
+          )}
         </div>
       ))}
     </ChartGrid>

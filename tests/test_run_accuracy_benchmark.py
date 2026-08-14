@@ -118,7 +118,7 @@ def _question(qid: str, answer: str) -> dict:
     }
 
 
-def _run(tmp_path, questions, behaviors):
+def _run(tmp_path, questions, behaviors, telemetry=None):
     data_path = tmp_path / "bank.json"
     data_path.write_text(json.dumps(questions))
     engine = FakeEngine(behaviors)
@@ -130,6 +130,7 @@ def _run(tmp_path, questions, behaviors):
         ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
         rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
         score_fn=MCQBenchmark.score,
+        telemetry=telemetry,
     )
     return results, engine
 
@@ -153,6 +154,26 @@ def test_normal_run_scores_correctly(tmp_path):
     assert engine.chat_contexts == [config.ACCURACY_CONTEXT] * len(questions)
     assert engine.runtime_backend("cuda") == "cuda"
     assert engine.runtime_backend("cuda", cpu_only=True) == "cpu"
+
+
+def test_accuracy_telemetry_retains_question_subwindows(tmp_path):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_model_load(self): self.calls.append("load")
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"windows": [{"name": name} for name in self.calls if name.startswith("measured:")]}
+
+    telemetry = Telemetry()
+    results, _ = _run(
+        tmp_path, [_question("q1", "B"), _question("q2", "A")],
+        {"q1": ("ok", "B"), "q2": ("ok", "A")}, telemetry,
+    )
+    assert telemetry.calls == ["load", "measured:q1", "measured:q2", "finish"]
+    assert [window["name"] for window in results["fake"]["memory"]["windows"]] == [
+        "measured:q1", "measured:q2",
+    ]
 
 
 def test_timeout_with_partial_text_gets_rescored(tmp_path):

@@ -51,42 +51,17 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 
 ## Documentation
 
-| Doc | Covers |
+Start with the [documentation index](docs/README.md), which separates current user guidance, methodology, developer references, operational policy, and forward-looking plans.
+
+| Common destination | Covers |
 |---|---|
-| [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
-| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
-| [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
-| [Product Requirements](docs/product-requirements.md) | Primary pre-launch hardware-validation workflow and quality gates |
-| [Version 6 Plan](VERSION_6_PLAN.md) | Ordered implementation, qualification, pilot, rollback, and release process for Version 6 |
-| [User Journey](docs/user-journey.md) | Complete discovery-to-report path, including cancellation, failure, resume, and review |
-| [Consumer Recommendation Policy](docs/recommendation-policy.md) | Evidence, fit, uncertainty, ranking, conflicts, and GPU/Mac decision flows |
-| [Platform Tuning Profiles](docs/platform-tuning.md) | Neutral runtime settings, compatibility workarounds, and profile change rules |
-| [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
-| [Benchmark Projects](docs/projects.md) | Local decision workflows, portable configuration, baselines, and acceptance policies |
-| [Local Result History](docs/result-history.md) | Filesystem-owned filtering, multi-file dashboard launch, and policy evaluation |
-| [Vendor Diagnostics](docs/vendor-diagnostics.md) | First-divergence evidence and source-verified engineer reproduction package |
-| [Outbound Metadata Review](docs/outbound-review.md) | Embargo review, private aliases, and source-identity verification |
-| [Offline Mode](docs/offline-mode.md) | Loopback-only execution controls and qualification boundary |
-| [Limitations](docs/limitations.md) | Representativeness, environmental variance, compatibility, and recommendation constraints |
-| [Local Data Lifecycle](docs/data-lifecycle.md) | Local storage, retention, deletion, portability, and support-bundle handling |
-| [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
-| [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
-| [Decision Reports](docs/reports.md) | Deterministic self-contained HTML/PDF evidence summaries |
-| [How It Works](docs/how-it-works.md) | Execution order, orchestration, and code organization |
-| [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
-| [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
-| [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
-| [4.1 Result Compatibility](docs/result-compatibility-v4.1.md) | Export, partial-result, measurement, and dashboard behavior protected during the commercial rewrite |
-| [Architecture Decisions](docs/architecture-decisions.md) | Simplicity gate, data ownership decisions, and migration deletion ledger |
-| [Coordinator API Contract](docs/coordinator-api.md) | Future authenticated localhost API, compatibility, validation, lifecycle, and artifact boundaries |
-| [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
-| [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
-| [Contributor Workflow](docs/contributor-workflow.md) | Branch roles, pull requests, validation, merge conventions, releases, hotfixes, and repository protection |
-| [Installation Maintenance](docs/maintenance.md) | Repair, upgrade, rollback, and safe project-owned uninstall boundaries |
-| [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
-| [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, report, and privacy-safe support guidance |
-| [Support Operations](docs/support.md) | Intake, severity, escalation, redaction, retention, and resolution runbooks |
-| [Telemetry Contract](docs/telemetry.md) | Current no-telemetry state and future opt-in event/field boundaries |
+| [Setup](docs/setup.md) | Installation, models, credentials, and platform notes |
+| [Workloads](docs/workloads.md) | What each benchmark measures |
+| [CLI Reference](docs/cli-reference.md) | Commands, flags, defaults, and examples |
+| [Dashboard](docs/dashboard.md) | Loading, comparing, interpreting, and exporting results |
+| [Methodology Contract](docs/methodology-contract.md) | Scientific boundaries and aggregation rules |
+| [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, and report failures |
+| [Version 6 Plan](VERSION_6_PLAN.md) | Active implementation, qualification, pilot, and rollback plan |
 
 ---
 

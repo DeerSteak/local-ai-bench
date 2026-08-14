@@ -143,10 +143,15 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
+                if journal:
+                    journal.begin_model_load()
                 if not engine.warmup(tag, label, num_ctx, warmup_runs,
                                      crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE):
                     engine.unload(tag)
                     continue
+
+                if journal:
+                    journal.begin_measured()
 
                 results[short] = {}
                 # label -> list of (ttft, tps, depth_tokens), one entry per run that reached it

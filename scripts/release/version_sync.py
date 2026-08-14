@@ -18,12 +18,25 @@ class VersionTarget:
     description: str
 
 
+def _prose(path: str, prefix: str, suffix: str, description: str) -> VersionTarget:
+    """Docs state the app version in prose; anchoring both sides keeps frozen schema/methodology versions out."""
+    anchor, text = ("^", prefix[1:]) if prefix.startswith("^") else ("", prefix)
+    pattern = re.compile(rf"{anchor}({re.escape(text)})(\d[\w.\-]*)({re.escape(suffix)})", re.MULTILINE)
+    return VersionTarget(path=path, pattern=pattern, description=description)
+
+
 TARGETS = (
     VersionTarget(
         path="README.md",
         pattern=re.compile(r"^(# Local AI Bench v)(\d[\w.\-]*)(\s*)$", re.MULTILINE),
         description="README title",
     ),
+    _prose("docs/telemetry.md", "^Local AI Bench ", " sends no product telemetry", "telemetry intro"),
+    _prose("docs/security-and-privacy.md", "^Version ", " sends no product telemetry", "telemetry section"),
+    _prose("docs/maintenance.md", "^Version ", " has no automatic updater", "updater section"),
+    _prose("docs/release-policy.md", "^Local AI Bench ", " is a preview engineering build", "policy intro"),
+    _prose("docs/product-requirements.md", "^The primary ", " product workflow", "workflow intro"),
+    _prose("docs/product-requirements.md", "^## Supported ", " scope", "supported-scope heading"),
 )
 
 
@@ -55,7 +68,7 @@ def plan_sync(sources: dict, head_sources: dict, config_version: str, head_versi
     plan = SyncPlan()
     bumped = head_version is not None and head_version != config_version
     for target in targets:
-        text = sources.get(target.path)
+        text = plan.updates.get(target.path, sources.get(target.path))
         if text is None:
             continue
         found = find_versions(text, target)
