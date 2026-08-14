@@ -43,6 +43,12 @@ class LlamaCppEngine(InferenceEngine):
     # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
     # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
     LOAD_TIMEOUT = 900
+    SPAWN_LOG_LINES = 200
+    _GPU_LAYERS_RE = re.compile(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", re.I)
+    _MODEL_BUFFER_RE = re.compile(
+        r"^load_tensors:\s+(.+?)\s+model buffer size\s*=\s*([\d.]+)\s*MiB",
+        re.I | re.MULTILINE,
+    )
 
     @staticmethod
     def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
@@ -62,10 +68,26 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
+        self._loaded_model_placement: dict = {}
         # Remembered for the lazy spawn in _ensure_model — no tag yet at start()/ensure_running() time.
         self._gpu_visible = True
         self._cpu_only_active = False
         self._model_lock = threading.RLock()
+
+    @classmethod
+    def parse_model_placement(cls, log_text: str) -> dict:
+        """Parse llama.cpp's actual layer and model-buffer placement."""
+        layer_matches = cls._GPU_LAYERS_RE.findall(log_text or "")
+        buffers = cls._MODEL_BUFFER_RE.findall(log_text or "")
+        placement = {}
+        if layer_matches:
+            gpu_layers, total_layers = layer_matches[-1]
+            placement.update({"gpu_layers": int(gpu_layers), "total_layers": int(total_layers)})
+        cpu_mib = sum(float(size) for backend, size in buffers
+                      if "cpu" in backend.lower() or "host" in backend.lower())
+        if cpu_mib:
+            placement["cpu_model_buffer_gb"] = round(cpu_mib / 1024, 3)
+        return placement
 
     # ── binary resolution ──
 
@@ -231,6 +253,7 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
+        self._loaded_model_placement = {}
 
     def is_connection_crash(self, exc: Exception) -> bool:
         """True for the exception shapes a dead HTTP server surfaces as."""
@@ -513,6 +536,8 @@ class LlamaCppEngine(InferenceEngine):
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
+                    self._loaded_model_placement = self.parse_model_placement(
+                        self.tail_log(self.SPAWN_LOG_LINES))
                     return
                 time.sleep(1)
 
@@ -602,6 +627,9 @@ class LlamaCppEngine(InferenceEngine):
             finish_reason=finish_reason,
             model_load_sec=model_load_sec,
             server_tps_implausible=sanitized != tps,
+            gpu_layers=self._loaded_model_placement.get("gpu_layers"),
+            total_layers=self._loaded_model_placement.get("total_layers"),
+            cpu_model_buffer_gb=self._loaded_model_placement.get("cpu_model_buffer_gb"),
         )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
@@ -762,7 +790,10 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        return chat_measurement(first, second, budget_nudged, model_load_sec)
+        return chat_measurement(
+            first, second, budget_nudged, model_load_sec,
+            model_placement=self._loaded_model_placement,
+        )
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
@@ -771,7 +802,10 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        return chat_measurement(first, second, budget_nudged, model_load_sec)
+        return chat_measurement(
+            first, second, budget_nudged, model_load_sec,
+            model_placement=self._loaded_model_placement,
+        )
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:

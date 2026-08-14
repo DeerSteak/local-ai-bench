@@ -23,6 +23,9 @@ class GenerationMeasurement:
     model_load_sec: float = 0
     server_tps_implausible: bool = False
     cpu_offload_gb: int = 0
+    gpu_layers: int | None = None
+    total_layers: int | None = None
+    cpu_model_buffer_gb: float | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,15 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
     cpu_offload_gb = max((sample.cpu_offload_gb for sample in valid), default=0)
     if cpu_offload_gb:
         result["cpu_offload_gb"] = cpu_offload_gb
+        result["model_placement"] = {"cpu_offload_gb": cpu_offload_gb}
+    placements = [sample for sample in valid if sample.gpu_layers is not None]
+    if placements:
+        placement = placements[-1]
+        result["model_placement"] = {
+            "gpu_layers": placement.gpu_layers,
+            "total_layers": placement.total_layers,
+            "cpu_model_buffer_gb": placement.cpu_model_buffer_gb,
+        }
     if not valid:
         return result
     ttfts = [sample.client_ttft_sec for sample in valid]

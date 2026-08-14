@@ -137,3 +137,14 @@ def test_aggregate_records_cpu_offload_only_when_used():
     assert "cpu_offload_gb" not in aggregate_generation_measurements([valid_measurement()], 1)
     measurement = replace(valid_measurement(), cpu_offload_gb=8)
     assert aggregate_generation_measurements([measurement], 1)["cpu_offload_gb"] == 8
+
+
+def test_aggregate_records_llamacpp_model_placement():
+    measurement = replace(
+        valid_measurement(), gpu_layers=35, total_layers=41, cpu_model_buffer_gb=14.042,
+    )
+    assert aggregate_generation_measurements([measurement], 1)["model_placement"] == {
+        "gpu_layers": 35,
+        "total_layers": 41,
+        "cpu_model_buffer_gb": 14.042,
+    }
