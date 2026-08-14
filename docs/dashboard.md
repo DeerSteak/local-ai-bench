@@ -9,6 +9,7 @@
 - [What the charts mean](#what-the-charts-mean)
 - [Stats table](#stats-table)
 - [Multi-file comparison](#multi-file-comparison)
+- [Repeated-trial artifacts](#repeated-trial-artifacts)
 - [Exporting](#exporting)
 - [Development](#development)
 
@@ -35,6 +36,8 @@ Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuild
 Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
 
 New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning. Multi-file comparisons also warn when one result used llama.cpp layer splitting and another used tensor parallelism; older files are treated as the historical layer default.
+
+A repeated-trial artifact produced by `python -m scripts.results.trial_set_cli` can be loaded by itself through the same drop zone. It switches the dashboard to the trial-set audit view; trial artifacts cannot be mixed with ordinary result files in one load.
 
 ## Sections
 
@@ -119,6 +122,10 @@ Schema-5 memory results add a tightest-headroom indicator to each run card, host
 Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. Engine-backed chart identities render as three lines—hostname, backend, then the engine identifier and version such as `llamacpp 10362` for either an official package or a build from that official source release, `llamacpp 2026.08.11-a1b2c3d` for a non-release source build, or `vllm 0.10.2`—so results made before and after an engine update remain distinguishable without parenthetical labels; a llama.cpp run with weight repacking disabled inserts `-nr` after the engine name on workloads that consume the setting. Image charts omit runtime labels because ComfyUI runs independently. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. When compared llama.cpp files disagree on weight-repacking mode, affected workload sections also show a methodology warning; Images, standard llama-bench, and vllm bench omit both `-nr` methodology cues because they do not consume the setting. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
 
 With two or more files loaded, **Compare As** can designate one file as the baseline. Charts then show each matching metric as a percentage of that result, with the baseline at 100%; cells absent or zero in the baseline remain absent rather than producing an invented ratio. Raw-number tables remain absolute so the underlying measurements are always available.
+
+## Repeated-trial artifacts
+
+The repeated-trial view shows each common metric's baseline and candidate mean, median, between-trial standard deviation, drift status, 95% change interval and method, practical threshold, pairing mode, trial counts, and verdict. Improved, regressed, unchanged, and inconclusive remain visually distinct. Missing intervals render as inconclusive rather than zero, and monotonic drift remains visible beside the affected distribution.
 
 ## Exporting
 

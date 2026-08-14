@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { parseResultsJSON, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
+import { parseJSON, parseResultsJSON, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
+import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -18,6 +19,7 @@ import "./dashboard.css";
 import styles from "./benchmark_dashboard.module.css";
 import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
+import TrialSetPanel from "./components/TrialSetPanel";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
@@ -44,6 +46,7 @@ export default function Dashboard() {
   const [fileError, setFileError] = useState("");
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [savingSpecCard, setSavingSpecCard] = useState(false);
+  const [trialSet, setTrialSet] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -150,6 +153,23 @@ export default function Dashboard() {
   const processJsonFiles = useCallback(async (jsonFiles: NamedTextSource[]) => {
     const limited = jsonFiles.slice(0, MAX_FILES);
     if (!limited.length) return;
+    const candidates = await Promise.all(limited.map(async source => {
+      const text = await source.text().catch(() => null);
+      return text == null ? null : parseJSON(text);
+    }));
+    const artifactMode = trialArtifactLoadMode(candidates);
+    if (artifactMode === "mixed") {
+      setFileError("Load one repeated-trial artifact by itself; it cannot be mixed with result files.");
+      return;
+    }
+    if (artifactMode === "single" && isTrialSetArtifact(candidates[0])) {
+      resetModelState();
+      setFiles([]);
+      setTrialSet({ name: limited[0].name, data: candidates[0] });
+      setFileError("");
+      return;
+    }
+    setTrialSet(null);
     const parsed = await Promise.all(limited.map(parseFile));
     const entries = parsed.map(result => result.entry).filter((entry): entry is DisplayFile => Boolean(entry));
     setFileError(parsed.map(result => result.error).filter(Boolean).join(" "));
@@ -305,6 +325,8 @@ export default function Dashboard() {
         ].filter(Boolean).join(" ")}
       />
 
+      {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} /> : <>
+
       <Controls
         section={section} setSection={setSection}
         accuracyTest={accuracyTest} setAccuracyTest={setAccuracyTest}
@@ -358,6 +380,7 @@ export default function Dashboard() {
       />
 
       <ValidityInspector key={section} files={effectiveFiles} section={section} />
+      </>}
     </div>
   );
 }
