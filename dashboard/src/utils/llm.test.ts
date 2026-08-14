@@ -3,6 +3,7 @@ import {
   getBarStatusLabel, getAllLLMModels, getLLMModelsWithSectionResults,
   buildLLMBarData, buildLLMBarConfigs, flattenLLMData, llmTTFTMean, llmValidRuns,
   buildLLMDataForModel, llmPrefillTPS, llmMetricValue,
+  modelPlacementLabel,
 } from "./llm";
 
 describe("explicit measurement fields", () => {
@@ -11,6 +12,20 @@ describe("explicit measurement fields", () => {
     expect(llmTTFTMean({ ttft_mean_sec: 0.8 })).toBe(0.8);
     expect(llmValidRuns({ valid_runs: 2, n_runs: 3 })).toBe(2);
     expect(llmValidRuns({ n_runs: 3 })).toBe(3);
+  });
+});
+
+describe("modelPlacementLabel", () => {
+  it("formats llama.cpp layer placement and CPU model buffers", () => {
+    expect(modelPlacementLabel({ model_placement: {
+      gpu_layers: 35, total_layers: 41, cpu_model_buffer_gb: 14.042,
+    } })).toBe("35/41 GPU layers · 14.0 GB CPU");
+  });
+
+  it("formats vLLM offload and tolerates legacy results", () => {
+    expect(modelPlacementLabel({ model_placement: { cpu_offload_gb: 8 } }))
+      .toBe("8 GB CPU offload");
+    expect(modelPlacementLabel({})).toBe("Not recorded");
   });
 });
 
@@ -176,7 +191,7 @@ describe("flattenLLMData", () => {
       data: {
         llm: {
           m: {
-            "2K": { tps_mean: 10, tps_stdev: 1, ttft_mean_sec: 0.5, ttft_stdev_sec: 0.1, n_runs: 3, cpu_offload_gb: 8 },
+            "2K": { tps_mean: 10, tps_stdev: 1, ttft_mean_sec: 0.5, ttft_stdev_sec: 0.1, n_runs: 3, model_placement: { cpu_offload_gb: 8 } },
             timed_out: "8K",
           },
         },
@@ -186,7 +201,7 @@ describe("flattenLLMData", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ctx).toBe("2K");
     expect(rows[0].tps_mean).toBe(10);
-    expect(rows[0].cpu_offload_gb).toBe(8);
+    expect(rows[0].model_placement).toBe("8 GB CPU offload");
   });
 });
 

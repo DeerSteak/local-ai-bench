@@ -77,7 +77,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <SortTh label="Process RSS peak" sortKey="process_rss_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Accelerator peak" sortKey="accelerator_memory_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Headroom" sortKey="headroom_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
-          <SortTh label="CPU offload" sortKey="cpu_offload_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <SortTh label="Model placement" sortKey="model_placement" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -103,7 +103,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
             <td className={`${styles.td} ${styles.tdNum}`}>{r.process_rss_peak_gb == null ? "Not recorded" : `${fmt(r.process_rss_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.accelerator_memory_peak_gb == null ? "Not recorded" : `${fmt(r.accelerator_memory_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.headroom_gb == null ? "Not recorded" : `${fmt(r.headroom_gb, "gb")} GB · ${r.headroom_state}`}</td>
-            <td className={`${styles.td} ${styles.tdNum}`}>{r.cpu_offload_gb ? `${r.cpu_offload_gb} GB` : "None"}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{r.model_placement}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}
