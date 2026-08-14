@@ -192,18 +192,22 @@ def test_delete_failure_retains_main_result_for_visible_retry(tmp_path, monkeypa
 
 def test_metric_extraction_uses_named_supported_evidence_only():
     metrics = extract_comparable_metrics(result())
-    assert metrics["llm/model/2K/tps_mean"] == 50.0
-    assert metrics["embeddings/embed/chunks_per_sec_mean"] == 100.0
-    assert metrics["images/flux/1024x1024/sec_per_image_mean"] == 8.0
-    assert metrics["mcq/model/accuracy_pct"] == 75.0
+    assert metrics["llm/model/2K/tps_mean"]["value"] == 50.0
+    assert metrics["embeddings/embed/chunks_per_sec_mean"]["value"] == 100.0
+    assert metrics["images/flux/1024x1024/sec_per_image_mean"]["value"] == 8.0
+    assert metrics["mcq/model/accuracy_pct"]["value"] == 75.0
 
 
 def test_comparison_reports_exact_deltas_for_compatible_results():
     comparison = compare_results(result(tps=50.0), result(tps=55.0))
     assert comparison["compatible"] is True
     row = next(item for item in comparison["rows"] if item["metric"] == "llm/model/2K/tps_mean")
-    assert row == {"metric": "llm/model/2K/tps_mean", "baseline": 50.0,
-                   "candidate": 55.0, "delta": 5.0, "percent_change": 10.0}
+    assert row["baseline"] == 50.0
+    assert row["candidate"] == 55.0
+    assert row["delta"] == 5.0
+    assert row["percent_change"] == 10.0
+    assert row["within_run_uncertainty"] == "insufficient"
+    assert row["verdict"] == "repeated_trials_required"
 
 
 def test_comparison_blocks_different_or_unrecorded_methodology_and_keeps_missing_rows():

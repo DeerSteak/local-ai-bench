@@ -1,13 +1,13 @@
 """Local result discovery, filtering, and methodology-safe baseline comparison."""
 
 import json
-import math
 import shutil
 import statistics
 from datetime import datetime
 from pathlib import Path
 
 from scripts.results.result_store import as_dict, validate_json_data
+from scripts.results.significance import compare_metric, metric_evidence
 from scripts.stage_registry import ACCURACY_TESTS
 
 
@@ -16,6 +16,14 @@ PERFORMANCE_METRICS = {
     "llm_conversation": ("tps_mean", "client_ttft_mean_sec", "server_prompt_mean_sec"),
     "concurrency_tool": ("aggregate_tps", "ttft_mean_sec"),
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
+}
+DISPERSION_KEYS = {
+    "tps_mean": "tps_stdev",
+    "ttft_mean_sec": "ttft_stdev_sec",
+    "client_ttft_mean_sec": "client_ttft_stdev_sec",
+    "server_prompt_mean_sec": "server_prompt_stdev_sec",
+    "chunks_per_sec_mean": "chunks_per_sec_stdev",
+    "sec_per_image_mean": "sec_per_image_stdev",
 }
 ACCURACY_SECTIONS = tuple(ACCURACY_TESTS)
 ETA_MATCH_KEYS = (
@@ -237,7 +245,7 @@ def load_result(path: Path) -> dict:
     return result
 
 
-def extract_comparable_metrics(result: dict) -> dict[str, float]:
+def extract_comparable_metrics(result: dict) -> dict[str, dict]:
     metrics = {}
     for section, names in PERFORMANCE_METRICS.items():
         section_data = result.get(section)
@@ -250,15 +258,16 @@ def extract_comparable_metrics(result: dict) -> dict[str, float]:
                 if not isinstance(values, dict):
                     continue
                 for metric in names:
-                    value = values.get(metric)
-                    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                        metrics[f"{section}/{model}/{case}/{metric}"] = float(value)
+                    evidence = metric_evidence(values, metric, DISPERSION_KEYS.get(metric))
+                    if evidence["value"] is not None:
+                        metrics[f"{section}/{model}/{case}/{metric}"] = evidence
     embeddings = result.get("embeddings")
     if isinstance(embeddings, dict):
         for model, values in embeddings.items():
-            value = values.get("chunks_per_sec_mean") if isinstance(values, dict) else None
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                metrics[f"embeddings/{model}/chunks_per_sec_mean"] = float(value)
+            if isinstance(values, dict):
+                evidence = metric_evidence(values, "chunks_per_sec_mean", "chunks_per_sec_stdev")
+                if evidence["value"] is not None:
+                    metrics[f"embeddings/{model}/chunks_per_sec_mean"] = evidence
     images = result.get("images")
     if isinstance(images, dict):
         for model, values in images.items():
@@ -266,17 +275,20 @@ def extract_comparable_metrics(result: dict) -> dict[str, float]:
             if not isinstance(resolutions, dict):
                 continue
             for resolution, evidence in resolutions.items():
-                value = evidence.get("sec_per_image_mean") if isinstance(evidence, dict) else None
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                    metrics[f"images/{model}/{resolution}/sec_per_image_mean"] = float(value)
+                if isinstance(evidence, dict):
+                    normalized = metric_evidence(
+                        evidence, "sec_per_image_mean", "sec_per_image_stdev")
+                    if normalized["value"] is not None:
+                        metrics[f"images/{model}/{resolution}/sec_per_image_mean"] = normalized
     for section in ACCURACY_SECTIONS:
         section_data = result.get(section)
         if not isinstance(section_data, dict):
             continue
         for model, evidence in section_data.items():
-            value = evidence.get("accuracy_pct") if isinstance(evidence, dict) else None
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                metrics[f"{section}/{model}/accuracy_pct"] = float(value)
+            if isinstance(evidence, dict):
+                normalized = metric_evidence(evidence, "accuracy_pct", None)
+                if normalized["value"] is not None:
+                    metrics[f"{section}/{model}/accuracy_pct"] = normalized
     return metrics
 
 
@@ -298,11 +310,8 @@ def compare_results(baseline: dict, candidate: dict) -> dict:
     candidate_metrics = extract_comparable_metrics(candidate)
     rows = []
     for key in sorted(set(baseline_metrics) | set(candidate_metrics)):
-        before = baseline_metrics.get(key)
-        after = candidate_metrics.get(key)
-        delta = after - before if before is not None and after is not None else None
-        percent = (delta / before * 100) if delta is not None and before else None
-        rows.append({"metric": key, "baseline": before, "candidate": after,
-                     "delta": delta, "percent_change": percent})
+        metric = key.rsplit("/", 1)[-1]
+        rows.append({"metric": key, **compare_metric(
+            metric, baseline_metrics.get(key), candidate_metrics.get(key))})
     return {"compatible": not incompatible, "incompatible_fields": sorted(set(incompatible)),
             "rows": rows}

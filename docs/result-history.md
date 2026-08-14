@@ -10,6 +10,8 @@ Select one to six results with the platform's normal multi-selection keys, then 
 
 The dashboard preserves missing measurements as missing and displays methodology, accuracy-setting, reliability, and validity warnings rather than presenting unlike evidence as silently equivalent.
 
+Backend comparisons retain the raw delta, provisional practical-change threshold, each side's recorded within-run dispersion, and the valid sample counts behind it. Missing dispersion is reported as insufficient rather than zero, and every single-run comparison states that repeated trials are required for a regression verdict.
+
 ## Acceptance evaluation
 
 Select a result and choose **Evaluate Policy** to apply a versioned acceptance-policy file. The dialog shows the overall decision and every rule's status, actual value, threshold, and evidence count. Missing, insufficient, or incompatible evidence rejects explicitly.

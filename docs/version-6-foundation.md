@@ -66,7 +66,7 @@ The Mac mini M4 Pro and native-Windows RTX 5090 coarse screens passed at all thr
 
 ## Practical-threshold derivation
 
-Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the provisional floors are 5% for TTFT, 3% for throughput, and 3% for wall time. Evidence below the interval method's eventual minimum trial count remains inconclusive.
+Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the provisional floors are 5% for TTFT, 3% for throughput, 3% for wall time, and 1% relative change for accuracy. Evidence below the interval method's eventual minimum trial count remains inconclusive.
 
 ## Minimum real-hardware qualification set
 

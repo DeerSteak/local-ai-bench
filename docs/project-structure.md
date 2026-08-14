@@ -98,6 +98,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
+| `results/significance.py` | Practical-threshold, uncertainty-availability, and repeated-trial comparison mathematics |
 | `results/outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
 | `runtime/network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
 | `results/vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |
