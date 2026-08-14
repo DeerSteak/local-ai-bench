@@ -64,7 +64,7 @@ def next_cpu_offload_gb(log_text: str, current_gb: int = 0) -> int | None:
         shortfall = max(0.0, -available)
     else:
         return None
-    needed = shortfall + config.VLLM_OFFLOAD_RESERVE_GB
+    needed = shortfall + (config.VLLM_OFFLOAD_RESERVE_GB if current_gb == 0 else 0)
     calculated = math.ceil(needed / config.VLLM_OFFLOAD_STEP_GB) * config.VLLM_OFFLOAD_STEP_GB
     return current_gb + max(config.VLLM_OFFLOAD_STEP_GB, calculated)
 
@@ -88,8 +88,19 @@ def tensor_parallel_size(args: list[str]) -> int:
 
 def offload_retry_allowed(retry_gb: int | None, host_limit_gb: int, attempts: int) -> bool:
     """Bound adaptive retries by current host capacity and attempt count."""
-    return (retry_gb is not None and retry_gb <= host_limit_gb
-            and attempts < config.VLLM_OFFLOAD_MAX_ATTEMPTS)
+    return offload_stop_reason(retry_gb, host_limit_gb, attempts) is None
+
+
+def offload_stop_reason(retry_gb: int | None, host_limit_gb: int, attempts: int) -> str | None:
+    """Explain why an adaptive retry is unsafe or inapplicable."""
+    if retry_gb is None:
+        return "failure was not a recognized KV-cache memory shortage"
+    if retry_gb > host_limit_gb:
+        return (f"CPU offload retry needs {retry_gb} GiB per worker, "
+                f"above the {host_limit_gb} GiB host-RAM limit")
+    if attempts >= config.VLLM_OFFLOAD_MAX_ATTEMPTS:
+        return f"CPU offload calibration reached its {config.VLLM_OFFLOAD_MAX_ATTEMPTS}-retry limit"
+    return None
 
 
 class VllmEngine(InferenceEngine):
@@ -744,15 +755,9 @@ class VllmEngine(InferenceEngine):
                     if proc.poll() is not None:
                         output = self.tail_log(self.SPAWN_LOG_LINES)
                         retry_gb = next_cpu_offload_gb(output, cpu_offload_gb)
-                        if not offload_retry_allowed(retry_gb, host_limit_gb, offload_attempts):
-                            if retry_gb is not None and retry_gb > host_limit_gb:
-                                reason = (f"CPU offload retry needs {retry_gb} GiB per worker, "
-                                          f"above the {host_limit_gb} GiB host-RAM limit")
-                            elif offload_attempts >= config.VLLM_OFFLOAD_MAX_ATTEMPTS:
-                                reason = (f"CPU offload calibration reached its "
-                                          f"{config.VLLM_OFFLOAD_MAX_ATTEMPTS}-retry limit")
-                            else:
-                                reason = "failure was not a recognized KV-cache memory shortage"
+                        reason = offload_stop_reason(
+                            retry_gb, host_limit_gb, offload_attempts)
+                        if reason is not None:
                             raise RuntimeError(
                                 f"vLLM exited unexpectedly (code {proc.returncode}) loading {tag}; "
                                 f"{reason} — last output:\n{output}")

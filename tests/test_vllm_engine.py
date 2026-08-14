@@ -9,7 +9,7 @@ import pytest
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import (
     VllmEngine, available_kv_cache_gib, next_cpu_offload_gb, offload_retry_allowed,
-    tensor_parallel_size,
+    offload_stop_reason, tensor_parallel_size,
 )
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
@@ -134,7 +134,7 @@ def test_offload_calculation_uses_deficit_reserve_and_two_gib_steps(available, e
 def test_offload_retry_adds_the_new_shortfall_to_the_current_value():
     log = ("Available KV cache memory: -0.25 GiB\n"
            "No available memory for the cache blocks")
-    assert next_cpu_offload_gb(log, current_gb=8) == 12
+    assert next_cpu_offload_gb(log, current_gb=8) == 10
 
 
 def test_offload_calculation_handles_positive_but_insufficient_kv_memory():
@@ -162,6 +162,12 @@ def test_offload_retry_guard_caps_attempts_and_host_use(monkeypatch):
     assert not offload_retry_allowed(12, 10, 3)
     assert not offload_retry_allowed(8, 10, 4)
     assert not offload_retry_allowed(None, 10, 0)
+
+
+def test_unrecognized_failure_reason_takes_precedence_over_retry_limit(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    assert offload_stop_reason(None, 10, 4) == (
+        "failure was not a recognized KV-cache memory shortage")
 
 
 def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
