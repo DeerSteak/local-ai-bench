@@ -176,7 +176,7 @@ describe("flattenLLMData", () => {
       data: {
         llm: {
           m: {
-            "2K": { tps_mean: 10, tps_stdev: 1, ttft_mean_sec: 0.5, ttft_stdev_sec: 0.1, n_runs: 3 },
+            "2K": { tps_mean: 10, tps_stdev: 1, ttft_mean_sec: 0.5, ttft_stdev_sec: 0.1, n_runs: 3, cpu_offload_gb: 8 },
             timed_out: "8K",
           },
         },
@@ -186,6 +186,7 @@ describe("flattenLLMData", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].ctx).toBe("2K");
     expect(rows[0].tps_mean).toBe(10);
+    expect(rows[0].cpu_offload_gb).toBe(8);
   });
 });
 

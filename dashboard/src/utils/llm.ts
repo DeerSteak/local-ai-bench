@@ -291,6 +291,7 @@ export function flattenLLMData(files: ResultsFile[], section = "llm"): ChartRow[
           accelerator_memory_peak_gb: memoryChannelPeak(s, "accelerator_memory_used_gb"),
           headroom_gb: s?.memory?.headroom?.absolute_gb ?? null,
           headroom_state: s?.memory?.headroom?.state ?? "not_recorded",
+          cpu_offload_gb: s.cpu_offload_gb ?? 0,
           n_runs: llmValidRuns(s),
         }));
     })
