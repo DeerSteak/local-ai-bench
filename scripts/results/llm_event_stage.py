@@ -21,6 +21,7 @@ MEASUREMENT_FIELDS = {
     "client_ttft_sec", "generated_tokens", "tokens_per_sec", "client_wall_sec",
     "decode_sec", "server_prompt_sec", "prompt_tokens", "finish_reason",
     "model_load_sec", "server_tps_implausible",
+    "cpu_offload_gb",
 }
 
 

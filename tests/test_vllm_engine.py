@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from scripts.runtime import config
-from scripts.runtime.engines.vllm import VllmEngine
+from scripts.runtime.engines.vllm import VllmEngine, available_kv_cache_gib, next_cpu_offload_gb
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
 from scripts.runtime.shared import EngineTimeout
@@ -109,6 +109,45 @@ def test_max_model_len_is_per_sequence_and_not_scaled_by_parallelism(engine):
 
 def test_context_is_omitted_when_unset(engine):
     assert "--max-model-len" not in engine.server_command("org/m", None)
+
+
+def test_cpu_offload_is_only_added_when_calibrated(engine):
+    assert "--cpu-offload-gb" not in engine.server_command("org/m", 4096)
+    command = engine.server_command("org/m", 4096, cpu_offload_gb=8)
+    assert command[command.index("--cpu-offload-gb") + 1] == "8"
+
+
+@pytest.mark.parametrize(("available", "expected"), [
+    (-3.53, 8),
+    (-2.05, 6),
+    (-0.01, 4),
+])
+def test_offload_calculation_uses_deficit_reserve_and_two_gib_steps(available, expected):
+    log = (f"Available KV cache memory: {available} GiB\n"
+           "ValueError: No available memory for the cache blocks")
+    assert next_cpu_offload_gb(log) == expected
+
+
+def test_offload_retry_advances_by_two_gib_after_a_calculated_attempt():
+    log = ("Available KV cache memory: -0.25 GiB\n"
+           "No available memory for the cache blocks")
+    assert next_cpu_offload_gb(log, current_gb=8) == 10
+
+
+def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
+    log = ("Available KV cache memory: -9 GiB\n"
+           "Available KV cache memory: -2.05 GiB\n"
+           "No available memory for the cache blocks")
+    assert available_kv_cache_gib(log) == -2.05
+    assert next_cpu_offload_gb("Available KV cache memory: -2.05 GiB\nbad checkpoint") is None
+
+
+def test_offload_cache_rejects_malformed_values(engine):
+    engine._cache_home.mkdir()
+    engine._offload_cache_path.write_text(json.dumps({
+        "offload_gb": {"valid": 6, "zero": 0, "float": 4.0, "negative": -2},
+    }))
+    assert engine._load_offload_cache() == {"valid": 6}
 
 
 def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, tmp_path):

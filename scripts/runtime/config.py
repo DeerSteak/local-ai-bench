@@ -38,6 +38,9 @@ VLLM_PORT = 8000
 VLLM_URL  = f"http://localhost:{VLLM_PORT}"
 # vLLM preallocates this fraction of VRAM for weights + KV cache.
 VLLM_GPU_MEMORY_UTILIZATION = 0.90
+VLLM_OFFLOAD_STEP_GB = 2
+VLLM_OFFLOAD_RESERVE_GB = 3
+VLLM_OFFLOAD_HOST_RESERVE_GB = 8
 # Prompts are padded by characters, so real tokenization can overshoot the target.
 # vLLM rejects prompt+max_tokens > max_model_len outright; llama.cpp does not.
 VLLM_CTX_TOLERANCE = 64

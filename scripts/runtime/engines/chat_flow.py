@@ -58,7 +58,7 @@ def run_bounded_chat(request: Callable, messages: list, tools: list | None,
 
 def chat_measurement(first: dict, second: dict | None, budget_nudged: bool,
                      model_load_sec: float, sanitize_tps: Callable[[float, int, float, float], float]
-                     | None = None) -> ChatMeasurement:
+                     | None = None, cpu_offload_gb: int = 0) -> ChatMeasurement:
     graded = second or first
     parts = [first] if second is None else [first, second]
     tokens = sum(part["tokens"] for part in parts)
@@ -77,4 +77,5 @@ def chat_measurement(first: dict, second: dict | None, budget_nudged: bool,
         server_tps_implausible=(
             tps != raw_tps or any(part.get("server_tps_implausible", False) for part in parts)
         ),
+        cpu_offload_gb=cpu_offload_gb,
     )

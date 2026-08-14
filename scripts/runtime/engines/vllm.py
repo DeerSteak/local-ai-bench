@@ -3,6 +3,7 @@ vLLM's own cache, never by path, so a containerised vLLM works unchanged."""
 
 import http.client
 import json
+import math
 import os
 import platform
 import re
@@ -16,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 import requests
+import psutil
 
 from scripts.runtime import config
 from scripts.runtime.engines import openai_api
@@ -24,7 +26,8 @@ from scripts.runtime.engines.base import (
     ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine,
 )
 from scripts.setup.setup_config import (
-    configured_vllm_launcher_args, configured_vllm_path, load_setup_config,
+    configured_gpu_devices, configured_vllm_launcher_args, configured_vllm_path,
+    load_setup_config,
 )
 from scripts.setup.custom_models import custom_model, load_custom_models
 from scripts.setup.vllm_install import (
@@ -32,13 +35,29 @@ from scripts.setup.vllm_install import (
     hf_cache_snapshot_dir, vllm_cache_home,
 )
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
-from scripts.runtime.shared import (
-    EngineLoopDetected,
-    EngineTimeout,
-    Shared,
-)
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
+from scripts.runtime.shared import EngineLoopDetected, EngineTimeout, Shared
+
+
+_KV_MEMORY_RE = re.compile(r"Available KV cache memory:\s*(-?\d+(?:\.\d+)?)\s*GiB", re.I)
+
+
+def available_kv_cache_gib(log_text: str) -> float | None:
+    """Return the last vLLM KV-cache memory profile reading."""
+    matches = _KV_MEMORY_RE.findall(log_text or "")
+    return float(matches[-1]) if matches else None
+
+
+def next_cpu_offload_gb(log_text: str, current_gb: int = 0) -> int | None:
+    """Choose a 2 GiB-aligned retry from vLLM's measured KV-cache deficit."""
+    available = available_kv_cache_gib(log_text)
+    memory_failure = "No available memory for the cache blocks" in log_text
+    if available is None or not memory_failure:
+        return None
+    needed = max(0.0, -available) + config.VLLM_OFFLOAD_RESERVE_GB
+    calculated = math.ceil(needed / config.VLLM_OFFLOAD_STEP_GB) * config.VLLM_OFFLOAD_STEP_GB
+    return max(current_gb + config.VLLM_OFFLOAD_STEP_GB, calculated)
 
 
 class VllmEngine(InferenceEngine):
@@ -60,6 +79,7 @@ class VllmEngine(InferenceEngine):
         # an externally-managed server we talk to but never spawn or stop ourselves.
         self._server_url = configured_vllm_path(setup, "server_url")
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
+        self._gpu_fingerprint = json.dumps(configured_gpu_devices(setup), sort_keys=True)
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -71,9 +91,54 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
         self._loaded_tool_parser: str | None = None
+        self._loaded_cpu_offload_gb = 0
         self._gpu_visible = True
         self._kv_cache_dtype = "auto"
+        self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
+
+    @property
+    def _offload_cache_path(self) -> Path:
+        return self._cache_home / "local-ai-bench-vllm-offload.json"
+
+    def _load_offload_cache(self) -> dict[str, int]:
+        try:
+            payload = json.loads(self._offload_cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        values = payload.get("offload_gb") if isinstance(payload, dict) else None
+        if not isinstance(values, dict):
+            return {}
+        return {
+            key: value for key, value in values.items()
+            if isinstance(key, str) and isinstance(value, int) and value > 0
+        }
+
+    def _save_offload_cache(self) -> None:
+        self._cache_home.mkdir(parents=True, exist_ok=True)
+        target = self._offload_cache_path
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"offload_gb": self._cpu_offload_gb}, indent=2) + "\n",
+                             encoding="utf-8")
+        temporary.replace(target)
+
+    def _offload_key(self, tag: str, repo: str, num_ctx: int | None, n_parallel: int) -> str:
+        runtime = self._launcher or self._executable or "external"
+        try:
+            runtime_mtime = Path(runtime).stat().st_mtime_ns
+        except OSError:
+            runtime_mtime = 0
+        snapshot = self._snapshot_dir(tag)
+        revision = snapshot.name if snapshot else "unknown"
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
+        return "|".join((repo, revision, str(num_ctx), str(n_parallel), self._kv_cache_dtype,
+                         str(runtime), str(runtime_mtime), self._gpu_fingerprint, visible))
+
+    @staticmethod
+    def _host_offload_limit_gb() -> int:
+        available = psutil.virtual_memory().available / (1024 ** 3)
+        usable = max(0, int(available - config.VLLM_OFFLOAD_HOST_RESERVE_GB))
+        return usable // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
 
     @staticmethod
     def supported_kv_cache_dtype(runtime_backend: str) -> str:
@@ -305,6 +370,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
+        self._loaded_cpu_offload_gb = 0
 
     def _wait_for_launcher_shutdown(self, timeout: int) -> None:
         """Wait for a launcher-owned container to stop serving after its wrapper exits."""
@@ -506,7 +572,8 @@ class VllmEngine(InferenceEngine):
         return min(num_ctx + config.VLLM_CTX_TOLERANCE, self.max_context_length(tag))
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
-                       n_parallel: int = 1, tool_parser: str | None = None) -> list[str]:
+                       n_parallel: int = 1, tool_parser: str | None = None,
+                       cpu_offload_gb: int = 0) -> list[str]:
         """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
         over bare `vllm serve` because it carries that platform's environment."""
         options = ["--served-model-name", repo,
@@ -516,6 +583,8 @@ class VllmEngine(InferenceEngine):
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
+        if cpu_offload_gb:
+            options += ["--cpu-offload-gb", str(cpu_offload_gb)]
         if embedding:
             # --task was replaced by --runner; pooling is the embedding runner.
             options += ["--runner", "pooling"]
@@ -567,6 +636,7 @@ class VllmEngine(InferenceEngine):
                 self._loaded_model_id = model_id
                 self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
                 self._loaded_tool_parser = tool_parser
+                self._loaded_cpu_offload_gb = 0
                 return
 
             if not self._gpu_visible:
@@ -580,54 +650,76 @@ class VllmEngine(InferenceEngine):
                     f"{repo} not found in {self._cache_home} — "
                     "download it first with: python -m scripts.setup.setup_check")
 
-            self.stop()
-            args = self.server_command(repo, self.context_limit(tag, num_ctx),
-                                        embedding=embedding, n_parallel=n_parallel,
-                                        tool_parser=tool_parser)
-            log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-vllm-server.log", delete=False)
-            self._log_path = Path(log_fh.name)
-            try:
-                # Own process group: vLLM forks an EngineCore child that holds the
-                # weights and KV cache, and signalling only the API server orphans it.
-                if os.name == "nt":
-                    proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT,
-                        env=self.runtime_environment(),
-                        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-                else:
-                    proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT,
-                        env=self.runtime_environment(),
-                        start_new_session=True)
-            except FileNotFoundError:
+            context_limit = self.context_limit(tag, num_ctx)
+            offload_key = self._offload_key(tag, repo, context_limit, n_parallel)
+            cpu_offload_gb = self._cpu_offload_gb.get(offload_key, 0)
+            host_limit_gb = self._host_offload_limit_gb()
+            while True:
+                self.stop()
+                if cpu_offload_gb:
+                    Shared.warn(f"Loading {tag} with {cpu_offload_gb} GiB CPU offload")
+                args = self.server_command(
+                    repo, context_limit, embedding=embedding, n_parallel=n_parallel,
+                    tool_parser=tool_parser, cpu_offload_gb=cpu_offload_gb,
+                )
+                log_fh = tempfile.NamedTemporaryFile(
+                    mode="w", suffix="-vllm-server.log", delete=False)
+                self._log_path = Path(log_fh.name)
+                try:
+                    # Own process group: the EngineCore child holds the weights and cache.
+                    popen_kwargs = {
+                        "stdout": log_fh, "stderr": subprocess.STDOUT,
+                        "env": self.runtime_environment(),
+                    }
+                    if os.name == "nt":
+                        popen_kwargs["creationflags"] = getattr(
+                            subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    else:
+                        popen_kwargs["start_new_session"] = True
+                    proc = subprocess.Popen(args, **popen_kwargs)
+                except FileNotFoundError:
+                    log_fh.close()
+                    raise RuntimeError(f"'{args[0]}' not found in PATH") from None
                 log_fh.close()
-                raise RuntimeError(f"'{args[0]}' not found in PATH") from None
-            log_fh.close()
-            setattr(proc, "own_process_group", True)   # see Shared.shutdown_managed
-            self._proc = proc
-            Shared._managed_procs.append(proc)
+                setattr(proc, "own_process_group", True)   # see Shared.shutdown_managed
+                self._proc = proc
+                Shared._managed_procs.append(proc)
 
-            t0 = time.perf_counter()
-            while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
-                if deadline is not None and time.perf_counter() >= deadline:
+                t0 = time.perf_counter()
+                while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
+                    if deadline is not None and time.perf_counter() >= deadline:
+                        self._stop_process()
+                        raise EngineTimeout(
+                            f"loading {tag} exceeded the request wall-clock timeout")
+                    if self.available():
+                        self._loaded_tag = tag
+                        self._loaded_model_id = repo
+                        self._loaded_num_ctx = num_ctx
+                        self._loaded_embedding = embedding
+                        self._loaded_n_parallel = n_parallel
+                        self._loaded_tool_parser = tool_parser
+                        self._loaded_cpu_offload_gb = cpu_offload_gb
+                        if cpu_offload_gb and self._cpu_offload_gb.get(offload_key) != cpu_offload_gb:
+                            self._cpu_offload_gb[offload_key] = cpu_offload_gb
+                            self._save_offload_cache()
+                        return
+                    if proc.poll() is not None:
+                        output = self.tail_log(self.SPAWN_LOG_LINES)
+                        retry_gb = next_cpu_offload_gb(output, cpu_offload_gb)
+                        if retry_gb is None or retry_gb > host_limit_gb:
+                            raise RuntimeError(
+                                f"vLLM exited unexpectedly (code {proc.returncode}) "
+                                f"loading {tag} — last output:\n{output}")
+                        Shared.warn(
+                            f"vLLM measured insufficient KV-cache memory; retrying {tag} "
+                            f"with {retry_gb} GiB CPU offload")
+                        cpu_offload_gb = retry_gb
+                        break
+                    time.sleep(1)
+                else:
                     self._stop_process()
-                    raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
-                if self.available():
-                    self._loaded_tag = tag
-                    self._loaded_model_id = repo
-                    self._loaded_num_ctx = num_ctx
-                    self._loaded_embedding = embedding
-                    self._loaded_n_parallel = n_parallel
-                    self._loaded_tool_parser = tool_parser
-                    return
-                if proc.poll() is not None:
-                    raise RuntimeError(f"vLLM exited unexpectedly (code {proc.returncode}) "
-                                        f"loading {tag} — last output:\n"
-                                        f"{self.tail_log(self.SPAWN_LOG_LINES)}")
-                time.sleep(1)
-
-            self._stop_process()
-            raise RuntimeError(f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
+                    raise RuntimeError(
+                        f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
 
     def runtime_environment(self) -> dict:
         """Environment shared by serving and offline vLLM commands."""
@@ -725,6 +817,7 @@ class VllmEngine(InferenceEngine):
             finish_reason=finish_reason,
             model_load_sec=model_load_sec,
             server_tps_implausible=tps != raw_tps,
+            cpu_offload_gb=self._loaded_cpu_offload_gb,
         )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
@@ -851,6 +944,7 @@ class VllmEngine(InferenceEngine):
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget)
         return chat_measurement(
             first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
+            self._loaded_cpu_offload_gb,
         )
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
@@ -860,6 +954,7 @@ class VllmEngine(InferenceEngine):
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
         return chat_measurement(
             first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
+            self._loaded_cpu_offload_gb,
         )
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:
