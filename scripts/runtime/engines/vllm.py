@@ -103,6 +103,15 @@ def offload_stop_reason(retry_gb: int | None, host_limit_gb: int, attempts: int)
     return None
 
 
+def offload_timeout_message(tag: str, cpu_offload_gb: int, attempts: int,
+                            timeout: int) -> str:
+    """Describe which bounded calibration load exhausted its time budget."""
+    total = config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1
+    return (f"loading {tag} exceeded the {timeout}s vLLM load timeout during CPU-offload "
+            f"calibration attempt {attempts + 1}/{total} "
+            f"(--cpu-offload-gb {cpu_offload_gb})")
+
+
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -701,7 +710,6 @@ class VllmEngine(InferenceEngine):
                 raise RuntimeError(
                     f"cached vLLM CPU offload for {tag} is {cpu_offload_gb} GiB per worker, "
                     f"but current free host RAM permits at most {host_limit_gb} GiB")
-            load_deadline = deadline or time.perf_counter() + self.LOAD_TIMEOUT
             offload_attempts = 0
             while True:
                 self.stop()
@@ -734,12 +742,8 @@ class VllmEngine(InferenceEngine):
                 self._proc = proc
                 Shared._managed_procs.append(proc)
 
-                t0 = time.perf_counter()
-                while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
-                    if time.perf_counter() >= load_deadline:
-                        self._stop_process()
-                        raise EngineTimeout(
-                            f"loading {tag} exceeded the request wall-clock timeout")
+                attempt_deadline = time.perf_counter() + self.LOAD_TIMEOUT
+                while time.perf_counter() < attempt_deadline:
                     if self.available():
                         self._loaded_tag = tag
                         self._loaded_model_id = repo
@@ -771,8 +775,9 @@ class VllmEngine(InferenceEngine):
                     time.sleep(1)
                 else:
                     self._stop_process()
-                    raise RuntimeError(
-                        f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
+                    raise EngineTimeout(
+                        offload_timeout_message(
+                            tag, cpu_offload_gb, offload_attempts, self.LOAD_TIMEOUT))
 
     def runtime_environment(self) -> dict:
         """Environment shared by serving and offline vLLM commands."""

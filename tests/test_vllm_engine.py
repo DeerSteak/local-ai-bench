@@ -9,7 +9,7 @@ import pytest
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import (
     VllmEngine, available_kv_cache_gib, next_cpu_offload_gb, offload_retry_allowed,
-    offload_stop_reason, tensor_parallel_size,
+    offload_stop_reason, offload_timeout_message, tensor_parallel_size,
 )
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
@@ -176,6 +176,13 @@ def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
            "No available memory for the cache blocks")
     assert available_kv_cache_gib(log) == -2.05
     assert next_cpu_offload_gb("Available KV cache memory: -2.05 GiB\nbad checkpoint") is None
+
+
+def test_offload_timeout_identifies_attempt_and_value(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    message = offload_timeout_message("large:model", 10, 2, 900)
+    assert "attempt 3/5" in message
+    assert "--cpu-offload-gb 10" in message
 
 
 def test_offload_cache_rejects_malformed_values(engine):
