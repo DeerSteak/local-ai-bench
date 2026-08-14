@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -24,6 +24,139 @@ class ModelCompatibility:
     architecture: str | None
     status: str
     detail: str
+    checks: tuple["CompatibilityCheck", ...] = field(default_factory=tuple)
+
+    def to_dict(self) -> dict:
+        return {
+            "engine": self.engine, "tag": self.tag, "architecture": self.architecture,
+            "status": self.status, "detail": self.detail,
+            "checks": [check.to_dict() for check in self.checks],
+        }
+
+
+@dataclass(frozen=True)
+class CompatibilityCheck:
+    name: str
+    status: str
+    severity: str
+    detail: str
+    scope: str = "model"
+    evidence: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name, "status": self.status, "severity": self.severity,
+            "scope": self.scope, "detail": self.detail, "evidence": self.evidence,
+        }
+
+
+def gguf_metadata(path: Path, reader_factory=None) -> tuple[dict, str | None]:
+    if reader_factory is None:
+        import gguf
+        reader_factory = gguf.GGUFReader
+    try:
+        fields = reader_factory(str(path)).fields
+        values = {key: field.contents() for key, field in fields.items()}
+    except Exception as exc:
+        return {}, str(exc)
+    return values, None
+
+
+def _text_value(value) -> str | None:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def chat_template_check(metadata: dict, read_error: str | None = None) -> CompatibilityCheck:
+    if read_error:
+        return CompatibilityCheck(
+            "chat_template", "unreadable", "warning",
+            f"GGUF metadata could not be read: {read_error}",
+        )
+    template = _text_value(metadata.get("tokenizer.chat_template"))
+    if template:
+        return CompatibilityCheck(
+            "chat_template", "passed", "info", "Embedded chat template is present.",
+            evidence={"source": "tokenizer.chat_template"},
+        )
+    return CompatibilityCheck(
+        "chat_template", "absent", "warning",
+        "No embedded chat template; the runtime may use heuristic formatting.",
+        evidence={"source": "runtime_fallback"},
+    )
+
+
+def declared_context_length(metadata: dict) -> int | None:
+    for key, value in metadata.items():
+        if key.count(".") == 1 and key.endswith(".context_length") \
+                and isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
+
+
+def context_capacity_check(declared: int | None, requested: int | None,
+                           engine_max: int | None) -> CompatibilityCheck:
+    evidence = {"declared": declared, "requested": requested, "engine_max": engine_max}
+    if declared is None:
+        return CompatibilityCheck(
+            "context_capacity", "unknown", "warning",
+            "The model's declared context length could not be read.", evidence=evidence,
+        )
+    limits = [value for value in (declared, engine_max) if isinstance(value, int) and value > 0]
+    if requested is not None and limits and requested > min(limits):
+        return CompatibilityCheck(
+            "context_capacity", "exceeded", "warning",
+            f"Requested context {requested} exceeds the readable limit {min(limits)}.",
+            evidence=evidence,
+        )
+    return CompatibilityCheck(
+        "context_capacity", "passed", "info", "Requested context is within readable limits.",
+        evidence=evidence,
+    )
+
+
+def tool_support_check(supported: bool, tool_selected: bool) -> CompatibilityCheck:
+    if not tool_selected:
+        return CompatibilityCheck(
+            "tool_calls", "not_applicable", "info", "No tool-call workload is selected.",
+            scope="tool",
+        )
+    if supported:
+        return CompatibilityCheck(
+            "tool_calls", "passed", "info", "Engine tool-call support is configured.",
+            scope="tool",
+        )
+    return CompatibilityCheck(
+        "tool_calls", "unsupported", "workload_blocking",
+        "Tool-call support is not configured for this model and engine.", scope="tool",
+    )
+
+
+def weight_completeness_check(paths: list[Path] | tuple[Path, ...]) -> CompatibilityCheck:
+    paths = [Path(path) for path in paths]
+    missing = [str(path) for path in paths if not path.is_file()]
+    empty = [str(path) for path in paths if path.is_file() and path.stat().st_size == 0]
+    if not paths or missing or empty:
+        return CompatibilityCheck(
+            "weights", "incomplete", "hard_failure",
+            "One or more declared model weight files are missing or empty.",
+            evidence={"files": len(paths), "missing": missing, "empty": empty},
+        )
+    return CompatibilityCheck(
+        "weights", "passed", "info", "All declared model weight files are present and non-empty.",
+        evidence={"files": len(paths), "bytes": sum(path.stat().st_size for path in paths)},
+    )
+
+
+def preflight_verdict(checks: tuple[CompatibilityCheck, ...], force_all: bool = False) -> str:
+    if any(check.severity == "hard_failure" for check in checks):
+        return "excluded"
+    if any(check.severity == "workload_blocking" for check in checks):
+        return "workload_limited"
+    if any(check.severity == "warning" for check in checks) and not force_all:
+        return "warning"
+    return "passed"
 
 
 def architecture_from_config(path: Path) -> str | None:
@@ -38,17 +171,8 @@ def architecture_from_config(path: Path) -> str | None:
 
 
 def architecture_from_gguf(path: Path, reader_factory=None) -> str | None:
-    if reader_factory is None:
-        import gguf
-        reader_factory = gguf.GGUFReader
-    try:
-        field = reader_factory(str(path)).fields.get("general.architecture")
-        value = field.contents() if field is not None else None
-    except Exception:
-        return None
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    return value if isinstance(value, str) and value else None
+    metadata, _error = gguf_metadata(path, reader_factory)
+    return _text_value(metadata.get("general.architecture"))
 
 
 def probe_vllm_architecture(python_exe: Path | None, architecture: str | None,

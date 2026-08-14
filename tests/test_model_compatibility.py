@@ -3,9 +3,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.setup.model_compatibility import (
-    architecture_from_config, architecture_from_gguf, inspect_llamacpp_model,
+    CompatibilityCheck, architecture_from_config, architecture_from_gguf,
+    chat_template_check, context_capacity_check, declared_context_length,
+    gguf_metadata, inspect_llamacpp_model,
     inspect_vllm_model, llamacpp_probe_command, probe_llamacpp_load,
-    probe_vllm_architecture,
+    preflight_verdict, probe_vllm_architecture, tool_support_check,
+    weight_completeness_check,
 )
 
 
@@ -25,6 +28,74 @@ def test_architecture_from_gguf_reads_general_architecture():
         fields = {"general.architecture": Field()}
 
     assert architecture_from_gguf(Path("model.gguf"), lambda _path: Reader()) == "muse-glimmer"
+
+
+def test_gguf_metadata_reports_unreadable_input():
+    def fail(_path):
+        raise ValueError("malformed metadata")
+
+    metadata, error = gguf_metadata(Path("model.gguf"), fail)
+    assert metadata == {}
+    assert error == "malformed metadata"
+
+
+def test_chat_template_check_distinguishes_embedded_absent_and_unreadable():
+    embedded = chat_template_check({"tokenizer.chat_template": b"{{ messages }}"})
+    absent = chat_template_check({})
+    unreadable = chat_template_check({}, "bad header")
+    assert (embedded.status, embedded.evidence["source"]) == ("passed", "tokenizer.chat_template")
+    assert (absent.status, absent.severity) == ("absent", "warning")
+    assert (unreadable.status, unreadable.severity) == ("unreadable", "warning")
+
+
+def test_context_capacity_check_uses_declared_and_engine_limits():
+    metadata = {
+        "muse.context_length": 8192,
+        "muse.rope.scaling.original_context_length": 2048,
+    }
+    assert declared_context_length(metadata) == 8192
+    assert context_capacity_check(8192, 4096, 16384).status == "passed"
+    assert context_capacity_check(8192, 12288, 16384).status == "exceeded"
+    assert context_capacity_check(16384, 12288, 8192).status == "exceeded"
+    assert context_capacity_check(None, 4096, 8192).status == "unknown"
+
+
+def test_tool_support_check_blocks_only_the_tool_workload():
+    blocked = tool_support_check(False, True)
+    assert blocked.severity == "workload_blocking"
+    assert blocked.scope == "tool"
+    assert tool_support_check(False, False).status == "not_applicable"
+    assert tool_support_check(True, True).status == "passed"
+
+
+def test_weight_completeness_rejects_missing_and_empty_declared_files(tmp_path):
+    present = tmp_path / "part-1.gguf"
+    empty = tmp_path / "part-2.gguf"
+    present.write_bytes(b"weights")
+    empty.touch()
+    result = weight_completeness_check([present, empty, tmp_path / "part-3.gguf"])
+    assert (result.status, result.severity) == ("incomplete", "hard_failure")
+    assert result.evidence["empty"] == [str(empty)]
+    assert weight_completeness_check([present]).status == "passed"
+    assert weight_completeness_check([]).status == "incomplete"
+
+
+def test_preflight_verdict_force_all_bypasses_warnings_not_hard_failures():
+    warning = CompatibilityCheck("template", "absent", "warning", "missing")
+    hard = CompatibilityCheck("weights", "incomplete", "hard_failure", "missing")
+    limited = CompatibilityCheck("tools", "unsupported", "workload_blocking", "unsupported")
+    assert preflight_verdict((warning,), force_all=False) == "warning"
+    assert preflight_verdict((warning,), force_all=True) == "passed"
+    assert preflight_verdict((hard,), force_all=True) == "excluded"
+    assert preflight_verdict((limited,), force_all=True) == "workload_limited"
+
+
+def test_model_compatibility_serializes_passing_checks():
+    check = CompatibilityCheck("weights", "passed", "info", "complete")
+    report = __import__(
+        "scripts.setup.model_compatibility", fromlist=["ModelCompatibility"]
+    ).ModelCompatibility("llamacpp", "muse", "muse", "passed", "ok", (check,))
+    assert report.to_dict()["checks"] == [check.to_dict()]
 
 
 def test_vllm_architecture_probe_reports_registry_verdict(tmp_path):
