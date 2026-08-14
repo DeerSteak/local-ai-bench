@@ -122,7 +122,7 @@ class VllmEngine(InferenceEngine):
                              encoding="utf-8")
         temporary.replace(target)
 
-    def _offload_key(self, tag: str, repo: str, num_ctx: int | None, n_parallel: int) -> str:
+    def _offload_key(self, tag: str, repo: str) -> str:
         runtime = self._launcher or self._executable or "external"
         try:
             runtime_mtime = Path(runtime).stat().st_mtime_ns
@@ -131,8 +131,8 @@ class VllmEngine(InferenceEngine):
         snapshot = self._snapshot_dir(tag)
         revision = snapshot.name if snapshot else "unknown"
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
-        return "|".join((repo, revision, str(num_ctx), str(n_parallel), self._kv_cache_dtype,
-                         str(runtime), str(runtime_mtime), self._gpu_fingerprint, visible))
+        return "|".join((repo, revision, self._kv_cache_dtype, str(runtime),
+                         str(runtime_mtime), self._gpu_fingerprint, visible))
 
     @staticmethod
     def _host_offload_limit_gb() -> int:
@@ -651,7 +651,7 @@ class VllmEngine(InferenceEngine):
                     "download it first with: python -m scripts.setup.setup_check")
 
             context_limit = self.context_limit(tag, num_ctx)
-            offload_key = self._offload_key(tag, repo, context_limit, n_parallel)
+            offload_key = self._offload_key(tag, repo)
             cpu_offload_gb = self._cpu_offload_gb.get(offload_key, 0)
             host_limit_gb = self._host_offload_limit_gb()
             while True:

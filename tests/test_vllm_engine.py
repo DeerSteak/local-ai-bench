@@ -150,6 +150,15 @@ def test_offload_cache_rejects_malformed_values(engine):
     assert engine._load_offload_cache() == {"valid": 6}
 
 
+def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, monkeypatch):
+    revisions = iter((Path("snapshots/one"), Path("snapshots/two")))
+    monkeypatch.setattr(engine, "_snapshot_dir", lambda _tag: next(revisions))
+    first = engine._offload_key(TEST_TAG, TEST_REPO)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    second = engine._offload_key(TEST_TAG, TEST_REPO)
+    assert first != second
+
+
 def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, tmp_path):
     venv = tmp_path / "vllm-env"
     bin_dir = venv / ("Scripts" if os.name == "nt" else "bin")
