@@ -83,6 +83,14 @@ class LlamaCppEngine(InferenceEngine):
     def model_paths(self, tag: str) -> tuple[Path, ...]:
         return tuple(self._resolve_model_files(tag) or ())
 
+    def model_artifacts_are_local(self) -> bool:
+        return True
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        from scripts.setup.model_compatibility import gguf_metadata
+        paths = self.model_paths(tag)
+        return gguf_metadata(paths[0]) if paths else ({}, "Model weight files are incomplete.")
+
     @staticmethod
     def repack_args() -> list[str]:
         return ["--no-repack"] if config.LLAMACPP_NO_REPACK else []

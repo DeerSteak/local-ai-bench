@@ -238,6 +238,17 @@ class InferenceEngine(ABC):
     def model_pulled(self, tag: str) -> bool:
         """True if `tag` is installed locally."""
 
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        """Local weight files used to verify artifact completeness."""
+        return ()
+
+    def model_artifacts_are_local(self) -> bool:
+        return False
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        """Normalized model metadata for read-only compatibility checks."""
+        return {}, "This engine does not expose local model metadata."
+
     @abstractmethod
     def list_installed_models(self) -> list[dict]:
         """Every model installed locally, as [{"tag": ..., "size": ...}]."""
