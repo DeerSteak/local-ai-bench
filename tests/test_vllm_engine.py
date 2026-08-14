@@ -7,7 +7,11 @@ from typing import cast
 import pytest
 
 from scripts.runtime import config
-from scripts.runtime.engines.vllm import VllmEngine
+from scripts.runtime.engines.vllm import (
+    VllmEngine, available_kv_cache_gib, load_attempt_deadline, load_timeout_error,
+    next_cpu_offload_gb, offload_retry_allowed, offload_stop_reason, offload_timeout_message,
+    tensor_parallel_size,
+)
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
 from scripts.runtime.shared import EngineTimeout
@@ -109,6 +113,116 @@ def test_max_model_len_is_per_sequence_and_not_scaled_by_parallelism(engine):
 
 def test_context_is_omitted_when_unset(engine):
     assert "--max-model-len" not in engine.server_command("org/m", None)
+
+
+def test_cpu_offload_is_only_added_when_calibrated(engine):
+    assert "--cpu-offload-gb" not in engine.server_command("org/m", 4096)
+    command = engine.server_command("org/m", 4096, cpu_offload_gb=8)
+    assert command[command.index("--cpu-offload-gb") + 1] == "8"
+
+
+@pytest.mark.parametrize(("available", "expected"), [
+    (-3.53, 8),
+    (-2.05, 6),
+    (-0.01, 4),
+])
+def test_offload_calculation_uses_deficit_reserve_and_two_gib_steps(available, expected):
+    log = (f"Available KV cache memory: {available} GiB\n"
+           "ValueError: No available memory for the cache blocks")
+    assert next_cpu_offload_gb(log) == expected
+
+
+def test_offload_retry_adds_the_new_shortfall_to_the_current_value():
+    log = ("Available KV cache memory: -0.25 GiB\n"
+           "No available memory for the cache blocks")
+    assert next_cpu_offload_gb(log, current_gb=8) == 10
+
+
+def test_offload_calculation_handles_positive_but_insufficient_kv_memory():
+    log = ("To serve at least one request with the model's max seq len (262144), "
+           "(27.45 GiB KV cache is needed, which is larger than the available "
+           "KV cache memory (23.43 GiB).")
+    assert next_cpu_offload_gb(log) == 8
+
+
+@pytest.mark.parametrize(("args", "expected"), [
+    (["--tensor-parallel-size", "4"], 4),
+    (["--tensor-parallel-size=2"], 2),
+    (["-tp", "8"], 8),
+    (["-tp=3"], 3),
+    (["--other", "2"], 1),
+    (["-tp", "bad"], 1),
+])
+def test_tensor_parallel_size_parses_launcher_forms(args, expected):
+    assert tensor_parallel_size(args) == expected
+
+
+def test_offload_retry_guard_caps_attempts_and_host_use(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    assert offload_retry_allowed(8, 10, 3)
+    assert not offload_retry_allowed(12, 10, 3)
+    assert not offload_retry_allowed(8, 10, 4)
+    assert not offload_retry_allowed(None, 10, 0)
+
+
+def test_unrecognized_failure_reason_takes_precedence_over_retry_limit(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    assert offload_stop_reason(None, 10, 4) == (
+        "failure was not a recognized KV-cache memory shortage")
+
+
+def test_offload_calculation_uses_last_profile_and_ignores_other_failures():
+    log = ("Available KV cache memory: -9 GiB\n"
+           "Available KV cache memory: -2.05 GiB\n"
+           "No available memory for the cache blocks")
+    assert available_kv_cache_gib(log) == -2.05
+    assert next_cpu_offload_gb("Available KV cache memory: -2.05 GiB\nbad checkpoint") is None
+
+
+def test_offload_timeout_identifies_attempt_and_value(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    message = offload_timeout_message("large:model", 10, 2)
+    assert "attempt 3/5" in message
+    assert "--cpu-offload-gb 10" in message
+
+
+def test_load_attempt_deadline_preserves_the_caller_bound():
+    assert load_attempt_deadline(100.0, 400.0, 900) == 400.0
+    assert load_attempt_deadline(100.0, 1200.0, 900) == 1000.0
+    assert load_attempt_deadline(100.0, None, 900) == 1000.0
+
+
+def test_load_timeout_classification_distinguishes_caller_from_server():
+    caller_error = load_timeout_error("large:model", 10, 2, 900, True)
+    server_error = load_timeout_error("large:model", 10, 2, 900, False)
+    assert isinstance(caller_error, EngineTimeout)
+    assert isinstance(server_error, RuntimeError)
+    assert not isinstance(server_error, EngineTimeout)
+
+
+def test_offload_cache_rejects_malformed_values(engine):
+    engine._cache_home.mkdir()
+    engine._offload_cache_path.write_text(json.dumps({
+        "offload_gb": {"valid": 6, "zero": 0, "float": 4.0, "negative": -2},
+    }))
+    assert engine._load_offload_cache() == {"valid": 6}
+
+
+def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, monkeypatch):
+    revisions = iter((Path("snapshots/one"), Path("snapshots/two")))
+    monkeypatch.setattr(engine, "_snapshot_dir", lambda _tag: next(revisions))
+    first = engine._offload_key(TEST_TAG, TEST_REPO)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    second = engine._offload_key(TEST_TAG, TEST_REPO)
+    assert first != second
+
+
+def test_host_offload_limit_accounts_for_per_worker_tensor_parallel_allocation(
+        engine, monkeypatch):
+    engine._launcher_extra_args = ["--tensor-parallel-size", "4"]
+    memory = type("Memory", (), {"available": 72 * 1024 ** 3})()
+    monkeypatch.setattr(vllm_module.psutil, "virtual_memory", lambda: memory)
+    assert engine._host_offload_limit_gb() == 16
 
 
 def test_runtime_environment_exposes_vllm_venv_build_tools(engine, monkeypatch, tmp_path):

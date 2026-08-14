@@ -27,6 +27,27 @@ def test_repack_args_follow_the_explicit_runtime_setting(monkeypatch):
     assert LlamaCppEngine.repack_args() == ["--no-repack"]
 
 
+def test_parse_model_placement_reports_layers_and_cpu_side_model_buffers():
+    log = """0.05.100.001 I load_tensors: offloaded 35/41 layers to GPU
+0.05.101.002 I load_tensors:          CPU_Mapped model buffer size =   272.81 MiB
+0.05.102.003 I load_tensors:        CUDA0 model buffer size =  4385.96 MiB
+0.05.103.004 I load_tensors:    CUDA_Host model buffer size = 14105.96 MiB
+"""
+    assert LlamaCppEngine.parse_model_placement(log) == {
+        "gpu_layers": 35,
+        "total_layers": 41,
+        "cpu_model_buffer_gb": 14.042,
+    }
+
+
+def test_parse_model_placement_uses_last_load_and_tolerates_missing_buffers():
+    log = "load_tensors: offloaded 10/41 layers to GPU\nload_tensors: offloaded 41/41 layers to GPU"
+    assert LlamaCppEngine.parse_model_placement(log) == {
+        "gpu_layers": 41,
+        "total_layers": 41,
+    }
+
+
 def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path)

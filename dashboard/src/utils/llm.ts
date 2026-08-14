@@ -16,6 +16,18 @@ const SKIP_REASON_LABELS: Record<string, string> = {
 };
 
 export const llmTTFTMean = (sample: JsonRecord[string]) => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
+
+export function modelPlacementLabel(sample: JsonRecord[string]): string {
+  const placement = sample?.model_placement;
+  if (typeof placement?.gpu_layers === "number" && typeof placement?.total_layers === "number") {
+    const cpu = typeof placement.cpu_model_buffer_gb === "number"
+      ? ` · ${placement.cpu_model_buffer_gb.toFixed(1)} GB CPU`
+      : "";
+    return `${placement.gpu_layers}/${placement.total_layers} GPU layers${cpu}`;
+  }
+  const offload = placement?.cpu_offload_gb ?? sample?.cpu_offload_gb;
+  return typeof offload === "number" && offload > 0 ? `${offload} GB CPU offload` : "Not recorded";
+}
 // Prompt-processing throughput. Absent on results from before it was recorded, and
 // on any run whose engine reported no prompt duration — see docs/engines.md#prefill-timing.
 export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps_mean;
@@ -291,6 +303,7 @@ export function flattenLLMData(files: ResultsFile[], section = "llm"): ChartRow[
           accelerator_memory_peak_gb: memoryChannelPeak(s, "accelerator_memory_used_gb"),
           headroom_gb: s?.memory?.headroom?.absolute_gb ?? null,
           headroom_state: s?.memory?.headroom?.state ?? "not_recorded",
+          model_placement: modelPlacementLabel(s),
           n_runs: llmValidRuns(s),
         }));
     })
