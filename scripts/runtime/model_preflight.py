@@ -1,6 +1,7 @@
 """Static and runtime model compatibility preflight policy."""
 
 import time
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -12,6 +13,11 @@ from scripts.setup.model_compatibility import (
 
 
 TOOL_TESTS = {"tool", "conc_tool"}
+FORMAT_PROBE_MESSAGES = [
+    {"role": "system", "content": "Reply with the single word ready."},
+    {"role": "user", "content": "Confirm readiness."},
+]
+RAW_TEMPLATE_PATTERN = re.compile(r"(?:\{[{%].*?[}%]\}|<\|[^>]+\|>)", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -95,3 +101,60 @@ def maximum_requested_context(tests: list[str] | tuple[str, ...],
         if isinstance(value, int) and not isinstance(value, bool) and value > 0
     ]
     return max(values, default=None)
+
+
+def formatting_response_check(response_text: str, finish_reason: str | None) -> CompatibilityCheck:
+    if not response_text.strip():
+        return CompatibilityCheck(
+            "formatting_probe", "empty", "hard_failure", "Formatting probe returned no text.",
+        )
+    if RAW_TEMPLATE_PATTERN.search(response_text):
+        return CompatibilityCheck(
+            "formatting_probe", "raw_markup", "hard_failure",
+            "Formatting probe emitted raw chat-template markup.",
+        )
+    if not finish_reason:
+        return CompatibilityCheck(
+            "formatting_probe", "unterminated", "hard_failure",
+            "Formatting probe did not report a termination reason.",
+        )
+    return CompatibilityCheck(
+        "formatting_probe", "passed", "info", "Formatting round-trip passed.",
+        evidence={"response_nonempty": True, "finish_reason": finish_reason},
+    )
+
+
+def run_formatting_probe(engine, tag: str, num_ctx: int, timeout: int) -> CompatibilityCheck:
+    try:
+        measurement = engine.chat(
+            tag, FORMAT_PROBE_MESSAGES, timeout=timeout, num_ctx=num_ctx, num_predict=8,
+        )
+        check = formatting_response_check(measurement.response_text, measurement.finish_reason)
+    except Exception as exc:
+        check = CompatibilityCheck(
+            "formatting_probe", "load_or_request_failed", "hard_failure", str(exc),
+        )
+    try:
+        engine.unload(tag)
+        clean = engine.wait_until_unloaded(tag)
+    except Exception as exc:
+        return CompatibilityCheck(
+            "formatting_probe", "cleanup_failed", "hard_failure",
+            f"Clean-state reset failed after formatting probe: {exc}",
+        )
+    if not clean:
+        return CompatibilityCheck(
+            "formatting_probe", "cleanup_failed", "hard_failure",
+            "Model remained loaded after formatting probe.",
+        )
+    return check
+
+
+def add_runtime_check(report: ModelCompatibility,
+                      check: CompatibilityCheck) -> ModelCompatibility:
+    checks = (*report.checks, check)
+    status = "excluded" if check.severity == "hard_failure" else report.status
+    detail = check.detail if check.severity == "hard_failure" else report.detail
+    return ModelCompatibility(
+        report.engine, report.tag, report.architecture, status, detail, checks,
+    )

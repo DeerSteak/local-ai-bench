@@ -1,5 +1,7 @@
+from scripts.runtime.engines.base import ChatMeasurement
 from scripts.runtime.model_preflight import (
-    build_static_report, filter_models, maximum_requested_context, run_static_preflight,
+    add_runtime_check, build_static_report, filter_models, formatting_response_check,
+    maximum_requested_context, run_formatting_probe, run_static_preflight,
 )
 
 
@@ -88,3 +90,52 @@ def test_maximum_requested_context_uses_only_selected_workloads():
     assert maximum_requested_context(["llm", "tool"], contexts) == 8192
     assert maximum_requested_context(["conv"], contexts) == 98304
     assert maximum_requested_context(["img"], contexts) is None
+
+
+def test_formatting_response_check_rejects_empty_unterminated_and_raw_markup():
+    assert formatting_response_check("", "stop").status == "empty"
+    assert formatting_response_check("ready", None).status == "unterminated"
+    assert formatting_response_check("<|assistant|> ready", "stop").status == "raw_markup"
+    assert formatting_response_check("{{ messages }}", "stop").status == "raw_markup"
+    assert formatting_response_check("ready", "stop").status == "passed"
+
+
+def test_formatting_probe_always_cleans_engine_state():
+    calls = []
+
+    class ProbeEngine:
+        def chat(self, tag, messages, **kwargs):
+            calls.append(("chat", tag, messages, kwargs))
+            return ChatMeasurement(0, 1, 1, 1, 1, response_text="ready", finish_reason="stop")
+        def unload(self, tag): calls.append(("unload", tag))
+        def wait_until_unloaded(self, tag):
+            calls.append(("wait", tag))
+            return True
+
+    check = run_formatting_probe(ProbeEngine(), "muse", 4096, 30)
+    assert check.status == "passed"
+    assert [call[0] for call in calls] == ["chat", "unload", "wait"]
+    assert calls[0][3]["num_predict"] == 8
+
+
+def test_formatting_probe_cleans_after_request_failure_and_records_no_metrics():
+    calls = []
+
+    class ProbeEngine:
+        def chat(self, *_args, **_kwargs): raise RuntimeError("cannot load")
+        def unload(self, tag): calls.append(("unload", tag))
+        def wait_until_unloaded(self, tag):
+            calls.append(("wait", tag))
+            return True
+
+    check = run_formatting_probe(ProbeEngine(), "bad", 4096, 30)
+    assert (check.status, check.severity) == ("load_or_request_failed", "hard_failure")
+    assert calls == [("unload", "bad"), ("wait", "bad")]
+    assert set(check.evidence) == set()
+
+
+def test_runtime_failure_changes_report_to_excluded():
+    report = build_static_report(FakeEngine(), {"tag": "muse"}, ["llm"], 4096, True)
+    failed = add_runtime_check(report, formatting_response_check("", "stop"))
+    assert failed.status == "excluded"
+    assert failed.checks[-1].name == "formatting_probe"
