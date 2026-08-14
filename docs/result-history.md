@@ -12,6 +12,19 @@ The dashboard preserves missing measurements as missing and displays methodology
 
 Backend comparisons retain the raw delta, provisional practical-change threshold, each side's recorded within-run dispersion, and the valid sample counts behind it. Missing dispersion is reported as insufficient rather than zero, and every single-run comparison states that repeated trials are required for a regression verdict.
 
+## Repeated-trial comparison
+
+Build a durable trial-set artifact from two groups of compatible independent runs:
+
+```bash
+python -m scripts.results.trial_set_cli \
+  --baseline results/baseline-1.json results/baseline-2.json results/baseline-3.json results/baseline-4.json results/baseline-5.json \
+  --candidate results/candidate-1.json results/candidate-2.json results/candidate-3.json results/candidate-4.json results/candidate-5.json \
+  --out results/runtime-upgrade.trials.json
+```
+
+Pooling requires the existing methodology compatibility gate and the same hardware identity. Five trials per side are required before an interval or regression verdict is emitted. Identical case sequences use paired relative changes and a 95% Student-t interval; unequal sequences or counts use a 95% Welch interval. Monotonic ordinal drift forces an inconclusive verdict. The artifact records source digests, descriptive statistics, interval method, comparison mode, practical threshold, drift state, and one of `improved`, `regressed`, `unchanged`, or `inconclusive` for every common metric.
+
 ## Acceptance evaluation
 
 Select a result and choose **Evaluate Policy** to apply a versioned acceptance-policy file. The dialog shows the overall decision and every rule's status, actual value, threshold, and evidence count. Missing, insufficient, or incompatible evidence rejects explicitly.

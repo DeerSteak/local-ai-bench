@@ -55,6 +55,8 @@ Acceptance is evaluated per required workload/model/case, never by one hidden co
 
 Version 6 uses the distinct comparison terms and predeclared practical-threshold derivation in [Version 6 Foundation](version-6-foundation.md). Within-case or within-run dispersion may describe available evidence but cannot establish a reproducibility verdict; that verdict requires qualified compatible independent trials, and insufficient evidence is inconclusive.
 
+Repeated-trial artifacts require at least five compatible trials per side before producing a 95% uncertainty interval. Matching case sequences use paired per-trial relative changes with a Student-t interval; unequal sequences or counts use a Welch interval over independent means. The artifact always states the method and trial counts. A monotonic increase or decline by trial ordinal is flagged as drift and forces an inconclusive verdict rather than being absorbed into dispersion. `N_RUNS` remains three pending the real-hardware equal-time qualification required by Milestone 3; independent trials do not reinterpret repeated requests within one loaded run as separate trials.
+
 - Missing required data fails acceptance as insufficient evidence; it does not equal zero and cannot silently pass.
 - A required case with zero valid samples fails as invalid evidence.
 - Partial coverage may pass only when the policy explicitly marks omitted cases optional and the report lists them.
