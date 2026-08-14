@@ -259,6 +259,8 @@ class VllmBenchBenchmark:
                         ("throughput", self.build_throughput_command,
                          self.parse_throughput_result, throughput_entries),
                     ):
+                        entry = None
+                        case_memory = None
                         with tempfile.TemporaryDirectory() as workdir:
                             out = Path(workdir) / f"{kind}.json"
                             command = builder(
@@ -273,9 +275,8 @@ class VllmBenchBenchmark:
                                 payload = self.run_one(
                                     command, out, config.VLLMBENCH_TIMEOUT, env,
                                 )
+                                entry = parser(payload, input_len, output_len)
                             except subprocess.TimeoutExpired:
-                                if telemetry:
-                                    telemetry.finish_case()
                                 model_result.update(
                                     timed_out=True, timed_out_at=f"{kind} in{input_len}",
                                     error=f"no result within {config.VLLMBENCH_TIMEOUT}s",
@@ -283,19 +284,17 @@ class VllmBenchBenchmark:
                                 Shared.err(f"{label}: {kind} timed out at in{input_len}")
                                 break
                             except Exception as exc:
-                                if telemetry:
-                                    telemetry.finish_case()
                                 model_result["error"] = str(exc)
                                 Shared.err(f"{label}: {kind} failed at in{input_len}: {exc}")
                                 break
-                        entry = parser(payload, input_len, output_len)
+                            finally:
+                                if telemetry:
+                                    case_memory = telemetry.finish_case()
                         if entry is None:
-                            if telemetry:
-                                telemetry.finish_case()
                             Shared.warn(f"{label}: {kind} at in{input_len} reported no usable result")
                             continue
                         if telemetry:
-                            entry["memory"] = telemetry.finish_case()
+                            entry["memory"] = case_memory
                         bucket.append(entry)
                         model_result["completed_cases"] += 1
                         Shared.ok(self.format_entry(kind, entry))

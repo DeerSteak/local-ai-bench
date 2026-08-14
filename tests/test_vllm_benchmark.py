@@ -295,3 +295,47 @@ def test_run_discards_timed_out_native_window(monkeypatch):
     )
     assert result["model"]["timed_out"] is True
     assert telemetry.calls == ["measured:latency:in512:out128:includes-load", "finish"]
+
+
+def test_run_closes_native_window_when_result_parser_fails(monkeypatch):
+    class FakeEngine:
+        name = "vllm"
+        kv_cache_dtype = "auto"
+        bench_executable = staticmethod(lambda: "vllm")
+        stop = staticmethod(lambda: None)
+        runtime_environment = staticmethod(lambda: {})
+        model_pulled = staticmethod(lambda tag: True)
+        _repo = staticmethod(lambda tag: f"org/{tag}")
+        max_context_length = staticmethod(lambda tag: 4096)
+
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    def fake_run_one(self, command, output_json, timeout, env):
+        if "org/bad" in command:
+            return {"avg_latency": 1.0, "percentiles": [1.0]}
+        if "latency" in command:
+            return {"avg_latency": 1.0}
+        return {"elapsed_time": 1.0, "num_requests": 1}
+
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
+    monkeypatch.setattr(config, "VLLMBENCH_INPUT", [512])
+    monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
+    monkeypatch.setattr(VllmBenchBenchmark, "run_one", fake_run_one)
+    telemetry = Telemetry()
+    results = VllmBenchBenchmark().run(
+        FakeEngine(), [
+            {"tag": "bad", "label": "Bad", "short": "bad"},
+            {"tag": "good", "label": "Good", "short": "good"},
+        ], telemetry=telemetry,
+    )
+
+    assert "'list' object has no attribute 'items'" in results["bad"]["error"]
+    assert results["good"]["completed_cases"] == 2
+    assert telemetry.calls == [
+        "measured:latency:in512:out128:includes-load", "finish",
+        "measured:latency:in512:out128:includes-load", "finish",
+        "measured:throughput:in512:out128:includes-load", "finish",
+    ]
