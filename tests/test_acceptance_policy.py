@@ -5,6 +5,7 @@ import pytest
 
 from scripts.results.acceptance_policy import evaluate_policy, load_policy, validate_policy
 from scripts.results.acceptance_policy_cli import main
+from scripts.results.trial_set import build_trial_set
 
 
 def policy(**rule_changes):
@@ -133,3 +134,36 @@ def test_schema_two_rejects_invalid_noise_policy_fields(change):
     candidate["rules"][0].update(change)
     with pytest.raises(ValueError):
         validate_policy(candidate)
+
+
+def test_repeated_trial_policy_uses_candidate_interval():
+    baseline = []
+    candidate = []
+    for index, value in enumerate((50.0, 50.1, 49.9, 50.05, 49.95)):
+        before = result()
+        after = result()
+        before["profile"] = after["profile"] = {"hostname": "system"}
+        before["llm"]["golden"]["2K"]["tps_mean"] = value
+        after["llm"]["golden"]["2K"]["tps_mean"] = value + 5
+        baseline.append(before)
+        candidate.append(after)
+    artifact = build_trial_set(baseline, candidate)
+    trial_policy = policy_v2(threshold=54.0)
+    trial_policy["rules"][0]["evidence_requirement"] = "repeated_trials"
+    evaluation = evaluate_policy(artifact, trial_policy)
+    assert evaluation["decision"] == "accepted"
+    assert evaluation["rules"][0]["status"] == "pass"
+
+
+def test_repeated_trial_policy_is_inconclusive_when_interval_crosses_threshold():
+    artifact = {
+        "schema_version": 1, "compatible": True, "methodology_profile": "neutral-v1",
+        "rows": [{
+            "key": "llm/golden/2K/tps_mean",
+            "candidate": {"mean": 50.0, "interval": [48.0, 52.0],
+                          "trial_count": 5, "drift": "none"},
+        }],
+    }
+    trial_policy = policy_v2(threshold=50.0, tolerance_pct=0)
+    trial_policy["rules"][0]["evidence_requirement"] = "repeated_trials"
+    assert evaluate_policy(artifact, trial_policy)["decision"] == "inconclusive"

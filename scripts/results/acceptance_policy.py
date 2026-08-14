@@ -85,6 +85,8 @@ def load_policy(path: Path) -> dict:
 
 
 def _methodology_profile(result: dict) -> str | None:
+    if isinstance(result.get("methodology_profile"), str):
+        return result["methodology_profile"]
     run = as_dict(result.get("run"))
     plan = as_dict(run.get("plan"))
     settings = as_dict(plan.get("effective_config"))
@@ -92,6 +94,25 @@ def _methodology_profile(result: dict) -> str | None:
 
 
 def _evidence(result: dict, rule: dict) -> tuple[dict | None, int]:
+    if (result.get("schema_version") == 1 and result.get("compatible") is True
+            and isinstance(result.get("rows"), list)):
+        parts = [rule["section"], rule["model"]]
+        if rule["case"] is not None:
+            parts.append(rule["case"])
+        parts.append(rule["metric"])
+        key = "/".join(parts)
+        row = next((item for item in result["rows"]
+                    if isinstance(item, dict) and item.get("key") == key), None)
+        candidate = row.get("candidate") if isinstance(row, dict) else None
+        if not isinstance(candidate, dict):
+            return None, 0
+        count = candidate.get("trial_count")
+        evidence = {
+            rule["metric"]: candidate.get("mean"),
+            "_trial_interval": candidate.get("interval"),
+            "_trial_drift": candidate.get("drift"),
+        }
+        return evidence, int(count or 0)
     section = result.get(rule["section"])
     model = section.get(rule["model"]) if isinstance(section, dict) else None
     if not isinstance(model, dict):
@@ -137,7 +158,25 @@ def evaluate_policy(result: dict, policy: dict) -> dict:
             elif count < rule["minimum_evidence"]:
                 outcome.update({"status": "insufficient_evidence", "actual": value})
             elif requirement == "repeated_trials":
-                outcome.update({"status": "inconclusive", "actual": value})
+                interval = evidence.get("_trial_interval") if evidence else None
+                drift = evidence.get("_trial_drift") if evidence else None
+                if not (isinstance(interval, list) and len(interval) == 2
+                        and all(isinstance(bound, (int, float)) for bound in interval)) \
+                        or drift not in {"none"}:
+                    outcome.update({"status": "inconclusive", "actual": value})
+                else:
+                    low, high = interval
+                    threshold = rule["threshold"]
+                    tolerance = abs(threshold) * tolerance_pct / 100
+                    if rule["operator"] == "at_least":
+                        status = "pass" if low >= threshold else \
+                            "pass_within_tolerance" if low >= threshold - tolerance else \
+                            "fail" if high < threshold - tolerance else "inconclusive"
+                    else:
+                        status = "pass" if high <= threshold else \
+                            "pass_within_tolerance" if high <= threshold + tolerance else \
+                            "fail" if low > threshold + tolerance else "inconclusive"
+                    outcome.update({"status": status, "actual": value})
             else:
                 threshold = rule["threshold"]
                 passed = value >= threshold if rule["operator"] == "at_least" \

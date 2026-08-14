@@ -179,6 +179,9 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
         "comparison_mode": "paired" if paired else "independent",
         "baseline_trials": len(baseline),
         "candidate_trials": len(candidate),
+        "methodology_profile": baseline[0]["run"]["plan"]["effective_config"].get(
+            "methodology_profile"),
+        "hardware_identity": hardware_identity(baseline[0].get("profile") or {}),
         "source_sha256": {
             "baseline": [sha256_json(result) for result in baseline],
             "candidate": [sha256_json(result) for result in candidate],

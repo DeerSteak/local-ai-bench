@@ -20,6 +20,8 @@ Policies can also be applied when creating a decision report through the benchma
 
 Supported operators are `at_least` and `at_most`. Performance evidence counts `valid_runs` when present and otherwise the workload's completed `n_runs`; accuracy evidence counts scored questions. Schema-2 rules add a non-negative `tolerance_pct` around the literal threshold and an `evidence_requirement` of `single_run` or `repeated_trials`. A literal miss inside tolerance passes explicitly as `pass_within_tolerance`; a single result evaluated against a repeated-trials requirement is inconclusive rather than rejected or falsely reproducible. Missing, incompatible, and insufficient evidence are also inconclusive under schema 2 and never become zero.
 
+When evaluated against a repeated-trial artifact, a `repeated_trials` rule applies its threshold to the candidate's 95% interval rather than only its mean. The full interval must clear the literal or tolerated threshold to pass; an interval wholly beyond the allowed side fails, while a crossing interval or any monotonic drift is inconclusive.
+
 The policy names its required methodology profile. A result with a different or unrecorded profile is rejected as `incompatible_methodology`, so a legacy or tuned result cannot accidentally satisfy a neutral threshold. Current supported metrics cover LLM, conversation, embeddings, images, accuracy, and HTTP concurrency; native diagnostic-tool policies are deliberately deferred until their case vocabulary is stabilized.
 
 ## Schema
