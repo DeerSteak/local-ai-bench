@@ -9,8 +9,8 @@ import pytest
 from scripts.runtime import config
 from scripts.runtime.engines.vllm import (
     VllmEngine, available_kv_cache_gib, load_attempt_deadline, load_timeout_error,
-    next_cpu_offload_gb, offload_retry_allowed, offload_stop_reason, offload_timeout_message,
-    tensor_parallel_size,
+    next_cpu_offload_gb, offload_calibration_timeout, offload_retry_allowed,
+    offload_stop_reason, offload_timeout_message, tensor_parallel_size,
 )
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
@@ -198,6 +198,25 @@ def test_load_timeout_classification_distinguishes_caller_from_server():
     assert isinstance(caller_error, EngineTimeout)
     assert isinstance(server_error, RuntimeError)
     assert not isinstance(server_error, EngineTimeout)
+
+
+def test_offload_calibration_timeout_covers_every_attempt(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    assert offload_calibration_timeout(900, 300) == 4500
+    assert offload_calibration_timeout(900, 5000) == 5000
+
+
+def test_prepare_concurrency_uses_the_full_calibration_budget(engine, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(config, "VLLM_OFFLOAD_MAX_ATTEMPTS", 4)
+    monkeypatch.setattr(vllm_module.time, "perf_counter", lambda: 100.0)
+    monkeypatch.setattr(
+        engine, "_ensure_model",
+        lambda *_args, **kwargs: captured.update(kwargs),
+    )
+
+    assert engine.prepare_concurrency(TEST_TAG, 4, 4096, timeout=300)
+    assert captured["deadline"] == 100.0 + (engine.LOAD_TIMEOUT * 5)
 
 
 def test_offload_cache_rejects_malformed_values(engine):
@@ -708,7 +727,8 @@ def test_launcher_shutdown_refuses_to_continue_while_container_is_reachable(
 
 
 @pytest.mark.parametrize("operation", ["generate", "chat"])
-def test_model_load_uses_startup_timeout_not_request_timeout(engine, monkeypatch, operation):
+def test_model_load_uses_calibration_timeout_not_request_timeout(
+        engine, monkeypatch, operation):
     deadlines = []
 
     def ensure(*_args, **kwargs):
@@ -724,7 +744,8 @@ def test_model_load_uses_startup_timeout_not_request_timeout(engine, monkeypatch
         else:
             engine.chat(TEST_TAG, [{"role": "user", "content": "hello"}], timeout=3)
 
-    assert deadlines == [100.0 + engine.LOAD_TIMEOUT]
+    expected = engine.LOAD_TIMEOUT * (config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1)
+    assert deadlines == [100.0 + expected]
 
 
 def test_stop_falls_back_when_the_group_is_gone(engine, monkeypatch):
