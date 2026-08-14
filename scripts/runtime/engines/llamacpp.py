@@ -46,8 +46,8 @@ class LlamaCppEngine(InferenceEngine):
     SPAWN_LOG_LINES = 200
     _GPU_LAYERS_RE = re.compile(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", re.I)
     _MODEL_BUFFER_RE = re.compile(
-        r"^load_tensors:\s+(.+?)\s+model buffer size\s*=\s*([\d.]+)\s*MiB",
-        re.I | re.MULTILINE,
+        r"\bload_tensors:\s+(.+?)\s+model buffer size\s*=\s*([\d.]+)\s*MiB",
+        re.I,
     )
 
     @staticmethod
