@@ -125,6 +125,12 @@ def load_timeout_error(tag: str, cpu_offload_gb: int, attempts: int,
     return RuntimeError(f"vLLM did not become healthy within {timeout}s loading {tag}")
 
 
+def offload_calibration_timeout(load_timeout: int, requested_timeout: int) -> int:
+    """Budget concurrency startup for the initial load and every bounded retry."""
+    attempts = config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1
+    return max(requested_timeout, load_timeout * attempts)
+
+
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -619,8 +625,9 @@ class VllmEngine(InferenceEngine):
         """Serve `n_parallel` concurrent sequences at `per_slot_ctx` tokens each.
         --max-model-len is per sequence, so it is NOT scaled by n_parallel."""
         try:
+            load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, timeout)
             self._ensure_model(tag, per_slot_ctx, n_parallel=n_parallel,
-                                deadline=time.perf_counter() + timeout)
+                                deadline=time.perf_counter() + load_timeout)
             return True
         except Exception as e:
             Shared.warn(f"Failed to load {tag} for {n_parallel}-way concurrency "
