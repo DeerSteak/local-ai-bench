@@ -109,12 +109,17 @@ def test_maximum_requested_context_uses_only_selected_workloads():
     assert maximum_requested_context(["img"], contexts) is None
 
 
-def test_formatting_response_check_rejects_empty_unterminated_and_raw_markup():
+def test_formatting_response_check_rejects_empty_and_raw_markup():
     assert formatting_response_check("", "stop").status == "empty"
-    assert formatting_response_check("ready", None).status == "unterminated"
     assert formatting_response_check("<|assistant|> ready", "stop").status == "raw_markup"
     assert formatting_response_check("{{ messages }}", "stop").status == "raw_markup"
     assert formatting_response_check("ready", "stop").status == "passed"
+
+
+def test_formatting_response_accepts_completed_request_without_finish_reason():
+    check = formatting_response_check("ready", None)
+    assert check.status == "passed"
+    assert check.evidence["finish_reason"] == "not_reported"
 
 
 def test_formatting_probe_always_cleans_engine_state():

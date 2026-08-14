@@ -119,14 +119,9 @@ def formatting_response_check(response_text: str, finish_reason: str | None) -> 
             "formatting_probe", "raw_markup", "hard_failure",
             "Formatting probe emitted raw chat-template markup.",
         )
-    if not finish_reason:
-        return CompatibilityCheck(
-            "formatting_probe", "unterminated", "hard_failure",
-            "Formatting probe did not report a termination reason.",
-        )
     return CompatibilityCheck(
         "formatting_probe", "passed", "info", "Formatting round-trip passed.",
-        evidence={"response_nonempty": True, "finish_reason": finish_reason},
+        evidence={"response_nonempty": True, "finish_reason": finish_reason or "not_reported"},
     )
 
 
