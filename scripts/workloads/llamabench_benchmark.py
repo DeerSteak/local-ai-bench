@@ -272,8 +272,6 @@ class LlamaBenchBenchmark:
                 ])
                 for sweep, pending_pp, pending_tg in sweeps:
                     wait_if_paused()
-                    if journal and (begin_load := getattr(journal, "begin_model_load", None)):
-                        begin_load()
                     command = (
                         self.build_prefill_command(
                             binary, paths[0], pending_pp,
@@ -287,8 +285,6 @@ class LlamaBenchBenchmark:
                     )
 
                     def record_row(row):
-                        if journal and (begin_measured := getattr(journal, "begin_measured", None)):
-                            begin_measured()
                         entry = self.normalize_streamed_entry(row, reps)
                         target = prefill_entries if row.get("n_gen", 0) == 0 else decode_entries
                         target.append(entry)
@@ -302,6 +298,8 @@ class LlamaBenchBenchmark:
                             save_fn(results)
 
                     try:
+                        if journal and (begin_measured := getattr(journal, "begin_measured", None)):
+                            begin_measured("measured:native-sweep-includes-load")
                         self.run_one(
                             command, config.LLAMABENCH_TIMEOUT,
                             on_progress=Shared.log, on_result=record_row,
@@ -327,6 +325,9 @@ class LlamaBenchBenchmark:
                             )
                         stopped = True
                         break
+                    finally:
+                        if journal and (discard_case := getattr(journal, "discard_case", None)):
+                            discard_case()
                 if stopped:
                     reason = model_result.get("error")
                     Shared.err(f"{label}: native benchmark stopped with partial results"

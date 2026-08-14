@@ -379,13 +379,39 @@ def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypa
             self.calls.append("finish")
             return {"summary": {"process_rss_gb": {"peak_gb": len(self.calls)}}}
 
-    rows = [_row(1), _row(2)]
-    monkeypatch.setattr(LBC, "run_one", classmethod(lambda cls, *a, **kw: rows))
+    telemetry = Telemetry()
+
+    def fake_run_one(cls, *args, on_entry=None, **kwargs):
+        assert telemetry.calls == ["measured:native-sweep-includes-load"]
+        assert on_entry is not None
+        for row in (_row(1), _row(2)):
+            on_entry(row)
+        return []
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
+    result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
+    assert telemetry.calls == [
+        "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
+        "finish", "measured:native-sweep", "finish",
+    ]
+    assert telemetry.calls.count("finish") == 3
+    assert all("memory" in entry for entry in result["m1"]["entries"])
+
+
+def test_run_discards_failed_native_window(fake_engine, monkeypatch):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    def fail(cls, *args, **kwargs):
+        raise subprocess.TimeoutExpired("llama-batched-bench", 1)
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fail))
     telemetry = Telemetry()
     result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
-    assert telemetry.calls[0] == "load"
-    assert telemetry.calls.count("finish") == 2
-    assert all("memory" in entry for entry in result["m1"]["entries"])
+    assert result["m1"]["timed_out"] is True
+    assert telemetry.calls == ["measured:native-sweep-includes-load", "finish"]
 
 
 def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):

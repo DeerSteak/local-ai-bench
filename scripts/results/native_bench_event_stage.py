@@ -52,9 +52,13 @@ class NativeBenchEventStage:
         if self.telemetry:
             self.telemetry.begin_model_load()
 
-    def begin_measured(self) -> None:
+    def begin_measured(self, subwindow: str = "measured") -> None:
         if self.telemetry:
-            self.telemetry.begin_measured()
+            self.telemetry.begin_measured(subwindow)
+
+    def discard_case(self) -> None:
+        if self.telemetry:
+            self.telemetry.finish_case()
 
     def _model_id(self, model: dict) -> str:
         identity = self.model_identities.get(model["tag"])
@@ -83,6 +87,8 @@ class NativeBenchEventStage:
         attempt_id = self.plan.attempt_id(case_id, 1)
         sample_id = self.plan.sample_id(attempt_id, 1)
         memory = self.telemetry.finish_case() if self.telemetry else None
+        if self.telemetry:
+            self.telemetry.begin_measured("measured:native-sweep")
         self.store.append(self.plan.job_id, [
             JournalEvent("case", case_id, "running", {
                 "case_kind": "entry", "model_short": model["short"],

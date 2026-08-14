@@ -267,11 +267,15 @@ class VllmBenchBenchmark:
                             )
                             try:
                                 if telemetry:
-                                    telemetry.begin_model_load()
+                                    telemetry.begin_measured(
+                                        f"measured:{kind}:in{input_len}:out{output_len}:includes-load",
+                                    )
                                 payload = self.run_one(
                                     command, out, config.VLLMBENCH_TIMEOUT, env,
                                 )
                             except subprocess.TimeoutExpired:
+                                if telemetry:
+                                    telemetry.finish_case()
                                 model_result.update(
                                     timed_out=True, timed_out_at=f"{kind} in{input_len}",
                                     error=f"no result within {config.VLLMBENCH_TIMEOUT}s",
@@ -279,17 +283,18 @@ class VllmBenchBenchmark:
                                 Shared.err(f"{label}: {kind} timed out at in{input_len}")
                                 break
                             except Exception as exc:
+                                if telemetry:
+                                    telemetry.finish_case()
                                 model_result["error"] = str(exc)
                                 Shared.err(f"{label}: {kind} failed at in{input_len}: {exc}")
                                 break
                         entry = parser(payload, input_len, output_len)
                         if entry is None:
+                            if telemetry:
+                                telemetry.finish_case()
                             Shared.warn(f"{label}: {kind} at in{input_len} reported no usable result")
                             continue
                         if telemetry:
-                            telemetry.begin_measured(
-                                f"measured:{kind}:in{input_len}:out{output_len}",
-                            )
                             entry["memory"] = telemetry.finish_case()
                         bucket.append(entry)
                         model_result["completed_cases"] += 1

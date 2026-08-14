@@ -223,10 +223,8 @@ class LlamaBenchConcurrencyBenchmark:
 
                 def _record_entry(entry):
                     if telemetry:
-                        telemetry.begin_measured(
-                            f"measured:pp{entry.get('pp', 0)}:tg{entry.get('tg', 0)}:pl{entry.get('pl', 0)}",
-                        )
                         entry["memory"] = telemetry.finish_case()
+                        telemetry.begin_measured("measured:native-sweep")
                     entries.append(entry)
                     results[short]["completed_cases"] = len(entries)
                     if save_fn:
@@ -235,7 +233,7 @@ class LlamaBenchConcurrencyBenchmark:
                 try:
                     wait_if_paused()
                     if telemetry:
-                        telemetry.begin_model_load()
+                        telemetry.begin_measured("measured:native-sweep-includes-load")
                     returned_entries = self.run_one(
                         binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
                         config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
@@ -254,6 +252,9 @@ class LlamaBenchConcurrencyBenchmark:
                     Shared.err(f"{label}: {e}")
                     results[short]["error"] = str(e)
                     continue
+                finally:
+                    if telemetry:
+                        telemetry.finish_case()
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
             except Exception as exc:
