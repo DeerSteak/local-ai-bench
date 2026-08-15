@@ -3,7 +3,9 @@
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
+from scripts.runtime.engines.base import (
+    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+)
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
@@ -122,11 +124,11 @@ class LLMPrefillBenchmark:
 
                     if ttfts:
                         results[short][label_ctx] = {
-                            "ttft_mean_sec":  round(Shared.mean(ttfts),    3),
-                            "ttft_stdev_sec": round(Shared.stdev(ttfts),   3),
+                            "ttft_mean_sec":  round(Shared.mean(ttfts), TIMING_DECIMALS),
+                            "ttft_stdev_sec": round(Shared.stdev(ttfts), TIMING_DECIMALS),
                             "tps_mean":       round(Shared.mean(tps_list), 2),
                             "tps_stdev":      round(Shared.stdev(tps_list),2),
-                            "ttft_runs":      [round(t, 3) for t in ttfts],
+                            "ttft_runs":      [round(t, TIMING_DECIMALS) for t in ttfts],
                             "tps_runs":       [round(t, 2) for t in tps_list],
                             **aggregate,
                         }

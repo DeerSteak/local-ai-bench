@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
+from scripts.runtime.engines.base import (
+    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+)
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache, record_crash
@@ -245,8 +247,8 @@ class ConcurrencyBenchmark:
                     mean_tps      = Shared.mean(tpss)
 
                     results[short][str(level)] = {
-                        "ttft_mean_sec":     round(Shared.mean(ttfts), 3),
-                        "ttft_stdev_sec":    round(Shared.stdev(ttfts), 3),
+                        "ttft_mean_sec":     round(Shared.mean(ttfts), TIMING_DECIMALS),
+                        "ttft_stdev_sec":    round(Shared.stdev(ttfts), TIMING_DECIMALS),
                         "tps_mean":          round(mean_tps, 2),
                         "tps_stdev":         round(Shared.stdev(tpss), 2),
                         "aggregate_tps":     round(aggregate_tps, 2),
