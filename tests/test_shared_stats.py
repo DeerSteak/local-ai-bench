@@ -1,3 +1,5 @@
+import pytest
+
 from scripts.runtime.shared import Shared
 
 
@@ -50,17 +52,28 @@ def test_ctx_with_headroom_no_room_when_base_equals_model_max():
 
 
 def test_build_prompt_for_context_small_target_still_includes_base_prompt():
-    # Even a tiny target can't be shorter than the nonce prefix; just confirm
+    # Even a tiny target can't be shorter than the identifying prefix; confirm
     # it doesn't crash and returns a non-empty, truncated string.
     prompt = Shared.build_prompt_for_context(1)
     assert isinstance(prompt, str)
     assert len(prompt) == 4
 
 
-def test_build_prompt_for_context_nonce_differs_between_calls():
+def test_build_prompt_for_context_repeats_for_comparable_calls():
     p1 = Shared.build_prompt_for_context(2000)
     p2 = Shared.build_prompt_for_context(2000)
-    assert p1 != p2
+    assert p1 == p2
+
+
+def test_build_prompt_for_context_variants_are_distinct_and_repeatable():
+    prompts = [Shared.build_prompt_for_context(2000, variant=index) for index in range(3)]
+    assert len(set(prompts)) == 3
+    assert prompts[2] == Shared.build_prompt_for_context(2000, variant=2)
+
+
+def test_build_prompt_for_context_rejects_negative_variant():
+    with pytest.raises(ValueError, match="variant"):
+        Shared.build_prompt_for_context(2000, variant=-1)
 
 
 def test_build_prompt_for_context_is_not_repetitive_filler():

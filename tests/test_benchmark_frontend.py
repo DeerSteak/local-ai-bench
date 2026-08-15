@@ -118,6 +118,15 @@ def test_build_command_includes_execution_modes_when_selected():
     assert command[command.index("--gpu-split-mode") + 1] == "tensor"
 
 
+def test_build_command_explicitly_disables_default_memory_telemetry():
+    options = dict(GUI_OPTION_DEFAULTS, memory_telemetry=False)
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--no-memory-telemetry" in command
+
+
 def test_frontend_classifies_every_option_for_ui_presentation():
     assert set(FRONTEND_OPTION_CLASSIFICATION) == set(FRONTEND_OPTION_INVENTORY)
     assert set(FRONTEND_OPTION_CLASSIFICATION.values()) <= {
@@ -216,6 +225,15 @@ def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
     loaded = load_frontend_state(path)
     assert loaded is not None and loaded["gui_options"]["offline"] is False
+
+
+def test_saved_gui_state_defaults_legacy_missing_memory_telemetry_to_true(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["memory_telemetry"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["memory_telemetry"] is True
 
 
 def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):

@@ -29,3 +29,9 @@ All 40 result files completed with three valid 2K measurements. The worktree ide
 Positive impact means higher latency/wall time or lower throughput. The 0.5-second macOS `psutil` memory source passes the predeclared coarse observer-effect screen. This does not approve default-on telemetry or establish cross-method scientific comparability.
 
 Host unified-memory usage and benchmark process-tree RSS used `psutil`; separate accelerator occupancy was unsupported. The local raw evidence, manifest, and machine-readable report are retained under the gitignored `results/qualification/mac-mini-m4-pro/0.5s/` directory because benchmark results can carry local identity.
+
+## Milestone 3 re-qualification
+
+A fixed-prompt re-qualification on Local AI Bench 6.0-pre3 at clean commit `2f5463e15d87531e0482f8c1ebf33b0a5b0d9223` repeated the 20 alternating pairs with llama.cpp build 10375. All 40 invocations completed with three valid measurements of the same 1,779-token prompt and zero telemetry failures. Median TTFT impact was −0.07% (−0.40 ms) and p90 was +0.02% (+0.13 ms); throughput was +0.04% median and +0.53% p90; client wall time was +0.01% median and +0.43% p90. Every metric passed.
+
+Ten non-overlapping telemetry-off pairs produced 95th-percentile absolute noise of 0.28% TTFT, 2.94% throughput, and 2.58% wall time, all within the defaults derived from the RTX 5090 evidence. Three-request averaging reduced between-invocation TTFT dispersion by 32%, and three separate one-request invocations would cost approximately 2.40 times one three-request invocation. The local raw evidence is retained under `results/qualification/m3-precision-m4-pro-llamacpp-500ms/`.

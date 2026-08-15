@@ -21,6 +21,7 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
+| `run_m3_memory_trials.sh` | Resumable alternating telemetry-off/on runner for Milestone 3 memory qualification on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
 | `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
@@ -98,6 +99,9 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_presets.py` | Versioned portable benchmark preset validation, persistence, duplication, and comparison |
 | `app/benchmark_project.py` | Versioned local decision projects combining portable configuration with optional baseline and policy |
 | `results/result_history.py` | Local result summaries, filters, named metric extraction, and compatibility-aware comparison |
+| `results/significance.py` | Practical-threshold, uncertainty-availability, and repeated-trial comparison mathematics |
+| `results/trial_set.py` / `results/trial_set_cli.py` | Compatible independent-trial aggregation, drift detection, uncertainty intervals, verdicts, and artifact CLI |
+| `results/trial_set_report.py` | Auditable Markdown presentation of repeated-trial evidence and inconclusive states |
 | `results/outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
 | `runtime/network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
 | `results/vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |

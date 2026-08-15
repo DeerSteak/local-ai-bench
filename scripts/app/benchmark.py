@@ -657,10 +657,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "llama.cpp and ComfyUI HTTP connections remain available.",
     )
     parser.add_argument(
-        "--memory-telemetry", action="store_true",
-        help="Opt in to provisional memory sampling. This mode has a distinct methodology "
-             "identity and is not comparable to telemetry-off results until Version 6 "
-             "qualification is complete (default: false).",
+        "--memory-telemetry", action=argparse.BooleanOptionalAction, default=True,
+        help="Record qualified 0.5-second memory sampling for completed workload cases. "
+             "Use --no-memory-telemetry to disable it (default: enabled).",
     )
     _engines = registered_engine_names()
     parser.add_argument(

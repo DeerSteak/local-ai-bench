@@ -7,8 +7,10 @@ from pathlib import Path
 from scripts.results.result_store import as_dict, validate_json_data
 
 
-POLICY_SCHEMA_VERSION = 1
+POLICY_SCHEMA_VERSION = 2
+SUPPORTED_POLICY_SCHEMAS = {1, 2}
 OPERATORS = {"at_least", "at_most"}
+EVIDENCE_REQUIREMENTS = {"single_run", "repeated_trials"}
 SECTION_METRICS = {
     "llm": {"tps_mean", "ttft_mean_sec"},
     "llm_conversation": {"tps_mean", "client_ttft_mean_sec", "server_prompt_mean_sec"},
@@ -23,7 +25,7 @@ CASE_REQUIRED = {"llm", "llm_conversation", "images", "concurrency_tool", "concu
 
 
 def validate_policy(policy: dict) -> dict:
-    if not isinstance(policy, dict) or policy.get("schema_version") != POLICY_SCHEMA_VERSION:
+    if not isinstance(policy, dict) or policy.get("schema_version") not in SUPPORTED_POLICY_SCHEMAS:
         raise ValueError("unsupported or missing acceptance-policy schema")
     if set(policy) != {"schema_version", "name", "methodology_profile", "rules"}:
         raise ValueError("acceptance policy contains unknown fields")
@@ -41,6 +43,8 @@ def validate_policy(policy: dict) -> dict:
             raise ValueError("acceptance policy rules must be objects")
         required = {"id", "section", "model", "case", "metric", "operator", "threshold",
                     "minimum_evidence"}
+        if policy["schema_version"] == 2:
+            required |= {"tolerance_pct", "evidence_requirement"}
         if set(rule) != required:
             raise ValueError(f"acceptance rule fields must be exactly: {sorted(required)}")
         if not isinstance(rule["id"], str) or not rule["id"] or rule["id"] in rule_ids:
@@ -64,6 +68,13 @@ def validate_policy(policy: dict) -> dict:
         minimum = rule["minimum_evidence"]
         if isinstance(minimum, bool) or not isinstance(minimum, int) or minimum < 1:
             raise ValueError("acceptance rule minimum_evidence must be a positive integer")
+        if policy["schema_version"] == 2:
+            tolerance = rule["tolerance_pct"]
+            if (isinstance(tolerance, bool) or not isinstance(tolerance, (int, float))
+                    or not math.isfinite(tolerance) or tolerance < 0):
+                raise ValueError("acceptance rule tolerance_pct must be finite and non-negative")
+            if rule["evidence_requirement"] not in EVIDENCE_REQUIREMENTS:
+                raise ValueError("unsupported acceptance evidence requirement")
     return policy
 
 
@@ -74,6 +85,8 @@ def load_policy(path: Path) -> dict:
 
 
 def _methodology_profile(result: dict) -> str | None:
+    if isinstance(result.get("methodology_profile"), str):
+        return result["methodology_profile"]
     run = as_dict(result.get("run"))
     plan = as_dict(run.get("plan"))
     settings = as_dict(plan.get("effective_config"))
@@ -81,6 +94,25 @@ def _methodology_profile(result: dict) -> str | None:
 
 
 def _evidence(result: dict, rule: dict) -> tuple[dict | None, int]:
+    if (result.get("schema_version") == 1 and result.get("compatible") is True
+            and isinstance(result.get("rows"), list)):
+        parts = [rule["section"], rule["model"]]
+        if rule["case"] is not None:
+            parts.append(rule["case"])
+        parts.append(rule["metric"])
+        key = "/".join(parts)
+        row = next((item for item in result["rows"]
+                    if isinstance(item, dict) and item.get("key") == key), None)
+        candidate = row.get("candidate") if isinstance(row, dict) else None
+        if not isinstance(candidate, dict):
+            return None, 0
+        count = candidate.get("trial_count")
+        evidence = {
+            rule["metric"]: candidate.get("mean"),
+            "_trial_interval": candidate.get("interval"),
+            "_trial_drift": candidate.get("drift"),
+        }
+        return evidence, int(count or 0)
     section = result.get(rule["section"])
     model = section.get(rule["model"]) if isinstance(section, dict) else None
     if not isinstance(model, dict):
@@ -105,10 +137,16 @@ def evaluate_policy(result: dict, policy: dict) -> dict:
     validate_policy(policy)
     actual_profile = _methodology_profile(result)
     expected_profile = policy["methodology_profile"]
+    schema_version = policy["schema_version"]
     outcomes = []
     for rule in policy["rules"]:
+        tolerance_pct = float(rule.get("tolerance_pct", 0.0))
+        requirement = rule.get("evidence_requirement", "single_run")
         outcome = {"id": rule["id"], "status": "missing", "actual": None,
                    "threshold": rule["threshold"], "evidence": 0}
+        if schema_version == 2:
+            outcome.update({"tolerance_pct": tolerance_pct,
+                            "evidence_requirement": requirement})
         if actual_profile != expected_profile:
             outcome["status"] = "incompatible_methodology"
         else:
@@ -119,15 +157,49 @@ def evaluate_policy(result: dict, policy: dict) -> dict:
                 outcome["status"] = "missing"
             elif count < rule["minimum_evidence"]:
                 outcome.update({"status": "insufficient_evidence", "actual": value})
+            elif requirement == "repeated_trials":
+                interval = evidence.get("_trial_interval") if evidence else None
+                drift = evidence.get("_trial_drift") if evidence else None
+                if not (isinstance(interval, list) and len(interval) == 2
+                        and all(isinstance(bound, (int, float)) for bound in interval)) \
+                        or drift not in {"none"}:
+                    outcome.update({"status": "inconclusive", "actual": value})
+                else:
+                    low, high = interval
+                    threshold = rule["threshold"]
+                    tolerance = abs(threshold) * tolerance_pct / 100
+                    if rule["operator"] == "at_least":
+                        status = "pass" if low >= threshold else \
+                            "pass_within_tolerance" if low >= threshold - tolerance else \
+                            "fail" if high < threshold - tolerance else "inconclusive"
+                    else:
+                        status = "pass" if high <= threshold else \
+                            "pass_within_tolerance" if high <= threshold + tolerance else \
+                            "fail" if low > threshold + tolerance else "inconclusive"
+                    outcome.update({"status": status, "actual": value})
             else:
-                passed = value >= rule["threshold"] if rule["operator"] == "at_least" \
-                    else value <= rule["threshold"]
-                outcome.update({"status": "pass" if passed else "fail", "actual": value})
+                threshold = rule["threshold"]
+                passed = value >= threshold if rule["operator"] == "at_least" \
+                    else value <= threshold
+                tolerance = abs(threshold) * tolerance_pct / 100
+                tolerated = value >= threshold - tolerance if rule["operator"] == "at_least" \
+                    else value <= threshold + tolerance
+                status = "pass" if passed else "pass_within_tolerance" if tolerated else "fail"
+                outcome.update({"status": status, "actual": value})
         outcomes.append(outcome)
+    passing = {"pass", "pass_within_tolerance"}
+    if schema_version == 1:
+        decision = "accepted" if all(item["status"] == "pass" for item in outcomes) else "rejected"
+    elif any(item["status"] == "fail" for item in outcomes):
+        decision = "rejected"
+    elif all(item["status"] in passing for item in outcomes):
+        decision = "accepted"
+    else:
+        decision = "inconclusive"
     return {
-        "schema_version": POLICY_SCHEMA_VERSION,
+        "schema_version": schema_version,
         "policy": policy["name"],
-        "decision": "accepted" if all(item["status"] == "pass" for item in outcomes) else "rejected",
+        "decision": decision,
         "methodology_profile": {"expected": expected_profile, "actual": actual_profile},
         "rules": outcomes,
     }

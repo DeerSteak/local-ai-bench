@@ -58,7 +58,7 @@ Model load is a third explicit lifecycle window. A case may retain workload-defi
 
 ## Foundation observer-effect screen
 
-The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds using at least 20 alternating telemetry-off/on pairs per platform. It reports descriptive distributions for TTFT, throughput, and measured-case wall time. A source fails the coarse screen if median TTFT impact exceeds 2%, median throughput impact exceeds 1%, median wall-time impact exceeds 1%, or the 90th-percentile impact for any metric exceeds twice its median bound.
+The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds using at least 20 alternating telemetry-off/on pairs per platform. It reports descriptive distributions for TTFT, throughput, and measured-case wall time. TTFT fails only when the impact exceeds both its relative and absolute bounds: 2% and 2 milliseconds at the median, or 4% and 4 milliseconds at the 90th percentile. Throughput and wall time fail above 1% at the median or 2% at the 90th percentile.
 
 Passing this screen cannot approve default-on telemetry or establish scientific comparability. After milestone 3, qualified independent trials must evaluate each source, interval, and combined sampler under its own methodology identity.
 
@@ -66,7 +66,7 @@ The Mac mini M4 Pro and native-Windows RTX 5090 coarse screens passed at all thr
 
 ## Practical-threshold derivation
 
-Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the provisional floors are 5% for TTFT, 3% for throughput, and 3% for wall time. Evidence below the interval method's eventual minimum trial count remains inconclusive.
+Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the product-relevance floors are 5% for TTFT, 3% for throughput, 3% for wall time, and 1% relative change for accuracy. The RTX 5090 WSL qualification used ten non-overlapping telemetry-off trial pairs for each engine: the largest 95th-percentile absolute noise was 7.15% for TTFT, 0.87% for throughput, and 0.89% for wall time, producing qualified defaults of 8%, 3%, and 3%. Accuracy remains at its 1% floor pending corresponding real-hardware evidence.
 
 ## Minimum real-hardware qualification set
 

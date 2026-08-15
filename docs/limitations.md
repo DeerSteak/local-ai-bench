@@ -16,7 +16,7 @@ Thermal state, power mode, battery state, ambient temperature, background proces
 
 A run made inside WSL2 reaches the GPU through a virtualization layer rather than a native driver, so it should not be treated as equivalent to a bare-metal Linux run even on identical hardware. WSL2 also caps guest RAM independently of the host, which changes both the memory-fit estimate and the memory pressure a model actually encounters. Such runs record `wsl: true` in the results profile and are tagged in the dashboard; compare them against other WSL2 runs, or read the difference as including the passthrough cost.
 
-Independent runs should begin from comparable power, thermal, and background-load conditions. A single run is evidence, not a variance study; vendor claims should use repeated independent runs on each physical system and disclose dispersion and anomalies.
+Independent runs should begin from comparable power, thermal, and background-load conditions. A single-run comparison now exposes available within-run dispersion and whether a delta clears a provisional practical threshold, but neither establishes reproducibility; vendor claims require compatible repeated independent trials and disclosure of dispersion and anomalies.
 
 ## Cross-result comparison
 

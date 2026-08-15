@@ -73,6 +73,21 @@ def test_aggregate_adds_median_and_cv_with_two_valid_samples():
     assert result["server_prompt_mean_sec"] == 0.15
 
 
+def test_aggregate_preserves_sub_millisecond_timing_precision():
+    measurement = replace(
+        valid_measurement(), client_ttft_sec=0.0284567, client_wall_sec=0.1284567,
+        decode_sec=0.1, generated_tokens=1, tokens_per_sec=10,
+        server_prompt_sec=0.0234567, model_load_sec=0.0004567,
+    )
+    result = aggregate_generation_measurements([measurement], 1)
+    sample = result["valid_samples"][0]
+    assert sample["client_ttft_sec"] == 0.028457
+    assert sample["client_wall_sec"] == 0.128457
+    assert sample["server_prompt_sec"] == 0.023457
+    assert sample["model_load_sec"] == 0.000457
+    assert result["client_ttft_mean_sec"] == 0.028457
+
+
 # ── prefill throughput ──
 
 def test_prefill_tps_divides_prompt_tokens_by_the_server_reported_prompt_time():

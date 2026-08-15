@@ -266,18 +266,18 @@ This is an extension of existing, already-tested code, and it protects the valid
 
 ## Acceptance criteria
 
-- [ ] Every comparison row carries the raw delta, practical threshold, within-run dispersion availability, and sample counts behind it.
-- [ ] No single-run comparison is labeled statistically significant or reproducible; tests search every output path for this invariant.
-- [ ] A comparison against a file lacking dispersion reports insufficient within-run uncertainty, never a false zero.
-- [ ] Acceptance policies support tolerance and evidence requirements and can return inconclusive; policy validation documents the outcome.
-- [ ] A sufficiently large trial set reports mean, median, between-trial dispersion, an uncertainty interval with its method stated, and the trial count; smaller sets return inconclusive.
-- [ ] Monotonic drift across trials is detected and flagged rather than absorbed into the dispersion estimate.
-- [ ] Paired comparison is used automatically when the case sequence matches, and the mode used is stated in the output.
-- [ ] The `N_RUNS` and independent-trial time-budget decision is supported by qualification evidence and documented; retaining the current default requires the same justification as changing it.
-- [ ] Each default practical threshold follows the derivation method committed before its data was generated, and no default is below its demonstrated noise floor.
-- [ ] Memory-only telemetry is re-qualified in Slice A, and the same required protocol is wired into the completion gate for every later telemetry source and combined mode.
-- [ ] Incompatible runs cannot be pooled into a trial set; a test asserts the gate rejects a methodology mismatch.
-- [ ] Reports and dashboard distinguish qualified repeated-trial verdicts from descriptive single-run deltas without hiding either.
+- [x] Every comparison row carries the raw delta, practical threshold, within-run dispersion availability, and sample counts behind it.
+- [x] No single-run comparison is labeled statistically significant or reproducible; tests search every output path for this invariant.
+- [x] A comparison against a file lacking dispersion reports insufficient within-run uncertainty, never a false zero.
+- [x] Acceptance policies support tolerance and evidence requirements and can return inconclusive; policy validation documents the outcome.
+- [x] A sufficiently large trial set reports mean, median, between-trial dispersion, an uncertainty interval with its method stated, and the trial count; smaller sets return inconclusive.
+- [x] Monotonic drift across trials is detected and flagged rather than absorbed into the dispersion estimate.
+- [x] Paired comparison is used automatically when the case sequence matches, and the mode used is stated in the output.
+- [x] The `N_RUNS` and independent-trial time-budget decision is supported by qualification evidence and documented; retaining the current default requires the same justification as changing it.
+- [x] Each default practical threshold follows the derivation method committed before its data was generated, and no default is below its demonstrated noise floor.
+- [x] Memory-only telemetry is re-qualified in Slice A, and the same required protocol is wired into the completion gate for every later telemetry source and combined mode.
+- [x] Incompatible runs cannot be pooled into a trial set; a test asserts the gate rejects a methodology mismatch.
+- [x] Reports and dashboard distinguish qualified repeated-trial verdicts from descriptive single-run deltas without hiding either.
 
 ---
 

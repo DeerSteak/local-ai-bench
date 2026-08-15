@@ -130,7 +130,9 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Canonical JSON encoding and durable identity hashing | [test_canonical_json.py](../tests/test_canonical_json.py) |
 | Neutral methodology profile and effective optimization inventory | [test_methodology_profile.py](../tests/test_methodology_profile.py) |
 | Local project workflows, portability boundaries, validation, and round trips | [test_benchmark_project.py](../tests/test_benchmark_project.py) |
-| Local result discovery, filtering, metric extraction, and comparison compatibility | [test_result_history.py](../tests/test_result_history.py) |
+| Local result discovery, filtering, metric extraction, comparison compatibility, and noise-aware evidence labels | [test_result_history.py](../tests/test_result_history.py), [test_significance.py](../tests/test_significance.py) |
+| Repeated-trial pooling, intervals, drift, pairing, verdicts, and artifact CLI | [test_trial_set.py](../tests/test_trial_set.py) |
+| Milestone 3 memory qualification runner argument validation and alternating dry-run order | [test_m3_memory_trial_runner.py](../tests/test_m3_memory_trial_runner.py) |
 | Outbound identity preview, private aliases, source digests, and export acknowledgement | [test_outbound_metadata.py](../tests/test_outbound_metadata.py), [test_result_bundle_cli.py](../tests/test_result_bundle_cli.py), [test_decision_report.py](../tests/test_decision_report.py) |
 | Offline loopback classification, socket blocking, environment controls, CLI inventory, concrete frontend control bindings, and plan identity | [test_network_policy.py](../tests/test_network_policy.py), [test_benchmark_frontend.py](../tests/test_benchmark_frontend.py), [test_run_plan.py](../tests/test_run_plan.py) |
 | Generated-code static restrictions, kernel/parent memory bounds, output/time limits, and filesystem denial | [test_code_sandbox.py](../tests/test_code_sandbox.py) |

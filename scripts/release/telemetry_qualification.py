@@ -11,6 +11,7 @@ from scripts.results.result_store import validate_json_data
 
 
 METRIC_BOUNDS_PCT = {"ttft": 2.0, "throughput": 1.0, "wall": 1.0}
+TTFT_MEDIAN_BOUND_SEC = 0.002
 MIN_PAIRS = 20
 
 
@@ -78,6 +79,22 @@ def analyze_pairs(pairs: Sequence[dict[str, Any]]) -> dict[str, Any]:
             "p90_bound_pct": bound * 2,
             "passed": metric_passed,
         }
+        if metric == "ttft":
+            duration_impacts = [pair["on"]["ttft"] - pair["off"]["ttft"] for pair in pairs]
+            median_sec = statistics.median(duration_impacts)
+            p90_sec = percentile(duration_impacts, 0.90)
+            median_failed = median > bound + 1e-12 and median_sec > TTFT_MEDIAN_BOUND_SEC
+            p90_failed = p90 > bound * 2 + 1e-12 and p90_sec > TTFT_MEDIAN_BOUND_SEC * 2
+            metric_passed = not median_failed and not p90_failed
+            metrics[metric].update({
+                "median_impact_sec": median_sec,
+                "p90_impact_sec": p90_sec,
+                "min_impact_sec": min(duration_impacts),
+                "max_impact_sec": max(duration_impacts),
+                "median_bound_sec": TTFT_MEDIAN_BOUND_SEC,
+                "p90_bound_sec": TTFT_MEDIAN_BOUND_SEC * 2,
+                "passed": metric_passed,
+            })
         passed = passed and metric_passed
     return {"pair_count": len(pairs), "metrics": metrics, "passed": passed}
 

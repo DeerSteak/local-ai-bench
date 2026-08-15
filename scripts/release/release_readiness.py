@@ -14,6 +14,7 @@ REQUIRED_EXTERNAL_GATES = (
     "clean_machine_lifecycle", "accessibility_and_usability", "legal_approval",
     "independent_security_assessment", "stable_release_approval",
 )
+REQUIRED_TELEMETRY_MODES = ("memory", "power", "temperature", "combined")
 
 
 def evaluate_release_readiness(repo_root, evidence=None):
@@ -38,6 +39,7 @@ def evaluate_release_readiness(repo_root, evidence=None):
     for check in checks:
         check["passed"] = not check["items"]
     checks += [_external_check(name, evidence.get(name)) for name in REQUIRED_EXTERNAL_GATES]
+    checks.append(_telemetry_qualification_check(evidence.get("telemetry_qualification")))
     return {"schema_version": 1, "ready": all(check["passed"] for check in checks), "checks": checks}
 
 
@@ -57,6 +59,31 @@ def _external_check(name, record):
         "name": name, "passed": bool(valid),
         "items": [] if valid else ["reviewed external evidence required"],
     }
+
+
+def _telemetry_qualification_check(records):
+    failures = []
+    records = records if isinstance(records, dict) else {}
+    for mode in REQUIRED_TELEMETRY_MODES:
+        record = records.get(mode)
+        valid = (
+            isinstance(record, dict) and record.get("status") == "passed"
+            and record.get("protocol") == "paired_observer_v1"
+            and isinstance(record.get("interval_sec"), (int, float))
+            and not isinstance(record.get("interval_sec"), bool) and record["interval_sec"] > 0
+            and isinstance(record.get("trial_pairs"), int)
+            and not isinstance(record.get("trial_pairs"), bool) and record["trial_pairs"] >= 20
+            and isinstance(record.get("sources"), list) and bool(record["sources"])
+            and all(isinstance(item, str) and item.strip() for item in record["sources"])
+            and isinstance(record.get("platform_classes"), list)
+            and bool(record["platform_classes"])
+            and all(isinstance(item, str) and item.strip()
+                    for item in record["platform_classes"])
+            and _external_check(mode, record)["passed"]
+        )
+        if not valid:
+            failures.append(mode)
+    return _check("telemetry_source_qualification", not failures, failures)
 
 
 if __name__ == "__main__":  # pragma: no cover

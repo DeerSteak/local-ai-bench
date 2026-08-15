@@ -8,6 +8,8 @@ import math
 import statistics
 from pathlib import Path
 
+TIMING_DECIMALS = 6
+
 
 @dataclass(frozen=True)
 class GenerationMeasurement:
@@ -117,11 +119,11 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
         "invalid_runs": invalid,
         "valid_samples": [
             {
-                "client_ttft_sec": round(sample.client_ttft_sec, 3),
-                "server_prompt_sec": round(sample.server_prompt_sec, 3)
+                "client_ttft_sec": round(sample.client_ttft_sec, TIMING_DECIMALS),
+                "server_prompt_sec": round(sample.server_prompt_sec, TIMING_DECIMALS)
                 if sample.server_prompt_sec is not None else None,
-                "client_wall_sec": round(sample.client_wall_sec, 3),
-                "decode_sec": round(sample.decode_sec, 3),
+                "client_wall_sec": round(sample.client_wall_sec, TIMING_DECIMALS),
+                "decode_sec": round(sample.decode_sec, TIMING_DECIMALS),
                 "generated_tokens": sample.generated_tokens,
                 "tokens_per_sec": round(sample.tokens_per_sec, 2),
                 "prompt_tokens": sample.prompt_tokens,
@@ -130,7 +132,7 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                         sample.prompt_tokens, sample.server_prompt_sec)) is not None else None
                 ),
                 "finish_reason": sample.finish_reason,
-                "model_load_sec": round(sample.model_load_sec, 3),
+                "model_load_sec": round(sample.model_load_sec, TIMING_DECIMALS),
             }
             for sample in valid
         ],
@@ -152,19 +154,22 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
     ttfts = [sample.client_ttft_sec for sample in valid]
     tps_values = [sample.tokens_per_sec for sample in valid]
     result.update({
-        "client_ttft_mean_sec": round(statistics.mean(ttfts), 3),
-        "client_ttft_stdev_sec": round(statistics.stdev(ttfts), 3) if len(ttfts) >= 2 else 0,
-        "client_ttft_runs_sec": [round(value, 3) for value in ttfts],
+        "client_ttft_mean_sec": round(statistics.mean(ttfts), TIMING_DECIMALS),
+        "client_ttft_stdev_sec": round(statistics.stdev(ttfts), TIMING_DECIMALS)
+        if len(ttfts) >= 2 else 0,
+        "client_ttft_runs_sec": [round(value, TIMING_DECIMALS) for value in ttfts],
         "server_prompt_runs_sec": [
-            round(sample.server_prompt_sec, 3) for sample in valid
+            round(sample.server_prompt_sec, TIMING_DECIMALS) for sample in valid
             if sample.server_prompt_sec is not None
         ],
-        "client_wall_runs_sec": [round(sample.client_wall_sec, 3) for sample in valid],
+        "client_wall_runs_sec": [round(sample.client_wall_sec, TIMING_DECIMALS)
+                                 for sample in valid],
     })
     server_times = [sample.server_prompt_sec for sample in valid
                     if sample.server_prompt_sec is not None]
     if server_times:
-        result["server_prompt_mean_sec"] = round(statistics.mean(server_times), 3)
+        result["server_prompt_mean_sec"] = round(
+            statistics.mean(server_times), TIMING_DECIMALS)
     prefill_rates = [rate for sample in valid
                      if (rate := prefill_tokens_per_sec(
                          sample.prompt_tokens, sample.server_prompt_sec)) is not None]
@@ -177,7 +182,7 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
         })
     if len(valid) >= 2:
         result.update({
-            "client_ttft_median_sec": round(statistics.median(ttfts), 3),
+            "client_ttft_median_sec": round(statistics.median(ttfts), TIMING_DECIMALS),
             "client_ttft_cv": round(statistics.stdev(ttfts) / statistics.mean(ttfts), 4)
             if statistics.mean(ttfts) else 0,
             "tps_median": round(statistics.median(tps_values), 2),

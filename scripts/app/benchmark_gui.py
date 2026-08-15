@@ -523,7 +523,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ("force_all", "Run slow models instead of skipping", 0),
         ("retry_crashed_models", "Retry models that crashed previously", 0),
         ("offline", "Offline mode (loopback only)", 0),
-        ("memory_telemetry", "Provisional memory telemetry", 0),
+        ("memory_telemetry", "Memory telemetry", 0),
     )
     for key, text, pady in checkboxes:
         row = execution_row(pady=pady)
@@ -531,7 +531,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             row=0, column=0, columnspan=2, sticky="w")
         ttk.Button(
             row, text="Reset", width=6,
-            command=lambda option=key: option_vars[option].set(False),
+            command=lambda option=key: option_vars[option].set(GUI_OPTION_DEFAULTS[option]),
         ).grid(row=0, column=2, padx=(8, 0))
     repack_row = execution_row()
     ttk.Checkbutton(

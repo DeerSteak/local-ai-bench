@@ -27,7 +27,7 @@ Example outputs are available as [HTML](../samples/decision_report_example.html)
 
 `COMPLETE EVIDENCE` means the source run is complete and every represented performance sample was aggregate-eligible. `REVIEW REQUIRED` means the run is partial, interrupted, failed, legacy, or contains excluded performance samples. Invalid-only cases remain visible in the sample-validity table even when they cannot produce an aggregate row.
 
-The report is an evidence summary, not an acceptance decision. Review the verified result bundle and raw sample exclusion reasons before making purchase, launch, or capacity decisions. Compare only results with compatible methodology, model artifacts, runtimes, cache behavior, and effective settings; see the [Methodology Contract](methodology-contract.md) and [Limitations](limitations.md).
+The report keeps evidence readiness separate from an optional acceptance-policy decision. Schema-2 policies can report accepted, rejected, or inconclusive, and a repeated-trials evidence requirement remains inconclusive when the report contains only one run. Review the verified result bundle and raw sample exclusion reasons before making purchase, launch, or capacity decisions. Compare only results with compatible methodology, model artifacts, runtimes, cache behavior, and effective settings; see the [Methodology Contract](methodology-contract.md) and [Limitations](limitations.md).
 
 ## Reproducibility and safety
 

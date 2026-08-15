@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "compatible": true,
+  "comparison_mode": "paired",
+  "baseline_trials": 5,
+  "candidate_trials": 5,
+  "source_sha256": { "baseline": ["a", "b", "c", "d", "e"], "candidate": ["f", "g", "h", "i", "j"] },
+  "rows": [
+    {
+      "key": "llm/qwen3.5-9b-q4/2K/tps_mean", "metric": "tps_mean",
+      "baseline": { "mean": 50.1, "median": 50.0, "stdev": 0.42, "trial_count": 5, "interval": [49.58, 50.62], "interval_method": "student_t_95", "drift": "none" },
+      "candidate": { "mean": 55.2, "median": 55.1, "stdev": 0.51, "trial_count": 5, "interval": [54.57, 55.83], "interval_method": "student_t_95", "drift": "none" },
+      "relative_changes_pct": [10.1, 10.4, 9.8, 10.3, 10.2], "change_interval_pct": [9.91, 10.41],
+      "interval_method": "student_t_95", "comparison_mode": "paired", "practical_threshold_pct": 3.0, "verdict": "improved"
+    },
+    {
+      "key": "llm/qwen3.5-9b-q4/2K/ttft_mean_sec", "metric": "ttft_mean_sec",
+      "baseline": { "mean": 0.82, "median": 0.81, "stdev": 0.04, "trial_count": 5, "interval": [0.77, 0.87], "interval_method": "student_t_95", "drift": "none" },
+      "candidate": { "mean": 0.80, "median": 0.80, "stdev": 0.05, "trial_count": 5, "interval": [0.74, 0.86], "interval_method": "student_t_95", "drift": "none" },
+      "relative_changes_pct": [-2.4, -1.2, -3.1, -1.8, -2.0], "change_interval_pct": [-3.31, -0.89],
+      "interval_method": "student_t_95", "comparison_mode": "paired", "practical_threshold_pct": 5.0, "verdict": "unchanged"
+    },
+    {
+      "key": "llm/qwen3.5-9b-q4/8K/tps_mean", "metric": "tps_mean",
+      "baseline": { "mean": 47.0, "median": 47.1, "stdev": 0.65, "trial_count": 5, "interval": [46.19, 47.81], "interval_method": "student_t_95", "drift": "none" },
+      "candidate": { "mean": 48.1, "median": 48.0, "stdev": 1.2, "trial_count": 5, "interval": [46.61, 49.59], "interval_method": "student_t_95", "drift": "declining" },
+      "relative_changes_pct": [4.2, 3.1, 2.0, 1.0, 0.2], "change_interval_pct": [-0.61, 4.81],
+      "interval_method": "student_t_95", "comparison_mode": "paired", "practical_threshold_pct": 3.0, "verdict": "inconclusive"
+    }
+  ]
+}

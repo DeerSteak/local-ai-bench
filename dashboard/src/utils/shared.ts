@@ -5,6 +5,12 @@ import type { ChartRow, LineConfig, ResultsFile } from "../types";
 // The one sanctioned `any` in the dashboard — see AGENTS.md's TypeScript section.
 // Reference `JsonRecord`/`JsonRecord[string]` instead of writing `any` directly.
 export type JsonRecord = Record<string, any>;
+export type NamedTextSource = { name: string, text: () => Promise<string> };
+export type ParsedNamedSource = {
+  name: string;
+  data: JsonRecord | null;
+  error: string | null;
+};
 
 // Object.entries on an `any`-typed value can infer T as `unknown` rather than
 // a usable type (a TS overload-resolution quirk) — this pins the value type.
@@ -32,6 +38,14 @@ export function parseResultsJSON(text: string): { data: JsonRecord | null, error
       data: null,
       error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
     };
+  }
+}
+
+export async function readNamedJSONSource(source: NamedTextSource): Promise<ParsedNamedSource> {
+  try {
+    return { name: source.name, ...parseResultsJSON(await source.text()) };
+  } catch {
+    return { name: source.name, data: null, error: "Could not read this file." };
   }
 }
 
@@ -95,13 +109,13 @@ export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: st
 
 export function getMemoryTelemetryMethodologyWarning(files: ResultsFile[]): string {
   if (files.length < 2) return "";
-  const identities = new Set(files.map(file => {
+  const intervals = new Set(files.map(file => {
     const config = file.data?.run?.effective_config;
-    if (config?.memory_telemetry !== true) return "off";
-    return `memory:${config.memory_telemetry_interval_sec ?? "unknown"}`;
+    return config?.memory_telemetry === true
+      ? config.memory_telemetry_interval_sec ?? "unknown" : 0.5;
   }));
-  return identities.size > 1
-    ? "Loaded files use incompatible telemetry modes or memory sampling intervals."
+  return intervals.size > 1
+    ? "Loaded files use incompatible memory sampling intervals."
     : "";
 }
 

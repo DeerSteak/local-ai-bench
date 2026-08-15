@@ -560,6 +560,7 @@ class LlamaCppEngine(InferenceEngine):
             "temperature": 0.0,
             "stream": True,
             "return_tokens": True,
+            "cache_prompt": False,
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/completion",

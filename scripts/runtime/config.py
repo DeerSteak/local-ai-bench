@@ -5,7 +5,7 @@ import os
 import math
 from pathlib import Path
 
-VERSION        = "5.1.1"
+VERSION        = "6.0-pre3"
 
 COMFYUI_URL  = "http://localhost:8188"
 
@@ -104,6 +104,12 @@ TELEMETRY_INTERVAL_SEC = float(os.environ.get("LOCAL_AI_BENCH_MEMORY_INTERVAL_SE
 if not math.isfinite(TELEMETRY_INTERVAL_SEC) or TELEMETRY_INTERVAL_SEC <= 0:
     raise ValueError("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC must be positive")
 MEMORY_HEADROOM_COMFORTABLE_FRACTION = 0.20
+
+# Provisional product-relevance floors; qualification may only raise these above observed noise.
+PRACTICAL_TTFT_THRESHOLD_PCT = 8.0
+PRACTICAL_THROUGHPUT_THRESHOLD_PCT = 3.0
+PRACTICAL_WALL_TIME_THRESHOLD_PCT = 3.0
+PRACTICAL_ACCURACY_THRESHOLD_PCT = 1.0
 
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
 # Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
