@@ -86,6 +86,23 @@ def test_supervisor_start_owns_process_group_and_private_token(tmp_path):
     assert supervisor.ownership_token not in captured["command"]
 
 
+def test_macos_supervisor_keeps_controlling_terminal_for_power_permission(tmp_path):
+    captured = {}
+
+    class Process:
+        stdout = []
+
+    def factory(_command, **options):
+        captured.update(options)
+        return Process()
+
+    RunnerSupervisor(
+        spec(tmp_path), process_factory=cast("type[subprocess.Popen]", factory), system="Darwin",
+    ).start()
+    assert captured["process_group"] == 0
+    assert "start_new_session" not in captured
+
+
 def test_heartbeat_uses_supervisor_receive_time_and_times_out(tmp_path):
     now = [10.0]
 

@@ -122,6 +122,9 @@ class RunnerSupervisor:
         }
         if self.system == "Windows":
             options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        elif self.system == "Darwin":
+            # Keep the controlling terminal so a supervised sampler can reuse sudo's tty ticket.
+            options["process_group"] = 0
         else:
             options["start_new_session"] = True
         self.process = self.process_factory(build_runner_command(self.spec), **options)
