@@ -5,6 +5,12 @@ import type { ChartRow, LineConfig, ResultsFile } from "../types";
 // The one sanctioned `any` in the dashboard — see AGENTS.md's TypeScript section.
 // Reference `JsonRecord`/`JsonRecord[string]` instead of writing `any` directly.
 export type JsonRecord = Record<string, any>;
+export type NamedTextSource = { name: string, text: () => Promise<string> };
+export type ParsedNamedSource = {
+  name: string;
+  data: JsonRecord | null;
+  error: string | null;
+};
 
 // Object.entries on an `any`-typed value can infer T as `unknown` rather than
 // a usable type (a TS overload-resolution quirk) — this pins the value type.
@@ -32,6 +38,14 @@ export function parseResultsJSON(text: string): { data: JsonRecord | null, error
       data: null,
       error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
     };
+  }
+}
+
+export async function readNamedJSONSource(source: NamedTextSource): Promise<ParsedNamedSource> {
+  try {
+    return { name: source.name, ...parseResultsJSON(await source.text()) };
+  } catch {
+    return { name: source.name, data: null, error: "Could not read this file." };
   }
 }
 

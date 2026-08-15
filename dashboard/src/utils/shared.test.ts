@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
+  parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
   getMemoryTelemetryMethodologyWarning,
@@ -67,6 +68,30 @@ describe("parseResultsJSON", () => {
     };
     expect(parseResultsJSON("not json")).toEqual(expected);
     expect(parseResultsJSON('{"given":Infinity}')).toEqual(expected);
+  });
+});
+
+describe("readNamedJSONSource", () => {
+  it("reads and parses each source exactly once", async () => {
+    let reads = 0;
+    const parsed = await readNamedJSONSource({
+      name: "result.json",
+      text: async () => { reads += 1; return '{"profile":{}}'; },
+    });
+    expect(reads).toBe(1);
+    expect(parsed).toEqual({ name: "result.json", data: { profile: {} }, error: null });
+  });
+
+  it("retains read failures without retrying the source", async () => {
+    let reads = 0;
+    const parsed = await readNamedJSONSource({
+      name: "broken.json",
+      text: async () => { reads += 1; throw new Error("unreadable"); },
+    });
+    expect(reads).toBe(1);
+    expect(parsed).toEqual({
+      name: "broken.json", data: null, error: "Could not read this file.",
+    });
   });
 });
 
