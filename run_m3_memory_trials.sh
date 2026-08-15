@@ -9,7 +9,7 @@ PAIRS=20
 MIN_QUALIFICATION_PAIRS=20
 INTERVAL="0.5"
 WAIT_SECONDS=30
-OUT_DIR="$SCRIPT_DIR/qualification/m3-memory-$(date '+%Y%m%d-%H%M%S')"
+OUT_DIR="$SCRIPT_DIR/results/qualification/m3-memory-$(date '+%Y%m%d-%H%M%S')"
 DRY_RUN=false
 
 usage() {
@@ -41,6 +41,10 @@ if ! [[ "$PAIRS" =~ ^[1-9][0-9]*$ ]] || ! [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]]; the
 fi
 if [ ! -x "$PYTHON" ]; then
     echo "Virtual environment not found at $PYTHON — run setup.sh first." >&2
+    exit 1
+fi
+if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$SCRIPT_DIR" status --porcelain)" ]; then
+    echo "Qualification requires a clean Git worktree; run git status --short." >&2
     exit 1
 fi
 

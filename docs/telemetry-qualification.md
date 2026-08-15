@@ -33,12 +33,12 @@ Archive the manifest, report, all referenced result files, exact OS/driver/runti
 
 ## Milestone 3 runner
 
-`run_m3_memory_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
+`run_m3_memory_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Its default output is under the gitignored `results/qualification/` tree, and a real run refuses to start from a dirty worktree so every result records a reproducible source identity. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
 
 ```bash
 bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
 bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp \
-  --out-dir qualification/m3-memory-this-machine
+  --out-dir results/qualification/m3-memory-this-machine
 ```
 
 Use `--pairs 5` only for a workflow smoke test; it does not meet the 20-pair qualification minimum. The script intentionally runs one engine and one installed xsmall model at 2K so model/runtime changes are not mixed into the observer comparison.
