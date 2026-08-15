@@ -228,6 +228,20 @@ def test_power_block_records_unavailable_reason_and_never_zero_energy():
     assert block["mean_watts"] is None
 
 
+def test_power_block_refuses_partial_multiwindow_energy_and_nonfinite_samples():
+    block = power_block([
+        TelemetrySample(0, "measured:first", power_watts=10),
+        TelemetrySample(1, "measured:first", power_watts=20),
+        TelemetrySample(2, "measured:second", power_watts=float("nan")),
+    ], 0.5, PowerAvailability(
+        True, "nvidia-smi", "accelerator", location="tool",
+    ), 1)
+    assert block["status"] == "unavailable"
+    assert block["energy_joules"] is None
+    assert block["reason"] == "insufficient valid samples for energy integration"
+    assert block["mean_watts"] == 15
+
+
 class FakePowerSource:
     def __init__(self, watts=12):
         self.watts = watts
@@ -383,3 +397,10 @@ def test_run_power_summary_refuses_mixed_scope_total_and_preserves_unavailable()
     assert unavailable["status"] == "unavailable"
     assert unavailable["energy_joules"] is None
     assert unavailable["reason"] == "permission denied"
+    invalid = derive_run_power_summary({"llm": {"a": {"power": {
+        "source": "powermetrics", "scope": "processor_package",
+        "energy_joules": float("nan"), "idle_baseline_watts": True,
+    }}}})
+    assert invalid is not None
+    assert invalid["energy_joules"] is None
+    assert invalid["idle_baseline_watts"] is None

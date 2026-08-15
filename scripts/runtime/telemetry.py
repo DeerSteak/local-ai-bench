@@ -404,15 +404,16 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
     windows = []
-    measured_energy = []
+    measured_energy: list[float | None] = []
     idle_values = []
     for name in dict.fromkeys(sample.window for sample in samples):
         selected = [sample for sample in samples if sample.window == name]
-        values = [sample.power_watts for sample in selected if sample.power_watts is not None]
+        values = [value for sample in selected
+                  if (value := _finite_nonnegative(sample.power_watts)) is not None]
         energy = integrate_power_joules([
             (sample.timestamp_sec, sample.power_watts) for sample in selected
         ])
-        if name.startswith("measured") and energy is not None:
+        if name.startswith("measured"):
             measured_energy.append(energy)
         if name == "idle":
             idle_values.extend(values)
@@ -431,15 +432,18 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 for sample in selected
             ],
         })
-    all_values = [sample.power_watts for sample in samples if sample.power_watts is not None]
+    all_values = [value for sample in samples
+                  if (value := _finite_nonnegative(sample.power_watts)) is not None]
+    recorded = bool(measured_energy) and all(value is not None for value in measured_energy)
     return {
-        "status": "recorded" if measured_energy else "unavailable",
-        "reason": None if measured_energy else (
+        "status": "recorded" if recorded else "unavailable",
+        "reason": None if recorded else (
             availability.reason or "insufficient valid samples for energy integration"
         ),
         "source": availability.source,
         "scope": availability.scope,
-        "energy_joules": sum(measured_energy) if measured_energy else None,
+        "energy_joules": sum(value for value in measured_energy if value is not None)
+        if recorded else None,
         "mean_watts": sum(all_values) / len(all_values) if all_values else None,
         "peak_watts": max(all_values) if all_values else None,
         "idle_baseline_watts": (
@@ -785,10 +789,10 @@ def derive_run_power_summary(sections: Mapping[str, object]) -> dict[str, Any] |
                      if isinstance(power.get("scope"), str)})
     sources = sorted({power.get("source") for power, _ in cases
                       if isinstance(power.get("source"), str)})
-    energies = [power.get("energy_joules") for power, _ in cases
-                if isinstance(power.get("energy_joules"), (int, float))]
-    idle = [power.get("idle_baseline_watts") for power, _ in cases
-            if isinstance(power.get("idle_baseline_watts"), (int, float))]
+    energies = [value for power, _ in cases
+                if (value := _finite_nonnegative(power.get("energy_joules"))) is not None]
+    idle = [value for power, _ in cases
+            if (value := _finite_nonnegative(power.get("idle_baseline_watts"))) is not None]
     return {
         "status": "recorded" if energies else "unavailable",
         "reason": None if energies else next(
