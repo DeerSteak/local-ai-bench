@@ -41,6 +41,34 @@ def test_screen_passes_at_median_bounds_and_rejects_p90_tail():
     assert report["metrics"]["ttft"]["p90_impact_pct"] > 4
 
 
+def test_ttft_requires_relative_and_duration_bounds_to_fail():
+    fast = pairs(on=metrics(0.0295, 100, 2))
+    for pair in fast:
+        pair["off"] = metrics(0.028, 100, 2)
+    report = analyze_pairs(fast)
+    assert report["metrics"]["ttft"]["median_impact_pct"] > 2
+    assert report["metrics"]["ttft"]["median_impact_sec"] == pytest.approx(0.0015)
+    assert report["metrics"]["ttft"]["median_bound_sec"] == 0.002
+    assert report["metrics"]["ttft"]["p90_bound_sec"] == 0.004
+    assert report["passed"] is True
+
+    slower = pairs(on=metrics(0.031, 100, 2))
+    for pair in slower:
+        pair["off"] = metrics(0.028, 100, 2)
+    assert analyze_pairs(slower)["passed"] is False
+
+
+def test_ttft_p90_requires_relative_and_duration_bounds_to_fail():
+    trial_pairs = pairs(on=metrics(0.028, 100, 2))
+    for pair in trial_pairs:
+        pair["off"] = metrics(0.028, 100, 2)
+    for pair in trial_pairs[-3:]:
+        pair["on"] = metrics(0.033, 100, 2)
+    report = analyze_pairs(trial_pairs)
+    assert report["metrics"]["ttft"]["p90_impact_sec"] > 0.004
+    assert report["metrics"]["ttft"]["passed"] is False
+
+
 @pytest.mark.parametrize("bad", [pairs(count=19), [{**pair, "order": "off-on"} for pair in pairs()]])
 def test_screen_rejects_underpowered_or_non_alternating_pairs(bad):
     with pytest.raises(ValueError):

@@ -27,7 +27,7 @@ The manifest records the physical execution order even though `off` and `on` alw
 }
 ```
 
-Continue the array through pair 20. Paths are resolved relative to the manifest. The analyzer uses each run's recorded mean TTFT, mean throughput, and median valid-sample client wall time. Positive impact means telemetry made latency/wall time worse or throughput lower. A source passes only when median TTFT impact is at most 2%, median throughput impact at most 1%, median wall impact at most 1%, and each metric's 90th-percentile impact is at most twice its median bound.
+Continue the array through pair 20. Paths are resolved relative to the manifest. The analyzer uses each run's recorded mean TTFT, mean throughput, and median valid-sample client wall time. Positive impact means telemetry made latency/wall time worse or throughput lower. TTFT fails at the median only when its impact exceeds both 2% and 2 milliseconds, and at the 90th percentile only when it exceeds both 4% and 4 milliseconds; the report includes both units and bounds. Throughput and wall time fail when their median impact exceeds 1% or their 90th-percentile impact exceeds 2%.
 
 Archive the manifest, report, all referenced result files, exact OS/driver/runtime/source versions, sensor permissions, process ownership and scope notes, telemetry failure counts, and the commit tested. A parser fixture is not hardware qualification, and a passing coarse screen does not make telemetry default-on or establish scientific comparability.
 

@@ -58,7 +58,7 @@ Model load is a third explicit lifecycle window. A case may retain workload-defi
 
 ## Foundation observer-effect screen
 
-The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds using at least 20 alternating telemetry-off/on pairs per platform. It reports descriptive distributions for TTFT, throughput, and measured-case wall time. A source fails the coarse screen if median TTFT impact exceeds 2%, median throughput impact exceeds 1%, median wall-time impact exceeds 1%, or the 90th-percentile impact for any metric exceeds twice its median bound.
+The coarse screen evaluates sampling intervals of 0.25, 0.5, and 1.0 seconds using at least 20 alternating telemetry-off/on pairs per platform. It reports descriptive distributions for TTFT, throughput, and measured-case wall time. TTFT fails only when the impact exceeds both its relative and absolute bounds: 2% and 2 milliseconds at the median, or 4% and 4 milliseconds at the 90th percentile. Throughput and wall time fail above 1% at the median or 2% at the 90th percentile.
 
 Passing this screen cannot approve default-on telemetry or establish scientific comparability. After milestone 3, qualified independent trials must evaluate each source, interval, and combined sampler under its own methodology identity.
 
