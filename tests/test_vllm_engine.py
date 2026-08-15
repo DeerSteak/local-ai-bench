@@ -324,6 +324,22 @@ def test_generate_counts_tokens_from_streamed_usage(engine, monkeypatch):
     assert result.finish_reason == "stop"
     assert captured["path"] == "/v1/completions"
     assert captured["payload"]["stream_options"] == {"include_usage": True}
+    assert isinstance(captured["payload"]["cache_salt"], str)
+    assert len(captured["payload"]["cache_salt"]) >= 32
+
+
+def test_generate_uses_a_fresh_cache_salt_per_request(engine, monkeypatch):
+    salts = []
+
+    def post(self, path, payload, timeout):
+        salts.append(payload["cache_salt"])
+        return _Response([_text_chunk("x", finish="stop"),
+                          {"choices": [], "usage": {"completion_tokens": 1}}])
+
+    monkeypatch.setattr(VllmEngine, "_post", post)
+    engine.generate(TEST_TAG, "same prompt", timeout=30)
+    engine.generate(TEST_TAG, "same prompt", timeout=30)
+    assert len(set(salts)) == 2
 
 
 def test_generate_reports_no_server_prompt_time(engine, monkeypatch):

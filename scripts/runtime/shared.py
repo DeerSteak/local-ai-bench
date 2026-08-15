@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -609,18 +608,20 @@ class Shared:
         return min(base_ctx + headroom, model_max)
 
     @staticmethod
-    def build_prompt_for_context(target_tokens: int) -> str:
-        """Pad a prompt to ~target_tokens (1 token ≈ 4 chars) from a real document slice,
-        prefixed with a unique nonce so reruns don't share a prefix the slot cache can hit."""
-        nonce = uuid.uuid4().hex
-        prefix = f"[run {nonce}] "
+    def build_prompt_for_context(target_tokens: int, variant: int = 0) -> str:
+        """Build stable real-text prompt content for a context and variant."""
+        if variant < 0:
+            raise ValueError("prompt variant must be non-negative")
+        prefix = f"[single-shot {target_tokens}:{variant}] "
         chars_needed = target_tokens * 4
         body_needed = max(0, chars_needed - len(prefix))
 
         document = Shared._long_document()
         if body_needed > len(document):
             document = document * (body_needed // len(document) + 1)
-        start = random.randint(0, len(document) - body_needed) if len(document) > body_needed else 0
+        available = max(0, len(document) - body_needed)
+        start = ((target_tokens * 2654435761 + variant * 2246822519) % (available + 1)
+                 if available else 0)
         body = document[start:start + body_needed]
 
         return (prefix + body)[:chars_needed]

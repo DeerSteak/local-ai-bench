@@ -7,6 +7,7 @@ import math
 import os
 import platform
 import re
+import secrets
 import signal
 import subprocess
 import tempfile
@@ -854,6 +855,7 @@ class VllmEngine(InferenceEngine):
             "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
+            "cache_salt": secrets.token_urlsafe(32),
         }
         prefill_before = self._prefill_reading()
         request_start = time.perf_counter()

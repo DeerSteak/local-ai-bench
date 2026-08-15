@@ -400,6 +400,7 @@ def test_generate_requests_n_predict_from_config_constant(monkeypatch):
     monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
     LlamaCppEngine().generate("some-tag", "prompt")
     assert captured[0]["n_predict"] == config.GENERATE_MAX_TOKENS
+    assert captured[0]["cache_prompt"] is False
 
 
 def test_generate_uses_server_reported_timings(monkeypatch):

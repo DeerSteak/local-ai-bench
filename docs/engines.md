@@ -87,6 +87,8 @@ llama.cpp returns it directly: `timings.prompt_ms` and `timings.prompt_n` come b
 
 What vLLM *does* have is a per-request observation recorded into the `vllm:request_prefill_time_seconds` histogram on `/metrics`. `VllmEngine` reads that histogram's `_sum`/`_count` immediately before and after each generation call, and attributes the difference to that request. Because a histogram is cumulative and shared, the delta is only trustworthy when the count advanced by **exactly one** — so `prefill_seconds_from_delta` returns `None` for a count that moved by zero (an older build with no such metric, or a request that never reached prefill), by more than one (a concurrent or retried call, where the sum is not ours alone), or for a negative sum delta (the server restarted and reset the histogram). The single-shot and conversation workloads issue one request at a time, which is what makes the attribution sound; do not reuse this path for the concurrency workloads.
 
+Single-shot `generate` requests bypass prefix reuse without changing prompt text: llama.cpp receives `cache_prompt: false`, and vLLM receives a fresh `cache_salt`. Chat requests do not use these controls because conversation intentionally measures continued-prefix reuse.
+
 A missing or unattributable reading leaves `server_prompt_sec` as `None`, and `prefill_tokens_per_sec` then returns `None` rather than dividing by client wall time. The results JSON simply omits `prefill_tps_mean` for that case, which the dashboard renders as absent instead of as a zero.
 
 ## Selecting an engine

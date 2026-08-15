@@ -43,7 +43,8 @@ class ConcurrencyBenchmark:
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
         """Fire `level` concurrent generate() requests — see docs/workloads.md#concurrency.
         Returns named measurement samples."""
-        prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
+        prompts = [Shared.build_prompt_for_context(per_request_context, variant=index)
+                   for index in range(level)]
         slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
         with ThreadPoolExecutor(max_workers=level) as pool:
             futures = [
