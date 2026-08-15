@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime.telemetry import (
-    PowerReading, efficiency_per_joule, integrate_power_joules,
+    PowerAvailability, PowerReading, discover_power_source, efficiency_per_joule,
+    integrate_power_joules,
     parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
-    parse_rocm_power,
+    parse_rocm_power, query_power_reading,
 )
 
 
@@ -80,3 +81,91 @@ def test_efficiency_per_joule_guards_unknown_zero_and_invalid_inputs(work, energ
 
 def test_efficiency_rejects_boolean_values():
     assert efficiency_per_joule(True, 10) is None
+
+
+class Result:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_macos_discovery_requires_active_noninteractive_admin_permission():
+    denied = discover_power_source(
+        "Darwin", which_fn=lambda name: f"/usr/bin/{name}",
+        run_fn=lambda *_args, **_kwargs: Result(1, stderr="identity hidden"),
+        is_file_fn=lambda _path: True,
+    )
+    assert denied == PowerAvailability(
+        False, "powermetrics", "processor_package",
+        "administrator permission is not active; run sudo -v before the benchmark",
+    )
+    available = discover_power_source(
+        "Darwin", which_fn=lambda name: f"/usr/bin/{name}",
+        run_fn=lambda *_args, **_kwargs: Result(), is_file_fn=lambda _path: True,
+    )
+    assert available == PowerAvailability(
+        True, "powermetrics", "processor_package", location="/usr/bin/powermetrics",
+    )
+
+
+def test_macos_discovery_reports_missing_tool_and_check_failure_without_raising():
+    assert discover_power_source(
+        "Darwin", which_fn=lambda _name: None, is_file_fn=lambda _path: False,
+    ).reason == "powermetrics is not installed"
+
+    def failed_run(*_args, **_kwargs):
+        raise OSError("private path and identity")
+
+    status = discover_power_source(
+        "Darwin", which_fn=lambda name: f"/usr/bin/{name}", run_fn=failed_run,
+        is_file_fn=lambda _path: True,
+    )
+    assert status.reason == "power permission check failed"
+
+
+def test_nvidia_and_rocm_discovery_probe_the_counter_not_only_the_executable():
+    nvidia = discover_power_source(
+        "Linux", which_fn=lambda name: "/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(stdout="125.5\n"),
+    )
+    assert nvidia == PowerAvailability(
+        True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi",
+    )
+    denied = discover_power_source(
+        "Linux", which_fn=lambda name: "/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(1, stderr="permission denied: serial-123"),
+    )
+    assert denied.reason == "GPU power counters are unreadable"
+    rocm = discover_power_source(
+        "Linux", which_fn=lambda name: "/bin/rocm-smi" if name == "rocm-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(stdout=fixture("rocm-smi.json")),
+    )
+    assert rocm.source == "rocm-smi"
+    assert rocm.available is True
+
+
+def test_rapl_discovery_distinguishes_permission_denied_from_unsupported(monkeypatch, tmp_path):
+    counter = tmp_path / "energy_uj"
+    counter.write_text("1", encoding="utf-8")
+    monkeypatch.setattr("scripts.runtime.telemetry.os.access", lambda *_args: False)
+    denied = discover_power_source("Linux", which_fn=lambda _name: None, rapl_paths=[counter])
+    assert denied == PowerAvailability(
+        False, "rapl", "cpu_package", "RAPL energy counter permission is denied",
+    )
+    unsupported = discover_power_source("Linux", which_fn=lambda _name: None, rapl_paths=[])
+    assert unsupported.source == "unsupported"
+    assert unsupported.scope == "unknown"
+
+
+def test_power_query_uses_discovered_source_and_never_returns_zero_for_failure():
+    status = PowerAvailability(True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi")
+    assert query_power_reading(
+        status, run_fn=lambda *_args, **_kwargs: Result(stdout="42\n"),
+    ) == PowerReading(42, "nvidia-smi", "accelerator")
+    assert query_power_reading(
+        status, run_fn=lambda *_args, **_kwargs: Result(1, stdout="0\n"),
+    ) is None
+    assert query_power_reading(PowerAvailability(
+        False, "nvidia-smi", "accelerator", "denied",
+    )) is None

@@ -5,6 +5,7 @@ import platform
 import json
 import math
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -23,7 +24,7 @@ MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
-POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system")
+POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system", "unknown")
 
 
 class _PsutilProcess(Protocol):
@@ -85,6 +86,15 @@ class PowerReading:
     watts: float
     source: str
     scope: str
+
+
+@dataclass(frozen=True)
+class PowerAvailability:
+    available: bool
+    source: str
+    scope: str
+    reason: str | None = None
+    location: str | None = None
 
 
 def _finite_nonnegative(value: object) -> float | None:
@@ -167,6 +177,92 @@ def efficiency_per_joule(work_count: float | int | None,
     if work is None or energy is None or work == 0 or energy == 0:
         return None
     return work / energy
+
+
+def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.which,
+                          run_fn=subprocess.run,
+                          rapl_paths: Sequence[Path] | None = None,
+                          is_file_fn: Callable[[str], bool] | None = None) -> PowerAvailability:
+    platform_name = platform_name or platform.system()
+    if platform_name == "Darwin":
+        executable = which_fn("powermetrics") or "/usr/bin/powermetrics"
+        exists = is_file_fn or (lambda path: Path(path).is_file())
+        if not exists(executable):
+            return PowerAvailability(False, "powermetrics", "processor_package",
+                                     "powermetrics is not installed")
+        sudo = which_fn("sudo") or "/usr/bin/sudo"
+        try:
+            result = run_fn([sudo, "-n", "-v"], capture_output=True, text=True,
+                            timeout=2, check=False)
+        except (OSError, subprocess.SubprocessError):
+            return PowerAvailability(False, "powermetrics", "processor_package",
+                                     "power permission check failed")
+        if result.returncode:
+            return PowerAvailability(
+                False, "powermetrics", "processor_package",
+                "administrator permission is not active; run sudo -v before the benchmark",
+            )
+        return PowerAvailability(True, "powermetrics", "processor_package",
+                                 location=executable)
+    if executable := which_fn("nvidia-smi"):
+        try:
+            result = run_fn(
+                [executable, "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result is not None and result.returncode == 0 and parse_nvidia_power(result.stdout):
+            return PowerAvailability(True, "nvidia-smi", "accelerator", location=executable)
+        return PowerAvailability(False, "nvidia-smi", "accelerator",
+                                 "GPU power counters are unreadable")
+    if executable := which_fn("rocm-smi"):
+        try:
+            result = run_fn(
+                [executable, "--showpower", "--json"], capture_output=True, text=True,
+                timeout=2, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result is not None and result.returncode == 0 and parse_rocm_power(result.stdout):
+            return PowerAvailability(True, "rocm-smi", "accelerator", location=executable)
+        return PowerAvailability(False, "rocm-smi", "accelerator",
+                                 "GPU power counters are unreadable")
+    paths = tuple(
+        rapl_paths if rapl_paths is not None
+        else Path("/sys/class/powercap").glob("intel-rapl*/energy_uj")
+    )
+    readable = next((path for path in paths if os.access(path, os.R_OK)), None)
+    if readable:
+        return PowerAvailability(True, "rapl", "cpu_package", location=str(readable))
+    if paths:
+        return PowerAvailability(False, "rapl", "cpu_package",
+                                 "RAPL energy counter permission is denied")
+    return PowerAvailability(False, "unsupported", "unknown",
+                             "no supported power source was detected")
+
+
+def query_power_reading(availability: PowerAvailability,
+                        *, run_fn=subprocess.run) -> PowerReading | None:
+    if not availability.available or not availability.location:
+        return None
+    try:
+        if availability.source == "nvidia-smi":
+            result = run_fn(
+                [availability.location, "--query-gpu=power.draw",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            return parse_nvidia_power(result.stdout) if result.returncode == 0 else None
+        if availability.source == "rocm-smi":
+            result = run_fn(
+                [availability.location, "--showpower", "--json"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            return parse_rocm_power(result.stdout) if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
 
 
 def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
