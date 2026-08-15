@@ -221,3 +221,28 @@ def test_comparison_blocks_different_or_unrecorded_methodology_and_keeps_missing
     assert any(row["baseline"] is None for row in comparison["rows"])
     del baseline["run"]["plan"]["effective_config"]["methodology_profile"]
     assert "unrecorded_methodology" in compare_results(baseline, result())["incompatible_fields"]
+
+
+def test_comparison_allows_qualified_memory_telemetry_on_or_off():
+    baseline = result()
+    candidate = result()
+    baseline["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": False, "memory_telemetry_interval_sec": None,
+    })
+    candidate["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": True, "memory_telemetry_interval_sec": 0.5,
+    })
+    assert compare_results(baseline, candidate)["compatible"] is True
+
+
+def test_comparison_blocks_unqualified_memory_interval_against_telemetry_off():
+    baseline = result()
+    candidate = result()
+    baseline["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": False, "memory_telemetry_interval_sec": None,
+    })
+    candidate["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": True, "memory_telemetry_interval_sec": 1.0,
+    })
+    comparison = compare_results(baseline, candidate)
+    assert "effective_config" in comparison["incompatible_fields"]

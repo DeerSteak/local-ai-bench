@@ -6,6 +6,8 @@ This document defines the Local AI Bench 4.1 neutral methodology. A result is co
 
 The active comparison profile is `neutral-v1`. Its effective runtime optimizations are recorded in the run plan and report; platform compatibility workarounds are not silently treated as vendor tuning. See [Platform Tuning Profiles](platform-tuning.md).
 
+Qualified 0.5-second memory sampling is enabled by default and does not change the performance methodology identity. A telemetry-on result remains comparable with a telemetry-off result when every other identity-bearing setting matches; other sampling intervals retain distinct identities unless separately qualified.
+
 ## Supported workload scope
 
 The commercially supported default workload set is single-shot LLM, conversation, embeddings, image generation, MCQ, math, reasoning, code, and tool accuracy. Native llama-bench throughput, native batched concurrency, HTTP tool concurrency, and HTTP chat concurrency remain opt-in diagnostic workloads: they are useful cross-checks and capacity evidence, but a default result is not incomplete merely because they were not selected. Developer `--sample` accuracy runs are non-comparable diagnostics and are not eligible for decision-grade acceptance.

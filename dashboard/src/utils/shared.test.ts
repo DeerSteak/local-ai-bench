@@ -190,9 +190,10 @@ describe("getMemoryTelemetryMethodologyWarning", () => {
     memory_telemetry: true, memory_telemetry_interval_sec: 0.5,
   } } } };
 
-  it("warns across telemetry modes and intervals", () => {
+  it("allows qualified telemetry on/off comparisons and warns on other intervals", () => {
+    expect(getMemoryTelemetryMethodologyWarning([off, halfSecond])).toBe("");
     expect(getMemoryTelemetryMethodologyWarning([off, oneSecond])).toContain("incompatible");
-    expect(getMemoryTelemetryMethodologyWarning([oneSecond, halfSecond])).toContain("intervals");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond, halfSecond])).toContain("incompatible");
   });
 
   it("allows matching or single-file identities", () => {

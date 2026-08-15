@@ -95,13 +95,13 @@ export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: st
 
 export function getMemoryTelemetryMethodologyWarning(files: ResultsFile[]): string {
   if (files.length < 2) return "";
-  const identities = new Set(files.map(file => {
+  const intervals = new Set(files.map(file => {
     const config = file.data?.run?.effective_config;
-    if (config?.memory_telemetry !== true) return "off";
-    return `memory:${config.memory_telemetry_interval_sec ?? "unknown"}`;
+    return config?.memory_telemetry === true
+      ? config.memory_telemetry_interval_sec ?? "unknown" : 0.5;
   }));
-  return identities.size > 1
-    ? "Loaded files use incompatible telemetry modes or memory sampling intervals."
+  return intervals.size > 1
+    ? "Loaded files use incompatible memory sampling intervals."
     : "";
 }
 

@@ -292,6 +292,15 @@ def extract_comparable_metrics(result: dict) -> dict[str, dict]:
     return metrics
 
 
+def _comparison_settings(settings: dict) -> dict:
+    comparable = dict(settings)
+    if not comparable.get("memory_telemetry") \
+            or comparable.get("memory_telemetry_interval_sec") == 0.5:
+        comparable.pop("memory_telemetry", None)
+        comparable.pop("memory_telemetry_interval_sec", None)
+    return comparable
+
+
 def compare_results(baseline: dict, candidate: dict) -> dict:
     baseline_settings = _run_settings(baseline)
     candidate_settings = _run_settings(candidate)
@@ -301,7 +310,9 @@ def compare_results(baseline: dict, candidate: dict) -> dict:
         "version": (baseline.get("version"), candidate.get("version")),
         "engine": (baseline.get("engine"), candidate.get("engine")),
         "methodology_profile": (baseline_profile, candidate_profile),
-        "effective_config": (baseline_settings, candidate_settings),
+        "effective_config": (
+            _comparison_settings(baseline_settings), _comparison_settings(candidate_settings),
+        ),
     }
     incompatible = [key for key, values in identity.items() if values[0] != values[1]]
     if baseline_profile is None or candidate_profile is None:

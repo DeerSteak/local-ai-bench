@@ -13,6 +13,7 @@ def test_memory_trial_runner_dry_run_alternates_pair_order(tmp_path):
     )
     commands = [line for line in result.stdout.splitlines() if "run_bench.sh" in line]
     assert ["--memory-telemetry" in line for line in commands] == [False, True, True, False]
+    assert ["--no-memory-telemetry" in line for line in commands] == [True, False, False, True]
     assert all("--max-prompt-tokens 2048" in line for line in commands)
     assert not (tmp_path / "manifest.json").exists()
 

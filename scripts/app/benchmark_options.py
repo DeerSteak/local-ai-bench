@@ -66,7 +66,7 @@ PUBLIC_OPTION_SCHEMA = {
     ),
     "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--memory-telemetry": _spec(
-        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=True,
     ),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),

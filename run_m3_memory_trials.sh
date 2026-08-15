@@ -73,6 +73,8 @@ run_trial() {
         --out "$output")
     if [ "$mode" = "on" ]; then
         command+=(--memory-telemetry)
+    else
+        command+=(--no-memory-telemetry)
     fi
     if [ "$DRY_RUN" = true ]; then
         printf 'LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=%q ' "$INTERVAL"

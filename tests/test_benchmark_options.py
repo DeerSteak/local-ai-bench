@@ -12,7 +12,7 @@ def test_schema_defines_every_gui_default_and_cli_choice_set():
         "acc_timeout": config.ACC_TIMEOUT, "acc_token_budget": config.ACC_TOKEN_BUDGET,
         "cpu_only": False, "gpu_split_mode": "layer", "force_all": False,
         "llamacpp_no_repack": False,
-        "retry_crashed_models": False, "offline": False, "memory_telemetry": False,
+        "retry_crashed_models": False, "offline": False, "memory_telemetry": True,
         "out": "", "comfyui": "",
     }
     assert set(GUI_OPTION_FLAGS.values()) <= set(PUBLIC_OPTION_SCHEMA)

@@ -748,6 +748,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--offline")
         if gui_options["memory_telemetry"]:
             command.append("--memory-telemetry")
+        else:
+            command.append("--no-memory-telemetry")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"] and "--comfyui" in command:
