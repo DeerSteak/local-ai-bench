@@ -27,6 +27,29 @@ def test_memory_trial_runner_requires_a_model():
     assert "--model is required" in result.stderr
 
 
+def test_power_trial_dry_run_compares_memory_only_with_combined_sampler(tmp_path):
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--model", "example:model",
+         "--telemetry", "power", "--pairs", "2", "--wait", "0",
+         "--out-dir", str(tmp_path), "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    commands = [line for line in result.stdout.splitlines() if "run_bench.sh" in line]
+    assert ["--power-telemetry" in line for line in commands] == [False, True, True, False]
+    assert all("--memory-telemetry" in line for line in commands)
+    assert "sudo" not in result.stdout.lower()
+
+
+def test_trial_runner_rejects_unknown_telemetry_mode():
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--model", "example:model",
+         "--telemetry", "temperature", "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    assert result.returncode == 2
+    assert "must be memory or power" in result.stderr
+
+
 def test_memory_trial_runner_rejects_dirty_source_tree(tmp_path):
     script = tmp_path / "run_m3_memory_trials.sh"
     script.write_bytes((ROOT / "run_m3_memory_trials.sh").read_bytes())

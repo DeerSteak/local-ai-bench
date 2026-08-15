@@ -5,22 +5,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="$SCRIPT_DIR/bench-env/bin/python"
 MODEL=""
 ENGINE="llamacpp"
+TELEMETRY_MODE="memory"
 PAIRS=20
 MIN_QUALIFICATION_PAIRS=20
 INTERVAL="0.5"
 WAIT_SECONDS=30
-OUT_DIR="$SCRIPT_DIR/results/qualification/m3-memory-$(date '+%Y%m%d-%H%M%S')"
+OUT_DIR=""
 DRY_RUN=false
 
 usage() {
     echo "Usage: bash run_m3_memory_trials.sh --model TAG [--engine NAME] [--pairs N]"
-    echo "       [--interval SEC] [--wait SEC] [--out-dir DIR] [--dry-run]"
+    echo "       [--telemetry memory|power] [--interval SEC] [--wait SEC] [--out-dir DIR] [--dry-run]"
 }
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --model) MODEL="${2:-}"; shift 2 ;;
         --engine) ENGINE="${2:-}"; shift 2 ;;
+        --telemetry) TELEMETRY_MODE="${2:-}"; shift 2 ;;
         --pairs) PAIRS="${2:-}"; shift 2 ;;
         --interval) INTERVAL="${2:-}"; shift 2 ;;
         --wait) WAIT_SECONDS="${2:-}"; shift 2 ;;
@@ -33,6 +35,10 @@ done
 
 if [ -z "$MODEL" ]; then
     echo "--model is required" >&2
+    exit 2
+fi
+if [ "$TELEMETRY_MODE" != "memory" ] && [ "$TELEMETRY_MODE" != "power" ]; then
+    echo "--telemetry must be memory or power" >&2
     exit 2
 fi
 if ! [[ "$PAIRS" =~ ^[1-9][0-9]*$ ]] || ! [[ "$WAIT_SECONDS" =~ ^[0-9]+$ ]]; then
@@ -49,7 +55,26 @@ if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$SCRIPT_DIR" status --porcelain)" ]
 fi
 
 cd "$SCRIPT_DIR"
+if [ -z "$OUT_DIR" ]; then
+    OUT_DIR="$SCRIPT_DIR/results/qualification/$TELEMETRY_MODE-$(date '+%Y%m%d-%H%M%S')"
+fi
 OUT_DIR="$(mkdir -p "$OUT_DIR" && cd "$OUT_DIR" && pwd)"
+
+SUDO_KEEPALIVE_PID=""
+cleanup_sudo_keepalive() {
+    if [ -n "$SUDO_KEEPALIVE_PID" ]; then
+        kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup_sudo_keepalive EXIT
+
+if [ "$TELEMETRY_MODE" = "power" ] && [ "$DRY_RUN" = false ] && [ "$(uname -s)" = "Darwin" ]; then
+    echo "Power qualification needs temporary administrator permission for powermetrics."
+    sudo -v
+    (while sudo -n -v 2>/dev/null; do sleep 60; done) &
+    SUDO_KEEPALIVE_PID=$!
+fi
 
 is_complete() {
     "$PYTHON" - "$1" <<'PY'
@@ -71,7 +96,12 @@ run_trial() {
     local command=(bash "$SCRIPT_DIR/run_bench.sh" --ui none --engine "$ENGINE" --tests llm
         --llm-models "$MODEL" --max-prompt-tokens 2048 --warmup 2 --runs 3
         --out "$output")
-    if [ "$mode" = "on" ]; then
+    if [ "$TELEMETRY_MODE" = "power" ]; then
+        command+=(--memory-telemetry)
+        if [ "$mode" = "on" ]; then
+            command+=(--power-telemetry)
+        fi
+    elif [ "$mode" = "on" ]; then
         command+=(--memory-telemetry)
     else
         command+=(--no-memory-telemetry)
@@ -113,14 +143,16 @@ if [ "$DRY_RUN" = true ]; then
     exit 0
 fi
 
-"$PYTHON" - "$OUT_DIR" "$PAIRS" "$INTERVAL" <<'PY'
+"$PYTHON" - "$OUT_DIR" "$PAIRS" "$INTERVAL" "$TELEMETRY_MODE" <<'PY'
 import json
 import platform
 import sys
 from pathlib import Path
 
 directory, pair_count, interval = Path(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3])
+telemetry_mode = sys.argv[4]
 first = json.loads((directory / "off-01.json").read_text(encoding="utf-8"))
+first_on = json.loads((directory / "on-01.json").read_text(encoding="utf-8"))
 models = list((first.get("llm") or {}).keys())
 if len(models) != 1:
     raise SystemExit("Expected exactly one LLM result model when building the manifest")
@@ -135,6 +167,13 @@ for index in range(1, pair_count + 1):
 manifest = {
     "platform": platform.platform(),
     "interval_sec": interval,
+    "telemetry_mode": telemetry_mode,
+    "source": first_on.get("run", {}).get("effective_config", {}).get(
+        f"{telemetry_mode}_source"
+    ),
+    "scope": first_on.get("run", {}).get("effective_config", {}).get(
+        f"{telemetry_mode}_scope"
+    ),
     "section": "llm",
     "model": models[0],
     "case": "2K",

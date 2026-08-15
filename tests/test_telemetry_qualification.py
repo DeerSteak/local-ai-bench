@@ -84,7 +84,9 @@ def test_extracts_case_metrics_and_manifest_paths(tmp_path):
     for index in range(40):
         (tmp_path / f"result-{index}.json").write_text(json.dumps(result))
     manifest = {
-        "platform": "test", "interval_sec": 1, "section": "llm", "model": "model", "case": "2K",
+        "platform": "test", "interval_sec": 1, "telemetry_mode": "power",
+        "source": "powermetrics", "scope": "processor_package",
+        "section": "llm", "model": "model", "case": "2K",
         "pairs": [
             {"order": "off-on" if index % 2 == 0 else "on-off",
              "off": f"result-{index * 2}.json", "on": f"result-{index * 2 + 1}.json"}
@@ -94,6 +96,9 @@ def test_extracts_case_metrics_and_manifest_paths(tmp_path):
     report = analyze_manifest(manifest, tmp_path)
     assert report["pair_count"] == 20
     assert report["passed"] is True
+    assert report["telemetry_mode"] == "power"
+    assert report["source"] == "powermetrics"
+    assert report["scope"] == "processor_package"
 
 
 def test_extract_rejects_missing_or_nonpositive_metrics():
