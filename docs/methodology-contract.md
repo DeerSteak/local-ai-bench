@@ -25,7 +25,7 @@ The commercially supported default workload set is single-shot LLM, conversation
 | Concurrent throughput | Sum of accepted generated tokens divided by batch wall time, with per-request TTFT and request coverage retained | tokens/second |
 | Native llama-bench rate | `llama-bench`/`llama-batched-bench` reported prompt or generation throughput for the recorded native-tool case | tokens/second |
 
-The authoritative field-level names and old/new aliases are listed in [Result compatibility v4.1](result-compatibility-v4.1.md). Conversation client TTFT includes request transport and cached-turn handling; server prompt time separately isolates prompt evaluation. Single-shot and conversation TTFT therefore answer different questions and must not be compared as if they share cache state.
+The authoritative field-level names and old/new aliases are listed in [Result compatibility v4.1](result-compatibility-v4.1.md). Generation durations are retained to six decimal places so short measurements do not lose sub-millisecond resolution; presentation layers may display fewer digits. Conversation client TTFT includes request transport and cached-turn handling; server prompt time separately isolates prompt evaluation. Single-shot and conversation TTFT therefore answer different questions and must not be compared as if they share cache state.
 
 ## Cache and load state
 

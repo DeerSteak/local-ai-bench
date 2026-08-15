@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Protocol
 
 from scripts.runtime.engines.base import (
-    GenerationMeasurement, aggregate_generation_measurements, measurement_validation_errors,
+    TIMING_DECIMALS, GenerationMeasurement, aggregate_generation_measurements,
+    measurement_validation_errors,
 )
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
@@ -238,11 +239,12 @@ class LLMEventStage:
                 if valid:
                     import statistics
                     context_result.update({
-                        "ttft_mean_sec": round(statistics.mean(ttfts), 3),
-                        "ttft_stdev_sec": round(statistics.stdev(ttfts), 3) if len(ttfts) >= 2 else 0,
+                        "ttft_mean_sec": round(statistics.mean(ttfts), TIMING_DECIMALS),
+                        "ttft_stdev_sec": round(statistics.stdev(ttfts), TIMING_DECIMALS)
+                        if len(ttfts) >= 2 else 0,
                         "tps_mean": round(statistics.mean(tps_values), 2),
                         "tps_stdev": round(statistics.stdev(tps_values), 2) if len(tps_values) >= 2 else 0,
-                        "ttft_runs": [round(value, 3) for value in ttfts],
+                        "ttft_runs": [round(value, TIMING_DECIMALS) for value in ttfts],
                         "tps_runs": [round(value, 2) for value in tps_values],
                     })
                 if case.get("depth_tokens") is not None:
