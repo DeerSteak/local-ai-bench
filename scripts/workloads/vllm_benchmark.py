@@ -261,6 +261,7 @@ class VllmBenchBenchmark:
                     ):
                         entry = None
                         case_memory = None
+                        case_power = None
                         with tempfile.TemporaryDirectory() as workdir:
                             out = Path(workdir) / f"{kind}.json"
                             command = builder(
@@ -290,11 +291,14 @@ class VllmBenchBenchmark:
                             finally:
                                 if telemetry:
                                     case_memory = telemetry.finish_case()
+                                    case_power = getattr(telemetry, "last_power", None)
                         if entry is None:
                             Shared.warn(f"{label}: {kind} at in{input_len} reported no usable result")
                             continue
                         if telemetry:
                             entry["memory"] = case_memory
+                            if case_power is not None:
+                                entry["power"] = case_power
                         bucket.append(entry)
                         model_result["completed_cases"] += 1
                         Shared.ok(self.format_entry(kind, entry))

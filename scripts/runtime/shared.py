@@ -911,6 +911,8 @@ class Shared:
                     memory = telemetry.finish_case()
                     if isinstance(results.get(short), dict):
                         results[short]["memory"] = memory
+                        if (power := getattr(telemetry, "last_power", None)) is not None:
+                            results[short]["power"] = power
                 if save_fn:
                     save_fn(results)
                 if answers_path:

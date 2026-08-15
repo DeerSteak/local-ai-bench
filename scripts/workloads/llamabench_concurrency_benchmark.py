@@ -224,6 +224,8 @@ class LlamaBenchConcurrencyBenchmark:
                 def _record_entry(entry):
                     if telemetry:
                         entry["memory"] = telemetry.finish_case()
+                        if (power := getattr(telemetry, "last_power", None)) is not None:
+                            entry["power"] = power
                         telemetry.begin_measured("measured:native-sweep")
                     entries.append(entry)
                     results[short]["completed_cases"] = len(entries)

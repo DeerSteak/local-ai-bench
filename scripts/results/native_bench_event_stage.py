@@ -87,6 +87,7 @@ class NativeBenchEventStage:
         attempt_id = self.plan.attempt_id(case_id, 1)
         sample_id = self.plan.sample_id(attempt_id, 1)
         memory = self.telemetry.finish_case() if self.telemetry else None
+        power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
         if self.telemetry:
             self.telemetry.begin_measured("measured:native-sweep")
         self.store.append(self.plan.job_id, [
@@ -98,7 +99,9 @@ class NativeBenchEventStage:
                 "number": 1, "valid": True, "measurement": entry, "errors": [],
             }, parent_id=attempt_id),
             JournalEvent("attempt", attempt_id, "complete", {}, parent_id=case_id),
-            JournalEvent("case", case_id, "complete", {"memory": memory}, parent_id=self.stage_id),
+            JournalEvent("case", case_id, "complete", {
+                "memory": memory, "power": power,
+            }, parent_id=self.stage_id),
         ])
         self.export_fn(self.export())
 
@@ -167,6 +170,8 @@ class NativeBenchEventStage:
                 entry = sample["measurement"]
                 if case.get("memory") is not None:
                     entry = {**entry, "memory": {**case["memory"], "case_id": case_id}}
+                if case.get("power") is not None:
+                    entry = {**entry, "power": {**case["power"], "case_id": case_id}}
                 model_result = results.setdefault(short, {
                     "prefill_entries": [], "decode_entries": [],
                     "requested_cases": 0, "completed_cases": 0,

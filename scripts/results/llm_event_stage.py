@@ -146,6 +146,7 @@ class LLMEventStage:
         )
         attempt_id = self.plan.attempt_id(case_id, attempt_number)
         memory = self.telemetry.finish_case() if self.telemetry else None
+        power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
         projection = self.store.rebuild(self.plan.job_id)
         events = []
         if case_id not in projection["cases"]:
@@ -176,7 +177,7 @@ class LLMEventStage:
             JournalEvent("attempt", attempt_id, attempt_state, {}, parent_id=case_id),
             JournalEvent("case", case_id, case_state, {
                 "run_status": status, "model_markers": model_markers or {},
-                "result_fields": result_fields or {}, "memory": memory,
+                "result_fields": result_fields or {}, "memory": memory, "power": power,
             }, parent_id=self.stage_id),
         ])
         self.store.append(self.plan.job_id, events)
@@ -252,6 +253,8 @@ class LLMEventStage:
                 context_result.update(case.get("result_fields", {}))
                 if case.get("memory") is not None:
                     context_result["memory"] = {**case["memory"], "case_id": case_id}
+                if case.get("power") is not None:
+                    context_result["power"] = {**case["power"], "case_id": case_id}
                 results.setdefault(short, {})[case["context_label"]] = context_result
             results.setdefault(short, {}).update(case.get("model_markers", {}))
         return results

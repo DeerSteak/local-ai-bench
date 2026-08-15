@@ -59,15 +59,21 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
-def test_case_memory_survives_journal_reopen_and_projection(tmp_path):
+def test_case_telemetry_survives_journal_reopen_and_projection(tmp_path):
     memory = {
         "windows": [{"name": "measured", "sample_count": 1}],
         "summary": {"process_rss_gb": {"peak_gb": 4.0}},
         "headroom": {"absolute_gb": 8.0, "fraction": 0.5, "state": "comfortable"},
         "provenance": {"interval_sec": 1.0, "failed_samples": 0},
     }
+    power = {
+        "status": "recorded", "source": "powermetrics", "scope": "processor_package",
+        "energy_joules": 12.5, "idle_baseline_watts": 4.0,
+    }
 
     class Telemetry:
+        last_power = power
+
         def begin_model_load(self):
             pass
 
@@ -85,6 +91,9 @@ def test_case_memory_survives_journal_reopen_and_projection(tmp_path):
     projected = export_llm_section(path, plan.job_id)["model"]["2K"]["memory"]
     assert {key: projected[key] for key in memory} == memory
     assert projected["case_id"].startswith("case_")
+    projected_power = export_llm_section(path, plan.job_id)["model"]["2K"]["power"]
+    assert {key: projected_power[key] for key in power} == power
+    assert projected_power["case_id"] == projected["case_id"]
 
 
 def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):

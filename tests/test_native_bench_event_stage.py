@@ -99,6 +99,10 @@ def test_native_case_memory_survives_projection(tmp_path):
     class Telemetry:
         def __init__(self):
             self.calls = []
+            self.last_power = {
+                "status": "recorded", "source": "nvidia-smi", "scope": "accelerator",
+                "energy_joules": 10,
+            }
 
         def begin_model_load(self):
             self.calls.append("load")
@@ -121,6 +125,9 @@ def test_native_case_memory_survives_projection(tmp_path):
     projected = export_native_bench_section(path, plan.job_id)["model"]["prefill_entries"][0]
     assert {key: projected["memory"][key] for key in memory} == memory
     assert projected["memory"]["case_id"].startswith("case_")
+    assert projected["power"]["energy_joules"] == 10
+    assert projected["power"]["scope"] == "accelerator"
+    assert projected["power"]["case_id"] == projected["memory"]["case_id"]
     assert telemetry.calls == [
         "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
         "finish",

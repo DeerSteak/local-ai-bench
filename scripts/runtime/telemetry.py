@@ -56,6 +56,7 @@ class TelemetrySample:
     process_rss_gb: float | None = None
     accelerator_memory_used_gb: float | None = None
     accelerator_memory_total_gb: float | None = None
+    power_watts: float | None = None
 
 
 @dataclass(frozen=True)
@@ -263,6 +264,171 @@ def query_power_reading(availability: PowerAvailability,
     except (OSError, subprocess.SubprocessError):
         return None
     return None
+
+
+class PowerSourceLike(Protocol):
+    def start(self) -> None: ...
+    def read_watts(self) -> float | None: ...
+    def stop(self) -> None: ...
+
+
+class PollingPowerSource:
+    def __init__(self, availability: PowerAvailability, *, run_fn=subprocess.run,
+                 monotonic=time.monotonic,
+                 read_text_fn: Callable[[str], str] | None = None):
+        self.availability = availability
+        self.run_fn = run_fn
+        self.monotonic = monotonic
+        self.read_text_fn = read_text_fn or (
+            lambda path: Path(path).read_text(encoding="utf-8")
+        )
+        self._last_rapl: tuple[float, float] | None = None
+
+    def start(self) -> None:
+        self._last_rapl = None
+
+    def read_watts(self) -> float | None:
+        if self.availability.source != "rapl":
+            reading = query_power_reading(self.availability, run_fn=self.run_fn)
+            return reading.watts if reading else None
+        if not self.availability.available or not self.availability.location:
+            return None
+        try:
+            joules = parse_rapl_energy_uj(self.read_text_fn(self.availability.location))
+        except OSError:
+            return None
+        now = self.monotonic()
+        previous = self._last_rapl
+        if joules is None:
+            return None
+        self._last_rapl = (now, joules)
+        if previous is None or now <= previous[0] or joules < previous[1]:
+            return None
+        return (joules - previous[1]) / (now - previous[0])
+
+    def stop(self) -> None:
+        pass
+
+
+class PowermetricsPowerSource:
+    def __init__(self, availability: PowerAvailability, interval_sec: float, *,
+                 popen_fn: Callable[..., Any] = subprocess.Popen):
+        self.availability = availability
+        self.interval_sec = interval_sec
+        self.popen_fn = popen_fn
+        self._process: Any = None
+        self._reader: threading.Thread | None = None
+        self._latest: float | None = None
+        self._lock = threading.Lock()
+
+    def start(self) -> None:
+        if not self.availability.available or not self.availability.location:
+            return
+        command = [
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", self.availability.location,
+            "--samplers", "cpu_power,gpu_power,ane_power", "--sample-rate",
+            str(max(100, round(self.interval_sec * 1000))), "--sample-count", "-1",
+            "--buffer-size", "1",
+        ]
+        try:
+            self._process = self.popen_fn(
+                command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, bufsize=1,
+            )
+        except OSError:
+            self._process = None
+            return
+        self._reader = threading.Thread(
+            target=self._read_output, name="powermetrics-reader", daemon=True,
+        )
+        self._reader.start()
+
+    def read_watts(self) -> float | None:
+        with self._lock:
+            return self._latest
+
+    def stop(self) -> None:
+        if self._process is None:
+            return
+        try:
+            self._process.terminate()
+            self._process.wait(timeout=2)
+        except (OSError, subprocess.SubprocessError):
+            try:
+                self._process.kill()
+            except OSError:
+                pass
+        if self._reader:
+            self._reader.join(timeout=2)
+
+    def _read_output(self) -> None:
+        stdout = getattr(self._process, "stdout", None)
+        if stdout is None:
+            return
+        for line in stdout:
+            reading = parse_powermetrics_power(line)
+            if reading:
+                with self._lock:
+                    self._latest = reading.watts
+
+
+def create_power_source(availability: PowerAvailability, interval_sec: float,
+                        **kwargs) -> PowerSourceLike:
+    if availability.source == "powermetrics":
+        return PowermetricsPowerSource(availability, interval_sec, **kwargs)
+    return PollingPowerSource(availability, **kwargs)
+
+
+def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
+                availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
+    windows = []
+    measured_energy = []
+    idle_values = []
+    for name in dict.fromkeys(sample.window for sample in samples):
+        selected = [sample for sample in samples if sample.window == name]
+        values = [sample.power_watts for sample in selected if sample.power_watts is not None]
+        energy = integrate_power_joules([
+            (sample.timestamp_sec, sample.power_watts) for sample in selected
+        ])
+        if name.startswith("measured") and energy is not None:
+            measured_energy.append(energy)
+        if name == "idle":
+            idle_values.extend(values)
+        windows.append({
+            "name": name,
+            "sample_count": len(selected),
+            "duration_sec": (
+                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
+                if selected else 0.0
+            ),
+            "mean_watts": sum(values) / len(values) if values else None,
+            "peak_watts": max(values) if values else None,
+            "energy_joules": energy,
+            "samples": [
+                {"timestamp_sec": sample.timestamp_sec, "watts": sample.power_watts}
+                for sample in selected
+            ],
+        })
+    all_values = [sample.power_watts for sample in samples if sample.power_watts is not None]
+    return {
+        "status": "recorded" if measured_energy else "unavailable",
+        "reason": None if measured_energy else (
+            availability.reason or "insufficient valid samples for energy integration"
+        ),
+        "source": availability.source,
+        "scope": availability.scope,
+        "energy_joules": sum(measured_energy) if measured_energy else None,
+        "mean_watts": sum(all_values) / len(all_values) if all_values else None,
+        "peak_watts": max(all_values) if all_values else None,
+        "idle_baseline_watts": (
+            sum(idle_values) / len(idle_values) if idle_values else None
+        ),
+        "windows": windows,
+        "provenance": {
+            "interval_sec": interval_sec,
+            "failed_samples": failed_samples,
+        },
+    }
 
 
 def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
@@ -573,17 +739,63 @@ def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] 
     return {"channels": channels, "tightest_headroom": tightest}
 
 
+def derive_run_power_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
+    cases = []
+
+    def visit(value: object, path: tuple[str, ...]) -> None:
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, (*path, str(index)))
+            return
+        if not isinstance(value, dict):
+            return
+        power = value.get("power")
+        if isinstance(power, dict):
+            cases.append((power, "/".join(path)))
+        for key, child in value.items():
+            if key != "power":
+                visit(child, (*path, str(key)))
+
+    visit(dict(sections), ())
+    if not cases:
+        return None
+    scopes = sorted({power.get("scope") for power, _ in cases
+                     if isinstance(power.get("scope"), str)})
+    sources = sorted({power.get("source") for power, _ in cases
+                      if isinstance(power.get("source"), str)})
+    energies = [power.get("energy_joules") for power, _ in cases
+                if isinstance(power.get("energy_joules"), (int, float))]
+    idle = [power.get("idle_baseline_watts") for power, _ in cases
+            if isinstance(power.get("idle_baseline_watts"), (int, float))]
+    return {
+        "status": "recorded" if energies else "unavailable",
+        "reason": None if energies else next(
+            (power.get("reason") for power, _ in cases if isinstance(power.get("reason"), str)),
+            "no case recorded usable power samples",
+        ),
+        "scope": scopes[0] if len(scopes) == 1 else "mixed",
+        "source": sources[0] if len(sources) == 1 else "mixed",
+        "energy_joules": sum(energies) if energies and len(scopes) == 1 else None,
+        "idle_baseline_watts": sum(idle) / len(idle) if idle else None,
+        "recorded_cases": len(energies),
+        "total_cases": len(cases),
+    }
+
+
 class TelemetrySampler:
     def __init__(self, pid: int, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
-                 sample_fn: Callable[[float, str], TelemetrySample] | None = None):
+                 sample_fn: Callable[[float, str], TelemetrySample] | None = None,
+                 power_source: PowerSourceLike | None = None):
         if interval_sec <= 0:
             raise ValueError("telemetry interval must be positive")
         self.pid = pid
         self.interval_sec = interval_sec
         self._sample_fn = sample_fn or self._sample
+        self.power_source = power_source
         self._samples: list[TelemetrySample] = []
         self._failed_samples = 0
         self._channel_failures = {channel: 0 for channel in MEMORY_CHANNELS}
+        self._power_failures = 0
         self._window = "idle"
         self._started_at = 0.0
         self._stop_event = threading.Event()
@@ -605,6 +817,11 @@ class TelemetrySampler:
     def channel_failures(self) -> Mapping[str, int]:
         with self._lock:
             return dict(self._channel_failures)
+
+    @property
+    def power_failures(self) -> int:
+        with self._lock:
+            return self._power_failures
 
     def set_window(self, name: str) -> None:
         if not name:
@@ -631,7 +848,9 @@ class TelemetrySampler:
             raise RuntimeError("telemetry sampler is already running")
         self._stop_event.clear()
         self._started_at = time.monotonic()
-        self._thread = threading.Thread(target=self._run, name="memory-telemetry", daemon=True)
+        if self.power_source:
+            self.power_source.start()
+        self._thread = threading.Thread(target=self._run, name="resource-telemetry", daemon=True)
         self._thread.start()
         return self
 
@@ -639,6 +858,8 @@ class TelemetrySampler:
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=max(3.0, self.interval_sec * 2))
+        if self.power_source:
+            self.power_source.stop()
         return self.samples
 
     def __enter__(self) -> "TelemetrySampler":
@@ -658,6 +879,7 @@ class TelemetrySampler:
             process_rss_gb=process[1] if process else None,
             accelerator_memory_used_gb=vram[0] if vram else None,
             accelerator_memory_total_gb=vram[1] if vram else None,
+            power_watts=self.power_source.read_watts() if self.power_source else None,
         )
 
     def _run(self) -> None:
@@ -673,23 +895,36 @@ class TelemetrySampler:
                 self._failed_samples += 1
                 for channel in MEMORY_CHANNELS:
                     self._channel_failures[channel] += 1
+                if self.power_source:
+                    self._power_failures += 1
             return TelemetrySample(timestamp, window)
         with self._lock:
             for channel in MEMORY_CHANNELS:
                 if getattr(sample, channel) is None:
                     self._channel_failures[channel] += 1
+            if self.power_source and sample.power_watts is None:
+                self._power_failures += 1
         return sample
 
 
 class CaseTelemetry:
     def __init__(self, pid: int | None = None, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
-                 sampler: TelemetrySampler | None = None, sources: Mapping[str, str] | None = None):
-        self.sampler = sampler or TelemetrySampler(pid or os.getpid(), interval_sec)
+                 sampler: TelemetrySampler | None = None, sources: Mapping[str, str] | None = None,
+                 power_availability: PowerAvailability | None = None):
+        self.power_availability = power_availability
+        power_source = (
+            create_power_source(power_availability, interval_sec) if power_availability else None
+        )
+        self.sampler = sampler or TelemetrySampler(
+            pid or os.getpid(), interval_sec, power_source=power_source,
+        )
         self.sources = dict(sources or default_memory_sources())
         self.ceiling_gb = memory_ceiling_gb(self.sources)
         self._cursor = 0
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
+        self._power_failure_cursor = 0
+        self.last_power: dict[str, Any] | None = None
 
     def start(self) -> "CaseTelemetry":
         self.sampler.start()
@@ -697,6 +932,8 @@ class CaseTelemetry:
         self._cursor = 0
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
+        self._power_failure_cursor = 0
+        self.last_power = None
         return self
 
     def stop(self) -> None:
@@ -720,6 +957,8 @@ class CaseTelemetry:
             for channel in MEMORY_CHANNELS
         }
         self._channel_failure_cursor = dict(current_failures)
+        power_failures = self.sampler.power_failures - self._power_failure_cursor
+        self._power_failure_cursor = self.sampler.power_failures
         block = memory_block(
             samples, self.sampler.interval_sec, failed_samples,
             {
@@ -729,6 +968,12 @@ class CaseTelemetry:
             },
             self.sources,
             self.ceiling_gb if ceiling_gb is None else ceiling_gb,
+        )
+        self.last_power = (
+            power_block(
+                samples, self.sampler.interval_sec, self.power_availability, power_failures,
+            )
+            if self.power_availability else None
         )
         self.sampler.mark_window("idle")
         return block

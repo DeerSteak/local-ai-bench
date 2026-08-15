@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime.telemetry import (
-    PowerAvailability, PowerReading, discover_power_source, efficiency_per_joule,
-    integrate_power_joules,
+    CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
+    PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
+    derive_run_power_summary, efficiency_per_joule, integrate_power_joules, power_block,
     parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
     parse_rocm_power, query_power_reading,
 )
@@ -169,3 +170,195 @@ def test_power_query_uses_discovered_source_and_never_returns_zero_for_failure()
     assert query_power_reading(PowerAvailability(
         False, "nvidia-smi", "accelerator", "denied",
     )) is None
+
+
+def test_power_block_keeps_idle_separate_and_integrates_only_measured_windows():
+    samples = [
+        TelemetrySample(0, "idle", power_watts=5),
+        TelemetrySample(1, "idle", power_watts=7),
+        TelemetrySample(2, "measured:prefill", power_watts=10),
+        TelemetrySample(2.5, "measured:prefill", power_watts=14),
+        TelemetrySample(3, "measured:decode", power_watts=20),
+        TelemetrySample(4.5, "measured:decode", power_watts=24),
+    ]
+    block = power_block(
+        samples, 0.5,
+        PowerAvailability(True, "powermetrics", "processor_package", location="tool"), 1,
+    )
+    assert block["status"] == "recorded"
+    assert block["energy_joules"] == pytest.approx(39)
+    assert block["idle_baseline_watts"] == 6
+    assert block["scope"] == "processor_package"
+    assert block["provenance"] == {"interval_sec": 0.5, "failed_samples": 1}
+    assert [window["name"] for window in block["windows"]] == [
+        "idle", "measured:prefill", "measured:decode",
+    ]
+    assert block["windows"][0]["energy_joules"] == 6
+
+
+def test_power_block_records_unavailable_reason_and_never_zero_energy():
+    block = power_block(
+        [TelemetrySample(0, "measured", power_watts=None)], 0.5,
+        PowerAvailability(False, "powermetrics", "processor_package", "permission denied"), 1,
+    )
+    assert block["status"] == "unavailable"
+    assert block["reason"] == "permission denied"
+    assert block["energy_joules"] is None
+    assert block["mean_watts"] is None
+
+
+class FakePowerSource:
+    def __init__(self, watts=12):
+        self.watts = watts
+        self.calls = []
+
+    def start(self):
+        self.calls.append("start")
+
+    def read_watts(self):
+        self.calls.append("read")
+        return self.watts
+
+    def stop(self):
+        self.calls.append("stop")
+
+
+def test_shared_sampler_starts_reads_and_stops_power_on_the_memory_timeline():
+    source = FakePowerSource()
+    sampler = TelemetrySampler(42, interval_sec=100, power_source=source)
+    sampler.start()
+    sampler.capture()
+    samples = sampler.stop()
+    assert source.calls[0] == "start"
+    assert source.calls[-1] == "stop"
+    assert all(sample.power_watts == 12 for sample in samples)
+    assert sampler.power_failures == 0
+
+
+def test_shared_sampler_turns_power_errors_into_unknown_samples():
+    source = FakePowerSource()
+
+    def fail():
+        raise OSError("sensor failed")
+
+    source.read_watts = fail
+    sampler = TelemetrySampler(42, interval_sec=100, power_source=source).start()
+    samples = sampler.stop()
+    assert samples[0].power_watts is None
+    assert sampler.failed_samples == 1
+    assert sampler.power_failures == 1
+
+
+class FakeProcess:
+    def __init__(self):
+        self.stdout = iter([
+            "CPU Power: 1000 mW\n",
+            "Combined Power (CPU + GPU + ANE): 2500 mW\n",
+        ])
+        self.terminated = False
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout):
+        return 0
+
+    def kill(self):
+        raise AssertionError("clean process should not be killed")
+
+
+def test_powermetrics_source_uses_one_long_lived_noninteractive_process():
+    process = FakeProcess()
+    commands = []
+
+    def popen(command, **_kwargs):
+        commands.append(command)
+        return process
+
+    source = PowermetricsPowerSource(
+        PowerAvailability(True, "powermetrics", "processor_package", location="/tool"),
+        0.5, popen_fn=popen,
+    )
+    source.start()
+    assert source._reader is not None
+    source._reader.join(timeout=1)
+    assert source.read_watts() == 2.5
+    source.stop()
+    assert process.terminated is True
+    assert commands == [[
+        "/usr/bin/sudo", "-n", "/tool", "--samplers", "cpu_power,gpu_power,ane_power",
+        "--sample-rate", "500", "--sample-count", "-1", "--buffer-size", "1",
+    ]]
+
+
+def test_rapl_polling_source_derives_watts_from_counter_delta():
+    values = iter(["1000000", "2500000", "500000"])
+    times = iter([10.0, 10.5, 11.0])
+    source = PollingPowerSource(
+        PowerAvailability(True, "rapl", "cpu_package", location="energy_uj"),
+        read_text_fn=lambda _path: next(values), monotonic=lambda: next(times),
+    )
+    source.start()
+    assert source.read_watts() is None
+    assert source.read_watts() == 3
+    assert source.read_watts() is None
+
+
+def test_case_telemetry_exposes_case_local_power_beside_legacy_memory_result():
+    readings = iter([5, 7, 10, 14, 8])
+
+    def sample(timestamp, window):
+        return TelemetrySample(timestamp, window, host_ram_used_gb=10,
+                               power_watts=next(readings))
+
+    sampler = TelemetrySampler(42, interval_sec=100, sample_fn=sample)
+    telemetry = CaseTelemetry(
+        sampler=sampler, sources={"host_ram_used_gb": "psutil"},
+        power_availability=PowerAvailability(
+            True, "powermetrics", "processor_package", location="tool",
+        ),
+    ).start()
+    telemetry.begin_measured()
+    memory = telemetry.finish_case()
+    telemetry.stop()
+    assert memory["summary"]["host_ram_used_gb"]["peak_gb"] == 10
+    assert telemetry.last_power is not None
+    assert telemetry.last_power["status"] == "recorded"
+    assert telemetry.last_power["energy_joules"] is not None
+
+
+def test_run_power_summary_sums_only_same_scope_case_energy():
+    sections = {"llm": {"model": {
+        "2K": {"power": {"status": "recorded", "source": "powermetrics",
+                           "scope": "processor_package", "energy_joules": 12,
+                           "idle_baseline_watts": 4}},
+        "8K": {"power": {"status": "recorded", "source": "powermetrics",
+                           "scope": "processor_package", "energy_joules": 20,
+                           "idle_baseline_watts": 6}},
+    }}}
+    assert derive_run_power_summary(sections) == {
+        "status": "recorded", "reason": None, "scope": "processor_package",
+        "source": "powermetrics", "energy_joules": 32, "idle_baseline_watts": 5,
+        "recorded_cases": 2, "total_cases": 2,
+    }
+
+
+def test_run_power_summary_refuses_mixed_scope_total_and_preserves_unavailable():
+    mixed = derive_run_power_summary({
+        "llm": {"a": {"power": {"scope": "accelerator", "source": "nvidia-smi",
+                                    "energy_joules": 8}}},
+        "embeddings": {"b": {"power": {"scope": "cpu_package", "source": "rapl",
+                                          "energy_joules": 2}}},
+    })
+    assert mixed is not None
+    assert mixed["scope"] == "mixed"
+    assert mixed["energy_joules"] is None
+    assert derive_run_power_summary({"llm": {"legacy": {"tps_mean": 4}}}) is None
+    unavailable = derive_run_power_summary({"llm": {"a": {"power": {
+        "status": "unavailable", "source": "powermetrics", "scope": "processor_package",
+        "energy_joules": None, "reason": "permission denied",
+    }}}})
+    assert unavailable is not None
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["energy_joules"] is None
+    assert unavailable["reason"] == "permission denied"
