@@ -3,6 +3,7 @@
 from dataclasses import asdict, dataclass
 import platform
 import json
+import math
 import os
 import re
 import shutil
@@ -22,6 +23,7 @@ MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
+POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system")
 
 
 class _PsutilProcess(Protocol):
@@ -76,6 +78,95 @@ class Headroom:
     absolute_gb: float | None
     fraction: float | None
     state: str
+
+
+@dataclass(frozen=True)
+class PowerReading:
+    watts: float
+    source: str
+    scope: str
+
+
+def _finite_nonnegative(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def parse_powermetrics_power(output: str) -> PowerReading | None:
+    patterns = (
+        r"Combined Power \(CPU \+ GPU \+ ANE\):\s*([0-9.]+)\s*(m?W)\b",
+        r"Package Power:\s*([0-9.]+)\s*(m?W)\b",
+    )
+    for pattern in patterns:
+        matches = re.findall(pattern, output, flags=re.IGNORECASE)
+        values = []
+        for raw, unit in matches:
+            value = _finite_nonnegative(raw)
+            if value is not None:
+                values.append(value / 1000 if unit.lower() == "mw" else value)
+        if values:
+            return PowerReading(values[-1], "powermetrics", "processor_package")
+    return None
+
+
+def parse_nvidia_power(output: str) -> PowerReading | None:
+    values = []
+    for line in output.splitlines():
+        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:W)?\s*", line, flags=re.IGNORECASE)
+        value = _finite_nonnegative(match.group(1)) if match else None
+        if value is not None:
+            values.append(value)
+    return PowerReading(sum(values), "nvidia-smi", "accelerator") if values else None
+
+
+def parse_rocm_power(output: str) -> PowerReading | None:
+    try:
+        payload = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    keys = ("Average Graphics Package Power (W)", "Current Socket Graphics Package Power (W)")
+    values = []
+    for card in payload.values():
+        if not isinstance(card, dict):
+            continue
+        value = next((_finite_nonnegative(card.get(key)) for key in keys if key in card), None)
+        if value is not None:
+            values.append(value)
+    return PowerReading(sum(values), "rocm-smi", "accelerator") if values else None
+
+
+def parse_rapl_energy_uj(output: str) -> float | None:
+    value = _finite_nonnegative(output.strip())
+    return value / 1_000_000 if value is not None else None
+
+
+def integrate_power_joules(samples: Sequence[tuple[float, float | None]]) -> float | None:
+    energy = 0.0
+    intervals = 0
+    for (before_time, before_watts), (after_time, after_watts) in zip(samples, samples[1:]):
+        if before_watts is None or after_watts is None or after_time <= before_time:
+            continue
+        if _finite_nonnegative(before_watts) is None or _finite_nonnegative(after_watts) is None:
+            continue
+        energy += (before_watts + after_watts) / 2 * (after_time - before_time)
+        intervals += 1
+    return energy if intervals else None
+
+
+def efficiency_per_joule(work_count: float | int | None,
+                          energy_joules: float | None) -> float | None:
+    work = _finite_nonnegative(work_count)
+    energy = _finite_nonnegative(energy_joules)
+    if work is None or energy is None or work == 0 or energy == 0:
+        return None
+    return work / energy
 
 
 def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
