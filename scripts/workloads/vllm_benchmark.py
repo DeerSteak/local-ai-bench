@@ -16,6 +16,7 @@ from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 def vllm_bench_process_options(os_name: str) -> dict:
@@ -298,7 +299,11 @@ class VllmBenchBenchmark:
                         if telemetry:
                             entry["memory"] = case_memory
                             if case_power is not None:
-                                entry["power"] = case_power
+                                requests = entry.get("num_requests", entry.get("completed_iters", 0))
+                                work = requests * entry["output_len"]
+                                entry["power"] = add_power_efficiency(
+                                    case_power, "tokens_per_joule", work,
+                                )
                         bucket.append(entry)
                         model_result["completed_cases"] += 1
                         Shared.ok(self.format_entry(kind, entry))

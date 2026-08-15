@@ -128,6 +128,8 @@ def test_native_case_memory_survives_projection(tmp_path):
     assert projected["power"]["energy_joules"] == 10
     assert projected["power"]["scope"] == "accelerator"
     assert projected["power"]["case_id"] == projected["memory"]["case_id"]
+    assert projected["power"]["efficiency"]["unit"] == "tokens_per_joule"
+    assert projected["power"]["efficiency"]["work_count"] > 0
     assert telemetry.calls == [
         "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
         "finish",

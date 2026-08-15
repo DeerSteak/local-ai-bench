@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
 from scripts.results.llm_event_stage import CaseTelemetryLike
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 def group_remaining_sweeps(pp, tg, completed):
@@ -88,6 +89,10 @@ class NativeBenchEventStage:
         sample_id = self.plan.sample_id(attempt_id, 1)
         memory = self.telemetry.finish_case() if self.telemetry else None
         power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
+        tokens = (entry.get("n_prompt") or entry.get("n_gen") or 0) * entry.get(
+            "completed_reps", 0,
+        )
+        power = add_power_efficiency(power, "tokens_per_joule", tokens)
         if self.telemetry:
             self.telemetry.begin_measured("measured:native-sweep")
         self.store.append(self.plan.job_id, [

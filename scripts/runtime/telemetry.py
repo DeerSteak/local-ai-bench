@@ -189,6 +189,19 @@ def efficiency_per_joule(work_count: float | int | None,
     return work / energy
 
 
+def add_power_efficiency(power: dict[str, Any] | None, unit: str,
+                         work_count: float | int | None) -> dict[str, Any] | None:
+    if power is None:
+        return None
+    result = dict(power)
+    result["efficiency"] = {
+        "unit": unit,
+        "work_count": work_count,
+        "per_joule": efficiency_per_joule(work_count, power.get("energy_joules")),
+    }
+    return result
+
+
 def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.which,
                           run_fn=subprocess.run,
                           rapl_paths: Sequence[Path] | None = None,

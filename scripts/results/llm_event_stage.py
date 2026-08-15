@@ -10,6 +10,7 @@ from scripts.runtime.engines.base import (
 )
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 class CaseTelemetryLike(Protocol):
@@ -147,6 +148,11 @@ class LLMEventStage:
         attempt_id = self.plan.attempt_id(case_id, attempt_number)
         memory = self.telemetry.finish_case() if self.telemetry else None
         power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
+        power = add_power_efficiency(
+            power, "tokens_per_joule",
+            sum(sample.generated_tokens for sample in samples
+                if not measurement_validation_errors(sample)),
+        )
         projection = self.store.rebuild(self.plan.job_id)
         events = []
         if case_id not in projection["cases"]:

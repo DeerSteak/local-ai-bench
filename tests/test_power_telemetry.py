@@ -5,7 +5,8 @@ import pytest
 from scripts.runtime.telemetry import (
     CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
     PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
-    derive_run_power_summary, efficiency_per_joule, integrate_power_joules, power_block,
+    add_power_efficiency, derive_run_power_summary, efficiency_per_joule,
+    integrate_power_joules, power_block,
     parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
     parse_rocm_power, power_availability_dict, query_power_reading,
 )
@@ -82,6 +83,21 @@ def test_efficiency_per_joule_guards_unknown_zero_and_invalid_inputs(work, energ
 
 def test_efficiency_rejects_boolean_values():
     assert efficiency_per_joule(True, 10) is None
+
+
+def test_efficiency_block_keeps_unit_work_and_unknown_ratio_auditable():
+    source = {"energy_joules": 20, "scope": "accelerator"}
+    assert add_power_efficiency(source, "tokens_per_joule", 100) == {
+        "energy_joules": 20, "scope": "accelerator",
+        "efficiency": {"unit": "tokens_per_joule", "work_count": 100, "per_joule": 5},
+    }
+    assert "efficiency" not in source
+    unknown = add_power_efficiency({"energy_joules": None}, "images_per_joule", 3)
+    assert unknown is not None
+    assert unknown["efficiency"] == {
+        "unit": "images_per_joule", "work_count": 3, "per_joule": None,
+    }
+    assert add_power_efficiency(None, "tokens_per_joule", 1) is None
 
 
 class Result:

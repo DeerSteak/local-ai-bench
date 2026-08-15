@@ -94,6 +94,9 @@ def test_case_telemetry_survives_journal_reopen_and_projection(tmp_path):
     projected_power = export_llm_section(path, plan.job_id)["model"]["2K"]["power"]
     assert {key: projected_power[key] for key in power} == power
     assert projected_power["case_id"] == projected["case_id"]
+    assert projected_power["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 100, "per_joule": 8,
+    }
 
 
 def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):

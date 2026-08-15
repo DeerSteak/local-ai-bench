@@ -17,6 +17,7 @@ from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 class LlamaBenchConcurrencyBenchmark:
@@ -225,7 +226,10 @@ class LlamaBenchConcurrencyBenchmark:
                     if telemetry:
                         entry["memory"] = telemetry.finish_case()
                         if (power := getattr(telemetry, "last_power", None)) is not None:
-                            entry["power"] = power
+                            entry["power"] = add_power_efficiency(
+                                power, "tokens_per_joule",
+                                entry.get("tg", 0) * entry.get("pl", 0),
+                            )
                         telemetry.begin_measured("measured:native-sweep")
                     entries.append(entry)
                     results[short]["completed_cases"] = len(entries)
