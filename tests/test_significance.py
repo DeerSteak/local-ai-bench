@@ -22,8 +22,8 @@ def test_comparison_requires_both_dispersion_values_and_two_samples():
     assert compare_metric("ttft_mean_sec", before, after)["within_run_uncertainty"] == "insufficient"
 
 
-def test_threshold_families_use_predeclared_provisional_floors():
-    assert practical_threshold_pct("ttft_mean_sec") == 5.0
+def test_threshold_families_use_qualified_noise_floors():
+    assert practical_threshold_pct("ttft_mean_sec") == 8.0
     assert practical_threshold_pct("aggregate_tps") == 3.0
     assert practical_threshold_pct("sec_per_image_mean") == 3.0
     assert practical_threshold_pct("accuracy_pct") == 1.0

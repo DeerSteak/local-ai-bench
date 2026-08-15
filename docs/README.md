@@ -87,5 +87,6 @@ This index separates current user guidance, scientific contracts, developer refe
 | [Windows RTX 5090 Memory Screen](qualification/memory-windows-rtx-5090-1s.md) | Completed 1-second discrete-NVIDIA observer-effect evidence |
 | [Windows RTX 5090 500 ms Memory Screen](qualification/memory-windows-rtx-5090-500ms.md) | Completed half-second discrete-NVIDIA observer-effect evidence |
 | [Windows RTX 5090 250 ms Memory Screen](qualification/memory-windows-rtx-5090-250ms.md) | Completed quarter-second discrete-NVIDIA observer-effect evidence |
+| [WSL RTX 5090 500 ms Memory Re-qualification](qualification/memory-wsl-rtx-5090-500ms.md) | Milestone 3 fixed-prompt evidence across llama.cpp and vLLM, plus practical-threshold derivation |
 | [Reliability Architecture Plan](reliability-architecture-plan.md) | Forward-looking reliability migration plan |
 | [vLLM Engine Plan](vllm-engine-plan.md) | Forward-looking vLLM adapter and packaging plan |

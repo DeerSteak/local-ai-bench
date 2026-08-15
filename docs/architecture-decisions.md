@@ -169,7 +169,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Decision: use the schema map, vocabulary, qualification set, observer bounds, and threshold derivation frozen in `docs/version-6-foundation.md`; schema 5 is additive and missing telemetry remains not recorded.
 - Methodology: the foundation screen may reject intrusive sampling but cannot approve default-on use; milestone 3 independent trials decide comparability for every source, interval, and combined sampler.
 - Privacy: persist only normalized allowlisted measurements and provenance through the outbound metadata policy; raw sensor output and private identity are excluded.
-- Evidence: Apple unified-memory and native-Windows discrete-NVIDIA sources passed the predeclared 20-pair screens at 1.0, 0.5, and 0.25 seconds; detailed records are indexed under `docs/qualification/`. Memory telemetry remains opt-in pending milestone 3.
+- Evidence: Apple unified-memory and native-Windows discrete-NVIDIA sources passed the predeclared 20-pair screens at 1.0, 0.5, and 0.25 seconds. Milestone 3 re-qualified the selected 0.5-second source on WSL discrete NVIDIA through llama.cpp and vLLM with fixed cold prompts; the same evidence derives the 8% TTFT, 3% throughput, and 3% wall-time practical thresholds. Detailed records are indexed under `docs/qualification/`.
 
 ## Migration and deletion ledger
 

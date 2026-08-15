@@ -66,7 +66,7 @@ The Mac mini M4 Pro and native-Windows RTX 5090 coarse screens passed at all thr
 
 ## Practical-threshold derivation
 
-Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the provisional floors are 5% for TTFT, 3% for throughput, 3% for wall time, and 1% relative change for accuracy. Evidence below the interval method's eventual minimum trial count remains inconclusive.
+Use qualified telemetry-off repeated trials and calculate the between-trial paired relative-change distribution. A metric threshold is the larger of its 95th-percentile absolute noise and its product-relevance floor, rounded upward to a whole percentage; the product-relevance floors are 5% for TTFT, 3% for throughput, 3% for wall time, and 1% relative change for accuracy. The RTX 5090 WSL qualification used ten non-overlapping telemetry-off trial pairs for each engine: the largest 95th-percentile absolute noise was 7.15% for TTFT, 0.87% for throughput, and 0.89% for wall time, producing qualified defaults of 8%, 3%, and 3%. Accuracy remains at its 1% floor pending corresponding real-hardware evidence.
 
 ## Minimum real-hardware qualification set
 
