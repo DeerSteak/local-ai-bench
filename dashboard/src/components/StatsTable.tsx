@@ -58,6 +58,37 @@ function MemoryCells({ row }: { row: Record<string, unknown> }) {
   </>;
 }
 
+function PowerHeaders({ sortConfig, onCycleSort }: {
+  sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
+  return <>
+    <SortTh label="Energy" sortKey="energy_joules" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+    <SortTh label="Efficiency" sortKey="efficiency_per_joule" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+    <th className={styles.th}>Power scope</th>
+  </>;
+}
+
+function PowerCells({ row }: { row: Record<string, unknown> }) {
+  const units: Record<string, string> = {
+    tokens_per_joule: "tokens/J", images_per_joule: "images/J",
+    embeddings_per_joule: "embeddings/J",
+  };
+  const unit = typeof row.efficiency_unit === "string"
+    ? units[row.efficiency_unit] || row.efficiency_unit : "per J";
+  const unavailable = row.power_status === "unavailable" && typeof row.power_reason === "string"
+    ? `Unavailable · ${row.power_reason}` : "Not recorded";
+  return <>
+    <td className={`${styles.td} ${styles.tdNum}`}>
+      {typeof row.energy_joules === "number" ? `${fmt(row.energy_joules, "energy")} J` : unavailable}
+    </td>
+    <td className={`${styles.td} ${styles.tdNum}`}>
+      {typeof row.efficiency_per_joule === "number"
+        ? `${fmt(row.efficiency_per_joule, "efficiency")} ${unit}` : unavailable}
+    </td>
+    <td className={styles.td}>{typeof row.power_scope === "string" ? row.power_scope : "Not recorded"}</td>
+  </>;
+}
+
 function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
   const rows = sortRows(flattenLLMData(files, section), sortConfig);
@@ -77,6 +108,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <SortTh label="Process RSS peak" sortKey="process_rss_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Accelerator peak" sortKey="accelerator_memory_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Headroom" sortKey="headroom_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Model placement" sortKey="model_placement" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
@@ -86,7 +118,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={11}>
+            <td className={styles.td} colSpan={14}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -103,6 +135,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
             <td className={`${styles.td} ${styles.tdNum}`}>{r.process_rss_peak_gb == null ? "Not recorded" : `${fmt(r.process_rss_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.accelerator_memory_peak_gb == null ? "Not recorded" : `${fmt(r.accelerator_memory_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.headroom_gb == null ? "Not recorded" : `${fmt(r.headroom_gb, "gb")} GB · ${r.headroom_state}`}</td>
+            <PowerCells row={r} />
             <td className={`${styles.td} ${styles.tdNum}`}>{r.model_placement}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
@@ -127,6 +160,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
           <SortTh label="Chunks" sortKey="n_chunks" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Device</th>
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -148,6 +182,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
             <td className={`${styles.td} ${styles.tdNum}`}>{r.n_chunks ?? "—"}</td>
             <td className={`${styles.td} ${styles.tdDevice}`}>{r.device || "—"}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}
@@ -171,6 +206,7 @@ function ImagesTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[
           <SortTh label="Sec/image" sortKey="sec_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>Runs</th>
         </tr>
       </thead>
@@ -184,6 +220,7 @@ function ImagesTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.sec_mean, "sec")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.sec_stdev, "sec")}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_runs}</td>
           </tr>
         ))}
@@ -212,6 +249,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <th className={styles.th}>± stdev</th>
           <SortTh label="Total Tokens" sortKey="total_tokens" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -237,6 +275,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.total_tokens}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -261,6 +300,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
           <th className={styles.th}>± stdev</th>
           <th className={styles.th}>GPU Layers</th>
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -283,6 +323,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.stddev_ts, "tps")}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.n_gpu_layers ?? "—"}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -306,6 +347,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
           <SortTh label="Aggregate TPS" sortKey="speed_tg" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Prefill TPS" sortKey="speed_pp" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -327,6 +369,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.speed_tg, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.speed_pp, "tps")}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
           </tr>
         ))}
       </tbody>
@@ -355,6 +398,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
           <SortTh label="Nudged" sortKey="budget_nudged_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Budget Exhausted" sortKey="budget_exceeded_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <MemoryHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          <PowerHeaders sortConfig={sortConfig} onCycleSort={onCycleSort} />
         </tr>
       </thead>
       <tbody>
@@ -382,6 +426,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_nudged_count || "—"}</td>
             <td className={`${styles.td} ${styles.tdRuns}`}>{r.budget_exceeded_count || "—"}</td>
             <MemoryCells row={r} />
+            <PowerCells row={r} />
           </tr>
         ))}
       </tbody>

@@ -1,6 +1,7 @@
 import { FILE_COLORS, MODEL_DASH_PATTERNS } from "../constants";
 import { buildFileLineConfigs, getModelColor, modelLabel, entriesOf } from "./shared";
 import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { JsonRecord } from "./shared";
 import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
@@ -148,11 +149,13 @@ export function flattenLlamaBenchData(files: ResultsFile[]): ChartRow[] {
         _fileId: file.id, model, metric: "Prefill", pp: entry.n_prompt ?? null, tg: null as number | null,
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
         ...memoryFields(entry),
+        ...powerFields(entry),
       }));
       const decode = llamaBenchDecodeEntries(modelData).map(entry => ({
         _fileId: file.id, model, metric: "Decode", pp: entry.n_depth ?? null, tg: entry.n_gen ?? null,
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
         ...memoryFields(entry),
+        ...powerFields(entry),
       }));
       if (prefill.length || decode.length) return [...prefill, ...decode];
       return (modelData?.entries || []).map((entry: JsonRecord[string]) => ({
@@ -160,6 +163,7 @@ export function flattenLlamaBenchData(files: ResultsFile[]): ChartRow[] {
         pp: entry.n_prompt ?? null, tg: entry.n_gen ?? null,
         avg_ts: entry.avg_ts, stddev_ts: entry.stddev_ts, n_gpu_layers: entry.n_gpu_layers,
         ...memoryFields(entry),
+        ...powerFields(entry),
       }));
     })
   );

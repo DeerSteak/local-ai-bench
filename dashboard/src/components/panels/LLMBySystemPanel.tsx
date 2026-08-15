@@ -10,6 +10,7 @@ import {
 import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
 import type { ResultsFile } from "../../types";
+import { hasMixedPowerScopes } from "../../utils/power";
 
 // Group By: System, LLM / LLM Conversation section — resolves this section's own
 // ctx-keyed data into BySystemPanel's generic { tier, metrics } shape.
@@ -65,11 +66,23 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       const memoryBarData = sortBarData(rawMemoryBarData, memoryBarConfigs.map(bc => bc.dataKey), "asc");
       const memoryLineData = buildLLMLineDataByCtx(f, models, "memory", section);
       const memoryLineConfigs = buildLLMLineConfigsByCtx(models, memoryLineData);
+      const mixedPowerScopes = hasMixedPowerScopes([f], models, section);
+      const rawEfficiencyBarData = buildLLMBarDataByModel(f, models, "efficiency", section);
+      const efficiencyBarConfigs = mixedPowerScopes ? [] : buildLLMBarConfigsByModel(f, models, section)
+        .filter(bc => rawEfficiencyBarData.some(row => row[bc.dataKey] != null));
+      const efficiencyBarData = sortBarData(
+        rawEfficiencyBarData, efficiencyBarConfigs.map(bc => bc.dataKey), "desc",
+      );
+      const efficiencyLineData = buildLLMLineDataByCtx(f, models, "efficiency", section);
+      const efficiencyLineConfigs = mixedPowerScopes
+        ? [] : buildLLMLineConfigsByCtx(models, efficiencyLineData);
 
       const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
       const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
       const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
       const hasMemory = isBar ? memoryBarConfigs.length > 0 : memoryLineConfigs.length > 0;
+      const hasEfficiency = isBar
+        ? efficiencyBarConfigs.length > 0 : efficiencyLineConfigs.length > 0;
 
       const metrics = [];
       if (hasTps) metrics.push({
@@ -95,6 +108,13 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
         xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}process_memory`,
         barData: memoryBarData, barConfigs: memoryBarConfigs,
         lineData: memoryLineData, lineConfigs: memoryLineConfigs,
+      });
+      if (hasEfficiency) metrics.push({
+        key: "efficiency", title: `Energy Efficiency${titleSuffix}`,
+        yLabel: "Generated tokens per joule", unit: "efficiency", direction: "higher",
+        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}tokens_per_joule`,
+        barData: efficiencyBarData, barConfigs: efficiencyBarConfigs,
+        lineData: efficiencyLineData, lineConfigs: efficiencyLineConfigs,
       });
       if (!metrics.length) return null;
       return { tier, metrics };
