@@ -163,7 +163,8 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         if isinstance(options, dict):
             missing = set(GUI_OPTION_DEFAULTS) - set(options)
             if missing <= {
-                "offline", "memory_telemetry", "gpu_split_mode", "retry_crashed_models",
+                "offline", "memory_telemetry", "power_telemetry", "gpu_split_mode",
+                "retry_crashed_models",
                 "llamacpp_no_repack",
             }:
                 for key in missing:
@@ -183,8 +184,10 @@ def validate_gui_options(options: object) -> list[str]:
     errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
     if any(not isinstance(options[key], bool) for key in (
             "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-            "llamacpp_no_repack")):
+            "power_telemetry", "llamacpp_no_repack")):
         errors.append("Execution mode settings must be true or false.")
+    if options.get("power_telemetry") and not options.get("memory_telemetry"):
+        errors.append("Power telemetry requires memory telemetry.")
     if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
         errors.append("Output and ComfyUI paths must be text.")
     return errors
@@ -237,7 +240,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "gpu_split_mode": "gpu_split_mode", "force_all": "force_all",
         "llamacpp_no_repack": "llamacpp_no_repack",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
-        "memory_telemetry": "memory_telemetry",
+        "memory_telemetry": "memory_telemetry", "power_telemetry": "power_telemetry",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
@@ -750,6 +753,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--memory-telemetry")
         else:
             command.append("--no-memory-telemetry")
+        if gui_options["power_telemetry"]:
+            command.append("--power-telemetry")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"] and "--comfyui" in command:

@@ -7,7 +7,7 @@ from scripts.runtime.telemetry import (
     PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
     derive_run_power_summary, efficiency_per_joule, integrate_power_joules, power_block,
     parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
-    parse_rocm_power, query_power_reading,
+    parse_rocm_power, power_availability_dict, query_power_reading,
 )
 
 
@@ -108,6 +108,11 @@ def test_macos_discovery_requires_active_noninteractive_admin_permission():
     assert available == PowerAvailability(
         True, "powermetrics", "processor_package", location="/usr/bin/powermetrics",
     )
+    assert power_availability_dict(available) == {
+        "available": True, "source": "powermetrics", "scope": "processor_package",
+        "reason": None,
+    }
+    assert "/usr/bin" not in str(power_availability_dict(available))
 
 
 def test_macos_discovery_reports_missing_tool_and_check_failure_without_raising():

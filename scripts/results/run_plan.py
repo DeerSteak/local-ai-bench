@@ -9,8 +9,8 @@ from pathlib import Path
 from scripts.results.canonical_json import canonical_json, sha256_json
 
 
-PLAN_SCHEMA_VERSION = 3
-SUPPORTED_PLAN_SCHEMAS = {1, 2, PLAN_SCHEMA_VERSION}
+PLAN_SCHEMA_VERSION = 4
+SUPPORTED_PLAN_SCHEMAS = {1, 2, 3, PLAN_SCHEMA_VERSION}
 IDENTITY_SCHEME = "sha256-v1"
 SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
@@ -24,6 +24,7 @@ SAFE_CONFIG_KEYS = {
     "gpu_split_mode",
     "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
+    "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
@@ -32,6 +33,7 @@ EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
     "retry_crashed_models", "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
+    "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
 }
 
 
@@ -156,6 +158,14 @@ class RunPlan:
                 "profile": settings["methodology_profile"],
                 "effective_optimizations": settings.get("effective_optimizations", []),
             }
+        if settings.get("power_telemetry"):
+            identity["telemetry"] = {
+                "power": {
+                    "interval_sec": settings["power_telemetry_interval_sec"],
+                    "source": settings["power_source"],
+                    "scope": settings["power_scope"],
+                },
+            }
         return identity
 
     @property
@@ -211,10 +221,11 @@ class RunPlan:
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
         for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack", "memory_telemetry"):
+                    "llamacpp_no_repack", "memory_telemetry", "power_telemetry"):
             if key == "retry_crashed_models" and key not in settings:
                 continue
-            if key not in settings and key in {"offline", "llamacpp_no_repack", "memory_telemetry"}:
+            if key not in settings and key in {
+                    "offline", "llamacpp_no_repack", "memory_telemetry", "power_telemetry"}:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
@@ -225,6 +236,20 @@ class RunPlan:
                 raise ValueError("invalid execution setting: memory_telemetry_interval_sec")
         elif interval is not None:
             raise ValueError("memory telemetry interval requires memory telemetry")
+        power_interval = settings.get("power_telemetry_interval_sec")
+        if settings.get("power_telemetry"):
+            if not settings.get("memory_telemetry"):
+                raise ValueError("power telemetry requires memory telemetry")
+            if (isinstance(power_interval, bool)
+                    or not isinstance(power_interval, (int, float))
+                    or not math.isfinite(power_interval) or power_interval <= 0):
+                raise ValueError("invalid execution setting: power_telemetry_interval_sec")
+            for key in ("power_source", "power_scope"):
+                if not isinstance(settings.get(key), str) or not settings[key]:
+                    raise ValueError(f"invalid execution setting: {key}")
+        elif any(settings.get(key) is not None for key in (
+                "power_telemetry_interval_sec", "power_source", "power_scope")):
+            raise ValueError("power telemetry settings require power telemetry")
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:

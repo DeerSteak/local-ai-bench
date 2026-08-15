@@ -31,7 +31,10 @@ from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
-from scripts.runtime.telemetry import CaseTelemetry, derive_run_memory_summary
+from scripts.runtime.telemetry import (
+    CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
+    discover_power_source, power_availability_dict,
+)
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
@@ -661,6 +664,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         help="Record qualified 0.5-second memory sampling for completed workload cases. "
              "Use --no-memory-telemetry to disable it (default: enabled).",
     )
+    parser.add_argument(
+        "--power-telemetry", action="store_true",
+        help="Record opt-in power and energy measurements through the shared 0.5-second "
+             "resource sampler. Requires active source permission and memory telemetry "
+             "(default: false).",
+    )
     _engines = registered_engine_names()
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
@@ -673,6 +682,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+    if args.power_telemetry and not args.memory_telemetry:
+        parser.error("--power-telemetry requires --memory-telemetry")
     apply_quick_preset(args)
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
@@ -911,6 +922,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
         )
+        power_availability = discover_power_source() if args.power_telemetry else None
+        if power_availability:
+            if power_availability.available:
+                Shared.log(
+                    f"Power preflight: {power_availability.source} available "
+                    f"({power_availability.scope})"
+                )
+            else:
+                Shared.warn(f"Power preflight: unavailable — {power_availability.reason}")
         effective_config = {
             "runs": config.N_RUNS, "warmup_runs": args.warmup,
             "run_timeout_seconds": config.RUN_TIMEOUT,
@@ -935,6 +955,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "memory_telemetry_interval_sec": (
                 config.TELEMETRY_INTERVAL_SEC if args.memory_telemetry else None
             ),
+            "power_telemetry": args.power_telemetry,
+            "power_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if args.power_telemetry else None
+            ),
+            "power_source": power_availability.source if power_availability else None,
+            "power_scope": power_availability.scope if power_availability else None,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
         }
@@ -1042,7 +1068,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
-            "preflight":       preflight.to_dict(),
+            "preflight":       {
+                **preflight.to_dict(),
+                **({"power": power_availability_dict(power_availability)}
+                   if power_availability else {}),
+            },
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
@@ -1068,19 +1098,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         store = ResultStore(Path(out_path), results)
 
-        def update_memory_summary():
-            memory_summary = derive_run_memory_summary({
+        def update_telemetry_summaries():
+            sections = {
                 key: results.get(key) for key in (
                     "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
                     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
                     "llamabench", "llamabenchconc", "vllmbench",
                 )
+            }
+            memory_summary = derive_run_memory_summary({
+                key: value for key, value in sections.items()
             })
             if memory_summary is not None:
                 results["run"]["memory_summary"] = memory_summary
+            power_summary = derive_run_power_summary(sections)
+            if power_summary is not None:
+                results["run"]["power_summary"] = power_summary
 
         def _checkpoint(label=""):
-            update_memory_summary()
+            update_telemetry_summaries()
             apply_pause_evidence(results["run"])
             store.checkpoint()
             if label:
@@ -1089,7 +1125,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def make_save(key, stage_key=None):
             def _save(partial):
                 store.update_section(key, partial, stage_key or key)
-                update_memory_summary()
+                update_telemetry_summaries()
                 store.checkpoint()
             return _save
 
@@ -1128,7 +1164,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 effective_config=effective_config, job_id=plan.job_id,
             )
             plan.validate_for_execution()
-            results["preflight"] = preflight.to_dict()
+            results["preflight"] = {
+                **preflight.to_dict(),
+                **({"power": power_availability_dict(power_availability)}
+                   if power_availability else {}),
+            }
             results["run"].update(
                 models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
             )
@@ -1144,6 +1184,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
+
+        def start_case_telemetry():
+            if not args.memory_telemetry:
+                return None
+            return CaseTelemetry(power_availability=power_availability).start()
 
         def run_llm(_context):
             return run_supervised_llm(
@@ -1170,7 +1215,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         def run_llamabench_concurrency(_context):
-            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            telemetry = start_case_telemetry()
             try:
                 return LlamaBenchConcurrencyBenchmark().run(
                     engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
@@ -1181,7 +1226,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     telemetry.stop()
 
         def run_vllmbench(_context):
-            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            telemetry = start_case_telemetry()
             try:
                 return VllmBenchBenchmark().run(
                     engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
@@ -1192,7 +1237,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     telemetry.stop()
 
         def run_embeddings(_context):
-            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            telemetry = start_case_telemetry()
             try:
                 return EmbeddingBenchmark().run(
                     engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
@@ -1209,7 +1254,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
-                telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+                telemetry = start_case_telemetry()
                 try:
                     section = Bench().run(
                         engine=engine, models=llm_models, questions=questions,
@@ -1247,7 +1292,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             out_stem = _context.paths.output_path.stem
             images_name = ("images_" + out_stem[len("results_"):]
                            if out_stem.startswith("results_") else f"images_{out_stem}")
-            telemetry = CaseTelemetry().start() if args.memory_telemetry else None
+            telemetry = start_case_telemetry()
             try:
                 return ImageBenchmark().run(
                     image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,

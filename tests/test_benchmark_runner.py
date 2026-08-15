@@ -5,6 +5,8 @@ from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.run_plan import RunPlan
+from scripts.runtime.telemetry import PowerAvailability
+from scripts.runtime.workload_runner import create_case_telemetry
 
 
 def make_plan():
@@ -17,6 +19,26 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_runner_power_telemetry_repeats_discovery_inside_supervised_process(monkeypatch):
+    status = PowerAvailability(True, "nvidia-smi", "accelerator", location="/tool")
+    calls = []
+
+    class Telemetry:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs))
+
+        def start(self):
+            calls.append(("start", {}))
+            return self
+
+    monkeypatch.setattr("scripts.runtime.workload_runner.discover_power_source", lambda: status)
+    monkeypatch.setattr("scripts.runtime.workload_runner.CaseTelemetry", Telemetry)
+    assert create_case_telemetry({"memory_telemetry": False, "power_telemetry": False}) is None
+    telemetry = create_case_telemetry({"memory_telemetry": True, "power_telemetry": True})
+    assert isinstance(telemetry, Telemetry)
+    assert calls == [("init", {"power_availability": status}), ("start", {})]
 
 
 def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):

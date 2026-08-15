@@ -43,6 +43,7 @@ from scripts.app.benchmark_frontend import (
     run_frontend,
     save_frontend_state,
     toggle_group,
+    validate_gui_options,
 )
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.results.run_plan import RunPlan
@@ -125,6 +126,19 @@ def test_build_command_explicitly_disables_default_memory_telemetry():
         [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
     )
     assert "--no-memory-telemetry" in command
+
+
+def test_power_telemetry_is_exposed_and_requires_shared_memory_sampling():
+    options = dict(GUI_OPTION_DEFAULTS, power_telemetry=True)
+    assert validate_gui_options(options) == []
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--power-telemetry" in command
+    assert validate_gui_options(dict(
+        options, memory_telemetry=False,
+    )) == ["Power telemetry requires memory telemetry."]
 
 
 def test_frontend_classifies_every_option_for_ui_presentation():

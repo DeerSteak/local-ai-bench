@@ -98,6 +98,15 @@ class PowerAvailability:
     location: str | None = None
 
 
+def power_availability_dict(value: PowerAvailability) -> dict[str, Any]:
+    return {
+        "available": value.available,
+        "source": value.source,
+        "scope": value.scope,
+        "reason": value.reason,
+    }
+
+
 def _finite_nonnegative(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None

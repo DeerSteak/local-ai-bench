@@ -24,10 +24,18 @@ from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
-from scripts.runtime.telemetry import CaseTelemetry
+from scripts.runtime.telemetry import CaseTelemetry, discover_power_source
 
 
 _emit_lock = threading.Lock()
+
+
+def create_case_telemetry(settings: dict) -> CaseTelemetry | None:
+    if not settings.get("memory_telemetry"):
+        return None
+    if settings.get("power_telemetry"):
+        return CaseTelemetry(power_availability=discover_power_source()).start()
+    return CaseTelemetry().start()
 
 
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
@@ -100,8 +108,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     journal = None
     telemetry = None
     try:
-        if settings.get("memory_telemetry"):
-            telemetry = CaseTelemetry().start()
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(path, plan, notify, initialize=False, telemetry=telemetry)
@@ -148,8 +155,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     journal = None
     telemetry = None
     try:
-        if settings.get("memory_telemetry"):
-            telemetry = CaseTelemetry().start()
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
@@ -210,7 +216,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
             store.close()
         emit("event", sequence=sequence, event={"stage": "llamabench", "committed": True})
 
-    telemetry = CaseTelemetry().start() if settings.get("memory_telemetry") else None
+    telemetry = create_case_telemetry(settings)
     journal = NativeBenchEventStage(
         path, plan, notify, initialize=False, telemetry=telemetry,
     )
@@ -264,8 +270,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     journal = None
     telemetry = None
     try:
-        if settings.get("memory_telemetry"):
-            telemetry = CaseTelemetry().start()
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
