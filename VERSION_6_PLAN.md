@@ -275,7 +275,7 @@ This is an extension of existing, already-tested code, and it protects the valid
 - [x] Paired comparison is used automatically when the case sequence matches, and the mode used is stated in the output.
 - [x] The `N_RUNS` and independent-trial time-budget decision is supported by qualification evidence and documented; retaining the current default requires the same justification as changing it.
 - [x] Each default practical threshold follows the derivation method committed before its data was generated, and no default is below its demonstrated noise floor.
-- [ ] Memory-only telemetry is re-qualified in Slice A, and the same required protocol is wired into the completion gate for every later telemetry source and combined mode.
+- [x] Memory-only telemetry is re-qualified in Slice A, and the same required protocol is wired into the completion gate for every later telemetry source and combined mode.
 - [x] Incompatible runs cannot be pooled into a trial set; a test asserts the gate rejects a methodology mismatch.
 - [x] Reports and dashboard distinguish qualified repeated-trial verdicts from descriptive single-run deltas without hiding either.
 
