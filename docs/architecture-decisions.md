@@ -170,6 +170,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Methodology: the foundation screen may reject intrusive sampling but cannot approve default-on use; milestone 3 independent trials decide comparability for every source, interval, and combined sampler.
 - Privacy: persist only normalized allowlisted measurements and provenance through the outbound metadata policy; raw sensor output and private identity are excluded.
 - Evidence: Apple unified-memory and native-Windows discrete-NVIDIA sources passed the predeclared 20-pair screens at 1.0, 0.5, and 0.25 seconds. Milestone 3 re-qualified the selected 0.5-second source on WSL discrete NVIDIA through llama.cpp and vLLM with fixed cold prompts; the same evidence derives the 8% TTFT, 3% throughput, and 3% wall-time practical thresholds. Detailed records are indexed under `docs/qualification/`.
+- Decision: retain three measured requests per loaded model for within-run dispersion; regression verdicts continue to use independent invocations. On the WSL qualification series, three separate one-request invocations would cost 2.57–2.89 times one three-request invocation, while averaging three reduced between-invocation dispersion across every measured metric.
 
 ## Migration and deletion ledger
 

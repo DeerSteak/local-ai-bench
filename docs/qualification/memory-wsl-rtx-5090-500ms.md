@@ -37,4 +37,8 @@ Host memory and benchmark process-tree RSS used `psutil`; accelerator occupancy 
 
 Ten non-overlapping telemetry-off pairs per engine supplied an independent-invocation noise estimate. The largest 95th-percentile absolute relative change across the engines was 7.15% for TTFT, 0.87% for throughput, and 0.89% for client wall time. Applying the precommitted larger-of-noise-or-product-floor rule and rounding upward selects practical thresholds of 8% for TTFT, 3% for throughput, and 3% for wall time.
 
+## Measured-runs decision
+
+The telemetry-off series also compared each invocation's first measured request with its mean of three. Averaging three reduced between-invocation coefficient of variation by 19% for TTFT, 10% for throughput, and 18% for wall time on llama.cpp, and by 53%, 28%, and 28% on vLLM. A one-request invocation would still pay model startup and two warmups: three such independent invocations are estimated to cost 2.57 times one three-request llama.cpp invocation and 2.89 times one vLLM invocation. The default therefore remains three measured requests for efficient within-run dispersion, while reproducibility verdicts continue to require separate independent invocations.
+
 The raw results, event journals, manifests, and machine-readable reports are retained in the local `m3-precision-llamacpp-500ms/` and `m3-precision-vllm-500ms/` qualification archives and remain outside Git because results can carry local identity.
