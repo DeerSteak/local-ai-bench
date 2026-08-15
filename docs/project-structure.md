@@ -222,11 +222,11 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | Key | Contents |
 |---|---|
 | `version`, `engine`, `engine_version` | Application release, inference-engine name, and the local runtime version when it can be inspected |
-| `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, and per-stage state/coverage |
+| `run` | Schema version, run ID, source revision, effective non-secret configuration, selected model identities, overall completion state, per-stage state/coverage, and optional memory/power summaries |
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
-| `llm`, `llm_conversation` | Per-model context/checkpoint measurements and any timeout, crash, slow-TPS, or skip markers |
+| `llm`, `llm_conversation` | Per-model context/checkpoint measurements, optional same-timeline memory/power evidence, and any timeout, crash, slow-TPS, or skip markers |
 | `accuracy_settings` | Effective accuracy timeout, completion-token budget, and first-pass fraction used by the run |
 | `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |

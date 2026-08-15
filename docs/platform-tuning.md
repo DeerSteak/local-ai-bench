@@ -16,6 +16,17 @@ Local AI Bench 4.1 ships one comparison profile, `neutral-v1`. It does not silen
 
 Setup selects runtime builds compatible with the detected operating system and accelerator: Metal on Apple Silicon, CUDA or Vulkan on Windows, and CUDA, ROCm, Vulkan, or CPU builds on Linux as available. Windows portable ComfyUI receives its required launch shape, and AMD/Windows may set `TRITON_INTERPRET=1` to avoid a known JIT failure. These choices make the runtime operable; they do not change scoring, prompts, sample inclusion, or thresholds, and they do not create a vendor-optimized result label.
 
+## Power source permissions
+
+| Platform source | Recorded scope | Permission requirement |
+|---|---|---|
+| macOS `powermetrics` | Processor package estimate covering CPU, GPU, and ANE, not wall power | Run `sudo -v` immediately before an opt-in benchmark; the sampler uses `sudo -n` and never prompts mid-run |
+| NVIDIA `nvidia-smi` | Accelerator only, summed across readable devices | The benchmark user must be allowed to query `power.draw` |
+| AMD `rocm-smi` | Accelerator only, summed across readable devices | The benchmark user must be allowed to query package power |
+| Intel RAPL sysfs | CPU package only | The selected `/sys/class/powercap/intel-rapl*/energy_uj` counter must be readable |
+
+Availability discovery never elevates permission, and a denied or unsupported source records an unavailable reason without failing the benchmark. Source scope is part of the methodology identity; package, accelerator, CPU-package, and whole-system measurements are not interchangeable.
+
 ## Profile change rule
 
 A future platform-tuned profile must have a distinct stable identifier, be explicitly selected before execution, list every effective optimization, and produce a different plan identity. It must ship with rationale, supported platform/runtime bounds, tests, report disclosure, and a methodology compatibility decision. Results from different profiles are not numerically compared without an explicit compatibility rule.

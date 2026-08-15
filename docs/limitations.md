@@ -18,6 +18,8 @@ A run made inside WSL2 reaches the GPU through a virtualization layer rather tha
 
 Independent runs should begin from comparable power, thermal, and background-load conditions. A single-run comparison now exposes available within-run dispersion and whether a delta clears a provisional practical threshold, but neither establishes reproducibility; vendor claims require compatible repeated independent trials and disclosure of dispersion and anomalies.
 
+Opt-in power telemetry reports only its named scope. Accelerator, CPU-package, Apple processor-package estimates, and whole-system-at-the-wall measurements must not share an axis or support a broader energy claim. `powermetrics` explicitly describes its subsystem power as estimated and unsuitable for comparison between devices, so Apple readings support within-device optimization evidence until an independently qualified source establishes a broader claim. Sampling has an observer effect and remains opt-in until repeated-trial qualification passes for that source, interval, and combined sampler. Idle baseline varies with battery state and background load and is displayed separately, never silently subtracted.
+
 ## Cross-result comparison
 
 Do not compare client TTFT with server prompt time or cold single-shot TTFT with cached conversation TTFT. Do not combine results across changed prompts, banks, checkpoint definitions, retry rules, runtimes, quantizations, context settings, tuning profiles, or schema/methodology boundaries without an explicit compatibility determination. Missing and invalid data are not zero. A faster partial run is not automatically better than a slower complete run.

@@ -8,6 +8,8 @@ The active comparison profile is `neutral-v1`. Its effective runtime optimizatio
 
 Qualified 0.5-second memory sampling is enabled by default and does not change the performance methodology identity. A telemetry-on result remains comparable with a telemetry-off result when every other identity-bearing setting matches; other sampling intervals retain distinct identities unless separately qualified.
 
+Power telemetry is opt-in until each source and the combined sampler pass the shared repeated-trial observer-effect policy. Its interval, normalized source, and measurement scope are identity-bearing in run-plan schema 4; results with different power sources or scopes cannot be pooled merely because both report watts or joules.
+
 ## Supported workload scope
 
 The commercially supported default workload set is single-shot LLM, conversation, embeddings, image generation, MCQ, math, reasoning, code, and tool accuracy. Native llama-bench throughput, native batched concurrency, HTTP tool concurrency, and HTTP chat concurrency remain opt-in diagnostic workloads: they are useful cross-checks and capacity evidence, but a default result is not incomplete merely because they were not selected. Developer `--sample` accuracy runs are non-comparable diagnostics and are not eligible for decision-grade acceptance.
@@ -26,6 +28,9 @@ The commercially supported default workload set is single-shot LLM, conversation
 | Accuracy | Correct scored questions divided by total scored questions; a timed-out partial answer is scored by the same parser | percent and counts |
 | Concurrent throughput | Sum of accepted generated tokens divided by batch wall time, with per-request TTFT and request coverage retained | tokens/second |
 | Native llama-bench rate | `llama-bench`/`llama-batched-bench` reported prompt or generation throughput for the recorded native-tool case | tokens/second |
+| Power | Mean instantaneous source reading on the shared sample timeline, without idle subtraction | watts |
+| Energy | Trapezoidal integration of adjacent valid power samples over actual timestamps inside measured windows only | joules |
+| Energy efficiency | Completed valid generated tokens, images, or embedding chunks divided by measured-window energy; the work count and unit remain attached | tokens, images, or embeddings per joule |
 
 The authoritative field-level names and old/new aliases are listed in [Result compatibility v4.1](result-compatibility-v4.1.md). Generation durations are retained to six decimal places so short measurements do not lose sub-millisecond resolution; presentation layers may display fewer digits. Conversation client TTFT includes request transport and cached-turn handling; server prompt time separately isolates prompt evaluation. Single-shot and conversation TTFT therefore answer different questions and must not be compared as if they share cache state.
 
