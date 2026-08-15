@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_memory_trial_runner_dry_run_alternates_pair_order(tmp_path):
     result = subprocess.run(
-        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--model", "example:model",
+        ["bash", str(ROOT / "run_telemetry_trials.sh"), "--model", "example:model",
          "--pairs", "2", "--wait", "0", "--out-dir", str(tmp_path), "--dry-run"],
         cwd=ROOT, text=True, capture_output=True, check=True,
     )
@@ -20,7 +20,7 @@ def test_memory_trial_runner_dry_run_alternates_pair_order(tmp_path):
 
 def test_memory_trial_runner_requires_a_model():
     result = subprocess.run(
-        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--dry-run"],
+        ["bash", str(ROOT / "run_telemetry_trials.sh"), "--dry-run"],
         cwd=ROOT, text=True, capture_output=True,
     )
     assert result.returncode == 2
@@ -29,7 +29,7 @@ def test_memory_trial_runner_requires_a_model():
 
 def test_power_trial_dry_run_compares_memory_only_with_combined_sampler(tmp_path):
     result = subprocess.run(
-        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--model", "example:model",
+        ["bash", str(ROOT / "run_telemetry_trials.sh"), "--model", "example:model",
          "--telemetry", "power", "--pairs", "2", "--wait", "0",
          "--out-dir", str(tmp_path), "--dry-run"],
         cwd=ROOT, text=True, capture_output=True, check=True,
@@ -42,7 +42,7 @@ def test_power_trial_dry_run_compares_memory_only_with_combined_sampler(tmp_path
 
 def test_trial_runner_rejects_unknown_telemetry_mode():
     result = subprocess.run(
-        ["bash", str(ROOT / "run_m3_memory_trials.sh"), "--model", "example:model",
+        ["bash", str(ROOT / "run_telemetry_trials.sh"), "--model", "example:model",
          "--telemetry", "temperature", "--dry-run"],
         cwd=ROOT, text=True, capture_output=True,
     )
@@ -51,14 +51,14 @@ def test_trial_runner_rejects_unknown_telemetry_mode():
 
 
 def test_memory_trial_runner_rejects_dirty_source_tree(tmp_path):
-    script = tmp_path / "run_m3_memory_trials.sh"
-    script.write_bytes((ROOT / "run_m3_memory_trials.sh").read_bytes())
+    script = tmp_path / "run_telemetry_trials.sh"
+    script.write_bytes((ROOT / "run_telemetry_trials.sh").read_bytes())
     python = tmp_path / "bench-env" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.symlink_to(Path(subprocess.check_output(["which", "python3"], text=True).strip()))
     (tmp_path / ".gitignore").write_text("bench-env/\nresults/\n", encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "run_m3_memory_trials.sh", ".gitignore"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "run_telemetry_trials.sh", ".gitignore"], cwd=tmp_path, check=True)
     subprocess.run(
         ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
          "commit", "-qm", "initial"], cwd=tmp_path, check=True,

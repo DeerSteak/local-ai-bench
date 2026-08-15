@@ -21,7 +21,7 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
-| `run_m3_memory_trials.sh` | Resumable alternating telemetry-off/on runner for Milestone 3 memory qualification on Linux / macOS |
+| `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
 | `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |

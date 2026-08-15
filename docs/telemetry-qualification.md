@@ -33,15 +33,15 @@ Archive the manifest, report, all referenced result files, exact OS/driver/runti
 
 ## Repeated-trial runner
 
-`run_m3_memory_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Its default `memory` mode compares telemetry disabled with memory sampling enabled. `--telemetry power` compares memory-only sampling with the combined memory-and-power sampler, preserving the shared-sampler design while isolating the incremental observer cost of power collection. The retained filename is a compatibility detail from milestone 3.
+`run_telemetry_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Its default `memory` mode compares telemetry disabled with memory sampling enabled. `--telemetry power` compares memory-only sampling with the combined memory-and-power sampler, preserving the shared-sampler design while isolating the incremental observer cost of power collection.
 
 The default output is under the gitignored `results/qualification/` tree, and a real run refuses to start from a dirty worktree so every result records a reproducible source identity. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
 
 ```bash
-bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
-bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp \
-  --out-dir results/qualification/m3-memory-this-machine
-bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp \
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
+  --out-dir results/qualification/memory-this-machine
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
   --telemetry power --dry-run
 ```
 

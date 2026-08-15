@@ -14,7 +14,7 @@ OUT_DIR=""
 DRY_RUN=false
 
 usage() {
-    echo "Usage: bash run_m3_memory_trials.sh --model TAG [--engine NAME] [--pairs N]"
+    echo "Usage: bash run_telemetry_trials.sh --model TAG [--engine NAME] [--pairs N]"
     echo "       [--telemetry memory|power] [--interval SEC] [--wait SEC] [--out-dir DIR] [--dry-run]"
 }
 
