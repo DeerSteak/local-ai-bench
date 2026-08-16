@@ -6,6 +6,7 @@ import {
 import type { RefObject } from "react";
 import {
   sortBarData, getModelSizeTier, getSkipInfo, modelLabel, deriveTtftUnit, hasValueOrStatus, lookup, isNotNull,
+  configsWithValues,
 } from "../../utils/shared";
 import { SECTION_LABELS, SIZE_TIER_ORDER } from "../../constants";
 import BySystemPanel from "./BySystemPanel";
@@ -65,7 +66,9 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
         .filter(bc => rawMemoryBarData.some(row => row[bc.dataKey] != null));
       const memoryBarData = sortBarData(rawMemoryBarData, memoryBarConfigs.map(bc => bc.dataKey), "asc");
       const memoryLineData = buildLLMLineDataByCtx(f, models, "memory", section);
-      const memoryLineConfigs = buildLLMLineConfigsByCtx(models, memoryLineData);
+      const memoryLineConfigs = configsWithValues(
+        buildLLMLineConfigsByCtx(models, memoryLineData), memoryLineData,
+      );
       const mixedPowerScopes = hasMixedPowerScopes([f], models, section);
       const rawEfficiencyBarData = buildLLMBarDataByModel(f, models, "efficiency", section);
       const efficiencyBarConfigs = mixedPowerScopes ? [] : buildLLMBarConfigsByModel(f, models, section)
@@ -75,7 +78,9 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       );
       const efficiencyLineData = buildLLMLineDataByCtx(f, models, "efficiency", section);
       const efficiencyLineConfigs = mixedPowerScopes
-        ? [] : buildLLMLineConfigsByCtx(models, efficiencyLineData);
+        ? [] : configsWithValues(
+          buildLLMLineConfigsByCtx(models, efficiencyLineData), efficiencyLineData,
+        );
 
       const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
       const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;

@@ -348,6 +348,14 @@ export function hasValueOrStatus(rows: ChartRow[], key: string): boolean {
   return rows.some(r => r[key] != null || r[`_status_${key}`] != null);
 }
 
+export function configsWithValues<T extends { dataKey: string }>(configs: T[], rows: ChartRow[]): T[] {
+  return configs.filter(config => rows.some(row => row[config.dataKey] != null));
+}
+
+export function statsSkippedColSpan(nonTelemetryColumns: number): number {
+  return nonTelemetryColumns + 7;
+}
+
 // Return the key from `keys` whose maximum value across all rows is highest
 // (i.e. the most strenuous setting).
 export function findMostStrenuousKey(data: ChartRow[], keys: string[]): string | null {

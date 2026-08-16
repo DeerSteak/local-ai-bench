@@ -8,7 +8,8 @@ import {
   sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
-  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
+  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
+  statsSkippedColSpan, findMostStrenuousKey,
   measuredCategoryAxisWidth,
   entriesOf, valuesOf, isNotNull,
 } from "./shared";
@@ -581,6 +582,24 @@ describe("hasValueOrStatus", () => {
   });
   it("is false when no row has either", () => {
     expect(hasValueOrStatus([{ "8K": 10 }], "2K")).toBe(false);
+  });
+});
+
+describe("configsWithValues", () => {
+  const configs = [{ dataKey: "old", label: "Old" }, { dataKey: "current", label: "Current" }];
+
+  it("removes line configs whose rows contain only missing telemetry", () => {
+    expect(configsWithValues(configs, [{ old: null }])).toEqual([]);
+  });
+
+  it("keeps zero as a measured value", () => {
+    expect(configsWithValues(configs, [{ current: 0 }])).toEqual([configs[1]]);
+  });
+});
+
+describe("statsSkippedColSpan", () => {
+  it("adds all four memory and three power columns", () => {
+    expect([7, 5, 9, 6, 5, 8].map(statsSkippedColSpan)).toEqual([14, 12, 16, 13, 12, 15]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { SECTION_LABELS, FILE_COLORS, ACCURACY_TEST_LABELS } from "../constants";
-import { sortRows, fmt, modelLabel, lookup } from "../utils/shared";
+import { sortRows, fmt, modelLabel, lookup, statsSkippedColSpan } from "../utils/shared";
 import type { ResultsFile, SortConfig } from "../types";
 
 type CycleSort = (key: string) => void;
@@ -118,7 +118,7 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={14}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(7)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -169,7 +169,7 @@ function EmbedTable({  files, sortConfig, onCycleSort  }: { files: ResultsFile[]
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{r.modelLabel}</td>
-            <td className={styles.td} colSpan={9}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(5)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -257,7 +257,7 @@ function ConcurrencyTable({  files, section, sortConfig, onCycleSort  }: { files
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={13}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(9)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -308,7 +308,7 @@ function LlamaBenchTable({  files, sortConfig, onCycleSort  }: { files: ResultsF
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={10}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(6)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -355,7 +355,7 @@ function LlamaBenchConcTable({  files, sortConfig, onCycleSort  }: { files: Resu
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={9}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(5)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
@@ -406,7 +406,7 @@ function AccuracyTable({ files, testKey, sortConfig, onCycleSort }: {
           <tr key={i} className={styles.trSkipped}>
             {isMulti && <MachineTd fileId={r._fileId} files={files} />}
             <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(r.model)}</td>
-            <td className={styles.td} colSpan={12}>
+            <td className={styles.td} colSpan={statsSkippedColSpan(8)}>
               Skipped — {r.skip_detail}
             </td>
           </tr>
