@@ -171,7 +171,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               title={`Energy Efficiency${titleSuffix}`}
               modelName={modelLabel(model)}
               data={efficiencyData} lineConfigs={efficiencyLineConfigs}
-              xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens/J"
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens / Joule"
               unit="efficiency" isMultiFile={isMultiFile}
               chartName={`${chartNamePrefix}tokens_per_joule`} chartModel={model}
               logoSrc={logoSrc} direction="higher"
