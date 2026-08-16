@@ -340,10 +340,10 @@ export default function Dashboard() {
         files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
       />
 
-      <DeltaModeContext.Provider value={baselineId != null}>
+      <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
         <ChartPanel
           containerRef={chartRef}
-          files={chartFiles}
+          files={section === "sustained" ? effectiveFiles : chartFiles}
           absoluteFiles={effectiveFiles}
           section={section}
           accuracyTest={accuracyTest}

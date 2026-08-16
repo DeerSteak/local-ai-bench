@@ -100,6 +100,7 @@ export function getAllLLMModels(files: ResultsFile[]): string[] {
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
+    for (const m of Object.keys(f.data.sustained || {})) s.add(m);
     for (const test of ACCURACY_TESTS)
       for (const m of Object.keys(f.data[test] || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);

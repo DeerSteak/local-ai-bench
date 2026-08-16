@@ -10,6 +10,7 @@ import { flattenAccuracyData } from "../utils/accuracy";
 import { flattenConcurrencyData, concurrencySortValue } from "../utils/concurrency";
 import { flattenLlamaBenchData } from "../utils/llamabench";
 import { flattenLlamaBenchConcData, llamaBenchConcSortValue } from "../utils/llamabenchconc";
+import { flattenSustainedData } from "../utils/sustained";
 import styles from "./StatsTable.module.css";
 
 function SortTh({ label, sortKey, sortConfig, onCycleSort }: {
@@ -87,6 +88,37 @@ function PowerCells({ row }: { row: Record<string, unknown> }) {
     </td>
     <td className={styles.td}>{typeof row.power_scope === "string" ? row.power_scope : "Not recorded"}</td>
   </>;
+}
+
+function SustainedTable({ files, sortConfig, onCycleSort }: {
+  files: ResultsFile[], sortConfig: SortConfig, onCycleSort: CycleSort,
+}) {
+  const isMulti = files.length > 1;
+  const rows = sortRows(flattenSustainedData(files), sortConfig);
+  return <table className={styles.table}>
+    <thead><tr>
+      {isMulti && <th className={styles.th}>Machine</th>}
+      <SortTh label="Model" sortKey="model" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Initial TPS" sortKey="initial_tokens_per_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Steady TPS" sortKey="steady_state_tokens_per_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Retention" sortKey="retention_pct" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Onset" sortKey="throttle_onset_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Duration" sortKey="actual_duration_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <th className={styles.th}>Classification</th><th className={styles.th}>Correlation</th><th className={styles.th}>Ambient</th>
+    </tr></thead>
+    <tbody>{rows.map((row, index) => <tr key={index}>
+      {isMulti && <MachineTd fileId={row._fileId} files={files} />}
+      <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(row.model)}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.initial_tokens_per_sec, "tps")}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.steady_state_tokens_per_sec, "tps")}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.retention_pct, "pct")}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.throttle_onset_sec, "sec")}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.actual_duration_sec, "sec")}</td>
+      <td className={styles.td}>{typeof row.performance === "string" ? row.performance.replaceAll("_", " ") : "Not recorded"}</td>
+      <td className={styles.td}>{typeof row.cause === "string" ? row.cause.replaceAll("_", " ") : "Not recorded"}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>{typeof row.ambient_temp_c === "number" ? `${row.ambient_temp_c.toFixed(1)}°C` : "Not recorded"}</td>
+    </tr>)}</tbody>
+  </table>;
 }
 
 function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
@@ -451,6 +483,7 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
       {(section === "concurrency_tool" || section === "concurrency_chat") &&
         <ConcurrencyTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "accuracy"  && <AccuracyTable files={files} testKey={accuracyTest} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+      {section === "sustained" && <SustainedTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "embeddings" && <EmbedTable  files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "images"     && <ImagesTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {section === "llamabench" && <LlamaBenchTable files={files} sortConfig={sortConfig} onCycleSort={onCycleSort} />}

@@ -10,6 +10,7 @@ import AccuracyPanel from "./panels/AccuracyPanel";
 import ConcurrencyPanel from "./panels/ConcurrencyPanel";
 import LlamaBenchPanel from "./panels/LlamaBenchPanel";
 import VllmBenchPanel from "./panels/VllmBenchPanel";
+import SustainedPanel from "./panels/SustainedPanel";
 import LlamaBenchBySystemPanel from "./panels/LlamaBenchBySystemPanel";
 import LlamaBenchConcPanel from "./panels/LlamaBenchConcPanel";
 import { EmptyState } from "./panels/shared";
@@ -70,6 +71,13 @@ export default function ChartPanel({
         containerRef={containerRef} files={files} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
+    );
+  }
+
+  if (section === "sustained") {
+    return (
+      <SustainedPanel containerRef={containerRef} files={files} enabledModels={enabledModels}
+        chartWidth={chartWidth} logoSrc={logoSrc} />
     );
   }
 
