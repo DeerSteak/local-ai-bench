@@ -363,11 +363,11 @@ describe("engineLabel", () => {
 describe("measuredCategoryAxisWidth", () => {
   it("uses the widest measured label line plus tick padding", () => {
     const rows: ChartRow[] = [{ system: "CPU\nLong GPU name" }, { system: "RAM" }];
-    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(83);
+    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(90);
   });
 
   it("returns tick padding for an empty dataset", () => {
-    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(11);
+    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(18);
   });
 });
 
