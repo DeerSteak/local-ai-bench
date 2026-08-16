@@ -161,7 +161,7 @@ export function engineLabel(engine: string | null | undefined): string {
 }
 
 export function measuredCategoryAxisWidth(
-  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 11,
+  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 18,
 ): number {
   const lines = rows.flatMap(row => String(row[key] ?? "").split("\n"));
   return Math.ceil(Math.max(0, ...lines.map(measure))) + tickSpace;
@@ -346,6 +346,14 @@ export function deriveTtftUnit(values: number[]): { ttftUnit: string, ttftYLabel
 // skip-status placeholder (`_status_<key>`) to render instead.
 export function hasValueOrStatus(rows: ChartRow[], key: string): boolean {
   return rows.some(r => r[key] != null || r[`_status_${key}`] != null);
+}
+
+export function configsWithValues<T extends { dataKey: string }>(configs: T[], rows: ChartRow[]): T[] {
+  return configs.filter(config => rows.some(row => row[config.dataKey] != null));
+}
+
+export function statsSkippedColSpan(nonTelemetryColumns: number): number {
+  return nonTelemetryColumns + 7;
 }
 
 // Return the key from `keys` whose maximum value across all rows is highest

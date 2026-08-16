@@ -2,10 +2,10 @@
   "version": "5.1.1",
   "engine": "llamacpp",
   "profile": {
-    "hostname": "Memory Telemetry Preview",
+    "hostname": "M5 Pro Telemetry Preview",
     "os": "macOS 26",
     "backend": "Metal",
-    "ram_gb": 24
+    "ram_gb": 48
   },
   "llm": {
     "qwen3.5-4b-q4": {
@@ -29,6 +29,13 @@
           },
           "headroom": {"absolute_gb": 11.8, "fraction": 0.7375, "state": "comfortable", "basis_channel": "process_rss_gb"},
           "provenance": {"interval_sec": 1, "failed_samples": 0, "channels": {}}
+        },
+        "power": {
+          "status": "recorded", "source": "powermetrics", "scope": "processor_package",
+          "energy_joules": 58.4, "mean_watts": 19.5, "peak_watts": 27.1,
+          "idle_baseline_watts": 4.2,
+          "efficiency": {"unit": "tokens_per_joule", "work_count": 768, "per_joule": 13.15},
+          "windows": [], "provenance": {"interval_sec": 0.5, "failed_samples": 0}
         }
       },
       "8K": {
@@ -51,6 +58,13 @@
           },
           "headroom": {"absolute_gb": 10.2, "fraction": 0.6375, "state": "comfortable", "basis_channel": "process_rss_gb"},
           "provenance": {"interval_sec": 1, "failed_samples": 1, "channels": {}}
+        },
+        "power": {
+          "status": "recorded", "source": "powermetrics", "scope": "processor_package",
+          "energy_joules": 76.8, "mean_watts": 21.3, "peak_watts": 30.4,
+          "idle_baseline_watts": 4.4,
+          "efficiency": {"unit": "tokens_per_joule", "work_count": 768, "per_joule": 10.0},
+          "windows": [], "provenance": {"interval_sec": 0.5, "failed_samples": 0}
         }
       }
     }
@@ -71,7 +85,14 @@
   "run": {
     "schema_version": 5,
     "status": "complete",
-    "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 1},
+    "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 0.5,
+      "power_telemetry": true, "power_telemetry_interval_sec": 0.5,
+      "power_source": "powermetrics", "power_scope": "processor_package"},
+    "power_summary": {
+      "status": "recorded", "reason": null, "source": "powermetrics",
+      "scope": "processor_package", "energy_joules": 135.2,
+      "idle_baseline_watts": 4.3, "recorded_cases": 2, "total_cases": 2
+    },
     "memory_summary": {
       "channels": {
         "host_ram_used_gb": {"peak_gb": 14.5},

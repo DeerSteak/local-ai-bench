@@ -64,7 +64,7 @@ def test_schema_4_fixture_preserves_pause_evidence_and_measurements():
     assert result["llm"]["golden"]["2K"]["tps_mean"] == 50.0
 
 
-def test_schema_5_fixture_retains_memory_samples_and_run_summary():
+def test_schema_5_fixture_retains_memory_and_power_samples_and_run_summaries():
     result = load_fixture("results_v6_schema5_memory.json")
     validate_json_data(result)
     memory = result["llm"]["golden"]["2K"]["memory"]
@@ -74,6 +74,13 @@ def test_schema_5_fixture_retains_memory_samples_and_run_summary():
     ]
     assert memory["windows"][2]["samples"][0]["process_rss_gb"] == 5.0
     assert result["run"]["memory_summary"]["tightest_headroom"]["case_id"] == "golden-memory-case"
+    power = result["llm"]["golden"]["2K"]["power"]
+    assert power["scope"] == "accelerator"
+    assert power["windows"][1]["samples"][-1] == {"timestamp_sec": 3.0, "watts": 14.0}
+    assert power["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 120, "per_joule": 10.0,
+    }
+    assert result["run"]["power_summary"]["energy_joules"] == 12.0
 
 
 def test_v4_1_complete_fixture_freezes_coverage_and_measurement_contract():

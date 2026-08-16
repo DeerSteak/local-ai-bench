@@ -1,4 +1,4 @@
-# Memory Telemetry Qualification
+# Telemetry Qualification
 
 The milestone-1 observer screen is a supervised real-hardware procedure. The analyzer is read-only and never launches a benchmark: `python -m scripts.release.telemetry_qualification MANIFEST.json --output REPORT.json` reads paired result files, emits descriptive impacts, and exits nonzero when a predeclared bound fails.
 
@@ -31,14 +31,27 @@ Continue the array through pair 20. Paths are resolved relative to the manifest.
 
 Archive the manifest, report, all referenced result files, exact OS/driver/runtime/source versions, sensor permissions, process ownership and scope notes, telemetry failure counts, and the commit tested. A parser fixture is not hardware qualification, and a passing coarse screen does not make telemetry default-on or establish scientific comparability.
 
-## Milestone 3 runner
+## Repeated-trial runner
 
-`run_m3_memory_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Its default output is under the gitignored `results/qualification/` tree, and a real run refuses to start from a dirty worktree so every result records a reproducible source identity. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
+`run_telemetry_trials.sh` automates the same alternating procedure for the selected model and engine, defaults to 20 pairs at the provisional 0.5-second interval, waits 30 seconds between invocations, writes explicit per-trial results, builds the manifest, and runs the analyzer. Its default `memory` mode compares telemetry disabled with memory sampling enabled. `--telemetry power` compares memory-only sampling with the combined memory-and-power sampler, preserving the shared-sampler design while isolating the incremental observer cost of power collection.
+
+The default output is under the gitignored `results/qualification/` tree, and a real run refuses to start from a dirty worktree so every result records a reproducible source identity. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
 
 ```bash
-bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
-bash run_m3_memory_trials.sh --model MODEL_TAG --engine llamacpp \
-  --out-dir results/qualification/m3-memory-this-machine
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
+  --out-dir results/qualification/memory-this-machine
+bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
+  --telemetry power --dry-run
 ```
 
 Use `--pairs 5` only for a workflow smoke test; it does not meet the 20-pair qualification minimum. The script intentionally runs one engine and one installed xsmall model at 2K so model/runtime changes are not mixed into the observer comparison.
+
+On macOS, a real power run requests administrator permission once before starting and refreshes that temporary authorization while the trial series runs; the sampler itself still uses non-interactive `sudo -n` and never prompts during a benchmark case. The manifest and report record the discovered source and measurement scope. Canceling or denying the initial permission stops the run before any benchmark starts.
+
+The M5 Pro release screen has a dedicated overnight wrapper that runs all three intervals for 20 pairs each—120 benchmark invocations total—and uses `caffeinate` to prevent system sleep. It fixes the model and methodology to the qualified configuration and groups the three manifests, reports, and raw-result directories beneath one timestamped root:
+
+```bash
+bash run_power_qualification_m5_pro.sh --dry-run
+bash run_power_qualification_m5_pro.sh
+```

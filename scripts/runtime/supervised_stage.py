@@ -10,6 +10,7 @@ from scripts.results.native_bench_event_stage import NativeBenchEventStage, expo
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
+from scripts.runtime.telemetry import PowerAvailability
 
 
 class RunnerLike(Protocol):
@@ -30,7 +31,8 @@ def relay_runner_log(text: str) -> None:
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
                          supervisor_factory: Callable[..., RunnerLike] = RunnerSupervisor,
                          resume_identity=None, resume=False,
-                         selected_case_ids=None) -> dict:
+                         selected_case_ids=None,
+                         power_availability: PowerAvailability | None = None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
         journal = NativeBenchEventStage(
@@ -46,7 +48,9 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         )
         project = lambda: export_llm_section(event_path, plan.job_id, stage_name, model_family)
     journal.close()
-    supervisor = supervisor_factory(RunnerSpec(plan.job_id, stage_name, event_path))
+    supervisor = supervisor_factory(RunnerSpec(
+        plan.job_id, stage_name, event_path, power_availability,
+    ))
     terminal = []
 
     def on_runner_event(event):
@@ -70,7 +74,9 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
                        supervisor_factory: Callable[..., RunnerLike] = RunnerSupervisor,
-                       resume_identity=None) -> dict:
+                       resume_identity=None,
+                       power_availability: PowerAvailability | None = None) -> dict:
     return run_supervised_stage(
         plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
+        power_availability=power_availability,
     )

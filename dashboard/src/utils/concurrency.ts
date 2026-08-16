@@ -1,6 +1,7 @@
 import { CONCURRENCY_LEVELS, CONCURRENCY_STOP_LABELS, LLM_DISPLAY_ORDER } from "../constants";
 import { entriesOf, lookup } from "./shared";
 import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { JsonRecord } from "./shared";
 import type { ResultsFile, ChartRow } from "../types";
 
@@ -101,6 +102,7 @@ export function flattenConcurrencyData(files: ResultsFile[], section: string): C
           ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,
           total_tokens: s.total_tokens,
           ...memoryFields(s),
+          ...powerFields(s),
         };
       });
     })

@@ -4,6 +4,7 @@ import {
 } from "../constants";
 import { getImageModelColor, imageModelLabel, entriesOf, valuesOf, lookup } from "./shared";
 import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
 
 const isKnownRes = (res: unknown): res is string =>
@@ -216,6 +217,7 @@ export function flattenImageData(files: ResultsFile[]): ChartRow[] {
         sec_stdev: s.sec_per_image_stdev,
         n_runs: s.n_runs,
         ...memoryFields(md),
+        ...powerFields(md),
       }))
     )
   );

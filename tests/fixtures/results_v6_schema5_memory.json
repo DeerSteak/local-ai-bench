@@ -26,12 +26,24 @@
         "accelerator_memory_used_gb": {"source": "nvidia-smi", "failed_samples": 0},
         "accelerator_memory_total_gb": {"source": "nvidia-smi", "failed_samples": 0}
       }}
+    },
+    "power": {
+      "case_id": "golden-memory-case", "status": "recorded", "reason": null,
+      "source": "nvidia-smi", "scope": "accelerator", "energy_joules": 12.0,
+      "mean_watts": 12.0, "peak_watts": 14.0, "idle_baseline_watts": 4.0,
+      "efficiency": {"unit": "tokens_per_joule", "work_count": 120, "per_joule": 10.0},
+      "windows": [
+        {"name": "idle", "sample_count": 2, "duration_sec": 1.0, "mean_watts": 4.0, "peak_watts": 4.0, "energy_joules": 4.0, "samples": [{"timestamp_sec": 0.0, "watts": 4.0}, {"timestamp_sec": 1.0, "watts": 4.0}]},
+        {"name": "measured", "sample_count": 2, "duration_sec": 1.0, "mean_watts": 12.0, "peak_watts": 14.0, "energy_joules": 12.0, "samples": [{"timestamp_sec": 2.0, "watts": 10.0}, {"timestamp_sec": 3.0, "watts": 14.0}]}
+      ],
+      "provenance": {"interval_sec": 1.0, "failed_samples": 0}
     }
   }}},
   "run": {
     "schema_version": 5,
     "status": "complete",
-    "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 1.0},
+    "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 1.0, "power_telemetry": true, "power_telemetry_interval_sec": 1.0, "power_source": "nvidia-smi", "power_scope": "accelerator"},
+    "power_summary": {"status": "recorded", "reason": null, "scope": "accelerator", "source": "nvidia-smi", "energy_joules": 12.0, "idle_baseline_watts": 4.0, "recorded_cases": 1, "total_cases": 1},
     "memory_summary": {
       "channels": {"process_rss_gb": {"peak_gb": 5.0}, "accelerator_memory_used_gb": {"peak_gb": 10.0}},
       "tightest_headroom": {"absolute_gb": 12.0, "fraction": 0.5, "state": "comfortable", "basis_channel": "accelerator_memory_used_gb", "case_id": "golden-memory-case", "case_path": "llm/golden/2K"}

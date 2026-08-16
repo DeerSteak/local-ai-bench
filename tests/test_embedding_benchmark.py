@@ -62,7 +62,9 @@ def test_run_attaches_case_telemetry_after_measured_embedding(monkeypatch):
         def is_connection_crash(self, _exc): return False
 
     class Telemetry:
-        def __init__(self): self.calls = []
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
         def begin_model_load(self): self.calls.append("load")
         def begin_measured(self, name): self.calls.append(name)
         def finish_case(self):
@@ -80,3 +82,6 @@ def test_run_attaches_case_telemetry_after_measured_embedding(monkeypatch):
     )
     assert telemetry.calls == ["load", "measured:embedding", "finish"]
     assert result["embed"]["memory"]["summary"]["process_rss_gb"]["peak_gb"] == 2
+    assert result["embed"]["power"]["efficiency"] == {
+        "unit": "embeddings_per_joule", "work_count": 1, "per_joule": 0.5,
+    }

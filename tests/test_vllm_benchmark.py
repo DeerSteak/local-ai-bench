@@ -236,7 +236,9 @@ def test_run_opens_measured_window_before_each_native_command(monkeypatch):
         def max_context_length(tag): return 4096
 
     class Telemetry:
-        def __init__(self): self.calls = []
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
         def begin_measured(self, name): self.calls.append(name)
         def finish_case(self):
             self.calls.append("finish")
@@ -263,6 +265,9 @@ def test_run_opens_measured_window_before_each_native_command(monkeypatch):
         "measured:latency:in512:out128:includes-load", "finish",
         "measured:throughput:in512:out128:includes-load", "finish",
     ]
+    assert result["model"]["throughput_entries"][0]["power"]["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 128, "per_joule": 64,
+    }
 
 
 def test_run_discards_timed_out_native_window(monkeypatch):

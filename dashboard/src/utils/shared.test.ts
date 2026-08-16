@@ -8,7 +8,8 @@ import {
   sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
-  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
+  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
+  statsSkippedColSpan, findMostStrenuousKey,
   measuredCategoryAxisWidth,
   entriesOf, valuesOf, isNotNull,
 } from "./shared";
@@ -363,11 +364,11 @@ describe("engineLabel", () => {
 describe("measuredCategoryAxisWidth", () => {
   it("uses the widest measured label line plus tick padding", () => {
     const rows: ChartRow[] = [{ system: "CPU\nLong GPU name" }, { system: "RAM" }];
-    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(83);
+    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(90);
   });
 
   it("returns tick padding for an empty dataset", () => {
-    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(11);
+    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(18);
   });
 });
 
@@ -581,6 +582,24 @@ describe("hasValueOrStatus", () => {
   });
   it("is false when no row has either", () => {
     expect(hasValueOrStatus([{ "8K": 10 }], "2K")).toBe(false);
+  });
+});
+
+describe("configsWithValues", () => {
+  const configs = [{ dataKey: "old", label: "Old" }, { dataKey: "current", label: "Current" }];
+
+  it("removes line configs whose rows contain only missing telemetry", () => {
+    expect(configsWithValues(configs, [{ old: null }])).toEqual([]);
+  });
+
+  it("keeps zero as a measured value", () => {
+    expect(configsWithValues(configs, [{ current: 0 }])).toEqual([configs[1]]);
+  });
+});
+
+describe("statsSkippedColSpan", () => {
+  it("adds all four memory and three power columns", () => {
+    expect([7, 5, 9, 6, 5, 8].map(statsSkippedColSpan)).toEqual([14, 12, 16, 13, 12, 15]);
   });
 });
 

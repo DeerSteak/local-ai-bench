@@ -1,6 +1,7 @@
 import { LLM_DISPLAY_ORDER, CATEGORY_COLORS, FILE_COLORS } from "../constants";
 import { modelLabel, entriesOf } from "./shared";
 import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { BarConfig, ChartRow, ResultsFile } from "../types";
 
 // Return all model keys present in a given accuracy test (mcq/math/code)
@@ -161,6 +162,7 @@ export function flattenAccuracyData(files: ResultsFile[], testKey: string): Char
         crashed: s.crashed || false,
         preflight_warning: getTemplateWarning(f, model),
         ...memoryFields(s),
+        ...powerFields(s),
       };
     })
   );

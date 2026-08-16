@@ -292,7 +292,7 @@ It ranks below memory only because it needs elevated permissions on some platfor
 ## Implementation outline
 
 1. **Add power channels to the existing sampler** in `telemetry.py`. Do not create a second sampler — power, memory, and temperature are one timeline and must share timestamps so they can be correlated in item 5.
-2. **Implement a per-platform power source behind one interface**, each independently testable against captured output: `powermetrics` on macOS, `nvidia-smi --query-gpu=power.draw` for NVIDIA, `rocm-smi` for AMD, and RAPL via sysfs for Intel CPU package power. Parse into a common unit and keep every parser a pure function over captured text, as the existing `parse_nvidia_gpus`-style functions already are.
+2. **Implement a per-platform power source behind one interface**, each independently testable against captured output or driver structures: `powermetrics` on macOS, `nvidia-smi --query-gpu=power.draw` for NVIDIA, Adrenalin ADL on Windows AMD, `rocm-smi` on Linux AMD, and RAPL via sysfs for Intel CPU package power. Parse into a common unit and keep every parser a pure function over captured evidence, as the existing `parse_nvidia_gpus`-style functions already are.
 3. **Make source discovery self-contained in `telemetry.py`.** `powermetrics` requires elevated privileges; RAPL sysfs may not be world-readable. A read-only availability function returns available or unavailable-with-reason before the run, without depending on item 2, prompting, or escalating privileges. When item 2 exists, preflight displays this result; the sampler remains independently usable and item 4 keeps only its dependency on item 1.
 4. **Integrate power over each measured window** to produce energy in joules, using trapezoidal integration over actual sample timestamps rather than assuming a fixed interval — a sampler thread under load will not tick evenly, and assuming it will inflates or deflates the total.
 5. **Derive efficiency metrics** per workload family: tokens per joule for generation, images per joule for image generation, embeddings per joule. Derive these as pure functions from recorded energy and recorded work, never sampled independently.
@@ -307,16 +307,16 @@ It ranks below memory only because it needs elevated permissions on some platfor
 
 ## Acceptance criteria
 
-- [ ] A run on a supported platform records energy in joules per measured case and per run, with idle baseline recorded separately.
-- [ ] Tokens per joule, images per joule, and embeddings per joule are derived and exported where the corresponding workload ran.
-- [ ] Every power figure carries an explicit scope; the dashboard never plots mixed scopes on one axis, and a test asserts this.
-- [ ] Missing permissions are detected by telemetry source discovery and reported before the run starts, with the reason recorded in the results; item 2's preflight displays the same result when present.
-- [ ] Unavailable power never fails a run and never records zero; it records unavailable with a reason.
-- [ ] Integration uses real sample timestamps, verified by a test with deliberately uneven spacing.
+- [x] A run on a supported platform records energy in joules per measured case and per run, with idle baseline recorded separately.
+- [x] Tokens per joule, images per joule, and embeddings per joule are derived and exported where the corresponding workload ran.
+- [x] Every power figure carries an explicit scope; the dashboard never plots mixed scopes on one axis, and a test asserts this.
+- [x] Missing permissions are detected by telemetry source discovery and reported before the run starts, with the reason recorded in the results; item 2's preflight displays the same result when present.
+- [x] Unavailable power never fails a run and never records zero; it records unavailable with a reason.
+- [x] Integration uses real sample timestamps, verified by a test with deliberately uneven spacing.
 - [ ] Power, memory, and temperature samples share one timeline and one set of timestamps.
-- [ ] Each power source and sampling interval passes the shared observer-effect policy or receives the resulting opt-in/unsupported methodology status.
-- [ ] Power-source discovery works without item 2; preflight only presents the result when available.
-- [ ] Power telemetry passes the shared privacy and outbound policy.
+- [x] Each power source and sampling interval passes the shared observer-effect policy or receives the resulting opt-in/unsupported methodology status.
+- [x] Power-source discovery works without item 2; preflight only presents the result when available.
+- [x] Power telemetry passes the shared privacy and outbound policy.
 
 ---
 

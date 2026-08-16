@@ -8,6 +8,7 @@ import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
 import { buildProcessMemoryDataForModel } from "../../utils/memory";
+import { buildPowerEfficiencyDataForModel, hasMixedPowerScopes } from "../../utils/power";
 import styles from "../ChartPanel.module.css";
 
 // Group By: Model, LLM / LLM Conversation section — one card group per model,
@@ -33,6 +34,10 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const prefillData = buildLLMDataForModel(files, model, "prefill", section);
     const memoryData = buildProcessMemoryDataForModel(files, model, section);
     const memoryLineConfigs = lineConfigs.filter(lc => memoryData.some(r => r[lc.dataKey] != null));
+    const efficiencyData = buildPowerEfficiencyDataForModel(files, model, section);
+    const efficiencyLineConfigs = lineConfigs.filter(
+      lc => efficiencyData.some(r => r[lc.dataKey] != null),
+    );
     const prefillLineConfigs = lineConfigs.filter(lc => prefillData.some(r => r[lc.dataKey] != null));
     const rawPrefillBarConfigs = buildLLMBarConfigs(files, model, section);
     const rawPrefillBarData = buildLLMBarData(files, model, "prefill", section);
@@ -53,8 +58,13 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))
       .filter((e): e is typeof e & { info: NonNullable<typeof e.info> } => e.info != null);
-    if (!hasTps && !hasTtft && !hasPrefill && !memoryLineConfigs.length && !skipEntries.length) return null;
-    return { model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries };
+    if (!hasTps && !hasTtft && !hasPrefill && !memoryLineConfigs.length
+        && !efficiencyLineConfigs.length && !skipEntries.length) return null;
+    return { model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs,
+      efficiencyData, efficiencyLineConfigs, tpsLineConfigs, ttftLineConfigs,
+      prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData,
+      ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill,
+      skipEntries };
   }).filter(isNotNull);
 
   if (!modelGroups.length) {
@@ -66,7 +76,11 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {modelGroups.map(({ model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs, tpsLineConfigs, ttftLineConfigs, prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData, ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill, skipEntries }) => (
+      {modelGroups.map(({ model, tpsData, ttftData, prefillData, memoryData, memoryLineConfigs,
+        efficiencyData, efficiencyLineConfigs, tpsLineConfigs, ttftLineConfigs,
+        prefillLineConfigs, tpsBarConfigs, ttftBarConfigs, prefillBarConfigs, tpsBarData,
+        ttftBarData, prefillBarData, ttftUnit, ttftYLabel, hasTps, hasTtft, hasPrefill,
+        skipEntries }) => (
         <div key={model} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{modelLabel(model)}</div>
           {skipEntries.length > 0 && (
@@ -150,6 +164,17 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               isMultiFile={isMultiFile}
               chartName={`${chartNamePrefix}process_memory`} chartModel={model}
               logoSrc={logoSrc} direction="lower"
+            />
+          )}
+          {efficiencyLineConfigs.length > 0 && !hasMixedPowerScopes(files, [model], section) && (
+            <ChartCard
+              title={`Energy Efficiency${titleSuffix}`}
+              modelName={modelLabel(model)}
+              data={efficiencyData} lineConfigs={efficiencyLineConfigs}
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens / Joule"
+              unit="efficiency" isMultiFile={isMultiFile}
+              chartName={`${chartNamePrefix}tokens_per_joule`} chartModel={model}
+              logoSrc={logoSrc} direction="higher"
             />
           )}
         </div>

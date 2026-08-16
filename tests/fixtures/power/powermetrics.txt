@@ -1,0 +1,5 @@
+**** Processor usage ****
+CPU Power: 1487 mW
+GPU Power: 226 mW
+ANE Power: 0 mW
+Combined Power (CPU + GPU + ANE): 1713 mW

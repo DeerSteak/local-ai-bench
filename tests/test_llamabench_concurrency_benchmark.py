@@ -372,7 +372,9 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
 
 def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypatch):
     class Telemetry:
-        def __init__(self): self.calls = []
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
         def begin_model_load(self): self.calls.append("load")
         def begin_measured(self, name): self.calls.append(name)
         def finish_case(self):
@@ -396,6 +398,8 @@ def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypa
     ]
     assert telemetry.calls.count("finish") == 3
     assert all("memory" in entry for entry in result["m1"]["entries"])
+    assert all(entry["power"]["efficiency"]["unit"] == "tokens_per_joule"
+               for entry in result["m1"]["entries"])
 
 
 def test_run_discards_failed_native_window(fake_engine, monkeypatch):

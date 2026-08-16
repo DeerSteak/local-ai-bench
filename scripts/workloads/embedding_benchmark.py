@@ -10,6 +10,7 @@ from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 class EmbeddingBenchmark:
@@ -188,6 +189,13 @@ class EmbeddingBenchmark:
                     memory = telemetry.finish_case()
                     if isinstance(results.get(short), dict):
                         results[short]["memory"] = memory
+                        if (power := getattr(telemetry, "last_power", None)) is not None:
+                            work = results[short].get("n_chunks", 0) * results[short].get(
+                                "valid_runs", 0,
+                            )
+                            results[short]["power"] = add_power_efficiency(
+                                power, "embeddings_per_joule", work,
+                            )
                 if save_fn:
                     save_fn(results)
                 emit_model_finished("emb", label, results.get(short), model_id=tag)

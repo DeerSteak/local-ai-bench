@@ -195,7 +195,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
             options[key] = values[key]
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                "llamacpp_no_repack"):
+                "power_telemetry", "llamacpp_no_repack"):
         options[key] = values[key]
     for key in ("out", "comfyui"):
         options[key] = str(values[key]).strip()
@@ -524,6 +524,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ("retry_crashed_models", "Retry models that crashed previously", 0),
         ("offline", "Offline mode (loopback only)", 0),
         ("memory_telemetry", "Memory telemetry", 0),
+        ("power_telemetry", "Power and energy telemetry (requires permission)", 0),
     )
     for key, text, pady in checkboxes:
         row = execution_row(pady=pady)
@@ -593,7 +594,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                    "llamacpp_no_repack"):
+                    "power_telemetry", "llamacpp_no_repack"):
             variable = option_vars[key]
             value = GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode" else defaults[key]
             variable.set(value)

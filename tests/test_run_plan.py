@@ -167,6 +167,57 @@ def test_memory_telemetry_settings_reject_invalid_combinations(enabled, interval
         make_plan(effective_config=config).validate_for_execution()
 
 
+def test_power_telemetry_is_identity_bearing_and_records_source_scope_and_interval():
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        power_telemetry=True, power_telemetry_interval_sec=0.5,
+        power_source="powermetrics", power_scope="processor_package",
+    )
+    plan = make_plan(effective_config=config)
+    plan.validate_for_execution()
+    assert plan.execution_identity["telemetry"] == {"power": {
+        "interval_sec": 0.5, "source": "powermetrics", "scope": "processor_package",
+    }}
+    changed = make_plan(effective_config=dict(config, power_scope="whole_system"))
+    assert changed.plan_id != plan.plan_id
+
+
+@pytest.mark.parametrize("changes", [
+    {"memory_telemetry": False},
+    {"power_telemetry_interval_sec": None},
+    {"power_telemetry_interval_sec": 0},
+    {"power_source": None},
+    {"power_scope": ""},
+])
+def test_power_telemetry_rejects_incomplete_or_invalid_methodology(changes):
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        power_telemetry=True, power_telemetry_interval_sec=0.5,
+        power_source="powermetrics", power_scope="processor_package",
+    )
+    config.update(changes)
+    with pytest.raises(ValueError, match="memory telemetry|power telemetry|power_"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
+def test_disabled_power_telemetry_rejects_orphaned_source_settings():
+    config = dict(
+        complete_plan().effective_config,
+        power_telemetry=False, power_telemetry_interval_sec=None,
+        power_source="powermetrics", power_scope=None,
+    )
+    with pytest.raises(ValueError, match="require power telemetry"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
+def test_schema_three_plan_remains_readable_after_power_schema_change():
+    plan = make_plan(schema_version=3)
+    encoded = plan.to_dict()
+    assert RunPlan.from_dict(encoded) == plan
+
+
 def test_returned_models_and_config_cannot_mutate_the_plan():
     plan = make_plan()
     plan.models["llm"].append({"tag": "injected"})

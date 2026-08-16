@@ -138,10 +138,15 @@ def test_comfyui_free_models_swallows_request_errors(monkeypatch):
 
 
 def test_run_attaches_model_memory_with_resolution_subwindows(monkeypatch, tmp_path):
+    events = []
+
     class Telemetry:
-        def __init__(self): self.calls = []
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
         def begin_model_load(self): self.calls.append("load")
         def begin_measured(self, name): self.calls.append(name)
+        def begin_pause(self): self.calls.append("pause"); events.append("pause-window")
         def finish_case(self):
             self.calls.append("finish")
             return {"windows": [{"name": name} for name in self.calls if name.startswith("measured:")]}
@@ -153,6 +158,9 @@ def test_run_attaches_model_memory_with_resolution_subwindows(monkeypatch, tmp_p
     monkeypatch.setattr(config, "N_RUNS", 1)
     monkeypatch.setattr(ImageBenchmark, "comfyui_submit", staticmethod(lambda *_a, **_k: (1.0, [])))
     monkeypatch.setattr(ImageBenchmark, "comfyui_free_models", staticmethod(lambda: None))
+    monkeypatch.setattr(
+        "scripts.workloads.image_benchmark.wait_if_paused", lambda: events.append("wait"),
+    )
     telemetry = Telemetry()
     model = {
         "label": "Image", "checkpoint": "model.safetensors", "workflow": "sdxl",
@@ -163,10 +171,16 @@ def test_run_attaches_model_memory_with_resolution_subwindows(monkeypatch, tmp_p
         [model], [(64, 64)], 1, "prompt", tmp_path,
         images_dir=tmp_path / "images", telemetry=telemetry,
     )
-    assert telemetry.calls == ["load", "measured:64x64", "measured:128x128", "finish"]
+    assert telemetry.calls == [
+        "load", "pause", "measured:64x64", "pause", "measured:128x128", "finish",
+    ]
+    assert events == ["pause-window", "wait", "pause-window", "wait"]
     assert [window["name"] for window in result["image"]["memory"]["windows"]] == [
         "measured:64x64", "measured:128x128",
     ]
+    assert result["image"]["power"]["efficiency"] == {
+        "unit": "images_per_joule", "work_count": 2, "per_joule": 1,
+    }
 
 
 def test_comfyui_interrupt_and_clear_stops_once_queue_is_empty(monkeypatch):
