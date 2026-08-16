@@ -22,6 +22,7 @@
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
+| `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
 | `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
@@ -124,6 +125,8 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
 | `runtime/telemetry.py` | Shared resource queries, background memory sampler, aggregation, and headroom classification |
+| `workloads/sustained_benchmark.py` / `workloads/sustained_analysis.py` | Continuous-generation soak, aligned time windows, pure retention/onset classification, and sensor correlation |
+| `results/sustained_event_stage.py` | Request-level sustained journal and whole-soak recovery projection |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |

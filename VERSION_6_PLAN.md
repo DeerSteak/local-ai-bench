@@ -346,16 +346,16 @@ This completes the sampler trio and converts the project's largest documented co
 
 ## Acceptance criteria
 
-- [ ] A soak run records a throughput time series, not only an aggregate, and exports the full series.
-- [ ] Initial throughput, steady-state throughput, retention ratio, and throttle-onset point are computed by pure, unit-tested functions.
-- [ ] Throttle onset requires a sustained departure across consecutive windows; a test asserts a single-window dip does not trigger it.
-- [ ] Performance retention and suspected cause are separate outputs; missing sensors can make cause unavailable without erasing a valid throughput result.
-- [ ] Degradation is correlated with temperature and power from the shared timeline, and "neither" is reported honestly rather than defaulting to thermal.
-- [ ] A soak too short to reach steady state classifies as indeterminate, never as stable.
-- [ ] The workload is opt-in and absent from the default evidence set.
-- [ ] The dashboard plots throughput, temperature, and power on one aligned time axis.
-- [ ] Every temperature source and the combined sampler pass the shared observer-effect policy or receive its opt-in/unsupported methodology status.
-- [ ] Temperature telemetry passes the shared privacy and outbound policy.
+- [x] A soak run records a throughput time series, not only an aggregate, and exports the full series.
+- [x] Initial throughput, steady-state throughput, retention ratio, and throttle-onset point are computed by pure, unit-tested functions.
+- [x] Throttle onset requires a sustained departure across consecutive windows; a test asserts a single-window dip does not trigger it.
+- [x] Performance retention and suspected cause are separate outputs; missing sensors can make cause unavailable without erasing a valid throughput result.
+- [x] Degradation is correlated with temperature and power from the shared timeline, and "neither" is reported honestly rather than defaulting to thermal.
+- [x] A soak too short to reach steady state classifies as indeterminate, never as stable.
+- [x] The workload is opt-in and absent from the default evidence set.
+- [x] The dashboard plots throughput, temperature, and power on one aligned time axis.
+- [x] Every temperature source and the combined sampler pass the shared observer-effect policy or receive its opt-in/unsupported methodology status.
+- [x] Temperature telemetry passes the shared privacy and outbound policy.
 
 ---
 

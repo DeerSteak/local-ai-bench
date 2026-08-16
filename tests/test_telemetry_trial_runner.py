@@ -64,6 +64,44 @@ def test_trial_runner_rejects_unknown_telemetry_mode():
     assert "must be memory or power" in result.stderr
 
 
+def test_sustained_linux_wrapper_previews_repeated_aligned_soaks(tmp_path):
+    output = tmp_path / "evidence"
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_sustained_qualification_linux.sh"),
+         "--model", "example:model", "--ambient-temp-c", "20.5",
+         "--duration", "300", "--repeats", "2", "--out-dir", str(output),
+         "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    commands = [line for line in result.stdout.splitlines() if "run_bench.sh" in line]
+    assert len(commands) == 2
+    assert all("--tests sustained" in line for line in commands)
+    assert all("--memory-telemetry --power-telemetry" in line for line in commands)
+    assert all("--sustained-duration 300" in line for line in commands)
+    assert all("--ambient-temp-c 20.5" in line for line in commands)
+    assert not output.exists()
+
+
+def test_sustained_linux_wrapper_requires_qualification_inputs():
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_sustained_qualification_linux.sh"), "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    assert result.returncode == 2
+    assert "--model and --ambient-temp-c are required" in result.stderr
+
+
+def test_sustained_linux_wrapper_rejects_too_short_duration():
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_sustained_qualification_linux.sh"),
+         "--model", "example:model", "--ambient-temp-c", "20", "--duration", "119",
+         "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    assert result.returncode == 2
+    assert "at least 120 seconds" in result.stderr
+
+
 def test_memory_trial_runner_rejects_dirty_source_tree(tmp_path):
     script = tmp_path / "run_telemetry_trials.sh"
     script.write_bytes((ROOT / "run_telemetry_trials.sh").read_bytes())
