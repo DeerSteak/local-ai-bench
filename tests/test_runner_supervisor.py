@@ -16,6 +16,7 @@ from scripts.runtime.runner_supervisor import (
     RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor, SupervisedProcess,
     build_runner_command, parse_runner_event,
 )
+from scripts.runtime.telemetry import PowerAvailability
 
 
 def spec(tmp_path):
@@ -84,6 +85,31 @@ def test_supervisor_start_owns_process_group_and_private_token(tmp_path):
     assert captured["options"]["encoding"] == "utf-8"
     assert captured["options"]["errors"] == "replace"
     assert supervisor.ownership_token not in captured["command"]
+
+
+def test_supervisor_passes_power_availability_only_in_child_environment(tmp_path):
+    captured = {}
+
+    class Process:
+        stdout = []
+
+    def factory(command, **options):
+        captured.update(command=command, options=options)
+        return Process()
+
+    availability = PowerAvailability(
+        True, "powermetrics", "processor_package", location="/usr/bin/powermetrics",
+    )
+    runner_spec = RunnerSpec(
+        "job_abc", "llm", (tmp_path / "events.sqlite3").resolve(), availability,
+    )
+    RunnerSupervisor(
+        runner_spec, process_factory=cast("type[subprocess.Popen]", factory), system="Darwin",
+    ).start()
+    payload = captured["options"]["env"]["LOCAL_AI_BENCH_POWER_AVAILABILITY"]
+    assert '"source":"powermetrics"' in payload
+    assert '"location":"/usr/bin/powermetrics"' in payload
+    assert "/usr/bin/powermetrics" not in captured["command"]
 
 
 def test_macos_supervisor_keeps_controlling_terminal_for_power_permission(tmp_path):

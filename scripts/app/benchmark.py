@@ -1193,13 +1193,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def run_llm(_context):
             return run_supervised_llm(
                 _context.plan, event_store_path(Path(out_path)), make_save("llm"),
-                resume_identity=resume_identity,
+                resume_identity=resume_identity, power_availability=power_availability,
             )
 
         def run_conversation(_context):
             return run_supervised_stage(
                 _context.plan, event_store_path(Path(out_path)), "conv",
                 make_save("llm_conversation", "conv"), resume_identity=resume_identity,
+                power_availability=power_availability,
             )
 
         def release_port_for_runner(_context):
@@ -1212,6 +1213,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             return run_supervised_stage(
                 _context.plan, event_store_path(Path(out_path)), "llamabench",
                 make_save("llamabench"), resume_identity=resume_identity,
+                power_availability=power_availability,
             )
 
         def run_llamabench_concurrency(_context):
@@ -1277,6 +1279,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 return run_supervised_stage(
                     _context.plan, event_store_path(Path(out_path)), key,
                     make_save(section, key), resume_identity=resume_identity,
+                    power_availability=power_availability,
                 )
             return StageDefinition(key, section, len(conc_models), runner,
                                    prepare=release_port_for_runner)

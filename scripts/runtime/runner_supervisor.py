@@ -10,11 +10,12 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.runtime import config
+from scripts.runtime.telemetry import PowerAvailability
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
@@ -44,6 +45,7 @@ class RunnerSpec:
     job_id: str
     stage: str
     event_store: Path
+    power_availability: PowerAvailability | None = None
 
     def validate(self) -> None:
         if not self.job_id.startswith("job_"):
@@ -115,6 +117,10 @@ class RunnerSupervisor:
         environment = dict(os.environ)
         environment["LOCAL_AI_BENCH_RUNNER_TOKEN"] = self.ownership_token
         environment["PYTHONIOENCODING"] = "utf-8"
+        if self.spec.power_availability is not None:
+            environment["LOCAL_AI_BENCH_POWER_AVAILABILITY"] = json.dumps(
+                asdict(self.spec.power_availability), separators=(",", ":"),
+            )
         options = {
             "cwd": config.SCRIPT_DIR, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
             "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,

@@ -24,17 +24,40 @@ from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
-from scripts.runtime.telemetry import CaseTelemetry, discover_power_source
+from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability
 
 
 _emit_lock = threading.Lock()
 
 
-def create_case_telemetry(settings: dict) -> CaseTelemetry | None:
+def inherited_power_availability(settings: dict, environ=None) -> PowerAvailability:
+    environ = os.environ if environ is None else environ
+    expected_source = settings.get("power_source") or "unsupported"
+    expected_scope = settings.get("power_scope") or "unknown"
+    try:
+        payload = json.loads(environ.get("LOCAL_AI_BENCH_POWER_AVAILABILITY", ""))
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if (not isinstance(payload, dict) or payload.get("source") != expected_source
+            or payload.get("scope") != expected_scope):
+        return PowerAvailability(
+            False, expected_source, expected_scope,
+            "parent power source was not inherited by the supervised process",
+        )
+    return PowerAvailability(
+        payload.get("available") is True, expected_source, expected_scope,
+        payload.get("reason") if isinstance(payload.get("reason"), str) else None,
+        payload.get("location") if isinstance(payload.get("location"), str) else None,
+    )
+
+
+def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
     if not settings.get("memory_telemetry"):
         return None
     if settings.get("power_telemetry"):
-        return CaseTelemetry(power_availability=discover_power_source()).start()
+        return CaseTelemetry(
+            power_availability=inherited_power_availability(settings, environ),
+        ).start()
     return CaseTelemetry().start()
 
 
