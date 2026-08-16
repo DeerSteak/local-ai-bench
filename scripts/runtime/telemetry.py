@@ -596,7 +596,10 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
     measured_energy = integrate_power_joules([
         (sample.timestamp_sec, sample.power_watts) for sample in measured_samples
     ])
-    recorded = measured_energy is not None
+    complete_timeline = all(
+        _finite_nonnegative(sample.power_watts) is not None for sample in measured_samples
+    )
+    recorded = measured_energy is not None and complete_timeline
     return {
         "status": "recorded" if recorded else "unavailable",
         "reason": None if recorded else (

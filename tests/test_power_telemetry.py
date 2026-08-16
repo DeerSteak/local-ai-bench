@@ -377,6 +377,21 @@ def test_power_block_integrates_across_single_sample_measured_subwindows():
     assert [window["energy_joules"] for window in block["windows"]] == [15, None, 45]
 
 
+def test_power_block_refuses_a_measured_timeline_with_failed_readings():
+    block = power_block([
+        TelemetrySample(0, "measured:first", power_watts=10),
+        TelemetrySample(1, "measured:first", power_watts=20),
+        TelemetrySample(2, "measured:second", power_watts=None),
+        TelemetrySample(3, "measured:third", power_watts=40),
+        TelemetrySample(4, "measured:third", power_watts=50),
+    ], 0.5, PowerAvailability(
+        True, "nvidia-smi", "accelerator", location="tool",
+    ), 1)
+    assert block["status"] == "unavailable"
+    assert block["energy_joules"] is None
+    assert block["reason"] == "insufficient valid samples for energy integration"
+
+
 class FakePowerSource:
     def __init__(self, watts=12):
         self.watts = watts
