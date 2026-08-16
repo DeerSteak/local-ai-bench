@@ -10,7 +10,7 @@ def series(rates, *, step=20, temperatures=None, powers=None):
     temperatures = temperatures or [None] * len(rates)
     powers = powers or [None] * len(rates)
     return [
-        {"timestamp_sec": index * step, "tokens_per_sec": rate,
+        {"timestamp_sec": index * step, "duration_sec": step, "tokens_per_sec": rate,
          "gpu_die_c": temperatures[index], "power_watts": powers[index]}
         for index, rate in enumerate(rates)
     ]
@@ -40,6 +40,7 @@ def test_monotonic_decline_reports_retention_and_first_sustained_onset():
     assert result["throttle_onset_sec"] == 60
     assert result["performance"] == "significant_degradation"
     assert result["cause"] == "unavailable"
+    assert result["ordinal_drift"] == "declining"
 
 
 def test_single_dip_then_recovery_does_not_trigger_sustained_onset():
@@ -48,6 +49,7 @@ def test_single_dip_then_recovery_does_not_trigger_sustained_onset():
     result = analyze(windows)
     assert result["performance"] == "stable"
     assert result["throttle_onset_sec"] is None
+    assert result["ordinal_drift"] == "none"
 
 
 def test_noisy_but_stable_series_does_not_cross_retention_or_onset_thresholds():
@@ -61,7 +63,7 @@ def test_noisy_but_stable_series_does_not_cross_retention_or_onset_thresholds():
     series([100] * 5, step=30),
     series([100] * 9, step=10),
     [{"timestamp_sec": index * 20, "tokens_per_sec": None} for index in range(9)],
-    series([100] * 8 + [0]),
+    series([100] * 8 + [-1]),
     [{"timestamp_sec": 0, "tokens_per_sec": 100}] * 9,
 ])
 def test_short_invalid_or_non_increasing_series_is_indeterminate(windows):

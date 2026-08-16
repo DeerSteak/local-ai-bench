@@ -4,6 +4,7 @@ import math
 from typing import Mapping, Sequence
 
 from scripts.runtime import config
+from scripts.results.trial_set import monotonic_drift
 
 
 TEMPERATURE_KEYS = ("cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
@@ -120,7 +121,7 @@ def analyze_sustained_series(
         related_trial_drift: str | None = None) -> dict[str, object]:
     throughput = [_number(window.get("tokens_per_sec")) for window in windows]
     timestamps = [_number(window.get("timestamp_sec")) for window in windows]
-    valid_throughput = [value for value in throughput if value is not None and value > 0]
+    valid_throughput = [value for value in throughput if value is not None and value >= 0]
     valid_timestamps = [value for value in timestamps if value is not None]
     valid_timeline = (
         len(windows) >= initial_count + late_count
@@ -129,9 +130,15 @@ def analyze_sustained_series(
         and all(after > before
                 for before, after in zip(valid_timestamps, valid_timestamps[1:]))
     )
-    duration = valid_timestamps[-1] - valid_timestamps[0] if valid_timeline else None
+    last_window_duration = _number(windows[-1].get("duration_sec")) if windows else None
+    duration = (
+        valid_timestamps[-1] + max(last_window_duration or 0, 0) - valid_timestamps[0]
+        if valid_timeline else None
+    )
     sufficiently_long = bool(valid_timeline and duration is not None
                              and duration >= minimum_duration_sec)
+    ordinal_drift = monotonic_drift(valid_throughput) \
+        if len(valid_throughput) == len(windows) else "insufficient"
     if not sufficiently_long:
         return {
             "initial_tokens_per_sec": None,
@@ -142,6 +149,7 @@ def analyze_sustained_series(
             "cause": "unavailable",
             "duration_sec": duration,
             "window_count": len(windows),
+            "ordinal_drift": ordinal_drift,
             "related_trial_drift": related_trial_drift,
         }
     initial = _mean(valid_throughput[:initial_count])
@@ -160,5 +168,6 @@ def analyze_sustained_series(
         ),
         "duration_sec": duration,
         "window_count": len(windows),
+        "ordinal_drift": ordinal_drift,
         "related_trial_drift": related_trial_drift,
     }

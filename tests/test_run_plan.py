@@ -212,6 +212,35 @@ def test_disabled_power_telemetry_rejects_orphaned_source_settings():
         make_plan(effective_config=config).validate_for_execution()
 
 
+def test_sustained_temperature_methodology_is_identity_bearing_and_validated():
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        temperature_telemetry=True, temperature_telemetry_interval_sec=0.5,
+        temperature_sources={"gpu_die_c": "nvidia-smi"},
+        sustained_duration_sec=600, sustained_window_sec=10,
+        sustained_context_tokens=2048, ambient_temp_c=18.5,
+    )
+    active = make_plan(tests=["sustained"], stage_order=["sustained"],
+                       effective_config=config)
+    active.validate_for_execution()
+    assert active.execution_identity["telemetry"]["temperature"] == {
+        "interval_sec": 0.5, "sources": {"gpu_die_c": "nvidia-smi"},
+    }
+    changed = make_plan(
+        tests=["sustained"], stage_order=["sustained"],
+        effective_config=dict(config, sustained_duration_sec=900),
+    )
+    assert changed.plan_id != active.plan_id
+    with pytest.raises(ValueError, match="temperature telemetry requires memory"):
+        make_plan(
+            tests=["sustained"], stage_order=["sustained"],
+            effective_config=dict(
+                config, memory_telemetry=False, memory_telemetry_interval_sec=None,
+            ),
+        ).validate_for_execution()
+
+
 def test_schema_three_plan_remains_readable_after_power_schema_change():
     plan = make_plan(schema_version=3)
     encoded = plan.to_dict()

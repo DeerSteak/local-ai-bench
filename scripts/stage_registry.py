@@ -23,6 +23,7 @@ STAGE_SPECS = (
     StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm", menu_label="llama-bench (throughput + concurrency)", native_engine="llamacpp"),
     StageSpec("llamabenchconc", "llama-bench concurrency", "llamabenchconc", "llm", "llm", "llm", menu_visible=False, native_engine="llamacpp"),
     StageSpec("vllmbench", "vllm bench (latency + throughput)", "vllmbench", "llm", "llm", "llm", native_engine="vllm"),
+    StageSpec("sustained", "Sustained load", "sustained", "llm", "llm", "llm"),
     StageSpec("emb", "Embeddings", "embeddings", "embeddings", "embedding", "embedding", default_enabled=True),
     StageSpec("mcq", "MCQ accuracy", "mcq", "llm", "llm", "accuracy"),
     StageSpec("math", "Math accuracy", "math", "llm", "llm", "accuracy"),

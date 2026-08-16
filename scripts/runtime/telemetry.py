@@ -1303,9 +1303,9 @@ class TelemetrySampler:
         with self._lock:
             self._window = name
 
-    def mark_window(self, name: str) -> None:
+    def mark_window(self, name: str) -> TelemetrySample:
         self.set_window(name)
-        self.capture()
+        return self.capture()
 
     def capture(self) -> TelemetrySample:
         with self._capture_lock:
@@ -1432,11 +1432,11 @@ class CaseTelemetry:
     def stop(self) -> None:
         self.sampler.stop()
 
-    def begin_model_load(self) -> None:
-        self.sampler.mark_window("model_load")
+    def begin_model_load(self) -> TelemetrySample:
+        return self.sampler.mark_window("model_load")
 
-    def begin_measured(self, subwindow: str = "measured") -> None:
-        self.sampler.mark_window(subwindow)
+    def begin_measured(self, subwindow: str = "measured") -> TelemetrySample:
+        return self.sampler.mark_window(subwindow)
 
     def begin_pause(self) -> None:
         self.sampler.capture()
