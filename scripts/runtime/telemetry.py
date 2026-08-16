@@ -592,14 +592,26 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
         })
     all_values = [value for sample in samples
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
-    measured_samples = [sample for sample in samples if sample.window.startswith("measured")]
-    measured_energy = integrate_power_joules([
-        (sample.timestamp_sec, sample.power_watts) for sample in measured_samples
-    ])
+    measured_groups: list[list[TelemetrySample]] = []
+    current_group: list[TelemetrySample] = []
+    for sample in samples:
+        if sample.window.startswith("measured"):
+            current_group.append(sample)
+        elif current_group:
+            measured_groups.append(current_group)
+            current_group = []
+    if current_group:
+        measured_groups.append(current_group)
+    measured_samples = [sample for group in measured_groups for sample in group]
+    group_energy = [integrate_power_joules([
+        (sample.timestamp_sec, sample.power_watts) for sample in group
+    ]) for group in measured_groups]
     complete_timeline = all(
         _finite_nonnegative(sample.power_watts) is not None for sample in measured_samples
     )
-    recorded = measured_energy is not None and complete_timeline
+    recorded = bool(group_energy) and all(value is not None for value in group_energy) \
+        and complete_timeline
+    measured_energy = sum(value for value in group_energy if value is not None) if recorded else None
     return {
         "status": "recorded" if recorded else "unavailable",
         "reason": None if recorded else (
@@ -1134,6 +1146,10 @@ class CaseTelemetry:
 
     def begin_measured(self, subwindow: str = "measured") -> None:
         self.sampler.mark_window(subwindow)
+
+    def begin_pause(self) -> None:
+        self.sampler.capture()
+        self.sampler.mark_window("pause")
 
     def finish_case(self, ceiling_gb: float | None = None) -> dict[str, Any]:
         self.sampler.capture()

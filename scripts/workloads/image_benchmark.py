@@ -404,14 +404,16 @@ class ImageBenchmark:
                 model_timed_out = False
                 for (w, h) in model_resolutions:
                     res_label = f"{w}x{h}"
-                    if telemetry:
-                        telemetry.begin_measured(f"measured:{res_label}")
                     Shared.log(f"{label} @ {res_label} — {config.N_RUNS} runs ...")
                     times = []
                     last_images: list[dict] = []
 
                     for run_i in range(config.N_RUNS):
+                        if telemetry:
+                            telemetry.begin_pause()
                         wait_if_paused()
+                        if telemetry:
+                            telemetry.begin_measured(f"measured:{res_label}")
                         try:
                             prefix = f"{short}_{res_label}_run{run_i + 1}"
                             run_seed = seed + run_i  # varied per run — see docs/workloads.md

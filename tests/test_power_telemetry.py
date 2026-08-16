@@ -392,6 +392,20 @@ def test_power_block_refuses_a_measured_timeline_with_failed_readings():
     assert block["reason"] == "insufficient valid samples for energy integration"
 
 
+def test_power_block_does_not_bridge_nonmeasured_gaps():
+    block = power_block([
+        TelemetrySample(0, "measured:first", power_watts=10),
+        TelemetrySample(1, "measured:first", power_watts=20),
+        TelemetrySample(2, "model_load", power_watts=100),
+        TelemetrySample(3, "measured:second", power_watts=40),
+        TelemetrySample(4, "measured:second", power_watts=50),
+    ], 0.5, PowerAvailability(
+        True, "nvidia-smi", "accelerator", location="tool",
+    ), 0)
+    assert block["status"] == "recorded"
+    assert block["energy_joules"] == 60
+
+
 class FakePowerSource:
     def __init__(self, watts=12):
         self.watts = watts
