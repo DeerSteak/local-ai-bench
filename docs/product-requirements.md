@@ -2,7 +2,7 @@
 
 ## Decision and user
 
-The primary 6.0-pre3 product workflow helps a hardware-vendor performance or product team decide whether measured local-AI behavior on an upcoming small-system launch is credible, reproducible, explainable, and ready for internal or external use. The product supplies an independent validation source; it does not promise favorable results or replace the vendor's own engineering benchmarks.
+The primary 6.0-pre4 product workflow helps a hardware-vendor performance or product team decide whether measured local-AI behavior on an upcoming small-system launch is credible, reproducible, explainable, and ready for internal or external use. The product supplies an independent validation source; it does not promise favorable results or replace the vendor's own engineering benchmarks.
 
 The accountable user owns the launch evidence or advises the decision maker. They may have pre-release hardware, established competing benchmarks, a vendor engineer available for discrepancies, and strict embargo/offline requirements. One engagement normally runs the agreed suite once across multiple systems; independent repeated runs must produce consistent evidence within the declared methodology and acceptance policy.
 
@@ -29,7 +29,7 @@ A successful project produces a validated immutable run plan, durable measuremen
 - The application must not silently apply vendor tuning, compare incompatible methodology, export embargoed identity, or make unpreviewed system-wide changes.
 - Common work stays local and direct: focused functions, small immutable records, and filesystem-owned artifacts are preferred over speculative services or generic frameworks.
 
-## Supported 6.0-pre3 scope
+## Supported 6.0-pre4 scope
 
 The supported default evidence set is single-shot LLM, conversation, embeddings, image generation, and MCQ/math/reasoning/code/tool accuracy. HTTP and native llama.cpp concurrency/throughput workloads are opt-in diagnostics. The supported runtime is llama.cpp plus ComfyUI for images; multi-node transport, a second inference engine, hosted collaboration, automatic updates, commercial entitlement, and automated consumer purchasing recommendations are not stable 4.1 capabilities.
 

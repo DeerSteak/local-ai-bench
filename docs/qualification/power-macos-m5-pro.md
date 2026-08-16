@@ -9,7 +9,7 @@
 | Platform | MacBook Pro, Apple M5 Pro, 48 GB unified memory |
 | OS | macOS 26.6.1 / Darwin 25.6.0, arm64 |
 | Engine | llama.cpp build 10375, Metal backend |
-| Application | Local AI Bench 6.0-pre3 |
+| Application | Local AI Bench 6.0-pre4 |
 | Source commit | `d5e9b945b0249253b528cce0a2260c3c6286db9a` |
 | Workload | Single-shot LLM, Gemma 3 1B Q4, 2K case |
 | Repetition | 2 warmups and 3 measured runs per invocation |
