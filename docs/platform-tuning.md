@@ -22,10 +22,13 @@ Setup selects runtime builds compatible with the detected operating system and a
 |---|---|---|
 | macOS `powermetrics` | Processor package estimate covering CPU, GPU, and ANE, not wall power | Run `sudo -v` immediately before an opt-in benchmark; the sampler uses `sudo -n` and never prompts mid-run |
 | NVIDIA `nvidia-smi` | Accelerator only, summed across readable devices | The benchmark user must be allowed to query `power.draw` |
-| AMD `rocm-smi` | Accelerator only, summed across readable devices | The benchmark user must be allowed to query package power |
+| AMD Adrenalin ADL on Windows | Accelerator only, summed across readable adapters | The installed AMD driver must expose a readable ASIC or board-power counter; no administrator permission is requested |
+| AMD `rocm-smi` on Linux | Accelerator only, summed across readable devices | The benchmark user must be allowed to query package power |
 | Intel RAPL sysfs | CPU package only | The selected `/sys/class/powercap/intel-rapl*/energy_uj` counter must be readable |
 
 Availability discovery never elevates permission, and a denied or unsupported source records an unavailable reason without failing the benchmark. Source scope is part of the methodology identity; package, accelerator, CPU-package, and whole-system measurements are not interchangeable.
+
+The Windows AMD source loads the public ADL interface from the installed Adrenalin driver and prefers ASIC power, falling back to board power when necessary. It does not automate or scrape the Adrenalin control panel. The source remains opt-in and unqualified until repeated trials are recorded on representative Windows AMD hardware.
 
 ## Profile change rule
 

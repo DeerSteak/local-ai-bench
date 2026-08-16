@@ -1,6 +1,7 @@
 """Shared resource queries, sampling, and memory aggregation."""
 
 from dataclasses import asdict, dataclass
+import ctypes
 import platform
 import json
 import math
@@ -25,6 +26,9 @@ MEMORY_CHANNELS = (
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
 POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system", "unknown")
+ADL_PMLOG_MAX_SENSORS = 256
+ADL_PMLOG_ASIC_POWER = 23
+ADL_PMLOG_BOARD_POWER = 73
 
 
 class _PsutilProcess(Protocol):
@@ -162,6 +166,141 @@ def parse_rocm_power(output: str) -> PowerReading | None:
     return PowerReading(sum(values), "rocm-smi", "accelerator") if values else None
 
 
+class _AdlSensorData(ctypes.Structure):
+    _fields_ = [("supported", ctypes.c_int), ("value", ctypes.c_int)]
+
+
+class _AdlPmLogData(ctypes.Structure):
+    _fields_ = [
+        ("size", ctypes.c_int),
+        ("sensors", _AdlSensorData * ADL_PMLOG_MAX_SENSORS),
+    ]
+
+
+def parse_amd_adl_power(sensors: Sequence[tuple[int, int]]) -> float | None:
+    for sensor in (ADL_PMLOG_ASIC_POWER, ADL_PMLOG_BOARD_POWER):
+        if sensor >= len(sensors):
+            continue
+        supported, raw_value = sensors[sensor]
+        value = _finite_nonnegative(raw_value) if supported else None
+        if value is not None:
+            return value
+    return None
+
+
+class AmdAdlPowerSource:
+    def __init__(self, availability: PowerAvailability, *, library_factory=None):
+        self.availability = availability
+        self.library_factory = library_factory or _load_amd_adl_library
+        self._library = None
+        self._context = ctypes.c_void_p()
+        self._allocations: list[Any] = []
+        self._allocator = None
+        self._adapter_count = 0
+
+    def start(self) -> None:
+        try:
+            library = self.library_factory()
+            if library is None:
+                return
+            self._configure(library)
+            self._library = library
+            allocator_type = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_int)
+
+            def allocate(size):
+                buffer = ctypes.create_string_buffer(size)
+                self._allocations.append(buffer)
+                return ctypes.addressof(buffer)
+
+            self._allocator = allocator_type(allocate)
+            if library.ADL2_Main_Control_Create(
+                    self._allocator, 1, ctypes.byref(self._context)) != 0:
+                self.stop()
+                return
+            count = ctypes.c_int()
+            if library.ADL2_Adapter_NumberOfAdapters_Get(
+                    self._context, ctypes.byref(count)) != 0:
+                self.stop()
+                return
+            self._adapter_count = max(0, min(count.value, 250))
+        except (AttributeError, OSError, TypeError, ValueError):
+            self.stop()
+
+    def read_watts(self) -> float | None:
+        if self._library is None or not self._context.value:
+            return None
+        values = []
+        for adapter_index in range(self._adapter_count):
+            output = _AdlPmLogData()
+            output.size = ctypes.sizeof(output)
+            try:
+                result = self._library.ADL2_New_QueryPMLogData_Get(
+                    self._context, adapter_index, ctypes.byref(output),
+                )
+            except (OSError, ValueError):
+                continue
+            if result != 0:
+                continue
+            value = parse_amd_adl_power([
+                (sensor.supported, sensor.value) for sensor in output.sensors
+            ])
+            if value is not None:
+                values.append(value)
+        return sum(values) if values else None
+
+    def stop(self) -> None:
+        if self._library is not None and self._context.value:
+            try:
+                self._library.ADL2_Main_Control_Destroy(self._context)
+            except (AttributeError, OSError, ValueError):
+                pass
+        self._library = None
+        self._context = ctypes.c_void_p()
+        self._adapter_count = 0
+        self._allocator = None
+        self._allocations.clear()
+
+    @staticmethod
+    def _configure(library) -> None:
+        library.ADL2_Main_Control_Create.restype = ctypes.c_int
+        library.ADL2_Main_Control_Destroy.restype = ctypes.c_int
+        library.ADL2_Adapter_NumberOfAdapters_Get.restype = ctypes.c_int
+        library.ADL2_New_QueryPMLogData_Get.restype = ctypes.c_int
+
+
+def _load_amd_adl_library():
+    if platform.system() != "Windows":
+        return None
+    name = "atiadlxx.dll" if ctypes.sizeof(ctypes.c_void_p) == 8 else "atiadlxy.dll"
+    try:
+        return ctypes.CDLL(name, winmode=0x00000800)
+    except OSError:
+        return None
+
+
+def discover_amd_adl_power(*, library_factory=None) -> PowerAvailability | None:
+    factory = library_factory or _load_amd_adl_library
+    try:
+        library = factory()
+    except OSError:
+        return None
+    if library is None:
+        return None
+    source = AmdAdlPowerSource(
+        PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll"),
+        library_factory=lambda: library,
+    )
+    source.start()
+    try:
+        reading = source.read_watts()
+    finally:
+        source.stop()
+    if reading is None:
+        return PowerAvailability(False, "amd-adl", "accelerator",
+                                 "AMD driver power counters are unreadable")
+    return PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll")
+
+
 def parse_rapl_energy_uj(output: str) -> float | None:
     value = _finite_nonnegative(output.strip())
     return value / 1_000_000 if value is not None else None
@@ -205,7 +344,8 @@ def add_power_efficiency(power: dict[str, Any] | None, unit: str,
 def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.which,
                           run_fn=subprocess.run,
                           rapl_paths: Sequence[Path] | None = None,
-                          is_file_fn: Callable[[str], bool] | None = None) -> PowerAvailability:
+                          is_file_fn: Callable[[str], bool] | None = None,
+                          adl_discovery_fn=discover_amd_adl_power) -> PowerAvailability:
     platform_name = platform_name or platform.system()
     if platform_name == "Darwin":
         executable = which_fn("powermetrics") or "/usr/bin/powermetrics"
@@ -239,6 +379,8 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
             return PowerAvailability(True, "nvidia-smi", "accelerator", location=executable)
         return PowerAvailability(False, "nvidia-smi", "accelerator",
                                  "GPU power counters are unreadable")
+    if platform_name == "Windows" and (adl_status := adl_discovery_fn()) is not None:
+        return adl_status
     if executable := which_fn("rocm-smi"):
         try:
             result = run_fn(
@@ -398,6 +540,8 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
                         **kwargs) -> PowerSourceLike:
     if availability.source == "powermetrics":
         return PowermetricsPowerSource(availability, interval_sec, **kwargs)
+    if availability.source == "amd-adl":
+        return AmdAdlPowerSource(availability, **kwargs)
     return PollingPowerSource(availability, **kwargs)
 
 

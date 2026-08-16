@@ -3,11 +3,12 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime.telemetry import (
-    CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
+    AmdAdlPowerSource, CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
     PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
+    discover_amd_adl_power,
     add_power_efficiency, derive_run_power_summary, efficiency_per_joule,
     integrate_power_joules, power_block,
-    parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
+    parse_amd_adl_power, parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
     parse_rocm_power, power_availability_dict, query_power_reading,
 )
 
@@ -52,6 +53,98 @@ def test_rocm_power_sums_devices_and_rejects_malformed_or_missing_values():
     assert parse_rocm_power('{"card0": {"Temperature": 40}}') is None
     assert parse_rocm_power('{"card0":') is None
     assert parse_rocm_power('[{"Average Graphics Package Power (W)": 4}]') is None
+
+
+def test_amd_adl_power_prefers_asic_then_board_and_rejects_invalid_values():
+    sensors = [(0, 0)] * 74
+    sensors[23] = (1, 185)
+    sensors[73] = (1, 210)
+    assert parse_amd_adl_power(sensors) == 185
+    sensors[23] = (0, 185)
+    assert parse_amd_adl_power(sensors) == 210
+    sensors[73] = (1, -1)
+    assert parse_amd_adl_power(sensors) is None
+
+
+class AdlFunction:
+    def __init__(self, callback):
+        self.callback = callback
+        self.restype = None
+
+    def __call__(self, *args):
+        return self.callback(*args)
+
+
+class FakeAdlLibrary:
+    def __init__(self, adapter_powers=(120, 80), create_result=0, count_result=0):
+        self.destroyed = False
+        self.ADL2_Main_Control_Create = AdlFunction(
+            lambda _allocator, _connected, context: self._create(context, create_result)
+        )
+        self.ADL2_Main_Control_Destroy = AdlFunction(self._destroy)
+        self.ADL2_Adapter_NumberOfAdapters_Get = AdlFunction(
+            lambda _context, count: self._count(count, len(adapter_powers), count_result)
+        )
+        self.ADL2_New_QueryPMLogData_Get = AdlFunction(
+            lambda _context, index, output: self._query(index, output, adapter_powers)
+        )
+
+    @staticmethod
+    def _create(context, result):
+        if result == 0:
+            context._obj.value = 123
+        return result
+
+    def _destroy(self, _context):
+        self.destroyed = True
+        return 0
+
+    @staticmethod
+    def _count(count, value, result):
+        count._obj.value = value
+        return result
+
+    @staticmethod
+    def _query(index, output, powers):
+        output._obj.sensors[23].supported = 1
+        output._obj.sensors[23].value = powers[index]
+        return 0
+
+
+def test_windows_amd_adl_source_sums_gpu_power_and_cleans_up_driver_context():
+    library = FakeAdlLibrary()
+    availability = PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll")
+    source = AmdAdlPowerSource(availability, library_factory=lambda: library)
+    source.start()
+    assert source.read_watts() == 200
+    source.stop()
+    assert library.destroyed is True
+    assert source.read_watts() is None
+
+
+def test_windows_amd_adl_source_cleans_up_when_adapter_enumeration_fails():
+    library = FakeAdlLibrary(count_result=-1)
+    source = AmdAdlPowerSource(
+        PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll"),
+        library_factory=lambda: library,
+    )
+    source.start()
+    assert library.destroyed is True
+    assert source.read_watts() is None
+
+
+def test_windows_amd_adl_discovery_distinguishes_missing_driver_from_unreadable_counter():
+    assert discover_amd_adl_power(library_factory=lambda: None) is None
+    unreadable = discover_amd_adl_power(
+        library_factory=lambda: FakeAdlLibrary(adapter_powers=()),
+    )
+    assert unreadable == PowerAvailability(
+        False, "amd-adl", "accelerator", "AMD driver power counters are unreadable",
+    )
+    available = discover_amd_adl_power(library_factory=lambda: FakeAdlLibrary())
+    assert available == PowerAvailability(
+        True, "amd-adl", "accelerator", location="atiadlxx.dll",
+    )
 
 
 def test_rapl_parser_converts_microjoules_and_rejects_invalid_counters():
@@ -165,6 +258,14 @@ def test_nvidia_and_rocm_discovery_probe_the_counter_not_only_the_executable():
     )
     assert rocm.source == "rocm-smi"
     assert rocm.available is True
+
+
+def test_windows_discovery_uses_amd_driver_after_nvidia_and_before_linux_sources():
+    amd = PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll")
+    assert discover_power_source(
+        "Windows", which_fn=lambda _name: None, adl_discovery_fn=lambda: amd,
+        rapl_paths=[],
+    ) == amd
 
 
 def test_rapl_discovery_distinguishes_permission_denied_from_unsupported(monkeypatch, tmp_path):
