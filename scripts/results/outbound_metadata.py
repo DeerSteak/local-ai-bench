@@ -30,6 +30,11 @@ POWER_WINDOW_FIELDS = {
 POWER_SAMPLE_FIELDS = {"timestamp_sec", "watts"}
 POWER_PROVENANCE_FIELDS = {"interval_sec", "failed_samples"}
 POWER_EFFICIENCY_FIELDS = {"unit", "work_count", "per_joule"}
+TEMPERATURE_BLOCK_FIELDS = {"status", "reason", "windows", "provenance", "case_id"}
+TEMPERATURE_CHANNEL_FIELDS = {"peak_c", "mean_c", "final_c", "valid_samples"}
+TEMPERATURE_SAMPLE_FIELDS = {
+    "timestamp_sec", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c",
+}
 
 
 def _allow_fields(value, allowed):
@@ -96,6 +101,37 @@ def _sanitize_power_block(value: dict) -> dict:
     return block
 
 
+def _sanitize_temperature_block(value: dict) -> dict:
+    block = _allow_fields(value, TEMPERATURE_BLOCK_FIELDS)
+    windows = []
+    for window in block.get("windows", []):
+        if not isinstance(window, dict):
+            continue
+        clean = _allow_fields(window, TELEMETRY_WINDOW_FIELDS)
+        channels = clean.get("channels")
+        clean["channels"] = {
+            key: _allow_fields(channel, TEMPERATURE_CHANNEL_FIELDS)
+            for key, channel in channels.items()
+            if isinstance(channels, dict) and isinstance(channel, dict)
+        } if isinstance(channels, dict) else {}
+        clean["samples"] = [
+            _allow_fields(sample, TEMPERATURE_SAMPLE_FIELDS)
+            for sample in clean.get("samples", []) if isinstance(sample, dict)
+        ]
+        windows.append(clean)
+    block["windows"] = windows
+    if isinstance(block.get("provenance"), dict):
+        provenance = _allow_fields(block["provenance"], TELEMETRY_PROVENANCE_FIELDS)
+        channels = provenance.get("channels")
+        provenance["channels"] = {
+            key: _allow_fields(channel, TELEMETRY_SOURCE_FIELDS)
+            for key, channel in channels.items()
+            if isinstance(channels, dict) and isinstance(channel, dict)
+        } if isinstance(channels, dict) else {}
+        block["provenance"] = provenance
+    return block
+
+
 def _sanitize_telemetry(value: object) -> None:
     if isinstance(value, dict):
         for key, child in list(value.items()):
@@ -105,6 +141,9 @@ def _sanitize_telemetry(value: object) -> None:
             elif (key == "power" and isinstance(child, dict)
                     and ("windows" in child or "provenance" in child)):
                 value[key] = _sanitize_power_block(child)
+            elif (key == "temperature" and isinstance(child, dict)
+                    and ("windows" in child or "provenance" in child)):
+                value[key] = _sanitize_temperature_block(child)
             else:
                 _sanitize_telemetry(child)
     elif isinstance(value, list):

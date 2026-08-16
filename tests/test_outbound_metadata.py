@@ -91,6 +91,22 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
         "efficiency": {"unit": "tokens_per_joule", "work_count": 120,
                        "per_joule": 10, "model_path": "/private/model"},
         "serial_number": "secret",
+    }, "temperature": {
+        "status": "recorded", "reason": None, "case_id": "case-1",
+        "windows": [{
+            "name": "measured", "sample_count": 1, "duration_sec": 0,
+            "channels": {"gpu_die_c": {
+                "peak_c": 70, "mean_c": 70, "final_c": 70, "valid_samples": 1,
+                "device_uuid": "secret",
+            }},
+            "samples": [{"timestamp_sec": 0, "gpu_die_c": 70,
+                         "sensor_path": "/sys/private"}],
+            "raw_output": "serial=secret",
+        }],
+        "provenance": {"interval_sec": 0.5, "channels": {"gpu_die_c": {
+            "source": "nvidia-smi", "failed_samples": 0, "path": "/private",
+        }}, "command": "private"},
+        "sensor_serial": "secret",
     }}}}
     outbound = prepare_outbound_result(source)["llm"]["model"]["2K"]
     memory = outbound["memory"]
@@ -113,6 +129,16 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
     }
     for forbidden in ("secret", "private", "serial", "command", "raw_output"):
         assert forbidden not in str(power).lower()
+    temperature = outbound["temperature"]
+    assert temperature["windows"][0]["samples"] == [
+        {"timestamp_sec": 0, "gpu_die_c": 70},
+    ]
+    assert temperature["provenance"] == {
+        "interval_sec": 0.5,
+        "channels": {"gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0}},
+    }
+    for forbidden in ("secret", "private", "serial", "command", "raw_output", "path"):
+        assert forbidden not in str(temperature).lower()
 
 
 @pytest.mark.parametrize(("field", "value"), [("system_alias", ""), ("hardware_alias", "  ")])
