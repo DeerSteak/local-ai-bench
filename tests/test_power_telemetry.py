@@ -260,6 +260,39 @@ def test_nvidia_and_rocm_discovery_probe_the_counter_not_only_the_executable():
     assert rocm.available is True
 
 
+def test_unreadable_nvidia_counter_falls_through_to_other_sources():
+    amd = PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll")
+    status = discover_power_source(
+        "Windows", which_fn=lambda name: "/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(1), adl_discovery_fn=lambda: amd,
+    )
+    assert status == amd
+
+
+def test_unreadable_windows_gpu_sources_fall_through_to_rapl(tmp_path):
+    counter = tmp_path / "energy_uj"
+    counter.write_text("1", encoding="utf-8")
+    status = discover_power_source(
+        "Windows", which_fn=lambda name: f"/bin/{name}",
+        run_fn=lambda *_args, **_kwargs: Result(1),
+        adl_discovery_fn=lambda: PowerAvailability(
+            False, "amd-adl", "accelerator", "driver counter unavailable",
+        ),
+        rapl_paths=[counter],
+    )
+    assert status == PowerAvailability(True, "rapl", "cpu_package", location=str(counter))
+
+
+def test_unreadable_nvidia_and_rocm_counters_fall_through_to_rapl(tmp_path):
+    counter = tmp_path / "energy_uj"
+    counter.write_text("1", encoding="utf-8")
+    status = discover_power_source(
+        "Linux", which_fn=lambda name: f"/bin/{name}",
+        run_fn=lambda *_args, **_kwargs: Result(1), rapl_paths=[counter],
+    )
+    assert status == PowerAvailability(True, "rapl", "cpu_package", location=str(counter))
+
+
 def test_windows_discovery_uses_amd_driver_after_nvidia_and_before_linux_sources():
     amd = PowerAvailability(True, "amd-adl", "accelerator", location="atiadlxx.dll")
     assert discover_power_source(
@@ -294,7 +327,7 @@ def test_power_query_uses_discovered_source_and_never_returns_zero_for_failure()
     )) is None
 
 
-def test_power_block_keeps_idle_separate_and_integrates_only_measured_windows():
+def test_power_block_keeps_idle_separate_and_integrates_measured_timeline():
     samples = [
         TelemetrySample(0, "idle", power_watts=5),
         TelemetrySample(1, "idle", power_watts=7),
@@ -308,7 +341,7 @@ def test_power_block_keeps_idle_separate_and_integrates_only_measured_windows():
         PowerAvailability(True, "powermetrics", "processor_package", location="tool"), 1,
     )
     assert block["status"] == "recorded"
-    assert block["energy_joules"] == pytest.approx(39)
+    assert block["energy_joules"] == pytest.approx(47.5)
     assert block["idle_baseline_watts"] == 6
     assert block["scope"] == "processor_package"
     assert block["provenance"] == {"interval_sec": 0.5, "failed_samples": 1}
@@ -329,18 +362,19 @@ def test_power_block_records_unavailable_reason_and_never_zero_energy():
     assert block["mean_watts"] is None
 
 
-def test_power_block_refuses_partial_multiwindow_energy_and_nonfinite_samples():
+def test_power_block_integrates_across_single_sample_measured_subwindows():
     block = power_block([
         TelemetrySample(0, "measured:first", power_watts=10),
         TelemetrySample(1, "measured:first", power_watts=20),
-        TelemetrySample(2, "measured:second", power_watts=float("nan")),
+        TelemetrySample(2, "measured:second", power_watts=30),
+        TelemetrySample(3, "measured:third", power_watts=40),
+        TelemetrySample(4, "measured:third", power_watts=50),
     ], 0.5, PowerAvailability(
         True, "nvidia-smi", "accelerator", location="tool",
-    ), 1)
-    assert block["status"] == "unavailable"
-    assert block["energy_joules"] is None
-    assert block["reason"] == "insufficient valid samples for energy integration"
-    assert block["mean_watts"] == 15
+    ), 0)
+    assert block["status"] == "recorded"
+    assert block["energy_joules"] == 120
+    assert [window["energy_joules"] for window in block["windows"]] == [15, None, 45]
 
 
 class FakePowerSource:
@@ -425,6 +459,19 @@ def test_powermetrics_source_uses_one_long_lived_noninteractive_process():
         "/usr/bin/sudo", "-n", "/tool", "--samplers", "cpu_power,gpu_power,ane_power",
         "--sample-rate", "500", "--sample-count", "-1", "--buffer-size", "1",
     ]]
+
+
+def test_powermetrics_source_rejects_a_stale_last_reading():
+    now = [10.0]
+    source = PowermetricsPowerSource(
+        PowerAvailability(True, "powermetrics", "processor_package", location="/tool"),
+        0.5, monotonic=lambda: now[0],
+    )
+    source._latest = 20
+    source._latest_at = 10
+    assert source.read_watts() == 20
+    now[0] = 12.1
+    assert source.read_watts() is None
 
 
 def test_rapl_polling_source_derives_watts_from_counter_delta():

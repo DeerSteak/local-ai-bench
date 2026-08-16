@@ -367,6 +367,7 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
             )
         return PowerAvailability(True, "powermetrics", "processor_package",
                                  location=executable)
+    failed_sources = []
     if executable := which_fn("nvidia-smi"):
         try:
             result = run_fn(
@@ -377,10 +378,13 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
             result = None
         if result is not None and result.returncode == 0 and parse_nvidia_power(result.stdout):
             return PowerAvailability(True, "nvidia-smi", "accelerator", location=executable)
-        return PowerAvailability(False, "nvidia-smi", "accelerator",
-                                 "GPU power counters are unreadable")
+        failed_sources.append(PowerAvailability(
+            False, "nvidia-smi", "accelerator", "GPU power counters are unreadable",
+        ))
     if platform_name == "Windows" and (adl_status := adl_discovery_fn()) is not None:
-        return adl_status
+        if adl_status.available:
+            return adl_status
+        failed_sources.append(adl_status)
     if executable := which_fn("rocm-smi"):
         try:
             result = run_fn(
@@ -391,8 +395,9 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
             result = None
         if result is not None and result.returncode == 0 and parse_rocm_power(result.stdout):
             return PowerAvailability(True, "rocm-smi", "accelerator", location=executable)
-        return PowerAvailability(False, "rocm-smi", "accelerator",
-                                 "GPU power counters are unreadable")
+        failed_sources.append(PowerAvailability(
+            False, "rocm-smi", "accelerator", "GPU power counters are unreadable",
+        ))
     paths = tuple(
         rapl_paths if rapl_paths is not None
         else Path("/sys/class/powercap").glob("intel-rapl*/energy_uj")
@@ -403,6 +408,8 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
     if paths:
         return PowerAvailability(False, "rapl", "cpu_package",
                                  "RAPL energy counter permission is denied")
+    if failed_sources:
+        return failed_sources[-1]
     return PowerAvailability(False, "unsupported", "unknown",
                              "no supported power source was detected")
 
@@ -476,13 +483,16 @@ class PollingPowerSource:
 
 class PowermetricsPowerSource:
     def __init__(self, availability: PowerAvailability, interval_sec: float, *,
-                 popen_fn: Callable[..., Any] = subprocess.Popen):
+                 popen_fn: Callable[..., Any] = subprocess.Popen,
+                 monotonic=time.monotonic):
         self.availability = availability
         self.interval_sec = interval_sec
         self.popen_fn = popen_fn
+        self.monotonic = monotonic
         self._process: Any = None
         self._reader: threading.Thread | None = None
         self._latest: float | None = None
+        self._latest_at: float | None = None
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -509,6 +519,12 @@ class PowermetricsPowerSource:
 
     def read_watts(self) -> float | None:
         with self._lock:
+            if (self._latest_at is None
+                    or self.monotonic() - self._latest_at > max(2.0, self.interval_sec * 3)):
+                return None
+            poll = getattr(self._process, "poll", None)
+            if callable(poll) and poll() is not None:
+                return None
             return self._latest
 
     def stop(self) -> None:
@@ -534,6 +550,7 @@ class PowermetricsPowerSource:
             if reading:
                 with self._lock:
                     self._latest = reading.watts
+                    self._latest_at = self.monotonic()
 
 
 def create_power_source(availability: PowerAvailability, interval_sec: float,
@@ -548,7 +565,6 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
     windows = []
-    measured_energy: list[float | None] = []
     idle_values = []
     for name in dict.fromkeys(sample.window for sample in samples):
         selected = [sample for sample in samples if sample.window == name]
@@ -557,8 +573,6 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
         energy = integrate_power_joules([
             (sample.timestamp_sec, sample.power_watts) for sample in selected
         ])
-        if name.startswith("measured"):
-            measured_energy.append(energy)
         if name == "idle":
             idle_values.extend(values)
         windows.append({
@@ -578,7 +592,11 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
         })
     all_values = [value for sample in samples
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
-    recorded = bool(measured_energy) and all(value is not None for value in measured_energy)
+    measured_samples = [sample for sample in samples if sample.window.startswith("measured")]
+    measured_energy = integrate_power_joules([
+        (sample.timestamp_sec, sample.power_watts) for sample in measured_samples
+    ])
+    recorded = measured_energy is not None
     return {
         "status": "recorded" if recorded else "unavailable",
         "reason": None if recorded else (
@@ -586,8 +604,7 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
         ),
         "source": availability.source,
         "scope": availability.scope,
-        "energy_joules": sum(value for value in measured_energy if value is not None)
-        if recorded else None,
+        "energy_joules": measured_energy if recorded else None,
         "mean_watts": sum(all_values) / len(all_values) if all_values else None,
         "peak_watts": max(all_values) if all_values else None,
         "idle_baseline_watts": (
@@ -1117,8 +1134,9 @@ class CaseTelemetry:
 
     def finish_case(self, ceiling_gb: float | None = None) -> dict[str, Any]:
         self.sampler.capture()
-        samples = self.sampler.samples[self._cursor:]
-        self._cursor = len(self.sampler.samples)
+        all_samples = self.sampler.samples
+        samples = all_samples[self._cursor:]
+        self._cursor = len(all_samples)
         failed_samples = self.sampler.failed_samples - self._failed_cursor
         self._failed_cursor = self.sampler.failed_samples
         current_failures = self.sampler.channel_failures

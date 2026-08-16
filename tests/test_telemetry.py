@@ -310,6 +310,26 @@ def test_case_telemetry_does_not_reuse_prior_case_measurements():
     ]
 
 
+def test_case_telemetry_uses_one_sample_snapshot_for_slice_and_cursor():
+    class CountingSampler(TelemetrySampler):
+        sample_reads = 0
+
+        @property
+        def samples(self):
+            self.sample_reads += 1
+            return super().samples
+
+    sampler = CountingSampler(
+        42, interval_sec=100,
+        sample_fn=lambda timestamp, window: sample(timestamp, window, rss=2),
+    )
+    telemetry = CaseTelemetry(sampler=sampler, sources={"process_rss_gb": "psutil"}).start()
+    telemetry.begin_measured()
+    telemetry.finish_case()
+    assert sampler.sample_reads == 1
+    telemetry.stop()
+
+
 def test_case_telemetry_failure_provenance_is_case_local():
     counter = {"value": 0}
 
