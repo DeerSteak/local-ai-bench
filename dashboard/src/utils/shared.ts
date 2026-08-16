@@ -161,7 +161,7 @@ export function engineLabel(engine: string | null | undefined): string {
 }
 
 export function measuredCategoryAxisWidth(
-  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 11,
+  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 18,
 ): number {
   const lines = rows.flatMap(row => String(row[key] ?? "").split("\n"));
   return Math.ceil(Math.max(0, ...lines.map(measure))) + tickSpace;
