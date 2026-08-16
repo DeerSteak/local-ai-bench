@@ -48,3 +48,10 @@ bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
 Use `--pairs 5` only for a workflow smoke test; it does not meet the 20-pair qualification minimum. The script intentionally runs one engine and one installed xsmall model at 2K so model/runtime changes are not mixed into the observer comparison.
 
 On macOS, a real power run requests administrator permission once before starting and refreshes that temporary authorization while the trial series runs; the sampler itself still uses non-interactive `sudo -n` and never prompts during a benchmark case. The manifest and report record the discovered source and measurement scope. Canceling or denying the initial permission stops the run before any benchmark starts.
+
+The M5 Pro release screen has a dedicated overnight wrapper that runs all three intervals for 20 pairs each—120 benchmark invocations total—and uses `caffeinate` to prevent system sleep. It fixes the model and methodology to the qualified configuration and groups the three manifests, reports, and raw-result directories beneath one timestamped root:
+
+```bash
+bash run_power_qualification_m5_pro.sh --dry-run
+bash run_power_qualification_m5_pro.sh
+```

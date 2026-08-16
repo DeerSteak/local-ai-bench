@@ -40,6 +40,20 @@ def test_power_trial_dry_run_compares_memory_only_with_combined_sampler(tmp_path
     assert "sudo" not in result.stdout.lower()
 
 
+def test_m5_pro_power_wrapper_previews_all_120_invocations(tmp_path):
+    result = subprocess.run(
+        ["bash", str(ROOT / "run_power_qualification_m5_pro.sh"),
+         "--out-root", str(tmp_path), "--dry-run"],
+        cwd=ROOT, text=True, capture_output=True, check=True,
+    )
+    commands = [line for line in result.stdout.splitlines() if "run_bench.sh" in line]
+    assert len(commands) == 120
+    assert sum("0.25" in line for line in commands) == 40
+    assert sum("0.5" in line for line in commands) == 40
+    assert sum("1.0" in line for line in commands) == 40
+    assert all("gemma3:1b-it-q4_K_M" in line for line in commands)
+
+
 def test_trial_runner_rejects_unknown_telemetry_mode():
     result = subprocess.run(
         ["bash", str(ROOT / "run_telemetry_trials.sh"), "--model", "example:model",
