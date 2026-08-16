@@ -23,6 +23,12 @@ def group_remaining_sweeps(pp, tg, completed):
     return sweeps
 
 
+def completed_entry_tokens(entry: dict) -> int:
+    return (entry.get("n_prompt", 0) + entry.get("n_gen", 0)) * entry.get(
+        "completed_reps", 0,
+    )
+
+
 class NativeBenchEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True,
                  resume_identity: dict | None = None, resume: bool = False,
@@ -89,9 +95,7 @@ class NativeBenchEventStage:
         sample_id = self.plan.sample_id(attempt_id, 1)
         memory = self.telemetry.finish_case() if self.telemetry else None
         power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
-        tokens = (entry.get("n_prompt") or entry.get("n_gen") or 0) * entry.get(
-            "completed_reps", 0,
-        )
+        tokens = completed_entry_tokens(entry)
         power = add_power_efficiency(power, "tokens_per_joule", tokens)
         if self.telemetry:
             self.telemetry.begin_measured("measured:native-sweep")

@@ -1,5 +1,6 @@
 from scripts.results.native_bench_event_stage import (
-    NativeBenchEventStage, export_native_bench_section, group_remaining_sweeps,
+    NativeBenchEventStage, completed_entry_tokens, export_native_bench_section,
+    group_remaining_sweeps,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -25,6 +26,11 @@ def entry(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_completed_entry_tokens_counts_prompt_and_generation_for_every_repetition():
+    assert completed_entry_tokens(entry(n_prompt=512, n_gen=128, completed_reps=2)) == 1280
+    assert completed_entry_tokens(entry(n_prompt=0, n_gen=128, completed_reps=2)) == 256
 
 
 def test_remaining_native_sweeps_keep_fresh_run_compact_and_group_partial_recovery():
