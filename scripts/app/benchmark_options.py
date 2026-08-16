@@ -19,7 +19,7 @@ class OptionSpec:
 
 TEST_CHOICES = (
     "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb", "mcq", "math",
-    "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "img",
+    "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "sustained", "img",
 )
 TG_TOKEN_CHOICES = (128, 512, 1024)
 TIER_CHOICES = ("xsmall", "small", "medium", "large")
@@ -71,6 +71,14 @@ PUBLIC_OPTION_SCHEMA = {
     "--power-telemetry": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
+    "--sustained-duration": _spec(
+        "integer", "advanced", "exposed", "Graphical execution settings",
+        default=config.SUSTAINED_DURATION_SEC, minimum=config.SUSTAINED_MIN_CLASSIFICATION_SEC,
+    ),
+    "--ambient-temp-c": _spec(
+        "number", "advanced", "exposed", "Graphical execution settings", default=None,
+        minimum=-100, maximum=100,
+    ),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
 }
@@ -83,7 +91,9 @@ GUI_OPTION_FLAGS = {
     "llamacpp_no_repack": "--llamacpp-no-repack",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
     "offline": "--offline", "memory_telemetry": "--memory-telemetry",
-    "power_telemetry": "--power-telemetry", "out": "--out",
+    "power_telemetry": "--power-telemetry",
+    "sustained_duration": "--sustained-duration", "ambient_temp_c": "--ambient-temp-c",
+    "out": "--out",
     "comfyui": "--comfyui",
 }
 
@@ -101,6 +111,14 @@ def option_value_errors(values: dict[str, object]) -> list[str]:
         if spec.value_type == "integer":
             if not isinstance(value, int) or isinstance(value, bool):
                 errors.append(f"{flag} must be a whole number.")
+                continue
+            if spec.minimum is not None and value < spec.minimum:
+                errors.append(f"{flag} must be at least {spec.minimum}.")
+            if spec.maximum is not None and value > spec.maximum:
+                errors.append(f"{flag} must be at most {spec.maximum}.")
+        elif spec.value_type == "number":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                errors.append(f"{flag} must be a number.")
                 continue
             if spec.minimum is not None and value < spec.minimum:
                 errors.append(f"{flag} must be at least {spec.minimum}.")

@@ -145,3 +145,30 @@ def test_outbound_telemetry_omits_raw_and_identity_fields():
 def test_aliases_reject_empty_values(field, value):
     with pytest.raises(ValueError, match="alias"):
         prepare_outbound_result(result(), **{field: value})
+
+
+def test_sustained_timeline_and_analysis_are_allowlisted_without_sensor_paths():
+    source = result()
+    source["sustained"] = {"model": {
+        "context_tokens": 2048, "ambient_temp_c": 18.5,
+        "requests": [{"start_sec": 0, "end_sec": 5, "generated_tokens": 100,
+                      "tokens_per_sec": 20, "prompt": "private"}],
+        "series": [{"timestamp_sec": 0, "duration_sec": 10, "tokens_per_sec": 20,
+                    "gpu_die_c": 70, "sensor_path": "/sys/private"}],
+        "analysis": {"retention_ratio": 0.9, "performance": "mild_degradation",
+                     "private_note": "secret"},
+        "raw_sensor_output": "serial=secret",
+    }}
+    sustained = prepare_outbound_result(source)["sustained"]["model"]
+    assert sustained["requests"] == [{
+        "start_sec": 0, "end_sec": 5, "generated_tokens": 100, "tokens_per_sec": 20,
+    }]
+    assert sustained["series"] == [{
+        "timestamp_sec": 0, "duration_sec": 10, "tokens_per_sec": 20,
+        "gpu_die_c": 70,
+    }]
+    assert sustained["analysis"] == {
+        "retention_ratio": 0.9, "performance": "mild_degradation",
+    }
+    for forbidden in ("private", "secret", "serial", "path", "prompt", "raw"):
+        assert forbidden not in str(sustained).lower()

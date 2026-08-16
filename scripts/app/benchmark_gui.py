@@ -188,11 +188,17 @@ def process_completion_state(kind: str | None, exit_code: int) -> ProcessComplet
 
 def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options = dict(GUI_OPTION_DEFAULTS)
-    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
+    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                "sustained_duration"):
         try:
             options[key] = int(values[key])
         except (TypeError, ValueError):
             options[key] = values[key]
+    try:
+        raw_ambient = str(values["ambient_temp_c"]).strip()
+        options["ambient_temp_c"] = float(raw_ambient) if raw_ambient else None
+    except (TypeError, ValueError):
+        options["ambient_temp_c"] = values["ambient_temp_c"]
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                 "power_telemetry", "llamacpp_no_repack"):
@@ -324,7 +330,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     if options["gpu_split_mode"] not in gpu_split_modes:
         options["gpu_split_mode"] = "layer"
     option_vars: dict[str, tk.Variable] = {
-        key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value)))
+        key: (tk.BooleanVar(value=value) if isinstance(value, bool)
+              else tk.StringVar(value="" if value is None else str(value)))
         for key, value in options.items()
     }
     option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
@@ -508,7 +515,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
               ("acc_timeout", f"Accuracy timeout, seconds (default {config.ACC_TIMEOUT})"),
-              ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"))
+              ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"),
+              ("sustained_duration", f"Sustained soak, seconds (default {config.SUSTAINED_DURATION_SEC})"),
+              ("ambient_temp_c", "Ambient temperature, °C (optional)"))
     for key, label in labels:
         row = execution_row(pady=2)
         ttk.Label(row, text=label).grid(row=0, column=0, sticky="w")
@@ -516,7 +525,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             row=0, column=1, sticky="w", padx=(10, 0))
         ttk.Button(
             row, text="Reset", width=6,
-            command=lambda option=key: option_vars[option].set(str(GUI_OPTION_DEFAULTS[option])),
+            command=lambda option=key: option_vars[option].set(
+                "" if GUI_OPTION_DEFAULTS[option] is None
+                else str(GUI_OPTION_DEFAULTS[option])
+            ),
         ).grid(row=0, column=2, padx=(8, 0))
     checkboxes = (
         ("cpu_only", "CPU-only inference", (8, 0)),
@@ -592,7 +604,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def reset_execution():
         set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
-        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
+        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                    "sustained_duration", "ambient_temp_c", "gpu_split_mode",
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                     "power_telemetry", "llamacpp_no_repack"):
             variable = option_vars[key]

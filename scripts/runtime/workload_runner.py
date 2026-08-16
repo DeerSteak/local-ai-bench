@@ -18,13 +18,15 @@ from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
+from scripts.workloads.sustained_benchmark import SustainedBenchmark
 from scripts.workloads.models import LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
-from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability
+from scripts.results.sustained_event_stage import SustainedEventStage
+from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability, TemperatureAvailability
 
 
 _emit_lock = threading.Lock()
@@ -51,14 +53,37 @@ def inherited_power_availability(settings: dict, environ=None) -> PowerAvailabil
     )
 
 
+def inherited_temperature_availability(settings: dict, environ=None) -> TemperatureAvailability:
+    environ = os.environ if environ is None else environ
+    expected_sources = settings.get("temperature_sources") or {}
+    try:
+        payload = json.loads(environ.get("LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY", ""))
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if not isinstance(payload, dict) or payload.get("sources") != expected_sources:
+        return TemperatureAvailability(
+            False, expected_sources,
+            "parent temperature sources were not inherited by the supervised process",
+        )
+    locations = payload.get("locations")
+    return TemperatureAvailability(
+        payload.get("available") is True, expected_sources,
+        payload.get("reason") if isinstance(payload.get("reason"), str) else None,
+        locations if isinstance(locations, dict) else None,
+    )
+
+
 def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
     if not settings.get("memory_telemetry"):
         return None
+    kwargs = {}
     if settings.get("power_telemetry"):
-        return CaseTelemetry(
-            power_availability=inherited_power_availability(settings, environ),
-        ).start()
-    return CaseTelemetry().start()
+        kwargs["power_availability"] = inherited_power_availability(settings, environ)
+    if settings.get("temperature_telemetry"):
+        kwargs["temperature_availability"] = inherited_temperature_availability(
+            settings, environ,
+        )
+    return CaseTelemetry(**kwargs).start()
 
 
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
@@ -255,6 +280,58 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         Shared.shutdown_managed()
 
 
+def execute_sustained_job(path, job_id, *, engine_factory=get_engine,
+                          benchmark_factory: Callable[[], Any] = SustainedBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "sustained" not in plan.tests:
+        raise ValueError("runner job does not include the sustained stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.RUN_TIMEOUT = settings["run_timeout_seconds"]
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    Shared._active_engine = engine
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "sustained", "committed": True})
+
+    telemetry = None
+    journal = None
+    try:
+        telemetry = create_case_telemetry(settings)
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = SustainedEventStage(
+            path, plan, notify, initialize=False, telemetry=telemetry,
+        )
+        benchmark_factory().run(
+            engine=engine, models=models, warmup_runs=plan.warmup_runs,
+            duration_sec=settings["sustained_duration_sec"],
+            window_sec=settings["sustained_window_sec"],
+            ambient_temp_c=settings.get("ambient_temp_c"), journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
 def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engine,
                             benchmark_factory: Callable[[], Any] = ConcurrencyBenchmark) -> None:
     plan = load_runner_plan(path, job_id)
@@ -343,6 +420,8 @@ def main(argv=None) -> int:
             execute_conversation_job(args.event_store, args.job_id)
         elif args.stage == "llamabench":
             execute_llamabench_job(args.event_store, args.job_id)
+        elif args.stage == "sustained":
+            execute_sustained_job(args.event_store, args.job_id)
         else:
             execute_concurrency_job(args.event_store, args.job_id, args.stage)
     except BaseException as exc:

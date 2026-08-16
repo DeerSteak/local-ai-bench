@@ -35,6 +35,28 @@ TEMPERATURE_CHANNEL_FIELDS = {"peak_c", "mean_c", "final_c", "valid_samples"}
 TEMPERATURE_SAMPLE_FIELDS = {
     "timestamp_sec", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c",
 }
+SUSTAINED_MODEL_FIELDS = {
+    "context_tokens", "server_context_tokens", "target_duration_sec", "actual_duration_sec",
+    "window_sec",
+    "ambient_temp_c", "pause_invalidated", "request_count", "valid_request_count",
+    "requests", "series", "analysis", "memory", "power", "temperature",
+    "skipped", "required_context_tokens", "model_max_context_tokens",
+    "label", "unexpected_error", "error", "error_type", "crashed", "crashed_at",
+}
+SUSTAINED_REQUEST_FIELDS = {
+    "start_sec", "end_sec", "generated_tokens", "tokens_per_sec", "validation_errors",
+}
+SUSTAINED_SERIES_FIELDS = {
+    "timestamp_sec", "duration_sec", "tokens", "tokens_per_sec", "host_ram_used_gb",
+    "process_rss_gb", "accelerator_memory_used_gb", "power_watts", "cpu_package_c",
+    "gpu_die_c", "gpu_hotspot_c",
+}
+SUSTAINED_ANALYSIS_FIELDS = {
+    "initial_tokens_per_sec", "steady_state_tokens_per_sec", "retention_ratio",
+    "throttle_onset_sec", "performance", "cause", "duration_sec", "window_count",
+    "related_trial_drift",
+    "ordinal_drift",
+}
 
 
 def _allow_fields(value, allowed):
@@ -132,10 +154,33 @@ def _sanitize_temperature_block(value: dict) -> dict:
     return block
 
 
+def _sanitize_sustained_section(value: dict) -> dict:
+    result = {}
+    for model, entry in value.items():
+        if not isinstance(entry, dict):
+            continue
+        clean = _allow_fields(entry, SUSTAINED_MODEL_FIELDS)
+        clean["requests"] = [
+            _allow_fields(request, SUSTAINED_REQUEST_FIELDS)
+            for request in clean.get("requests", []) if isinstance(request, dict)
+        ]
+        clean["series"] = [
+            _allow_fields(window, SUSTAINED_SERIES_FIELDS)
+            for window in clean.get("series", []) if isinstance(window, dict)
+        ]
+        if isinstance(clean.get("analysis"), dict):
+            clean["analysis"] = _allow_fields(clean["analysis"], SUSTAINED_ANALYSIS_FIELDS)
+        _sanitize_telemetry(clean)
+        result[model] = clean
+    return result
+
+
 def _sanitize_telemetry(value: object) -> None:
     if isinstance(value, dict):
         for key, child in list(value.items()):
-            if (key == "memory" and isinstance(child, dict)
+            if key == "sustained" and isinstance(child, dict):
+                value[key] = _sanitize_sustained_section(child)
+            elif (key == "memory" and isinstance(child, dict)
                     and ("windows" in child or "provenance" in child)):
                 value[key] = _sanitize_telemetry_block(child)
             elif (key == "power" and isinstance(child, dict)

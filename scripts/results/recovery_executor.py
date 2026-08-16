@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from scripts.runtime.supervised_stage import run_supervised_stage
+from scripts.runtime.telemetry import discover_power_source, discover_temperature_source
 from scripts.results.event_store import EventStore
 from scripts.results.llm_event_stage import event_store_path
 from scripts.runtime.pause_control import apply_pause_evidence
@@ -26,9 +27,14 @@ def _finish_result(store, data, status, reason=None):
 
 
 def _run_stage(plan, journal_path, stage, save, identity, resume, selected_case_ids=None):
+    settings = plan.effective_config
     return run_supervised_stage(
         plan, journal_path, stage, save, resume_identity=identity, resume=resume,
         selected_case_ids=selected_case_ids,
+        power_availability=(discover_power_source() if settings.get("power_telemetry") else None),
+        temperature_availability=(
+            discover_temperature_source() if settings.get("temperature_telemetry") else None
+        ),
     )
 
 

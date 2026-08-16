@@ -6,8 +6,10 @@ from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.run_plan import RunPlan
-from scripts.runtime.telemetry import PowerAvailability
-from scripts.runtime.workload_runner import create_case_telemetry, inherited_power_availability
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
+from scripts.runtime.workload_runner import (
+    create_case_telemetry, inherited_power_availability, inherited_temperature_availability,
+)
 
 
 def make_plan():
@@ -55,6 +57,25 @@ def test_runner_refuses_inherited_power_identity_that_differs_from_plan():
         False, "nvidia-smi", "accelerator",
         "parent power source was not inherited by the supervised process",
     )
+
+
+def test_runner_inherits_only_the_planned_temperature_channels():
+    status = TemperatureAvailability(
+        True, {"gpu_die_c": "nvidia-smi"},
+        locations={"gpu_die_c": "/usr/bin/nvidia-smi"},
+    )
+    inherited = inherited_temperature_availability(
+        {"temperature_sources": {"gpu_die_c": "nvidia-smi"}},
+        {"LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY": json.dumps(status.__dict__)},
+    )
+    assert inherited == status
+    refused = inherited_temperature_availability(
+        {"temperature_sources": {"cpu_package_c": "hwmon"}},
+        {"LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY": json.dumps(status.__dict__)},
+    )
+    assert refused.available is False
+    assert refused.sources == {"cpu_package_c": "hwmon"}
+    assert refused.locations is None
 
 
 def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):

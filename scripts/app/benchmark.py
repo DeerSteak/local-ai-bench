@@ -5,6 +5,7 @@ See docs/workloads.md for what each test measures, docs/cli-reference.md for fla
 import argparse
 import fnmatch
 import json
+import math
 import platform
 import re
 import signal
@@ -33,7 +34,8 @@ from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.telemetry import (
     CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
-    discover_power_source, power_availability_dict,
+    discover_power_source, discover_temperature_source, power_availability_dict,
+    temperature_availability_dict,
 )
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
@@ -144,13 +146,22 @@ def eta_match_config(args) -> dict:
         "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
         "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
         "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+        "sustained_duration_sec": getattr(args, "sustained_duration", config.SUSTAINED_DURATION_SEC),
+        "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
+        "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
     }
-    return {key: values[key] for key in ETA_MATCH_KEYS}
+    matched = {key: values[key] for key in ETA_MATCH_KEYS}
+    if "sustained" in getattr(args, "tests", []):
+        matched.update({key: values[key] for key in (
+            "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+        )})
+    return matched
 
 
 def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
                          estimate_seconds: float | None, *, runs: int, warmups: int,
-                         max_prompt_tokens: int | None, sample_size: int | None) -> str:
+                         max_prompt_tokens: int | None, sample_size: int | None,
+                         sustained_duration: int = config.SUSTAINED_DURATION_SEC) -> str:
     family_for = {
         "emb": "embeddings", "img": "images", "conc_tool": "concurrency",
         "conc_chat": "concurrency",
@@ -177,6 +188,9 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
             cases = f"levels {config.CONCURRENCY_TOOL_LEVELS}"
         elif test == "conc_chat":
             cases = f"levels {config.CONCURRENCY_CHAT_LEVELS}"
+        elif test == "sustained":
+            cases = (f"{sustained_duration}s soak; {config.SUSTAINED_WINDOW_SEC}s windows; "
+                     f"{config.SUSTAINED_CONTEXT_TOKENS}-token context")
         elif test == "img":
             cases = "; ".join(
                 f"{model['short']}={model.get('resolutions', config.IMAGE_RESOLUTIONS)}"
@@ -670,6 +684,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "resource sampler. Requires active source permission and memory telemetry "
              "(default: false).",
     )
+    parser.add_argument(
+        "--sustained-duration", type=positive_int, default=config.SUSTAINED_DURATION_SEC,
+        metavar="SECONDS",
+        help=f"Minimum sustained-load soak duration per model (default: "
+             f"{config.SUSTAINED_DURATION_SEC}s; minimum "
+             f"{config.SUSTAINED_MIN_CLASSIFICATION_SEC}s).",
+    )
+    parser.add_argument(
+        "--ambient-temp-c", type=float, default=None, metavar="CELSIUS",
+        help="Ambient temperature measured near the system immediately before a sustained "
+             "run (default: not recorded).",
+    )
     _engines = registered_engine_names()
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
@@ -700,6 +726,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         parser.error(option_errors[0])
 
     args.tests = expand_tests(args.tests)
+    if "sustained" in args.tests and not args.memory_telemetry:
+        parser.error("the sustained workload requires --memory-telemetry for aligned sampling")
+    if args.ambient_temp_c is not None and "sustained" not in args.tests:
+        parser.error("--ambient-temp-c requires --tests sustained")
+    if args.sustained_duration < config.SUSTAINED_MIN_CLASSIFICATION_SEC:
+        parser.error(
+            f"--sustained-duration must be at least {config.SUSTAINED_MIN_CLASSIFICATION_SEC}"
+        )
+    if args.ambient_temp_c is not None and (
+            not math.isfinite(args.ambient_temp_c) or not -100 <= args.ambient_temp_c <= 100):
+        parser.error("--ambient-temp-c must be a finite value from -100 to 100")
     setup_config = load_setup_config(config.SETUP_CONFIG_PATH)
     if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
         parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
@@ -785,6 +822,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 engine_scope["name"], tests, display_models, estimate,
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
+                sustained_duration=args.sustained_duration,
             ))
         Shared.output(format_dry_run_output(previews))
         return
@@ -832,7 +870,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
-                        "conc_tool", "conc_chat") if t in tests
+                        "conc_tool", "conc_chat", "sustained") if t in tests
         ]
         hardware_backend = hardware_profile["backend"]
         profile = {
@@ -923,6 +961,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             vllm_launcher_args=vllm_launcher_args,
         )
         power_availability = discover_power_source() if args.power_telemetry else None
+        temperature_availability = discover_temperature_source() if "sustained" in tests else None
         if power_availability:
             if power_availability.available:
                 Shared.log(
@@ -931,6 +970,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
             else:
                 Shared.warn(f"Power preflight: unavailable — {power_availability.reason}")
+        if temperature_availability:
+            if temperature_availability.available:
+                Shared.log(
+                    "Temperature preflight: "
+                    + ", ".join(
+                        f"{channel}={source}"
+                        for channel, source in temperature_availability.sources.items()
+                    )
+                )
+            else:
+                Shared.warn(
+                    f"Temperature preflight: unavailable — {temperature_availability.reason}"
+                )
         effective_config = {
             "runs": config.N_RUNS, "warmup_runs": args.warmup,
             "run_timeout_seconds": config.RUN_TIMEOUT,
@@ -961,6 +1013,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             ),
             "power_source": power_availability.source if power_availability else None,
             "power_scope": power_availability.scope if power_availability else None,
+            "temperature_telemetry": temperature_availability is not None,
+            "temperature_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if temperature_availability else None
+            ),
+            "temperature_sources": (
+                dict(temperature_availability.sources) if temperature_availability else None
+            ),
+            "sustained_duration_sec": args.sustained_duration,
+            "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
+            "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
+            "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
         }
@@ -984,6 +1047,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "mcq": [config.ACCURACY_CONTEXT], "math": [config.ACCURACY_CONTEXT],
             "reasoning": [config.ACCURACY_CONTEXT], "code": [config.ACCURACY_CONTEXT],
             "tool": [config.ACCURACY_CONTEXT],
+            "sustained": [config.SUSTAINED_CONTEXT_TOKENS],
             "conc_tool": [config.CONCURRENCY_TOOL_CONTEXT],
             "conc_chat": [config.CONCURRENCY_CHAT_CONTEXT],
         }
@@ -1021,7 +1085,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
         )
-        journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+        journal_stages = set(tests) & {
+            "llm", "conv", "llamabench", "conc_tool", "conc_chat", "sustained",
+        }
         resume_identity = None
         extra_resume_runtimes = {}
         model_families = []
@@ -1031,7 +1097,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
-            if journal_stages & {"llm", "conv", "llamabench"}:
+            if journal_stages & {"llm", "conv", "llamabench", "sustained"}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
@@ -1072,6 +1138,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 **preflight.to_dict(),
                 **({"power": power_availability_dict(power_availability)}
                    if power_availability else {}),
+                **({"temperature": temperature_availability_dict(temperature_availability)}
+                   if temperature_availability else {}),
             },
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
@@ -1088,6 +1156,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamabench":      {},
             "llamabenchconc":  {},
             "vllmbench":       {},
+            "sustained":       {},
         }
 
         results["run"] = build_run_manifest(
@@ -1104,6 +1173,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
                     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
                     "llamabench", "llamabenchconc", "vllmbench",
+                    "sustained",
                 )
             }
             memory_summary = derive_run_memory_summary({
@@ -1168,6 +1238,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 **preflight.to_dict(),
                 **({"power": power_availability_dict(power_availability)}
                    if power_availability else {}),
+                **({"temperature": temperature_availability_dict(temperature_availability)}
+                   if temperature_availability else {}),
             }
             results["run"].update(
                 models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
@@ -1201,6 +1273,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 _context.plan, event_store_path(Path(out_path)), "conv",
                 make_save("llm_conversation", "conv"), resume_identity=resume_identity,
                 power_availability=power_availability,
+            )
+
+        def run_sustained(_context):
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "sustained",
+                make_save("sustained"), resume_identity=resume_identity,
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
             )
 
         def release_port_for_runner(_context):
@@ -1318,6 +1398,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
                             run_llamabench_concurrency, prepare=release_port_for_runner),
             StageDefinition("vllmbench", "vllmbench", len(llm_models), run_vllmbench,
+                            prepare=release_port_for_runner),
+            StageDefinition("sustained", "sustained", len(llm_models), run_sustained,
                             prepare=release_port_for_runner),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
                             requires_engine=True),
