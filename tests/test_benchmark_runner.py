@@ -1,7 +1,10 @@
 import json
 from types import SimpleNamespace
 
-from scripts.app.benchmark import relay_runner_log, run_supervised_llm, run_supervised_stage
+from scripts.app.benchmark import (
+    qualification_temperature_requested, relay_runner_log, run_supervised_llm,
+    run_supervised_stage,
+)
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
@@ -22,6 +25,16 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_qualification_temperature_requires_explicit_internal_environment_value():
+    assert qualification_temperature_requested({}) is False
+    assert qualification_temperature_requested(
+        {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "0"},
+    ) is False
+    assert qualification_temperature_requested(
+        {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "1"},
+    ) is True
 
 
 def test_runner_power_telemetry_inherits_parent_source_inside_supervised_process(monkeypatch):
@@ -142,6 +155,32 @@ def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path
     assert result == saved[-1]
     assert saved[0]["fake"]["512"]["tps_mean"] == 50
     assert cancelled == [True]
+
+
+def test_llm_supervisor_receives_temperature_availability(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+    availability = TemperatureAvailability(True, {"gpu_die_c": "nvidia-smi"})
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.temperature_availability == availability
+
+        def run(self, callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.finish()
+            stage.close()
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    run_supervised_llm(
+        plan, path, lambda _section: None, Supervisor,
+        temperature_availability=availability,
+    )
 
 
 def test_runner_failure_preserves_committed_case_for_parent_recovery(tmp_path):

@@ -84,8 +84,10 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
                        supervisor_factory: Callable[..., RunnerLike] = RunnerSupervisor,
                        resume_identity=None,
-                       power_availability: PowerAvailability | None = None) -> dict:
+                       power_availability: PowerAvailability | None = None,
+                       temperature_availability: TemperatureAvailability | None = None) -> dict:
     return run_supervised_stage(
         plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
         power_availability=power_availability,
+        temperature_availability=temperature_availability,
     )
