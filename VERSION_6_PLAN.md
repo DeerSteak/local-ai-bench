@@ -4,13 +4,13 @@
 
 Version 5.1 has broad workload coverage, durable evidence, and heavy governance machinery. Its remaining gaps are not "more benchmarks" — they fall into two groups: measurements the suite never takes (memory, power, thermal), and the missing steps between a measurement and a trustworthy decision (noise handling, preflight validation, recommendations).
 
-This plan orders ten features on one rule: **anything that makes existing conclusions more trustworthy outranks anything that adds new conclusions.** A faster number nobody can trust is worth less than an existing number that can now be defended.
+This plan orders eleven features on one rule: **anything that makes existing conclusions more trustworthy outranks anything that adds new conclusions.** A faster number nobody can trust is worth less than an existing number that can now be defended.
 
 This is a single-maintainer project. “Release owner,” “methodology owner,” “code owner,” and “qualification owner” are responsibilities held by the same person, not separate approvers; controls that would normally rely on separation of duties instead rely on committed predefinitions, automated gates, durable evidence, and reproducible real-hardware records.
 
 ## The plan in plain English
 
-Build Version 6 in ten numbered milestones. Finish and verify one milestone before starting anything that depends on it. For every milestone, follow the same simple loop:
+Build Version 6 in eleven numbered milestones. Finish and verify one milestone before starting anything that depends on it. For every milestone, follow the same simple loop:
 
 1. Write down exactly what the feature will measure or decide.
 2. Write the tests that prove the important rules and failure cases.
@@ -40,9 +40,9 @@ A milestone is complete only when all six layers below are finished. If one laye
 
 ## Work that happens before milestone 1
 
-Complete this short foundation phase first. It prevents ten features from inventing ten incompatible meanings for the same data.
+Complete this short foundation phase first. It prevents eleven features from inventing eleven incompatible meanings for the same data.
 
-1. Create one Version 6 tracking issue that links to the ten milestone sections in this document and to implementation changes. **This document is the sole authoritative checklist.** The tracking issue reports status and links here; it never copies acceptance or release boxes.
+1. Create one Version 6 tracking issue that links to the eleven milestone sections in this document and to implementation changes. **This document is the sole authoritative checklist.** The tracking issue reports status and links here; it never copies acceptance or release boxes.
 2. Freeze the Version 5.1 compatibility fixtures and add representative schema-1 through schema-4 results wherever the supported test set has a gap.
 3. Write the schema-5 field map before code: field name, unit, scope, source, availability state, owning event, JSON location, and old-file fallback.
 4. Write the telemetry vocabulary: `sample`, `channel`, `source`, `scope`, `measured window`, `idle window`, `unknown`, and `unsupported` must have one meaning everywhere.
@@ -57,9 +57,9 @@ Complete this short foundation phase first. It prevents ten features from invent
 
 Items 1, 4, and 5 share one background telemetry sampler. Item 1 builds the light version (memory only, no elevated permissions); items 4 and 5 extend that same sampler rather than adding parallel instrumentation. Do not implement them as three separate efforts.
 
-Item 6 (recommendations) depends on item 3's completed repeated-trials verdicts, because a recommendation that ranks models on differences it cannot distinguish from run-to-run noise is worse than no recommendation. Item 10 (workspace) is deliberately last: it consolidates capabilities rather than adding any, and it is easier to design once the decision it must display has been defined by item 6.
+Item 6 (recommendations) depends on item 3's completed repeated-trials verdicts, because a recommendation that ranks models on differences it cannot distinguish from run-to-run noise is worse than no recommendation. Item 11 (workspace) is deliberately last: it consolidates capabilities rather than adding any, and it is easier to design once the decision it must display has been defined by item 6.
 
-Items 2, 7, and 8 are independent and may be resequenced against team capacity. Item 9 must wait for items 1 and 3; its energy comparison waits for item 4.
+Items 2, 7, 8, and 9 are independent and may be resequenced against team capacity. Item 10 must wait for items 1, 3, and 9; its energy comparison waits for item 4.
 
 | # | Feature | Depends on | Sampler group |
 |---|---------|-----------|---------------|
@@ -71,8 +71,9 @@ Items 2, 7, and 8 are independent and may be resequenced against team capacity. 
 | 6 | Goal-driven recommendation view | 3 | |
 | 7 | Complete case-level resume for every workload | — | |
 | 8 | Evidence-backed platform qualification | — | |
-| 9 | Quantization comparison workflow | 1, 3; 4 for energy comparisons | |
-| 10 | Unified results and decision workspace | 6 | |
+| 9 | Model catalog audit and refresh | — | |
+| 10 | Quantization comparison workflow | 1, 3, 9; 4 for energy comparisons | |
+| 11 | Unified results and decision workspace | 6 | |
 
 ### Coarse effort estimates
 
@@ -88,8 +89,9 @@ These are planning sizes, not promises: **S** is a focused change, **M** spans s
 | 6 | Goal-driven recommendation view | L | Authoritative policy engine plus CLI, report, and UI artifact flow |
 | 7 | Complete case-level resume | XL | Workload-by-workload persistence migration and interruption parity |
 | 8 | Platform qualification matrix | M | Evidence process, release gating, generated docs, and UI labels |
-| 9 | Quantization comparison workflow | L | Catalog/identity migration, setup, storage estimates, and comparison |
-| 10 | Unified results and decision workspace | XL | Cross-platform architecture, shared state, packaging, and offline UX |
+| 9 | Model catalog audit and refresh | M | Role coverage, candidate qualification, lifecycle compatibility, and migration evidence |
+| 10 | Quantization comparison workflow | L | Catalog/identity migration, setup, storage estimates, and comparison |
+| 11 | Unified results and decision workspace | XL | Cross-platform architecture, shared state, packaging, and offline UX |
 
 ## Conventions that apply to every item
 
@@ -144,7 +146,7 @@ Use a lightweight commit-message tag instead of a prose status block: `v6:<item>
 
 ### Schema versioning for this release
 
-Items 1, 2, 4, and 5 add result fields, while items 3, 6, 8, 9, and 10 add derived artifacts or interpretation metadata. Introduce **result schema 5** once, in the first merged change that writes a new result field, rather than bumping per item. Store it in the existing `run.schema_version` location, keep every new field optional on read, and extend [result-compatibility-v4.1.md](docs/result-compatibility-v4.1.md) with a Version 6 section stating exactly which fields are new, which are optional, and what a schema-4 file renders as. Runs from schema 4 and earlier must remain loadable, comparable where methodology permits, and visibly distinct from runs that carry the new telemetry — missing telemetry is not zero.
+Items 1, 2, 4, and 5 add result fields, while items 3, 6, 8, 10, and 11 add derived artifacts or interpretation metadata. Introduce **result schema 5** once, in the first merged change that writes a new result field, rather than bumping per item. Store it in the existing `run.schema_version` location, keep every new field optional on read, and extend [result-compatibility-v4.1.md](docs/result-compatibility-v4.1.md) with a Version 6 section stating exactly which fields are new, which are optional, and what a schema-4 file renders as. Runs from schema 4 and earlier must remain loadable, comparable where methodology permits, and visibly distinct from runs that carry the new telemetry — missing telemetry is not zero.
 
 Do not reuse the result-schema number for plans, policies, projects, bundles, journals, or qualification records. Each format changes its own schema only when its serialized shape changes. A methodology-affecting change also receives a new methodology identity even when the JSON remains readable; schema compatibility and scientific comparability are separate decisions.
 
@@ -466,13 +468,49 @@ The maintainer builds validation and presentation, performs each real install/ru
 
 ---
 
-# 9. Quantization comparison workflow
+# 9. Model catalog audit and refresh
 
 ## Why this is ninth
 
+The catalog is a benchmark methodology, not a list of whatever models are newest. Each selected model consumes download space and hours of repeated workload time, represents a parameter tier or capability role, and becomes part of comparisons that users expect to remain intelligible across releases. The current lineup therefore needs a deliberate Version 6 audit rather than ad hoc additions whenever a compelling release appears.
+
+Muse Glimmer 30B and Qwen 3.8 27B are initial candidates for the audit, not predetermined additions. Both occupy the medium-size neighborhood already represented by the catalog, so the useful question is whether either improves role coverage or should replace an incumbent—not merely whether it can run. The audit also covers every existing catalog entry so an older model is not retained only through inertia.
+
+## Implementation outline
+
+1. **Inventory the current catalog by purpose**, recording for each model its tier, architecture, dense or sparse parameter count, capability roles, context requirement, license, selected quantization, download size, supported engines, and the reason it earns benchmark time. Distinguish general instruction following, reasoning, code, tool use, long context, multimodal behavior, and architecture diversity rather than treating parameter count as the only axis.
+2. **Define selection and retirement criteria before scoring candidates**: relevance to contemporary local inference, nonredundant role coverage, weights and license suitable for redistribution-by-reference and local use, a stable upstream identity, a supported GGUF conversion, clean llama.cpp lifecycle behavior, required context support, feasible resource coverage across the intended tier, and measurable value in this suite's workloads. Popularity or vendor benchmark claims alone are insufficient.
+3. **Audit every incumbent under the same criteria.** Record whether it remains, moves tier, becomes legacy-only, or is proposed for replacement, with an explicit reason and named replacement candidate. Model tiers remain cumulative, and the audit must estimate the run-time and disk impact of the proposed lineup before changing it.
+4. **Evaluate Muse Glimmer 30B and Qwen 3.8 27B as candidates** using their exact upstream model cards, licenses, architecture/configuration, context semantics, chat templates, and maintained GGUF artifacts. Verify current llama.cpp support rather than inferring compatibility from a community launch report; separately record optional multimodal projectors, speculative-draft dependencies, MTP, or custom flags so the baseline catalog does not silently depend on them.
+5. **Run a small compatibility screen before full evaluation**: setup discovery, download/inventory identity, model load and unload, 2K and the model's relevant deeper context, deterministic completion, chat template behavior, cancellation, and clean recovery. A model that requires an engine patch or unreleased runtime remains a documented candidate rather than entering the default catalog.
+6. **Compare candidates with incumbents using existing evidence**, including accuracy categories, single-shot prefill/decode, conversation growth, tool and chat concurrency, memory headroom, sustained behavior, and supported context. Use item 3's repeated-trial verdicts for close performance claims; do not rank a noisy one-off delta as an improvement.
+7. **Make replacement decisions role-by-role.** Prefer the smallest lineup that preserves meaningful architecture and capability coverage. Adding a candidate without retiring an overlapping incumbent requires a documented distinct role that the existing workload suite can actually measure.
+8. **Preserve historical rendering.** Removed catalog entries move to the dashboard's legacy model registry with their labels, colors, tier metadata, and result lookup intact. Existing result files remain readable and comparable where methodology permits; catalog retirement never rewrites old evidence.
+9. **Apply accepted changes as separate reviewable commits** for catalog/setup identity, dashboard legacy/current registries, tests, and documentation. The audit report lands before any model change so reviewers can challenge the evidence without also reviewing implementation churn.
+10. **Tests**: catalog uniqueness and tier consistency; every current entry has required audit metadata; accepted tags, repos, files, and sizes agree across setup and dashboard registries; retired models remain renderable through legacy mappings; cumulative tier selection remains unchanged; malformed or duplicate candidate identities are rejected.
+11. **Docs**: publish the audit date, tested commit and engine version, selection rubric, incumbent decisions, candidate evidence, disk/run-time impact, and unresolved compatibility gaps in [catalogs.md](docs/catalogs.md) and [workloads.md](docs/workloads.md). Vendor claims and community reports may motivate a candidate but are not recorded as suite qualification evidence.
+
+## Acceptance criteria
+
+- [ ] Every incumbent has a recorded role and an evidence-backed keep, replace, move, or legacy-only decision.
+- [ ] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
+- [ ] Muse Glimmer 30B and Qwen 3.8 27B have exact upstream identity, license, context, architecture, GGUF, and current llama.cpp compatibility recorded.
+- [ ] Candidate compatibility screens cover load/unload, context, completion, chat template, cancellation, and recovery without making setup or live benchmark execution automatic.
+- [ ] Any accepted addition fills a measurable role or replaces an incumbent; novelty alone cannot expand the default lineup.
+- [ ] Proposed catalog disk cost and representative run-time impact are reported before adoption.
+- [ ] Close performance claims use item 3's repeated-trial verdicts and may remain inconclusive.
+- [ ] Retired entries remain in the legacy dashboard registry and old results render unchanged.
+- [ ] The audit report is reviewable before catalog implementation changes begin.
+
+---
+
+# 10. Quantization comparison workflow
+
+## Why this is tenth
+
 Quantization is fixed at one variant per catalog entry — every model in [models.py](scripts/workloads/models.py) carries a single `Q4_K_M` tag and `hf_repo`. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly: it already has the accuracy banks to measure quality loss, the speed harness to measure the throughput gain, and — after items 1 and 4 — the memory and energy measurement to complete the tradeoff. Almost nothing else answers this with quality evidence attached.
 
-It ranks ninth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
+It ranks tenth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
 
 ## Implementation outline
 
@@ -499,7 +537,7 @@ It ranks ninth because it multiplies run time and disk consumption substantially
 
 ---
 
-# 10. Unified results and decision workspace
+# 11. Unified results and decision workspace
 
 ## Why this is last
 
@@ -534,9 +572,9 @@ It is last because it is the largest build for the least new capability — it c
 
 ---
 
-## How the ten milestones become one release
+## How the eleven milestones become one release
 
-Version 6 is developed in small, usable slices. “All ten features are coded” is not the release strategy.
+Version 6 is developed in small, usable slices. “All eleven features are coded” is not the release strategy.
 
 ### Slice A — trustworthy existing evidence
 
@@ -552,7 +590,7 @@ Complete milestones 6 and 7 (**L + XL**). Deliver recommendations independently 
 
 ### Slice D — scope and product integration
 
-Complete milestones 8, 9, and 10 (**M + L + XL**). Deliver D1 qualification matrix, D2 quantization workflow, and D3 workspace separately; they are not assumed to fit one equal-length iteration. Publish only support claims backed by recorded qualification evidence. Keep quantization sweeps opt-in. Choose the workspace architecture only after the disposable cross-platform prototypes have been reviewed.
+Complete milestones 8, 9, 10, and 11 (**M + M + L + XL**). Deliver D1 qualification matrix, D2 model-catalog audit, D3 quantization workflow, and D4 workspace separately; they are not assumed to fit one equal-length iteration. Publish only support claims backed by recorded qualification evidence. Review the model audit before changing the lineup, keep quantization sweeps opt-in, and choose the workspace architecture only after the disposable cross-platform prototypes have been reviewed.
 
 ### Pilot at every slice boundary
 
