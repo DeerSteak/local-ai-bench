@@ -35,9 +35,12 @@ export function flattenSustainedData(files: ResultsFile[]): ChartRow[] {
     performance: result?.analysis?.performance,
     cause: result?.analysis?.cause,
     actual_duration_sec: result?.actual_duration_sec,
+    request_count: result?.request_count,
+    valid_request_count: result?.valid_request_count,
     ambient_temp_c: result?.ambient_temp_c,
     pause_invalidated: result?.pause_invalidated,
     skipped: result?.skipped,
+    skip_detail: result?.skipped,
     error: result?.unexpected_error ?? result?.error ?? result?.crashed,
   })));
 }

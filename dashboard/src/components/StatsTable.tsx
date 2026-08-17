@@ -104,9 +104,18 @@ function SustainedTable({ files, sortConfig, onCycleSort }: {
       <SortTh label="Retention" sortKey="retention_pct" sortConfig={sortConfig} onCycleSort={onCycleSort} />
       <SortTh label="Onset" sortKey="throttle_onset_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
       <SortTh label="Duration" sortKey="actual_duration_sec" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+      <SortTh label="Valid requests" sortKey="valid_request_count" sortConfig={sortConfig} onCycleSort={onCycleSort} />
       <th className={styles.th}>Classification</th><th className={styles.th}>Correlation</th><th className={styles.th}>Ambient</th>
     </tr></thead>
-    <tbody>{rows.map((row, index) => <tr key={index}>
+    <tbody>{rows.map((row, index) => row.skipped || row.error ? (
+      <tr key={index} className={styles.trSkipped}>
+        {isMulti && <MachineTd fileId={row._fileId} files={files} />}
+        <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(row.model)}</td>
+        <td className={styles.td} colSpan={9}>
+          {row.error ? `Failed — ${String(row.error)}` : `Skipped — ${String(row.skip_detail)}`}
+        </td>
+      </tr>
+    ) : <tr key={index}>
       {isMulti && <MachineTd fileId={row._fileId} files={files} />}
       <td className={`${styles.td} ${styles.tdModel}`}>{modelLabel(row.model)}</td>
       <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.initial_tokens_per_sec, "tps")}</td>
@@ -114,6 +123,11 @@ function SustainedTable({ files, sortConfig, onCycleSort }: {
       <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.retention_pct, "pct")}</td>
       <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.throttle_onset_sec, "sec")}</td>
       <td className={`${styles.td} ${styles.tdNum}`}>{fmt(row.actual_duration_sec, "sec")}</td>
+      <td className={`${styles.td} ${styles.tdNum}`}>
+        {typeof row.valid_request_count === "number"
+          ? `${row.valid_request_count} / ${typeof row.request_count === "number" ? row.request_count : "?"}`
+          : "Not recorded"}
+      </td>
       <td className={styles.td}>{typeof row.performance === "string" ? row.performance.replaceAll("_", " ") : "Not recorded"}</td>
       <td className={styles.td}>{typeof row.cause === "string" ? row.cause.replaceAll("_", " ") : "Not recorded"}</td>
       <td className={`${styles.td} ${styles.tdNum}`}>{typeof row.ambient_temp_c === "number" ? `${row.ambient_temp_c.toFixed(1)}°C` : "Not recorded"}</td>

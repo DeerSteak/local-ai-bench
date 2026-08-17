@@ -23,8 +23,7 @@ export default function SustainedPanel({ containerRef, files, enabledModels, cha
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const runs = files.flatMap((file, fileIndex) => Object.keys(file.data.sustained || {})
     .filter(model => enabledModels.has(model))
-    .map(model => ({ file, fileIndex, model, result: file.data.sustained?.[model] }))
-    .filter(run => buildSustainedTimeline(run.result).length > 0 || run.result?.analysis));
+    .map(model => ({ file, fileIndex, model, result: file.data.sustained?.[model] })));
   if (!runs.length) return <EmptyState style={containerStyle}>No sustained-load data in the loaded file(s)</EmptyState>;
 
   return (
@@ -34,6 +33,8 @@ export default function SustainedPanel({ containerRef, files, enabledModels, cha
         const temperatureKey = preferredTemperatureKey(data);
         const hasPower = data.some(row => typeof row.power_watts === "number");
         const analysis = result?.analysis;
+        const error = result?.unexpected_error ?? result?.error ?? result?.crashed;
+        const skipped = result?.skipped;
         const title = files.length > 1 ? `${file.hostname ?? "Unknown system"} · ${modelLabel(model)}` : modelLabel(model);
         return (
           <div key={`${file.id ?? fileIndex}:${model}`} className="card chart-card" data-chart-name="sustained_timeline" data-chart-model={model}>
@@ -42,12 +43,15 @@ export default function SustainedPanel({ containerRef, files, enabledModels, cha
               <div className={styles.chartTitleRow}><span className={styles.chartTitle}>Sustained Throughput and Thermals</span></div>
             </div>
             <div className={styles.skipNote}>
-              Retention {typeof analysis?.retention_ratio === "number" ? fmt(analysis.retention_ratio * 100, "pct") : "not recorded"}
-              {` · ${label(analysis?.performance)} · ${label(analysis?.cause)}`}
-              {typeof analysis?.throttle_onset_sec === "number" ? ` · onset ${fmt(analysis.throttle_onset_sec, "sec")}` : ""}
-              {typeof result?.ambient_temp_c === "number" ? ` · ambient ${result.ambient_temp_c.toFixed(1)}°C` : " · ambient not recorded"}
+              {error ? `Failed — ${String(error)}` : skipped ? `Skipped — ${String(skipped)}` : <>
+                Retention {typeof analysis?.retention_ratio === "number" ? fmt(analysis.retention_ratio * 100, "pct") : "not recorded"}
+                {` · ${label(analysis?.performance)} · ${label(analysis?.cause)}`}
+                {typeof analysis?.throttle_onset_sec === "number" ? ` · onset ${fmt(analysis.throttle_onset_sec, "sec")}` : ""}
+                {typeof result?.valid_request_count === "number" ? ` · valid requests ${result.valid_request_count}/${typeof result?.request_count === "number" ? result.request_count : "?"}` : ""}
+                {typeof result?.ambient_temp_c === "number" ? ` · ambient ${result.ambient_temp_c.toFixed(1)}°C` : " · ambient not recorded"}
+              </>}
             </div>
-            {data.length > 0 && <ResponsiveContainer width="100%" height={340}>
+            {!error && !skipped && data.length > 0 && <ResponsiveContainer width="100%" height={340}>
               <LineChart data={data} margin={{ top: 4, right: hasPower ? 58 : 12, bottom: 4, left: 8 }}>
                 <CartesianGrid stroke="#e0e4e8" strokeDasharray="3 3" />
                 <XAxis dataKey="elapsed_min" type="number" domain={["dataMin", "dataMax"]}

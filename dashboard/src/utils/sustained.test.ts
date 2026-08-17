@@ -22,11 +22,23 @@ describe("sustained utilities", () => {
 
   it("flattens analysis and converts retention to percent", () => {
     const rows = flattenSustainedData([{ id: 7, data: { sustained: { model_a: {
-      actual_duration_sec: 601, ambient_temp_c: 20,
+      actual_duration_sec: 601, ambient_temp_c: 20, request_count: 42,
+      valid_request_count: 41,
       analysis: { initial_tokens_per_sec: 50, steady_state_tokens_per_sec: 45,
         retention_ratio: 0.9, performance: "mild_degradation", cause: "temperature_correlated" },
     } } } }]);
     expect(rows[0]).toMatchObject({ _fileId: 7, model: "model_a", retention_pct: 90,
+      request_count: 42, valid_request_count: 41,
       performance: "mild_degradation", cause: "temperature_correlated" });
+  });
+
+  it("preserves skipped and crashed outcomes for table rendering", () => {
+    const rows = flattenSustainedData([{ id: 9, data: { sustained: {
+      skipped_model: { skipped: "context_unsupported" },
+      crashed_model: { crashed: "during warmup" },
+    } } }]);
+
+    expect(rows[0]).toMatchObject({ skipped: "context_unsupported", skip_detail: "context_unsupported" });
+    expect(rows[1]).toMatchObject({ error: "during warmup" });
   });
 });
