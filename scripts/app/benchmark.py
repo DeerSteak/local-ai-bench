@@ -40,9 +40,12 @@ from scripts.runtime.telemetry import (
 )
 
 
-def qualification_temperature_requested(environ=None) -> bool:
+def temperature_telemetry_requested(tests, environ=None) -> bool:
     environ = os.environ if environ is None else environ
-    return environ.get("LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE") == "1"
+    qualification_value = environ.get("LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE")
+    if qualification_value in {"0", "1"}:
+        return qualification_value == "1"
+    return "sustained" in tests
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
@@ -967,9 +970,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             vllm_launcher_args=vllm_launcher_args,
         )
         power_availability = discover_power_source() if args.power_telemetry else None
-        qualification_temperature = qualification_temperature_requested()
         temperature_availability = discover_temperature_source() \
-            if "sustained" in tests or qualification_temperature else None
+            if temperature_telemetry_requested(tests) else None
         if power_availability:
             if power_availability.available:
                 Shared.log(

@@ -2,8 +2,8 @@ import json
 from types import SimpleNamespace
 
 from scripts.app.benchmark import (
-    qualification_temperature_requested, relay_runner_log, run_supervised_llm,
-    run_supervised_stage,
+    relay_runner_log, run_supervised_llm, run_supervised_stage,
+    temperature_telemetry_requested,
 )
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
@@ -27,13 +27,14 @@ def make_plan():
     )
 
 
-def test_qualification_temperature_requires_explicit_internal_environment_value():
-    assert qualification_temperature_requested({}) is False
-    assert qualification_temperature_requested(
-        {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "0"},
+def test_qualification_temperature_override_controls_default_sustained_sampling():
+    assert temperature_telemetry_requested(["llm"], {}) is False
+    assert temperature_telemetry_requested(["sustained"], {}) is True
+    assert temperature_telemetry_requested(
+        ["sustained"], {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "0"},
     ) is False
-    assert qualification_temperature_requested(
-        {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "1"},
+    assert temperature_telemetry_requested(
+        ["llm"], {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "1"},
     ) is True
 
 
