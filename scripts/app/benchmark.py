@@ -1270,7 +1270,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def start_case_telemetry():
             if not args.memory_telemetry:
                 return None
-            return CaseTelemetry(power_availability=power_availability).start()
+            return CaseTelemetry(
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
+            ).start()
 
         def run_llm(_context):
             return run_supervised_llm(
@@ -1284,6 +1287,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 _context.plan, event_store_path(Path(out_path)), "conv",
                 make_save("llm_conversation", "conv"), resume_identity=resume_identity,
                 power_availability=power_availability,
+                temperature_availability=temperature_availability,
             )
 
         def run_sustained(_context):
@@ -1305,6 +1309,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 _context.plan, event_store_path(Path(out_path)), "llamabench",
                 make_save("llamabench"), resume_identity=resume_identity,
                 power_availability=power_availability,
+                temperature_availability=temperature_availability,
             )
 
         def run_llamabench_concurrency(_context):
@@ -1371,6 +1376,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     _context.plan, event_store_path(Path(out_path)), key,
                     make_save(section, key), resume_identity=resume_identity,
                     power_availability=power_availability,
+                    temperature_availability=temperature_availability,
                 )
             return StageDefinition(key, section, len(conc_models), runner,
                                    prepare=release_port_for_runner)
