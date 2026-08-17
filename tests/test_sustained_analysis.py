@@ -52,6 +52,15 @@ def test_single_dip_then_recovery_does_not_trigger_sustained_onset():
     assert result["ordinal_drift"] == "none"
 
 
+def test_throttle_onset_cannot_be_reported_inside_its_baseline_windows():
+    windows = series([130, 80, 80, 80, 80, 80, 80, 80, 80])
+    initial = sum(window["tokens_per_sec"] for window in windows[:3]) / 3
+
+    assert throttle_onset(
+        windows, initial, tolerance_fraction=0.05, consecutive=3, baseline_count=3,
+    ) == 60
+
+
 def test_noisy_but_stable_series_does_not_cross_retention_or_onset_thresholds():
     result = analyze(series([100, 98, 102, 96, 101, 97, 96, 98, 97]))
     assert result["retention_ratio"] == pytest.approx(0.97)
@@ -68,6 +77,14 @@ def test_noisy_but_stable_series_does_not_cross_retention_or_onset_thresholds():
 ])
 def test_short_invalid_or_non_increasing_series_is_indeterminate(windows):
     result = analyze(windows)
+    assert result["performance"] == "indeterminate"
+    assert result["retention_ratio"] is None
+    assert result["cause"] == "unavailable"
+
+
+def test_invalid_request_evidence_forces_an_indeterminate_classification():
+    result = analyze(series([100, 100, 100, 0, 0, 0, 0, 0, 0]), measurement_valid=False)
+
     assert result["performance"] == "indeterminate"
     assert result["retention_ratio"] is None
     assert result["cause"] == "unavailable"

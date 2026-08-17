@@ -33,12 +33,14 @@ def performance_classification(retention_ratio: float | None) -> str:
 
 def throttle_onset(windows: Sequence[Mapping[str, object]], initial_throughput: float,
                    *, tolerance_fraction: float = config.SUSTAINED_ONSET_TOLERANCE_FRACTION,
-                   consecutive: int = config.SUSTAINED_ONSET_CONSECUTIVE_WINDOWS) \
+                   consecutive: int = config.SUSTAINED_ONSET_CONSECUTIVE_WINDOWS,
+                   baseline_count: int = config.SUSTAINED_INITIAL_WINDOWS) \
         -> float | None:
-    if initial_throughput <= 0 or consecutive <= 0 or not 0 <= tolerance_fraction < 1:
+    if (initial_throughput <= 0 or consecutive <= 0 or baseline_count < 0
+            or not 0 <= tolerance_fraction < 1):
         return None
     threshold = initial_throughput * (1 - tolerance_fraction)
-    for index in range(len(windows) - consecutive + 1):
+    for index in range(baseline_count, len(windows) - consecutive + 1):
         run = windows[index:index + consecutive]
         values = [_number(window.get("tokens_per_sec")) for window in run]
         if all(value is not None and value < threshold for value in values):
@@ -118,6 +120,7 @@ def analyze_sustained_series(
         minimum_duration_sec: float = config.SUSTAINED_MIN_CLASSIFICATION_SEC,
         initial_count: int = config.SUSTAINED_INITIAL_WINDOWS,
         late_count: int = config.SUSTAINED_STEADY_WINDOWS,
+        measurement_valid: bool = True,
         related_trial_drift: str | None = None) -> dict[str, object]:
     throughput = [_number(window.get("tokens_per_sec")) for window in windows]
     timestamps = [_number(window.get("timestamp_sec")) for window in windows]
@@ -135,7 +138,7 @@ def analyze_sustained_series(
         valid_timestamps[-1] + max(last_window_duration or 0, 0) - valid_timestamps[0]
         if valid_timeline else None
     )
-    sufficiently_long = bool(valid_timeline and duration is not None
+    sufficiently_long = bool(measurement_valid and valid_timeline and duration is not None
                              and duration >= minimum_duration_sec)
     ordinal_drift = monotonic_drift(valid_throughput) \
         if len(valid_throughput) == len(windows) else "insufficient"
@@ -156,7 +159,8 @@ def analyze_sustained_series(
     steady = _mean(valid_throughput[-late_count:])
     retention = steady / initial if initial and steady is not None else None
     performance = performance_classification(retention)
-    onset = throttle_onset(windows, initial) if initial is not None else None
+    onset = throttle_onset(windows, initial, baseline_count=initial_count) \
+        if initial is not None else None
     return {
         "initial_tokens_per_sec": initial,
         "steady_state_tokens_per_sec": steady,

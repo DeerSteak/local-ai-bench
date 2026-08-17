@@ -1,6 +1,8 @@
 import pytest
 
-from scripts.workloads.sustained_benchmark import aligned_sustained_windows
+from scripts.workloads.sustained_benchmark import (
+    aligned_sustained_windows, sustained_measurement_valid,
+)
 
 
 def blocks():
@@ -86,6 +88,16 @@ def test_missing_temperature_or_power_stays_unknown_on_the_shared_axis():
     assert windows[0]["cpu_package_c"] is None
     assert windows[0]["gpu_die_c"] is None
     assert windows[0]["gpu_hotspot_c"] is None
+
+
+@pytest.mark.parametrize(("requests", "valid", "expected"), [
+    (0, 0, False),
+    (10, 0, False),
+    (10, 9, False),
+    (10, 10, True),
+])
+def test_measurement_requires_a_nonempty_fully_valid_request_series(requests, valid, expected):
+    assert sustained_measurement_valid(requests, valid) is expected
 
 
 @pytest.mark.parametrize(("duration", "window"), [(0, 10), (-1, 10), (10, 0), (10, -1)])

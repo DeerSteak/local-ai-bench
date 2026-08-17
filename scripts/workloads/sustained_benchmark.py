@@ -107,6 +107,10 @@ def aligned_sustained_windows(
     return windows
 
 
+def sustained_measurement_valid(request_count: int, valid_request_count: int) -> bool:
+    return request_count > 0 and valid_request_count == request_count
+
+
 class SustainedBenchmark:
     CRASH_CACHE = Path(".sustained_crash_cache.json")
 
@@ -218,7 +222,12 @@ class SustainedBenchmark:
                     measured_offset_sec=boundary.timestamp_sec if boundary else 0,
                     memory=memory, power=power, temperature=temperature,
                 )
-                analysis = analyze_sustained_series(windows)
+                analysis = analyze_sustained_series(
+                    windows,
+                    measurement_valid=sustained_measurement_valid(
+                        len(requests), len(valid_requests),
+                    ),
+                )
                 if pause_invalidated:
                     analysis.update({
                         "performance": "indeterminate", "cause": "unavailable",
