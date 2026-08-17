@@ -476,6 +476,21 @@ The catalog is a benchmark methodology, not a list of whatever models are newest
 
 The initial candidate register is deliberately broader than the expected set of accepted changes: Qwen 3.8 27B, Muse Glimmer 30B, Nemotron 3.5 Nano/Lightning 30B-A3B, Gemma 4 26B-A4B, and Nemotron Nano 9B v2 for the LLM tiers; EmbeddingGemma 300M, Qwen3 Embedding 0.6B, and Qwen3 Embedding 4B for embeddings; and FLUX.2 Klein 4B and Z-Image Turbo for image generation. These are audit inputs, not predetermined additions. Candidates that occupy roles already represented by the catalog are evaluated as possible replacements—not appended merely because they can run. The audit also covers every existing catalog entry so an older model is not retained only through inertia.
 
+Repository entries below are starting points for the audit, not compatibility claims. The audit pins a revision and exact artifact only after testing; community GGUF conversions require provenance and architecture checks, and a safetensors repository must still pass the targeted vLLM lifecycle before it is considered supported.
+
+| Candidate | Safetensors source for vLLM audit | GGUF source for llama.cpp audit | Repository status |
+| --- | --- | --- | --- |
+| Qwen 3.8 27B | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) | [`unsloth/Qwen3.8-27B-GGUF`](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) | Upstream weights; community GGUF |
+| Muse Glimmer 30B | [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) | [`meta-models/Muse-Glimmer-30B-GGUF`](https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF) | Publisher-hosted weights and GGUF; exact quantization still to select |
+| Nemotron 3.5 Nano/Lightning 30B-A3B | [`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16) | [`ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`](https://huggingface.co/ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF) | Candidate naming and base/instruct identity must be reconciled before testing |
+| Gemma 4 26B-A4B | [`google/gemma-4-26B-A4B-it`](https://huggingface.co/google/gemma-4-26B-A4B-it) | [`ggml-org/gemma-4-26B-A4B-it-GGUF`](https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF) | Upstream weights; llama.cpp project GGUF |
+| Nemotron Nano 9B v2 | [`nvidia/NVIDIA-Nemotron-Nano-9B-v2`](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2) | [`bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF`](https://huggingface.co/bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF) | Upstream weights; community GGUF |
+| EmbeddingGemma 300M | [`google/embeddinggemma-300m`](https://huggingface.co/google/embeddinggemma-300m) | [`cstr/embeddinggemma-300m-GGUF`](https://huggingface.co/cstr/embeddinggemma-300m-GGUF) | Upstream weights; provisional community GGUF |
+| Qwen3 Embedding 0.6B | [`Qwen/Qwen3-Embedding-0.6B`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | [`Qwen/Qwen3-Embedding-0.6B-GGUF`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) | Upstream weights and GGUF |
+| Qwen3 Embedding 4B | [`Qwen/Qwen3-Embedding-4B`](https://huggingface.co/Qwen/Qwen3-Embedding-4B) | [`Qwen/Qwen3-Embedding-4B-GGUF`](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF) | Upstream weights and GGUF |
+| FLUX.2 Klein 4B | [`black-forest-labs/FLUX.2-klein-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) | Not applicable | Safetensors/ComfyUI candidate; not a llama.cpp workload |
+| Z-Image Turbo | [`Tongyi-MAI/Z-Image-Turbo`](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Not applicable | Safetensors/ComfyUI candidate; not a llama.cpp workload |
+
 ## Implementation outline
 
 1. **Inventory the current catalog by purpose**, recording for each model its tier, architecture, dense or sparse parameter count, capability roles, context requirement, license, selected quantization, download size, supported engines, and the reason it earns benchmark time. Distinguish general instruction following, reasoning, code, tool use, long context, multimodal behavior, and architecture diversity rather than treating parameter count as the only axis.
@@ -496,6 +511,7 @@ The initial candidate register is deliberately broader than the expected set of 
 - [ ] Every incumbent has a recorded role and an evidence-backed keep, replace, move, or legacy-only decision.
 - [ ] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
 - [ ] Every registered LLM candidate has exact upstream identity, license, context, architecture, GGUF, and current llama.cpp compatibility recorded.
+- [ ] Every candidate has a pinned safetensors and GGUF repository plus exact artifact and revision, or an explicit not-applicable entry, before compatibility testing begins.
 - [ ] EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B are compared with both current embedding entries, with quality limitations stated explicitly.
 - [ ] FLUX.2 Klein 4B and Z-Image Turbo are compared with the current image lineup using complete pipeline size and a fixed quality/performance workflow.
 - [ ] Candidate compatibility screens cover load/unload, context, completion, chat template, cancellation, and recovery without making setup or live benchmark execution automatic.
