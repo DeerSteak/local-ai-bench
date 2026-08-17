@@ -90,6 +90,8 @@ Run-plan identity tests prove that hierarchical IDs are deterministic, distinct 
 
 Execution-progress tests verify the structured event parser, idempotent model coverage, retry/invalid counters, remaining-time estimates, and recursive child-process resource totals. Runner tests additionally reconstruct an immutable journal plan with a fake engine, record a case through the child execution seam, and verify its committed-event notification and compatible projection. Failure tests reopen and verify prior committed measurements after a runner crash, coordinator interruption, read-only JSON export, and simulated SQLite disk-full abort. Workload tests also assert that an implausible token-rate retry emits recovered or invalid measurement events without changing the one-retry policy.
 
+Telemetry qualification tests exercise alternating pair order, exact off/on methodology identity, source availability, threshold boundaries, duration-weighted sustained throughput, retention-point impacts, dry-run command matrices, and the unattended six-suite Linux wrapper. Dry-run tests never launch a benchmark.
+
 ### Workloads and graders
 
 | Area | Test modules |
