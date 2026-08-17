@@ -889,7 +889,10 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
             "channels": {
                 channel: {
                     "source": availability.sources.get(channel, "unsupported"),
-                    "failed_samples": channel_failures.get(channel, 0),
+                    "failed_samples": (
+                        channel_failures.get(channel, 0)
+                        if channel in availability.sources else 0
+                    ),
                 }
                 for channel in TEMPERATURE_CHANNELS
             },

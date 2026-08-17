@@ -133,6 +133,25 @@ def test_temperature_block_preserves_aligned_timestamps_and_missing_channels():
         {"timestamp_sec": 1.25, "cpu_package_c": None, "gpu_die_c": 70,
          "gpu_hotspot_c": None},
     ]
+    assert block["provenance"]["channels"] == {
+        "cpu_package_c": {"source": "unsupported", "failed_samples": 0},
+        "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0},
+        "gpu_hotspot_c": {"source": "unsupported", "failed_samples": 0},
+    }
+
+
+def test_temperature_block_retains_failures_for_discovered_channels():
+    block = temperature_block(
+        [TelemetrySample(0, "measured", cpu_package_c=None)],
+        0.5, TemperatureAvailability(True, {"cpu_package_c": "hwmon"}),
+        {"cpu_package_c": 1, "gpu_die_c": 1},
+    )
+    assert block["provenance"]["channels"]["cpu_package_c"] == {
+        "source": "hwmon", "failed_samples": 1,
+    }
+    assert block["provenance"]["channels"]["gpu_die_c"] == {
+        "source": "unsupported", "failed_samples": 0,
+    }
 
 
 def test_sampler_counts_each_missing_temperature_channel_without_losing_memory():
