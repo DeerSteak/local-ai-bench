@@ -1,9 +1,11 @@
 from pathlib import Path
 
 from scripts.runtime.telemetry import (
-    PollingTemperatureSource, TemperatureAvailability, TemperatureReading,
+    NvidiaTelemetryReading, PollingPowerSource, PollingTemperatureSource, PowerAvailability,
+    TemperatureAvailability, TemperatureReading,
     TelemetrySample, TelemetrySampler, discover_temperature_source,
-    parse_hwmon_temperature, parse_nvidia_temperatures, parse_rocm_temperatures,
+    parse_hwmon_temperature, parse_nvidia_telemetry, parse_nvidia_temperatures,
+    parse_rocm_temperatures,
     temperature_availability_dict, temperature_block,
 )
 
@@ -19,6 +21,14 @@ def test_nvidia_temperature_parser_uses_hottest_die_and_rejects_partial_output()
     assert parse_nvidia_temperatures("62\n71 C\nN/A\n") == TemperatureReading(gpu_die_c=71)
     assert parse_nvidia_temperatures("N/A\n[Not Supported]\n") is None
     assert parse_nvidia_temperatures("201\nnan\n-1\n") is None
+
+
+def test_nvidia_combined_parser_aggregates_devices_and_preserves_partial_channels():
+    assert parse_nvidia_telemetry("1024, 8192, 120.5, 65\n2048, 16384, 80, 72\n") == \
+        NvidiaTelemetryReading(3, 24, 200.5, 72)
+    assert parse_nvidia_telemetry("N/A, N/A, 50, N/A\n") == \
+        NvidiaTelemetryReading(power_watts=50)
+    assert parse_nvidia_telemetry("N/A, N/A, N/A, N/A\n") is None
 
 
 def test_rocm_temperature_parser_separates_die_and_hotspot_across_devices():
@@ -84,6 +94,28 @@ def test_discovery_retains_cpu_channel_when_accelerator_probe_fails(tmp_path):
     )
     assert status.available is True
     assert status.sources == {"cpu_package_c": "hwmon"}
+
+
+def test_discovery_falls_back_to_rocm_when_nvidia_probe_fails(tmp_path):
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "/bin/nvidia-smi":
+            return Result(1, stderr="driver unavailable")
+        return Result(stdout=(
+            '{"card0":{"Temperature (Sensor edge) (C)":58,'
+            '"Temperature (Sensor junction) (C)":74}}'
+        ))
+
+    status = discover_temperature_source(
+        "Linux", hwmon_root=tmp_path,
+        which_fn=lambda name: f"/bin/{name}" if name in {"nvidia-smi", "rocm-smi"} else None,
+        run_fn=run,
+    )
+
+    assert [command[0] for command in commands] == ["/bin/nvidia-smi", "/bin/rocm-smi"]
+    assert status.sources == {"gpu_die_c": "rocm-smi", "gpu_hotspot_c": "rocm-smi"}
 
 
 def test_discovery_reports_unavailable_when_no_supported_channel_exists(tmp_path):
@@ -172,3 +204,33 @@ def test_sampler_counts_each_missing_temperature_channel_without_losing_memory()
     assert sampler.temperature_failures == {
         "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
     }
+
+
+def test_sampler_uses_one_nvidia_capture_for_memory_power_and_temperature(monkeypatch):
+    calls = []
+    availability = TemperatureAvailability(
+        True, {"gpu_die_c": "nvidia-smi"}, locations={"gpu_die_c": "/bin/nvidia-smi"},
+    )
+    power = PollingPowerSource(
+        PowerAvailability(True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi"),
+        run_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("extra query")),
+    )
+    temperature = PollingTemperatureSource(
+        availability,
+        run_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("extra query")),
+    )
+    monkeypatch.setattr("scripts.runtime.telemetry.system_memory_usage", lambda: (8, 16))
+    monkeypatch.setattr("scripts.runtime.telemetry.process_resource_usage", lambda _pid: (1, 2))
+    sampler = TelemetrySampler(
+        42, power_source=power, temperature_source=temperature,
+        memory_sources={"accelerator_memory_used_gb": "nvidia-smi"},
+        nvidia_query_fn=lambda: calls.append("capture") or NvidiaTelemetryReading(3, 24, 200, 72),
+    )
+
+    sample = sampler._sample(0, "measured")
+
+    assert calls == ["capture"]
+    assert sample.accelerator_memory_used_gb == 3
+    assert sample.accelerator_memory_total_gb == 24
+    assert sample.power_watts == 200
+    assert sample.gpu_die_c == 72

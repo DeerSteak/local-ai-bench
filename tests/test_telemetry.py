@@ -6,6 +6,7 @@ import pytest
 from scripts.runtime import config
 from scripts.runtime.telemetry import (
     CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
+    next_sample_deadline,
     default_memory_sources, derive_run_memory_summary, memory_block, memory_ceiling_gb,
     query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
@@ -227,6 +228,11 @@ def test_sampler_cleans_up_after_context_exception():
     assert sampler._thread is not None
     assert not sampler._thread.is_alive()
     assert sampler.samples
+
+
+def test_sampler_deadline_subtracts_capture_time_and_recovers_after_overrun():
+    assert next_sample_deadline(10, 10.2, 0.5) == 10.5
+    assert next_sample_deadline(10, 10.7, 0.5) == 10.7
 
 
 def test_sampler_failure_records_unknown_and_continues():
