@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from scripts.release.qualification_install import inspect_install_plan, install_qualification_stack
+from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 
 
@@ -111,16 +112,30 @@ def uninstall(root: Path, engine: str) -> None:
         remove_managed(managed_path(root, name))
 
 
+def export_verified_bundle(result: Path, bundle: Path, alias: str) -> None:
+    export_result_bundle(result, bundle, [], system_alias=alias, hardware_alias=alias)
+    verify_result_bundle(bundle)
+
+
 def main(argv=None) -> int:  # pragma: no cover
     parser = argparse.ArgumentParser(description="Manage an isolated qualification runtime")
-    parser.add_argument("action", choices=("install", "upgrade", "discover", "rollback", "uninstall"))
+    parser.add_argument(
+        "action", choices=("install", "upgrade", "discover", "rollback", "uninstall", "bundle"),
+    )
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--engine", required=True, choices=tuple(RUNTIME_NAMES))
     parser.add_argument("--model")
     parser.add_argument("--version")
+    parser.add_argument("--result", type=Path)
+    parser.add_argument("--bundle", type=Path)
+    parser.add_argument("--alias")
     args = parser.parse_args(argv)
     try:
-        if args.action in {"install", "upgrade"}:
+        if args.action == "bundle":
+            if not args.result or not args.bundle or not args.alias:
+                parser.error("bundle requires --result, --bundle, and --alias")
+            export_verified_bundle(args.result, args.bundle, args.alias)
+        elif args.action in {"install", "upgrade"}:
             if not args.model or not args.version:
                 parser.error(f"{args.action} requires --model and --version")
             install_runtime(

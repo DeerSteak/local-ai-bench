@@ -214,6 +214,15 @@ def normalize_vllm_version(value) -> str:
     return str(version)
 
 
+def normalize_exact_vllm_version(value) -> str:
+    """Accept a fully pinned stable or wheel-channel development build."""
+    text = str(value or "").strip()
+    try:
+        return str(Version(text))
+    except InvalidVersion as exc:
+        raise ValueError("Enter an exact vLLM wheel version.") from exc
+
+
 def fetch_vllm_versions(*, opener=urllib.request.urlopen) -> list[str]:
     with opener(VLLM_PYPI_URL, timeout=15) as response:
         payload = json.load(response)
@@ -235,7 +244,8 @@ def fetch_vllm_versions(*, opener=urllib.request.urlopen) -> list[str]:
 def vllm_install_command(method: str, python_exe: str, uv_available: bool,
                          version: str | None = None) -> list[str]:
     """Argv that installs vLLM into the venv owned by `python_exe`."""
-    package = f"vllm[bench]=={normalize_vllm_version(version)}" if version else VLLM_PACKAGE
+    normalized = normalize_exact_vllm_version(version) if version else None
+    package = f"vllm[bench]=={normalized}" if normalized else VLLM_PACKAGE
     extra = {
         "cuda_wheel": ([package, "--torch-backend=auto"] if uv_available else [package]),
         "rocm_wheel": [package, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],

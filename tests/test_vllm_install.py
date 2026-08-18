@@ -375,6 +375,12 @@ def test_install_commands_target_the_venv_interpreter():
     )
     assert exact[-1] == "vllm[bench]==0.10.2"
 
+    development = vllm_install_command(
+        "rocm_wheel", "/v/bin/python", uv_available=False,
+        version="0.27.1.dev4+g6e448d0ea.rocm723",
+    )
+    assert "vllm[bench]==0.27.1.dev4+g6e448d0ea.rocm723" in development
+
 
 def test_every_install_method_requests_the_bench_extra():
     """`vllm bench` deps ship only with the extra, and the vllmbench test needs them."""

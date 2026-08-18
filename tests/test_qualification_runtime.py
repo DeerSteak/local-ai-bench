@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_runtime import (
-    managed_path, restore_runtime, runtime_path, snapshot_runtime, uninstall,
+    export_verified_bundle, managed_path, restore_runtime, runtime_path, snapshot_runtime, uninstall,
 )
 
 
@@ -42,3 +42,17 @@ def test_uninstall_removes_only_qualification_assets(tmp_path):
     uninstall(root, "llamacpp")
     assert not runtime_path(root, "llamacpp").exists()
     assert evidence.is_dir()
+
+
+def test_bundle_export_is_immediately_verified(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        "scripts.release.qualification_runtime.export_result_bundle",
+        lambda *args, **kwargs: calls.append(("export", args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "scripts.release.qualification_runtime.verify_result_bundle",
+        lambda path: calls.append(("verify", path)),
+    )
+    export_verified_bundle(tmp_path / "result.json", tmp_path / "bundle.zip", "machine")
+    assert [call[0] for call in calls] == ["export", "verify"]
