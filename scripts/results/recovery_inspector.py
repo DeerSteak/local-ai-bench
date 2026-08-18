@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.engines import get_engine
+from scripts.runtime.execution_profile import build_execution_profile
 from scripts.results.event_store import EventStore
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.llm_event_stage import event_store_path
@@ -13,7 +14,6 @@ from scripts.results.local_execution_context import load_local_execution_context
 from scripts.results.resume_policy import assess_resume, build_engine_resume_identity
 from scripts.results.canonical_json import sha256_json
 from scripts.results.run_plan import load_run_plan
-from scripts.runtime.shared import Shared
 from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES
 from scripts.stage_registry import ACCURACY_TESTS
 from scripts.workloads.accuracy_registry import accuracy_spec
@@ -24,10 +24,6 @@ from scripts.workloads.models import IMAGE_MODELS
 
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
 META_CASE_KINDS = {"model_plan", "model_state", "model_evidence", "model_complete"}
-ENGINE_BACKED_STAGES = {
-    "llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning",
-    "code", "tool", "conc_tool", "conc_chat", "sustained",
-}
 
 
 def retryable_case_records(plan, projection):
@@ -79,21 +75,43 @@ def workload_case_counts(plan, projection, stages) -> dict:
     return {stage: dict(sorted(values.items())) for stage, values in counts.items()}
 
 
-def recovery_environment_profile(plan, engine) -> dict:
-    """Reconstruct the run profile without its volatile timestamp."""
-    hardware = Shared.build_profile()
-    hardware_backend = hardware["backend"]
-    backend = (engine.runtime_backend(hardware_backend, cpu_only=plan.cpu_only)
-               if set(plan.tests) & ENGINE_BACKED_STAGES else hardware_backend)
-    return {**hardware, "hardware_backend": hardware_backend, "backend": backend}
-
-
 def legacy_environment_identity(current_profile: dict, saved_profile) -> dict | None:
     """Rebuild pre-fix identity using only the saved run timestamp."""
     if not isinstance(saved_profile, dict) or not isinstance(saved_profile.get("timestamp"), str):
         return None
     profile = {**current_profile, "timestamp": saved_profile["timestamp"]}
     return {"profile_sha256": sha256_json(profile)}
+
+
+def compatible_environment_identity(current_identity: dict, current_profile: dict,
+                                    saved_identity: dict, saved_profile) -> dict:
+    legacy_environment = legacy_environment_identity(current_profile, saved_profile)
+    if (saved_identity.get("environment") != current_identity.get("environment")
+            and legacy_environment is not None
+            and saved_identity.get("environment") == legacy_environment):
+        return {**current_identity, "environment": legacy_environment}
+    return current_identity
+
+
+def current_resume_identity_for_result(result_path: Path, plan=None) -> dict:
+    """Build the current identity with compatibility for pre-fix timestamped journals."""
+    result_path = Path(result_path).resolve()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    plan = plan or load_run_plan(result_path)
+    journal_path = event_store_path(result_path)
+    store = EventStore(journal_path)
+    try:
+        saved_identity = store.resume_identity(plan.job_id)
+    finally:
+        store.close()
+    engine = get_engine(plan.engine_name)
+    current_profile = build_execution_profile(engine, plan.tests, cpu_only=plan.cpu_only)
+    current_identity = current_resume_identity(
+        plan, profile=current_profile, engine=engine, event_path=journal_path,
+    )
+    return compatible_environment_identity(
+        current_identity, current_profile, saved_identity, result.get("profile"),
+    )
 
 
 def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find_llamacpp_tool,
@@ -145,7 +163,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         if not isinstance(binary, (str, Path)):
             raise ValueError("vLLM bench runtime required by the saved plan was not found")
         extra["vllm-bench"] = Path(binary).resolve()
-    profile = profile or recovery_environment_profile(plan, engine)
+    profile = profile or build_execution_profile(engine, plan.tests, cpu_only=plan.cpu_only)
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages & {
@@ -171,19 +189,7 @@ def inspect_recovery(result_path, identity_builder=None):
         store.verify(plan.job_id)
         projection = store.rebuild(plan.job_id)
         if identity_builder is None:
-            engine = get_engine(plan.engine_name)
-            current_profile = recovery_environment_profile(plan, engine)
-            current_identity = current_resume_identity(
-                plan, profile=current_profile, engine=engine, event_path=journal_path,
-            )
-            saved_identity = store.resume_identity(plan.job_id)
-            legacy_environment = legacy_environment_identity(
-                current_profile, result.get("profile"),
-            )
-            if (saved_identity.get("environment") != current_identity.get("environment")
-                    and legacy_environment is not None
-                    and saved_identity.get("environment") == legacy_environment):
-                current_identity = {**current_identity, "environment": legacy_environment}
+            current_identity = current_resume_identity_for_result(result_path, plan)
         else:
             current_identity = identity_builder(plan)
         decision = assess_resume(

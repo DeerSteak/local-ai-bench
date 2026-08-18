@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from scripts.results import recovery_inspector
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.recovery_inspector import (
-    current_resume_identity, inspect_recovery, legacy_environment_identity,
-    recovery_environment_profile,
+    compatible_environment_identity, current_resume_identity, inspect_recovery,
+    legacy_environment_identity,
     retryable_case_records, workload_case_counts,
 )
 from scripts.results.run_plan import RunPlan
@@ -106,23 +106,6 @@ def test_current_recovery_identity_bypasses_persistent_digest_cache(monkeypatch,
     assert seen["use_digest_cache"] is False
 
 
-def test_recovery_profile_reconstructs_hardware_and_runtime_backends(monkeypatch):
-    plan = RunPlan.create(
-        application_version="6.0-pre7", engine_name="vllm", tests=["llm"],
-        stage_order=["llm"], models={
-            "llm": [], "concurrency": [], "embeddings": [], "images": [],
-        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
-    )
-    monkeypatch.setattr(recovery_inspector.Shared, "build_profile", lambda: {
-        "hostname": "host", "backend": "metal", "timestamp": "now",
-    })
-    engine = SimpleNamespace(runtime_backend=lambda backend, cpu_only: "cuda")
-    assert recovery_environment_profile(plan, engine) == {
-        "hostname": "host", "backend": "cuda", "timestamp": "now",
-        "hardware_backend": "metal",
-    }
-
-
 def test_legacy_environment_identity_reuses_only_saved_timestamp():
     current = {"hostname": "host", "backend": "metal", "timestamp": "now"}
     first = legacy_environment_identity(current, {"timestamp": "then"})
@@ -131,6 +114,20 @@ def test_legacy_environment_identity_reuses_only_saved_timestamp():
     )
     assert first == second
     assert legacy_environment_identity(current, {}) is None
+
+
+def test_compatible_environment_identity_returns_saved_legacy_hash_only_on_exact_match():
+    profile = {"hostname": "host", "backend": "metal", "timestamp": "now"}
+    current = {"environment": {"profile_sha256": "stable"}, "plan_id": "plan"}
+    legacy = legacy_environment_identity(profile, {"timestamp": "then"})
+    saved = {"environment": legacy}
+    assert compatible_environment_identity(
+        current, profile, saved, {"timestamp": "then"},
+    )["environment"] == legacy
+    assert compatible_environment_identity(
+        current, profile, {"environment": {"profile_sha256": "other"}},
+        {"timestamp": "then"},
+    ) == current
 
 
 def test_current_embedding_identity_includes_model_family_and_corpus(monkeypatch, tmp_path):

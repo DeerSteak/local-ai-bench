@@ -17,7 +17,7 @@ from scripts.results.local_execution_context import (
 from scripts.results.regrade import answer_sidecar_path
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.results.recovery_inspector import (
-    current_resume_identity, inspect_recovery,
+    current_resume_identity, current_resume_identity_for_result, inspect_recovery,
 )
 from scripts.results.result_store import ResultStore, atomic_write_json, build_run_manifest
 from scripts.results.run_plan import RunPlan, load_run_plan
@@ -86,7 +86,7 @@ def resume_journal_run(result_path, *, identity_builder=None,
             "saved plan contains stages without durable recovery: " + ", ".join(unsupported)
         )
     journal_path = event_store_path(result_path)
-    identity = (current_resume_identity(plan, event_path=journal_path)
+    identity = (current_resume_identity_for_result(result_path, plan)
                 if identity_builder is None else identity_builder(plan))
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
@@ -151,7 +151,7 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=None,
         raise ValueError("select at least one retry-eligible case")
     plan = load_run_plan(result_path)
     journal_path = event_store_path(result_path)
-    identity = (current_resume_identity(plan, event_path=journal_path)
+    identity = (current_resume_identity_for_result(result_path, plan)
                 if identity_builder is None else identity_builder(plan))
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:

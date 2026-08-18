@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from scripts.runtime import config
+from scripts.runtime.execution_profile import build_execution_profile
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
@@ -886,13 +887,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        hardware_backend = hardware_profile["backend"]
-        profile = {
-            **hardware_profile,
-            "hardware_backend": hardware_backend,
-            "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
-                        if engine_backed_tests else hardware_backend),
-        }
+        profile = build_execution_profile(
+            engine, tests, cpu_only=args.cpu_only, hardware_profile=hardware_profile,
+        )
+        hardware_backend = profile["hardware_backend"]
         runtime_version = (
             engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
         )
