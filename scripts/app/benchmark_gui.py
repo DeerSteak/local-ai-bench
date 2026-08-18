@@ -871,7 +871,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def update_progress(event):
         nonlocal progress_metrics
-        progress_screen.update(event)
+        elapsed = (None if progress_started_at is None
+                   else time.monotonic() - progress_started_at)
+        progress_screen.update({**event, "elapsed_seconds": elapsed})
         progress_metrics = progress_screen.metrics
 
     def append_log(text):
@@ -936,6 +938,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             completed = len(progress_metrics.get("finished_models", ()))
             remaining = estimate_remaining_seconds(
                 elapsed, completed, progress_metrics.get("total_models", 0),
+                progress_metrics.get("last_completion_elapsed"),
             )
             estimate = "calibrating" if remaining is None else f"about {remaining // 60}m {remaining % 60}s"
             usage = process_resource_usage(process.pid)

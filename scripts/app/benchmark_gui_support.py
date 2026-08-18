@@ -111,8 +111,11 @@ def update_progress_metrics(metrics: dict, event: dict) -> dict:
             "complete", "skipped", "failed", "interrupted"}:
         identity = (event["stage"], progress_model_identity(event))
         finished = set(updated["finished_models"])
+        newly_finished = identity not in finished
         finished.add(identity)
         updated["finished_models"] = finished
+        if newly_finished and isinstance(event.get("elapsed_seconds"), (int, float)):
+            updated["last_completion_elapsed"] = event["elapsed_seconds"]
         if event.get("usable"):
             usable = set(updated["usable_models"])
             usable.add(identity)
@@ -130,10 +133,15 @@ def progress_summary_rows(metrics: dict) -> dict[str, str]:
     }
 
 
-def estimate_remaining_seconds(elapsed: float, completed: int, total: int) -> int | None:
+def estimate_remaining_seconds(elapsed: float, completed: int, total: int,
+                               last_completion_elapsed: float | None = None) -> int | None:
     if elapsed < 0 or completed <= 0 or total <= completed:
         return 0 if total > 0 and completed >= total else None
-    return round((elapsed / completed) * (total - completed))
+    calibrated_at = elapsed if last_completion_elapsed is None else last_completion_elapsed
+    if calibrated_at < 0 or calibrated_at > elapsed:
+        return None
+    projected_remaining = (calibrated_at / completed) * (total - completed)
+    return max(0, round(projected_remaining - (elapsed - calibrated_at)))
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],

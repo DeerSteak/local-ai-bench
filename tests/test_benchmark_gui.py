@@ -628,7 +628,7 @@ def test_history_row_height_tracks_scaled_font_height(line_height, expected):
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     metrics = {
         "total_models": 2, "finished_models": set(), "usable_models": set(),
-        "retries": 0, "valid": 0, "invalid": 0,
+        "retries": 0, "valid": 0, "invalid": 0, "last_completion_elapsed": None,
     }
     metrics = update_progress_metrics(
         metrics, {"kind": "measurement", "stage": "llm", "status": "retrying", "model": "A"},
@@ -638,6 +638,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     terminal = {
         "kind": "model", "stage": "llm", "status": "complete", "model": "A", "usable": True,
+        "elapsed_seconds": 30,
     }
     metrics = update_progress_metrics(metrics, terminal)
     metrics = update_progress_metrics(metrics, terminal)
@@ -646,6 +647,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 2)
     assert metrics["usable_models"] == {("llm", "A")}
+    assert metrics["last_completion_elapsed"] == 30
     assert progress_summary_rows(metrics) == {
         "Finished models": "2 / 2",
         "Usable coverage": "1 / 2",
@@ -654,11 +656,13 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     }
 
 
-@pytest.mark.parametrize(("elapsed", "completed", "total", "expected"), [
-    (60, 1, 4, 180), (60, 4, 4, 0), (60, 0, 4, None), (-1, 1, 4, None),
+@pytest.mark.parametrize(("elapsed", "completed", "total", "calibrated", "expected"), [
+    (60, 1, 4, None, 180), (75, 1, 4, 60, 165), (90, 2, 4, 80, 70),
+    (60, 4, 4, 60, 0), (60, 0, 4, None, None), (-1, 1, 4, None, None),
+    (30, 1, 4, 40, None),
 ])
-def test_remaining_time_estimate(elapsed, completed, total, expected):
-    assert estimate_remaining_seconds(elapsed, completed, total) == expected
+def test_remaining_time_estimate(elapsed, completed, total, calibrated, expected):
+    assert estimate_remaining_seconds(elapsed, completed, total, calibrated) == expected
 
 
 def test_process_resource_usage_includes_child_processes():

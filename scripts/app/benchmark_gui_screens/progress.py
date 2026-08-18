@@ -54,7 +54,7 @@ class ProgressScreen:
         )
         self.metrics = {
             "total_models": total, "finished_models": set(), "usable_models": set(),
-            "retries": 0, "valid": 0, "invalid": 0,
+            "retries": 0, "valid": 0, "invalid": 0, "last_completion_elapsed": None,
         }
         self.started_at = time.monotonic()
         self._build_summary(shell)
