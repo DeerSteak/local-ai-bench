@@ -2,7 +2,8 @@ import pytest
 
 from scripts.release.qualification import (
     QUALIFICATION_LIFECYCLE, derive_support_level, platform_name,
-    qualification_is_stale, validate_qualification_entry,
+    qualification_entry, qualification_is_stale, qualification_rows,
+    validate_qualification_entry,
     validate_qualification_matrix,
 )
 
@@ -63,3 +64,25 @@ def test_wsl2_is_a_distinct_platform_and_requires_linux():
     assert platform_name("Linux", wsl=True) == "wsl2"
     with pytest.raises(ValueError, match="requires a Linux"):
         platform_name("Windows", wsl=True)
+
+
+def test_matrix_rows_default_missing_targets_to_unverified():
+    targets = [
+        {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp",
+         "backend": "cuda"},
+        {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm",
+         "backend": "cuda"},
+    ]
+    rows = qualification_rows("6.0-pre8", targets=targets, entries=[entry()])
+    assert [row["support_level"] for row in rows] == ["supported", "unverified"]
+    assert rows[1]["platform"] == "wsl2" and rows[1]["qualified_at"] is None
+
+
+def test_runtime_lookup_can_require_the_exact_qualified_version():
+    evidence = entry()
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "cuda", "b6000", [evidence],
+    ) == evidence
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "cuda", "b7000", [evidence],
+    ) is None

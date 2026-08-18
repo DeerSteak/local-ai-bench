@@ -12,6 +12,19 @@ LIFECYCLE_STATES = {"passed", "failed", "not_tested"}
 SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
 QUALIFICATION_MATRIX: tuple[dict, ...] = ()
+QUALIFICATION_TARGETS = (
+    {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm"},
+    {"platform": "linux", "architecture": "aarch64", "runtime": "llamacpp", "backend": "cuda"},
+    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
+    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan"},
+    {"platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm"},
+    {"platform": "linux", "architecture": "aarch64", "runtime": "vllm", "backend": "cuda"},
+    {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda"},
+)
 
 ENTRY_KEYS = {
     "id", "platform", "architecture", "runtime", "runtime_version", "backend",
@@ -116,3 +129,32 @@ def platform_name(system: str, *, wsl: bool = False) -> str:
         return {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[system]
     except KeyError:
         raise ValueError(f"unsupported qualification operating system: {system}") from None
+
+
+def qualification_entry(platform: str, architecture: str, runtime: str, backend: str,
+                        runtime_version: str | None = None,
+                        entries=QUALIFICATION_MATRIX) -> dict | None:
+    matches = [entry for entry in entries if (
+        entry["platform"], entry["architecture"], entry["runtime"], entry["backend"]
+    ) == (platform, architecture, runtime, backend)]
+    if runtime_version is not None:
+        matches = [entry for entry in matches if entry["runtime_version"] == runtime_version]
+    return max(matches, key=lambda item: item["qualified_at"], default=None)
+
+
+def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
+                       entries=QUALIFICATION_MATRIX) -> list[dict]:
+    validate_qualification_matrix(entries)
+    rows = []
+    for target in targets:
+        evidence = qualification_entry(**target, entries=entries)
+        rows.append({
+            **target,
+            "support_level": derive_support_level(evidence, current_version),
+            "runtime_version": evidence.get("runtime_version") if evidence else None,
+            "qualified_at": evidence.get("qualified_at") if evidence else None,
+            "suite_version": evidence.get("suite_version") if evidence else None,
+            "stale": qualification_is_stale(evidence, current_version) if evidence else False,
+            "known_failures": evidence.get("known_failures", []) if evidence else [],
+        })
+    return rows
