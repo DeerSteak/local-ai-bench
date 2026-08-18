@@ -353,7 +353,7 @@ def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
 
 def test_history_process_fork_routes_unsupported_plan_to_frontend(monkeypatch, tmp_path):
     controller, plan, launches, fallbacks = build_history_process_controller(
-        tmp_path, stages=["img"],
+        tmp_path, stages=["llamabenchconc"],
     )
     source = tmp_path / "source.json"
     monkeypatch.setattr(

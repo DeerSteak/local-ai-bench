@@ -4,11 +4,16 @@ import json
 import sys
 from pathlib import Path
 
+from scripts.runtime import config
 from scripts.runtime.supervised_stage import run_supervised_stage
 from scripts.runtime.telemetry import discover_power_source, discover_temperature_source
 from scripts.results.event_store import EventStore
 from scripts.results.accuracy_event_stage import export_accuracy
 from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import (
+    LocalExecutionContext, images_dir_for_result, load_local_execution_context,
+    local_execution_path, write_local_execution_context,
+)
 from scripts.results.regrade import answer_sidecar_path
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.results.recovery_inspector import (
@@ -70,7 +75,7 @@ def _rebuild_accuracy_sidecar(result_path, journal_path, plan, stage):
     atomic_write_json(answer_sidecar_path(result_path, stage), answers)
 
 
-def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
+def resume_journal_run(result_path, *, identity_builder=None,
                        stage_runner=_run_stage):
     """Resume a stopped journal-only result after a read-only eligibility decision."""
     result_path = Path(result_path).resolve()
@@ -80,11 +85,12 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
         raise ValueError(
             "saved plan contains stages without durable recovery: " + ", ".join(unsupported)
         )
-    identity = identity_builder(plan)
+    journal_path = event_store_path(result_path)
+    identity = (current_resume_identity(plan, event_path=journal_path)
+                if identity_builder is None else identity_builder(plan))
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
         raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
-    journal_path = event_store_path(result_path)
     journal = EventStore(journal_path)
     try:
         journal.resume_job(plan.job_id)
@@ -136,7 +142,7 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
     return data
 
 
-def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resume_identity,
+def retry_selected_cases(result_path, case_ids, *, identity_builder=None,
                          stage_runner=_run_stage):
     """Retry an explicit eligible subset from one stopped journal stage."""
     result_path = Path(result_path).resolve()
@@ -144,7 +150,9 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resu
     if not requested:
         raise ValueError("select at least one retry-eligible case")
     plan = load_run_plan(result_path)
-    identity = identity_builder(plan)
+    journal_path = event_store_path(result_path)
+    identity = (current_resume_identity(plan, event_path=journal_path)
+                if identity_builder is None else identity_builder(plan))
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
         raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
@@ -195,7 +203,7 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=current_resu
     return data
 
 
-def fork_journal_run(source_path, output_path, *, identity_builder=current_resume_identity,
+def fork_journal_run(source_path, output_path, *, identity_builder=None,
                      stage_runner=_run_stage):
     """Execute a saved journal-only plan under a new durable job and result identity."""
     source_path = Path(source_path).resolve()
@@ -207,8 +215,8 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
             "saved plan contains stages without durable recovery: " + ", ".join(unsupported)
         )
     journal_path = event_store_path(output_path)
-    if output_path.exists() or journal_path.exists():
-        raise ValueError("fork output or event journal already exists")
+    if output_path.exists() or journal_path.exists() or local_execution_path(journal_path).exists():
+        raise ValueError("fork output, event journal, or local context already exists")
     source = json.loads(source_path.read_text(encoding="utf-8"))
     source_run = source.get("run", {})
     plan = RunPlan.create(
@@ -217,7 +225,18 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
         stage_order=source_plan.stage_order, models=source_plan.models,
         effective_config=source_plan.effective_config,
     )
-    identity = identity_builder(plan)
+    source_journal = event_store_path(source_path)
+    identity = (current_resume_identity(source_plan, event_path=source_journal)
+                if identity_builder is None else identity_builder(plan))
+    if "img" in plan.stage_order:
+        source_context = load_local_execution_context(source_journal, source_plan.job_id)
+        write_local_execution_context(
+            journal_path,
+            LocalExecutionContext(
+                plan.job_id, source_context.comfyui_dir,
+                images_dir_for_result(output_path, config.RESULTS_DIR),
+            ),
+        )
     data = {"run": build_run_manifest(plan=plan, repo_root=Path(__file__).parents[2])}
     data.update({key: source[key] for key in FORK_METADATA_KEYS if key in source})
     data["run"]["forked_from"] = {

@@ -7,8 +7,6 @@ import zipfile
 from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json_bytes
-from scripts.results.llm_event_stage import event_store_path
-from scripts.results.local_execution_context import local_execution_path
 from scripts.results.result_store import atomic_write_json, validate_json_data
 from scripts.results.run_plan import RunPlan
 from scripts.results.outbound_metadata import prepare_outbound_result
@@ -51,7 +49,7 @@ def export_result_bundle(result_path: Path, bundle_path: Path,
     artifact_records = []
     for artifact in artifacts or []:
         artifact = Path(artifact).resolve()
-        if artifact == local_execution_path(event_store_path(result_path)):
+        if artifact.name.endswith(".events.sqlite3.local.json"):
             raise ValueError("private local execution context cannot be exported")
         data = artifact.read_bytes()
         digest = _digest(data)

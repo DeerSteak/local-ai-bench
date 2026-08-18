@@ -99,7 +99,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: prove the event path on a real workload while retaining 4.1 result compatibility and per-model durability.
-- Decision: single-shot, conversation, accuracy, and embedding cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints, accuracy answer sidecars, and stage return values rebuild from stage-scoped events. Conversation commits each sampled checkpoint before further growth, each accuracy question commits its graded value and diagnostics before the next question, and each embedding model commits its complete input batch without persisting vectors. Ephemeral in-memory values may guide an active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
+- Decision: single-shot, conversation, accuracy, embedding, and image cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints, accuracy answer sidecars, and stage return values rebuild from stage-scoped events. Conversation commits each sampled checkpoint before further growth, each accuracy question commits its graded value and diagnostics before the next question, each embedding model commits its complete input batch without persisting vectors, and each image resolution commits after its repetitions and representative artifact save attempt. Image content uses the content-addressed store while private execution paths remain in an owner-only job-bound local sidecar. Ephemeral in-memory values may guide an active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
 - Compatibility: schema-3 golden LLM fields are asserted value-for-value; conversation retains its depth and timing fields, partial checkpoints, selection rules, retry, and cache behavior; current additive validity diagnostics remain allowed.
 - Deletion gate: after all workloads migrate, remove runtime JSON ownership and export the whole result from journal projections.
 
@@ -107,7 +107,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
-- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot, conversation, embeddings, native llama-bench, both HTTP concurrency stages, and all five accuracy banks are supported.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot, conversation, embeddings, images, native llama-bench, both HTTP concurrency stages, and all five accuracy banks are supported.
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
 - Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 

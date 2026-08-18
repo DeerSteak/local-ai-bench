@@ -237,7 +237,9 @@ class ImageEventStage:
             and case["state"] not in {"complete", "skipped"}
             for case in projection["cases"].values()
         )
-        state = "failed" if unresolved else "complete"
+        stage = projection["stages"].get(self.stage_id, {})
+        state = "failed" if stage.get("recovery_scope") == "selected" and unresolved \
+            else "complete"
         self.store.append(self.plan.job_id, [
             JournalEvent("stage", self.stage_id, state, {}, parent_id=self.plan.job_id),
         ])

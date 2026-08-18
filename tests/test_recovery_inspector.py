@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 from scripts.results import recovery_inspector
 from scripts.results.event_store import EventStore, JournalEvent
@@ -99,6 +100,59 @@ def test_current_embedding_identity_includes_model_family_and_corpus(monkeypatch
     assert identity == {"identity": "embedding"}
     assert seen["model_families"] == ["embeddings"]
     assert seen["extra_artifacts"] == {"corpus:embeddings": corpus}
+
+
+def test_current_image_identity_uses_private_runtime_and_model_assets(monkeypatch, tmp_path):
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    event_path = tmp_path / "events.sqlite3"
+    asset = tmp_path / "model.safetensors"
+    runtime = tmp_path / "main.py"
+    seen = {}
+
+    def build(*args, **kwargs):
+        seen.update(kwargs)
+        return {"identity": "image"}
+
+    monkeypatch.setattr(recovery_inspector, "build_engine_resume_identity", build)
+    monkeypatch.setattr(
+        recovery_inspector, "load_local_execution_context",
+        lambda _path, _job: SimpleNamespace(comfyui_dir=tmp_path),
+    )
+    monkeypatch.setattr(recovery_inspector, "image_resume_artifacts",
+                        lambda _models: {"image:sdxl:checkpoint": asset})
+    monkeypatch.setattr(recovery_inspector, "image_resume_runtimes",
+                        lambda _path: {"comfyui-main": runtime})
+    identity = current_resume_identity(
+        plan, profile={"os": "test"}, engine=object(), event_path=event_path,
+    )
+    assert identity == {"identity": "image"}
+    assert seen["include_engine_runtime"] is False
+    assert seen["extra_artifacts"] == {"image:sdxl:checkpoint": asset}
+    assert seen["extra_runtimes"] == {"comfyui-main": runtime}
+
+
+def test_retryable_image_resolution_has_resolution_label():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    assert retryable_case_records(plan, {"cases": {"case_image": {
+        "state": "timed_out", "parent_id": plan.stage_id("img"),
+        "case_kind": "image_resolution", "model_short": "sdxl",
+        "width": 1024, "height": 1024,
+    }}}) == [{
+        "case_id": "case_image", "stage": "img", "state": "timed_out",
+        "model": "sdxl", "label": "sdxl · 1024x1024",
+    }]
 
 
 def test_recovery_inspector_rejects_result_without_journal(tmp_path):

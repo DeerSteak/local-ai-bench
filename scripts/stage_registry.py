@@ -45,7 +45,8 @@ STAGE_SPECS = (
               journal_owned=True, selected_retry=True),
     StageSpec("conc_chat", "Chat concurrency", "concurrency_chat", "concurrency", "llm", "concurrency",
               journal_owned=True, selected_retry=True),
-    StageSpec("img", "Image generation", "images", "images", "image", "image", default_enabled=True),
+    StageSpec("img", "Image generation", "images", "images", "image", "image",
+              default_enabled=True, journal_owned=True, selected_retry=True),
 )
 STAGE_BY_KEY = {spec.key: spec for spec in STAGE_SPECS}
 STAGE_ORDER = tuple(spec.key for spec in STAGE_SPECS)

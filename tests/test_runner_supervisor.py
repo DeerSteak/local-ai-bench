@@ -35,7 +35,7 @@ def test_runner_command_is_fixed_and_contains_no_caller_command_surface(tmp_path
 
 @pytest.mark.parametrize("value", [
     RunnerSpec("bad", "llm", Path("/tmp/events")),
-    RunnerSpec("job_x", "img", Path("/tmp/events")),
+    RunnerSpec("job_x", "llamabenchconc", Path("/tmp/events")),
     RunnerSpec("job_x", "llm", Path("relative")),
 ])
 def test_runner_spec_rejects_unowned_or_unsupported_execution(value):

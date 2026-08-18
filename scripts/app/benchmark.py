@@ -27,8 +27,13 @@ from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import (
+    LocalExecutionContext, images_dir_for_result, write_local_execution_context,
+)
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
-from scripts.workloads.image_benchmark import ImageBenchmark
+from scripts.workloads.image_benchmark import (
+    ImageBenchmark, image_resume_artifacts, image_resume_runtimes,
+)
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
@@ -1098,6 +1103,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if args.fork_plan else None
         )
         journal_stages = set(tests) & JOURNAL_STAGES
+        image_dir = None
+        if "img" in journal_stages:
+            image_dir = images_dir_for_result(Path(out_path), config.RESULTS_DIR)
+            write_local_execution_context(
+                event_store_path(Path(out_path)),
+                LocalExecutionContext(plan.job_id, comfyui_dir.resolve(), image_dir),
+            )
         resume_identity = None
         extra_resume_runtimes = {}
         extra_resume_artifacts = {
@@ -1106,6 +1118,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         }
         if "emb" in journal_stages:
             extra_resume_artifacts["corpus:embeddings"] = EmbeddingBenchmark.EMBED_DOCUMENT_PATH
+        if "img" in journal_stages:
+            extra_resume_artifacts.update(image_resume_artifacts(image_models))
+            extra_resume_runtimes.update(image_resume_runtimes(comfyui_dir))
         model_families = []
         if journal_stages:
             if "llamabench" in tests:
@@ -1128,7 +1143,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             resume_identity = build_engine_resume_identity(
                 plan, engine, model_families=model_families,
-                include_engine_runtime=bool(journal_stages - {"llamabench"}),
+                include_engine_runtime=bool(journal_stages & {
+                    "llm", "conv", "sustained", "emb", "conc_tool", "conc_chat",
+                    *ACCURACY_TESTS,
+                }),
                 extra_runtimes=extra_resume_runtimes,
                 extra_artifacts=extra_resume_artifacts,
                 digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
@@ -1266,7 +1284,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if journal_stages:
                 resume_identity = build_engine_resume_identity(
                     plan, engine, model_families=model_families,
-                    include_engine_runtime=bool(journal_stages - {"llamabench"}),
+                    include_engine_runtime=bool(journal_stages & {
+                        "llm", "conv", "sustained", "emb", "conc_tool", "conc_chat",
+                        *ACCURACY_TESTS,
+                    }),
                     extra_runtimes=extra_resume_runtimes,
                     extra_artifacts=extra_resume_artifacts,
                     digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
@@ -1389,24 +1410,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             lifecycle.stop_engine()
 
         def run_images(_context):
-            if not Shared.ensure_comfyui(_context.paths.comfyui_dir):
-                Shared.warn("Image benchmarks will be skipped")
-                return {}
-            out_stem = _context.paths.output_path.stem
-            images_name = ("images_" + out_stem[len("results_"):]
-                           if out_stem.startswith("results_") else f"images_{out_stem}")
-            telemetry = start_case_telemetry()
-            try:
-                return ImageBenchmark().run(
-                    image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
-                    seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
-                    comfyui_dir=_context.paths.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
-                    save_fn=make_save("images", "img"),
-                    images_dir=config.RESULTS_DIR / images_name, telemetry=telemetry,
-                )
-            finally:
-                if telemetry:
-                    telemetry.stop()
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "img",
+                make_save("images", "img"), resume_identity=resume_identity,
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
+            )
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,

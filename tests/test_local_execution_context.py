@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from scripts.results.local_execution_context import (
-    LocalExecutionContext, load_local_execution_context, local_execution_path,
+    LocalExecutionContext, images_dir_for_result, load_local_execution_context,
+    local_execution_path,
     write_local_execution_context,
 )
 
@@ -50,3 +51,12 @@ def test_private_context_missing_or_malformed_is_a_stable_validation_error(tmp_p
     local_execution_path(event_path).write_text("not json", encoding="utf-8")
     with pytest.raises(ValueError, match="unreadable"):
         load_local_execution_context(event_path, "job_example")
+
+
+def test_image_directory_uses_result_stem_without_exporting_output_parent(tmp_path):
+    assert images_dir_for_result(
+        tmp_path / "elsewhere" / "results_System_20260101.json", tmp_path / "results",
+    ) == (tmp_path / "results" / "images_System_20260101").resolve()
+    assert images_dir_for_result(
+        tmp_path / "custom.json", tmp_path / "results",
+    ) == (tmp_path / "results" / "images_custom").resolve()

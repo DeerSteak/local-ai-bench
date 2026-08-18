@@ -537,6 +537,22 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
     assert recovery_progress_entries(plan, {"other"}) == []
 
 
+def test_recovery_progress_entries_include_embedding_and_image_models():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp",
+        tests=["emb", "img"], stage_order=["emb", "img"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "nomic-embed-text", "short": "nomic-embed-text"}],
+            "images": [{"short": "sdxl"}],
+        }, effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+    assert [(entry.kind, entry.value, entry.label)
+            for entry in recovery_progress_entries(plan)] == [
+        ("embedding", "nomic-embed-text", "Nomic Embed Text"),
+        ("image", "sdxl", "SDXL"),
+    ]
+
+
 def test_discovery_report_summarizes_readiness_without_mutation():
     inventory = {
         "llm": [{"tag": "one"}], "custom": [{"tag": "custom"}],

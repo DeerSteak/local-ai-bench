@@ -12,6 +12,7 @@ from scripts.results.accuracy_event_stage import AccuracyEventStage, export_accu
 from scripts.results.embedding_event_stage import (
     EmbeddingEventStage, embedding_corpus_hash, export_embeddings,
 )
+from scripts.results.image_event_stage import ImageEventStage, export_images
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from scripts.results.sustained_event_stage import SustainedEventStage, export_sustained_section
 from scripts.results.run_plan import RunPlan
@@ -48,7 +49,13 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
                          temperature_availability: TemperatureAvailability | None = None) -> dict:
     event_path = Path(event_path).resolve()
     project_answers: Callable[[], dict] | None = None
-    if stage_name == "emb":
+    if stage_name == "img":
+        journal = ImageEventStage(
+            event_path, plan, lambda _: None, resume_identity=resume_identity,
+            resume=resume, selected_case_ids=selected_case_ids,
+        )
+        project = lambda: export_images(event_path, plan.job_id)
+    elif stage_name == "emb":
         journal = EmbeddingEventStage(
             event_path, plan, embedding_corpus_hash(resume_identity or {}),
             lambda _: None, resume_identity=resume_identity, resume=resume,

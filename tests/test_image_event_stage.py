@@ -88,6 +88,10 @@ def test_selected_retry_leaves_unselected_failed_resolution_pending(tmp_path):
     )
     assert resumed.next_attempt(MODEL, 512, 512) == 2
     assert resumed.next_attempt(MODEL, 768, 768) is None
+    resumed.record_resolution(MODEL, 512, 512, [1.0], 3, attempt_number=2)
+    resumed.finish()
+    projection = resumed.store.rebuild(plan.job_id)
+    assert projection["stages"][plan.stage_id("img")]["state"] == "failed"
     resumed.close()
 
 

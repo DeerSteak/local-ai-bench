@@ -198,6 +198,8 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 
 Generated sample images are saved under `results/images_<hostname>_<timestamp>/` — see [Project Structure](project-structure.md). If `--out` puts the main JSON elsewhere, the image folder remains under `results/` and is named from that output stem.
 
+Each model/resolution pair is a journal-owned recovery case. All requested repetitions and the representative PNG save attempt complete before the case commits; a compatible resume skips committed resolutions and reruns only the interrupted, failed, or timed-out resolution. Generated PNGs keep their visible legacy names while a content-addressed copy and digest make the saved artifact durable; artifact metadata remains outside the compatible results JSON. Resume identity covers every existing selected checkpoint/workflow asset plus the selected ComfyUI entrypoint and interpreter bytes.
+
 ## Embeddings
 
 Two models — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`scripts/workloads/data/sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting.

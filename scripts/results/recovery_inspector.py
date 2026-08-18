@@ -9,6 +9,7 @@ from scripts.runtime.engines import get_engine
 from scripts.results.event_store import EventStore
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import load_local_execution_context
 from scripts.results.resume_policy import assess_resume, build_engine_resume_identity
 from scripts.results.run_plan import load_run_plan
 from scripts.runtime.shared import Shared
@@ -16,6 +17,8 @@ from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES
 from scripts.stage_registry import ACCURACY_TESTS
 from scripts.workloads.accuracy_registry import accuracy_spec
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
+from scripts.workloads.image_benchmark import image_resume_artifacts, image_resume_runtimes
+from scripts.workloads.models import IMAGE_MODELS
 
 
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
@@ -32,6 +35,7 @@ def retryable_case_records(plan, projection):
                 or case.get("parent_id") not in stages
                 or case.get("case_kind") not in {
                     "context", "sustained", "accuracy_question", "embedding_batch",
+                    "image_resolution",
                 }):
             continue
         details = []
@@ -41,6 +45,8 @@ def retryable_case_records(plan, projection):
             details.append(str(case["question_id"]))
         elif case.get("case_kind") == "embedding_batch":
             details.append("input batch")
+        elif case.get("case_kind") == "image_resolution":
+            details.append(f"{case['width']}x{case['height']}")
         elif case.get("case_kind"):
             details.append(str(case["case_kind"]).replace("_", " "))
         records.append({
@@ -53,7 +59,8 @@ def retryable_case_records(plan, projection):
 
 
 def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find_llamacpp_tool,
-                            digest_cache_path=config.RESUME_DIGEST_CACHE_PATH):
+                            digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
+                            event_path: Path | None = None):
     """Discover the current local identities needed by the plan's journal stages."""
     engine = engine or get_engine(plan.engine_name)
     stages = set(plan.stage_order) & JOURNAL_STAGES
@@ -71,6 +78,19 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     }
     if "emb" in stages:
         extra_artifacts["corpus:embeddings"] = EmbeddingBenchmark.EMBED_DOCUMENT_PATH
+    if "img" in stages:
+        if event_path is None:
+            raise ValueError("image recovery requires its private local execution context")
+        context = load_local_execution_context(event_path, plan.job_id)
+        catalog = {model["short"]: model for model in IMAGE_MODELS}
+        models = []
+        for identity in plan.models["images"]:
+            model = catalog.get(identity["short"])
+            if model is None:
+                raise ValueError(f"image model is absent from the catalog: {identity['short']}")
+            models.append(model)
+        extra_artifacts.update(image_resume_artifacts(models))
+        extra.update(image_resume_runtimes(context.comfyui_dir))
     if "llamabench" in stages:
         binary = tool_finder("llama-bench")
         if not binary:
@@ -78,14 +98,17 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         extra["llama-bench"] = Path(binary).resolve()
     return build_engine_resume_identity(
         plan, engine, model_families=families,
-        include_engine_runtime=bool(stages - {"llamabench"}), extra_runtimes=extra,
+        include_engine_runtime=bool(stages & {
+            "llm", "conv", "sustained", "emb", "conc_tool", "conc_chat",
+            *ACCURACY_TESTS,
+        }), extra_runtimes=extra,
         extra_artifacts=extra_artifacts,
         digest_cache_path=digest_cache_path, environment=profile or Shared.build_profile(),
         use_digest_cache=False,
     )
 
 
-def inspect_recovery(result_path, identity_builder=current_resume_identity):
+def inspect_recovery(result_path, identity_builder=None):
     """Return a redacted recovery decision without changing the result or journal."""
     result_path = Path(result_path).resolve()
     result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -97,8 +120,10 @@ def inspect_recovery(result_path, identity_builder=current_resume_identity):
     try:
         store.verify(plan.job_id)
         projection = store.rebuild(plan.job_id)
+        current_identity = (current_resume_identity(plan, event_path=journal_path)
+                            if identity_builder is None else identity_builder(plan))
         decision = assess_resume(
-            store.resume_identity(plan.job_id), identity_builder(plan), projection,
+            store.resume_identity(plan.job_id), current_identity, projection,
             list(projection["cases"]),
         )
     finally:

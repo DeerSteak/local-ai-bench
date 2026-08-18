@@ -5,6 +5,11 @@ import pytest
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.llm_event_stage import LLMEventStage
+from scripts.results.image_event_stage import ImageEventStage
+from scripts.results.local_execution_context import (
+    LocalExecutionContext, images_dir_for_result, load_local_execution_context,
+    write_local_execution_context,
+)
 from scripts.results.recovery_executor import fork_journal_run, resume_journal_run, retry_selected_cases
 from scripts.results.result_store import build_run_manifest, finish_run, finish_stage, start_stage
 from scripts.results.run_plan import RunPlan
@@ -80,6 +85,40 @@ def test_recovery_executor_rejects_legacy_stage_before_mutation(tmp_path):
     with pytest.raises(ValueError, match="without durable recovery: llamabenchconc"):
         resume_journal_run(result, identity_builder=lambda _plan: {})
     assert result.read_bytes() == before
+
+
+def test_image_fork_rebinds_private_paths_to_new_job_and_output(tmp_path, monkeypatch):
+    result, source_plan = stopped_result(tmp_path, ("img",))
+    source_journal = result.with_suffix(".events.sqlite3")
+    identity = {"plan_id": source_plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    owner = ImageEventStage(
+        source_journal, source_plan, lambda _: None, resume_identity=identity,
+    )
+    owner.close()
+    comfyui = (tmp_path / "Custom ComfyUI").resolve()
+    write_local_execution_context(
+        source_journal,
+        LocalExecutionContext(source_plan.job_id, comfyui, (tmp_path / "old images").resolve()),
+    )
+    output = tmp_path / "results_forked.json"
+    monkeypatch.setattr("scripts.results.recovery_executor.config.RESULTS_DIR", tmp_path)
+
+    def runner(plan, journal, stage, save, saved_identity, resume):
+        context = load_local_execution_context(journal, plan.job_id)
+        assert context.comfyui_dir == comfyui
+        assert context.images_dir == images_dir_for_result(output, tmp_path)
+        child = ImageEventStage(
+            journal, plan, save, resume_identity=saved_identity,
+        )
+        child.finish()
+        child.close()
+        return {}
+
+    forked = fork_journal_run(
+        result, output, identity_builder=lambda _plan: identity, stage_runner=runner,
+    )
+    assert forked["run"]["status"] == "complete"
 
 
 def test_recovery_executor_requires_fork_before_mutation_on_identity_drift(tmp_path):

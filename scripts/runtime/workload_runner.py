@@ -12,17 +12,20 @@ from typing import Any, Callable
 from scripts.runtime import config
 from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
+from scripts.workloads.image_benchmark import ImageBenchmark
 from scripts.runtime.engines import get_engine
 from scripts.results.event_store import EventStore
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.results.accuracy_event_stage import AccuracyEventStage
 from scripts.results.embedding_event_stage import EmbeddingEventStage, embedding_corpus_hash
+from scripts.results.image_event_stage import ImageEventStage
+from scripts.results.local_execution_context import load_local_execution_context
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.sustained_benchmark import SustainedBenchmark
-from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
@@ -508,6 +511,53 @@ def execute_embedding_job(path, job_id, *, engine_factory=get_engine,
         Shared.shutdown_managed()
 
 
+def execute_image_job(path, job_id, *, benchmark_factory: Callable[[], Any] = ImageBenchmark,
+                      ensure_comfyui=Shared.ensure_comfyui) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "img" not in plan.tests:
+        raise ValueError("runner job does not include the image stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.N_RUNS = settings["runs"]
+    catalog = {model["short"]: model for model in IMAGE_MODELS}
+    models = []
+    for identity in plan.models["images"]:
+        model = catalog.get(identity["short"])
+        if model is None:
+            raise ValueError(f"image model is absent from the catalog: {identity['short']}")
+        models.append(model)
+    context = load_local_execution_context(path, job_id)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "img", "committed": True})
+
+    journal = None
+    telemetry = None
+    try:
+        if not ensure_comfyui(context.comfyui_dir):
+            raise RuntimeError("runner could not prepare ComfyUI")
+        telemetry = create_case_telemetry(settings)
+        journal = ImageEventStage(path, plan, notify, initialize=False)
+        benchmark_factory().run(
+            image_models=models, resolutions=config.IMAGE_RESOLUTIONS,
+            seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
+            comfyui_dir=context.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
+            images_dir=context.images_dir, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
 def heartbeat(stop_event: threading.Event) -> None:
     while not stop_event.wait(5):
         emit("heartbeat")
@@ -541,6 +591,8 @@ def main(argv=None) -> int:
             execute_accuracy_job(args.event_store, args.job_id, args.stage)
         elif args.stage == "emb":
             execute_embedding_job(args.event_store, args.job_id)
+        elif args.stage == "img":
+            execute_image_job(args.event_store, args.job_id)
         else:
             execute_concurrency_job(args.event_store, args.job_id, args.stage)
     except BaseException as exc:

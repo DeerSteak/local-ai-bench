@@ -24,6 +24,8 @@ The journal-owned accuracy projection retains each workload's existing aggregate
 
 The journal-owned embedding projection retains the existing per-model throughput statistics, completed/valid/invalid run counts, timing samples, and telemetry while deliberately excluding embedding vectors as before. One complete document batch is durable per model, and the full corpus hash is part of resume identity.
 
+The journal-owned image projection retains each model's checkpoint, steps, resolution-keyed mean/stdev/run list, timeout marker, and model telemetry. Content-addressed PNG metadata stays journal-local and does not alter the compatible result section; resumed telemetry segments merge without mixing prior timing attempts into the latest resolution aggregate.
+
 ## Required result envelope
 
 A current result contains `version`, `engine`, `profile`, `accuracy_settings`, `bank_versions`, `sample_ids`, `run`, and every workload section, even when a section is empty. The workload sections are `llm`, `llm_conversation`, `embeddings`, `images`, `mcq`, `math`, `reasoning`, `code`, `tool`, `concurrency_tool`, `concurrency_chat`, `llamabench`, and `llamabenchconc`.
