@@ -7,6 +7,8 @@ from pathlib import Path
 from scripts.app.benchmark_frontend import frontend_option_gaps
 from scripts.results.catalogs import HARDWARE_CATALOG, model_catalog
 from scripts.release.sbom import generate_sbom
+from scripts.release.qualification_docs import qualification_doc_gaps
+from scripts.runtime import config
 
 
 REQUIRED_EXTERNAL_GATES = (
@@ -31,6 +33,8 @@ def evaluate_release_readiness(repo_root, evidence=None):
             record["id"] for record in HARDWARE_CATALOG
             if record["qualification"] != "qualified"
         ]),
+        _check("published_qualification_matrix", False,
+               qualification_doc_gaps(repo_root, config.VERSION)),
         _check("dependency_license_review", False, [
             f"{record['ecosystem']}:{record['name']}" for record in sbom["packages"]
             if record["license"] == "NOASSERTION"

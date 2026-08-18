@@ -33,12 +33,15 @@ def test_readiness_reports_each_unresolved_gate(monkeypatch, tmp_path):
         {"ecosystem": "pypi", "name": "unknown", "license": "NOASSERTION"},
         {"ecosystem": "npm", "name": "known", "license": "MIT"},
     ]})
+    monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
+                        lambda _root, _version: ["docs/engines.md"])
     result = release_readiness.evaluate_release_readiness(tmp_path)
     checks = {check["name"]: check for check in result["checks"]}
     assert result["ready"] is False
     assert checks["frontend_option_coverage"]["items"] == ["--future"]
     assert checks["model_license_review"]["items"] == ["model:one"]
     assert checks["hardware_qualification"]["items"] == ["hardware:one"]
+    assert checks["published_qualification_matrix"]["items"] == ["docs/engines.md"]
     assert checks["dependency_license_review"]["items"] == ["pypi:unknown"]
     assert checks["signed_installers"]["items"] == ["reviewed external evidence required"]
     assert checks["telemetry_source_qualification"]["items"] == [
@@ -57,6 +60,8 @@ def test_readiness_passes_when_all_local_inputs_are_cleared(monkeypatch, tmp_pat
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": [
         {"ecosystem": "npm", "name": "known", "license": "MIT"},
     ]})
+    monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
+                        lambda _root, _version: [])
     result = release_readiness.evaluate_release_readiness(tmp_path, complete_evidence())
     assert result["ready"] is True
     assert all(check["passed"] for check in result["checks"])
@@ -67,6 +72,8 @@ def test_readiness_never_passes_with_only_local_checks_cleared(monkeypatch, tmp_
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [])
     monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [])
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": []})
+    monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
+                        lambda _root, _version: [])
     result = release_readiness.evaluate_release_readiness(tmp_path)
     assert result["ready"] is False
     assert all(not check["passed"] for check in result["checks"] if check["name"]

@@ -2,6 +2,26 @@
 
 # Engines
 
+## Platform qualification
+
+Support is derived from the recorded lifecycle evidence below. Missing evidence is unverified; it is never treated as a support claim.
+
+<!-- qualification-matrix:start -->
+| Platform | Architecture | Runtime | Backend | Support | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| macos | arm64 | llamacpp | metal | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
+| linux | aarch64 | llamacpp | cuda | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| linux | x86_64 | vllm | cuda | Unverified | No qualification record |
+| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
+| linux | aarch64 | vllm | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | vllm | cuda | Unverified | No qualification record |
+<!-- qualification-matrix:end -->
+
 **Contents**
 - [Why an interface](#why-an-interface)
 - [The interface](#the-interface)
