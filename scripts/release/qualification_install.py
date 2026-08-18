@@ -11,7 +11,7 @@ from scripts.setup import llamacpp_install
 from scripts.setup.model_download import provision_catalog_models
 from scripts.setup.setup_discovery import discover_nvidia, discover_rocm, rocm_version
 from scripts.setup.vllm_install import (
-    install_vllm, vllm_cache_home, vllm_platform_support,
+    install_vllm, vllm_platform_support,
 )
 from scripts.workloads.models import LLM_MODELS
 
