@@ -16,6 +16,7 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
+    authorize_macos_power_telemetry,
     BENCHMARK_PRESETS, CUSTOM_PRESET, BenchmarkLaunchError, BenchmarkLaunchReady,
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
@@ -372,6 +373,59 @@ def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tm
     assert calls[0][1]["errors"] == "replace"
 
 
+def test_macos_power_authorization_uses_graphical_askpass(tmp_path):
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"returncode": 0})()
+
+    assert authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=run, environ={"SAFE": "yes"},
+        askpass_path=helper,
+    ) is None
+    assert calls[0][0] == ["/usr/bin/sudo", "-A", "-v"]
+    assert calls[0][1]["env"] == {"SAFE": "yes", "SUDO_ASKPASS": str(helper)}
+    assert calls[0][1]["stdin"] is subprocess.DEVNULL
+    assert calls[0][1]["timeout"] == 120
+
+
+def test_power_authorization_skips_other_paths_and_blocks_denial(tmp_path):
+    run = lambda *_args, **_kwargs: pytest.fail("authorization must not run")
+    assert authorize_macos_power_telemetry(False, system=lambda: "Darwin", run=run) is None
+    assert authorize_macos_power_telemetry(True, system=lambda: "Linux", run=run) is None
+
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+    denied = lambda *_args, **_kwargs: type("Result", (), {"returncode": 1})()
+    error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=denied, askpass_path=helper,
+    )
+    assert error is not None and "canceled or denied" in error
+
+
+def test_power_authorization_rejects_missing_or_hung_prompt(tmp_path):
+    missing_error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", askpass_path=tmp_path / "missing",
+    )
+    assert missing_error is not None and "missing or not executable" in missing_error
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+
+    def timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("sudo", 120)
+
+    timeout_error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=timeout, askpass_path=helper,
+    )
+    assert timeout_error is not None and "could not be requested" in timeout_error
+
+
 def test_windows_host_offset_comes_from_powershell_only_under_wsl():
     calls = []
 
@@ -624,6 +678,74 @@ def test_process_resource_usage_includes_child_processes():
             return parent
 
     assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
+
+
+def test_process_resource_usage_skips_inaccessible_children():
+    class ResourceError(Exception):
+        pass
+
+    class Process:
+        pid = 0
+
+        def __init__(self, cpu, rss, *, inaccessible=False, children=()):
+            self.cpu = cpu
+            self.rss = rss
+            self.inaccessible = inaccessible
+            self._children = children
+
+        def children(self, recursive):
+            assert recursive
+            return list(self._children)
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return self.cpu
+
+        def memory_info(self):
+            if self.inaccessible:
+                raise ResourceError("privileged child")
+            return type("Memory", (), {"rss": self.rss})()
+
+    accessible = Process(20, 1024 ** 3)
+    privileged = Process(90, 8 * 1024 ** 3, inaccessible=True)
+    parent = Process(30, 2 * 1024 ** 3, children=[accessible, privileged])
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return parent
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
+
+
+def test_process_resource_usage_retains_parent_when_child_enumeration_races():
+    class ResourceError(Exception):
+        pass
+
+    class Parent:
+        pid = 42
+
+        def children(self, recursive):
+            assert recursive
+            raise ResourceError("child exited")
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return 30
+
+        def memory_info(self):
+            return type("Memory", (), {"rss": 2 * 1024 ** 3})()
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return Parent()
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (30, 2.0)
 
 
 def test_system_memory_usage_reports_used_and_total_gibibytes():

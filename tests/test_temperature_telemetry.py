@@ -1,9 +1,11 @@
 from pathlib import Path
 
 from scripts.runtime.telemetry import (
-    NvidiaTelemetryReading, PollingPowerSource, PollingTemperatureSource, PowerAvailability,
+    AppleHidTemperatureSource, NvidiaTelemetryReading, PollingPowerSource,
+    PollingTemperatureSource, PowerAvailability,
     TemperatureAvailability, TemperatureReading,
     TelemetrySample, TelemetrySampler, discover_temperature_source,
+    aggregate_apple_hid_temperatures,
     parse_hwmon_temperature, parse_nvidia_telemetry, parse_nvidia_temperatures,
     parse_rocm_temperatures,
     temperature_availability_dict, temperature_block,
@@ -57,6 +59,102 @@ def test_hwmon_parser_accepts_package_labels_and_rejects_unrelated_or_invalid_se
     assert parse_hwmon_temperature("Core 0", "59000") is None
     assert parse_hwmon_temperature("Tctl", "permission denied") is None
     assert parse_hwmon_temperature("Tctl", "201000") is None
+
+
+def test_apple_hid_aggregation_combines_named_sensor_families_as_soc_package():
+    assert aggregate_apple_hid_temperatures([
+        ("pACC MTR Temp Sensor0", 50),
+        ("eACC MTR Temp Sensor1", 46),
+        ("GPU MTR Temp Sensor0", 44),
+        ("gas gauge battery", 31),
+        ("PMU tcal", 80),
+    ]) == TemperatureReading(soc_package_c=140 / 3)
+    assert aggregate_apple_hid_temperatures([
+        ("PMU tdie1", 40), ("PMU tdie2", 42), ("NAND CH0 temp", 35),
+    ]) == TemperatureReading(soc_package_c=41)
+    assert aggregate_apple_hid_temperatures([
+        ("PMU tdie1", 0), ("GPU MTR Temp Sensor0", 201),
+    ]) is None
+
+
+def test_darwin_discovery_probes_apple_hid_and_preserves_available_channels():
+    class Reader:
+        def read(self):
+            return TemperatureReading(soc_package_c=48)
+
+    status = discover_temperature_source(
+        "Darwin", machine_name="arm64", which_fn=lambda _name: None,
+        apple_reader_factory=Reader,
+    )
+    assert status == TemperatureAvailability(
+        True, {"soc_package_c": "apple-hid"},
+        locations={},
+    )
+
+
+def test_darwin_discovery_rejects_empty_or_unsupported_apple_hid_probe():
+    class EmptyReader:
+        def read(self):
+            return None
+
+    unavailable = discover_temperature_source(
+        "Darwin", machine_name="arm64", which_fn=lambda _name: None,
+        apple_reader_factory=EmptyReader,
+    )
+    assert unavailable.available is False
+    assert unavailable.reason == "no supported temperature source was detected"
+
+    def unexpected_reader():
+        raise AssertionError("Intel macOS must not probe Apple Silicon HID sensors")
+
+    intel = discover_temperature_source(
+        "Darwin", machine_name="x86_64", which_fn=lambda _name: None,
+        apple_reader_factory=unexpected_reader,
+    )
+    assert intel.available is False
+
+
+def test_apple_hid_source_lifecycle_turns_reader_failure_into_missing_evidence():
+    calls = []
+
+    class Reader:
+        def read(self):
+            calls.append("read")
+            if len(calls) == 1:
+                return TemperatureReading(soc_package_c=47)
+            raise OSError("sensor disappeared")
+
+    source = AppleHidTemperatureSource(
+        TemperatureAvailability(True, {"soc_package_c": "apple-hid"}),
+        reader_factory=Reader,
+    )
+    source.start()
+    assert source.read() == TemperatureReading(soc_package_c=47)
+    assert source.read() == TemperatureReading()
+    source.stop()
+    assert source.read() == TemperatureReading()
+
+
+def test_sampler_starts_and_stops_temperature_source():
+    calls = []
+
+    class Source:
+        def start(self):
+            calls.append("start")
+
+        def read(self):
+            calls.append("read")
+            return TemperatureReading(soc_package_c=45)
+
+        def stop(self):
+            calls.append("stop")
+
+    sampler = TelemetrySampler(42, interval_sec=100, temperature_source=Source()).start()
+    samples = sampler.stop()
+    assert calls[0] == "start"
+    assert "read" in calls
+    assert calls[-1] == "stop"
+    assert samples[0].soc_package_c == 45
 
 
 def write_hwmon(root: Path, device: str, name: str, label: str, value: str) -> None:
@@ -160,12 +258,13 @@ def test_temperature_block_preserves_aligned_timestamps_and_missing_channels():
         "peak_c": 70, "mean_c": 65, "final_c": 70, "valid_samples": 2,
     }
     assert block["windows"][0]["samples"] == [
-        {"timestamp_sec": 0, "cpu_package_c": None, "gpu_die_c": 60,
+        {"timestamp_sec": 0, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 60,
          "gpu_hotspot_c": None},
-        {"timestamp_sec": 1.25, "cpu_package_c": None, "gpu_die_c": 70,
+        {"timestamp_sec": 1.25, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 70,
          "gpu_hotspot_c": None},
     ]
     assert block["provenance"]["channels"] == {
+        "soc_package_c": {"source": "unsupported", "failed_samples": 0},
         "cpu_package_c": {"source": "unsupported", "failed_samples": 0},
         "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0},
         "gpu_hotspot_c": {"source": "unsupported", "failed_samples": 0},
@@ -188,8 +287,14 @@ def test_temperature_block_retains_failures_for_discovered_channels():
 
 def test_sampler_counts_each_missing_temperature_channel_without_losing_memory():
     class Source:
+        def start(self):
+            pass
+
         def read(self):
             return TemperatureReading(gpu_die_c=64)
+
+        def stop(self):
+            pass
 
     sampler = TelemetrySampler(
         42, temperature_source=Source(),
@@ -202,7 +307,7 @@ def test_sampler_counts_each_missing_temperature_channel_without_losing_memory()
     assert captured.host_ram_used_gb == 10
     assert captured.gpu_die_c == 64
     assert sampler.temperature_failures == {
-        "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
+        "soc_package_c": 1, "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
     }
 
 

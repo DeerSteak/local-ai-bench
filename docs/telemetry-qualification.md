@@ -49,6 +49,8 @@ Use `--pairs 5` only for a workflow smoke test; it does not meet the 20-pair qua
 
 Temperature qualification also supports `--workload sustained --sustained-duration 120 --ambient-temp-c C`. It alternates otherwise identical two-minute soaks with temperature disabled and enabled. The sustained analyzer computes duration-weighted overall throughput and retention ratio from the complete series. Median impact may not exceed 1% throughput or one retention percentage point; the 90th-percentile bounds are 2% and two points. The latency-sensitive screen retains the existing TTFT, throughput, and wall-time bounds. Every temperature-on result must record an available source, while both modes must retain the memory-and-power baseline, or the analyzer rejects the evidence identity before calculating impacts.
 
+Apple Silicon discovery can use the built-in `apple-hid` source without an external utility or administrator permission. Its private-API and chip-specific sensor mapping requires a separate macOS observer-effect qualification before it supports thermal-cause claims; the completed Linux small-system qualification does not qualify this source by analogy.
+
 The unattended Linux wrapper runs the complete matrix: 20 alternating latency pairs and 20 alternating sustained pairs at each of 0.25, 0.5, and 1.0 seconds, for 240 benchmark invocations total. It uses 30-second waits for latency trials, 120-second waits for sustained trials, and five-minute gaps between sustained interval suites. Outputs are resumable. A rejected observer report is retained and the remaining interval suites continue; an actual benchmark failure stops the wrapper. Preview the whole matrix without launching a benchmark:
 
 ```bash

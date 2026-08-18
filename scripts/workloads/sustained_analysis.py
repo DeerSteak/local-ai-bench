@@ -7,7 +7,7 @@ from scripts.runtime import config
 from scripts.results.trial_set import monotonic_drift
 
 
-TEMPERATURE_KEYS = ("cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
+TEMPERATURE_KEYS = ("soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
 
 
 def _number(value: object) -> float | None:

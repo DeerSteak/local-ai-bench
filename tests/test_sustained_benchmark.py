@@ -22,9 +22,9 @@ def blocks():
     }]}
     temperature = {"windows": [{
         "name": "measured:sustained", "samples": [
-            {"timestamp_sec": 5.0, "gpu_die_c": 60},
-            {"timestamp_sec": 9.9, "gpu_die_c": 64},
-            {"timestamp_sec": 15.1, "gpu_die_c": 70},
+            {"timestamp_sec": 5.0, "soc_package_c": 60, "gpu_die_c": 60},
+            {"timestamp_sec": 9.9, "soc_package_c": 64, "gpu_die_c": 64},
+            {"timestamp_sec": 15.1, "soc_package_c": 70, "gpu_die_c": 70},
         ],
     }]}
     return memory, power, temperature
@@ -50,6 +50,8 @@ def test_aligned_windows_distribute_requests_by_real_overlap_and_share_telemetry
     assert windows[1]["host_ram_used_gb"] == 24
     assert windows[0]["power_watts"] == 110
     assert windows[1]["power_watts"] == 90
+    assert windows[0]["soc_package_c"] == 62
+    assert windows[1]["soc_package_c"] == 70
     assert windows[0]["gpu_die_c"] == 62
     assert windows[1]["gpu_die_c"] == 70
 
@@ -85,6 +87,7 @@ def test_missing_temperature_or_power_stays_unknown_on_the_shared_axis():
     windows = aligned_sustained_windows([], 10, 10)
     assert windows[0]["tokens_per_sec"] == 0
     assert windows[0]["power_watts"] is None
+    assert windows[0]["soc_package_c"] is None
     assert windows[0]["cpu_package_c"] is None
     assert windows[0]["gpu_die_c"] is None
     assert windows[0]["gpu_hotspot_c"] is None

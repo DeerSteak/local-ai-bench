@@ -2,6 +2,12 @@
 
 Local AI Bench may help a consumer choose a model for hardware they already own or choose a Mac configuration for intended local-AI work. A recommendation is an explanation over inspectable compatible evidence, never a hidden score, parameter-count shortcut, sponsorship placement, or guarantee that an untested workload will behave the same way.
 
+## Implemented evaluator and artifact
+
+`python -m scripts.results.recommendation_cli RESULT [RESULT ...] --constraints CONSTRAINTS.json --out RECOMMENDATION.json` is the authoritative evaluator. The request identifies an exact workload and case, an optional accuracy workload, a primary objective, and any hard accuracy, latency, throughput, concurrency, memory, headroom, or efficiency limits. Constraints run before ranking. Missing cases, incomplete runs, absent methodology identity, and unavailable measurements produce an unevaluated candidate with a specific resolution request; a measured constraint failure produces an eliminated candidate with its value and evidence path.
+
+One surviving candidate produces recommended. Multiple survivors require at least five distinct compatible independent trials and the repeated-trial verdict machinery: unchanged top candidates are tied, reproducibly worse survivors do not dissolve a top tie, and drift or an inconclusive interval produces insufficient evidence. Memory, efficiency, and image throughput constraints are implemented, but repeated-trial ordering for those objective families remains insufficient until their trial metric semantics and practical thresholds are predeclared. The versioned artifact stores normalized constraints, source digests, original-unit measurements, trial values, and evidence paths under one `candidates` object with mutually exclusive `recommended`, `tied`, `other_eligible`, `eliminated`, and `unevaluated` groups. Python computes it once; reports and the standalone dashboard only validate and render it. Interactive constraint entry and the unified evidence workspace remain milestone 11 work.
+
 ## Supported goals
 
 | Goal | Required primary evidence | Secondary evidence |

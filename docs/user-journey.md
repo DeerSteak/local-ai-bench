@@ -32,7 +32,9 @@ The user opens Result History, filters and multi-selects local files, then opens
 
 ## 8. Export and report
 
-Before a result bundle or report is written, the user reviews outbound system/hardware/model identity, may assign private aliases, and approves the export. Bundles verify schema, file digests, methodology availability, reproducible aggregates, and optionally the retained private source identity. Reports are deterministic, self-contained, disclose methodology/offline/optimization state, show coverage and exclusions, list acceptance evidence, and state limitations without a hidden composite score.
+The user may first write explicit recommendation constraints and evaluate one complete result or a compatible repeated-trial set with the recommendation CLI. Hard failures, missing evidence, and surviving candidates remain separate; only qualified repeated trials may order multiple survivors. The resulting versioned artifact can be loaded alone in the static dashboard or attached to a decision report. Interactive constraint entry and unified selection state remain part of the later workspace milestone.
+
+Before a result bundle or report is written, the user reviews outbound system/hardware/model identity, may assign private aliases, and approves the export. Bundles verify schema, file digests, methodology availability, reproducible aggregates, and optionally the retained private source identity. Reports are deterministic, self-contained, disclose methodology/offline/optimization state, show coverage and exclusions, list acceptance evidence, optionally render a source-verified recommendation artifact, and state limitations without a hidden composite score.
 
 ## 9. Correct or escalate
 

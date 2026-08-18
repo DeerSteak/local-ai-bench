@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 import ctypes
+from ctypes.util import find_library
 import platform
 import json
 import math
@@ -25,7 +26,7 @@ MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
-TEMPERATURE_CHANNELS = ("cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
+TEMPERATURE_CHANNELS = ("soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
 POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system", "unknown")
 ADL_PMLOG_MAX_SENSORS = 256
 ADL_PMLOG_ASIC_POWER = 23
@@ -65,6 +66,7 @@ class TelemetrySample:
     cpu_package_c: float | None = None
     gpu_die_c: float | None = None
     gpu_hotspot_c: float | None = None
+    soc_package_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +113,7 @@ class TemperatureReading:
     cpu_package_c: float | None = None
     gpu_die_c: float | None = None
     gpu_hotspot_c: float | None = None
+    soc_package_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -290,6 +293,154 @@ def parse_hwmon_temperature(label: str, raw_millicelsius: str) -> tuple[str, flo
     if any(name in normalized for name in ("package", "tctl", "tdie")):
         return "cpu_package_c", value
     return None
+
+
+def aggregate_apple_hid_temperatures(
+        sensors: Sequence[tuple[str, float]]) -> TemperatureReading | None:
+    soc_values = [
+        temperature for name, value in sensors
+        if name.startswith((
+            "pACC MTR Temp Sensor", "eACC MTR Temp Sensor", "GPU MTR Temp Sensor", "PMU tdie",
+        ))
+        and (temperature := _valid_temperature(value)) is not None and temperature > 0
+    ]
+    if not soc_values:
+        return None
+    return TemperatureReading(soc_package_c=sum(soc_values) / len(soc_values))
+
+
+class AppleHidTemperatureReader:
+    _UTF8 = 0x08000100
+    _SINT32 = 3
+    _TEMPERATURE_EVENT = 15
+
+    def __init__(self):
+        iokit_path = find_library("IOKit")
+        core_foundation_path = find_library("CoreFoundation")
+        if not iokit_path or not core_foundation_path:
+            raise OSError("Apple temperature frameworks are unavailable")
+        self.iokit = ctypes.CDLL(iokit_path)
+        self.core = ctypes.CDLL(core_foundation_path)
+        self._configure_functions()
+
+    def _configure_functions(self) -> None:
+        pointer = ctypes.c_void_p
+        self.iokit.IOHIDEventSystemClientCreate.argtypes = [pointer]
+        self.iokit.IOHIDEventSystemClientCreate.restype = pointer
+        self.iokit.IOHIDEventSystemClientSetMatching.argtypes = [pointer, pointer]
+        self.iokit.IOHIDEventSystemClientCopyServices.argtypes = [pointer]
+        self.iokit.IOHIDEventSystemClientCopyServices.restype = pointer
+        self.iokit.IOHIDServiceClientCopyProperty.argtypes = [pointer, pointer]
+        self.iokit.IOHIDServiceClientCopyProperty.restype = pointer
+        self.iokit.IOHIDServiceClientCopyEvent.argtypes = [
+            pointer, ctypes.c_int64, ctypes.c_int32, ctypes.c_int64,
+        ]
+        self.iokit.IOHIDServiceClientCopyEvent.restype = pointer
+        self.iokit.IOHIDEventGetFloatValue.argtypes = [pointer, ctypes.c_int64]
+        self.iokit.IOHIDEventGetFloatValue.restype = ctypes.c_double
+        self.core.CFArrayGetCount.argtypes = [pointer]
+        self.core.CFArrayGetCount.restype = ctypes.c_long
+        self.core.CFArrayGetValueAtIndex.argtypes = [pointer, ctypes.c_long]
+        self.core.CFArrayGetValueAtIndex.restype = pointer
+        self.core.CFStringCreateWithCString.argtypes = [pointer, ctypes.c_char_p, ctypes.c_uint32]
+        self.core.CFStringCreateWithCString.restype = pointer
+        self.core.CFStringGetCString.argtypes = [
+            pointer, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32,
+        ]
+        self.core.CFStringGetCString.restype = ctypes.c_bool
+        self.core.CFNumberCreate.argtypes = [pointer, ctypes.c_long, pointer]
+        self.core.CFNumberCreate.restype = pointer
+        self.core.CFDictionaryCreateMutable.argtypes = [pointer, ctypes.c_long, pointer, pointer]
+        self.core.CFDictionaryCreateMutable.restype = pointer
+        self.core.CFDictionarySetValue.argtypes = [pointer, pointer, pointer]
+        self.core.CFRelease.argtypes = [pointer]
+
+    def _string(self, value: str) -> int:
+        reference = self.core.CFStringCreateWithCString(
+            None, value.encode("utf-8"), self._UTF8,
+        )
+        if not reference:
+            raise OSError("could not allocate an Apple sensor string")
+        return reference
+
+    def _number(self, value: int) -> int:
+        raw = ctypes.c_int32(value)
+        reference = self.core.CFNumberCreate(None, self._SINT32, ctypes.byref(raw))
+        if not reference:
+            raise OSError("could not allocate an Apple sensor number")
+        return reference
+
+    def _matching(self) -> tuple[int, list[int]]:
+        matching = self.core.CFDictionaryCreateMutable(None, 0, None, None)
+        if not matching:
+            raise OSError("could not allocate Apple sensor matching state")
+        retained = []
+        try:
+            for key, value in (("PrimaryUsagePage", 0xff00), ("PrimaryUsage", 5)):
+                key_ref, value_ref = self._string(key), self._number(value)
+                retained.extend((key_ref, value_ref))
+                self.core.CFDictionarySetValue(matching, key_ref, value_ref)
+        except Exception:
+            for reference in (matching, *retained):
+                self.core.CFRelease(reference)
+            raise
+        return matching, retained
+
+    def _property_name(self, service: int, product_key: int) -> str | None:
+        name_ref = self.iokit.IOHIDServiceClientCopyProperty(service, product_key)
+        if not name_ref:
+            return None
+        try:
+            output = ctypes.create_string_buffer(256)
+            if not self.core.CFStringGetCString(
+                    name_ref, output, len(output), self._UTF8):
+                return None
+            return output.value.decode("utf-8", errors="replace")
+        finally:
+            self.core.CFRelease(name_ref)
+
+    def read(self) -> TemperatureReading | None:
+        matching, retained = self._matching()
+        client = None
+        services = None
+        product_key = None
+        try:
+            product_key = self._string("Product")
+            client = self.iokit.IOHIDEventSystemClientCreate(None)
+            if not client:
+                return None
+            self.iokit.IOHIDEventSystemClientSetMatching(client, matching)
+            services = self.iokit.IOHIDEventSystemClientCopyServices(client)
+            if not services:
+                return None
+            sensors = []
+            for index in range(self.core.CFArrayGetCount(services)):
+                service = self.core.CFArrayGetValueAtIndex(services, index)
+                name = self._property_name(service, product_key) if service else None
+                if not name:
+                    continue
+                event = self.iokit.IOHIDServiceClientCopyEvent(
+                    service, self._TEMPERATURE_EVENT, 0, 0,
+                )
+                if not event:
+                    continue
+                try:
+                    value = self.iokit.IOHIDEventGetFloatValue(
+                        event, self._TEMPERATURE_EVENT << 16,
+                    )
+                finally:
+                    self.core.CFRelease(event)
+                if _valid_temperature(value) is not None:
+                    sensors.append((name, value))
+            return aggregate_apple_hid_temperatures(sensors)
+        finally:
+            for value in (services, client, product_key, matching, *retained):
+                if value:
+                    self.core.CFRelease(value)
+
+
+class AppleTemperatureReaderLike(Protocol):
+    def read(self) -> TemperatureReading | None: ...
 
 
 class _AdlSensorData(ctypes.Structure):
@@ -716,11 +867,23 @@ def _discover_hwmon_cpu_paths(hwmon_root: Path) -> dict[str, str]:
 
 def discover_temperature_source(platform_name: str | None = None, *, which_fn=shutil.which,
                                 run_fn=subprocess.run,
+                                apple_reader_factory: Callable[[], AppleTemperatureReaderLike] =
+                                AppleHidTemperatureReader,
+                                machine_name: str | None = None,
                                 hwmon_root: Path = Path("/sys/class/hwmon")) \
         -> TemperatureAvailability:
     platform_name = platform_name or platform.system()
+    machine_name = machine_name or platform.machine()
     sources: dict[str, str] = {}
     locations: dict[str, str] = {}
+    if platform_name == "Darwin" and machine_name == "arm64":
+        try:
+            reading = apple_reader_factory().read()
+        except (AttributeError, OSError, ValueError, ctypes.ArgumentError):
+            reading = None
+        if reading:
+            if reading.soc_package_c is not None:
+                sources["soc_package_c"] = "apple-hid"
     if platform_name == "Linux":
         cpu_locations = _discover_hwmon_cpu_paths(hwmon_root)
         if "cpu_package_c" in cpu_locations:
@@ -758,7 +921,35 @@ def discover_temperature_source(platform_name: str | None = None, *, which_fn=sh
 
 
 class TemperatureSourceLike(Protocol):
+    def start(self) -> None: ...
     def read(self) -> TemperatureReading: ...
+    def stop(self) -> None: ...
+
+
+class AppleHidTemperatureSource:
+    def __init__(self, availability: TemperatureAvailability, *,
+                 reader_factory: Callable[[], AppleTemperatureReaderLike] =
+                 AppleHidTemperatureReader):
+        self.availability = availability
+        self.reader_factory = reader_factory
+        self.reader = None
+
+    def start(self) -> None:
+        try:
+            self.reader = self.reader_factory()
+        except (AttributeError, OSError, ValueError, ctypes.ArgumentError):
+            self.reader = None
+
+    def read(self) -> TemperatureReading:
+        if self.reader is None:
+            return TemperatureReading()
+        try:
+            return self.reader.read() or TemperatureReading()
+        except (AttributeError, OSError, ValueError, ctypes.ArgumentError):
+            return TemperatureReading()
+
+    def stop(self) -> None:
+        self.reader = None
 
 
 class PollingTemperatureSource:
@@ -769,6 +960,9 @@ class PollingTemperatureSource:
         self.read_text_fn = read_text_fn or (
             lambda path: Path(path).read_text(encoding="utf-8")
         )
+
+    def start(self) -> None:
+        pass
 
     def read(self, *, nvidia_reading: NvidiaTelemetryReading | None = None,
              nvidia_captured: bool = False) -> TemperatureReading:
@@ -814,6 +1008,16 @@ class PollingTemperatureSource:
             values["gpu_die_c"] = reading.gpu_die_c
             values["gpu_hotspot_c"] = reading.gpu_hotspot_c
         return TemperatureReading(**values)
+
+    def stop(self) -> None:
+        pass
+
+
+def create_temperature_source(availability: TemperatureAvailability,
+                              **kwargs) -> TemperatureSourceLike:
+    if "apple-hid" in availability.sources.values():
+        return AppleHidTemperatureSource(availability, **kwargs)
+    return PollingTemperatureSource(availability, **kwargs)
 
 
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
@@ -946,12 +1150,23 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
 def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
     try:
         parent = psutil_module.Process(pid)
-        processes = [parent, *parent.children(recursive=True)]
-        cpu = sum(item.cpu_percent(interval=None) for item in processes)
-        memory_gb = sum(item.memory_info().rss for item in processes) / (1024 ** 3)
-        return cpu, memory_gb
+        cpu = parent.cpu_percent(interval=None)
+        memory = parent.memory_info().rss
     except (psutil_module.Error, OSError):
         return None
+    try:
+        children = parent.children(recursive=True)
+    except (psutil_module.Error, OSError):
+        children = []
+    for child in children:
+        try:
+            child_cpu = child.cpu_percent(interval=None)
+            child_memory = child.memory_info().rss
+        except (psutil_module.Error, OSError):
+            continue
+        cpu += child_cpu
+        memory += child_memory
+    return cpu, memory / (1024 ** 3)
 
 
 def system_memory_usage(psutil_module: PsutilLike = psutil) -> tuple[float, float]:
@@ -1395,6 +1610,8 @@ class TelemetrySampler:
         self._started_at = time.monotonic()
         if self.power_source:
             self.power_source.start()
+        if self.temperature_source:
+            self.temperature_source.start()
         self._thread = threading.Thread(target=self._run, name="resource-telemetry", daemon=True)
         self._thread.start()
         return self
@@ -1405,6 +1622,8 @@ class TelemetrySampler:
             self._thread.join(timeout=max(3.0, self.interval_sec * 2))
         if self.power_source:
             self.power_source.stop()
+        if self.temperature_source:
+            self.temperature_source.stop()
         return self.samples
 
     def __enter__(self) -> "TelemetrySampler":
@@ -1452,6 +1671,7 @@ class TelemetrySampler:
             cpu_package_c=temperature.cpu_package_c,
             gpu_die_c=temperature.gpu_die_c,
             gpu_hotspot_c=temperature.gpu_hotspot_c,
+            soc_package_c=temperature.soc_package_c,
         )
 
     def _run(self) -> None:
@@ -1502,7 +1722,7 @@ class CaseTelemetry:
         )
         self.sampler = sampler or TelemetrySampler(
             pid or os.getpid(), interval_sec, power_source=power_source,
-            temperature_source=(PollingTemperatureSource(temperature_availability)
+            temperature_source=(create_temperature_source(temperature_availability)
                                 if temperature_availability else None),
             memory_sources=self.sources,
         )

@@ -8,6 +8,7 @@ import { ChartGrid, EmptyState } from "./shared";
 import styles from "../ChartPanel.module.css";
 
 const TEMPERATURE_LABELS: Record<string, string> = {
+  soc_package_c: "SoC package",
   cpu_package_c: "CPU package",
   gpu_die_c: "GPU die",
   gpu_hotspot_c: "GPU hotspot",

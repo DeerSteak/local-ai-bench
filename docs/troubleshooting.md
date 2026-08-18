@@ -28,7 +28,7 @@ Start with the exact error and the latest durable result rather than deleting st
 | Ctrl-C or GUI cancel | Run/stage status and last checkpoint | Wait for cleanup; completed cases remain saved and the active stage becomes interrupted rather than masquerading as complete |
 | Result cannot be compared | Plan/methodology/runtime/model identity warning | Compare only compatible identities or explicitly fork/re-run; never suppress an incompatibility to obtain a chart |
 | Offline mode blocks work | Whether all models/runtimes were installed before launch | Install prerequisites online through reviewed setup, then rerun offline; offline execution intentionally denies non-loopback Python connections |
-| Power telemetry is unavailable | The recorded preflight source, scope, and normalized reason | On macOS run `sudo -v` immediately before starting; on NVIDIA or Linux AMD verify the vendor query works for the benchmark user; on Windows AMD update Adrenalin and confirm its Metrics panel shows GPU power; on Intel verify the RAPL counter is readable. Do not run the whole benchmark as root |
+| Power telemetry is unavailable | The recorded preflight source, scope, and normalized reason | On macOS the GUI requests permission before launch; for a terminal-only run, run `sudo -v` immediately before starting. On NVIDIA or Linux AMD verify the vendor query works for the benchmark user; on Windows AMD update Adrenalin and confirm its Metrics panel shows GPU power; on Intel verify the RAPL counter is readable. Do not run the whole benchmark as root |
 
 ## Results, reports, and support
 

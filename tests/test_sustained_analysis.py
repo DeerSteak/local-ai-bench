@@ -129,6 +129,13 @@ def test_hot_stable_device_is_not_called_temperature_correlated():
     ) == "neither"
 
 
+def test_soc_package_temperature_can_support_correlation():
+    windows = degraded(None, [100] * 9)
+    for window, temperature in zip(windows, [50, 51, 52, 70, 70, 70, 70, 70, 70]):
+        window["soc_package_c"] = temperature
+    assert analyze(windows)["cause"] == "temperature_correlated"
+
+
 def test_temperature_rise_without_a_ceiling_is_not_called_thermal():
     temperatures = [50, 51, 52, 60, 63, 66, 68, 71, 75]
     assert analyze(degraded(temperatures, [100] * 9))["cause"] == "neither"

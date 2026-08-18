@@ -127,6 +127,30 @@ def launch_controlled_process(command: list[str], **kwargs):
     )
 
 
+def authorize_macos_power_telemetry(enabled: bool, *, system=platform.system,
+                                    run=subprocess.run,
+                                    environ: dict[str, str] | None = None,
+                                    askpass_path: Path | None = None) -> str | None:
+    if not enabled or system() != "Darwin":
+        return None
+    helper = askpass_path or Path(__file__).with_name("macos_sudo_askpass.sh")
+    if not helper.is_file() or not os.access(helper, os.X_OK):
+        return "The macOS administrator prompt helper is missing or not executable."
+    sudo_environment = dict(os.environ if environ is None else environ)
+    sudo_environment["SUDO_ASKPASS"] = str(helper)
+    try:
+        result = run(
+            ["/usr/bin/sudo", "-A", "-v"], env=sudo_environment,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "Administrator permission could not be requested."
+    if result.returncode != 0:
+        return "Administrator permission was canceled or denied; the benchmark was not started."
+    return None
+
+
 @dataclass(frozen=True)
 class BenchmarkLaunchError:
     errors: list[str]
@@ -987,6 +1011,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
             pending_fork_source = None
+            return
+        authorization_error = authorize_macos_power_telemetry(
+            gui_options["power_telemetry"],
+        )
+        if authorization_error:
+            messagebox.showerror(
+                "Power telemetry permission", authorization_error, parent=root,
+            )
             return
         if not save_frontend_state(preparation.state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):

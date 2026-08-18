@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import html2canvas from "html2canvas";
 import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
+import { isRecommendationArtifact, recommendationArtifactLoadMode } from "./utils/recommendations";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -21,6 +22,7 @@ import styles from "./benchmark_dashboard.module.css";
 import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
 import TrialSetPanel from "./components/TrialSetPanel";
+import RecommendationPanel from "./components/RecommendationPanel";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
@@ -44,6 +46,7 @@ export default function Dashboard() {
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [savingSpecCard, setSavingSpecCard] = useState(false);
   const [trialSet, setTrialSet] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
+  const [recommendation, setRecommendation] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -145,18 +148,30 @@ export default function Dashboard() {
     if (!limited.length) return;
     const candidates = await Promise.all(limited.map(readNamedJSONSource));
     const artifactMode = trialArtifactLoadMode(candidates.map(candidate => candidate.data));
-    if (artifactMode === "mixed") {
-      setFileError("Load one repeated-trial artifact by itself; it cannot be mixed with result files.");
+    const recommendationMode = recommendationArtifactLoadMode(candidates.map(candidate => candidate.data));
+    if (artifactMode === "mixed" || recommendationMode === "mixed"
+        || (artifactMode === "single" && recommendationMode === "single")) {
+      setFileError("Load one derived artifact by itself; it cannot be mixed with result files or another artifact.");
       return;
     }
     if (artifactMode === "single" && isTrialSetArtifact(candidates[0].data)) {
       resetModelState();
       setFiles([]);
       setTrialSet({ name: candidates[0].name, data: candidates[0].data });
+      setRecommendation(null);
+      setFileError("");
+      return;
+    }
+    if (recommendationMode === "single" && isRecommendationArtifact(candidates[0].data)) {
+      resetModelState();
+      setFiles([]);
+      setTrialSet(null);
+      setRecommendation({ name: candidates[0].name, data: candidates[0].data });
       setFileError("");
       return;
     }
     setTrialSet(null);
+    setRecommendation(null);
     const parsed = candidates.map(parseFile);
     const entries = parsed.map(result => result.entry).filter((entry): entry is DisplayFile => Boolean(entry));
     setFileError(parsed.map(result => result.error).filter(Boolean).join(" "));
@@ -312,7 +327,8 @@ export default function Dashboard() {
         ].filter(Boolean).join(" ")}
       />
 
-      {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} /> : <>
+      {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} />
+        : recommendation ? <RecommendationPanel name={recommendation.name} artifact={recommendation.data} /> : <>
 
       <Controls
         section={section} setSection={setSection}

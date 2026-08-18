@@ -378,7 +378,7 @@ This is the item that changes the product from a benchmark viewer into a decisio
 5. **Rank survivors without an opaque composite score.** Order by the user's stated primary objective. Use only item 3's qualified repeated-trial verdicts to break close comparisons; report unchanged candidates as tied and return insufficient evidence when the requested ranking requires reproducibility that the trial set cannot establish.
 6. **Produce one of three verdicts** — recommended, tied, or insufficient evidence — and never a bare number. Insufficient evidence must state precisely what is missing and what run would resolve it, so the verdict is actionable rather than a dead end.
 7. **Link every conclusion to its evidence**: each eliminated candidate to the measurement that eliminated it, each ranking to the chart rows and raw samples behind it. A recommendation a reviewer cannot audit is worth nothing in this product's stated setting.
-8. **Add a constraint-entry UI** in the integrated workspace, with a results view showing recommended, tied, eliminated (with reasons), and unevaluated (with what is missing) as four visually distinct groups. For the standalone static dashboard, support loading a recommendation artifact produced by the CLI; do not pretend a browser-only page can call the Python evaluator. Unevaluated must not look like a failure.
+8. **Render the versioned artifact in the standalone static dashboard**, showing recommended, tied, other eligible, eliminated (with reasons), and unevaluated (with what is missing) as five visually distinct groups. Do not pretend a browser-only page can call the Python evaluator, and do not make unevaluated look like a failure. Interactive constraint entry and integrated workspace placement remain item 11 work.
 9. **Add a CLI path** that evaluates constraints and writes the versioned artifact for automation, reports, and standalone-dashboard review.
 10. **Include the recommendation in the generated report** via `decision_report.py`, with its constraints, verdict, evidence links, and limitations, so an exported report is self-contained.
 11. **Tests**: eligibility against complete, partial, and incompatible evidence; each constraint type as a hard filter at and across its boundary; tie detection driven by item 3's verdicts; insufficient-evidence output naming the specific gap; a regression test that an eliminated candidate never appears in the ranked list, and that no code path emits a composite score. Vitest coverage for the constraint form and each result group.
@@ -386,14 +386,14 @@ This is the item that changes the product from a benchmark viewer into a decisio
 
 ## Acceptance criteria
 
-- [ ] A user can state workload, context, accuracy, latency, throughput, concurrency, memory, and efficiency constraints, leaving any of them unset.
-- [ ] Candidates without compatible evidence are reported as unevaluated, visually distinct from eliminated, with the missing evidence named.
-- [ ] Constraints are applied as hard filters before ranking; each eliminated candidate names the constraint and the measured value that eliminated it.
-- [ ] Candidates classified unchanged by qualified repeated trials are tied; inconclusive trial evidence never creates an ordering.
-- [ ] The output is always recommended, tied, or insufficient evidence — no opaque composite score exists on any code path, asserted by test.
-- [ ] Every conclusion links to its chart rows and raw samples.
-- [ ] Insufficient evidence states what run would resolve it.
-- [ ] Python computes the verdict once; CLI, report, workspace, and standalone dashboard render the same versioned artifact, verified with shared conformance fixtures.
+- [x] A user can state workload, context, accuracy, latency, throughput, concurrency, memory, and efficiency constraints, leaving any of them unset.
+- [x] Candidates without compatible evidence are reported as unevaluated, visually distinct from eliminated, with the missing evidence named.
+- [x] Constraints are applied as hard filters before ranking; each eliminated candidate names the constraint and the measured value that eliminated it.
+- [x] Candidates classified unchanged by qualified repeated trials are tied; inconclusive trial evidence never creates an ordering.
+- [x] The output is always recommended, tied, or insufficient evidence — no opaque composite score exists on any code path, asserted by test.
+- [x] Every conclusion links to its aggregate/chart row and raw evidence path.
+- [x] Insufficient evidence states what run would resolve it.
+- [x] Python computes the verdict once; CLI, report, and standalone dashboard render the same versioned artifact, verified with a shared conformance fixture. Integrated workspace rendering remains item 11 work.
 
 ---
 

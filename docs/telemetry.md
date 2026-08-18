@@ -1,6 +1,6 @@
 # Product analytics telemetry contract
 
-Local AI Bench 6.0-pre5 sends no product telemetry, crash uploads, hosted sync, or background analytics. This contract governs possible future outbound product analytics, not local benchmark measurement such as the local memory sampler described in [Memory Telemetry Qualification](telemetry-qualification.md). The event dictionary below is the maximum initial contract for a future opt-in implementation; documenting an event does not mean it is currently collected.
+Local AI Bench 6.0-pre6 sends no product telemetry, crash uploads, hosted sync, or background analytics. This contract governs possible future outbound product analytics, not local benchmark measurement such as the local memory sampler described in [Memory Telemetry Qualification](telemetry-qualification.md). The event dictionary below is the maximum initial contract for a future opt-in implementation; documenting an event does not mean it is currently collected.
 
 ## Consent and control
 
