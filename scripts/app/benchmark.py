@@ -1104,6 +1104,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             f"bank:{stage}": accuracy_spec(stage).data_path
             for stage in journal_stages & set(ACCURACY_TESTS)
         }
+        if "emb" in journal_stages:
+            extra_resume_artifacts["corpus:embeddings"] = EmbeddingBenchmark.EMBED_DOCUMENT_PATH
         model_families = []
         if journal_stages:
             if "llamabench" in tests:
@@ -1115,6 +1117,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
+            if "emb" in journal_stages:
+                model_families.append("embeddings")
             identity_model_count = len({
                 model["tag"] for family in model_families for model in plan.models[family]
                 if engine.model_pulled(model["tag"])
@@ -1341,15 +1345,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     telemetry.stop()
 
         def run_embeddings(_context):
-            telemetry = start_case_telemetry()
-            try:
-                return EmbeddingBenchmark().run(
-                    engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
-                    save_fn=make_save("embeddings", "emb"), telemetry=telemetry,
-                )
-            finally:
-                if telemetry:
-                    telemetry.stop()
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "emb",
+                make_save("embeddings", "emb"), resume_identity=resume_identity,
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
+            )
 
         def accuracy_stage(test_name, Bench):
             def runner(_context):

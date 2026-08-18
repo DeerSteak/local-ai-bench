@@ -1,3 +1,7 @@
+import pytest
+
+from scripts.results.embedding_event_stage import EmbeddingEventStage
+from scripts.results.run_plan import RunPlan
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
 from scripts.runtime.engines.base import EmbeddingMeasurement
 
@@ -85,3 +89,71 @@ def test_run_attaches_case_telemetry_after_measured_embedding(monkeypatch):
     assert result["embed"]["power"]["efficiency"] == {
         "unit": "embeddings_per_joule", "work_count": 1, "per_joule": 0.5,
     }
+
+
+@pytest.mark.parametrize("interrupt_index", [0, 1, 2])
+def test_journal_resume_reruns_only_unfinished_embedding_models(
+        monkeypatch, tmp_path, interrupt_index):
+    models = [
+        {"tag": f"embed:{index}", "label": f"Embed {index}", "short": f"e{index}"}
+        for index in range(3)
+    ]
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": model["tag"], "short": model["short"]}
+                           for model in models],
+            "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+        },
+    )
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    path = tmp_path / "events.sqlite3"
+    first = EmbeddingEventStage(
+        path, plan, "corpus", lambda _: None, resume_identity=identity,
+    )
+
+    class Engine:
+        name = "fake"
+
+        def __init__(self, interrupt=None):
+            self.interrupt = interrupt
+            self.calls = []
+
+        def ensure_running(self): return True
+        def reachable_or_abort(self): return True
+        def model_pulled(self, _tag): return True
+        def is_connection_crash(self, _exc): return False
+
+        def embed(self, tag, _chunks):
+            self.calls.append(tag)
+            if tag == self.interrupt:
+                raise KeyboardInterrupt
+            return EmbeddingMeasurement([], 0.5)
+
+    monkeypatch.setattr("scripts.workloads.embedding_benchmark.load_crash_cache", lambda _path: {})
+    monkeypatch.setattr(
+        "scripts.workloads.embedding_benchmark.check_crash_cache", lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(EmbeddingBenchmark, "chunk_document", staticmethod(lambda: ["chunk"]))
+    monkeypatch.setattr("scripts.workloads.embedding_benchmark.config.N_RUNS", 1)
+    first_engine = Engine(models[interrupt_index]["tag"])
+    with pytest.raises(KeyboardInterrupt):
+        EmbeddingBenchmark().run(first_engine, models, warmup_runs=0, journal=first)
+    first.close()
+
+    resumed = EmbeddingEventStage(
+        path, plan, "corpus", lambda _: None, resume=True, resume_identity=identity,
+    )
+    second_engine = Engine()
+    try:
+        result = EmbeddingBenchmark().run(
+            second_engine, models, warmup_runs=0, journal=resumed,
+        )
+    finally:
+        resumed.close()
+    assert second_engine.calls == [model["tag"] for model in models[interrupt_index:]]
+    assert set(result) == {"e0", "e1", "e2"}

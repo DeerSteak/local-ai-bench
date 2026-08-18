@@ -76,6 +76,31 @@ def test_current_recovery_identity_bypasses_persistent_digest_cache(monkeypatch,
     assert seen["use_digest_cache"] is False
 
 
+def test_current_embedding_identity_includes_model_family_and_corpus(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.txt"
+    corpus.write_text("stable embedding input", encoding="utf-8")
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed", "short": "embed"}], "images": [],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    seen = {}
+
+    def build(*args, **kwargs):
+        seen.update(kwargs)
+        return {"identity": "embedding"}
+
+    monkeypatch.setattr(recovery_inspector, "build_engine_resume_identity", build)
+    monkeypatch.setattr(recovery_inspector.EmbeddingBenchmark, "EMBED_DOCUMENT_PATH", corpus)
+    identity = current_resume_identity(plan, profile={"os": "test"}, engine=object())
+    assert identity == {"identity": "embedding"}
+    assert seen["model_families"] == ["embeddings"]
+    assert seen["extra_artifacts"] == {"corpus:embeddings": corpus}
+
+
 def test_recovery_inspector_rejects_result_without_journal(tmp_path):
     result, _, _ = make_result(tmp_path)
     result.with_suffix(".events.sqlite3").unlink()

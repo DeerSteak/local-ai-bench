@@ -5,9 +5,10 @@ from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
     temperature_telemetry_requested,
 )
-from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.runtime.engines.base import EmbeddingMeasurement, GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.accuracy_event_stage import AccuracyEventStage
+from scripts.results.embedding_event_stage import EmbeddingEventStage, export_embeddings
 from scripts.runtime import supervised_stage
 from scripts.runtime.shared import Shared
 from scripts.workloads.mcq_benchmark import MCQBenchmark
@@ -15,7 +16,8 @@ from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 from scripts.runtime.workload_runner import (
-    create_case_telemetry, inherited_power_availability, inherited_temperature_availability,
+    create_case_telemetry, execute_embedding_job, inherited_power_availability,
+    inherited_temperature_availability,
 )
 
 
@@ -444,6 +446,104 @@ def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
 
     result = run_supervised_stage(plan, path, "conc_tool", lambda _: None, Supervisor)
     assert result["fake"]["1"]["aggregate_tps"] == 45
+
+
+def test_supervised_embedding_projects_committed_batch(tmp_path):
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed:model", "short": "embed"}], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+        },
+    )
+    identity = {
+        "plan_id": plan.plan_id,
+        "artifacts": {"corpus:embeddings": {"sha256": "corpus", "size": 1}},
+        "runtimes": {}, "methodology": {},
+    }
+    path = (tmp_path / "results.events.sqlite3").resolve()
+
+    class Supervisor:
+        def __init__(self, spec): assert spec.stage == "emb"
+
+        def run(self, callback):
+            stage = EmbeddingEventStage(
+                path, plan, "corpus", lambda _: None, initialize=False,
+            )
+            stage.record_batch(
+                {"tag": "embed:model", "short": "embed", "label": "Embed"},
+                [EmbeddingMeasurement([], 0.5)], "ok", 2, 1,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(
+        plan, path, "emb", lambda _: None, Supervisor, resume_identity=identity,
+    )
+    assert result["embed"]["chunks_per_sec_mean"] == 4.0
+
+
+def test_embedding_runner_reconstructs_plan_and_commits_projection(monkeypatch, tmp_path):
+    from scripts.runtime import workload_runner
+
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "nomic-embed-text", "short": "nomic"}], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512], "llamabench_tg": [128],
+            "sample_size": None, "concurrency_tool_levels": [1],
+            "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
+            "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+        },
+    )
+    identity = {
+        "plan_id": plan.plan_id,
+        "artifacts": {"corpus:embeddings": {"sha256": "corpus", "size": 1}},
+        "runtimes": {}, "methodology": {},
+    }
+    path = tmp_path / "events.sqlite3"
+    owner = EmbeddingEventStage(path, plan, "corpus", lambda _: None,
+                                resume_identity=identity)
+    owner.close()
+
+    class Engine:
+        def start(self, **_kwargs): return True
+        def available(self): return False
+
+    class Benchmark:
+        def run(self, *, models, journal, **_kwargs):
+            assert models[0]["label"] == "Nomic Embed Text"
+            journal.record_batch(
+                models[0], [EmbeddingMeasurement([], 0.5)], "ok", 2, 1,
+            )
+            journal.finish()
+
+    monkeypatch.setattr(workload_runner, "apply_offline_mode", lambda _value: None)
+    monkeypatch.setattr(workload_runner, "configure_runner_engine", lambda *_args: None)
+    monkeypatch.setattr(workload_runner, "create_case_telemetry", lambda _settings: None)
+    monkeypatch.setattr(workload_runner.Shared, "detect_backend", lambda: "cpu")
+    monkeypatch.setattr(workload_runner.Shared, "shutdown_managed", lambda: None)
+    monkeypatch.setattr(workload_runner, "emit", lambda *_args, **_kwargs: None)
+    execute_embedding_job(
+        path, plan.job_id, engine_factory=lambda _name: Engine(),
+        benchmark_factory=lambda: Benchmark(),
+    )
+    assert export_embeddings(path, plan.job_id)["nomic"][
+        "chunks_per_sec_mean"
+    ] == 4.0
 
 
 def test_supervised_accuracy_projects_committed_question(monkeypatch, tmp_path):

@@ -75,9 +75,9 @@ def test_recovery_executor_resumes_attempt_and_completes_original_result(tmp_pat
 
 
 def test_recovery_executor_rejects_legacy_stage_before_mutation(tmp_path):
-    result, _ = stopped_result(tmp_path, ("emb",))
+    result, _ = stopped_result(tmp_path, ("llamabenchconc",))
     before = result.read_bytes()
-    with pytest.raises(ValueError, match="without durable recovery: emb"):
+    with pytest.raises(ValueError, match="without durable recovery: llamabenchconc"):
         resume_journal_run(result, identity_builder=lambda _plan: {})
     assert result.read_bytes() == before
 

@@ -22,6 +22,8 @@ The journal-owned HTTP concurrency projections retain numeric level keys, per-re
 
 The journal-owned accuracy projection retains each workload's existing aggregate, category, diagnostic, and incorrect-answer fields while rebuilding the separate raw-answer sidecar from the same per-question events. Timed-out and token-exhausted partial responses remain graded and the bank continues; resumed execution skips completed question IDs. The selected full-bank content hash is part of resume identity, so changing a bank requires a fork rather than mixing answers across bank versions.
 
+The journal-owned embedding projection retains the existing per-model throughput statistics, completed/valid/invalid run counts, timing samples, and telemetry while deliberately excluding embedding vectors as before. One complete document batch is durable per model, and the full corpus hash is part of resume identity.
+
 ## Required result envelope
 
 A current result contains `version`, `engine`, `profile`, `accuracy_settings`, `bank_versions`, `sample_ids`, `run`, and every workload section, even when a section is empty. The workload sections are `llm`, `llm_conversation`, `embeddings`, `images`, `mcq`, `math`, `reasoning`, `code`, `tool`, `concurrency_tool`, `concurrency_chat`, `llamabench`, and `llamabenchconc`.

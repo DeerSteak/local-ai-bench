@@ -125,6 +125,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/recovery_inspector.py` | Read-only resume/fork eligibility, identity revalidation, and durable coverage report |
 | `results/recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
 | `results/accuracy_event_stage.py` | Per-question accuracy journal ownership plus scored-result and raw-answer projections shared by all five banks |
+| `results/embedding_event_stage.py` | Per-model embedding-batch journal ownership, corpus identity, and compatible throughput projection without retained vectors |
 | `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |

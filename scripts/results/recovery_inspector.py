@@ -15,6 +15,7 @@ from scripts.runtime.shared import Shared
 from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES
 from scripts.stage_registry import ACCURACY_TESTS
 from scripts.workloads.accuracy_registry import accuracy_spec
+from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
 
 
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
@@ -30,7 +31,7 @@ def retryable_case_records(plan, projection):
         if (case.get("state") not in RETRYABLE_CASE_STATES
                 or case.get("parent_id") not in stages
                 or case.get("case_kind") not in {
-                    "context", "sustained", "accuracy_question",
+                    "context", "sustained", "accuracy_question", "embedding_batch",
                 }):
             continue
         details = []
@@ -38,6 +39,8 @@ def retryable_case_records(plan, projection):
             details.append(str(case["context_label"]))
         elif case.get("question_id"):
             details.append(str(case["question_id"]))
+        elif case.get("case_kind") == "embedding_batch":
+            details.append("input batch")
         elif case.get("case_kind"):
             details.append(str(case["case_kind"]).replace("_", " "))
         records.append({
@@ -60,10 +63,14 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
+    if "emb" in stages:
+        families.append("embeddings")
     extra = {}
     extra_artifacts = {
         f"bank:{stage}": accuracy_spec(stage).data_path for stage in accuracy_stages
     }
+    if "emb" in stages:
+        extra_artifacts["corpus:embeddings"] = EmbeddingBenchmark.EMBED_DOCUMENT_PATH
     if "llamabench" in stages:
         binary = tool_finder("llama-bench")
         if not binary:
