@@ -63,6 +63,7 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
+from scripts.app.tk_utils import schedule_tk_layout_refresh
 from scripts.app.result_actions import (
     completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
@@ -422,6 +423,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         run_active=lambda: process is not None and process.poll() is None,
     )
     root.update()
+    notebook.bind(
+        "<<NotebookTabChanged>>", lambda _event: schedule_tk_layout_refresh(root), add="+",
+    )
     form = configuration_screen.form
     canvas = configuration_screen.canvas
     configuration_frame = configuration_screen.configuration_frame
