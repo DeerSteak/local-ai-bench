@@ -13,6 +13,8 @@ from scripts.results.resume_policy import assess_resume, build_engine_resume_ide
 from scripts.results.run_plan import load_run_plan
 from scripts.runtime.shared import Shared
 from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES
+from scripts.stage_registry import ACCURACY_TESTS
+from scripts.workloads.accuracy_registry import accuracy_spec
 
 
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
@@ -27,11 +29,15 @@ def retryable_case_records(plan, projection):
     for case_id, case in projection["cases"].items():
         if (case.get("state") not in RETRYABLE_CASE_STATES
                 or case.get("parent_id") not in stages
-                or case.get("case_kind") not in {"context", "sustained"}):
+                or case.get("case_kind") not in {
+                    "context", "sustained", "accuracy_question",
+                }):
             continue
         details = []
         if case.get("context_label"):
             details.append(str(case["context_label"]))
+        elif case.get("question_id"):
+            details.append(str(case["question_id"]))
         elif case.get("case_kind"):
             details.append(str(case["case_kind"]).replace("_", " "))
         records.append({
@@ -49,11 +55,15 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     engine = engine or get_engine(plan.engine_name)
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
-    if stages & {"llm", "conv", "llamabench", "sustained"}:
+    accuracy_stages = stages & set(ACCURACY_TESTS)
+    if stages & {"llm", "conv", "llamabench", "sustained", *ACCURACY_TESTS}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
     extra = {}
+    extra_artifacts = {
+        f"bank:{stage}": accuracy_spec(stage).data_path for stage in accuracy_stages
+    }
     if "llamabench" in stages:
         binary = tool_finder("llama-bench")
         if not binary:
@@ -62,6 +72,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages - {"llamabench"}), extra_runtimes=extra,
+        extra_artifacts=extra_artifacts,
         digest_cache_path=digest_cache_path, environment=profile or Shared.build_profile(),
         use_digest_cache=False,
     )

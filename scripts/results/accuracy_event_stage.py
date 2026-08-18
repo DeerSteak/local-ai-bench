@@ -6,13 +6,118 @@ from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
 
 
-FINAL_QUESTION_STATES = {"complete", "failed"}
+def _weighted(values: list[tuple[float | None, int]]) -> float | None:
+    selected = [(value, weight) for value, weight in values if value is not None and weight > 0]
+    total = sum(weight for _, weight in selected)
+    return sum(value * weight for value, weight in selected) / total if total else None
+
+
+def merge_memory_evidence(blocks: list[dict]) -> dict | None:
+    blocks = [block for block in blocks if isinstance(block, dict)]
+    if not blocks:
+        return None
+    if len(blocks) == 1:
+        return blocks[0]
+    summaries = {}
+    channels = {
+        channel for block in blocks for channel in block.get("summary", {})
+    }
+    for channel in channels:
+        values = [block.get("summary", {}).get(channel, {}) for block in blocks]
+        valid = sum(value.get("valid_samples", 0) for value in values)
+        peaks = [value.get("peak_gb") for value in values if value.get("peak_gb") is not None]
+        finals = [value.get("final_gb") for value in values if value.get("final_gb") is not None]
+        summaries[channel] = {
+            "peak_gb": max(peaks) if peaks else None,
+            "mean_gb": _weighted([
+                (value.get("mean_gb"), value.get("valid_samples", 0)) for value in values
+            ]),
+            "final_gb": finals[-1] if finals else None,
+            "valid_samples": valid,
+        }
+    known_headroom = [
+        block.get("headroom", {}) for block in blocks
+        if block.get("headroom", {}).get("absolute_gb") is not None
+    ]
+    headroom = min(known_headroom, key=lambda value: value["absolute_gb"]) \
+        if known_headroom else blocks[-1].get("headroom", {})
+    provenances = [block.get("provenance", {}) for block in blocks]
+    channel_provenance = {}
+    for channel in {
+            name for provenance in provenances for name in provenance.get("channels", {})}:
+        values = [provenance.get("channels", {}).get(channel, {}) for provenance in provenances]
+        sources = {value.get("source") for value in values if value.get("source") is not None}
+        if len(sources) > 1:
+            raise ValueError(f"accuracy memory source changed across recovery: {channel}")
+        channel_provenance[channel] = {
+            "source": next(iter(sources), "unsupported"),
+            "failed_samples": sum(value.get("failed_samples", 0) for value in values),
+        }
+    intervals = {value.get("interval_sec") for value in provenances}
+    if len(intervals) > 1:
+        raise ValueError("accuracy memory interval changed across recovery")
+    return {
+        "windows": [window for block in blocks for window in block.get("windows", [])],
+        "summary": summaries, "headroom": headroom,
+        "provenance": {
+            "interval_sec": next(iter(intervals), None),
+            "failed_samples": sum(value.get("failed_samples", 0) for value in provenances),
+            "channels": channel_provenance,
+        },
+    }
+
+
+def merge_power_evidence(blocks: list[dict]) -> dict | None:
+    blocks = [block for block in blocks if isinstance(block, dict)]
+    if not blocks:
+        return None
+    if len(blocks) == 1:
+        return blocks[0]
+    identities = {(block.get("source"), block.get("scope")) for block in blocks}
+    if len(identities) > 1:
+        raise ValueError("accuracy power source or scope changed across recovery")
+    weights = [sum(window.get("sample_count", 0) for window in block.get("windows", []))
+               for block in blocks]
+    idle_weights = [sum(window.get("sample_count", 0) for window in block.get("windows", [])
+                        if window.get("name") == "idle") for block in blocks]
+    peaks = [float(value) for block in blocks
+             if isinstance((value := block.get("peak_watts")), (int, float))
+             and not isinstance(value, bool)]
+    recorded = all(block.get("status") == "recorded" for block in blocks)
+    provenances = [block.get("provenance", {}) for block in blocks]
+    intervals = {value.get("interval_sec") for value in provenances}
+    if len(intervals) > 1:
+        raise ValueError("accuracy power interval changed across recovery")
+    source, scope = next(iter(identities))
+    return {
+        "status": "recorded" if recorded else "unavailable",
+        "reason": None if recorded else next(
+            (block.get("reason") for block in blocks if block.get("reason")),
+            "incomplete power evidence across recovery",
+        ),
+        "source": source, "scope": scope,
+        "energy_joules": sum(block["energy_joules"] for block in blocks) if recorded else None,
+        "mean_watts": _weighted([
+            (block.get("mean_watts"), weight) for block, weight in zip(blocks, weights)
+        ]),
+        "peak_watts": max(peaks) if peaks else None,
+        "idle_baseline_watts": _weighted([
+            (block.get("idle_baseline_watts"), weight)
+            for block, weight in zip(blocks, idle_weights)
+        ]),
+        "windows": [window for block in blocks for window in block.get("windows", [])],
+        "provenance": {
+            "interval_sec": next(iter(intervals), None),
+            "failed_samples": sum(value.get("failed_samples", 0) for value in provenances),
+        },
+    }
 
 
 class AccuracyEventStage:
     def __init__(self, path: Path, plan: RunPlan, stage_name: str, questions: list[dict],
                  bank_hash: str, score_fn, export_fn, *, initialize: bool = True,
-                 resume_identity: dict | None = None, resume: bool = False):
+                 resume_identity: dict | None = None, resume: bool = False,
+                 selected_case_ids: list[str] | None = None):
         if stage_name not in {"mcq", "math", "reasoning", "code", "tool"}:
             raise ValueError(f"unsupported accuracy stage: {stage_name}")
         question_ids = [question.get("id") for question in questions]
@@ -40,7 +145,9 @@ class AccuracyEventStage:
                 raise ValueError("resume plan does not match the journal job")
             if resume_identity is None or self.store.resume_identity(plan.job_id) != resume_identity:
                 raise ValueError("resume identity changed; create a fork")
-            self.recovery_attempts = self.store.prepare_recovery(plan.job_id, stage_name)
+            self.recovery_attempts = self.store.prepare_recovery(
+                plan.job_id, stage_name, selected_case_ids,
+            )
         elif initialize:
             self.store.start_stage(plan, stage_name, resume_identity)
         elif self.store.load_plan(plan.job_id) != plan:
@@ -65,13 +172,23 @@ class AccuracyEventStage:
 
     def next_attempt(self, model: dict, question_id: str) -> int | None:
         case_id = self._case_id(model, question_id)
-        case = self.store.rebuild(self.plan.job_id)["cases"].get(case_id)
+        projection = self.store.rebuild(self.plan.job_id)
+        case = projection["cases"].get(case_id)
         if case is None:
             return 1
         if case["state"] == "complete":
             return None
         if case_id in self.recovery_attempts:
             return self.recovery_attempts[case_id]
+        if case.get("recovery") == "retry":
+            numbers = [
+                attempt.get("number", 0) for attempt in projection["attempts"].values()
+                if attempt["parent_id"] == case_id
+            ]
+            return max(numbers, default=0) + 1
+        stage = projection["stages"].get(self.stage_id, {})
+        if stage.get("recovery_scope") == "selected":
+            return None
         raise ValueError("incomplete accuracy case was not prepared for recovery")
 
     def pending_questions(self, model: dict) -> list[dict]:
@@ -142,6 +259,29 @@ class AccuracyEventStage:
         ])
         self.export_fn(self.export_results(), self.export_answers())
 
+    def record_model_evidence(self, model: dict, memory, power=None) -> None:
+        projection = self.store.rebuild(self.plan.job_id)
+        segments = sum(
+            case.get("parent_id") == self.stage_id
+            and case.get("case_kind") == "model_evidence"
+            and case.get("model_short") == model["short"]
+            for case in projection["cases"].values()
+        )
+        case_id = self.plan.case_id(
+            self.stage_name, self._model_id(model),
+            {"bank_hash": self.bank_hash, "model_evidence": segments + 1},
+        )
+        self.store.append(self.plan.job_id, [
+            JournalEvent("case", case_id, "running", {
+                "case_kind": "model_evidence", "model_short": model["short"],
+                "model_label": model["label"], "bank_hash": self.bank_hash,
+            }, parent_id=self.stage_id),
+            JournalEvent("case", case_id, "complete", {
+                "memory": memory, "power": power,
+            }, parent_id=self.stage_id),
+        ])
+        self.export_fn(self.export_results(), self.export_answers())
+
     def _model_records(self) -> dict[str, dict]:
         projection = self.store.rebuild(self.plan.job_id)
         records = {}
@@ -150,9 +290,13 @@ class AccuracyEventStage:
                 continue
             model = records.setdefault(case["model_short"], {
                 "label": case["model_label"], "questions": {}, "model_states": [],
+                "evidence": [],
             })
             if case["case_kind"] == "model_state":
                 model["model_states"].append(case)
+                continue
+            if case["case_kind"] == "model_evidence":
+                model["evidence"].append(case)
                 continue
             attempts = [
                 (attempt_id, attempt) for attempt_id, attempt in projection["attempts"].items()
@@ -186,9 +330,13 @@ class AccuracyEventStage:
             answers = {question_id: value.get("given") for question_id, value in questions.items()}
             scored = self.score_fn(self.questions, answers)
             scored.pop("all", None)
-            result = {"label": record["label"], **scored}
-            if len(questions) < len(self.questions):
-                result["partial"] = True
+            failed = [value for value in questions.values() if value["state"] == "failed"]
+            incomplete = len(questions) < len(self.questions)
+            result = (
+                {"label": record["label"], "partial": True,
+                 "answered": len(questions), "total": len(self.questions)}
+                if incomplete and not failed else {"label": record["label"], **scored}
+            )
             diagnostics = {
                 "timed_out": [qid for qid, value in questions.items()
                               if value.get("run_status") == "timed_out"],
@@ -207,10 +355,20 @@ class AccuracyEventStage:
                 if values:
                     result[f"{key}_count"] = len(values)
                     result[f"{key}_ids"] = values
-            failed = [value for value in questions.values() if value["state"] == "failed"]
             if failed:
                 result["crashed"] = True
                 result["crashed_at"] = failed[-1]["question_id"]
+            if record["evidence"]:
+                memory = merge_memory_evidence([
+                    evidence.get("memory") for evidence in record["evidence"]
+                ])
+                power = merge_power_evidence([
+                    evidence.get("power") for evidence in record["evidence"]
+                ])
+                if memory is not None:
+                    result["memory"] = memory
+                if power is not None:
+                    result["power"] = power
             results[short] = result
         return results
 
@@ -239,7 +397,9 @@ class AccuracyEventStage:
             case["parent_id"] == self.stage_id and case["state"] not in {"complete", "skipped"}
             for case in projection["cases"].values()
         )
-        state = "failed" if unresolved else "complete"
+        stage = projection["stages"].get(self.stage_id, {})
+        state = "failed" if stage.get("recovery_scope") == "selected" and unresolved \
+            else "complete"
         self.store.append(self.plan.job_id, [
             JournalEvent("stage", self.stage_id, state, {}, parent_id=self.plan.job_id),
         ])

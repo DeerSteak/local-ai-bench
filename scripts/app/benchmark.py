@@ -74,8 +74,10 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.runtime_identity import engine_runtime_version
 from scripts.stage_registry import (
-    ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests,
+    ACCURACY_TESTS, CONCURRENCY_TESTS, JOURNAL_STAGES, LLM_TESTS,
+    engine_incompatible_tests,
 )
+from scripts.workloads.accuracy_registry import accuracy_spec
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -1095,11 +1097,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
         )
-        journal_stages = set(tests) & {
-            "llm", "conv", "llamabench", "conc_tool", "conc_chat", "sustained",
-        }
+        journal_stages = set(tests) & JOURNAL_STAGES
         resume_identity = None
         extra_resume_runtimes = {}
+        extra_resume_artifacts = {
+            f"bank:{stage}": accuracy_spec(stage).data_path
+            for stage in journal_stages & set(ACCURACY_TESTS)
+        }
         model_families = []
         if journal_stages:
             if "llamabench" in tests:
@@ -1107,7 +1111,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
-            if journal_stages & {"llm", "conv", "llamabench", "sustained"}:
+            if journal_stages & {"llm", "conv", "llamabench", "sustained", *ACCURACY_TESTS}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
@@ -1122,6 +1126,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 plan, engine, model_families=model_families,
                 include_engine_runtime=bool(journal_stages - {"llamabench"}),
                 extra_runtimes=extra_resume_runtimes,
+                extra_artifacts=extra_resume_artifacts,
                 digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
                 environment=profile,
             )
@@ -1259,6 +1264,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     plan, engine, model_families=model_families,
                     include_engine_runtime=bool(journal_stages - {"llamabench"}),
                     extra_runtimes=extra_resume_runtimes,
+                    extra_artifacts=extra_resume_artifacts,
                     digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
                     environment=profile,
                 )
@@ -1352,16 +1358,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
-                telemetry = start_case_telemetry()
-                try:
-                    section = Bench().run(
-                        engine=engine, models=llm_models, questions=questions,
-                        warmup_runs=_context.plan.warmup_runs, save_fn=make_save(test_name),
-                        answers_path=answers_path, telemetry=telemetry,
-                    )
-                finally:
-                    if telemetry:
-                        telemetry.stop()
+                section = run_supervised_stage(
+                    _context.plan, event_store_path(Path(out_path)), test_name,
+                    make_save(test_name), resume_identity=resume_identity,
+                    power_availability=power_availability,
+                    temperature_availability=temperature_availability,
+                )
                 Shared.ok(f"Answers saved to: {answers_path}")
                 return section
             return StageDefinition(

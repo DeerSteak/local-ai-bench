@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.event_store import EventStore
 from scripts.results.llm_event_stage import (
     LLMEventStage, event_store_path, export_llm_section, measurement_from_payload,
-    measurement_payload,
+    measurement_payload, result_path_from_event_store,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -44,6 +46,10 @@ def test_measurement_event_payload_excludes_response_content_and_round_trips():
 
 def test_event_store_path_is_predictable_beside_result(tmp_path):
     assert event_store_path(tmp_path / "results.json") == tmp_path / "results.events.sqlite3"
+    assert result_path_from_event_store(tmp_path / "results.events.sqlite3") == \
+        tmp_path / "results.json"
+    with pytest.raises(ValueError, match="must end"):
+        result_path_from_event_store(tmp_path / "events.sqlite3")
 
 
 def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_path):

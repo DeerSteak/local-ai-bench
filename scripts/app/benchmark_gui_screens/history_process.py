@@ -8,9 +8,7 @@ from scripts.app.recovery_actions import (
     recovery_progress_entries, retry_executor_command,
 )
 from scripts.results.run_plan import load_run_plan
-
-
-RECOVERABLE_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+from scripts.stage_registry import JOURNAL_STAGES
 
 
 class HistoryProcessActions:
@@ -39,7 +37,7 @@ class HistoryProcessActions:
 
     def resume(self, result_path, report) -> None:
         plan = load_run_plan(result_path)
-        unsupported = [stage for stage in plan.stage_order if stage not in RECOVERABLE_STAGES]
+        unsupported = [stage for stage in plan.stage_order if stage not in JOURNAL_STAGES]
         if unsupported:
             self.messagebox.showerror(
                 "Recovery unavailable",
@@ -63,7 +61,7 @@ class HistoryProcessActions:
 
     def fork(self, source_path, report) -> None:
         plan = load_run_plan(source_path)
-        unsupported = [stage for stage in plan.stage_order if stage not in RECOVERABLE_STAGES]
+        unsupported = [stage for stage in plan.stage_order if stage not in JOURNAL_STAGES]
         destination = self.filedialog.asksaveasfilename(
             title="Save forked benchmark", defaultextension=".json",
             initialdir=str(config.RESULTS_DIR), initialfile=f"{source_path.stem}_fork.json",

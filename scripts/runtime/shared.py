@@ -740,16 +740,19 @@ class Shared:
                                 progress_stage: str | None = None,
                                 requires_tool_calls: bool = False,
                                 telemetry=None,
+                                journal=None,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
         from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
 
-        results = {}
-        answers_out: dict = {}
+        results = journal.export_results() if journal else {}
+        answers_out: dict = journal.export_answers() if journal else {}
 
         if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
+            if journal:
+                raise RuntimeError("inference engine unavailable in supervised accuracy runner")
             return results
 
         crash_cache = load_crash_cache(crash_cache_path)
@@ -769,9 +772,18 @@ class Shared:
                 emit_progress("model", progress_stage, "running", label, model_id=tag)
             telemetry_active = False
             try:
+                pending_questions = journal.pending_questions(model) if journal else questions
+                if journal and not pending_questions:
+                    results = journal.export_results()
+                    answers_out = journal.export_answers()
+                    continue
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "model_not_downloaded",
+                        })
                     continue
 
                 if requires_tool_calls and not engine.supports_tool_calls(tag):
@@ -783,6 +795,8 @@ class Shared:
                         "skip_reason": "tool_calls_unsupported",
                         "skip_detail": f"No {engine.name} tool-call parser for this model",
                     }
+                    if journal:
+                        journal.record_model_state(model, "skipped", results[short])
                     continue
 
                 skip_entry = check_crash_cache(
@@ -791,6 +805,8 @@ class Shared:
                 )
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
                 if telemetry:
@@ -803,7 +819,7 @@ class Shared:
                     continue
 
                 Shared.log(
-                    f"Answering {len(questions)} {question_noun} "
+                    f"Answering {len(pending_questions)} {question_noun} "
                     f"({config.ACC_TIMEOUT}s and {config.ACC_TOKEN_BUDGET} completion tokens each) ..."
                 )
                 answers: dict = {}
@@ -816,7 +832,7 @@ class Shared:
                 answers_out[short] = {"label": label, "answers": [], "partial": True}
                 results[short] = {"label": label, "partial": True, "answered": 0, "total": len(questions)}
 
-                for i, q in enumerate(questions):
+                for i, q in enumerate(pending_questions):
                     if telemetry:
                         telemetry.begin_measured(f"measured:{q['id']}")
                     samples, status, partial_text, metadata = Shared.run_measured_calls(
@@ -837,6 +853,22 @@ class Shared:
                         "id": q["id"], "given": given, "raw_response": raw,
                     })
                     results[short]["answered"] = len(answers)
+
+                    if journal:
+                        attempt_number = journal.next_attempt(model, q["id"])
+                        if attempt_number is None:
+                            raise ValueError(f"accuracy question already completed: {q['id']}")
+                        journal.record_question(
+                            model, q["id"], given, raw, status,
+                            budget_nudged=budget_nudged,
+                            likely_loop=(status == "loop_detected" or (
+                                status == "timed_out" and bool(partial_text)
+                                and looks_like_loop(partial_text)
+                            )),
+                            attempt_number=attempt_number,
+                        )
+                        results = journal.export_results()
+                        answers_out = journal.export_answers()
 
                     if budget_nudged:
                         budget_nudged_ids.append(q["id"])
@@ -862,6 +894,16 @@ class Shared:
 
                     if (i + 1) % 10 == 0:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
+
+                if journal:
+                    scored_result = results.get(short, {})
+                    if scored_result.get("accuracy_pct") is not None:
+                        Shared.ok(f"{label}: {scored_result['accuracy_pct']:.1f}% "
+                                  f"({scored_result['correct']}/{scored_result['total']})")
+                    Shared.log(f"Unloading {label} ...")
+                    engine.unload(tag)
+                    engine.wait_until_unloaded(tag)
+                    continue
 
                 scored = score_fn(questions, answers)
                 answers_out[short] = {
@@ -906,20 +948,33 @@ class Shared:
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(
                     unexpected_model_failure(label, exc, crashed=True))
+                if journal:
+                    journal.record_model_state(model, "failed", results[short])
+                    results = journal.export_results()
+                    answers_out = journal.export_answers()
             finally:
                 if telemetry_active and telemetry:
                     memory = telemetry.finish_case()
-                    if isinstance(results.get(short), dict):
+                    if journal:
+                        journal.record_model_evidence(
+                            model, memory, getattr(telemetry, "last_power", None),
+                        )
+                        results = journal.export_results()
+                        answers_out = journal.export_answers()
+                    elif isinstance(results.get(short), dict):
                         results[short]["memory"] = memory
                         if (power := getattr(telemetry, "last_power", None)) is not None:
                             results[short]["power"] = power
-                if save_fn:
+                if save_fn and not journal:
                     save_fn(results)
-                if answers_path:
+                if answers_path and not journal:
                     Shared.write_answers_sidecar(answers_path, answers_out)
                 if progress_stage:
                     emit_model_finished(progress_stage, label, results.get(short), model_id=tag)
 
+        if journal:
+            journal.finish()
+            return journal.export_results()
         return results
 
 

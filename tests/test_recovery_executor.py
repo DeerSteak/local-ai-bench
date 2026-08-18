@@ -3,7 +3,7 @@ import json
 import pytest
 
 from scripts.runtime.engines.base import GenerationMeasurement
-from scripts.results.event_store import EventStore
+from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.recovery_executor import fork_journal_run, resume_journal_run, retry_selected_cases
 from scripts.results.result_store import build_run_manifest, finish_run, finish_stage, start_stage
@@ -124,6 +124,35 @@ def test_recovery_executor_finalizes_when_all_stage_evidence_already_completed(t
     journal.close()
 
 
+def test_recovery_rebuilds_sidecar_for_already_completed_accuracy_stage(monkeypatch, tmp_path):
+    result, plan = stopped_result(tmp_path, ("mcq",))
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}, "environment": {}}
+    journal_path = result.with_suffix(".events.sqlite3")
+    journal = EventStore(journal_path)
+    journal.start_stage(plan, "mcq", identity)
+    journal.append(plan.job_id, [JournalEvent(
+        "stage", plan.stage_id("mcq"), "complete", {}, parent_id=plan.job_id,
+    )])
+    journal.finish_job(plan.job_id, "interrupted", "sidecar_export_failed")
+    journal.close()
+    data = json.loads(result.read_text())
+    data["run"]["stages"]["mcq"]["status"] = "complete"
+    result.write_text(json.dumps(data), encoding="utf-8")
+    rebuilt = []
+    monkeypatch.setattr(
+        "scripts.results.recovery_executor._rebuild_accuracy_sidecar",
+        lambda *args: rebuilt.append(args),
+    )
+
+    recovered = resume_journal_run(
+        result, identity_builder=lambda _plan: identity,
+        stage_runner=lambda *_args: pytest.fail("completed accuracy stage reran"),
+    )
+    assert recovered["run"]["status"] == "complete"
+    assert rebuilt == [(result.resolve(), journal_path, plan, "mcq")]
+
+
 def test_recovery_executor_records_user_interrupt_truthfully(tmp_path):
     result, plan = stopped_result(tmp_path)
     identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
@@ -149,6 +178,12 @@ def test_recovery_executor_records_user_interrupt_truthfully(tmp_path):
 
 def test_recovery_executor_forks_plan_without_mutating_source(tmp_path):
     source, source_plan = stopped_result(tmp_path)
+    source_data = json.loads(source.read_text())
+    source_data.update({
+        "bank_versions": {"mcq": "abc123"}, "sample_ids": {"mcq": ["q1"]},
+        "accuracy_settings": {"timeout_seconds": 60},
+    })
+    source.write_text(json.dumps(source_data), encoding="utf-8")
     source_before = source.read_bytes()
     output = tmp_path / "fork.json"
     calls = []
@@ -183,6 +218,9 @@ def test_recovery_executor_forks_plan_without_mutating_source(tmp_path):
         {"plan_id": source_plan.plan_id}, False,
     )]
     assert json.loads(output.read_text())["llm"]["model"]["512"]["tps_mean"] == 42.0
+    assert forked["bank_versions"] == {"mcq": "abc123"}
+    assert forked["sample_ids"] == {"mcq": ["q1"]}
+    assert forked["accuracy_settings"] == {"timeout_seconds": 60}
     journal = EventStore(output.with_suffix(".events.sqlite3"))
     assert journal.rebuild(forked["run"]["job_id"])["jobs"][forked["run"]["job_id"]]["state"] == "complete"
     journal.close()

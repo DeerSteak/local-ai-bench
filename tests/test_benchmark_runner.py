@@ -7,6 +7,10 @@ from scripts.app.benchmark import (
 )
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
+from scripts.results.accuracy_event_stage import AccuracyEventStage
+from scripts.runtime import supervised_stage
+from scripts.runtime.shared import Shared
+from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
@@ -440,6 +444,51 @@ def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
 
     result = run_supervised_stage(plan, path, "conc_tool", lambda _: None, Supervisor)
     assert result["fake"]["1"]["aggregate_tps"] == 45
+
+
+def test_supervised_accuracy_projects_committed_question(monkeypatch, tmp_path):
+    questions = [{
+        "id": "q1", "category": "general", "choices": {"A": "x", "B": "y"},
+        "answer": "B",
+    }]
+    monkeypatch.setattr(supervised_stage, "selected_questions", lambda _stage, _sample: questions)
+    monkeypatch.setattr(Shared, "file_hash", lambda _path: "bank-v1")
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["mcq"],
+        stage_order=["mcq"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+        },
+    )
+    path = (tmp_path / "results.events.sqlite3").resolve()
+
+    class Supervisor:
+        def __init__(self, _spec): pass
+
+        def run(self, callback):
+            stage = AccuracyEventStage(
+                path, plan, "mcq", questions, "bank-v1", MCQBenchmark.score,
+                lambda _results, _answers: None, initialize=False,
+            )
+            stage.record_question(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                "q1", "B", "The answer is B", "ok",
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(plan, path, "mcq", lambda _: None, Supervisor)
+    assert result["fake"]["accuracy_pct"] == 100.0
+    sidecar = json.loads((tmp_path / "answers_mcq_results.json").read_text())
+    assert sidecar["fake"]["answers"][0]["raw_response"] == "The answer is B"
 
 
 def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_path):

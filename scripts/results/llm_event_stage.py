@@ -32,6 +32,14 @@ def event_store_path(result_path: Path) -> Path:
     return Path(result_path).with_suffix(".events.sqlite3")
 
 
+def result_path_from_event_store(path: Path) -> Path:
+    path = Path(path)
+    suffix = ".events.sqlite3"
+    if not path.name.endswith(suffix):
+        raise ValueError("event-store path must end with .events.sqlite3")
+    return path.with_name(f"{path.name[:-len(suffix)]}.json")
+
+
 def measurement_payload(measurement: GenerationMeasurement) -> dict:
     values = asdict(measurement)
     return {key: values[key] for key in MEASUREMENT_FIELDS}

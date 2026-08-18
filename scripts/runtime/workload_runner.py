@@ -15,6 +15,7 @@ from scripts.runtime.engines import get_engine
 from scripts.results.event_store import EventStore
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
+from scripts.results.accuracy_event_stage import AccuracyEventStage
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
@@ -27,6 +28,8 @@ from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUN
 from scripts.runtime.shared import Shared
 from scripts.results.sustained_event_stage import SustainedEventStage
 from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability, TemperatureAvailability
+from scripts.stage_registry import ACCURACY_TESTS
+from scripts.workloads.accuracy_registry import accuracy_spec, selected_questions
 
 
 _emit_lock = threading.Lock()
@@ -393,6 +396,60 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
         Shared.shutdown_managed()
 
 
+def execute_accuracy_job(path, job_id, stage_name, *, engine_factory=get_engine) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if stage_name not in ACCURACY_TESTS or stage_name not in plan.tests:
+        raise ValueError("runner job does not include the requested accuracy stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.ACC_TIMEOUT = settings["accuracy_timeout_seconds"]
+    config.ACC_TOKEN_BUDGET = settings["accuracy_token_budget"]
+    spec = accuracy_spec(stage_name)
+    questions = selected_questions(stage_name, settings.get("sample_size"))
+    bank_hash = Shared.file_hash(spec.data_path)
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"],
+        )}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    Shared._active_engine = engine
+    def notify(_results, _answers):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
+
+    journal = None
+    telemetry = None
+    try:
+        telemetry = create_case_telemetry(settings)
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = AccuracyEventStage(
+            path, plan, stage_name, questions, bank_hash, spec.benchmark.score,
+            notify, initialize=False,
+        )
+        spec.benchmark().run(
+            engine=engine, models=models, questions=questions,
+            warmup_runs=plan.warmup_runs, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
 def heartbeat(stop_event: threading.Event) -> None:
     while not stop_event.wait(5):
         emit("heartbeat")
@@ -422,6 +479,8 @@ def main(argv=None) -> int:
             execute_llamabench_job(args.event_store, args.job_id)
         elif args.stage == "sustained":
             execute_sustained_job(args.event_store, args.job_id)
+        elif args.stage in ACCURACY_TESTS:
+            execute_accuracy_job(args.event_store, args.job_id, args.stage)
         else:
             execute_concurrency_job(args.event_store, args.job_id, args.stage)
     except BaseException as exc:

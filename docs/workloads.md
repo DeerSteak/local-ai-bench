@@ -221,6 +221,8 @@ All five accuracy workloads use the same `--llm-models` selection as single-shot
 
 Question banks are validated when loaded, before any model inference begins: every question needs an ID and category, IDs must be unique, and each workload requires the fields it consumes during inference and scoring. Scoring repeats the common validation defensively for programmatically supplied questions but omits a missing optional breakdown value instead of discarding completed measurements.
 
+Each accuracy question is a journal-owned recovery case keyed by the model, full question-bank content hash, and question ID. Its graded value, raw response, timeout/token-budget/loop diagnostics, and attempt number commit before the next question starts; the aggregate result and `answers_<test>_*.json` sidecar are projections of those events. A compatible resume skips completed questions, while any bank-content change fails identity validation and requires a fork.
+
 ### MCQ
 
 Every LLM model (all four tiers, same models as the LLM test above) answers a fixed bank of 150 multiple-choice questions once each, via a real chat turn (`/v1/chat/completions`) asking for just the letter of the correct answer.

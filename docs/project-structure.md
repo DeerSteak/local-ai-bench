@@ -124,6 +124,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
 | `results/recovery_inspector.py` | Read-only resume/fork eligibility, identity revalidation, and durable coverage report |
 | `results/recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
+| `results/accuracy_event_stage.py` | Per-question accuracy journal ownership plus scored-result and raw-answer projections shared by all five banks |
 | `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
@@ -174,6 +175,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
 | `workloads/tool_benchmark.py` | Tool-calling accuracy test |
 | `workloads/accuracy_scoring.py` | Shared accuracy-bank aggregation with workload-owned correctness callbacks |
+| `workloads/accuracy_registry.py` | Shared accuracy class and question-bank metadata for supervised execution and recovery identity |
 | `results/regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `workloads/llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `workloads/vllm_benchmark.py` | Opt-in `vllmbench` test — vLLM's own `vllm bench latency`/`throughput` sweep, bypassing the HTTP engine (see [Workloads](workloads.md#vllm-bench)) |

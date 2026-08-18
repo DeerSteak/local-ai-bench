@@ -5,13 +5,21 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from scripts.runtime.progress_events import PROGRESS_PREFIX
-from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
+from scripts.results.llm_event_stage import (
+    LLMEventStage, export_llm_section, result_path_from_event_store,
+)
+from scripts.results.accuracy_event_stage import AccuracyEventStage, export_accuracy
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
 from scripts.results.sustained_event_stage import SustainedEventStage, export_sustained_section
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
+from scripts.runtime.shared import Shared
+from scripts.results.regrade import answer_sidecar_path
+from scripts.results.result_store import atomic_write_json
+from scripts.stage_registry import ACCURACY_TESTS
+from scripts.workloads.accuracy_registry import accuracy_spec, selected_questions
 
 
 class RunnerLike(Protocol):
@@ -36,7 +44,23 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
                          power_availability: PowerAvailability | None = None,
                          temperature_availability: TemperatureAvailability | None = None) -> dict:
     event_path = Path(event_path).resolve()
-    if stage_name == "llamabench":
+    project_answers: Callable[[], dict] | None = None
+    if stage_name in ACCURACY_TESTS:
+        spec = accuracy_spec(stage_name)
+        questions = selected_questions(stage_name, plan.effective_config.get("sample_size"))
+        bank_hash = Shared.file_hash(spec.data_path)
+        journal = AccuracyEventStage(
+            event_path, plan, stage_name, questions, bank_hash, spec.benchmark.score,
+            lambda _results, _answers: None, resume_identity=resume_identity, resume=resume,
+            selected_case_ids=selected_case_ids,
+        )
+        project = lambda: export_accuracy(
+            event_path, plan.job_id, stage_name, questions, bank_hash, spec.benchmark.score,
+        )[0]
+        project_answers = lambda: export_accuracy(
+            event_path, plan.job_id, stage_name, questions, bank_hash, spec.benchmark.score,
+        )[1]
+    elif stage_name == "llamabench":
         journal = NativeBenchEventStage(
             event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
         )
@@ -65,6 +89,11 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
     def on_runner_event(event):
         if event["kind"] == "event":
             save_fn(project())
+            if project_answers:
+                atomic_write_json(
+                    answer_sidecar_path(result_path_from_event_store(event_path), stage_name),
+                    project_answers(),
+                )
         elif event["kind"] == "terminal":
             terminal.append(event["status"])
         elif event["kind"] == "log":
@@ -76,6 +105,11 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
         supervisor.cancel()
     section = project()
     save_fn(section)
+    if project_answers:
+        atomic_write_json(
+            answer_sidecar_path(result_path_from_event_store(event_path), stage_name),
+            project_answers(),
+        )
     if return_code or terminal != ["complete"]:
         raise RuntimeError(f"{stage_name} runner failed with exit code {return_code}")
     return section

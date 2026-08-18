@@ -68,9 +68,11 @@ def test_engine_resume_identity_covers_selected_models_runtime_and_methodology(t
 
     identity = build_engine_resume_identity(
         plan, Engine(), model_families=["llm"], extra_runtimes={"llama-bench": extra},
+        extra_artifacts={"bank:mcq": extra},
         environment={"os": "ExampleOS", "backend": "metal"},
     )
     assert identity["artifacts"]["model:model:4b:part1"] == file_identity(model)
+    assert identity["artifacts"]["bank:mcq"] == file_identity(extra)
     assert identity["runtimes"]["llama-server"] == file_identity(runtime)
     assert identity["runtimes"]["llama-bench"] == file_identity(extra)
     assert len(identity["methodology"]["execution"]) == 64

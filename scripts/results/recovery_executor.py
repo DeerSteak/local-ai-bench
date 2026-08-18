@@ -7,18 +7,28 @@ from pathlib import Path
 from scripts.runtime.supervised_stage import run_supervised_stage
 from scripts.runtime.telemetry import discover_power_source, discover_temperature_source
 from scripts.results.event_store import EventStore
+from scripts.results.accuracy_event_stage import export_accuracy
 from scripts.results.llm_event_stage import event_store_path
+from scripts.results.regrade import answer_sidecar_path
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.results.recovery_inspector import (
     current_resume_identity, inspect_recovery,
 )
-from scripts.results.result_store import ResultStore, build_run_manifest
+from scripts.results.result_store import ResultStore, atomic_write_json, build_run_manifest
 from scripts.results.run_plan import RunPlan, load_run_plan
-from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES, stage_spec
+from scripts.stage_registry import (
+    ACCURACY_TESTS, JOURNAL_STAGES, SELECTED_RETRY_STAGES, stage_spec,
+)
+from scripts.runtime.shared import Shared
+from scripts.workloads.accuracy_registry import accuracy_spec, selected_questions
 
 
 SECTION_BY_STAGE = {key: stage_spec(key).section for key in JOURNAL_STAGES}
 FAMILY_BY_STAGE = {key: stage_spec(key).model_family for key in JOURNAL_STAGES}
+FORK_METADATA_KEYS = {
+    "version", "engine", "engine_version", "profile", "accuracy_settings",
+    "bank_versions", "sample_ids", "preflight",
+}
 
 
 def _finish_result(store, data, status, reason=None):
@@ -50,6 +60,16 @@ def _finish_journal_job(journal_path, plan, state, reason=None, preserve_termina
         journal.close()
 
 
+def _rebuild_accuracy_sidecar(result_path, journal_path, plan, stage):
+    spec = accuracy_spec(stage)
+    questions = selected_questions(stage, plan.effective_config.get("sample_size"))
+    _, answers = export_accuracy(
+        journal_path, plan.job_id, stage, questions, Shared.file_hash(spec.data_path),
+        spec.benchmark.score,
+    )
+    atomic_write_json(answer_sidecar_path(result_path, stage), answers)
+
+
 def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
                        stage_runner=_run_stage):
     """Resume a stopped journal-only result after a read-only eligibility decision."""
@@ -77,6 +97,8 @@ def resume_journal_run(result_path, *, identity_builder=current_resume_identity,
         for stage in plan.stage_order:
             record = data["run"]["stages"].get(stage)
             if record and record["status"] == "complete":
+                if stage in ACCURACY_TESTS:
+                    _rebuild_accuracy_sidecar(result_path, journal_path, plan, stage)
                 continue
             selected_models = len(plan.models[FAMILY_BY_STAGE[stage]])
             if record is None:
@@ -197,6 +219,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=current_resum
     )
     identity = identity_builder(plan)
     data = {"run": build_run_manifest(plan=plan, repo_root=Path(__file__).parents[2])}
+    data.update({key: source[key] for key in FORK_METADATA_KEYS if key in source})
     data["run"]["forked_from"] = {
         "run_id": source_run.get("run_id"), "job_id": source_plan.job_id,
         "plan_id": source_plan.plan_id,

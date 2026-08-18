@@ -43,10 +43,11 @@ def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
 
 def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
                                  include_engine_runtime=True, extra_runtimes=None,
+                                 extra_artifacts=None,
                                  digest_cache_path=None, environment=None,
                                  use_digest_cache=True) -> dict:
     """Resolve byte identities for every journal-backed model and runtime in a plan."""
-    artifacts = {}
+    artifacts = dict(extra_artifacts or {})
     tags = {
         model["tag"] for family in model_families
         for model in plan.models[family] if model.get("tag")
