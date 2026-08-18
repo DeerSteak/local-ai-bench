@@ -72,6 +72,7 @@ def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
         "constraint": "accuracy", "operator": "minimum", "threshold": 80.0,
             "measurement": {
                 "value": 70.0, "unit": "percent", "evidence_path": "code/fast/accuracy_pct",
+                "raw_evidence_paths": ["answers_code/fast"],
                 "trial_values": [70.0],
             },
     }]

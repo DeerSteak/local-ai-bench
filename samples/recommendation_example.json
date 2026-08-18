@@ -26,6 +26,9 @@
           "value": 61.5,
           "unit": "tokens_per_second",
           "evidence_path": "llm/qwen3.5-4b-q4/8K/tps_mean",
+          "raw_evidence_paths": [
+            "llm/qwen3.5-4b-q4/8K/valid_samples"
+          ],
           "trial_values": [
             61.5
           ]
@@ -34,6 +37,9 @@
           "value": 0.72,
           "unit": "seconds",
           "evidence_path": "llm/qwen3.5-4b-q4/8K/ttft_mean_sec",
+          "raw_evidence_paths": [
+            "llm/qwen3.5-4b-q4/8K/valid_samples"
+          ],
           "trial_values": [
             0.72
           ]
@@ -43,6 +49,9 @@
           "value": 5.8,
           "unit": "GB",
           "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/summary/process_rss_gb/peak_gb",
+          "raw_evidence_paths": [
+            "llm/qwen3.5-4b-q4/8K/memory/windows"
+          ],
           "trial_values": [
             5.8
           ]
@@ -51,6 +60,9 @@
           "value": 10.2,
           "unit": "GB",
           "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/headroom/absolute_gb",
+          "raw_evidence_paths": [
+            "llm/qwen3.5-4b-q4/8K/memory/windows"
+          ],
           "trial_values": [
             10.2
           ]
@@ -59,6 +71,9 @@
           "value": 10.0,
           "unit": "tokens_per_joule",
           "evidence_path": "llm/qwen3.5-4b-q4/8K/power/efficiency/per_joule",
+          "raw_evidence_paths": [
+            "llm/qwen3.5-4b-q4/8K/power/windows"
+          ],
           "trial_values": [
             10.0
           ]

@@ -7,6 +7,7 @@ const artifact = {
   constraints: { primary_objective: "throughput" }, source_sha256: ["abc"],
   recommended: [{ candidate: "fast", evidence: { throughput: {
     value: 80, unit: "tokens_per_second", evidence_path: "llm/fast/8K/tps_mean",
+    raw_evidence_paths: ["llm/fast/8K/valid_samples"],
   } } }],
   tied: [],
   eliminated: [{ candidate: "small", reasons: [{
@@ -20,7 +21,7 @@ describe("recommendation artifact view", () => {
   it("recognizes the versioned artifact and preserves four result groups", () => {
     expect(isRecommendationArtifact(artifact)).toBe(true);
     expect(buildRecommendationDisplayItems(artifact)).toEqual([
-      { group: "recommended", candidate: "fast", detail: "80 tokens_per_second", evidencePath: "llm/fast/8K/tps_mean" },
+      { group: "recommended", candidate: "fast", detail: "80 tokens_per_second", evidencePath: "llm/fast/8K/tps_mean · llm/fast/8K/valid_samples" },
       { group: "eliminated", candidate: "small", detail: "accuracy minimum 80", evidencePath: "code/small/accuracy_pct" },
       { group: "unevaluated", candidate: "unknown", detail: "Needs: memory", evidencePath: null },
     ]);
@@ -43,7 +44,7 @@ describe("recommendation artifact view", () => {
     expect(isRecommendationArtifact(recommendationExample)).toBe(true);
     expect(buildRecommendationDisplayItems(recommendationExample)[0]).toMatchObject({
       group: "recommended", candidate: "qwen3.5-4b-q4",
-      evidencePath: "llm/qwen3.5-4b-q4/8K/tps_mean",
+      evidencePath: "llm/qwen3.5-4b-q4/8K/tps_mean · llm/qwen3.5-4b-q4/8K/valid_samples",
     });
   });
 });

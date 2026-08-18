@@ -58,7 +58,9 @@ def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
             candidates.append((
                 group.title(), _text(item.get("candidate")),
                 f"{_text(evidence.get('value'))} {_text(evidence.get('unit'), '')}".strip(),
-                _text(evidence.get("evidence_path")),
+                ", ".join([str(evidence.get("evidence_path")), *(
+                    str(path) for path in evidence.get("raw_evidence_paths") or ()
+                )]),
             ))
     for item in artifact.get("eliminated") or ():
         for reason in item.get("reasons") or ():
@@ -66,7 +68,9 @@ def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
             detail = f"{reason.get('constraint')} {reason.get('operator')} {reason.get('threshold')}"
             candidates.append((
                 "Eliminated", _text(item.get("candidate")), detail,
-                _text(measurement.get("evidence_path")),
+                ", ".join([str(measurement.get("evidence_path")), *(
+                    str(path) for path in measurement.get("raw_evidence_paths") or ()
+                )]),
             ))
     for item in artifact.get("unevaluated") or ():
         candidates.append((

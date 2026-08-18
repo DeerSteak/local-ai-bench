@@ -38,7 +38,9 @@ function evidenceDetail(item: JsonRecord, objective: string): { detail: string, 
   const unit = typeof evidence?.unit === "string" ? evidence.unit : "";
   return {
     detail: typeof value === "number" ? `${value} ${unit}`.trim() : "Evidence recorded",
-    path: typeof evidence?.evidence_path === "string" ? evidence.evidence_path : null,
+    path: typeof evidence?.evidence_path === "string" ? [evidence.evidence_path, ...(
+      Array.isArray(evidence.raw_evidence_paths) ? evidence.raw_evidence_paths.map(String) : []
+    )].join(" · ") : null,
   };
 }
 
@@ -67,7 +69,9 @@ export function buildRecommendationDisplayItems(data: JsonRecord): Recommendatio
     const measurement = record(reasons[0]?.measurement);
     items.push({
       group: "eliminated", candidate: item.candidate, detail,
-      evidencePath: typeof measurement?.evidence_path === "string" ? measurement.evidence_path : null,
+      evidencePath: typeof measurement?.evidence_path === "string" ? [measurement.evidence_path, ...(
+        Array.isArray(measurement.raw_evidence_paths) ? measurement.raw_evidence_paths.map(String) : []
+      )].join(" · ") : null,
     });
   }
   for (const value of data.unevaluated) {

@@ -117,8 +117,12 @@ def _case_values(result: dict, constraints: ConstraintSet, model: str) -> tuple[
     return as_dict(model_values.get(case)), f"{constraints.workload}/{model}/{case}"
 
 
-def _measurement(value: float | None, path: str, unit: str) -> dict | None:
-    return {"value": value, "unit": unit, "evidence_path": path} if value is not None else None
+def _measurement(value: float | None, path: str, unit: str,
+                 raw_evidence_paths: list[str]) -> dict | None:
+    return {
+        "value": value, "unit": unit, "evidence_path": path,
+        "raw_evidence_paths": raw_evidence_paths,
+    } if value is not None else None
 
 
 def candidate_evidence(result: dict, constraints: ConstraintSet, model: str) -> dict:
@@ -147,20 +151,26 @@ def candidate_evidence(result: dict, constraints: ConstraintSet, model: str) -> 
     return {
         "throughput": _measurement(
             _number(values.get(throughput_key)), f"{case_path}/{throughput_key}",
-            "seconds_per_image" if constraints.workload == "images" else "tokens_per_second"),
+            "seconds_per_image" if constraints.workload == "images" else "tokens_per_second",
+            [f"{case_path}/valid_samples"]),
         "ttft": _measurement(
-            _number(values.get(ttft_key)), f"{case_path}/{ttft_key}", "seconds"),
+            _number(values.get(ttft_key)), f"{case_path}/{ttft_key}", "seconds",
+            [f"{case_path}/valid_samples"]),
         "accuracy": _measurement(
             _number(accuracy_values.get("accuracy_pct")),
-            f"{constraints.accuracy_section}/{model}/accuracy_pct", "percent"),
+            f"{constraints.accuracy_section}/{model}/accuracy_pct", "percent",
+            [f"answers_{constraints.accuracy_section}/{model}"]),
         "memory": _measurement(
-            peak_memory, f"{case_path}/memory/summary/{memory_channel}/peak_gb", "GB"),
+            peak_memory, f"{case_path}/memory/summary/{memory_channel}/peak_gb", "GB",
+            [f"{case_path}/memory/windows"]),
         "memory_headroom": _measurement(
             _number(headroom.get("absolute_gb")),
-            f"{case_path}/memory/headroom/absolute_gb", "GB"),
+            f"{case_path}/memory/headroom/absolute_gb", "GB",
+            [f"{case_path}/memory/windows"]),
         "efficiency": _measurement(
             _number(efficiency.get("per_joule")),
-            f"{case_path}/power/efficiency/per_joule", str(efficiency.get("unit") or "per_joule")),
+            f"{case_path}/power/efficiency/per_joule", str(efficiency.get("unit") or "per_joule"),
+            [f"{case_path}/power/windows"]),
     }
 
 
@@ -194,6 +204,7 @@ def _mean_measurement(measurements: list[dict]) -> dict:
         "value": sum(item["value"] for item in measurements) / len(measurements),
         "unit": first["unit"],
         "evidence_path": first["evidence_path"],
+        "raw_evidence_paths": first["raw_evidence_paths"],
         "trial_values": [item["value"] for item in measurements],
     }
 

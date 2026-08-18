@@ -159,7 +159,8 @@ def test_report_renders_authoritative_recommendation_without_reevaluating_it():
     model = build_report_model(result, recommendation=recommendation)
     assert model.recommendation_verdict == "RECOMMENDED"
     assert model.recommendation_candidates[0] == (
-        "Recommended", "golden", "50.0 tokens_per_second", "llm/golden/2K/tps_mean",
+        "Recommended", "golden", "50.0 tokens_per_second",
+        "llm/golden/2K/tps_mean, llm/golden/2K/valid_samples",
     )
     assert "Recommendation: RECOMMENDED" in render_html(model)
 
