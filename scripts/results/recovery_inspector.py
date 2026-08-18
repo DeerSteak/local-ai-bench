@@ -22,6 +22,7 @@ from scripts.workloads.models import IMAGE_MODELS
 
 
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
+META_CASE_KINDS = {"model_plan", "model_state", "model_evidence", "model_complete"}
 
 
 def retryable_case_records(plan, projection):
@@ -146,8 +147,16 @@ def inspect_recovery(result_path, identity_builder=None):
         for stage in plan.stage_order if stage in JOURNAL_STAGES
     }
     case_states = {}
+    stage_case_states = {stage: {} for stage in stage_states}
     for case in projection["cases"].values():
         case_states[case["state"]] = case_states.get(case["state"], 0) + 1
+        if case.get("case_kind") in META_CASE_KINDS:
+            continue
+        stage = next((key for key in stage_states
+                      if plan.stage_id(key) == case.get("parent_id")), None)
+        if stage is not None:
+            counts = stage_case_states[stage]
+            counts[case["state"]] = counts.get(case["state"], 0) + 1
     reasons = list(decision.reasons)
     if result.get("run", {}).get("status") == "complete":
         reasons.append("result is already complete")
@@ -157,6 +166,9 @@ def inspect_recovery(result_path, identity_builder=None):
         "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),
+        "stage_case_counts": {
+            stage: dict(sorted(counts.items())) for stage, counts in stage_case_states.items()
+        },
         "retryable_cases": retryable_case_records(plan, projection),
         "interrupted_attempts": len(decision.interrupted_attempts),
     }

@@ -38,6 +38,12 @@ def format_recovery_inspection(report: dict) -> str:
     lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
     lines += ["", "Cases:"]
     lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]
+    stage_counts = report.get("stage_case_counts", {})
+    if stage_counts:
+        lines += ["", "Workload case coverage:"]
+        for stage, counts in stage_counts.items():
+            summary = ", ".join(f"{state}={count}" for state, count in counts.items())
+            lines.append(f"  {stage}: {summary or 'none committed'}")
     retryable = report.get("retryable_cases", [])
     if retryable:
         lines += ["", "Retry candidates:"]
@@ -58,7 +64,7 @@ def fork_review_report(result_path: Path) -> dict:
             stage: run.get("stages", {}).get(stage, {}).get("status", "pending")
             for stage in plan.stage_order
         },
-        "case_counts": {}, "retryable_cases": [],
+        "case_counts": {}, "stage_case_counts": {}, "retryable_cases": [],
         "reasons": ["fork creates a new run and leaves the source unchanged"],
     }
 

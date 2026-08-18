@@ -42,6 +42,7 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
     assert report["action"] == "resume" and report["can_resume"] is True
     assert report["stage_states"] == {"llm": "running"}
     assert report["case_counts"] == {"running": 1}
+    assert report["stage_case_counts"] == {"llm": {"running": 1}}
     assert len(report["retryable_cases"]) == 1
     assert report["retryable_cases"][0] == {
         "case_id": plan.case_id(

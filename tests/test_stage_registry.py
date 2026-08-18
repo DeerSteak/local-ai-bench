@@ -31,6 +31,7 @@ def test_every_stage_has_result_and_model_ownership():
 
 
 def test_recovery_capabilities_are_derived_from_stage_ownership():
+    assert JOURNAL_STAGES == frozenset(spec.key for spec in STAGE_SPECS)
     assert JOURNAL_STAGES == {
         "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained",
         "conc_tool", "conc_chat",

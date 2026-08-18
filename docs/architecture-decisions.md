@@ -107,7 +107,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
-- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot, conversation, embeddings, images, native llama-bench, both HTTP concurrency stages, and all five accuracy banks are supported.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; every current workload, including all native stages, is supported.
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
 - Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 
