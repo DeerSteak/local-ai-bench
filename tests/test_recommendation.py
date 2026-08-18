@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
 from scripts.results.recommendation import evaluate_recommendation, parse_constraints
+from scripts.results.recommendation_cli import main
 from tests.test_result_history import result as history_result
 
 
@@ -48,6 +51,8 @@ def test_constraints_preserve_absent_values_and_reject_invalid_combinations():
     with pytest.raises(ValueError, match="at most 100"):
         parse_constraints({"workload": "llm", "accuracy_section": "code",
                            "minimum_accuracy_pct": 101})
+    with pytest.raises(ValueError, match="unknown recommendation constraint fields"):
+        parse_constraints({"workload": "llm", "score_weights": {"speed": 1}})
 
 
 def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
@@ -148,3 +153,32 @@ def test_incompatible_repeated_results_are_rejected_not_pooled():
 def test_no_code_path_emits_a_composite_score():
     artifact = evaluate_recommendation(result(), request())
     assert "score" not in repr(artifact).lower()
+
+
+def test_cli_writes_a_versioned_artifact_and_normalized_constraints(tmp_path):
+    result_path = tmp_path / "result.json"
+    constraints_path = tmp_path / "constraints.json"
+    output_path = tmp_path / "recommendation.json"
+    result_path.write_text(json.dumps(result()), encoding="utf-8")
+    constraints_path.write_text(json.dumps(request()), encoding="utf-8")
+    assert main([
+        str(result_path), "--constraints", str(constraints_path), "--out", str(output_path),
+    ]) == 0
+    artifact = json.loads(output_path.read_text(encoding="utf-8"))
+    assert artifact["schema_version"] == 1
+    assert artifact["artifact_type"] == "recommendation"
+    assert artifact["constraints"]["maximum_ttft_sec"] is None
+    assert artifact["verdict"] == "recommended"
+
+
+def test_cli_rejects_nonfinite_and_malformed_constraint_files(tmp_path):
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps(result()), encoding="utf-8")
+    for name, contents in (("nonfinite", '{"workload":"llm","maximum_ttft_sec":NaN}'),
+                           ("malformed", "{")):
+        constraints_path = tmp_path / f"{name}.json"
+        constraints_path.write_text(contents, encoding="utf-8")
+        assert main([
+            str(result_path), "--constraints", str(constraints_path),
+            "--out", str(tmp_path / f"{name}-out.json"),
+        ]) == 1

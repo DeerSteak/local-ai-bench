@@ -1,0 +1,13 @@
+{
+  "workload": "llm",
+  "case": "8K",
+  "accuracy_section": "code",
+  "primary_objective": "throughput",
+  "minimum_accuracy_pct": 70,
+  "maximum_ttft_sec": 1,
+  "minimum_throughput": 20,
+  "concurrency": null,
+  "maximum_memory_gb": 24,
+  "minimum_memory_headroom_gb": 4,
+  "minimum_efficiency_per_joule": null
+}

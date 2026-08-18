@@ -1,6 +1,6 @@
 """Constraint-first recommendation evaluation over compatible benchmark evidence."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import math
 
 from scripts.results.canonical_json import sha256_json
@@ -14,6 +14,11 @@ SUPPORTED_WORKLOADS = {
 }
 SUPPORTED_ACCURACY_SECTIONS = {"mcq", "math", "reasoning", "code", "tool"}
 SUPPORTED_OBJECTIVES = {"accuracy", "throughput", "ttft", "memory", "efficiency"}
+CONSTRAINT_FIELDS = {
+    "workload", "case", "accuracy_section", "primary_objective", "minimum_accuracy_pct",
+    "maximum_ttft_sec", "minimum_throughput", "concurrency", "maximum_memory_gb",
+    "minimum_memory_headroom_gb", "minimum_efficiency_per_joule",
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,9 @@ def parse_constraints(value: dict) -> ConstraintSet:
     """Validate the explicit request without turning absent constraints into zero."""
     if not isinstance(value, dict):
         raise ValueError("recommendation constraints must be an object")
+    unknown = sorted(set(value) - CONSTRAINT_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown recommendation constraint fields: {', '.join(unknown)}")
     workload = value.get("workload")
     if workload not in SUPPORTED_WORKLOADS:
         raise ValueError(f"workload must be one of: {', '.join(sorted(SUPPORTED_WORKLOADS))}")
@@ -297,7 +305,7 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
     return {
         "schema_version": RECOMMENDATION_SCHEMA_VERSION,
         "artifact_type": "recommendation",
-        "constraints": request,
+        "constraints": asdict(constraints),
         "source_sha256": [sha256_json(item) for item in results],
         "verdict": verdict,
         "recommended": ranked[:1] if verdict == "recommended" else [],
