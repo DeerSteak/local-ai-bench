@@ -12,8 +12,8 @@ def _weighted(values: list[tuple[float | None, int]]) -> float | None:
     return sum(value * weight for value, weight in selected) / total if total else None
 
 
-def merge_memory_evidence(blocks: list[dict]) -> dict | None:
-    blocks = [block for block in blocks if isinstance(block, dict)]
+def merge_memory_evidence(raw_blocks: list[dict | None]) -> dict | None:
+    blocks: list[dict] = [block for block in raw_blocks if isinstance(block, dict)]
     if not blocks:
         return None
     if len(blocks) == 1:
@@ -67,8 +67,8 @@ def merge_memory_evidence(blocks: list[dict]) -> dict | None:
     }
 
 
-def merge_power_evidence(blocks: list[dict]) -> dict | None:
-    blocks = [block for block in blocks if isinstance(block, dict)]
+def merge_power_evidence(raw_blocks: list[dict | None]) -> dict | None:
+    blocks: list[dict] = [block for block in raw_blocks if isinstance(block, dict)]
     if not blocks:
         return None
     if len(blocks) == 1:
@@ -287,6 +287,12 @@ class AccuracyEventStage:
 
     def _model_records(self) -> dict[str, dict]:
         projection = self.store.rebuild(self.plan.job_id)
+        attempts_by_case = {}
+        for attempt_id, attempt in projection["attempts"].items():
+            attempts_by_case.setdefault(attempt["parent_id"], []).append((attempt_id, attempt))
+        samples_by_attempt = {}
+        for sample in projection["samples"].values():
+            samples_by_attempt.setdefault(sample["parent_id"], []).append(sample)
         records = {}
         for case_id, case in projection["cases"].items():
             if case["parent_id"] != self.stage_id or case["state"] == "running":
@@ -301,19 +307,14 @@ class AccuracyEventStage:
             if case["case_kind"] == "model_evidence":
                 model["evidence"].append(case)
                 continue
-            attempts = [
-                (attempt_id, attempt) for attempt_id, attempt in projection["attempts"].items()
-                if attempt["parent_id"] == case_id
-            ]
+            attempts = attempts_by_case.get(case_id, [])
             latest = max((attempt.get("number", 0) for _, attempt in attempts), default=0)
             attempt_ids = {
                 attempt_id for attempt_id, attempt in attempts
                 if attempt.get("number") == latest
             }
-            samples = [
-                sample for sample in projection["samples"].values()
-                if sample["parent_id"] in attempt_ids
-            ]
+            samples = [sample for attempt_id in attempt_ids
+                       for sample in samples_by_attempt.get(attempt_id, [])]
             sample = samples[-1] if samples else {"measurement": {}}
             model["questions"][case["question_id"]] = {
                 **case, **sample.get("measurement", {}), "case_id": case_id,
@@ -324,10 +325,12 @@ class AccuracyEventStage:
         results = {}
         for short, record in self._model_records().items():
             if record["model_states"]:
-                results[short] = {
+                result = {
                     "label": record["label"],
                     **record["model_states"][-1].get("model_result", {}),
                 }
+                self._merge_record_evidence(result, record["evidence"])
+                results[short] = result
                 continue
             questions = record["questions"]
             answers = {question_id: value.get("given") for question_id, value in questions.items()}
@@ -361,19 +364,20 @@ class AccuracyEventStage:
             if failed:
                 result["crashed"] = True
                 result["crashed_at"] = failed[-1]["question_id"]
-            if record["evidence"]:
-                memory = merge_memory_evidence([
-                    evidence.get("memory") for evidence in record["evidence"]
-                ])
-                power = merge_power_evidence([
-                    evidence.get("power") for evidence in record["evidence"]
-                ])
-                if memory is not None:
-                    result["memory"] = memory
-                if power is not None:
-                    result["power"] = power
+            self._merge_record_evidence(result, record["evidence"])
             results[short] = result
         return results
+
+    @staticmethod
+    def _merge_record_evidence(result: dict, evidence: list[dict]) -> None:
+        if not evidence:
+            return
+        memory = merge_memory_evidence([item.get("memory") for item in evidence])
+        power = merge_power_evidence([item.get("power") for item in evidence])
+        if memory is not None:
+            result["memory"] = memory
+        if power is not None:
+            result["power"] = power
 
     def export_answers(self) -> dict:
         answers = {}

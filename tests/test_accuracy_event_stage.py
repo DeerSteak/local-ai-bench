@@ -94,6 +94,18 @@ def test_model_skip_is_idempotent_when_resume_rechecks_missing_model(tmp_path):
     stage.close()
 
 
+def test_model_state_export_retains_memory_and_power_evidence(tmp_path):
+    stage = make_stage(tmp_path / "events.sqlite3")
+    memory = {"summary": {"process_rss_gb": {"peak_gb": 2.0}}}
+    power = {"status": "recorded", "source": "sensor", "scope": "package"}
+    stage.record_model_state(MODEL, "failed", {"crashed": True})
+    stage.record_model_evidence(MODEL, memory, power)
+    assert stage.export_results()["model"] == {
+        "label": "Model 4B", "crashed": True, "memory": memory, "power": power,
+    }
+    stage.close()
+
+
 def test_failed_question_resumes_at_next_attempt_without_rerunning_completed_case(tmp_path):
     path = tmp_path / "events.sqlite3"
     plan = make_plan()
