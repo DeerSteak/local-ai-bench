@@ -49,6 +49,23 @@ def test_readiness_reports_each_unresolved_gate(monkeypatch, tmp_path):
     ]
 
 
+def test_readiness_rejects_a_published_support_claim_without_evidence(monkeypatch, tmp_path):
+    monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: [])
+    monkeypatch.setattr(release_readiness, "model_catalog", lambda: [])
+    monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [])
+    monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": []})
+    monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
+                        lambda _root, _version: ["docs/engines.md"])
+    result = release_readiness.evaluate_release_readiness(tmp_path, complete_evidence())
+    check = next(item for item in result["checks"]
+                 if item["name"] == "published_qualification_matrix")
+    assert check == {
+        "name": "published_qualification_matrix", "passed": False,
+        "items": ["docs/engines.md"],
+    }
+    assert result["ready"] is False
+
+
 def test_readiness_passes_when_all_local_inputs_are_cleared(monkeypatch, tmp_path):
     monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: [])
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [

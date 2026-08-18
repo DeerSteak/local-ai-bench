@@ -457,14 +457,14 @@ The maintainer builds validation and presentation, performs each real install/ru
 
 ## Acceptance criteria
 
-- [ ] A machine-readable matrix records platform, runtime, version, backend, date, suite version, and per-lifecycle-step results.
-- [ ] Support level is derived from evidence; no code path sets it manually, asserted by test.
-- [ ] Anything without qualification evidence is unverified by default.
-- [ ] Experimental and unverified paths are labeled in the UI at selection time, and the choice is recorded in the run profile.
-- [ ] vLLM is presented as experimental until it passes the full lifecycle on real hardware.
-- [ ] WSL2 is its own matrix row, consistent with the existing profile flag.
-- [ ] Release readiness fails when a support claim lacks a qualification record.
-- [ ] The published matrix is generated from the data and cannot drift from it.
+- [x] A machine-readable matrix records platform, runtime, version, backend, date, suite version, and per-lifecycle-step results.
+- [x] Support level is derived from evidence; no code path sets it manually, asserted by test.
+- [x] Anything without qualification evidence is unverified by default.
+- [x] Experimental and unverified paths are labeled in the UI at selection time, and the choice is recorded in the run profile.
+- [x] vLLM is presented as experimental until it passes the full lifecycle on real hardware.
+- [x] WSL2 is its own matrix row, consistent with the existing profile flag.
+- [x] Release readiness fails when a support claim lacks a qualification record.
+- [x] The published matrix is generated from the data and cannot drift from it.
 
 ---
 
