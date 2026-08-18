@@ -21,6 +21,8 @@ The graphical benchmark launcher also provides **Create Report** on the Run Log 
 
 The GUI then offers an optional acceptance-policy selection. On the CLI, pass `--policy POLICY.json`. When supplied, both report formats show the overall accepted/rejected decision and every named rule's status, actual value, threshold, and evidence count; evidence readiness remains a separate statement so a complete run cannot be mistaken for a passing policy.
 
+Pass `--recommendation RECOMMENDATION.json` to include a recommendation produced by `scripts.results.recommendation_cli`. The report verifies that the artifact cites the private source result before outbound aliases are applied, then renders its constraints, recommended/tied/insufficient-evidence verdict, candidate groups, reasons, and evidence paths without recomputing policy. A mismatched artifact is rejected rather than attached to the wrong result.
+
 Example outputs are available as [HTML](../samples/decision_report_example.html) and [PDF](../samples/decision_report_example.pdf).
 
 ## Readiness and evidence

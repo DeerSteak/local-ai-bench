@@ -10,6 +10,7 @@
 - [Stats table](#stats-table)
 - [Multi-file comparison](#multi-file-comparison)
 - [Repeated-trial artifacts](#repeated-trial-artifacts)
+- [Recommendation artifacts](#recommendation-artifacts)
 - [Exporting](#exporting)
 - [Development](#development)
 
@@ -38,6 +39,8 @@ Drag one or more `results_*.json` files onto the drop zone in the top-right corn
 New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning. Multi-file comparisons also warn when one result used llama.cpp layer splitting and another used tensor parallelism; older files are treated as the historical layer default.
 
 A repeated-trial artifact produced by `python -m scripts.results.trial_set_cli` can be loaded by itself through the same drop zone. It switches the dashboard to the trial-set audit view; trial artifacts cannot be mixed with ordinary result files in one load.
+
+A recommendation artifact produced by `python -m scripts.results.recommendation_cli` can likewise be loaded by itself. The static dashboard renders the authoritative Python verdict and its constraints, evidence paths, and four visually distinct candidate groups; it does not evaluate constraints or calculate a browser-side score.
 
 ## Sections
 
@@ -131,6 +134,10 @@ With two or more files loaded, **Compare As** can designate one file as the base
 ## Repeated-trial artifacts
 
 The repeated-trial view shows each common metric's baseline and candidate mean, median, between-trial standard deviation, drift status, 95% change interval and method, practical threshold, pairing mode, trial counts, and verdict. Improved, regressed, unchanged, and inconclusive remain visually distinct. Missing intervals render as inconclusive rather than zero, and monotonic drift remains visible beside the affected distribution.
+
+## Recommendation artifacts
+
+Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect the view. Recommended, tied, eliminated, and unevaluated candidates are separate groups; eliminated entries show the failed hard constraint and evidence path, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. Interactive constraint entry and shared workspace state belong to Version 6 milestone 11 and are deliberately not implemented in the standalone dashboard.
 
 ## Exporting
 

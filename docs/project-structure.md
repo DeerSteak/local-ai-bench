@@ -60,7 +60,7 @@
 | `docs/coordinator-api.md` | Versioned future localhost coordinator API, authentication, validation, lifecycle, and compatibility contract |
 | `docs/extension-contracts.md` | Versioned workload SDK, conformance-vector format, and capability-negotiated engine adapter contract |
 | `docs/security-and-privacy.md` | Working threat model, data classifications, embargo policy, controls, and verification gaps |
-| `samples/` | Sample `results_*.json` files for trying the dashboard plus reviewed HTML/PDF decision-report examples |
+| `samples/` | Sample results, recommendation constraints/artifact, trial artifact, and reviewed HTML/PDF decision-report examples |
 | `models/` | Downloaded LLM/embedding GGUF files, namespaced per engine (`models/llamacpp/<tag-slug>/`) — created by `setup/setup_check.py`, gitignored |
 | `requirements.txt` | Python dependencies, installed by the setup scripts |
 | `scripts/workloads/data/` | Active accuracy banks plus `sample_document.txt`, the real-world corpus used by the embeddings workload |
@@ -104,14 +104,15 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/significance.py` | Practical-threshold, uncertainty-availability, and repeated-trial comparison mathematics |
 | `results/trial_set.py` / `results/trial_set_cli.py` | Compatible independent-trial aggregation, drift detection, uncertainty intervals, verdicts, and artifact CLI |
 | `results/trial_set_report.py` | Auditable Markdown presentation of repeated-trial evidence and inconclusive states |
+| `results/recommendation.py` / `results/recommendation_cli.py` | Constraint validation, evidence eligibility, hard filtering, qualified trial ranking, and versioned recommendation artifacts |
 | `results/outbound_metadata.py` | Exact outbound identity preview, private aliases, and stable source-identity digests |
 | `runtime/network_policy.py` | Loopback classification, offline environment, and Python socket enforcement |
 | `results/vendor_diagnostic.py` | Deterministic first-divergence package, raw evidence selection, and source verification |
 | `results/vendor_diagnostic_cli.py` | Reviewed diagnostic creation and source-pair verification commands |
 | `results/result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `results/result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
-| `results/decision_report.py` | Deterministic self-contained HTML/PDF decision-report model and renderers |
-| `results/decision_report_cli.py` | Command-line decision-report generator for validated result JSON |
+| `results/decision_report.py` | Deterministic self-contained HTML/PDF decision-report model plus acceptance and recommendation-artifact rendering |
+| `results/decision_report_cli.py` | Command-line decision-report generator for validated result JSON and source-verified recommendation artifacts |
 | `results/acceptance_policy.py` | Validates and evaluates versioned per-case evidence-threshold policies |
 | `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
