@@ -34,6 +34,9 @@ ETA_MATCH_KEYS = (
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
 )
+SUSTAINED_ETA_KEYS = (
+    "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+)
 HARDWARE_IDENTITY_KEYS = ("hostname", "os", "arch", "ram_gb", "backend", "wsl")
 
 
@@ -98,7 +101,8 @@ def estimate_matching_plan_seconds(directory: Path, engine: str, tests: list[str
                 or actual_models != expected_models
                 or any(key not in recorded_config
                        or recorded_config.get(key) != effective_config.get(key)
-                       for key in ETA_MATCH_KEYS)
+                       for key in (*ETA_MATCH_KEYS,
+                                   *(SUSTAINED_ETA_KEYS if "sustained" in tests else ())))
                 or any(key not in recorded_profile for key in HARDWARE_IDENTITY_KEYS[:-1])
                 or hardware_identity(recorded_profile) != hardware_identity(profile)):
             continue

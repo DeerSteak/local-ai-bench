@@ -4,13 +4,13 @@
 
 Version 5.1 has broad workload coverage, durable evidence, and heavy governance machinery. Its remaining gaps are not "more benchmarks" — they fall into two groups: measurements the suite never takes (memory, power, thermal), and the missing steps between a measurement and a trustworthy decision (noise handling, preflight validation, recommendations).
 
-This plan orders ten features on one rule: **anything that makes existing conclusions more trustworthy outranks anything that adds new conclusions.** A faster number nobody can trust is worth less than an existing number that can now be defended.
+This plan orders eleven features on one rule: **anything that makes existing conclusions more trustworthy outranks anything that adds new conclusions.** A faster number nobody can trust is worth less than an existing number that can now be defended.
 
 This is a single-maintainer project. “Release owner,” “methodology owner,” “code owner,” and “qualification owner” are responsibilities held by the same person, not separate approvers; controls that would normally rely on separation of duties instead rely on committed predefinitions, automated gates, durable evidence, and reproducible real-hardware records.
 
 ## The plan in plain English
 
-Build Version 6 in ten numbered milestones. Finish and verify one milestone before starting anything that depends on it. For every milestone, follow the same simple loop:
+Build Version 6 in eleven numbered milestones. Finish and verify one milestone before starting anything that depends on it. For every milestone, follow the same simple loop:
 
 1. Write down exactly what the feature will measure or decide.
 2. Write the tests that prove the important rules and failure cases.
@@ -40,9 +40,9 @@ A milestone is complete only when all six layers below are finished. If one laye
 
 ## Work that happens before milestone 1
 
-Complete this short foundation phase first. It prevents ten features from inventing ten incompatible meanings for the same data.
+Complete this short foundation phase first. It prevents eleven features from inventing eleven incompatible meanings for the same data.
 
-1. Create one Version 6 tracking issue that links to the ten milestone sections in this document and to implementation changes. **This document is the sole authoritative checklist.** The tracking issue reports status and links here; it never copies acceptance or release boxes.
+1. Create one Version 6 tracking issue that links to the eleven milestone sections in this document and to implementation changes. **This document is the sole authoritative checklist.** The tracking issue reports status and links here; it never copies acceptance or release boxes.
 2. Freeze the Version 5.1 compatibility fixtures and add representative schema-1 through schema-4 results wherever the supported test set has a gap.
 3. Write the schema-5 field map before code: field name, unit, scope, source, availability state, owning event, JSON location, and old-file fallback.
 4. Write the telemetry vocabulary: `sample`, `channel`, `source`, `scope`, `measured window`, `idle window`, `unknown`, and `unsupported` must have one meaning everywhere.
@@ -57,9 +57,9 @@ Complete this short foundation phase first. It prevents ten features from invent
 
 Items 1, 4, and 5 share one background telemetry sampler. Item 1 builds the light version (memory only, no elevated permissions); items 4 and 5 extend that same sampler rather than adding parallel instrumentation. Do not implement them as three separate efforts.
 
-Item 6 (recommendations) depends on item 3's completed repeated-trials verdicts, because a recommendation that ranks models on differences it cannot distinguish from run-to-run noise is worse than no recommendation. Item 10 (workspace) is deliberately last: it consolidates capabilities rather than adding any, and it is easier to design once the decision it must display has been defined by item 6.
+Item 6 (recommendations) depends on item 3's completed repeated-trials verdicts, because a recommendation that ranks models on differences it cannot distinguish from run-to-run noise is worse than no recommendation. Item 11 (workspace) is deliberately last: it consolidates capabilities rather than adding any, and it is easier to design once the decision it must display has been defined by item 6.
 
-Items 2, 7, and 8 are independent and may be resequenced against team capacity. Item 9 must wait for items 1 and 3; its energy comparison waits for item 4.
+Items 2, 7, 8, and 9 are independent and may be resequenced against team capacity. Item 10 must wait for items 1, 3, and 9; its energy comparison waits for item 4.
 
 | # | Feature | Depends on | Sampler group |
 |---|---------|-----------|---------------|
@@ -71,8 +71,9 @@ Items 2, 7, and 8 are independent and may be resequenced against team capacity. 
 | 6 | Goal-driven recommendation view | 3 | |
 | 7 | Complete case-level resume for every workload | — | |
 | 8 | Evidence-backed platform qualification | — | |
-| 9 | Quantization comparison workflow | 1, 3; 4 for energy comparisons | |
-| 10 | Unified results and decision workspace | 6 | |
+| 9 | Model catalog audit and refresh | — | |
+| 10 | Quantization comparison workflow | 1, 3, 9; 4 for energy comparisons | |
+| 11 | Unified results and decision workspace | 6 | |
 
 ### Coarse effort estimates
 
@@ -88,8 +89,9 @@ These are planning sizes, not promises: **S** is a focused change, **M** spans s
 | 6 | Goal-driven recommendation view | L | Authoritative policy engine plus CLI, report, and UI artifact flow |
 | 7 | Complete case-level resume | XL | Workload-by-workload persistence migration and interruption parity |
 | 8 | Platform qualification matrix | M | Evidence process, release gating, generated docs, and UI labels |
-| 9 | Quantization comparison workflow | L | Catalog/identity migration, setup, storage estimates, and comparison |
-| 10 | Unified results and decision workspace | XL | Cross-platform architecture, shared state, packaging, and offline UX |
+| 9 | Model catalog audit and refresh | M | Role coverage, candidate qualification, lifecycle compatibility, and migration evidence |
+| 10 | Quantization comparison workflow | L | Catalog/identity migration, setup, storage estimates, and comparison |
+| 11 | Unified results and decision workspace | XL | Cross-platform architecture, shared state, packaging, and offline UX |
 
 ## Conventions that apply to every item
 
@@ -144,7 +146,7 @@ Use a lightweight commit-message tag instead of a prose status block: `v6:<item>
 
 ### Schema versioning for this release
 
-Items 1, 2, 4, and 5 add result fields, while items 3, 6, 8, 9, and 10 add derived artifacts or interpretation metadata. Introduce **result schema 5** once, in the first merged change that writes a new result field, rather than bumping per item. Store it in the existing `run.schema_version` location, keep every new field optional on read, and extend [result-compatibility-v4.1.md](docs/result-compatibility-v4.1.md) with a Version 6 section stating exactly which fields are new, which are optional, and what a schema-4 file renders as. Runs from schema 4 and earlier must remain loadable, comparable where methodology permits, and visibly distinct from runs that carry the new telemetry — missing telemetry is not zero.
+Items 1, 2, 4, and 5 add result fields, while items 3, 6, 8, 10, and 11 add derived artifacts or interpretation metadata. Introduce **result schema 5** once, in the first merged change that writes a new result field, rather than bumping per item. Store it in the existing `run.schema_version` location, keep every new field optional on read, and extend [result-compatibility-v4.1.md](docs/result-compatibility-v4.1.md) with a Version 6 section stating exactly which fields are new, which are optional, and what a schema-4 file renders as. Runs from schema 4 and earlier must remain loadable, comparable where methodology permits, and visibly distinct from runs that carry the new telemetry — missing telemetry is not zero.
 
 Do not reuse the result-schema number for plans, policies, projects, bundles, journals, or qualification records. Each format changes its own schema only when its serialized shape changes. A methodology-affecting change also receives a new methodology identity even when the JSON remains readable; schema compatibility and scientific comparability are separate decisions.
 
@@ -346,16 +348,16 @@ This completes the sampler trio and converts the project's largest documented co
 
 ## Acceptance criteria
 
-- [ ] A soak run records a throughput time series, not only an aggregate, and exports the full series.
-- [ ] Initial throughput, steady-state throughput, retention ratio, and throttle-onset point are computed by pure, unit-tested functions.
-- [ ] Throttle onset requires a sustained departure across consecutive windows; a test asserts a single-window dip does not trigger it.
-- [ ] Performance retention and suspected cause are separate outputs; missing sensors can make cause unavailable without erasing a valid throughput result.
-- [ ] Degradation is correlated with temperature and power from the shared timeline, and "neither" is reported honestly rather than defaulting to thermal.
-- [ ] A soak too short to reach steady state classifies as indeterminate, never as stable.
-- [ ] The workload is opt-in and absent from the default evidence set.
-- [ ] The dashboard plots throughput, temperature, and power on one aligned time axis.
-- [ ] Every temperature source and the combined sampler pass the shared observer-effect policy or receive its opt-in/unsupported methodology status.
-- [ ] Temperature telemetry passes the shared privacy and outbound policy.
+- [x] A soak run records a throughput time series, not only an aggregate, and exports the full series.
+- [x] Initial throughput, steady-state throughput, retention ratio, and throttle-onset point are computed by pure, unit-tested functions.
+- [x] Throttle onset requires a sustained departure across consecutive windows; a test asserts a single-window dip does not trigger it.
+- [x] Performance retention and suspected cause are separate outputs; missing sensors can make cause unavailable without erasing a valid throughput result.
+- [x] Degradation is correlated with temperature and power from the shared timeline, and "neither" is reported honestly rather than defaulting to thermal.
+- [x] A soak too short to reach steady state classifies as indeterminate, never as stable.
+- [x] The workload is opt-in and absent from the default evidence set.
+- [x] The dashboard plots throughput, temperature, and power on one aligned time axis.
+- [x] Every temperature source and the combined sampler pass the shared observer-effect policy or receive its opt-in/unsupported methodology status.
+- [x] Temperature telemetry passes the shared privacy and outbound policy.
 
 ---
 
@@ -466,40 +468,105 @@ The maintainer builds validation and presentation, performs each real install/ru
 
 ---
 
-# 9. Quantization comparison workflow
+# 9. Model catalog audit and refresh
 
 ## Why this is ninth
 
-Quantization is fixed at one variant per catalog entry — every model in [models.py](scripts/workloads/models.py) carries a single `Q4_K_M` tag and `hf_repo`. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly: it already has the accuracy banks to measure quality loss, the speed harness to measure the throughput gain, and — after items 1 and 4 — the memory and energy measurement to complete the tradeoff. Almost nothing else answers this with quality evidence attached.
+The catalog is a benchmark methodology, not a list of whatever models are newest. Each selected model consumes download space and hours of repeated workload time, represents a parameter tier or capability role, and becomes part of comparisons that users expect to remain intelligible across releases. The current lineup therefore needs a deliberate Version 6 audit rather than ad hoc additions whenever a compelling release appears.
 
-It ranks ninth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
+The initial candidate register is deliberately broader than the expected set of accepted changes: Qwen 3.8 27B, Muse Glimmer 30B, Nemotron 3.5 Nano/Lightning 30B-A3B, Gemma 4 26B-A4B, and Nemotron Nano 9B v2 for the LLM tiers; EmbeddingGemma 300M, Qwen3 Embedding 0.6B, and Qwen3 Embedding 4B for embeddings; and FLUX.2 Klein 4B and Z-Image Turbo for image generation. These are audit inputs, not predetermined additions. Candidates that occupy roles already represented by the catalog are evaluated as possible replacements—not appended merely because they can run. The audit also covers every existing catalog entry so an older model is not retained only through inertia.
+
+Repository entries below are starting points for the audit, not compatibility claims. The audit pins a revision and exact artifact only after testing; community GGUF conversions require provenance and architecture checks, and a safetensors repository must still pass the targeted vLLM lifecycle before it is considered supported.
+
+| Candidate | Safetensors source for vLLM audit | GGUF source for llama.cpp audit | Repository status |
+| --- | --- | --- | --- |
+| Qwen 3.8 27B | [`Qwen/Qwen3.8-27B`](https://huggingface.co/Qwen/Qwen3.8-27B) | [`unsloth/Qwen3.8-27B-GGUF`](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) | Upstream weights; community GGUF |
+| Muse Glimmer 30B | [`meta-models/Muse-Glimmer-30B`](https://huggingface.co/meta-models/Muse-Glimmer-30B) | [`meta-models/Muse-Glimmer-30B-GGUF`](https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF) | Publisher-hosted weights and GGUF; exact quantization still to select |
+| Nemotron 3.5 Nano/Lightning 30B-A3B | [`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16) | [`ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF`](https://huggingface.co/ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF) | Candidate naming and base/instruct identity must be reconciled before testing |
+| Gemma 4 26B-A4B | [`google/gemma-4-26B-A4B-it`](https://huggingface.co/google/gemma-4-26B-A4B-it) | [`ggml-org/gemma-4-26B-A4B-it-GGUF`](https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF) | Upstream weights; llama.cpp project GGUF |
+| Nemotron Nano 9B v2 | [`nvidia/NVIDIA-Nemotron-Nano-9B-v2`](https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2) | [`bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF`](https://huggingface.co/bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF) | Upstream weights; community GGUF |
+| EmbeddingGemma 300M | [`google/embeddinggemma-300m`](https://huggingface.co/google/embeddinggemma-300m) | [`cstr/embeddinggemma-300m-GGUF`](https://huggingface.co/cstr/embeddinggemma-300m-GGUF) | Upstream weights; provisional community GGUF |
+| Qwen3 Embedding 0.6B | [`Qwen/Qwen3-Embedding-0.6B`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | [`Qwen/Qwen3-Embedding-0.6B-GGUF`](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) | Upstream weights and GGUF |
+| Qwen3 Embedding 4B | [`Qwen/Qwen3-Embedding-4B`](https://huggingface.co/Qwen/Qwen3-Embedding-4B) | [`Qwen/Qwen3-Embedding-4B-GGUF`](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF) | Upstream weights and GGUF |
+| FLUX.2 Klein 4B | [`black-forest-labs/FLUX.2-klein-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) | Not applicable | Safetensors/ComfyUI candidate; not a llama.cpp workload |
+| Z-Image Turbo | [`Tongyi-MAI/Z-Image-Turbo`](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) | Not applicable | Safetensors/ComfyUI candidate; not a llama.cpp workload |
 
 ## Implementation outline
 
-1. **Generalize the catalog entry** so a model may declare multiple quantization variants, each with its own tag, repo, file, size, and quantization label. Preserve the existing single-variant shape as the default so no existing entry changes meaning and no existing results file becomes unreadable.
+1. **Inventory the current catalog by purpose**, recording for each model its tier, architecture, dense or sparse parameter count, capability roles, context requirement, license, selected quantization, download size, supported engines, and the reason it earns benchmark time. Distinguish general instruction following, reasoning, code, tool use, long context, multimodal behavior, and architecture diversity rather than treating parameter count as the only axis.
+2. **Define selection and retirement criteria before scoring candidates**: relevance to contemporary local inference, nonredundant role coverage, weights and license suitable for redistribution-by-reference and local use, a stable upstream identity, a supported GGUF conversion, clean llama.cpp lifecycle behavior, required context support, feasible resource coverage across the intended tier, and measurable value in this suite's workloads. Popularity or vendor benchmark claims alone are insufficient.
+3. **Audit every incumbent under the same criteria.** Record whether it remains, moves tier, becomes legacy-only, or is proposed for replacement, with an explicit reason and named replacement candidate. Model tiers remain cumulative, and the audit must estimate the run-time and disk impact of the proposed lineup before changing it.
+4. **Evaluate the registered LLM candidates**—Qwen 3.8 27B, Muse Glimmer 30B, Nemotron 3.5 Nano/Lightning 30B-A3B, Gemma 4 26B-A4B, and Nemotron Nano 9B v2—using their exact upstream model cards, licenses, architecture/configuration, context semantics, chat templates, and maintained GGUF artifacts. Verify current llama.cpp support rather than inferring compatibility from a community launch report; separately record optional multimodal projectors, speculative-draft dependencies, MTP, or custom flags so the baseline catalog does not silently depend on them.
+5. **Freeze an explicit sampling policy across engines.** The comparable baseline sends temperature zero and explicit neutral values for every supported logit modifier, including presence and frequency penalties, rather than inheriting llama.cpp, vLLM, or model-repository defaults. Store the fully resolved sampler profile in the run plan and result methodology identity. Separately capture publisher-recommended settings from a pinned upstream model card as an opt-in named profile; those runs remain visibly distinct and may never pool or compare as baseline-equivalent evidence.
+6. **Run a small compatibility screen before full evaluation**: setup discovery, download/inventory identity, model load and unload, 2K and the model's relevant deeper context, deterministic completion, chat template behavior, cancellation, and clean recovery. A model that requires an engine patch or unreleased runtime remains a documented candidate rather than entering the default catalog.
+7. **Compare candidates with incumbents using existing evidence**, including accuracy categories, single-shot prefill/decode, conversation growth, tool and chat concurrency, memory headroom, sustained behavior, and supported context. Use item 3's repeated-trial verdicts for close performance claims; do not rank a noisy one-off delta as an improvement.
+8. **Audit embedding and image candidates under workload-specific criteria.** Compare EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B with the current Nomic and MixedBread entries on runtime support, dimensionality, context, multilingual and instruction-aware behavior, throughput, memory, license/access friction, and retrieval quality once the suite has a defensible quality measure. Compare FLUX.2 Klein 4B and Z-Image Turbo with the current image lineup on ComfyUI lifecycle support, complete dependency size, peak memory, resolution, steps, latency, license, and prompt/image quality under a fixed workflow. Speed alone cannot justify replacing an embedding or image model.
+9. **Make replacement decisions role-by-role.** Prefer the smallest lineup that preserves meaningful architecture and capability coverage. Adding a candidate without retiring an overlapping incumbent requires a documented distinct role that the existing workload suite can actually measure.
+10. **Preserve historical rendering.** Removed catalog entries move to the dashboard's legacy model registry with their labels, colors, tier metadata, and result lookup intact. Existing result files remain readable and comparable where methodology permits; catalog retirement never rewrites old evidence.
+11. **Apply accepted changes as separate reviewable commits** for catalog/setup identity, dashboard legacy/current registries, tests, and documentation. The audit report lands before any model change so reviewers can challenge the evidence without also reviewing implementation churn.
+12. **Tests**: catalog uniqueness and tier consistency; every current entry has required audit metadata; accepted tags, repos, files, and sizes agree across setup and dashboard registries; baseline sampler payload parity across llama.cpp and vLLM; publisher-profile identity separation and unsupported-setting handling; retired models remain renderable through legacy mappings; cumulative tier selection remains unchanged; malformed or duplicate candidate identities are rejected.
+13. **Docs**: publish the audit date, tested commit and engine version, selection rubric, incumbent decisions, candidate evidence, disk/run-time impact, sampler profiles, and unresolved compatibility gaps in [catalogs.md](docs/catalogs.md), [workloads.md](docs/workloads.md), and [methodology-contract.md](docs/methodology-contract.md). Vendor claims and community reports may motivate a candidate but are not recorded as suite qualification evidence.
+
+## Acceptance criteria
+
+- [ ] Every incumbent has a recorded role and an evidence-backed keep, replace, move, or legacy-only decision.
+- [ ] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
+- [ ] Every registered LLM candidate has exact upstream identity, license, context, architecture, GGUF, and current llama.cpp compatibility recorded.
+- [ ] Every candidate has a pinned safetensors and GGUF repository plus exact artifact and revision, or an explicit not-applicable entry, before compatibility testing begins.
+- [ ] The baseline explicitly pins every supported sampling control across llama.cpp and vLLM; it never silently inherits engine or repository defaults.
+- [ ] Publisher-recommended sampling is an opt-in, source-pinned profile with a distinct methodology identity and is never pooled with the deterministic baseline.
+- [ ] EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B are compared with both current embedding entries, with quality limitations stated explicitly.
+- [ ] FLUX.2 Klein 4B and Z-Image Turbo are compared with the current image lineup using complete pipeline size and a fixed quality/performance workflow.
+- [ ] Candidate compatibility screens cover load/unload, context, completion, chat template, cancellation, and recovery without making setup or live benchmark execution automatic.
+- [ ] Any accepted addition fills a measurable role or replaces an incumbent; novelty alone cannot expand the default lineup.
+- [ ] Proposed catalog disk cost and representative run-time impact are reported before adoption.
+- [ ] Close performance claims use item 3's repeated-trial verdicts and may remain inconclusive.
+- [ ] Retired entries remain in the legacy dashboard registry and old results render unchanged.
+- [ ] The audit report is reviewable before catalog implementation changes begin.
+
+---
+
+# 10. Quantization comparison workflow
+
+## Why this is tenth
+
+Quantization is fixed at one variant per catalog entry — every model in [models.py](scripts/workloads/models.py) carries a single `Q4_K_M` tag and `hf_repo`. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly: it already has the accuracy banks to measure quality loss, the speed harness to measure the throughput gain, and — after items 1 and 4 — the memory and energy measurement to complete the tradeoff. Almost nothing else answers this with quality evidence attached.
+
+The initial scope is llama.cpp and GGUF. A single base model may select several GGUF files—including multiple quantizations stored in one Unsloth or other Hugging Face repository—and execute them sequentially in one unattended, resumable run. Native vLLM quantization formats remain outside this milestone until a separate methodology defines which formats are comparable to GGUF and how their engine-specific effects should be reported.
+
+It ranks tenth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
+
+## Implementation outline
+
+1. **Generalize the catalog entry** so a llama.cpp model may declare multiple GGUF variants, each with its own tag, repository, filename, size, and quantization label. Several variants may reference different files in the same Hugging Face repository. Preserve the existing single-variant shape as the default so no existing entry changes meaning and no existing results file becomes unreadable.
 2. **Extend model identity** in [model_identity.py](scripts/runtime/model_identity.py) so a variant is a distinct identity for evidence purposes. Two quantizations of one base model must never pool into one evidence set — this is the central correctness requirement of the feature.
-3. **Add variant selection to the run plan and CLI**, defaulting to the single documented variant so ordinary runs are unchanged in time and disk. A sweep is explicitly opt-in.
-4. **Extend setup and download** to fetch a selected variant, reusing the existing resumable download and inventory paths rather than adding a second acquisition route.
+3. **Add explicit variant selection to every run surface**, defaulting to the single documented variant so ordinary runs are unchanged in time and disk. The desktop GUI shows the available GGUF variants for each selected base model as checkboxes, with the catalog default checked and disk size shown beside each option; select-all and clear controls make larger sweeps manageable. The CLI accepts repeatable model-qualified variant selectors so headless runs express the same set without prompts. An explicitly selected set runs sequentially in one invocation across every selected workload and model/quantization pair without another prompt or restart.
+4. **Extend setup and download** to enumerate and fetch selected GGUF filenames from a shared or per-variant repository, reusing the existing resumable download and inventory paths rather than adding a second acquisition route. The run journal checkpoints every completed variant so an interrupted multi-quant sweep resumes at the next incomplete unit.
 5. **Report the cost of a sweep before it starts** — added disk, added download, added run time — using the existing estimation path from [result_history.py](scripts/results/result_history.py). A user must not discover a 4x run time after committing to it.
 6. **Extract the tradeoff analysis as pure functions**: for a base model across its variants, compute quality delta from the accuracy banks, throughput delta, memory delta from item 1, and energy delta from item 4, each relative to a chosen reference variant. Include item 3's qualified trial verdicts so an inconclusive or unchanged quality difference is not over-interpreted.
 7. **Feed variants into the recommendation engine** from item 6 as ranked candidates, so "which quantization on this machine" is answered by the same constraint-first machinery rather than a parallel implementation.
 8. **Dashboard**: a per-base-model variant comparison showing quality, speed, memory, and energy together, with unchanged and inconclusive quality differences visibly marked. Extend `constants.ts` with variant labels and ordering.
-9. **Tests**: catalog parsing for single-variant and multi-variant entries including a malformed variant list; identity separation asserting two variants never pool; sweep cost estimation; each tradeoff computation including a missing-variant and a single-variant case; and unchanged/inconclusive trial verdicts. Vitest covers the variant comparison builders.
+9. **Tests**: catalog parsing for single-variant and multi-variant entries including a malformed variant list; GUI and CLI selection normalization, defaults, duplicates, unknown model/variant pairs, and an empty selection; identity separation asserting two variants never pool; sweep cost estimation; each tradeoff computation including a missing-variant and a single-variant case; and unchanged/inconclusive trial verdicts. Vitest covers the variant comparison builders.
 10. **Docs**: [workloads.md](docs/workloads.md) for the catalog shape and sweep behavior; [cli-reference.md](docs/cli-reference.md) for the flags; [setup.md](docs/setup.md) for variant download and disk cost; [catalogs.md](docs/catalogs.md) for the extended entry format; [limitations.md](docs/limitations.md) for what a cross-quantization comparison does and does not establish, extending the existing per-engine-weights reasoning.
 
 ## Acceptance criteria
 
 - [ ] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
 - [ ] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
+- [ ] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
+- [ ] The GUI provides per-model quantization checkboxes with the default preselected, visible artifact sizes, and select-all/clear controls; only checked variants enter the run plan.
+- [ ] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
+- [ ] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
 - [ ] A sweep is opt-in, and its added disk, download, and run time are reported before it starts.
 - [ ] Variant comparison reports quality, throughput, memory, and energy deltas against a stated reference variant.
 - [ ] Quality differences classified unchanged or inconclusive by item 3 are not presented as rankings.
 - [ ] Variants are ranked by the item 6 engine rather than a parallel implementation.
 - [ ] Older results files whose model identity has no explicit base-model/variant fields load and render unchanged through a documented legacy mapping.
+- [ ] The initial implementation is explicitly llama.cpp/GGUF-only; vLLM-native quantization comparison is not implied by these results.
 
 ---
 
-# 10. Unified results and decision workspace
+# 11. Unified results and decision workspace
 
 ## Why this is last
 
@@ -534,9 +601,9 @@ It is last because it is the largest build for the least new capability — it c
 
 ---
 
-## How the ten milestones become one release
+## How the eleven milestones become one release
 
-Version 6 is developed in small, usable slices. “All ten features are coded” is not the release strategy.
+Version 6 is developed in small, usable slices. “All eleven features are coded” is not the release strategy.
 
 ### Slice A — trustworthy existing evidence
 
@@ -552,7 +619,7 @@ Complete milestones 6 and 7 (**L + XL**). Deliver recommendations independently 
 
 ### Slice D — scope and product integration
 
-Complete milestones 8, 9, and 10 (**M + L + XL**). Deliver D1 qualification matrix, D2 quantization workflow, and D3 workspace separately; they are not assumed to fit one equal-length iteration. Publish only support claims backed by recorded qualification evidence. Keep quantization sweeps opt-in. Choose the workspace architecture only after the disposable cross-platform prototypes have been reviewed.
+Complete milestones 8, 9, 10, and 11 (**M + M + L + XL**). Deliver D1 qualification matrix, D2 model-catalog audit, D3 quantization workflow, and D4 workspace separately; they are not assumed to fit one equal-length iteration. Publish only support claims backed by recorded qualification evidence. Review the model audit before changing the lineup, keep quantization sweeps opt-in, and choose the workspace architecture only after the disposable cross-platform prototypes have been reviewed.
 
 ### Pilot at every slice boundary
 

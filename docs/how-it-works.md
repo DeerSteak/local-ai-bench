@@ -24,6 +24,7 @@ Selected tests run in a fixed stage order, independent of the order passed to `-
 ```
 single-shot LLM (all selected models, xsmall → large)
   → conversation LLM (all eligible selected models)
+  → sustained load (opt-in)
   → llama-bench (opt-in)
   → llama-bench concurrency (opt-in)
   → vllm bench (opt-in)
@@ -36,6 +37,8 @@ single-shot LLM (all selected models, xsmall → large)
 See [Engines](engines.md) for `--engine <name>|all`. Each engine gets one pass through the selected engine-backed stages. Images run only on the first pass because they use ComfyUI rather than the selected inference engine.
 
 Within each stage, only one model is loaded at a time. `LlamaCppEngine` runs a model-specific llama-server process and restarts it whenever the requested model, context allocation, GPU mode, or concurrency shape changes. Each workload unloads or stops that model before advancing.
+
+The sustained stage repeatedly generates from one stable 2K prompt until its minimum wall-time duration is reached. Completed requests are checkpointed immediately; fixed ten-second throughput windows distribute each request's generated tokens across its real overlap with the window, while memory, power, and temperature samples are aggregated over the identical timestamp boundaries. Recovery retries the whole model soak because a partial cool-down/restart cannot be joined into one continuous thermal series.
 
 The selected keys are resolved through the fixed `STAGE_ORDER` registry in `orchestration.py`; a registered or selected key missing from that order is an error rather than a silently skipped stage. Each `StageDefinition` names its result section, selected-model count, runner, and only the preparation or cleanup hooks it actually needs. Native llama.cpp stages explicitly stop the HTTP engine, images restore normal engine mode before stopping it for ComfyUI, and ordinary stages have no special hooks.
 

@@ -22,7 +22,7 @@ PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\|/Users/|/home/)[^\s,;]+")
 PUBLIC_SECTIONS = {
     "run", "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
-    "llamabench", "llamabenchconc",
+    "llamabench", "llamabenchconc", "sustained",
 }
 
 

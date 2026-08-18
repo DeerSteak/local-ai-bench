@@ -33,6 +33,8 @@ Schema 5 is introduced by the first writer that adds memory telemetry. Every fie
 
 Raw sensor output, process arguments, paths, serial numbers, UUIDs, and host identity are excluded. Schema 5 changes the result envelope only; event, plan, policy, project, journal, and bundle schemas change independently when their own serialized forms change.
 
+Version 6.0-pre5 adds the optional top-level `sustained` section without making older fields mandatory. Each model entry retains target and actual duration, fixed window size, ambient temperature when supplied, request diagnostics, the full aligned `series`, pure `analysis`, and the existing memory/power blocks plus a normalized temperature block. Series windows carry elapsed timestamp, duration, tokens, tokens/sec, memory channels, watts, and CPU-package/GPU-die/GPU-hotspot degrees Celsius; any unavailable channel is null, never zero. Analysis retains initial and steady TPS, retention ratio, sustained onset, performance class, cause correlation, duration, window count, ordinal drift, and related-trial drift. Older readers may ignore the section and newer readers treat its absence as not recorded.
+
 ## Telemetry vocabulary
 
 - **Sample:** one timestamped sampler observation containing an explicit availability outcome for every configured channel.

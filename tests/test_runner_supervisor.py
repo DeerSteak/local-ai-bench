@@ -16,7 +16,7 @@ from scripts.runtime.runner_supervisor import (
     RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor, SupervisedProcess,
     build_runner_command, parse_runner_event,
 )
-from scripts.runtime.telemetry import PowerAvailability
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 
 
 def spec(tmp_path):
@@ -102,6 +102,10 @@ def test_supervisor_passes_power_availability_only_in_child_environment(tmp_path
     )
     runner_spec = RunnerSpec(
         "job_abc", "llm", (tmp_path / "events.sqlite3").resolve(), availability,
+        TemperatureAvailability(
+            True, {"gpu_die_c": "nvidia-smi"},
+            locations={"gpu_die_c": "/usr/bin/nvidia-smi"},
+        ),
     )
     RunnerSupervisor(
         runner_spec, process_factory=cast("type[subprocess.Popen]", factory), system="Darwin",
@@ -109,6 +113,9 @@ def test_supervisor_passes_power_availability_only_in_child_environment(tmp_path
     payload = captured["options"]["env"]["LOCAL_AI_BENCH_POWER_AVAILABILITY"]
     assert '"source":"powermetrics"' in payload
     assert '"location":"/usr/bin/powermetrics"' in payload
+    temperature = captured["options"]["env"]["LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY"]
+    assert '"gpu_die_c":"nvidia-smi"' in temperature
+    assert '"gpu_die_c":"/usr/bin/nvidia-smi"' in temperature
     assert "/usr/bin/powermetrics" not in captured["command"]
 
 

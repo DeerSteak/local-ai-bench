@@ -25,6 +25,7 @@ MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
+TEMPERATURE_CHANNELS = ("cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
 POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system", "unknown")
 ADL_PMLOG_MAX_SENSORS = 256
 ADL_PMLOG_ASIC_POWER = 23
@@ -61,6 +62,9 @@ class TelemetrySample:
     accelerator_memory_used_gb: float | None = None
     accelerator_memory_total_gb: float | None = None
     power_watts: float | None = None
+    cpu_package_c: float | None = None
+    gpu_die_c: float | None = None
+    gpu_hotspot_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,37 @@ class PowerAvailability:
     scope: str
     reason: str | None = None
     location: str | None = None
+
+
+@dataclass(frozen=True)
+class TemperatureReading:
+    cpu_package_c: float | None = None
+    gpu_die_c: float | None = None
+    gpu_hotspot_c: float | None = None
+
+
+@dataclass(frozen=True)
+class TemperatureAvailability:
+    available: bool
+    sources: Mapping[str, str]
+    reason: str | None = None
+    locations: Mapping[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class NvidiaTelemetryReading:
+    memory_used_gb: float | None = None
+    memory_total_gb: float | None = None
+    power_watts: float | None = None
+    gpu_die_c: float | None = None
+
+
+def temperature_availability_dict(value: TemperatureAvailability) -> dict[str, Any]:
+    return {
+        "available": value.available,
+        "sources": dict(value.sources),
+        "reason": value.reason,
+    }
 
 
 def power_availability_dict(value: PowerAvailability) -> dict[str, Any]:
@@ -164,6 +199,97 @@ def parse_rocm_power(output: str) -> PowerReading | None:
         if value is not None:
             values.append(value)
     return PowerReading(sum(values), "rocm-smi", "accelerator") if values else None
+
+
+def _valid_temperature(value: object) -> float | None:
+    number = _finite_nonnegative(value)
+    return number if number is not None and number <= 200 else None
+
+
+def _valid_millicelsius(value: object) -> float | None:
+    number = _finite_nonnegative(value)
+    if number is None:
+        return None
+    return number / 1000 if number <= 200_000 else None
+
+
+def parse_nvidia_temperatures(output: str) -> TemperatureReading | None:
+    values = []
+    for line in output.splitlines():
+        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:C)?\s*", line, flags=re.IGNORECASE)
+        value = _valid_temperature(match.group(1)) if match else None
+        if value is not None:
+            values.append(value)
+    return TemperatureReading(gpu_die_c=max(values)) if values else None
+
+
+def parse_nvidia_telemetry(output: str) -> NvidiaTelemetryReading | None:
+    memory_used = []
+    memory_total = []
+    power = []
+    temperatures = []
+    for line in output.splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) != 4:
+            continue
+        used = _finite_nonnegative(fields[0])
+        total = _finite_nonnegative(fields[1])
+        watts = _finite_nonnegative(fields[2])
+        temperature = _valid_temperature(fields[3])
+        if used is not None and total is not None and total > 0:
+            memory_used.append(used / 1024)
+            memory_total.append(total / 1024)
+        if watts is not None:
+            power.append(watts)
+        if temperature is not None:
+            temperatures.append(temperature)
+    if not any((memory_total, power, temperatures)):
+        return None
+    return NvidiaTelemetryReading(
+        memory_used_gb=sum(memory_used) if memory_total else None,
+        memory_total_gb=sum(memory_total) if memory_total else None,
+        power_watts=sum(power) if power else None,
+        gpu_die_c=max(temperatures) if temperatures else None,
+    )
+
+
+def parse_rocm_temperatures(output: str) -> TemperatureReading | None:
+    try:
+        payload = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    die_values = []
+    hotspot_values = []
+    for card in payload.values():
+        if not isinstance(card, dict):
+            continue
+        for key, raw in card.items():
+            normalized = str(key).lower()
+            value = _valid_temperature(raw)
+            if value is None:
+                continue
+            if "junction" in normalized or "hotspot" in normalized:
+                hotspot_values.append(value)
+            elif "edge" in normalized or "temperature" in normalized:
+                die_values.append(value)
+    if not die_values and not hotspot_values:
+        return None
+    return TemperatureReading(
+        gpu_die_c=max(die_values) if die_values else None,
+        gpu_hotspot_c=max(hotspot_values) if hotspot_values else None,
+    )
+
+
+def parse_hwmon_temperature(label: str, raw_millicelsius: str) -> tuple[str, float] | None:
+    value = _valid_millicelsius(raw_millicelsius)
+    if value is None:
+        return None
+    normalized = label.strip().lower()
+    if any(name in normalized for name in ("package", "tctl", "tdie")):
+        return "cpu_package_c", value
+    return None
 
 
 class _AdlSensorData(ctypes.Structure):
@@ -562,6 +688,134 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
     return PollingPowerSource(availability, **kwargs)
 
 
+def _discover_hwmon_cpu_paths(hwmon_root: Path) -> dict[str, str]:
+    locations = {}
+    try:
+        devices = tuple(hwmon_root.glob("hwmon*"))
+    except OSError:
+        return locations
+    for device in devices:
+        try:
+            name = (device / "name").read_text(encoding="utf-8").strip().lower()
+        except OSError:
+            continue
+        if name not in {"coretemp", "k10temp", "zenpower"}:
+            continue
+        for input_path in device.glob("temp*_input"):
+            label_path = input_path.with_name(input_path.name.replace("_input", "_label"))
+            try:
+                label = label_path.read_text(encoding="utf-8").strip()
+                raw = input_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            parsed = parse_hwmon_temperature(label, raw)
+            if parsed and parsed[0] not in locations:
+                locations[parsed[0]] = str(input_path)
+    return locations
+
+
+def discover_temperature_source(platform_name: str | None = None, *, which_fn=shutil.which,
+                                run_fn=subprocess.run,
+                                hwmon_root: Path = Path("/sys/class/hwmon")) \
+        -> TemperatureAvailability:
+    platform_name = platform_name or platform.system()
+    sources: dict[str, str] = {}
+    locations: dict[str, str] = {}
+    if platform_name == "Linux":
+        cpu_locations = _discover_hwmon_cpu_paths(hwmon_root)
+        if "cpu_package_c" in cpu_locations:
+            sources["cpu_package_c"] = "hwmon"
+            locations.update(cpu_locations)
+    if executable := which_fn("nvidia-smi"):
+        try:
+            result = run_fn(
+                [executable, "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result is not None and result.returncode == 0 and parse_nvidia_temperatures(result.stdout):
+            sources["gpu_die_c"] = "nvidia-smi"
+            locations["gpu_die_c"] = executable
+    if "gpu_die_c" not in sources and (executable := which_fn("rocm-smi")):
+        try:
+            result = run_fn(
+                [executable, "--showtemp", "--json"], capture_output=True, text=True,
+                timeout=2, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        reading = parse_rocm_temperatures(result.stdout) \
+            if result is not None and result.returncode == 0 else None
+        if reading:
+            for channel in ("gpu_die_c", "gpu_hotspot_c"):
+                if getattr(reading, channel) is not None:
+                    sources[channel] = "rocm-smi"
+                    locations[channel] = executable
+    if not sources:
+        return TemperatureAvailability(False, {}, "no supported temperature source was detected")
+    return TemperatureAvailability(True, sources, locations=locations)
+
+
+class TemperatureSourceLike(Protocol):
+    def read(self) -> TemperatureReading: ...
+
+
+class PollingTemperatureSource:
+    def __init__(self, availability: TemperatureAvailability, *, run_fn=subprocess.run,
+                 read_text_fn: Callable[[str], str] | None = None):
+        self.availability = availability
+        self.run_fn = run_fn
+        self.read_text_fn = read_text_fn or (
+            lambda path: Path(path).read_text(encoding="utf-8")
+        )
+
+    def read(self, *, nvidia_reading: NvidiaTelemetryReading | None = None,
+             nvidia_captured: bool = False) -> TemperatureReading:
+        values: dict[str, float | None] = {channel: None for channel in TEMPERATURE_CHANNELS}
+        locations = self.availability.locations or {}
+        cpu_path = locations.get("cpu_package_c")
+        if cpu_path:
+            try:
+                raw = self.read_text_fn(cpu_path)
+            except OSError:
+                raw = ""
+            values["cpu_package_c"] = _valid_millicelsius(raw.strip())
+        accelerator_source = next(
+            (self.availability.sources.get(channel)
+             for channel in ("gpu_die_c", "gpu_hotspot_c")
+             if self.availability.sources.get(channel) in {"nvidia-smi", "rocm-smi"}),
+            None,
+        )
+        executable = locations.get("gpu_die_c") or locations.get("gpu_hotspot_c")
+        try:
+            if accelerator_source == "nvidia-smi" and nvidia_captured:
+                reading = TemperatureReading(
+                    gpu_die_c=nvidia_reading.gpu_die_c if nvidia_reading else None,
+                )
+            elif accelerator_source == "nvidia-smi" and executable:
+                result = self.run_fn(
+                    [executable, "--query-gpu=temperature.gpu",
+                     "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=2, check=False,
+                )
+                reading = parse_nvidia_temperatures(result.stdout) if result.returncode == 0 else None
+            elif accelerator_source == "rocm-smi" and executable:
+                result = self.run_fn(
+                    [executable, "--showtemp", "--json"], capture_output=True, text=True,
+                    timeout=2, check=False,
+                )
+                reading = parse_rocm_temperatures(result.stdout) if result.returncode == 0 else None
+            else:
+                reading = None
+        except (OSError, subprocess.SubprocessError):
+            reading = None
+        if reading:
+            values["gpu_die_c"] = reading.gpu_die_c
+            values["gpu_hotspot_c"] = reading.gpu_hotspot_c
+        return TemperatureReading(**values)
+
+
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
     windows = []
@@ -629,6 +883,62 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
         "provenance": {
             "interval_sec": interval_sec,
             "failed_samples": failed_samples,
+        },
+    }
+
+
+def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
+                      availability: TemperatureAvailability,
+                      channel_failures: Mapping[str, int]) -> dict[str, Any]:
+    windows = []
+    for name in dict.fromkeys(sample.window for sample in samples):
+        selected = [sample for sample in samples if sample.window == name]
+        channels = {}
+        for channel in TEMPERATURE_CHANNELS:
+            values = [value for sample in selected
+                      if (value := _valid_temperature(getattr(sample, channel))) is not None]
+            channels[channel] = {
+                "peak_c": max(values) if values else None,
+                "mean_c": sum(values) / len(values) if values else None,
+                "final_c": values[-1] if values else None,
+                "valid_samples": len(values),
+            }
+        windows.append({
+            "name": name,
+            "sample_count": len(selected),
+            "duration_sec": (
+                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
+                if selected else 0.0
+            ),
+            "channels": channels,
+            "samples": [{
+                "timestamp_sec": sample.timestamp_sec,
+                **{channel: getattr(sample, channel) for channel in TEMPERATURE_CHANNELS},
+            } for sample in selected],
+        })
+    return {
+        "status": "recorded" if any(
+            getattr(sample, channel) is not None
+            for sample in samples for channel in TEMPERATURE_CHANNELS
+        ) else "unavailable",
+        "reason": availability.reason or (
+            None if any(getattr(sample, channel) is not None
+                        for sample in samples for channel in TEMPERATURE_CHANNELS)
+            else "no valid temperature samples were recorded"
+        ),
+        "windows": windows,
+        "provenance": {
+            "interval_sec": interval_sec,
+            "channels": {
+                channel: {
+                    "source": availability.sources.get(channel, "unsupported"),
+                    "failed_samples": (
+                        channel_failures.get(channel, 0)
+                        if channel in availability.sources else 0
+                    ),
+                }
+                for channel in TEMPERATURE_CHANNELS
+            },
         },
     }
 
@@ -746,6 +1056,22 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
     except (OSError, ValueError, TypeError, json.JSONDecodeError, subprocess.SubprocessError):
         return None
     return (used, total) if total > 0 else None
+
+
+def query_nvidia_telemetry(run_fn=subprocess.run, which_fn=shutil.which) \
+        -> NvidiaTelemetryReading | None:
+    executable = which_fn("nvidia-smi")
+    if not executable:
+        return None
+    try:
+        result = run_fn([
+            executable,
+            "--query-gpu=memory.used,memory.total,power.draw,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ], capture_output=True, text=True, timeout=2, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_nvidia_telemetry(result.stdout) if result.returncode == 0 else None
 
 
 def summarize_samples(name: str, samples: Sequence[TelemetrySample]) -> WindowSummary:
@@ -984,20 +1310,32 @@ def derive_run_power_summary(sections: Mapping[str, object]) -> dict[str, Any] |
     }
 
 
+def next_sample_deadline(deadline: float, now: float, interval_sec: float) -> float:
+    return max(deadline + interval_sec, now)
+
+
 class TelemetrySampler:
     def __init__(self, pid: int, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
                  sample_fn: Callable[[float, str], TelemetrySample] | None = None,
-                 power_source: PowerSourceLike | None = None):
+                 power_source: PowerSourceLike | None = None,
+                 temperature_source: TemperatureSourceLike | None = None,
+                 memory_sources: Mapping[str, str] | None = None,
+                 nvidia_query_fn: Callable[[], NvidiaTelemetryReading | None] =
+                 query_nvidia_telemetry):
         if interval_sec <= 0:
             raise ValueError("telemetry interval must be positive")
         self.pid = pid
         self.interval_sec = interval_sec
         self._sample_fn = sample_fn or self._sample
         self.power_source = power_source
+        self.temperature_source = temperature_source
+        self.memory_sources = dict(memory_sources or default_memory_sources())
+        self.nvidia_query_fn = nvidia_query_fn
         self._samples: list[TelemetrySample] = []
         self._failed_samples = 0
         self._channel_failures = {channel: 0 for channel in MEMORY_CHANNELS}
         self._power_failures = 0
+        self._temperature_failures = {channel: 0 for channel in TEMPERATURE_CHANNELS}
         self._window = "idle"
         self._started_at = 0.0
         self._stop_event = threading.Event()
@@ -1025,15 +1363,20 @@ class TelemetrySampler:
         with self._lock:
             return self._power_failures
 
+    @property
+    def temperature_failures(self) -> Mapping[str, int]:
+        with self._lock:
+            return dict(self._temperature_failures)
+
     def set_window(self, name: str) -> None:
         if not name:
             raise ValueError("telemetry window must not be empty")
         with self._lock:
             self._window = name
 
-    def mark_window(self, name: str) -> None:
+    def mark_window(self, name: str) -> TelemetrySample:
         self.set_window(name)
-        self.capture()
+        return self.capture()
 
     def capture(self) -> TelemetrySample:
         with self._capture_lock:
@@ -1073,7 +1416,31 @@ class TelemetrySampler:
     def _sample(self, timestamp_sec: float, window: str) -> TelemetrySample:
         host_used, _ = system_memory_usage()
         process = process_resource_usage(self.pid)
-        vram = query_sampler_vram_usage()
+        power_uses_nvidia = isinstance(self.power_source, PollingPowerSource) and \
+            self.power_source.availability.source == "nvidia-smi"
+        temperature_uses_nvidia = isinstance(self.temperature_source, PollingTemperatureSource) \
+            and "nvidia-smi" in self.temperature_source.availability.sources.values()
+        memory_uses_nvidia = "nvidia-smi" in self.memory_sources.values()
+        nvidia_captured = memory_uses_nvidia or power_uses_nvidia or temperature_uses_nvidia
+        nvidia = self.nvidia_query_fn() if nvidia_captured else None
+        vram = (
+            (nvidia.memory_used_gb, nvidia.memory_total_gb)
+            if memory_uses_nvidia and nvidia and nvidia.memory_used_gb is not None
+            and nvidia.memory_total_gb is not None
+            else (None if memory_uses_nvidia else query_sampler_vram_usage())
+        )
+        if isinstance(self.temperature_source, PollingTemperatureSource):
+            temperature = self.temperature_source.read(
+                nvidia_reading=nvidia, nvidia_captured=temperature_uses_nvidia,
+            )
+        else:
+            temperature = self.temperature_source.read() \
+                if self.temperature_source else TemperatureReading()
+        power_watts = (
+            nvidia.power_watts if power_uses_nvidia and nvidia else
+            None if power_uses_nvidia else
+            self.power_source.read_watts() if self.power_source else None
+        )
         return TelemetrySample(
             timestamp_sec=timestamp_sec,
             window=window,
@@ -1081,13 +1448,19 @@ class TelemetrySampler:
             process_rss_gb=process[1] if process else None,
             accelerator_memory_used_gb=vram[0] if vram else None,
             accelerator_memory_total_gb=vram[1] if vram else None,
-            power_watts=self.power_source.read_watts() if self.power_source else None,
+            power_watts=power_watts,
+            cpu_package_c=temperature.cpu_package_c,
+            gpu_die_c=temperature.gpu_die_c,
+            gpu_hotspot_c=temperature.gpu_hotspot_c,
         )
 
     def _run(self) -> None:
+        deadline = time.monotonic()
         while not self._stop_event.is_set():
             self.capture()
-            self._stop_event.wait(self.interval_sec)
+            now = time.monotonic()
+            deadline = next_sample_deadline(deadline, now, self.interval_sec)
+            self._stop_event.wait(max(0.0, deadline - now))
 
     def _capture(self, timestamp: float, window: str) -> TelemetrySample:
         try:
@@ -1099,6 +1472,9 @@ class TelemetrySampler:
                     self._channel_failures[channel] += 1
                 if self.power_source:
                     self._power_failures += 1
+                if self.temperature_source:
+                    for channel in TEMPERATURE_CHANNELS:
+                        self._temperature_failures[channel] += 1
             return TelemetrySample(timestamp, window)
         with self._lock:
             for channel in MEMORY_CHANNELS:
@@ -1106,27 +1482,38 @@ class TelemetrySampler:
                     self._channel_failures[channel] += 1
             if self.power_source and sample.power_watts is None:
                 self._power_failures += 1
+            if self.temperature_source:
+                for channel in TEMPERATURE_CHANNELS:
+                    if getattr(sample, channel) is None:
+                        self._temperature_failures[channel] += 1
         return sample
 
 
 class CaseTelemetry:
     def __init__(self, pid: int | None = None, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
                  sampler: TelemetrySampler | None = None, sources: Mapping[str, str] | None = None,
-                 power_availability: PowerAvailability | None = None):
+                 power_availability: PowerAvailability | None = None,
+                 temperature_availability: TemperatureAvailability | None = None):
         self.power_availability = power_availability
+        self.temperature_availability = temperature_availability
+        self.sources = dict(sources or default_memory_sources())
         power_source = (
             create_power_source(power_availability, interval_sec) if power_availability else None
         )
         self.sampler = sampler or TelemetrySampler(
             pid or os.getpid(), interval_sec, power_source=power_source,
+            temperature_source=(PollingTemperatureSource(temperature_availability)
+                                if temperature_availability else None),
+            memory_sources=self.sources,
         )
-        self.sources = dict(sources or default_memory_sources())
         self.ceiling_gb = memory_ceiling_gb(self.sources)
         self._cursor = 0
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
         self._power_failure_cursor = 0
+        self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
         self.last_power: dict[str, Any] | None = None
+        self.last_temperature: dict[str, Any] | None = None
 
     def start(self) -> "CaseTelemetry":
         self.sampler.start()
@@ -1135,17 +1522,19 @@ class CaseTelemetry:
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
         self._power_failure_cursor = 0
+        self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
         self.last_power = None
+        self.last_temperature = None
         return self
 
     def stop(self) -> None:
         self.sampler.stop()
 
-    def begin_model_load(self) -> None:
-        self.sampler.mark_window("model_load")
+    def begin_model_load(self) -> TelemetrySample:
+        return self.sampler.mark_window("model_load")
 
-    def begin_measured(self, subwindow: str = "measured") -> None:
-        self.sampler.mark_window(subwindow)
+    def begin_measured(self, subwindow: str = "measured") -> TelemetrySample:
+        return self.sampler.mark_window(subwindow)
 
     def begin_pause(self) -> None:
         self.sampler.capture()
@@ -1166,6 +1555,13 @@ class CaseTelemetry:
         self._channel_failure_cursor = dict(current_failures)
         power_failures = self.sampler.power_failures - self._power_failure_cursor
         self._power_failure_cursor = self.sampler.power_failures
+        current_temperature_failures = self.sampler.temperature_failures
+        temperature_failures = {
+            channel: current_temperature_failures[channel]
+            - self._temperature_failure_cursor[channel]
+            for channel in TEMPERATURE_CHANNELS
+        }
+        self._temperature_failure_cursor = dict(current_temperature_failures)
         block = memory_block(
             samples, self.sampler.interval_sec, failed_samples,
             {
@@ -1181,6 +1577,13 @@ class CaseTelemetry:
                 samples, self.sampler.interval_sec, self.power_availability, power_failures,
             )
             if self.power_availability else None
+        )
+        self.last_temperature = (
+            temperature_block(
+                samples, self.sampler.interval_sec, self.temperature_availability,
+                temperature_failures,
+            )
+            if self.temperature_availability else None
         )
         self.sampler.mark_window("idle")
         return block

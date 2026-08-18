@@ -1,13 +1,18 @@
 import json
 from types import SimpleNamespace
 
-from scripts.app.benchmark import relay_runner_log, run_supervised_llm, run_supervised_stage
+from scripts.app.benchmark import (
+    relay_runner_log, run_supervised_llm, run_supervised_stage,
+    temperature_telemetry_requested,
+)
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.run_plan import RunPlan
-from scripts.runtime.telemetry import PowerAvailability
-from scripts.runtime.workload_runner import create_case_telemetry, inherited_power_availability
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
+from scripts.runtime.workload_runner import (
+    create_case_telemetry, inherited_power_availability, inherited_temperature_availability,
+)
 
 
 def make_plan():
@@ -20,6 +25,17 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_qualification_temperature_override_controls_default_sustained_sampling():
+    assert temperature_telemetry_requested(["llm"], {}) is False
+    assert temperature_telemetry_requested(["sustained"], {}) is True
+    assert temperature_telemetry_requested(
+        ["sustained"], {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "0"},
+    ) is False
+    assert temperature_telemetry_requested(
+        ["llm"], {"LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE": "1"},
+    ) is True
 
 
 def test_runner_power_telemetry_inherits_parent_source_inside_supervised_process(monkeypatch):
@@ -55,6 +71,25 @@ def test_runner_refuses_inherited_power_identity_that_differs_from_plan():
         False, "nvidia-smi", "accelerator",
         "parent power source was not inherited by the supervised process",
     )
+
+
+def test_runner_inherits_only_the_planned_temperature_channels():
+    status = TemperatureAvailability(
+        True, {"gpu_die_c": "nvidia-smi"},
+        locations={"gpu_die_c": "/usr/bin/nvidia-smi"},
+    )
+    inherited = inherited_temperature_availability(
+        {"temperature_sources": {"gpu_die_c": "nvidia-smi"}},
+        {"LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY": json.dumps(status.__dict__)},
+    )
+    assert inherited == status
+    refused = inherited_temperature_availability(
+        {"temperature_sources": {"cpu_package_c": "hwmon"}},
+        {"LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY": json.dumps(status.__dict__)},
+    )
+    assert refused.available is False
+    assert refused.sources == {"cpu_package_c": "hwmon"}
+    assert refused.locations is None
 
 
 def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):
@@ -121,6 +156,32 @@ def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path
     assert result == saved[-1]
     assert saved[0]["fake"]["512"]["tps_mean"] == 50
     assert cancelled == [True]
+
+
+def test_llm_supervisor_receives_temperature_availability(tmp_path):
+    plan = make_plan()
+    path = tmp_path / "events.sqlite3"
+    availability = TemperatureAvailability(True, {"gpu_die_c": "nvidia-smi"})
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.temperature_availability == availability
+
+        def run(self, callback):
+            stage = LLMEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.finish()
+            stage.close()
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel():
+            pass
+
+    run_supervised_llm(
+        plan, path, lambda _section: None, Supervisor,
+        temperature_availability=availability,
+    )
 
 
 def test_runner_failure_preserves_committed_case_for_parent_recovery(tmp_path):

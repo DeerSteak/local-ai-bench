@@ -90,6 +90,8 @@ Run-plan identity tests prove that hierarchical IDs are deterministic, distinct 
 
 Execution-progress tests verify the structured event parser, idempotent model coverage, retry/invalid counters, remaining-time estimates, and recursive child-process resource totals. Runner tests additionally reconstruct an immutable journal plan with a fake engine, record a case through the child execution seam, and verify its committed-event notification and compatible projection. Failure tests reopen and verify prior committed measurements after a runner crash, coordinator interruption, read-only JSON export, and simulated SQLite disk-full abort. Workload tests also assert that an implausible token-rate retry emits recovered or invalid measurement events without changing the one-retry policy.
 
+Telemetry qualification tests exercise alternating pair order, exact off/on methodology identity, source availability, threshold boundaries, duration-weighted sustained throughput, retention-point impacts, dry-run command matrices, and the unattended six-suite Linux wrapper. Dry-run tests never launch a benchmark.
+
 ### Workloads and graders
 
 | Area | Test modules |
@@ -97,6 +99,7 @@ Execution-progress tests verify the structured event parser, idempotent model co
 | LLM throughput and conversation growth | [test_llm_prefill_benchmark.py](../tests/test_llm_prefill_benchmark.py), [test_llm_conversation_benchmark.py](../tests/test_llm_conversation_benchmark.py) |
 | Embeddings and images | [test_embedding_benchmark.py](../tests/test_embedding_benchmark.py), [test_image_benchmark.py](../tests/test_image_benchmark.py) |
 | HTTP concurrency | [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
+| Sustained load and degradation analysis | [test_sustained_benchmark.py](../tests/test_sustained_benchmark.py), [test_sustained_analysis.py](../tests/test_sustained_analysis.py), [test_sustained_event_stage.py](../tests/test_sustained_event_stage.py) |
 | llama.cpp native benchmarks | [test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py), [test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py) |
 | vLLM native benchmark | [test_vllm_benchmark.py](../tests/test_vllm_benchmark.py) |
 | Non-catalog vLLM cache cleanup | [test_vllm_cleanup.py](../tests/test_vllm_cleanup.py) |
@@ -172,7 +175,7 @@ npm run lint
 npx tsc --noEmit
 ```
 
-The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, memory/power telemetry and missing states, mixed-scope power rejection, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. `samples.test.ts` loads every bundled result and verifies that each populated section still produces rows, catching schema drift at the compatibility boundary. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
+The Vitest suite covers pure transformations in `dashboard/src/utils/*.ts`, selected-result staging, and registry invariants in `dashboard/src/constants.ts`: chart data, status labels, sorting, formatting, memory/power telemetry and missing states, sustained timelines and retention rows, mixed-scope power rejection, sample-validity inspection, historical-schema compatibility, model ordering, color contrast, build-time suite-version parsing, and the bounded local-file autoload handoff. `samples.test.ts` loads every bundled result and verifies that each populated section still produces rows, catching schema drift at the compatibility boundary. The validity tests prove that invalid runs remain distinct from zero, rejection reasons survive, and aggregate-only historical files are labeled rather than assigned invented samples. The suite deliberately does not mount React components; chart and layout changes also need a rendered dashboard check against a sample or relevant results file.
 
 Run `npm run test:coverage` to measure statement, branch, function, and line coverage across `src/constants.ts` and the pure utilities in `src/utils/`. CI publishes the text report for every protected-target pull request; coverage is diagnostic rather than a fixed percentage gate.
 

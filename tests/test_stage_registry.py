@@ -16,6 +16,7 @@ def test_stage_groups_are_derived_from_categories():
     assert CONCURRENCY_TESTS == ["conc_tool", "conc_chat"]
     assert set(LLM_TESTS) == {
         "llm", "conv", "llamabench", "llamabenchconc", "vllmbench",
+        "sustained",
         *ACCURACY_TESTS,
     }
 

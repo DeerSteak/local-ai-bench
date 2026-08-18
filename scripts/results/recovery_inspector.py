@@ -14,8 +14,8 @@ from scripts.results.run_plan import load_run_plan
 from scripts.runtime.shared import Shared
 
 
-JOURNAL_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
-SELECTED_RETRY_STAGES = {"llm", "conv", "conc_tool", "conc_chat"}
+JOURNAL_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat", "sustained"}
+SELECTED_RETRY_STAGES = {"llm", "conv", "conc_tool", "conc_chat", "sustained"}
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
 
 
@@ -27,7 +27,8 @@ def retryable_case_records(plan, projection):
     records = []
     for case_id, case in projection["cases"].items():
         if (case.get("state") not in RETRYABLE_CASE_STATES
-                or case.get("parent_id") not in stages or case.get("case_kind") != "context"):
+                or case.get("parent_id") not in stages
+                or case.get("case_kind") not in {"context", "sustained"}):
             continue
         details = []
         if case.get("context_label"):
@@ -49,7 +50,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     engine = engine or get_engine(plan.engine_name)
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
-    if stages & {"llm", "conv", "llamabench"}:
+    if stages & {"llm", "conv", "llamabench", "sustained"}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")

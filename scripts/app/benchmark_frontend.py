@@ -166,6 +166,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
                 "offline", "memory_telemetry", "power_telemetry", "gpu_split_mode",
                 "retry_crashed_models",
                 "llamacpp_no_repack",
+                "sustained_duration", "ambient_temp_c",
             }:
                 for key in missing:
                     options[key] = GUI_OPTION_DEFAULTS[key]
@@ -241,6 +242,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "llamacpp_no_repack": "llamacpp_no_repack",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
         "memory_telemetry": "memory_telemetry", "power_telemetry": "power_telemetry",
+        "sustained_duration_sec": "sustained_duration", "ambient_temp_c": "ambient_temp_c",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
@@ -738,6 +740,9 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         command.extend(["--timeout", str(gui_options["timeout"])])
         command.extend(["--acc-timeout", str(gui_options["acc_timeout"])])
         command.extend(["--acc-token-budget", str(gui_options["acc_token_budget"])])
+        command.extend(["--sustained-duration", str(gui_options["sustained_duration"])])
+        if "sustained" in tests and gui_options["ambient_temp_c"] is not None:
+            command.extend(["--ambient-temp-c", str(gui_options["ambient_temp_c"])])
         command.extend(["--gpu-split-mode", gui_options["gpu_split_mode"]])
         if gui_options["cpu_only"]:
             command.append("--cpu-only")

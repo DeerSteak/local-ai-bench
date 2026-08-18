@@ -7,10 +7,11 @@ from typing import Callable, Protocol
 from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.sustained_event_stage import SustainedEventStage, export_sustained_section
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
-from scripts.runtime.telemetry import PowerAvailability
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 
 
 class RunnerLike(Protocol):
@@ -32,13 +33,20 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
                          supervisor_factory: Callable[..., RunnerLike] = RunnerSupervisor,
                          resume_identity=None, resume=False,
                          selected_case_ids=None,
-                         power_availability: PowerAvailability | None = None) -> dict:
+                         power_availability: PowerAvailability | None = None,
+                         temperature_availability: TemperatureAvailability | None = None) -> dict:
     event_path = Path(event_path).resolve()
     if stage_name == "llamabench":
         journal = NativeBenchEventStage(
             event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
         )
         project = lambda: export_native_bench_section(event_path, plan.job_id)
+    elif stage_name == "sustained":
+        journal = SustainedEventStage(
+            event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
+            selected_case_ids=selected_case_ids,
+        )
+        project = lambda: export_sustained_section(event_path, plan.job_id)
     else:
         model_family = "concurrency" if stage_name in {"conc_tool", "conc_chat"} else "llm"
         journal = LLMEventStage(
@@ -50,6 +58,7 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
     journal.close()
     supervisor = supervisor_factory(RunnerSpec(
         plan.job_id, stage_name, event_path, power_availability,
+        temperature_availability,
     ))
     terminal = []
 
@@ -75,8 +84,10 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
 def run_supervised_llm(plan: RunPlan, event_path: Path, save_fn,
                        supervisor_factory: Callable[..., RunnerLike] = RunnerSupervisor,
                        resume_identity=None,
-                       power_availability: PowerAvailability | None = None) -> dict:
+                       power_availability: PowerAvailability | None = None,
+                       temperature_availability: TemperatureAvailability | None = None) -> dict:
     return run_supervised_stage(
         plan, event_path, "llm", save_fn, supervisor_factory, resume_identity,
         power_availability=power_availability,
+        temperature_availability=temperature_availability,
     )

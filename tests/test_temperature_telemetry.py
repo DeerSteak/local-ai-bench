@@ -1,0 +1,236 @@
+from pathlib import Path
+
+from scripts.runtime.telemetry import (
+    NvidiaTelemetryReading, PollingPowerSource, PollingTemperatureSource, PowerAvailability,
+    TemperatureAvailability, TemperatureReading,
+    TelemetrySample, TelemetrySampler, discover_temperature_source,
+    parse_hwmon_temperature, parse_nvidia_telemetry, parse_nvidia_temperatures,
+    parse_rocm_temperatures,
+    temperature_availability_dict, temperature_block,
+)
+
+
+class Result:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_nvidia_temperature_parser_uses_hottest_die_and_rejects_partial_output():
+    assert parse_nvidia_temperatures("62\n71 C\nN/A\n") == TemperatureReading(gpu_die_c=71)
+    assert parse_nvidia_temperatures("N/A\n[Not Supported]\n") is None
+    assert parse_nvidia_temperatures("201\nnan\n-1\n") is None
+
+
+def test_nvidia_combined_parser_aggregates_devices_and_preserves_partial_channels():
+    assert parse_nvidia_telemetry("1024, 8192, 120.5, 65\n2048, 16384, 80, 72\n") == \
+        NvidiaTelemetryReading(3, 24, 200.5, 72)
+    assert parse_nvidia_telemetry("N/A, N/A, 50, N/A\n") == \
+        NvidiaTelemetryReading(power_watts=50)
+    assert parse_nvidia_telemetry("N/A, N/A, N/A, N/A\n") is None
+
+
+def test_rocm_temperature_parser_separates_die_and_hotspot_across_devices():
+    output = """{
+      "card0": {
+        "Temperature (Sensor edge) (C)": "54.0",
+        "Temperature (Sensor junction) (C)": "67.0"
+      },
+      "card1": {
+        "Temperature (Sensor edge) (C)": "58.0",
+        "Temperature (Sensor junction) (C)": "73.0"
+      }
+    }"""
+    assert parse_rocm_temperatures(output) == TemperatureReading(
+        gpu_die_c=58, gpu_hotspot_c=73,
+    )
+    assert parse_rocm_temperatures('{"card0": {"Temperature": "N/A"}}') is None
+    assert parse_rocm_temperatures('{"card0":') is None
+    assert parse_rocm_temperatures("[]") is None
+
+
+def test_hwmon_parser_accepts_package_labels_and_rejects_unrelated_or_invalid_sensors():
+    assert parse_hwmon_temperature("Package id 0", "62500") == ("cpu_package_c", 62.5)
+    assert parse_hwmon_temperature("Tctl", "71000") == ("cpu_package_c", 71)
+    assert parse_hwmon_temperature("Tdie", "68000") == ("cpu_package_c", 68)
+    assert parse_hwmon_temperature("Core 0", "59000") is None
+    assert parse_hwmon_temperature("Tctl", "permission denied") is None
+    assert parse_hwmon_temperature("Tctl", "201000") is None
+
+
+def write_hwmon(root: Path, device: str, name: str, label: str, value: str) -> None:
+    path = root / device
+    path.mkdir()
+    (path / "name").write_text(name, encoding="utf-8")
+    (path / "temp1_label").write_text(label, encoding="utf-8")
+    (path / "temp1_input").write_text(value, encoding="utf-8")
+
+
+def test_linux_discovery_combines_hwmon_cpu_and_nvidia_gpu_without_exposing_paths(tmp_path):
+    write_hwmon(tmp_path, "hwmon0", "k10temp", "Tctl", "65000")
+    status = discover_temperature_source(
+        "Linux", hwmon_root=tmp_path,
+        which_fn=lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(stdout="57\n"),
+    )
+    assert status.available is True
+    assert status.sources == {"cpu_package_c": "hwmon", "gpu_die_c": "nvidia-smi"}
+    assert status.locations is not None
+    assert temperature_availability_dict(status) == {
+        "available": True,
+        "sources": {"cpu_package_c": "hwmon", "gpu_die_c": "nvidia-smi"},
+        "reason": None,
+    }
+    assert str(tmp_path) not in str(temperature_availability_dict(status))
+
+
+def test_discovery_retains_cpu_channel_when_accelerator_probe_fails(tmp_path):
+    write_hwmon(tmp_path, "hwmon0", "coretemp", "Package id 0", "61000")
+    status = discover_temperature_source(
+        "Linux", hwmon_root=tmp_path,
+        which_fn=lambda name: "/bin/nvidia-smi" if name == "nvidia-smi" else None,
+        run_fn=lambda *_args, **_kwargs: Result(1, stderr="permission denied: gpu serial"),
+    )
+    assert status.available is True
+    assert status.sources == {"cpu_package_c": "hwmon"}
+
+
+def test_discovery_falls_back_to_rocm_when_nvidia_probe_fails(tmp_path):
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "/bin/nvidia-smi":
+            return Result(1, stderr="driver unavailable")
+        return Result(stdout=(
+            '{"card0":{"Temperature (Sensor edge) (C)":58,'
+            '"Temperature (Sensor junction) (C)":74}}'
+        ))
+
+    status = discover_temperature_source(
+        "Linux", hwmon_root=tmp_path,
+        which_fn=lambda name: f"/bin/{name}" if name in {"nvidia-smi", "rocm-smi"} else None,
+        run_fn=run,
+    )
+
+    assert [command[0] for command in commands] == ["/bin/nvidia-smi", "/bin/rocm-smi"]
+    assert status.sources == {"gpu_die_c": "rocm-smi", "gpu_hotspot_c": "rocm-smi"}
+
+
+def test_discovery_reports_unavailable_when_no_supported_channel_exists(tmp_path):
+    write_hwmon(tmp_path, "hwmon0", "acpitz", "temp1", "40000")
+    status = discover_temperature_source(
+        "Linux", hwmon_root=tmp_path, which_fn=lambda _name: None,
+    )
+    assert status == TemperatureAvailability(
+        False, {}, "no supported temperature source was detected",
+    )
+
+
+def test_polling_source_reads_cpu_and_rocm_channels_from_one_capture():
+    status = TemperatureAvailability(
+        True,
+        {"cpu_package_c": "hwmon", "gpu_die_c": "rocm-smi", "gpu_hotspot_c": "rocm-smi"},
+        locations={"cpu_package_c": "/sys/tctl", "gpu_die_c": "/bin/rocm-smi",
+                   "gpu_hotspot_c": "/bin/rocm-smi"},
+    )
+    source = PollingTemperatureSource(
+        status, read_text_fn=lambda _path: "66000",
+        run_fn=lambda *_args, **_kwargs: Result(stdout=(
+            '{"card0":{"Temperature (Sensor edge) (C)":55,'
+            '"Temperature (Sensor junction) (C)":72}}'
+        )),
+    )
+    assert source.read() == TemperatureReading(66, 55, 72)
+
+
+def test_temperature_block_preserves_aligned_timestamps_and_missing_channels():
+    samples = [
+        TelemetrySample(0, "measured:0", power_watts=100, gpu_die_c=60),
+        TelemetrySample(1.25, "measured:0", power_watts=95, gpu_die_c=70),
+    ]
+    block = temperature_block(
+        samples, 0.5, TemperatureAvailability(True, {"gpu_die_c": "nvidia-smi"}),
+        {"cpu_package_c": 2, "gpu_hotspot_c": 2},
+    )
+    assert block["status"] == "recorded"
+    assert block["windows"][0]["duration_sec"] == 1.25
+    assert block["windows"][0]["channels"]["gpu_die_c"] == {
+        "peak_c": 70, "mean_c": 65, "final_c": 70, "valid_samples": 2,
+    }
+    assert block["windows"][0]["samples"] == [
+        {"timestamp_sec": 0, "cpu_package_c": None, "gpu_die_c": 60,
+         "gpu_hotspot_c": None},
+        {"timestamp_sec": 1.25, "cpu_package_c": None, "gpu_die_c": 70,
+         "gpu_hotspot_c": None},
+    ]
+    assert block["provenance"]["channels"] == {
+        "cpu_package_c": {"source": "unsupported", "failed_samples": 0},
+        "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0},
+        "gpu_hotspot_c": {"source": "unsupported", "failed_samples": 0},
+    }
+
+
+def test_temperature_block_retains_failures_for_discovered_channels():
+    block = temperature_block(
+        [TelemetrySample(0, "measured", cpu_package_c=None)],
+        0.5, TemperatureAvailability(True, {"cpu_package_c": "hwmon"}),
+        {"cpu_package_c": 1, "gpu_die_c": 1},
+    )
+    assert block["provenance"]["channels"]["cpu_package_c"] == {
+        "source": "hwmon", "failed_samples": 1,
+    }
+    assert block["provenance"]["channels"]["gpu_die_c"] == {
+        "source": "unsupported", "failed_samples": 0,
+    }
+
+
+def test_sampler_counts_each_missing_temperature_channel_without_losing_memory():
+    class Source:
+        def read(self):
+            return TemperatureReading(gpu_die_c=64)
+
+    sampler = TelemetrySampler(
+        42, temperature_source=Source(),
+        sample_fn=lambda timestamp, window: TelemetrySample(
+            timestamp, window, host_ram_used_gb=10, gpu_die_c=64,
+        ),
+    )
+    sampler._started_at = 0
+    captured = sampler.capture()
+    assert captured.host_ram_used_gb == 10
+    assert captured.gpu_die_c == 64
+    assert sampler.temperature_failures == {
+        "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
+    }
+
+
+def test_sampler_uses_one_nvidia_capture_for_memory_power_and_temperature(monkeypatch):
+    calls = []
+    availability = TemperatureAvailability(
+        True, {"gpu_die_c": "nvidia-smi"}, locations={"gpu_die_c": "/bin/nvidia-smi"},
+    )
+    power = PollingPowerSource(
+        PowerAvailability(True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi"),
+        run_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("extra query")),
+    )
+    temperature = PollingTemperatureSource(
+        availability,
+        run_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("extra query")),
+    )
+    monkeypatch.setattr("scripts.runtime.telemetry.system_memory_usage", lambda: (8, 16))
+    monkeypatch.setattr("scripts.runtime.telemetry.process_resource_usage", lambda _pid: (1, 2))
+    sampler = TelemetrySampler(
+        42, power_source=power, temperature_source=temperature,
+        memory_sources={"accelerator_memory_used_gb": "nvidia-smi"},
+        nvidia_query_fn=lambda: calls.append("capture") or NvidiaTelemetryReading(3, 24, 200, 72),
+    )
+
+    sample = sampler._sample(0, "measured")
+
+    assert calls == ["capture"]
+    assert sample.accelerator_memory_used_gb == 3
+    assert sample.accelerator_memory_total_gb == 24
+    assert sample.power_watts == 200
+    assert sample.gpu_die_c == 72

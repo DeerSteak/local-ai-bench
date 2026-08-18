@@ -25,6 +25,9 @@ SAFE_CONFIG_KEYS = {
     "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
+    "temperature_telemetry", "temperature_telemetry_interval_sec", "temperature_sources",
+    "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+    "ambient_temp_c",
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
@@ -34,6 +37,9 @@ EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "retry_crashed_models", "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
+    "temperature_telemetry", "temperature_telemetry_interval_sec", "temperature_sources",
+    "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+    "ambient_temp_c",
 }
 
 
@@ -158,14 +164,20 @@ class RunPlan:
                 "profile": settings["methodology_profile"],
                 "effective_optimizations": settings.get("effective_optimizations", []),
             }
+        telemetry = {}
         if settings.get("power_telemetry"):
-            identity["telemetry"] = {
-                "power": {
-                    "interval_sec": settings["power_telemetry_interval_sec"],
-                    "source": settings["power_source"],
-                    "scope": settings["power_scope"],
-                },
+            telemetry["power"] = {
+                "interval_sec": settings["power_telemetry_interval_sec"],
+                "source": settings["power_source"],
+                "scope": settings["power_scope"],
             }
+        if settings.get("temperature_telemetry"):
+            telemetry["temperature"] = {
+                "interval_sec": settings["temperature_telemetry_interval_sec"],
+                "sources": settings["temperature_sources"],
+            }
+        if telemetry:
+            identity["telemetry"] = telemetry
         return identity
 
     @property
@@ -209,6 +221,17 @@ class RunPlan:
                 f"incomplete run plan: model families={sorted(missing_families)}, "
                 f"settings={sorted(missing_config)}"
             )
+        if "sustained" in self.tests:
+            sustained_required = {
+                "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+                "ambient_temp_c", "temperature_telemetry",
+                "temperature_telemetry_interval_sec", "temperature_sources",
+            }
+            missing_sustained = sustained_required - set(self.effective_config)
+            if missing_sustained:
+                raise ValueError(
+                    f"incomplete sustained run plan: settings={sorted(missing_sustained)}"
+                )
         settings = self.effective_config
         integer_ranges = {
             "runs": (1, 10), "warmup_runs": (0, None),
@@ -216,16 +239,18 @@ class RunPlan:
             "accuracy_token_budget": (1, None),
         }
         for key, (minimum, maximum) in integer_ranges.items():
-            value = settings[key]
+            value = settings.get(key)
             if (isinstance(value, bool) or not isinstance(value, int) or value < minimum
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
         for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack", "memory_telemetry", "power_telemetry"):
+                    "llamacpp_no_repack", "memory_telemetry", "power_telemetry",
+                    "temperature_telemetry"):
             if key == "retry_crashed_models" and key not in settings:
                 continue
             if key not in settings and key in {
-                    "offline", "llamacpp_no_repack", "memory_telemetry", "power_telemetry"}:
+                    "offline", "llamacpp_no_repack", "memory_telemetry", "power_telemetry",
+                    "temperature_telemetry"}:
                 continue
             if not isinstance(settings[key], bool):
                 raise ValueError(f"invalid execution setting: {key}")
@@ -250,6 +275,23 @@ class RunPlan:
         elif any(settings.get(key) is not None for key in (
                 "power_telemetry_interval_sec", "power_source", "power_scope")):
             raise ValueError("power telemetry settings require power telemetry")
+        temperature_interval = settings.get("temperature_telemetry_interval_sec")
+        if settings.get("temperature_telemetry"):
+            if not settings.get("memory_telemetry"):
+                raise ValueError("temperature telemetry requires memory telemetry")
+            if (isinstance(temperature_interval, bool)
+                    or not isinstance(temperature_interval, (int, float))
+                    or not math.isfinite(temperature_interval) or temperature_interval <= 0):
+                raise ValueError("invalid execution setting: temperature_telemetry_interval_sec")
+            sources = settings.get("temperature_sources")
+            if not isinstance(sources, dict) or any(
+                    key not in {"cpu_package_c", "gpu_die_c", "gpu_hotspot_c"}
+                    or not isinstance(value, str) or not value
+                    for key, value in sources.items()):
+                raise ValueError("invalid execution setting: temperature_sources")
+        elif any(settings.get(key) is not None for key in (
+                "temperature_telemetry_interval_sec", "temperature_sources")):
+            raise ValueError("temperature telemetry settings require temperature telemetry")
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
@@ -263,11 +305,17 @@ class RunPlan:
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",
             "concurrency_chat_context", "concurrency_chat_soft_exit_floor",
+            "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
         ):
-            value = settings[key]
+            value = settings.get(key)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int)
                                       or value < 1):
                 raise ValueError(f"invalid execution setting: {key}")
+        ambient = settings.get("ambient_temp_c")
+        if ambient is not None and (
+                isinstance(ambient, bool) or not isinstance(ambient, (int, float))
+                or not math.isfinite(ambient) or not -100 <= ambient <= 100):
+            raise ValueError("invalid execution setting: ambient_temp_c")
         for key in (
             "context_lengths", "llamabench_pp", "llamabench_tg",
             "concurrency_tool_levels", "concurrency_chat_levels",

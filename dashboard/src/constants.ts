@@ -206,10 +206,11 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
+export const SECTIONS = ["llm", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
+  sustained: "Sustained Load",
   concurrency_tool: "Concurrency (Tool)",
   concurrency_chat: "Concurrency (Chat)",
   accuracy: "Accuracy",

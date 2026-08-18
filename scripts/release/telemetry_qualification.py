@@ -13,6 +13,8 @@ from scripts.results.result_store import validate_json_data
 METRIC_BOUNDS_PCT = {"ttft": 2.0, "throughput": 1.0, "wall": 1.0}
 TTFT_MEDIAN_BOUND_SEC = 0.002
 MIN_PAIRS = 20
+SUSTAINED_THROUGHPUT_BOUND_PCT = 1.0
+SUSTAINED_RETENTION_BOUND_POINTS = 1.0
 
 
 def percentile(values: Sequence[float], proportion: float) -> float:
@@ -45,6 +47,38 @@ def extract_case_metrics(result: dict, section: str, model: str, case: str) -> d
     if any(not math.isfinite(value) or value <= 0 for value in values.values()):
         raise ValueError("qualification metrics must be finite and positive")
     return values
+
+
+def extract_sustained_metrics(result: dict, model: str) -> dict[str, float]:
+    validate_json_data(result)
+    sample = result.get("sustained", {}).get(model)
+    if not isinstance(sample, dict) or not isinstance(sample.get("series"), list):
+        raise ValueError(f"result has no sustained/{model} series")
+    durations = []
+    tokens = []
+    for window in sample["series"]:
+        if not isinstance(window, dict):
+            raise ValueError("sustained series contains a non-object window")
+        duration = window.get("duration_sec")
+        count = window.get("tokens")
+        if (not isinstance(duration, (int, float)) or isinstance(duration, bool)
+                or not isinstance(count, (int, float)) or isinstance(count, bool)
+                or not math.isfinite(duration) or not math.isfinite(count)
+                or duration <= 0 or count < 0):
+            raise ValueError("sustained series contains invalid duration or token count")
+        durations.append(float(duration))
+        tokens.append(float(count))
+    retention = sample.get("analysis", {}).get("retention_ratio")
+    if (not durations or not isinstance(retention, (int, float)) or isinstance(retention, bool)
+            or not math.isfinite(retention) or retention <= 0):
+        raise ValueError(f"sustained/{model} lacks valid throughput or retention")
+    throughput = sum(tokens) / sum(durations)
+    if throughput <= 0:
+        raise ValueError(f"sustained/{model} lacks valid throughput or retention")
+    return {
+        "throughput": throughput,
+        "retention_pct": float(retention) * 100,
+    }
 
 
 def metric_impacts(off: dict[str, float], on: dict[str, float]) -> dict[str, float]:
@@ -99,6 +133,50 @@ def analyze_pairs(pairs: Sequence[dict[str, Any]]) -> dict[str, Any]:
     return {"pair_count": len(pairs), "metrics": metrics, "passed": passed}
 
 
+def analyze_sustained_pairs(pairs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    if len(pairs) < MIN_PAIRS:
+        raise ValueError(f"observer screen requires at least {MIN_PAIRS} pairs")
+    expected_orders = ["off-on" if index % 2 == 0 else "on-off" for index in range(len(pairs))]
+    if [pair.get("order") for pair in pairs] != expected_orders:
+        raise ValueError("pair order must alternate off-on, on-off, starting with off-on")
+    throughput_impacts = [
+        (pair["off"]["throughput"] - pair["on"]["throughput"])
+        / pair["off"]["throughput"] * 100
+        for pair in pairs
+    ]
+    retention_impacts = [
+        pair["off"]["retention_pct"] - pair["on"]["retention_pct"]
+        for pair in pairs
+    ]
+    metrics = {}
+    passed = True
+    for name, values, bound, unit in (
+        ("throughput", throughput_impacts, SUSTAINED_THROUGHPUT_BOUND_PCT, "percent"),
+        ("retention", retention_impacts, SUSTAINED_RETENTION_BOUND_POINTS, "percentage_points"),
+    ):
+        median = statistics.median(values)
+        p90 = percentile(values, 0.90)
+        metric_passed = median <= bound + 1e-12 and p90 <= bound * 2 + 1e-12
+        metrics[name] = {
+            "median_impact": median, "p90_impact": p90,
+            "min_impact": min(values), "max_impact": max(values),
+            "median_bound": bound, "p90_bound": bound * 2,
+            "unit": unit, "passed": metric_passed,
+        }
+        passed = passed and metric_passed
+    return {"pair_count": len(pairs), "metrics": metrics, "passed": passed}
+
+
+def validate_temperature_mode(result: dict, enabled: bool) -> None:
+    settings = result.get("run", {}).get("effective_config", {})
+    if settings.get("temperature_telemetry") is not enabled:
+        raise ValueError("temperature pair does not match its declared off/on mode")
+    if settings.get("memory_telemetry") is not True or settings.get("power_telemetry") is not True:
+        raise ValueError("temperature qualification requires the combined memory and power baseline")
+    if enabled and result.get("preflight", {}).get("temperature", {}).get("available") is not True:
+        raise ValueError("temperature-on result has no available temperature source")
+
+
 def analyze_manifest(manifest: dict, base_dir: Path) -> dict[str, Any]:
     section = manifest.get("section")
     model = manifest.get("model")
@@ -120,9 +198,14 @@ def analyze_manifest(manifest: dict, base_dir: Path) -> dict[str, Any]:
                 raise ValueError(f"pair {mode} path must be non-empty text")
             path = (base_dir / path_value).resolve()
             result = json.loads(path.read_text(encoding="utf-8"))
-            pair[mode] = extract_case_metrics(result, section, model, case)
+            if manifest.get("telemetry_mode") == "temperature":
+                validate_temperature_mode(result, mode == "on")
+            pair[mode] = (
+                extract_sustained_metrics(result, model) if section == "sustained"
+                else extract_case_metrics(result, section, model, case)
+            )
         pairs.append(pair)
-    analysis = analyze_pairs(pairs)
+    analysis = analyze_sustained_pairs(pairs) if section == "sustained" else analyze_pairs(pairs)
     return {
         "schema_version": 1,
         "platform": manifest.get("platform"),

@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.runtime import config
-from scripts.runtime.telemetry import PowerAvailability
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
-SUPPORTED_RUNNER_STAGES = {"conc_chat", "conc_tool", "conv", "llamabench", "llm"}
+SUPPORTED_RUNNER_STAGES = {"conc_chat", "conc_tool", "conv", "llamabench", "llm", "sustained"}
 
 
 class SupervisedProcess(Protocol):
@@ -46,6 +46,7 @@ class RunnerSpec:
     stage: str
     event_store: Path
     power_availability: PowerAvailability | None = None
+    temperature_availability: TemperatureAvailability | None = None
 
     def validate(self) -> None:
         if not self.job_id.startswith("job_"):
@@ -120,6 +121,10 @@ class RunnerSupervisor:
         if self.spec.power_availability is not None:
             environment["LOCAL_AI_BENCH_POWER_AVAILABILITY"] = json.dumps(
                 asdict(self.spec.power_availability), separators=(",", ":"),
+            )
+        if self.spec.temperature_availability is not None:
+            environment["LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY"] = json.dumps(
+                asdict(self.spec.temperature_availability), separators=(",", ":"),
             )
         options = {
             "cwd": config.SCRIPT_DIR, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
