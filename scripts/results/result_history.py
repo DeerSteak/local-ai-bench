@@ -6,6 +6,7 @@ import statistics
 from datetime import datetime
 from pathlib import Path
 
+from scripts.results.local_execution_context import local_execution_path
 from scripts.results.result_store import as_dict, validate_json_data
 from scripts.results.significance import compare_metric, metric_evidence
 from scripts.stage_registry import ACCURACY_TESTS
@@ -141,6 +142,7 @@ def run_artifact_paths(result_path: Path, results_dir: Path) -> tuple[Path, ...]
             results_dir / f"log_{suffix}.txt",
             results_dir / f"images_{suffix}",
             event_path,
+            local_execution_path(event_path),
             *(Path(f"{event_path}{suffix}") for suffix in ("-wal", "-shm", "-journal")),
             *(results_dir / f"regraded_answers_{workload}_{suffix}.json"
               for workload in ACCURACY_SECTIONS),
