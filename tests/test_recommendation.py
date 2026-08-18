@@ -60,6 +60,10 @@ def test_constraints_preserve_absent_values_and_reject_invalid_combinations():
                            "minimum_accuracy_pct": 101})
     with pytest.raises(ValueError, match="unknown recommendation constraint fields"):
         parse_constraints({"workload": "llm", "score_weights": {"speed": 1}})
+    with pytest.raises(ValueError, match="concurrency or case"):
+        parse_constraints({"workload": "concurrency_chat", "case": "2", "concurrency": 2})
+    with pytest.raises(ValueError, match="not available for image"):
+        parse_constraints({"workload": "images", "accuracy_section": "code"})
 
 
 def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
@@ -186,6 +190,36 @@ def test_incompatible_repeated_results_are_rejected_not_pooled():
 def test_no_code_path_emits_a_composite_score():
     artifact = evaluate_recommendation(result(), request())
     assert "score" not in repr(artifact).lower()
+
+
+def test_image_throughput_uses_images_per_second_without_reversing_the_filter():
+    value = result()
+    value["images"] = {
+        "quick": {"resolutions": {"1024x1024": {"sec_per_image_mean": 2}}},
+        "slow": {"resolutions": {"1024x1024": {"sec_per_image_mean": 4}}},
+    }
+    artifact = evaluate_recommendation(value, {
+        "workload": "images", "case": "1024x1024", "primary_objective": "throughput",
+        "minimum_throughput": 0.4,
+    })
+    assert artifact["recommended"][0]["candidate"] == "quick"
+    assert artifact["recommended"][0]["evidence"]["throughput"]["value"] == 0.5
+    assert artifact["eliminated"][0]["candidate"] == "slow"
+
+
+def test_empty_candidate_set_and_malformed_verdict_groups_are_explicit():
+    value = result()
+    value["llm"] = {}
+    value["code"] = {}
+    artifact = evaluate_recommendation(value, request())
+    assert artifact["verdict"] == "insufficient_evidence"
+    assert artifact["resolution"] == {
+        "action": "run_missing_evidence", "workload": "llm", "case": "8K",
+    }
+    malformed = evaluate_recommendation(result(), request())
+    malformed["recommended"] = []
+    with pytest.raises(ValueError, match="does not match"):
+        validate_recommendation_artifact(malformed)
 
 
 def test_cli_writes_a_versioned_artifact_and_normalized_constraints(tmp_path):

@@ -96,6 +96,10 @@ def parse_constraints(value: dict) -> ConstraintSet:
         raise ValueError("accuracy_section is required for the accuracy objective")
     if concurrency is not None and workload not in {"concurrency_tool", "concurrency_chat"}:
         raise ValueError("concurrency is only valid for a concurrency workload")
+    if concurrency is not None and case is not None:
+        raise ValueError("set concurrency or case, not both")
+    if workload == "images" and accuracy_section is not None:
+        raise ValueError("accuracy_section is not available for image recommendations")
     return constraints
 
 
@@ -148,10 +152,13 @@ def candidate_evidence(result: dict, constraints: ConstraintSet, model: str) -> 
     efficiency = as_dict(power.get("efficiency"))
     accuracy_values = as_dict(as_dict(result.get(constraints.accuracy_section)).get(model)) \
         if constraints.accuracy_section else {}
+    throughput = _number(values.get(throughput_key))
+    if constraints.workload == "images" and throughput:
+        throughput = 1 / throughput
     return {
         "throughput": _measurement(
-            _number(values.get(throughput_key)), f"{case_path}/{throughput_key}",
-            "seconds_per_image" if constraints.workload == "images" else "tokens_per_second",
+            throughput, f"{case_path}/{throughput_key}",
+            "images_per_second" if constraints.workload == "images" else "tokens_per_second",
             [f"{case_path}/valid_samples"]),
         "ttft": _measurement(
             _number(values.get(ttft_key)), f"{case_path}/{ttft_key}", "seconds",
@@ -217,7 +224,7 @@ def _trial_metric(constraints: ConstraintSet) -> str | None:
             else "ttft_mean_sec"
     if constraints.primary_objective == "throughput":
         if constraints.workload == "images":
-            return "sec_per_image_mean"
+            return None
         return "aggregate_tps" if constraints.workload.startswith("concurrency_") else "tps_mean"
     return None
 
@@ -308,7 +315,7 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
         else:
             eligible.append({"candidate": model, "evidence": evidence})
     objective = constraints.primary_objective
-    reverse = objective not in {"ttft", "memory"} and constraints.workload != "images"
+    reverse = objective not in {"ttft", "memory"}
     eligible.sort(key=lambda item: item["evidence"][objective]["value"], reverse=reverse)
     if not eligible:
         verdict = "insufficient_evidence"
@@ -329,6 +336,17 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
                         "minimum_compatible_trials": MIN_INTERVAL_TRIALS,
                     },
                 })
+    if verdict != "insufficient_evidence":
+        resolution = None
+    elif unevaluated:
+        resolution = {"action": "run_missing_evidence", "candidate_gaps": len(unevaluated)}
+    elif eliminated:
+        resolution = {"action": "test_other_candidates_or_change_constraints"}
+    else:
+        resolution = {
+            "action": "run_missing_evidence", "workload": constraints.workload,
+            "case": str(constraints.concurrency) if constraints.concurrency else constraints.case,
+        }
     return {
         "schema_version": RECOMMENDATION_SCHEMA_VERSION,
         "artifact_type": "recommendation",
@@ -339,6 +357,7 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
         "tied": ranked if verdict == "tied" else [],
         "eliminated": eliminated,
         "unevaluated": unevaluated,
+        "resolution": resolution,
     }
 
 
@@ -352,5 +371,15 @@ def validate_recommendation_artifact(artifact: dict, *, source_result: dict | No
     for field in ("source_sha256", "recommended", "tied", "eliminated", "unevaluated"):
         if not isinstance(artifact.get(field), list):
             raise ValueError(f"recommendation artifact field {field} must be a list")
+    expected = {
+        "recommended": (len(artifact["recommended"]) == 1 and not artifact["tied"]),
+        "tied": (len(artifact["tied"]) >= 2 and not artifact["recommended"]),
+        "insufficient_evidence": (not artifact["recommended"] and not artifact["tied"]),
+    }
+    if not expected[artifact["verdict"]]:
+        raise ValueError("recommendation verdict does not match its candidate groups")
+    if artifact["verdict"] == "insufficient_evidence" \
+            and not isinstance(artifact.get("resolution"), dict):
+        raise ValueError("insufficient recommendation must include a resolution")
     if source_result is not None and sha256_json(source_result) not in artifact["source_sha256"]:
         raise ValueError("recommendation artifact does not cite this result")
