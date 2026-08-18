@@ -355,6 +355,8 @@ class EventStore:
                 "stage", stage_id, "running", {
                     "recovery": "resume",
                     "recovery_scope": "all" if selected_case_ids is None else "selected",
+                    "selected_case_ids": (None if selected_case_ids is None
+                                          else sorted(selected)),
                 }, parent_id=job_id,
             ))
         if job_state in RECOVERABLE_STATES:

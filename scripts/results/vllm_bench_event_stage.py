@@ -59,14 +59,16 @@ class VllmBenchEventStage:
             return None
         if case_id in self.recovery_attempts:
             return self.recovery_attempts[case_id]
+        stage = projection["stages"].get(self.stage_id, {})
+        if (stage.get("recovery_scope") == "selected"
+                and case_id not in stage.get("selected_case_ids", [])):
+            return None
         if case.get("recovery") == "retry":
             numbers = [
                 attempt.get("number", 0) for attempt in projection["attempts"].values()
                 if attempt["parent_id"] == case_id
             ]
             return max(numbers, default=0) + 1
-        if projection["stages"].get(self.stage_id, {}).get("recovery_scope") == "selected":
-            return None
         raise ValueError("incomplete vLLM bench case was not prepared for recovery")
 
     def record_case(self, model: dict, kind: str, input_len: int, output_len: int,

@@ -180,15 +180,16 @@ class AccuracyEventStage:
             return None
         if case_id in self.recovery_attempts:
             return self.recovery_attempts[case_id]
+        stage = projection["stages"].get(self.stage_id, {})
+        if (stage.get("recovery_scope") == "selected"
+                and case_id not in stage.get("selected_case_ids", [])):
+            return None
         if case.get("recovery") == "retry":
             numbers = [
                 attempt.get("number", 0) for attempt in projection["attempts"].values()
                 if attempt["parent_id"] == case_id
             ]
             return max(numbers, default=0) + 1
-        stage = projection["stages"].get(self.stage_id, {})
-        if stage.get("recovery_scope") == "selected":
-            return None
         raise ValueError("incomplete accuracy case was not prepared for recovery")
 
     def pending_questions(self, model: dict) -> list[dict]:

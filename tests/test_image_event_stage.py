@@ -95,6 +95,32 @@ def test_selected_retry_leaves_unselected_failed_resolution_pending(tmp_path):
     resumed.close()
 
 
+def test_selected_retry_ignores_old_retry_marker_from_prior_full_resume(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    first = ImageEventStage(path, plan, lambda _: None, resume_identity=identity)
+    first.record_resolution(MODEL, 512, 512, [], 3, "failed")
+    first.record_resolution(MODEL, 768, 768, [], 3, "failed")
+    first.close()
+    full_resume = ImageEventStage(
+        path, plan, lambda _: None, resume=True, resume_identity=identity,
+    )
+    full_resume.close()
+    store_owner = ImageEventStage(
+        path, plan, lambda _: None, resume=True, resume_identity=identity,
+        selected_case_ids=[plan.case_id(
+            "img", plan.model_id("images", plan.models["images"][0]),
+            {"width": 512, "height": 512},
+        )],
+    )
+    store_owner.close()
+    runner = ImageEventStage(path, plan, lambda _: None, initialize=False)
+    assert runner.pending_resolutions(MODEL, [(512, 512), (768, 768)]) == [(512, 512, 2)]
+    runner.close()
+
+
 def test_model_skip_projects_legacy_shape(tmp_path):
     stage = ImageEventStage(tmp_path / "events.sqlite3", make_plan(), lambda _: None)
     stage.record_resolution(MODEL, 512, 512, [1.0], 1)
