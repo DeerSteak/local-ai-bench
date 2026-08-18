@@ -455,6 +455,8 @@ This is mostly process rather than code, which is exactly why it is worth doing 
 
 The maintainer builds validation and presentation, performs each real install/run/lifecycle checklist, records the evidence and failures, and applies the derived support rule without silently changing it. No automated test may claim that hardware was qualified.
 
+For a one-person team, the lifecycle is driven by `scripts.release.qualification_automation`: a reviewed recipe previews without side effects, executes only with an explicit flag, checkpoints each step for resume, captures per-step logs, automatically interrupts the cancellation run, and emits a qualification entry. A representative smoke model is sufficient for lifecycle qualification; catalog-wide performance and compatibility claims remain separate evidence.
+
 ## Acceptance criteria
 
 - [x] A machine-readable matrix records platform, runtime, version, backend, date, suite version, and per-lifecycle-step results.

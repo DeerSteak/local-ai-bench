@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -63,6 +64,12 @@ def test_recipe_load_and_preview_are_read_only(tmp_path):
     assert preview["checkpoint"].endswith("evidence/qualification-state.json")
     assert [step["name"] for step in preview["steps"]] == list(QUALIFICATION_LIFECYCLE)
     assert not (tmp_path / "evidence").exists()
+
+
+def test_published_example_recipe_stays_valid():
+    root = Path(__file__).resolve().parents[1]
+    loaded = load_qualification_recipe(root / "samples/qualification_recipe_example.json")
+    assert loaded["target"]["platform"] == "macos"
 
 
 def test_checkpoint_resumes_at_first_step_that_has_not_passed():

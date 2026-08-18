@@ -243,6 +243,16 @@ bash run_bench.sh --tests llamabenchconc
 
 A full run takes several hours, depending on your hardware and which options you select.
 
+## Qualification automation
+
+Preview a reviewed lifecycle recipe without creating evidence or running its commands:
+
+```bash
+bench-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001
+```
+
+Add `--execute` only after reviewing the preview and confirming that install, upgrade, rollback, and uninstall target an isolated qualification installation. The command checkpoints each lifecycle step and resumes an unchanged recipe at the first step that has not passed. See [Platform qualification automation](qualification.md).
+
 ## Comparing results
 
 Copy result files from all machines to one machine, then load them into the [dashboard](dashboard.md).
