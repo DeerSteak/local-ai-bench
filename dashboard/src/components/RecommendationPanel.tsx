@@ -72,7 +72,7 @@ export default function RecommendationPanel({ name, artifact }: { name: string, 
           </article>)}
         </section>;
       })}</div>
-      <p className={styles.note}>The recommendation was calculated by Local AI Bench from the cited evidence. The dashboard displays that decision without inventing a composite score.</p>
+      <footer className={styles.note}>The recommendation was calculated by Local AI Bench from the cited evidence. The dashboard displays that decision without inventing a composite score.</footer>
     </main>
   );
 }

@@ -1,4 +1,4 @@
-.panel { margin: 24px auto; max-width: 1500px; padding: 28px; background: #fff; border: 1px solid #dbe3ef; border-radius: 14px; box-shadow: 0 8px 28px rgba(20, 35, 60, .08); }
+.panel { margin: 24px auto 96px; max-width: 1500px; padding: 28px; background: #fff; border: 1px solid #dbe3ef; border-radius: 14px; box-shadow: 0 8px 28px rgba(20, 35, 60, .08); }
 .eyebrow { color: #193b68; font-size: 20px; font-weight: 800; letter-spacing: .02em; }
 .panel h2 { margin: 4px 0 0; color: #172033; font-size: 22px; }
 .headingRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
@@ -28,5 +28,5 @@
 .group details { margin-top: 4px; color: #385679; font-size: 12px; }
 .group summary { cursor: pointer; font-weight: 700; }
 .group code { display: block; margin-top: 6px; overflow-wrap: anywhere; color: #385679; font-size: 11px; }
-.note { margin: 18px 0 0; padding: 12px 14px; color: #4b3b12; background: #fff7d6; border: 1px solid #ead58a; border-radius: 8px; }
-@media (max-width: 700px) { .headingRow { display: block; } .badges { justify-content: flex-start; margin-top: 12px; } }
+.note { position: fixed; right: 24px; bottom: 16px; left: 24px; z-index: 20; padding: 10px 16px; color: #59677b; background: rgba(248, 250, 253, .96); border: 1px solid #d5deea; border-radius: 8px; box-shadow: 0 5px 18px rgba(20, 35, 60, .12); font-size: 13px; text-align: center; backdrop-filter: blur(8px); }
+@media (max-width: 700px) { .panel { margin-bottom: 124px; } .headingRow { display: block; } .badges { justify-content: flex-start; margin-top: 12px; } .note { right: 12px; bottom: 10px; left: 12px; } }
