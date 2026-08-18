@@ -28,6 +28,7 @@ def recipe():
             "id": "macos-arm64-llamacpp-metal", "platform": "macos",
             "architecture": "arm64", "runtime": "llamacpp",
             "runtime_version": "b6000", "backend": "metal",
+            "accelerator": "MacBook Pro / M5 Pro",
         },
         "coverage": {
             "workloads": ["llm"], "models": ["llama3.2:3b-instruct-q4_K_M"],
@@ -80,7 +81,7 @@ def test_published_example_recipe_stays_valid():
     loaded = load_qualification_recipe(root / "samples/qualification_recipe_example.json")
     assert loaded["target"]["platform"] == "macos"
     assert execution_recipe_gaps(loaded) == [
-        "target.runtime_version", "coverage.models", "steps.install.command",
+        "target.runtime_version", "target.accelerator", "coverage.models", "steps.install.command",
         "steps.discovery.command", "steps.first_valid_run.command",
         "steps.cancellation.command", "steps.resume.command",
         "steps.report_generation.command", "steps.bundle_export.command",

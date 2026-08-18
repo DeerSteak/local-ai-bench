@@ -17,6 +17,7 @@ def entry(states=None, **overrides):
         "id": "linux-x86_64-llamacpp-cuda", "platform": "linux",
         "architecture": "x86_64", "runtime": "llamacpp", "runtime_version": "b6000",
         "backend": "cuda", "qualified_at": "2026-08-18", "suite_version": "6.0-pre8",
+        "accelerator": "NVIDIA GeForce RTX 5090",
         "lifecycle": lifecycle,
         "known_failures": [
             {"step": step, "detail": f"{state} during qualification"}
@@ -71,9 +72,9 @@ def test_wsl2_is_a_distinct_platform_and_requires_linux():
 def test_matrix_rows_default_missing_targets_to_unverified():
     targets = [
         {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp",
-         "backend": "cuda"},
+         "backend": "cuda", "accelerator": "NVIDIA GeForce RTX 5090"},
         {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm",
-         "backend": "cuda"},
+         "backend": "cuda", "accelerator": "NVIDIA GeForce RTX 5090"},
     ]
     rows = qualification_rows("6.0-pre8", targets=targets, entries=[entry()])
     assert [row["support_level"] for row in rows] == ["supported", "unverified"]
@@ -87,6 +88,14 @@ def test_runtime_lookup_can_require_the_exact_qualified_version():
     ) == evidence
     assert qualification_entry(
         "linux", "x86_64", "llamacpp", "cuda", "b7000", [evidence],
+    ) is None
+
+
+def test_runtime_lookup_distinguishes_accelerators_with_the_same_backend():
+    evidence = entry(accelerator="AMD Radeon")
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "cuda", "b6000", [evidence],
+        accelerator="Intel Arc",
     ) is None
 
 

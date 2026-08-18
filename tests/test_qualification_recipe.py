@@ -1,7 +1,7 @@
 import pytest
 
 from scripts.release.qualification_automation import execution_recipe_gaps
-from scripts.release.qualification_recipe import TARGETS, build_recipe
+from scripts.release.qualification_recipe import TARGETS, TARGET_ACCELERATORS, build_recipe
 
 
 @pytest.mark.parametrize("target_id", TARGETS)
@@ -10,6 +10,7 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
         target_id=target_id, root=tmp_path, output=tmp_path / "evidence",
         baseline_version="baseline", target_version="target",
         python_executable="/usr/bin/python3",
+        accelerator_identity=TARGET_ACCELERATORS[target_id],
     )
     assert execution_recipe_gaps(recipe) == []
     assert recipe["target"]["id"] == target_id
@@ -22,6 +23,7 @@ def test_recipe_requires_a_real_version_transition(tmp_path):
         build_recipe(
             target_id="macos-m5-pro-llamacpp-metal", root=tmp_path,
             output=tmp_path / "evidence", baseline_version="b1", target_version="b1",
+            accelerator_identity="MacBook Pro / M5 Pro",
         )
 
 
@@ -30,6 +32,16 @@ def test_vllm_recipe_uses_private_cache_and_acknowledges_experimental_engine(tmp
         target_id="ryzen-ai-halo-vllm-rocm", root=tmp_path,
         output=tmp_path / "evidence", baseline_version="0.26.0+rocm700",
         target_version="0.27.1+rocm723",
+        accelerator_identity="AMD Radeon 8060S",
     )
     assert recipe["environment"]["HF_HOME"].endswith("qualification-vllm-cache")
     assert "--ack-experimental-engine" in recipe["steps"]["first_valid_run"]["command"]
+
+
+def test_recipe_rejects_a_different_accelerator_on_same_backend(tmp_path):
+    with pytest.raises(ValueError, match="requires accelerator identity"):
+        build_recipe(
+            target_id="intel-arc-windows-llamacpp-vulkan", root=tmp_path,
+            output=tmp_path / "evidence", baseline_version="b1", target_version="b2",
+            accelerator_identity="AMD Radeon RX 9070 XT",
+        )

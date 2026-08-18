@@ -15,7 +15,9 @@ from scripts.runtime import config
 
 
 RECIPE_KEYS = {"target", "coverage", "environment", "steps"}
-TARGET_KEYS = {"id", "platform", "architecture", "runtime", "runtime_version", "backend"}
+TARGET_KEYS = {
+    "id", "platform", "architecture", "runtime", "runtime_version", "backend", "accelerator",
+}
 COVERAGE_KEYS = {"workloads", "models", "notes"}
 STEP_KEYS = {
     "command", "timeout_seconds", "expected_exit_codes", "interrupt_when_log_contains",
@@ -161,6 +163,7 @@ def qualification_entry_from_run(state: dict, suite_version: str, evidence_path:
         "id": target["id"], "platform": target["platform"],
         "architecture": target["architecture"], "runtime": target["runtime"],
         "runtime_version": target["runtime_version"], "backend": target["backend"],
+        "accelerator": target["accelerator"],
         "qualified_at": date.today().isoformat(), "suite_version": suite_version,
         "lifecycle": lifecycle, "known_failures": failures,
         "evidence": [evidence_path] if any(value == "passed" for value in lifecycle.values()) else [],

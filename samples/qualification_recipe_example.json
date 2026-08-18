@@ -5,7 +5,8 @@
     "architecture": "arm64",
     "runtime": "llamacpp",
     "runtime_version": "REPLACE_WITH_EXACT_VERSION",
-    "backend": "metal"
+    "backend": "metal",
+    "accelerator": "REPLACE_WITH_EXACT_ACCELERATOR_IDENTITY"
   },
   "coverage": {
     "workloads": ["llm"],

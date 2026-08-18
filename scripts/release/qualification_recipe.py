@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from scripts.release.qualification_automation import validate_qualification_recipe
+from scripts.runtime.shared import Shared
 
 
 SMOKE_MODEL = "gemma3:1b-it-q4_K_M"
@@ -26,6 +27,20 @@ TARGETS = {
     "dgx-spark-llamacpp-cuda": ("linux", "aarch64", "llamacpp", "cuda"),
     "dgx-spark-vllm-cuda": ("linux", "aarch64", "vllm", "cuda"),
 }
+TARGET_ACCELERATORS = {
+    "macos-m5-pro-llamacpp-metal": "M5 Pro",
+    "geforce-windows-llamacpp-cuda": "NVIDIA GeForce",
+    "radeon-windows-llamacpp-vulkan": "AMD Radeon",
+    "intel-arc-windows-llamacpp-vulkan": "Intel Arc Pro B65",
+    "geforce-wsl2-llamacpp-cuda": "NVIDIA GeForce",
+    "geforce-wsl2-vllm-cuda": "NVIDIA GeForce",
+    "nvidia-linux-llamacpp-cuda": "NVIDIA",
+    "nvidia-linux-vllm-cuda": "NVIDIA",
+    "ryzen-ai-halo-llamacpp-rocm": "AMD Radeon 8060S",
+    "ryzen-ai-halo-vllm-rocm": "AMD Radeon 8060S",
+    "dgx-spark-llamacpp-cuda": "NVIDIA GB10",
+    "dgx-spark-vllm-cuda": "NVIDIA GB10",
+}
 
 
 def step(command, timeout=3600, exit_codes=(0,), interrupt=None):
@@ -37,13 +52,20 @@ def step(command, timeout=3600, exit_codes=(0,), interrupt=None):
 
 def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: str,
                  target_version: str, python_executable: str = sys.executable,
-                 model: str = SMOKE_MODEL) -> dict:
+                 model: str = SMOKE_MODEL, accelerator_identity: str | None = None) -> dict:
     if target_id not in TARGETS:
         raise ValueError(f"unknown qualification target: {target_id}")
     if not baseline_version or not target_version or baseline_version == target_version:
         raise ValueError("baseline and target runtime versions must be distinct")
     root, output = Path(root).resolve(), Path(output).resolve()
     platform_name, architecture, engine, backend = TARGETS[target_id]
+    accelerator_identity = accelerator_identity or Shared.get_hostname()
+    expected = TARGET_ACCELERATORS[target_id]
+    if expected.lower() not in accelerator_identity.lower():
+        raise ValueError(
+            f"target {target_id} requires accelerator identity containing {expected!r}; "
+            f"detected {accelerator_identity!r}"
+        )
     py = str(Path(python_executable).resolve())
     result = output / "smoke-result.json"
     interrupted = output / "interrupted-result.json"
@@ -60,6 +82,7 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
         "target": {
             "id": target_id, "platform": platform_name, "architecture": architecture,
             "runtime": engine, "runtime_version": target_version, "backend": backend,
+            "accelerator": accelerator_identity,
         },
         "coverage": {
             "workloads": ["llm"], "models": [model],

@@ -26,6 +26,7 @@ def build_execution_profile(engine, tests, *, cpu_only: bool,
         system=os_name, architecture=str(hardware.get("arch", "")),
         wsl=hardware.get("wsl") is True, runtime=engine_name,
         runtime_version=runtime_version, backend=backend, current_version=config.VERSION,
+        accelerator=str(hardware.get("hostname", "")),
     )
     return {
         **hardware, "hardware_backend": hardware_backend, "backend": backend,

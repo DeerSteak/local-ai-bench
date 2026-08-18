@@ -13,22 +13,23 @@ SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
 QUALIFICATION_MATRIX: tuple[dict, ...] = ()
 QUALIFICATION_TARGETS = (
-    {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm"},
-    {"platform": "linux", "architecture": "aarch64", "runtime": "llamacpp", "backend": "cuda"},
-    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
-    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm"},
-    {"platform": "linux", "architecture": "aarch64", "runtime": "vllm", "backend": "cuda"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda"},
+    {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "AMD Radeon 8060S"},
+    {"platform": "linux", "architecture": "aarch64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GB10"},
+    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
+    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "AMD Radeon"},
+    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "Intel Arc Pro B65"},
+    {"platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA"},
+    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "AMD Radeon 8060S"},
+    {"platform": "linux", "architecture": "aarch64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GB10"},
+    {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
 )
 
 ENTRY_KEYS = {
     "id", "platform", "architecture", "runtime", "runtime_version", "backend",
-    "qualified_at", "suite_version", "lifecycle", "known_failures", "evidence",
+    "accelerator", "qualified_at", "suite_version", "lifecycle", "known_failures", "evidence",
 }
 PLATFORMS = {"macos", "linux", "windows", "wsl2"}
 
@@ -61,7 +62,7 @@ def validate_qualification_entry(entry: dict) -> None:
         raise ValueError("qualification entry requires an id")
     if entry["platform"] not in PLATFORMS:
         raise ValueError(f"unknown qualification platform: {entry['platform']}")
-    for key in ("architecture", "runtime", "runtime_version", "backend"):
+    for key in ("architecture", "runtime", "runtime_version", "backend", "accelerator"):
         if not isinstance(entry[key], str) or not entry[key].strip():
             raise ValueError(f"qualification {key} must be non-empty text")
     try:
@@ -112,7 +113,7 @@ def validate_qualification_matrix(entries=QUALIFICATION_MATRIX) -> None:
         ids.append(entry["id"])
         identities.append((
             entry["platform"], entry["architecture"], entry["runtime"],
-            entry["runtime_version"], entry["backend"],
+            entry["runtime_version"], entry["backend"], entry["accelerator"],
         ))
     if len(ids) != len(set(ids)):
         raise ValueError("qualification entry ids must be unique")
@@ -133,12 +134,19 @@ def platform_name(system: str, *, wsl: bool = False) -> str:
 
 def qualification_entry(platform: str, architecture: str, runtime: str, backend: str,
                         runtime_version: str | None = None,
-                        entries=QUALIFICATION_MATRIX) -> dict | None:
+                        entries=QUALIFICATION_MATRIX,
+                        accelerator: str | None = None) -> dict | None:
     matches = [entry for entry in entries if (
         entry["platform"], entry["architecture"], entry["runtime"], entry["backend"]
     ) == (platform, architecture, runtime, backend)]
     if runtime_version is not None:
         matches = [entry for entry in matches if entry["runtime_version"] == runtime_version]
+    if accelerator is not None:
+        expected = accelerator.casefold()
+        matches = [entry for entry in matches if (
+            expected in entry["accelerator"].casefold()
+            or entry["accelerator"].casefold() in expected
+        )]
     return max(matches, key=lambda item: item["qualified_at"], default=None)
 
 
@@ -166,11 +174,13 @@ def normalize_architecture(value: str) -> str:
 
 def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime: str,
                            runtime_version: str | None, backend: str,
-                           current_version: str, entries=QUALIFICATION_MATRIX) -> dict:
+                           current_version: str, entries=QUALIFICATION_MATRIX,
+                           accelerator: str | None = None) -> dict:
     platform = platform_name(system, wsl=wsl)
     architecture = normalize_architecture(architecture)
     evidence = qualification_entry(
         platform, architecture, runtime, backend, runtime_version, entries,
+        accelerator=accelerator,
     ) if runtime_version else None
     support_level = derive_support_level(evidence, current_version)
     caveat = {
