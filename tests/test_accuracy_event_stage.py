@@ -70,6 +70,24 @@ def test_question_commit_rebuilds_scored_result_and_raw_sidecar(tmp_path):
     assert projected_answers == {"model": answers}
 
 
+def test_question_commits_reuse_incremental_projection_without_replaying_journal(
+        tmp_path, monkeypatch):
+    stage = make_stage(tmp_path / "events.sqlite3")
+    replay_count = 0
+    original_events = stage.store.events
+
+    def counted_events(job_id):
+        nonlocal replay_count
+        replay_count += 1
+        return original_events(job_id)
+
+    monkeypatch.setattr(stage.store, "events", counted_events)
+    for question in QUESTIONS:
+        stage.record_question(MODEL, question["id"], question["answer"], "answer", "ok")
+    assert replay_count == 0
+    stage.close()
+
+
 def test_completed_question_is_not_pending_and_duplicate_commit_is_rejected(tmp_path):
     stage = make_stage(tmp_path / "events.sqlite3")
     try:

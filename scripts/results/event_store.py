@@ -120,6 +120,7 @@ class EventStore:
         self.connection.execute("PRAGMA synchronous=FULL")
         self.connection.execute("PRAGMA foreign_keys=ON")
         self._create_schema()
+        self._projection_cache: dict[str, tuple[int, dict]] = {}
 
     def _create_schema(self):
         self.connection.executescript("""
@@ -224,28 +225,37 @@ class EventStore:
     def append(self, job_id: str, events: list[JournalEvent]) -> None:
         normalized = [event.normalized() for event in events]
         projection = self.rebuild(job_id)
-        for event in normalized:
-            apply_event(projection, event)
+        try:
+            for event in normalized:
+                apply_event(projection, event)
+        except Exception:
+            self._projection_cache.pop(job_id, None)
+            raise
         row = self.connection.execute(
             "SELECT digest FROM events WHERE job_id = ? ORDER BY sequence DESC LIMIT 1", (job_id,),
         ).fetchone()
         previous = row["digest"] if row else "0" * 64
-        with self.connection:
-            for event in normalized:
-                payload_json = canonical_json(event.payload)
-                values = [
-                    event.event_id, job_id, event.entity_type, event.entity_id,
-                    event.state, payload_json, event.occurred_at, event.parent_id,
-                ]
-                digest = _event_digest(previous, values)
-                self.connection.execute(
-                    """INSERT INTO events(
-                        event_id, job_id, entity_type, entity_id, state, payload_json,
-                        occurred_at, parent_id, previous_digest, digest
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (*values, previous, digest),
-                )
-                previous = digest
+        try:
+            with self.connection:
+                for event in normalized:
+                    payload_json = canonical_json(event.payload)
+                    values = [
+                        event.event_id, job_id, event.entity_type, event.entity_id,
+                        event.state, payload_json, event.occurred_at, event.parent_id,
+                    ]
+                    digest = _event_digest(previous, values)
+                    self.connection.execute(
+                        """INSERT INTO events(
+                            event_id, job_id, entity_type, entity_id, state, payload_json,
+                            occurred_at, parent_id, previous_digest, digest
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (*values, previous, digest),
+                    )
+                    previous = digest
+        except Exception:
+            self._projection_cache.pop(job_id, None)
+            raise
+        self._projection_cache[job_id] = (self.last_sequence(job_id), projection)
 
     def events(self, job_id: str) -> list[JournalEvent]:
         rows = self.connection.execute(
@@ -260,9 +270,14 @@ class EventStore:
     def rebuild(self, job_id: str) -> dict:
         if not self.connection.execute("SELECT 1 FROM jobs WHERE job_id = ?", (job_id,)).fetchone():
             raise ValueError(f"unknown job: {job_id}")
+        sequence = self.last_sequence(job_id)
+        cached = self._projection_cache.get(job_id)
+        if cached is not None and cached[0] == sequence:
+            return cached[1]
         projection = {"jobs": {}, "stages": {}, "cases": {}, "attempts": {}, "samples": {}}
         for event in self.events(job_id):
             apply_event(projection, event)
+        self._projection_cache[job_id] = (sequence, projection)
         return projection
 
     def verify(self, job_id: str) -> None:
@@ -344,13 +359,15 @@ class EventStore:
             events.append(JournalEvent(
                 "case", case_id, "running", {"recovery": "retry"}, parent_id=stage_id,
             ))
-        if stage_state == "running" and selected_case_ids is not None:
+        if stage_state == "running":
             events.append(JournalEvent(
-                "stage", stage_id, "interrupted", {"reason": "selected_recovery"},
+                "stage", stage_id, "interrupted", {
+                    "reason": ("selected_recovery" if selected_case_ids is not None
+                               else "recovery"),
+                },
                 parent_id=job_id,
             ))
-        if stage_state in RECOVERABLE_STATES or (
-                stage_state == "running" and selected_case_ids is not None):
+        if stage_state in RECOVERABLE_STATES or stage_state == "running":
             events.append(JournalEvent(
                 "stage", stage_id, "running", {
                     "recovery": "resume",
