@@ -1150,12 +1150,23 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
 def process_resource_usage(pid: int, psutil_module: PsutilLike = psutil) -> tuple[float, float] | None:
     try:
         parent = psutil_module.Process(pid)
-        processes = [parent, *parent.children(recursive=True)]
-        cpu = sum(item.cpu_percent(interval=None) for item in processes)
-        memory_gb = sum(item.memory_info().rss for item in processes) / (1024 ** 3)
-        return cpu, memory_gb
+        cpu = parent.cpu_percent(interval=None)
+        memory = parent.memory_info().rss
     except (psutil_module.Error, OSError):
         return None
+    try:
+        children = parent.children(recursive=True)
+    except (psutil_module.Error, OSError):
+        children = []
+    for child in children:
+        try:
+            child_cpu = child.cpu_percent(interval=None)
+            child_memory = child.memory_info().rss
+        except (psutil_module.Error, OSError):
+            continue
+        cpu += child_cpu
+        memory += child_memory
+    return cpu, memory / (1024 ** 3)
 
 
 def system_memory_usage(psutil_module: PsutilLike = psutil) -> tuple[float, float]:

@@ -680,6 +680,74 @@ def test_process_resource_usage_includes_child_processes():
     assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
 
 
+def test_process_resource_usage_skips_inaccessible_children():
+    class ResourceError(Exception):
+        pass
+
+    class Process:
+        pid = 0
+
+        def __init__(self, cpu, rss, *, inaccessible=False, children=()):
+            self.cpu = cpu
+            self.rss = rss
+            self.inaccessible = inaccessible
+            self._children = children
+
+        def children(self, recursive):
+            assert recursive
+            return list(self._children)
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return self.cpu
+
+        def memory_info(self):
+            if self.inaccessible:
+                raise ResourceError("privileged child")
+            return type("Memory", (), {"rss": self.rss})()
+
+    accessible = Process(20, 1024 ** 3)
+    privileged = Process(90, 8 * 1024 ** 3, inaccessible=True)
+    parent = Process(30, 2 * 1024 ** 3, children=[accessible, privileged])
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return parent
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
+
+
+def test_process_resource_usage_retains_parent_when_child_enumeration_races():
+    class ResourceError(Exception):
+        pass
+
+    class Parent:
+        pid = 42
+
+        def children(self, recursive):
+            assert recursive
+            raise ResourceError("child exited")
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return 30
+
+        def memory_info(self):
+            return type("Memory", (), {"rss": 2 * 1024 ** 3})()
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return Parent()
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (30, 2.0)
+
+
 def test_system_memory_usage_reports_used_and_total_gibibytes():
     memory = type("Memory", (), {"used": 32 * 1024 ** 3, "total": 128 * 1024 ** 3})()
     psutil_module = cast(PsutilLike,
