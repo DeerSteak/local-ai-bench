@@ -27,11 +27,12 @@ def test_llamacpp_plan_keeps_runtime_models_and_cache_under_isolated_root(tmp_pa
     monkeypatch.setattr("scripts.release.qualification_install.LLM_MODELS", CATALOG)
     plan = qualification_install_plan(
         root=tmp_path, engine="llamacpp", model_tag="tiny", system="Darwin",
-        machine="arm64", nvidia=False, rocm=False,
+        machine="arm64", nvidia=False, rocm=False, runtime_version="b7000",
     )
     assert plan["runtime_dir"] == str(tmp_path / "llama.cpp")
     assert plan["models_dir"] == str(tmp_path / "models")
     assert plan["cache_dir"] == str(tmp_path / "qualification-cache")
+    assert plan["runtime_version"] == "b7000"
     assert not (tmp_path / "llama.cpp").exists()
 
 
@@ -58,9 +59,9 @@ def test_vllm_plan_accepts_installable_support_and_records_exact_model(tmp_path,
     assert plan["runtime_version"] == "0.27.1+rocm723"
 
 
-def test_vllm_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypatch):
+def test_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypatch):
     monkeypatch.setattr("scripts.release.qualification_install.LLM_MODELS", CATALOG)
-    with pytest.raises(ValueError, match="exact ROCm wheel version"):
+    with pytest.raises(ValueError, match="exact runtime version"):
         qualification_install_plan(
             root=tmp_path, engine="vllm", model_tag="tiny", system="Linux",
             machine="x86_64", nvidia=True, rocm=False, vllm_support=Support(True),

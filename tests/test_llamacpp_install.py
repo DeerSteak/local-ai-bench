@@ -44,6 +44,27 @@ def test_unknown_platform_is_not_installed(tmp_path):
     )
 
 
+def test_macos_install_resolves_requested_release(monkeypatch, tmp_path):
+    requested = []
+    monkeypatch.setattr(llamacpp_install.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(
+        llamacpp_install, "fetch_llamacpp_release_tag",
+        lambda tag: requested.append(tag) or {"tag_name": tag},
+    )
+
+    def update(_runtime, _machine, *, release_fetcher):
+        assert release_fetcher()["tag_name"] == "b7000"
+        return SimpleNamespace(success=True, detail="installed")
+
+    monkeypatch.setattr(llamacpp_install, "update_macos_llamacpp", update)
+    assert llamacpp_install.install(
+        tmp_path / "runtime", tmp_path, "Darwin", nvidia=False, rocm=False,
+        compute_capability=None, max_cuda_version=None, version="b7000",
+        info=_log, warn=_log, fail=_log, ok=_log,
+    )
+    assert requested == ["b7000"]
+
+
 class _Response:
     def __enter__(self):
         return self

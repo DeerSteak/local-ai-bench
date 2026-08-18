@@ -14,7 +14,7 @@
   },
   "environment": {},
   "steps": {
-    "install": {"command": ["bench-env/bin/python", "-m", "scripts.release.qualification_install", "--root", "REPLACE_WITH_DISPOSABLE_CLONE", "--engine", "llamacpp", "--model", "REPLACE_WITH_ONE_XSMALL_MODEL", "--execute", "--confirm-isolated-root"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "install": {"command": ["bench-env/bin/python", "-m", "scripts.release.qualification_install", "--root", "REPLACE_WITH_DISPOSABLE_CLONE", "--engine", "llamacpp", "--model", "REPLACE_WITH_ONE_XSMALL_MODEL", "--runtime-version", "REPLACE_WITH_BASELINE_RUNTIME_VERSION", "--execute", "--confirm-isolated-root"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
     "discovery": {"command": ["REPLACE_WITH_DISCOVERY_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
     "first_valid_run": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
     "cancellation": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [130], "interrupt_when_log_contains": "\"kind\":\"model\",\"stage\":\"llm\",\"status\":\"running\""},

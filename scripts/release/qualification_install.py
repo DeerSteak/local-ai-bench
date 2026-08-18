@@ -37,8 +37,8 @@ def qualification_install_plan(*, root: Path, engine: str, model_tag: str,
     if engine == "vllm" and (vllm_support is None or not vllm_support.installable):
         detail = vllm_support.detail if vllm_support is not None else "support was not inspected"
         raise ValueError(f"vLLM cannot be installed on this target: {detail}")
-    if engine == "vllm" and not runtime_version:
-        raise ValueError("vLLM qualification requires an exact ROCm wheel version")
+    if not runtime_version:
+        raise ValueError("qualification requires an exact runtime version")
     runtime_dir = root / ("llama.cpp" if engine == "llamacpp" else "vllm-env")
     cache_dir = root / "qualification-cache"
     models_dir = root / "models"
@@ -92,7 +92,7 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
             nvidia=plan["platform"]["nvidia"], rocm=plan["platform"]["rocm"],
             compute_capability=nvidia.compute_capability,
             max_cuda_version=nvidia.max_cuda_version,
-            info=log, warn=log, fail=log, ok=log,
+            info=log, warn=log, fail=log, ok=log, version=plan["runtime_version"],
         )
         model_cache = root / "qualification-vllm-cache"
     else:

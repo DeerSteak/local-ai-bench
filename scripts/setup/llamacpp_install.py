@@ -12,7 +12,8 @@ from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool
 from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.resumable_download import download_file
 from scripts.setup.runtime_update import (
-    fetch_llamacpp_release, llamacpp_clone_command, llamacpp_source_release,
+    fetch_llamacpp_release, fetch_llamacpp_release_tag, llamacpp_clone_command,
+    llamacpp_source_release,
     update_macos_llamacpp,
 )
 
@@ -24,15 +25,18 @@ def find_tool(name: str, runtime_dir: Path, platform_name: str) -> str | None:
 
 
 def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str | None,
-                    *, info, warn, fail, ok) -> bool:
+                    *, info, warn, fail, ok, release_fetcher=None) -> bool:
     info("Fetching latest llama.cpp release info ...")
     try:
-        request = urllib.request.Request(
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
-            headers={"Accept": "application/vnd.github+json"},
-        )
-        with urllib.request.urlopen(request, timeout=15) as response:
-            release = json.load(response)
+        if release_fetcher is None:
+            request = urllib.request.Request(
+                "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:
+                release = json.load(response)
+        else:
+            release = release_fetcher()
         tag = release["tag_name"]
     except Exception as exc:
         fail(f"Could not fetch llama.cpp release info: {exc}")
@@ -86,17 +90,24 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
 
 def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             nvidia: bool, rocm: bool, compute_capability: str | None,
-            max_cuda_version: str | None, info, warn, fail, ok) -> bool:
+            max_cuda_version: str | None, info, warn, fail, ok,
+            version: str | None = None) -> bool:
+    release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
     if platform_name == "Darwin":
         info("Downloading the latest official llama.cpp macOS release ...")
-        result = update_macos_llamacpp(runtime_dir, platform.machine())
+        if release_fetcher:
+            result = update_macos_llamacpp(
+                runtime_dir, platform.machine(), release_fetcher=release_fetcher,
+            )
+        else:
+            result = update_macos_llamacpp(runtime_dir, platform.machine())
         if not result.success:
             fail(result.detail)
         return result.success
     if platform_name == "Windows":
         return install_windows(
             runtime_dir, download_dir, max_cuda_version,
-            info=info, warn=warn, fail=fail, ok=ok,
+            info=info, warn=warn, fail=fail, ok=ok, release_fetcher=release_fetcher,
         )
     if platform_name != "Linux":
         return False
@@ -128,7 +139,8 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
     else:
         info("Cloning llama.cpp ...")
         try:
-            tag, build_number = llamacpp_source_release(fetch_llamacpp_release())
+            release = release_fetcher() if release_fetcher else fetch_llamacpp_release()
+            tag, build_number = llamacpp_source_release(release)
         except Exception as exc:
             fail(f"Could not resolve the latest llama.cpp source release: {exc}")
             return False
