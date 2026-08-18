@@ -40,7 +40,7 @@ New results record whether the run completed, remained in progress, was interrup
 
 A repeated-trial artifact produced by `python -m scripts.results.trial_set_cli` can be loaded by itself through the same drop zone. It switches the dashboard to the trial-set audit view; trial artifacts cannot be mixed with ordinary result files in one load.
 
-A recommendation artifact produced by `python -m scripts.results.recommendation_cli` can likewise be loaded by itself. The static dashboard renders the authoritative Python verdict and its constraints, evidence paths, and four visually distinct candidate groups; it does not evaluate constraints or calculate a browser-side score.
+A recommendation artifact produced by `python -m scripts.results.recommendation_cli` can likewise be loaded by itself. The static dashboard renders the authoritative Python verdict and its constraints, evidence paths, and five visually distinct candidate groups: recommended, tied, other eligible, eliminated, and unevaluated. It does not evaluate constraints or calculate a browser-side score.
 
 ## Sections
 
