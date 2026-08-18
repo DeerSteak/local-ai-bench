@@ -93,6 +93,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_options.py` | Typed public-option metadata shared by CLI parsing, GUI defaults, validation, and option coverage |
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Tk application bootstrap, shared run state, controller wiring, and cross-screen orchestration |
+| `app/macos_sudo_askpass.sh` | Native macOS password prompt used only to authorize opt-in GUI power telemetry before launch |
 | `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers |
 | `app/benchmark_gui_support.py` | Pure GUI configuration, planning, and progress-state helpers |
 | `app/benchmark_gui_process.py` / `app/benchmark_gui_resources.py` | GUI subprocess coordination plus CPU, RAM, GPU, and VRAM monitoring |
