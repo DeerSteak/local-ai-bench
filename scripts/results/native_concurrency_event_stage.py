@@ -8,6 +8,17 @@ from scripts.results.llm_event_stage import CaseTelemetryLike
 from scripts.runtime.telemetry import add_power_efficiency
 
 
+def group_remaining_concurrency_sweeps(pp: int, tg_values: list[int], npl_values: list[int],
+                                       completed: set[tuple[int, int, int]]):
+    """Group pending cells into native Cartesian sweeps without replaying completed cells."""
+    grouped = {}
+    for tg in tg_values:
+        pending_npl = tuple(pl for pl in npl_values if (pp, tg, pl) not in completed)
+        if pending_npl:
+            grouped.setdefault(pending_npl, []).append(tg)
+    return [(tg, list(npl)) for npl, tg in grouped.items()]
+
+
 class NativeConcurrencyEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True,
                  resume_identity: dict | None = None, resume: bool = False,
@@ -66,6 +77,12 @@ class NativeConcurrencyEventStage:
                     and case["state"] == "complete"):
                 completed.add((case["pp"], case["tg"], case["pl"]))
         return completed
+
+    def pending_sweeps(self, model: dict, pp: int, tg_values: list[int],
+                       npl_values: list[int]):
+        return group_remaining_concurrency_sweeps(
+            pp, tg_values, npl_values, self.completed_keys(model),
+        )
 
     def begin_measured(self, subwindow: str) -> None:
         if self.telemetry:

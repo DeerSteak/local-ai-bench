@@ -370,6 +370,33 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
     assert result["m1"]["ctx_size"] == expected_ctx
 
 
+def test_run_uses_only_journal_pending_cells_on_resume(fake_engine, monkeypatch):
+    captured = []
+
+    class Journal:
+        def __init__(self): self.entries = []
+        def export(self):
+            return {"m1": {"entries": list(self.entries), "pp": config.LLAMABENCH_CONC_PP,
+                           "ctx_size": 1, "requested_cases": 4,
+                           "completed_cases": len(self.entries)}}
+        def record_model_plan(self, *args): pass
+        def pending_sweeps(self, *args): return [([256], [2])]
+        def begin_measured(self, _name): pass
+        def discard_case(self): pass
+        def record_entry(self, _model, entry): self.entries.append(entry); return True
+        def record_model_complete(self, _model): pass
+        def finish(self): pass
+
+    def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, *args, **kwargs):
+        captured.append((tg, npl))
+        return [{"pp": pp, "tg": tg[0], "pl": npl[0], "speed_tg": 1.0}]
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
+    result = LBC().run(fake_engine, _MODELS, journal=Journal())
+    assert captured == [([256], [2])]
+    assert [(entry["tg"], entry["pl"]) for entry in result["m1"]["entries"]] == [(256, 2)]
+
+
 def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypatch):
     class Telemetry:
         def __init__(self):

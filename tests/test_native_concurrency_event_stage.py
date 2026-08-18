@@ -1,4 +1,8 @@
-from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
+import pytest
+
+from scripts.results.native_concurrency_event_stage import (
+    NativeConcurrencyEventStage, group_remaining_concurrency_sweeps,
+)
 from scripts.results.run_plan import RunPlan
 
 
@@ -43,6 +47,37 @@ def test_native_concurrency_resume_reports_completed_rows_across_interruption(tm
         path, plan, lambda _: None, resume=True, resume_identity=identity,
     )
     assert resumed.completed_keys(MODEL) == {(512, 128, 1)}
+    resumed.close()
+
+
+def test_native_concurrency_remaining_sweeps_never_include_completed_cells():
+    completed = {(512, 128, 1), (512, 256, 1), (512, 256, 2)}
+    assert group_remaining_concurrency_sweeps(512, [128, 256], [1, 2], completed) == [
+        ([128], [2]),
+    ]
+
+
+@pytest.mark.parametrize("completed_count", [0, 2, 3])
+def test_native_concurrency_first_middle_last_interruption_runs_only_unfinished_cells(
+        tmp_path, completed_count):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    cells = [(128, 1), (128, 2), (256, 1), (256, 2)]
+    stage = NativeConcurrencyEventStage(path, plan, lambda _: None, resume_identity=identity)
+    stage.record_model_plan(MODEL, 512, 2048, len(cells))
+    for tg, pl in cells[:completed_count]:
+        stage.record_entry(MODEL, {"pp": 512, "tg": tg, "pl": pl})
+    stage.close()
+    resumed = NativeConcurrencyEventStage(
+        path, plan, lambda _: None, resume=True, resume_identity=identity,
+    )
+    pending = resumed.pending_sweeps(MODEL, 512, [128, 256], [1, 2])
+    scheduled = {(tg, pl) for tg_values, pl_values in pending
+                 for tg in tg_values for pl in pl_values}
+    assert scheduled == set(cells[completed_count:])
+    assert not scheduled.intersection(cells[:completed_count])
     resumed.close()
 
 

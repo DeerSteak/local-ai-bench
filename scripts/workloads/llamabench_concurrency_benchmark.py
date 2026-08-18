@@ -234,6 +234,9 @@ class LlamaBenchConcurrencyBenchmark:
                         len(config.LLAMABENCH_CONC_TG) * len(npl),
                     )
                     results = journal.export()
+                sweeps = (journal.pending_sweeps(
+                    model, effective_pp, config.LLAMABENCH_CONC_TG, npl,
+                ) if journal else [(config.LLAMABENCH_CONC_TG, npl)])
 
                 def _record_entry(entry):
                     if journal:
@@ -255,20 +258,28 @@ class LlamaBenchConcurrencyBenchmark:
                         save_fn(results)
 
                 try:
-                    wait_if_paused()
-                    if journal:
-                        journal.begin_measured("measured:native-sweep-includes-load")
-                    elif telemetry:
-                        telemetry.begin_measured("measured:native-sweep-includes-load")
-                    returned_entries = self.run_one(
-                        binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
-                        config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
-                        ngl, config.LLAMABENCH_TIMEOUT,
-                        on_progress=Shared.log, on_entry=_record_entry,
-                    )
-                    if not entries:
-                        for entry in returned_entries:
-                            _record_entry(entry)
+                    for sweep_tg, sweep_npl in sweeps:
+                        wait_if_paused()
+                        if journal:
+                            journal.begin_measured("measured:native-sweep-includes-load")
+                        elif telemetry:
+                            telemetry.begin_measured("measured:native-sweep-includes-load")
+                        before = len(entries)
+                        try:
+                            returned_entries = self.run_one(
+                                binary, paths[0], ctx_size, effective_pp, sweep_tg, sweep_npl,
+                                config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
+                                ngl, config.LLAMABENCH_TIMEOUT,
+                                on_progress=Shared.log, on_entry=_record_entry,
+                            )
+                            if len(entries) == before:
+                                for entry in returned_entries:
+                                    _record_entry(entry)
+                        finally:
+                            if journal:
+                                journal.discard_case()
+                            elif telemetry:
+                                telemetry.finish_case()
                     if journal:
                         journal.record_model_complete(model)
                         results = journal.export()
@@ -290,11 +301,6 @@ class LlamaBenchConcurrencyBenchmark:
                         journal.record_model_state(model, "failed", {"error": str(e)})
                         results = journal.export()
                     continue
-                finally:
-                    if journal:
-                        journal.discard_case()
-                    elif telemetry:
-                        telemetry.finish_case()
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
             except Exception as exc:
