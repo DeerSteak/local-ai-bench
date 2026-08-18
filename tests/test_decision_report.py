@@ -151,6 +151,7 @@ def test_report_renders_explicit_acceptance_without_changing_evidence_readiness(
 
 def test_report_renders_authoritative_recommendation_without_reevaluating_it():
     result = load("results_v4_1_complete.json")
+    result["run"]["plan"] = {"effective_config": {"methodology_profile": "neutral-v1"}}
     recommendation = evaluate_recommendation(result, {
         "workload": "llm", "case": "2K", "primary_objective": "throughput",
         "minimum_throughput": 40,
@@ -165,6 +166,7 @@ def test_report_renders_authoritative_recommendation_without_reevaluating_it():
 
 def test_report_rejects_recommendation_for_a_different_source_result():
     result = load("results_v4_1_complete.json")
+    result["run"]["plan"] = {"effective_config": {"methodology_profile": "neutral-v1"}}
     other = load("results_v4_1_complete.json")
     other["profile"]["hostname"] = "other"
     recommendation = evaluate_recommendation(other, {
@@ -176,6 +178,7 @@ def test_report_rejects_recommendation_for_a_different_source_result():
 
 def test_report_cli_renders_recommendation_after_outbound_metadata_review(tmp_path):
     result = load("results_v4_1_complete.json")
+    result["run"]["plan"] = {"effective_config": {"methodology_profile": "neutral-v1"}}
     result_path = tmp_path / "result.json"
     artifact_path = tmp_path / "recommendation.json"
     report_path = tmp_path / "report.html"

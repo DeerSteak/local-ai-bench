@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildRecommendationDisplayItems, isRecommendationArtifact, recommendationArtifactLoadMode } from "./recommendations";
+import recommendationExample from "../../../samples/recommendation_example.json";
 
 const artifact = {
   artifact_type: "recommendation", schema_version: 1, verdict: "recommended",
@@ -36,5 +37,13 @@ describe("recommendation artifact view", () => {
     expect(recommendationArtifactLoadMode([artifact])).toBe("single");
     expect(recommendationArtifactLoadMode([artifact, { profile: {} }])).toBe("mixed");
     expect(recommendationArtifactLoadMode([{ profile: {} }])).toBe("none");
+  });
+
+  it("renders the shared Python-generated conformance artifact", () => {
+    expect(isRecommendationArtifact(recommendationExample)).toBe(true);
+    expect(buildRecommendationDisplayItems(recommendationExample)[0]).toMatchObject({
+      group: "recommended", candidate: "qwen3.5-4b-q4",
+      evidencePath: "llm/qwen3.5-4b-q4/8K/tps_mean",
+    });
   });
 });

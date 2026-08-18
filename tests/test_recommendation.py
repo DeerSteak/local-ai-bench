@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
 
 import pytest
 
-from scripts.results.recommendation import evaluate_recommendation, parse_constraints
+from scripts.results.recommendation import (
+    evaluate_recommendation, parse_constraints, validate_recommendation_artifact,
+)
 from scripts.results.recommendation_cli import main
 from tests.test_result_history import result as history_result
 
@@ -18,6 +21,10 @@ def result():
             "power": {"efficiency": {"per_joule": efficiency, "unit": "tokens_per_joule"}},
         }
     return {
+        "version": "6.0", "engine": "llamacpp", "profile": {"hostname": "system"},
+        "run": {"status": "complete", "plan": {"effective_config": {
+            "methodology_profile": "neutral-v1",
+        }}},
         "llm": {
             "fast": {"8K": case(80, 0.4, 8, 16, 12)},
             "accurate": {"8K": case(60, 0.6, 12, 12, 9)},
@@ -143,6 +150,31 @@ def test_qualified_repeated_trials_produce_tied_or_recommended_verdicts():
     assert recommended["recommended"][0]["candidate"] == "fast"
 
 
+def test_top_tie_is_preserved_when_another_survivor_is_reproducibly_worse():
+    results = repeated_results(
+        [90, 90.2, 89.8, 90.1, 89.9],
+        [89.5, 89.7, 89.3, 89.6, 89.4],
+    )
+    for value, slow in zip(results, [60, 60.2, 59.8, 60.1, 59.9]):
+        value["llm"]["slow"] = {"8K": value["llm"]["accurate"]["8K"] | {
+            "tps_mean": slow,
+        }}
+        value["code"]["slow"] = {"accuracy_pct": 85}
+    artifact = evaluate_recommendation(results, request(minimum_accuracy_pct=60))
+    assert artifact["verdict"] == "tied"
+    assert {item["candidate"] for item in artifact["tied"]} == {"fast", "accurate"}
+
+
+def test_incomplete_or_methodology_unknown_evidence_is_unevaluated():
+    incomplete = result()
+    incomplete["run"]["status"] = "interrupted"
+    del incomplete["run"]["plan"]["effective_config"]["methodology_profile"]
+    artifact = evaluate_recommendation(incomplete, request())
+    assert artifact["verdict"] == "insufficient_evidence"
+    accurate = next(item for item in artifact["unevaluated"] if item["candidate"] == "accurate")
+    assert accurate["missing_evidence"] == ["complete_run", "methodology_profile"]
+
+
 def test_incompatible_repeated_results_are_rejected_not_pooled():
     values = repeated_results([80] * 5, [70] * 5)
     values[-1]["profile"]["hostname"] = "other"
@@ -182,3 +214,9 @@ def test_cli_rejects_nonfinite_and_malformed_constraint_files(tmp_path):
             str(result_path), "--constraints", str(constraints_path),
             "--out", str(tmp_path / f"{name}-out.json"),
         ]) == 1
+
+
+def test_shared_dashboard_conformance_artifact_is_valid():
+    artifact = json.loads(Path("samples/recommendation_example.json").read_text(encoding="utf-8"))
+    validate_recommendation_artifact(artifact)
+    assert artifact["recommended"][0]["candidate"] == "qwen3.5-4b-q4"

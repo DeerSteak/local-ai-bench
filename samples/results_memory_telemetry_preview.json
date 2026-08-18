@@ -85,6 +85,12 @@
   "run": {
     "schema_version": 5,
     "status": "complete",
+    "plan": {"effective_config": {
+      "methodology_profile": "neutral-v1",
+      "memory_telemetry": true, "memory_telemetry_interval_sec": 0.5,
+      "power_telemetry": true, "power_telemetry_interval_sec": 0.5,
+      "power_source": "powermetrics", "power_scope": "processor_package"
+    }},
     "effective_config": {"memory_telemetry": true, "memory_telemetry_interval_sec": 0.5,
       "power_telemetry": true, "power_telemetry_interval_sec": 0.5,
       "power_source": "powermetrics", "power_scope": "processor_package"},

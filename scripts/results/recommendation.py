@@ -225,11 +225,26 @@ def _rank_with_trials(eligible: list[dict], constraints: ConstraintSet) -> tuple
             best["evidence"][constraints.primary_objective]["trial_values"],
             paired=True,
         ))
-    if all(comparison["verdict"] == "unchanged" for comparison in comparisons):
-        return "tied", eligible
-    if all(comparison["verdict"] == "improved" for comparison in comparisons):
+    verdicts = [comparison["verdict"] for comparison in comparisons]
+    if all(verdict in {"unchanged", "improved"} for verdict in verdicts):
+        tied = [best, *(candidate for candidate, comparison in zip(eligible[1:], comparisons)
+                        if comparison["verdict"] == "unchanged")]
+        if len(tied) > 1:
+            return "tied", tied
         return "recommended", [best]
     return "insufficient_evidence", []
+
+
+def _result_evidence_gaps(result: dict) -> list[str]:
+    run = as_dict(result.get("run"))
+    plan = as_dict(run.get("plan"))
+    settings = as_dict(plan.get("effective_config"))
+    gaps = []
+    if run.get("status") != "complete":
+        gaps.append("complete_run")
+    if not settings.get("methodology_profile"):
+        gaps.append("methodology_profile")
+    return gaps
 
 
 def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
@@ -244,6 +259,7 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
             f"incompatible recommendation evidence: {', '.join(compatibility['incompatible_fields'])}")
     eligible, eliminated, unevaluated = [], [], []
     models = sorted(set().union(*(_candidate_models(item, constraints) for item in results)))
+    result_gaps = sorted(set().union(*(_result_evidence_gaps(item) for item in results)))
     for model in models:
         trial_evidence = [candidate_evidence(item, constraints, model) for item in results]
         evidence = {}
@@ -252,7 +268,7 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
             evidence[metric] = _mean_measurement(measurements) \
                 if all(measurement is not None for measurement in measurements) else None
         missing = sorted({metric for metric, *_ in _requirements(constraints)
-                          if evidence.get(metric) is None})
+                          if evidence.get(metric) is None} | set(result_gaps))
         if missing:
             unevaluated.append({
                 "candidate": model,
