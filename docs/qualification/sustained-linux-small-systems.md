@@ -1,6 +1,17 @@
 # Sustained-load qualification on Linux small systems
 
-This procedure captures the real-hardware evidence needed to qualify Version 6.0-pre5 temperature sources and the combined memory, power, temperature, and throughput sampler. It is prepared for the stock, open-air DGX Spark and AMD Ryzen AI Halo Developer Platform; neither platform is claimed qualified until its evidence is reviewed and this document is updated with the exact OS, driver, runtime, source, commit, and results.
+This procedure captures the real-hardware evidence needed to qualify Version 6.0-pre5 temperature sources and the combined memory, power, temperature, and throughput sampler. The stock, open-air DGX Spark and AMD Ryzen AI Halo Developer Platform completed the procedure on August 17, 2026; the reviewed evidence and exact qualification scope are recorded below.
+
+## Qualified evidence
+
+Both systems ran from clean commit `06cf7757c4bc2ecbf9697bed17e7de31720c0161` with Gemma 3 1B Q4_K_M, a recorded ambient temperature of 20 °C, factory-default system controls, and llama.cpp. Each platform completed three post-fix ten-minute soaks plus 20 alternating telemetry-off/on pairs for both the latency-sensitive and sustained screens at 0.25, 0.5, and 1.0 seconds. All twelve observer-effect reports passed their predeclared bounds, all six long soaks completed with only valid requests and 61 aligned windows, and the current analyzer exactly reproduces every stored classification.
+
+| Platform | Runtime and sources | Post-fix ten-minute results | Evidence |
+|---|---|---|---|
+| AMD Ryzen AI Halo Developer Platform, Linux 6.18.35+rex+2-amd64 | llama.cpp 9413; CPU package via `hwmon`, GPU die and accelerator power via `rocm-smi` | Mild degradation in all three runs: 91.04%, 94.80%, and 94.04% retention, with onset at 400, 530, and 310 seconds; cause classified power-correlated | [`sustained-linux-20260817-212722`](../../results/qualification/sustained-linux-20260817-212722), [`temperature-linux-20260817-092852`](../../results/qualification/temperature-linux-20260817-092852) |
+| NVIDIA DGX Spark, Linux 6.17.0-1029-nvidia-aarch64 | llama.cpp 10362; GPU die and accelerator power via `nvidia-smi` | Stable in all three runs: 99.16%, 99.05%, and 99.13% retention, with no throttle onset and cause classified neither | [`sustained-linux-20260817-212933`](../../results/qualification/sustained-linux-20260817-212933), [`temperature-linux-20260817-092911`](../../results/qualification/temperature-linux-20260817-092911) |
+
+Supported temperature and power channels recorded zero failed samples. Unsupported CPU-package and GPU-hotspot channels on DGX Spark and the unsupported GPU-hotspot channel on Ryzen AI Halo remain explicitly unavailable with zero failures. DGX Spark's host-memory channel remained valid, but `nvidia-smi` did not return accelerator-memory used or total values; those channels remain an item 1 unified-memory coverage limitation and are not qualified by this temperature evidence.
 
 ## Preconditions
 
@@ -31,4 +42,4 @@ Archive the raw results, exported bundles if used, dashboard screenshots, ambien
 
 ## Observer-effect status
 
-Temperature collection is confined to the opt-in sustained workload and is not default-on. The combined sampler remains opt-in until the unattended 20-pair latency-sensitive and sustained observer screens pass for each exact Linux source combination and interval. Run `run_temperature_qualification_linux.sh` once per platform as described in [Telemetry Qualification](../telemetry-qualification.md); it covers every interval without manual intervention. The three repeated ten-minute soaks qualify sensor readability and sustained evidence shape but do not by themselves prove polling overhead is negligible. If a source is absent or repeatedly fails, retain the throughput result, report cause as unavailable or based only on the remaining channel, and label that source unsupported on the tested platform rather than substituting a different sensor silently.
+Temperature collection remains confined to the opt-in sustained workload and is not default-on for unrelated stages. The exact Ryzen AI Halo `hwmon` plus `rocm-smi` combination and DGX Spark `nvidia-smi` combination passed the unattended 20-pair latency-sensitive and sustained observer screens at every supported interval; 0.5 seconds remains the product cadence. This evidence does not qualify different kernels, sensor combinations, engines, or platforms automatically. If a source is absent or repeatedly fails elsewhere, retain the throughput result, report cause as unavailable or based only on the remaining channel, and label that source unsupported on the tested platform rather than substituting a different sensor silently.
