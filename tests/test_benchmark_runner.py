@@ -803,8 +803,10 @@ def test_runner_restores_recorded_gpu_split_mode(monkeypatch):
     from scripts.runtime.workload_runner import apply_runner_settings
 
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
-    apply_runner_settings({"gpu_split_mode": "tensor"})
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 300)
+    apply_runner_settings({"gpu_split_mode": "tensor", "run_timeout_seconds": 7})
     assert config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+    assert config.RUN_TIMEOUT == 7
 
 
 def test_legacy_runner_plan_defaults_gpu_split_to_layer(monkeypatch):

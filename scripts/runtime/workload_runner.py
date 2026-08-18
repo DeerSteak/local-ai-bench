@@ -110,6 +110,8 @@ def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> st
 def apply_runner_settings(settings: dict) -> None:
     """Restore mutable CLI-overridden settings inside the supervised child process."""
     config.LLAMACPP_GPU_SPLIT_MODE = settings.get("gpu_split_mode", "layer")
+    if "run_timeout_seconds" in settings:
+        config.RUN_TIMEOUT = settings["run_timeout_seconds"]
 
 
 def emit(kind: str, **details) -> None:
