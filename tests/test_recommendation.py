@@ -213,6 +213,37 @@ def test_unknown_case_is_a_request_error_with_available_cases():
         evaluate_recommendation(result(), request(case="8k"))
 
 
+def test_unknown_case_does_not_advertise_model_status_markers():
+    value = result()
+    value["llm"]["fast"].update({
+        "crashed": "2K", "crashed_at": "startup", "timed_out": True, "slow_tps": 1,
+    })
+    with pytest.raises(ValueError, match="unknown case '8k'.*2K, 8K") as error:
+        evaluate_recommendation(value, request(case="8k"))
+    assert "crashed" not in str(error.value)
+    assert "timed_out" not in str(error.value)
+
+
+def test_status_only_models_remain_unevaluated_for_the_requested_case():
+    value = result()
+    value["llm"] = {
+        "failed": {"crashed": "2K", "crashed_at": "startup"},
+    }
+    value["code"] = {"failed": {"accuracy_pct": 90}}
+    artifact = evaluate_recommendation(value, request())
+    assert artifact["verdict"] == "insufficient_evidence"
+    assert artifact["candidates"]["unevaluated"] == [{
+        "candidate": "failed",
+        "missing_evidence": ["throughput"],
+        "resolution": {
+            "workload": "llm", "case": "8K", "accuracy_section": "code",
+        },
+    }]
+    assert artifact["resolution"] == {
+        "action": "run_missing_evidence", "candidate_gaps": 1,
+    }
+
+
 def test_no_code_path_emits_a_composite_score():
     artifact = evaluate_recommendation(result(), request())
     assert "score" not in repr(artifact).lower()

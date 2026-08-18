@@ -215,7 +215,8 @@ def _available_cases(results: list[dict], constraints: ConstraintSet) -> list[st
             values = as_dict(model_values)
             if constraints.workload == "images":
                 values = as_dict(values.get("resolutions"))
-            cases.update(str(case) for case in values)
+            cases.update(str(case) for case, case_values in values.items()
+                         if isinstance(case_values, dict))
     return sorted(cases)
 
 
