@@ -16,3 +16,12 @@ def test_windows_launcher_bootstraps_then_previews_by_default():
     assert "py -3 -m venv bench-env" in text
     assert "qualification_recipe" in text
     assert 'if "%EXECUTE%"=="--execute"' in text
+
+
+def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():
+    unix = (ROOT / "bootstrap_qualification.sh").read_text()
+    windows = (ROOT / "bootstrap_qualification.bat").read_text()
+    assert 'if [ "$MODE" != "--execute" ]' in unix
+    assert "GPU drivers and CUDA/ROCm SDKs are intentionally not changed" in unix
+    assert 'if not "%~1"=="--execute"' in windows
+    assert "winget install --id Python.Python.3.12" in windows

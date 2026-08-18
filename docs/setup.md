@@ -139,7 +139,8 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 |---|---|---|
 | Linux + NVIDIA CUDA | Supported | Prebuilt CUDA wheels; needs compute capability 7.5+ and a Python 3.10–3.13 on `PATH`, which setup offers to provide when the system has none |
 | Linux + AMD ROCm (gfx90a/942/950, RX 7900/9000) | Supported | Prebuilt wheels from `wheels.vllm.ai/rocm`; needs ROCm 6.3+ and a CPython 3.12 interpreter, which is the only version those wheels are published for |
-| Linux + AMD ROCm, any other gfx target (e.g. gfx1151 / Strix Halo) | Experimental | Same wheels, but they ship no kernels for that target — see the Strix Halo platform note below |
+| Linux + AMD ROCm (gfx1150/1151, including Strix Halo) | Supported install path | Current official ROCm wheels include these RDNA 3.5 targets; exact-build platform support still requires qualification |
+| Linux + AMD ROCm, any other gfx target | Experimental | Setup may offer the ROCm wheel, but reports when its published kernel target list does not match the detected GPU |
 | DGX Spark (GB10) | Experimental | CUDA 13 nightly wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
 | macOS | Not offered | Out of scope for this project — see the design note below |
 | Windows (native) | Not offered | vLLM has no upstream Windows support — see [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2) |

@@ -10,9 +10,29 @@ A lifecycle recipe runs one deliberately small representative workload, normally
 
 Use a separate performance qualification when a claim depends on catalog-wide compatibility, throughput, accuracy, image generation, embeddings, or model-specific behavior.
 
-## Recipe
+## Launchers
 
-Copy [`samples/qualification_recipe_example.json`](../samples/qualification_recipe_example.json) outside the repository or into a private evidence workspace and replace every placeholder with an argv command. Commands are JSON arrays and are executed directly without a shell. Give install, upgrade, rollback, and uninstall commands an isolated qualification prefix; never point them at the normal installation or model store. The recipe may record only the allowlisted non-secret runtime environment fields; credentials such as a Hugging Face token must be inherited at execution time and never written into the recipe or evidence.
+Use a disposable clone and run `./run_qualification.sh --list-targets` on macOS, Linux, or WSL2, or `run_qualification.bat --list-targets` on Windows. Each launcher creates `bench-env` and installs `requirements.txt` when needed, generates a concrete recipe for the detected accelerator, and previews it by default. It refuses a target whose expected accelerator name is absent from the shared machine identity, which keeps Radeon and Intel Vulkan evidence separate.
+
+Pass the exact version being qualified first and a distinct upgrade version second. The first version is installed, exercised, snapshotted, restored by rollback, and recorded as the qualified runtime; the second exists only to prove the upgrade path. Review the preview, then repeat the same command with `--execute` as the final argument:
+
+```bash
+./run_qualification.sh macos-m5-pro-llamacpp-metal bLATEST bNEXT qualification-evidence/m5-pro
+./run_qualification.sh macos-m5-pro-llamacpp-metal bLATEST bNEXT qualification-evidence/m5-pro --execute
+```
+
+On Windows:
+
+```text
+run_qualification.bat geforce-windows-llamacpp-cuda bLATEST bNEXT qualification-evidence\geforce
+run_qualification.bat geforce-windows-llamacpp-cuda bLATEST bNEXT qualification-evidence\geforce --execute
+```
+
+For a newly installed host, `bootstrap_qualification.sh` or `bootstrap_qualification.bat` previews the prerequisite package-manager commands and performs them only with `--execute`. The bootstrap covers Git, Python, venv support, CMake, and a C++ compiler where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.
+
+## Recipe internals
+
+The launchers generate the production recipe; [`samples/qualification_recipe_example.json`](../samples/qualification_recipe_example.json) documents its schema for manual integrations. Commands are JSON arrays and are executed directly without a shell. Give install, upgrade, rollback, and uninstall commands an isolated qualification prefix; never point them at the normal installation or model store. The recipe may record only the allowlisted non-secret runtime environment fields; credentials such as a Hugging Face token must be inherited at execution time and never written into the recipe or evidence.
 
 The bundled install step uses `scripts.release.qualification_install` to install the selected llama.cpp or vLLM runtime and download only the recorded smoke model beneath a disposable repository clone. It previews by default and requires both `--execute` and `--confirm-isolated-root` before changing that clone. Runtime installation still obeys the platform support checks; an unsupported vLLM combination fails instead of falling back to another backend. Every engine installation requires `--runtime-version`; vLLM records the complete wheel identity, including a ROCm local-version suffix such as `0.27.1+rocm723`, while llama.cpp records its exact `bNNNNN` release. Qualification never installs a floating latest build. A vLLM recipe sets `HF_HOME` to the disposable clone's `qualification-vllm-cache` directory so installation and the later smoke run resolve the same weights.
 
@@ -22,7 +42,7 @@ The cancellation command is the only command that may define `interrupt_when_log
 
 ## Preview and execution
 
-Preview is the default and creates no directories or files:
+The low-level runner remains preview-first. The top-level launcher writes only the generated recipe and its parent evidence directory before showing this preview; it does not install a runtime, download a model, or launch a workload until `--execute` is supplied:
 
 ```bash
 bench-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001

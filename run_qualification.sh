@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="${PYTHON:-python3}"
+if [ -n "${PYTHON:-}" ]; then
+    QUALIFICATION_PYTHON="$PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    QUALIFICATION_PYTHON="python3.12"
+else
+    QUALIFICATION_PYTHON="python3"
+fi
 VENV="$ROOT/bench-env"
 
 usage() {
@@ -14,7 +20,7 @@ if [ "${1:-}" = "--list-targets" ]; then
     if [ -x "$VENV/bin/python" ]; then
         exec "$VENV/bin/python" -m scripts.release.qualification_recipe --list-targets
     fi
-    exec "$PYTHON" -m scripts.release.qualification_recipe --list-targets
+    exec "$QUALIFICATION_PYTHON" -m scripts.release.qualification_recipe --list-targets
 fi
 if [ "$#" -lt 3 ]; then
     usage
@@ -32,7 +38,7 @@ if [ "$EXECUTE" != "" ] && [ "$EXECUTE" != "--execute" ]; then
 fi
 
 if [ ! -x "$VENV/bin/python" ]; then
-    "$PYTHON" -m venv "$VENV"
+    "$QUALIFICATION_PYTHON" -m venv "$VENV"
     "$VENV/bin/python" -m pip install --upgrade pip
     "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
 fi

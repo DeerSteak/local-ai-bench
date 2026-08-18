@@ -21,6 +21,8 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
+| `run_qualification.sh` / `run_qualification.bat` | Fresh-clone bootstrap, concrete target-recipe generation, preview, and resumable lifecycle qualification launchers |
+| `bootstrap_qualification.sh` / `bootstrap_qualification.bat` | Preview-first host prerequisite installation for fresh qualification machines; never changes GPU drivers or SDKs |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
@@ -141,7 +143,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
-| `release/qualification_automation.py` | Reviewed, preview-first, resumable lifecycle recipe runner and qualification evidence projection |
+| `release/qualification_automation.py` / `release/qualification_recipe.py` / `release/qualification_runtime.py` | Concrete target recipe generation, preview-first resumable execution, isolated snapshot/rollback, and evidence projection |
 | `release/qualification_install.py` | Preview-first isolated engine-runtime and single smoke-model provisioning for qualification |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
