@@ -725,6 +725,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
                             gui_options: dict | None = None) -> list[str]:
     benchmark_target = [str(benchmark_path)] if benchmark_path else ["-m", "scripts.app.benchmark"]
     command = [python_executable, *benchmark_target, "--engine", engine_name]
+    if "vllm" in parse_engine_selection(engine_name):
+        command.append("--ack-experimental-engine")
     # Sending a path for a ComfyUI that was never installed fails validation, and without
     # image tests there is nothing for it to point at anyway.
     if "img" in tests:

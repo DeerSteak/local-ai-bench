@@ -14,6 +14,7 @@ run_bench.bat [options]   # Windows
 
 --tests TESTS           Tests to run (default: all nine — see Flag details below)
 --engine ENGINE         Inference engine to benchmark, or 'all' (default: llamacpp)
+--ack-experimental-engine  Acknowledge an unqualified vLLM run
 --cpu-only              Force CPU-only inference for every engine-backed test
 --gpu-split-mode MODE   llama.cpp GPU mode: single, layer, or tensor (default: layer)
 --llamacpp-no-repack    Disable llama.cpp weight repacking (`-nr`; default: false)
@@ -37,6 +38,8 @@ run_bench.bat [options]   # Windows
 ```
 
 See [Flag details](#flag-details) below for what each flag actually does.
+
+When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed the complete qualification lifecycle. The graphical launcher adds the flag only after displaying its experimental-engine confirmation. The resulting support caveat remains recorded in the run profile.
 
 ## Launch modes
 

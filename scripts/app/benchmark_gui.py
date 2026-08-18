@@ -58,6 +58,9 @@ from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_contro
 from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
+from scripts.release.qualification import (
+    engine_selection_label, engine_support_profile, experimental_acknowledgement_required,
+)
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
@@ -315,6 +318,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     )}
     system_ram_gb = Shared.system_ram_gb()
     hardware_backend = Shared.detect_backend()
+    qualification_profiles = {
+        name: engine_support_profile(
+            system=platform.system(), architecture=platform.machine(),
+            wsl=Shared.detect_wsl(platform.system(), platform.release()), runtime=name,
+            runtime_version=None, backend=hardware_backend, current_version=config.VERSION,
+        )
+        for name in available_engines
+    }
     runtime_backend = get_engine(selected_engine).runtime_backend(hardware_backend)
     gpu_split_modes = available_gpu_split_modes(setup, runtime_backend)
     discovery = build_discovery_report(
@@ -483,7 +494,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 model_vars[value].set(False)
 
     for index, name in enumerate(available_engines):
-        ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
+        ttk.Checkbutton(
+            engine_box, text=engine_selection_label(name, qualification_profiles[name]),
+            variable=engine_check_vars[name],
+        ).grid(
             row=0, column=index, sticky="w", padx=(0, 16))
     ttk.Button(
         engine_box, text="Reset", width=6,
@@ -1011,6 +1025,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
             return
+        selected_engines = parse_engine_selection(engine_var.get())
+        if experimental_acknowledgement_required(selected_engines, qualification_profiles):
+            if not messagebox.askyesno(
+                    "Experimental engine",
+                    "vLLM has not passed this suite's full lifecycle qualification on this "
+                    "exact platform and runtime. Continue with an experimental run whose "
+                    "result will retain that caveat?",
+                    parent=root):
+                return
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
         )

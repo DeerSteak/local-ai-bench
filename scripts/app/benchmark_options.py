@@ -37,6 +37,10 @@ PUBLIC_OPTION_SCHEMA = {
     "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),
     "--tests": _spec("string-list", "guided", "exposed", "Test selection screen", choices=TEST_CHOICES),
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
+    "--ack-experimental-engine": _spec(
+        "boolean", "contextual", "equivalent", "Experimental-engine confirmation dialog",
+        default=False,
+    ),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
     "--embedding-models": _spec("string-list", "guided", "exposed", "Embedding model selection screen"),

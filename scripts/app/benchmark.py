@@ -16,6 +16,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.execution_profile import build_execution_profile
+from scripts.release.qualification import experimental_engine_ack_error
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
@@ -722,6 +723,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "until a second engine (e.g. MLX) is added — kept here so scripts/"
              "docs referencing --engine don't need to change when one is.",
     )
+    parser.add_argument(
+        "--ack-experimental-engine", action="store_true",
+        help="Acknowledge that selected experimental engines lack full lifecycle qualification.",
+    )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
@@ -764,6 +769,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         run_engine_names = resolve_engine_names(args.engine, _engines)
     except ValueError as exc:
         parser.error(str(exc))
+    acknowledgement_error = experimental_engine_ack_error(
+        run_engine_names, args.ack_experimental_engine,
+    )
+    if acknowledgement_error:
+        parser.error(acknowledgement_error)
 
     if args.list_models:
         any_installed = False

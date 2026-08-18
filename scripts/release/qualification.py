@@ -187,3 +187,25 @@ def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime
         "architecture": architecture, "backend": backend,
         "stale": qualification_is_stale(evidence, current_version) if evidence else False,
     }
+
+
+def engine_selection_label(runtime: str, support_profile: dict) -> str:
+    level = support_profile["support_level"]
+    if runtime == "vllm" and level != "supported":
+        return f"vllm — Experimental · {level.capitalize()} qualification"
+    label = "llama.cpp" if runtime == "llamacpp" else runtime
+    return f"{label} — {level.capitalize()}"
+
+
+def experimental_acknowledgement_required(runtimes, support_profiles: dict[str, dict]) -> bool:
+    return any(
+        runtime == "vllm" and support_profiles[runtime]["support_level"] != "supported"
+        for runtime in runtimes
+    )
+
+
+def experimental_engine_ack_error(runtimes, acknowledged: bool) -> str | None:
+    if "vllm" in runtimes and not acknowledged:
+        return ("vLLM requires --ack-experimental-engine until its exact platform and "
+                "runtime pass full lifecycle qualification")
+    return None
