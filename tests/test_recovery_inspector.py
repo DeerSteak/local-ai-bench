@@ -3,8 +3,11 @@ from types import SimpleNamespace
 
 from scripts.results import recovery_inspector
 from scripts.results.event_store import EventStore, JournalEvent
-from scripts.results.recovery_inspector import current_resume_identity, inspect_recovery, retryable_case_records
+from scripts.results.recovery_inspector import (
+    current_resume_identity, inspect_recovery, retryable_case_records, workload_case_counts,
+)
 from scripts.results.run_plan import RunPlan
+from scripts.stage_registry import STAGE_ORDER
 
 
 def make_result(tmp_path):
@@ -52,6 +55,29 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
     }
     assert report["interrupted_attempts"] == 1
     assert result.with_suffix(".events.sqlite3").read_bytes() == before
+
+
+def test_workload_case_coverage_is_reported_for_every_registered_stage():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=list(STAGE_ORDER),
+        stage_order=list(STAGE_ORDER), models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
+    cases = {}
+    for stage in STAGE_ORDER:
+        cases[f"{stage}-complete"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "measurement", "state": "complete",
+        }
+        cases[f"{stage}-failed"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "measurement", "state": "failed",
+        }
+        cases[f"{stage}-metadata"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "model_state", "state": "skipped",
+        }
+    assert workload_case_counts(plan, {"cases": cases}, STAGE_ORDER) == {
+        stage: {"complete": 1, "failed": 1} for stage in STAGE_ORDER
+    }
 
 
 def test_recovery_inspector_requires_fork_when_current_identity_changes(tmp_path):

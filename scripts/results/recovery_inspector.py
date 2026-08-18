@@ -61,6 +61,19 @@ def retryable_case_records(plan, projection):
                                               item["case_id"]))
 
 
+def workload_case_counts(plan, projection, stages) -> dict:
+    """Count durable measurement states per workload while excluding model metadata."""
+    stage_ids = {plan.stage_id(stage): stage for stage in stages}
+    counts = {stage: {} for stage in stages}
+    for case in projection["cases"].values():
+        stage = stage_ids.get(case.get("parent_id"))
+        if stage is None or case.get("case_kind") in META_CASE_KINDS:
+            continue
+        state_counts = counts[stage]
+        state_counts[case["state"]] = state_counts.get(case["state"], 0) + 1
+    return {stage: dict(sorted(values.items())) for stage, values in counts.items()}
+
+
 def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find_llamacpp_tool,
                             digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
                             event_path: Path | None = None):
@@ -147,16 +160,8 @@ def inspect_recovery(result_path, identity_builder=None):
         for stage in plan.stage_order if stage in JOURNAL_STAGES
     }
     case_states = {}
-    stage_case_states = {stage: {} for stage in stage_states}
     for case in projection["cases"].values():
         case_states[case["state"]] = case_states.get(case["state"], 0) + 1
-        if case.get("case_kind") in META_CASE_KINDS:
-            continue
-        stage = next((key for key in stage_states
-                      if plan.stage_id(key) == case.get("parent_id")), None)
-        if stage is not None:
-            counts = stage_case_states[stage]
-            counts[case["state"]] = counts.get(case["state"], 0) + 1
     reasons = list(decision.reasons)
     if result.get("run", {}).get("status") == "complete":
         reasons.append("result is already complete")
@@ -166,9 +171,7 @@ def inspect_recovery(result_path, identity_builder=None):
         "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),
-        "stage_case_counts": {
-            stage: dict(sorted(counts.items())) for stage, counts in stage_case_states.items()
-        },
+        "stage_case_counts": workload_case_counts(plan, projection, stage_states),
         "retryable_cases": retryable_case_records(plan, projection),
         "interrupted_attempts": len(decision.interrupted_attempts),
     }
