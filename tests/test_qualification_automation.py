@@ -4,7 +4,9 @@ import pytest
 
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_automation import (
-    load_qualification_recipe, qualification_preview, validate_qualification_recipe,
+    initial_run_state, load_qualification_recipe, next_qualification_step,
+    qualification_entry_from_run, qualification_preview, recipe_digest,
+    validate_qualification_recipe,
 )
 
 
@@ -61,6 +63,39 @@ def test_recipe_load_and_preview_are_read_only(tmp_path):
     assert preview["checkpoint"].endswith("evidence/qualification-state.json")
     assert [step["name"] for step in preview["steps"]] == list(QUALIFICATION_LIFECYCLE)
     assert not (tmp_path / "evidence").exists()
+
+
+def test_checkpoint_resumes_at_first_step_that_has_not_passed():
+    state = initial_run_state(recipe())
+    assert next_qualification_step(state) == "install"
+    state["steps"]["install"]["status"] = "passed"
+    state["steps"]["discovery"]["status"] = "failed"
+    assert next_qualification_step(state) == "discovery"
+    for step in QUALIFICATION_LIFECYCLE:
+        state["steps"][step]["status"] = "passed"
+    assert next_qualification_step(state) is None
+
+
+def test_recipe_digest_is_stable_and_changes_with_coverage():
+    first = recipe()
+    second = recipe()
+    assert recipe_digest(first) == recipe_digest(second)
+    second["coverage"]["models"] = ["another-model"]
+    assert recipe_digest(first) != recipe_digest(second)
+
+
+def test_run_projects_complete_and_incomplete_steps_into_evidence():
+    state = initial_run_state(recipe())
+    state["steps"]["install"].update({"status": "passed", "detail": "ok"})
+    state["steps"]["discovery"].update({"status": "failed", "detail": "runtime absent"})
+    entry = qualification_entry_from_run(state, "6.0-pre8", "records/run.json")
+    assert entry["lifecycle"]["install"] == "passed"
+    assert entry["lifecycle"]["discovery"] == "failed"
+    assert entry["known_failures"][0] == {
+        "step": "discovery", "detail": "runtime absent",
+    }
+    assert entry["evidence"] == ["records/run.json"]
+    assert "coverage" not in entry
 
 
 @pytest.mark.parametrize("value", [0, -1, True])
