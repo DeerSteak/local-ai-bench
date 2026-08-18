@@ -1,0 +1,118 @@
+"""Evidence-backed platform and runtime qualification policy."""
+
+import re
+from datetime import date
+
+
+QUALIFICATION_LIFECYCLE = (
+    "install", "discovery", "first_valid_run", "cancellation", "resume",
+    "report_generation", "bundle_export", "upgrade", "rollback", "uninstall",
+)
+LIFECYCLE_STATES = {"passed", "failed", "not_tested"}
+SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
+MAX_QUALIFICATION_RELEASE_AGE = 1
+QUALIFICATION_MATRIX: tuple[dict, ...] = ()
+
+ENTRY_KEYS = {
+    "id", "platform", "architecture", "runtime", "runtime_version", "backend",
+    "qualified_at", "suite_version", "lifecycle", "known_failures", "evidence",
+}
+PLATFORMS = {"macos", "linux", "windows", "wsl2"}
+
+
+def release_number(version: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:[.-].*)?", version)
+    if not match:
+        raise ValueError(f"invalid suite version: {version}")
+    return int(match.group(1)), int(match.group(2))
+
+
+def release_age(entry_version: str, current_version: str) -> int:
+    entry = release_number(entry_version)
+    current = release_number(current_version)
+    if entry > current:
+        raise ValueError("qualification suite version is newer than the current suite")
+    if entry[0] != current[0]:
+        return MAX_QUALIFICATION_RELEASE_AGE + 1
+    return current[1] - entry[1]
+
+
+def qualification_is_stale(entry: dict, current_version: str) -> bool:
+    return release_age(entry["suite_version"], current_version) > MAX_QUALIFICATION_RELEASE_AGE
+
+
+def validate_qualification_entry(entry: dict) -> None:
+    if not isinstance(entry, dict) or set(entry) != ENTRY_KEYS:
+        raise ValueError("qualification entry has missing or unknown fields")
+    if not isinstance(entry["id"], str) or not entry["id"].strip():
+        raise ValueError("qualification entry requires an id")
+    if entry["platform"] not in PLATFORMS:
+        raise ValueError(f"unknown qualification platform: {entry['platform']}")
+    for key in ("architecture", "runtime", "runtime_version", "backend"):
+        if not isinstance(entry[key], str) or not entry[key].strip():
+            raise ValueError(f"qualification {key} must be non-empty text")
+    try:
+        date.fromisoformat(entry["qualified_at"])
+    except (TypeError, ValueError):
+        raise ValueError("qualification date must use YYYY-MM-DD") from None
+    release_number(entry["suite_version"])
+    lifecycle = entry["lifecycle"]
+    if not isinstance(lifecycle, dict) or set(lifecycle) != set(QUALIFICATION_LIFECYCLE):
+        raise ValueError("qualification lifecycle is incomplete")
+    if any(state not in LIFECYCLE_STATES for state in lifecycle.values()):
+        raise ValueError("qualification lifecycle has an invalid state")
+    failures = entry["known_failures"]
+    if not isinstance(failures, list) or any(
+            not isinstance(item, dict) or set(item) != {"step", "detail"}
+            or item["step"] not in QUALIFICATION_LIFECYCLE
+            or not isinstance(item["detail"], str) or not item["detail"].strip()
+            for item in failures):
+        raise ValueError("qualification known failures are invalid")
+    gaps = {step for step, state in lifecycle.items() if state != "passed"}
+    documented = {item["step"] for item in failures}
+    if gaps != documented:
+        raise ValueError("every incomplete lifecycle step requires one known failure")
+    evidence = entry["evidence"]
+    if (not isinstance(evidence, list)
+            or any(not isinstance(item, str) or not item.strip() for item in evidence)
+            or any(state == "passed" for state in lifecycle.values()) and not evidence):
+        raise ValueError("qualification evidence references are invalid")
+
+
+def derive_support_level(entry: dict | None, current_version: str) -> str:
+    if entry is None:
+        return "unverified"
+    validate_qualification_entry(entry)
+    states = set(entry["lifecycle"].values())
+    if states == {"passed"} and not qualification_is_stale(entry, current_version):
+        return "supported"
+    if "passed" in states:
+        return "experimental"
+    return "unverified"
+
+
+def validate_qualification_matrix(entries=QUALIFICATION_MATRIX) -> None:
+    ids = []
+    identities = []
+    for entry in entries:
+        validate_qualification_entry(entry)
+        ids.append(entry["id"])
+        identities.append((
+            entry["platform"], entry["architecture"], entry["runtime"],
+            entry["runtime_version"], entry["backend"],
+        ))
+    if len(ids) != len(set(ids)):
+        raise ValueError("qualification entry ids must be unique")
+    if len(identities) != len(set(identities)):
+        raise ValueError("qualification runtime identities must be unique")
+
+
+def platform_name(system: str, *, wsl: bool = False) -> str:
+    if wsl:
+        if system != "Linux":
+            raise ValueError("WSL2 qualification requires a Linux runtime")
+        return "wsl2"
+    try:
+        return {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[system]
+    except KeyError:
+        raise ValueError(f"unsupported qualification operating system: {system}") from None
