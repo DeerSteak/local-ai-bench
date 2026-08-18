@@ -79,10 +79,10 @@ def test_recovery_executor_resumes_attempt_and_completes_original_result(tmp_pat
     journal.close()
 
 
-def test_recovery_executor_rejects_legacy_stage_before_mutation(tmp_path):
+def test_recovery_executor_requires_journal_before_mutation(tmp_path):
     result, _ = stopped_result(tmp_path, ("llamabenchconc",))
     before = result.read_bytes()
-    with pytest.raises(ValueError, match="without durable recovery: llamabenchconc"):
+    with pytest.raises(ValueError, match="no durable event journal"):
         resume_journal_run(result, identity_builder=lambda _plan: {})
     assert result.read_bytes() == before
 

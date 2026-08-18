@@ -14,6 +14,9 @@ from scripts.results.embedding_event_stage import (
 )
 from scripts.results.image_event_stage import ImageEventStage, export_images
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.native_concurrency_event_stage import (
+    NativeConcurrencyEventStage, export_native_concurrency,
+)
 from scripts.results.sustained_event_stage import SustainedEventStage, export_sustained_section
 from scripts.results.vllm_bench_event_stage import VllmBenchEventStage, export_vllm_bench
 from scripts.results.run_plan import RunPlan
@@ -83,6 +86,11 @@ def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_
             event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
         )
         project = lambda: export_native_bench_section(event_path, plan.job_id)
+    elif stage_name == "llamabenchconc":
+        journal = NativeConcurrencyEventStage(
+            event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,
+        )
+        project = lambda: export_native_concurrency(event_path, plan.job_id)
     elif stage_name == "vllmbench":
         journal = VllmBenchEventStage(
             event_path, plan, lambda _: None, resume_identity=resume_identity, resume=resume,

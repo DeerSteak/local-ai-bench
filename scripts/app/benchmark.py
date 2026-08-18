@@ -56,7 +56,6 @@ from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
-from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
@@ -1127,12 +1126,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
+            if "llamabenchconc" in tests:
+                batched_bench_path = find_llamacpp_tool("llama-batched-bench")
+                if not batched_bench_path:
+                    raise ValueError("cannot identify llama-batched-bench runtime for resume")
+                extra_resume_runtimes["llama-batched-bench"] = Path(
+                    batched_bench_path,
+                ).resolve()
             if "vllmbench" in tests:
                 vllm_bench_path = engine.bench_executable()
                 if not vllm_bench_path:
                     raise ValueError("cannot identify vLLM bench runtime for resume")
                 extra_resume_runtimes["vllm-bench"] = Path(vllm_bench_path).resolve()
-            if journal_stages & {"llm", "conv", "llamabench", "vllmbench", "sustained", *ACCURACY_TESTS}:
+            if journal_stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
@@ -1348,15 +1354,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
 
         def run_llamabench_concurrency(_context):
-            telemetry = start_case_telemetry()
-            try:
-                return LlamaBenchConcurrencyBenchmark().run(
-                    engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
-                    save_fn=make_save("llamabenchconc"), telemetry=telemetry,
-                )
-            finally:
-                if telemetry:
-                    telemetry.stop()
+            return run_supervised_stage(
+                _context.plan, event_store_path(Path(out_path)), "llamabenchconc",
+                make_save("llamabenchconc"), resume_identity=resume_identity,
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
+            )
 
         def run_vllmbench(_context):
             return run_supervised_stage(

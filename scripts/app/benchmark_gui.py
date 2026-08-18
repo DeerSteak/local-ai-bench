@@ -36,7 +36,6 @@ from scripts.app.benchmark_frontend import (
     apply_saved_test_selection,
     build_benchmark_command,
     build_frontend_state,
-    frontend_state_from_run_plan,
     frontend_state_availability_errors,
     build_model_entries,
     build_test_entries,
@@ -771,23 +770,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(stages, entries, engines=engines)
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    def fallback_history_fork(source_path, output_path, plan):
-        nonlocal pending_fork_source
-        try:
-            state = frontend_state_from_run_plan(plan, collect_options())
-            state["gui_options"]["out"] = str(output_path)
-            apply_frontend_state(state)
-        except (KeyError, ValueError) as exc:
-            messagebox.showerror("Fork unavailable", str(exc), parent=root)
-            return
-        pending_fork_source = source_path
-        notebook.select(config_tab)
-        root.after(0, start_run)
-
     history_process = HistoryProcessActions(
         root=root, filedialog=filedialog, messagebox=messagebox,
         process_active=lambda: process is not None and process.poll() is None,
-        launch=launch_history_process, fallback_fork=fallback_history_fork,
+        launch=launch_history_process,
     )
     history_actions = HistoryActions(
         history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
@@ -820,7 +806,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     process = None
     active_process_kind = None
     active_result_paths: list[Path] = []
-    pending_fork_source = None
     process_control_path = None
     process_paused = False
     process_exit_observed_at = None
@@ -988,7 +973,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_files.bind()
 
     def start_run():
-        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
+        nonlocal process, active_process_kind, active_result_paths
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -1010,7 +995,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             )
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
-            pending_fork_source = None
             return
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
@@ -1024,19 +1008,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
         command = preparation.command
-        if pending_fork_source is not None:
-            command.extend(["--fork-plan", str(pending_fork_source)])
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
             )
         except OSError as exc:
-            pending_fork_source = None
             messagebox.showerror("Benchmark could not start", str(exc), parent=root)
             return
         begin_process_control(control_path)
-        pending_fork_source = None
         active_process_kind = "benchmark"
         active_result_paths = []
         log_text.configure(state="normal")

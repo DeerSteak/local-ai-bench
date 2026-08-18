@@ -173,8 +173,8 @@ class LlamaBenchConcurrencyBenchmark:
         return (f"pp{entry.get('pp', 0)}+tg{entry.get('tg', 0)} @ {entry.get('pl', 0)}-way: "
                 f"{entry.get('speed_tg', 0.0):.1f} tok/s aggregate")
 
-    def run(self, engine, models, cpu_only=False, save_fn=None, telemetry=None):
-        results = {}
+    def run(self, engine, models, cpu_only=False, save_fn=None, telemetry=None, journal=None):
+        results = journal.export() if journal else {}
 
         if not isinstance(engine, LlamaCppEngine):
             Shared.warn(f"llama-batched-bench only supports the llamacpp engine — skipping for {engine.name}")
@@ -197,12 +197,19 @@ class LlamaBenchConcurrencyBenchmark:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {})
                     continue
 
                 paths = LlamaCppEngine._resolve_model_files(tag)
                 if paths is None:
                     Shared.err(f"{tag}: model files went missing between listing and run — skipping")
-                    results[short] = {"error": "model files not found"}
+                    failure = {"error": "model files not found"}
+                    if journal:
+                        journal.record_model_state(model, "failed", failure)
+                        results = journal.export()
+                    else:
+                        results[short] = failure
                     continue
 
                 model_max = engine.max_context_length(tag)
@@ -221,9 +228,19 @@ class LlamaBenchConcurrencyBenchmark:
                     "requested_cases": len(config.LLAMABENCH_CONC_TG) * len(npl),
                     "completed_cases": 0,
                 }
+                if journal:
+                    journal.record_model_plan(
+                        model, effective_pp, ctx_size,
+                        len(config.LLAMABENCH_CONC_TG) * len(npl),
+                    )
+                    results = journal.export()
 
                 def _record_entry(entry):
-                    if telemetry:
+                    if journal:
+                        journal.record_entry(model, entry)
+                        results.update(journal.export())
+                        entries.append(entry)
+                    elif telemetry:
                         entry["memory"] = telemetry.finish_case()
                         if (power := getattr(telemetry, "last_power", None)) is not None:
                             entry["power"] = add_power_efficiency(
@@ -231,14 +248,17 @@ class LlamaBenchConcurrencyBenchmark:
                                 entry.get("tg", 0) * entry.get("pl", 0),
                             )
                         telemetry.begin_measured("measured:native-sweep")
-                    entries.append(entry)
-                    results[short]["completed_cases"] = len(entries)
-                    if save_fn:
+                    if not journal:
+                        entries.append(entry)
+                        results[short]["completed_cases"] = len(entries)
+                    if save_fn and not journal:
                         save_fn(results)
 
                 try:
                     wait_if_paused()
-                    if telemetry:
+                    if journal:
+                        journal.begin_measured("measured:native-sweep-includes-load")
+                    elif telemetry:
                         telemetry.begin_measured("measured:native-sweep-includes-load")
                     returned_entries = self.run_one(
                         binary, paths[0], ctx_size, effective_pp, config.LLAMABENCH_CONC_TG, npl,
@@ -249,27 +269,49 @@ class LlamaBenchConcurrencyBenchmark:
                     if not entries:
                         for entry in returned_entries:
                             _record_entry(entry)
+                    if journal:
+                        journal.record_model_complete(model)
+                        results = journal.export()
                 except subprocess.TimeoutExpired:
                     Shared.err(f"{label}: llama-batched-bench stopped with {len(entries)} completed entries")
                     results[short]["timed_out"] = True
                     results[short]["error"] = f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)"
+                    if journal:
+                        journal.record_model_state(model, "timed_out", {
+                            "timed_out": True,
+                            "error": f"no output for {config.LLAMABENCH_TIMEOUT}s (idle timeout)",
+                        })
+                        results = journal.export()
                     continue
                 except Exception as e:
                     Shared.err(f"{label}: {e}")
                     results[short]["error"] = str(e)
+                    if journal:
+                        journal.record_model_state(model, "failed", {"error": str(e)})
+                        results = journal.export()
                     continue
                 finally:
-                    if telemetry:
+                    if journal:
+                        journal.discard_case()
+                    elif telemetry:
                         telemetry.finish_case()
                 for entry in entries:
                     Shared.ok(self.format_entry(entry))
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running llama-batched-bench — {exc} — "
                            "skipping remaining work for this model")
-                results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
+                failure = unexpected_model_failure(label, exc)
+                if journal:
+                    journal.record_model_state(model, "failed", failure)
+                    results = journal.export()
+                else:
+                    results.setdefault(short, {}).update(failure)
             finally:
-                if save_fn:
+                if save_fn and not journal:
                     save_fn(results)
                 emit_model_finished("llamabenchconc", label, results.get(short), model_id=tag)
 
+        if journal:
+            journal.finish()
+            results = journal.export()
         return results

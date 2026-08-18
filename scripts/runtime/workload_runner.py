@@ -24,10 +24,12 @@ from scripts.results.local_execution_context import load_local_execution_context
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
+from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from scripts.workloads.sustained_benchmark import SustainedBenchmark
 from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
@@ -320,6 +322,48 @@ def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
     try:
         benchmark_factory().run(
             engine=engine, models=models, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
+def execute_llamabench_concurrency_job(
+        path, job_id, *, engine_factory=get_engine,
+        benchmark_factory: Callable[[], Any] = LlamaBenchConcurrencyBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "llamabenchconc" not in plan.tests:
+        raise ValueError("runner job does not include native llama-bench concurrency")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence,
+             event={"stage": "llamabenchconc", "committed": True})
+
+    telemetry = create_case_telemetry(settings)
+    journal = NativeConcurrencyEventStage(
+        path, plan, notify, initialize=False, telemetry=telemetry,
+    )
+    try:
+        benchmark_factory().run(
+            engine=engine, models=models, cpu_only=plan.cpu_only, journal=journal,
         )
     finally:
         journal.close()
@@ -625,6 +669,8 @@ def main(argv=None) -> int:
             execute_conversation_job(args.event_store, args.job_id)
         elif args.stage == "llamabench":
             execute_llamabench_job(args.event_store, args.job_id)
+        elif args.stage == "llamabenchconc":
+            execute_llamabench_concurrency_job(args.event_store, args.job_id)
         elif args.stage == "vllmbench":
             execute_vllmbench_job(args.event_store, args.job_id)
         elif args.stage == "sustained":

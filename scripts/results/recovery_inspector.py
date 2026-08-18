@@ -68,7 +68,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
     accuracy_stages = stages & set(ACCURACY_TESTS)
-    if stages & {"llm", "conv", "llamabench", "vllmbench", "sustained", *ACCURACY_TESTS}:
+    if stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
@@ -98,6 +98,11 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         if not binary:
             raise ValueError("llama-bench runtime required by the saved plan was not found")
         extra["llama-bench"] = Path(binary).resolve()
+    if "llamabenchconc" in stages:
+        binary = tool_finder("llama-batched-bench")
+        if not binary:
+            raise ValueError("llama-batched-bench runtime required by the saved plan was not found")
+        extra["llama-batched-bench"] = Path(binary).resolve()
     if "vllmbench" in stages:
         bench_executable = getattr(engine, "bench_executable", None)
         binary = bench_executable() if callable(bench_executable) else None

@@ -32,10 +32,11 @@ def test_every_stage_has_result_and_model_ownership():
 
 def test_recovery_capabilities_are_derived_from_stage_ownership():
     assert JOURNAL_STAGES == {
-        "llm", "conv", "llamabench", "vllmbench", "sustained", "conc_tool", "conc_chat",
+        "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained",
+        "conc_tool", "conc_chat",
         "emb", "img", *ACCURACY_TESTS,
     }
-    assert SELECTED_RETRY_STAGES == JOURNAL_STAGES - {"llamabench"}
+    assert SELECTED_RETRY_STAGES == JOURNAL_STAGES - {"llamabench", "llamabenchconc"}
     assert all(stage_spec(key).journal_owned for key in SELECTED_RETRY_STAGES)
 
 

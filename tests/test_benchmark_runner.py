@@ -17,6 +17,7 @@ from scripts.runtime import supervised_stage
 from scripts.runtime.shared import Shared
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
 from scripts.results.vllm_bench_event_stage import VllmBenchEventStage
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
@@ -445,6 +446,40 @@ def test_generic_supervisor_projects_vllm_bench_stage(tmp_path):
         def cancel(): pass
 
     result = run_supervised_stage(plan, path, "vllmbench", lambda _: None, Supervisor)
+    assert result["fake"]["completed_cases"] == 1
+
+
+def test_generic_supervisor_projects_native_concurrency_stage(tmp_path):
+    base = make_plan()
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["llamabenchconc"],
+        stage_order=["llamabenchconc"], models=base.models,
+        effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec): assert spec.stage == "llamabenchconc"
+
+        def run(self, callback):
+            stage = NativeConcurrencyEventStage(
+                path.resolve(), plan, lambda _: None, initialize=False,
+            )
+            model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
+            stage.record_model_plan(model, 512, 2048, 1)
+            stage.record_entry(model, {"pp": 512, "tg": 128, "pl": 1})
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(
+        plan, path, "llamabenchconc", lambda _: None, Supervisor,
+    )
     assert result["fake"]["completed_cases"] == 1
 
 

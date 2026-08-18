@@ -12,15 +12,12 @@ from scripts.stage_registry import JOURNAL_STAGES
 
 
 class HistoryProcessActions:
-    def __init__(
-            self, *, root, filedialog, messagebox, process_active, launch,
-            fallback_fork):
+    def __init__(self, *, root, filedialog, messagebox, process_active, launch):
         self.root = root
         self.filedialog = filedialog
         self.messagebox = messagebox
         self.process_active = process_active
         self.launch = launch
-        self.fallback_fork = fallback_fork
 
     def start(self, action, result_path, report, selected=None) -> None:
         if self.process_active():
@@ -61,7 +58,6 @@ class HistoryProcessActions:
 
     def fork(self, source_path, report) -> None:
         plan = load_run_plan(source_path)
-        unsupported = [stage for stage in plan.stage_order if stage not in JOURNAL_STAGES]
         destination = self.filedialog.asksaveasfilename(
             title="Save forked benchmark", defaultextension=".json",
             initialdir=str(config.RESULTS_DIR), initialfile=f"{source_path.stem}_fork.json",
@@ -76,9 +72,6 @@ class HistoryProcessActions:
             "Run this saved plan from the beginning as a new result? "
             "The source result will not be changed.", parent=self.root,
         ):
-            return
-        if unsupported:
-            self.fallback_fork(source_path, output_path, plan)
             return
         self.launch(
             fork_executor_command(source_path, output_path), "fork", [output_path],

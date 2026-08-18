@@ -396,6 +396,8 @@ Like `llamabench`, this workload is inherently llama.cpp-specific and is skipped
 
 For each model, one `llama-batched-bench` subprocess sweeps the configured prompt, generation, and parallel-sequence matrix. Every valid JSONL row is checkpointed as it arrives, so an idle timeout or later failure preserves earlier matrix cases with requested/completed counts and diagnostics. Context fitting, explicit `-ngl`, and engine shutdown remain as before.
 
+Resume preserves the one-process-per-model methodology: it reruns the native sweep command, ignores rows whose `(pp, tg, pl)` identities are already committed, and stores only newly reached rows. This can recompute earlier native rows before reaching the remaining work, but never duplicates them in the compatible result or presents selected-row retry that the native command cannot honor.
+
 This build of `llama-batched-bench` prints nothing to stderr and has no `--progress` flag, so progress comes from stdout instead: results are requested as `--output-format jsonl`, one JSON object per (pp, tg, pl) combination, and each line is parsed and logged as it arrives. Blank or non-JSON lines are ignored. The same idle timeout as `llamabench` applies (`config.LLAMABENCH_TIMEOUT`) — the sweep is killed only if no output arrives for that long, not after a fixed total duration.
 
 Each model's `llamabenchconc` result is either `{"entries": [...], "pp": <effective prompt depth>, "ctx_size": <-c value used>}` — where `entries` are the parsed JSONL rows verbatim, with `llama-batched-bench`'s own field names (`pp`, `tg`, `pl`, `n_kv`, `t_pp`, `speed_pp`, `t_tg`, `speed_tg`, `t`, `speed`, ...) — or `{"error": "..."}`.
