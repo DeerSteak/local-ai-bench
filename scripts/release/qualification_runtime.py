@@ -11,6 +11,7 @@ from pathlib import Path
 from scripts.release.qualification_install import inspect_install_plan, install_qualification_stack
 from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from scripts.setup.runtime_identity import parse_runtime_version
 
 
 RUNTIME_NAMES = {"llamacpp": "llama.cpp", "vllm": "vllm-env"}
@@ -86,6 +87,14 @@ def install_runtime(root: Path, engine: str, model: str, version: str,
 def runtime_version(root: Path, engine: str) -> str:
     root = qualification_root(root)
     if engine == "llamacpp":
+        source = runtime_path(root, engine)
+        if (source / ".git").is_dir():
+            tag = subprocess.run(
+                ["git", "-C", str(source), "describe", "--tags", "--exact-match", "HEAD"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if tag.returncode == 0 and tag.stdout.strip():
+                return tag.stdout.strip()
         executable = find_llamacpp_tool(
             "llama-server", vendored_dir=runtime_path(root, engine),
             platform_name="Windows" if os.name == "nt" else None,
@@ -103,7 +112,14 @@ def runtime_version(root: Path, engine: str) -> str:
     output = (result.stdout or result.stderr).strip()
     if result.returncode or not output:
         raise ValueError(output or f"{engine} version discovery failed")
-    return output.splitlines()[0]
+    return parse_runtime_version(output) or output.splitlines()[0]
+
+
+def require_runtime_version(root: Path, engine: str, expected: str) -> str:
+    actual = runtime_version(root, engine)
+    if actual.removeprefix("b") != expected.removeprefix("b"):
+        raise ValueError(f"expected {engine} {expected}, discovered {actual}")
+    return actual
 
 
 def uninstall(root: Path, engine: str) -> None:
@@ -142,11 +158,19 @@ def main(argv=None) -> int:  # pragma: no cover
                 args.root, args.engine, args.model, args.version,
                 snapshot=args.action == "install",
             )
+            print(json.dumps({
+                "engine": args.engine,
+                "version": require_runtime_version(args.root, args.engine, args.version),
+            }))
         elif args.action == "discover":
-            print(json.dumps({"engine": args.engine, "version": runtime_version(args.root, args.engine)}))
+            actual = (require_runtime_version(args.root, args.engine, args.version)
+                      if args.version else runtime_version(args.root, args.engine))
+            print(json.dumps({"engine": args.engine, "version": actual}))
         elif args.action == "rollback":
             restore_runtime(args.root, args.engine)
-            print(json.dumps({"engine": args.engine, "version": runtime_version(args.root, args.engine)}))
+            actual = (require_runtime_version(args.root, args.engine, args.version)
+                      if args.version else runtime_version(args.root, args.engine))
+            print(json.dumps({"engine": args.engine, "version": actual}))
         else:
             uninstall(args.root, args.engine)
         return 0

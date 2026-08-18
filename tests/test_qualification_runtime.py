@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_runtime import (
-    export_verified_bundle, managed_path, restore_runtime, runtime_path, snapshot_runtime, uninstall,
+    export_verified_bundle, managed_path, require_runtime_version, restore_runtime, runtime_path,
+    snapshot_runtime, uninstall,
 )
 
 
@@ -56,3 +57,11 @@ def test_bundle_export_is_immediately_verified(monkeypatch, tmp_path):
     )
     export_verified_bundle(tmp_path / "result.json", tmp_path / "bundle.zip", "machine")
     assert [call[0] for call in calls] == ["export", "verify"]
+
+
+def test_discovery_rejects_a_different_runtime_version(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "scripts.release.qualification_runtime.runtime_version", lambda *_args: "0.26.0",
+    )
+    with pytest.raises(ValueError, match="expected vllm 0.27.1"):
+        require_runtime_version(tmp_path, "vllm", "0.27.1")

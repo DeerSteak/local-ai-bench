@@ -93,7 +93,9 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
         "environment": environment,
         "steps": {
             "install": step(install),
-            "discovery": step(lifecycle + ["discover", "--root", root, "--engine", engine]),
+            "discovery": step(lifecycle + [
+                "discover", "--root", root, "--engine", engine, "--version", baseline_version,
+            ]),
             "first_valid_run": step(benchmark + ["--out", result]),
             "cancellation": step(
                 benchmark + ["--out", interrupted], exit_codes=(-2, 130, -1073741510),
@@ -113,7 +115,9 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
                 "upgrade", "--root", root, "--engine", engine,
                 "--model", model, "--version", target_version,
             ]),
-            "rollback": step(lifecycle + ["rollback", "--root", root, "--engine", engine]),
+            "rollback": step(lifecycle + [
+                "rollback", "--root", root, "--engine", engine, "--version", baseline_version,
+            ]),
             "uninstall": step(lifecycle + ["uninstall", "--root", root, "--engine", engine]),
         },
     }
