@@ -63,6 +63,25 @@ export function getRunReliabilityWarning(data: JsonRecord | null | undefined): s
   return labels[run.status] || "This result has an unknown completion state.";
 }
 
+export function getEngineSupport(data: JsonRecord | null | undefined): {
+  level: "supported" | "experimental" | "unverified" | "not_recorded";
+  caveat: string;
+} {
+  const support = data?.profile?.engine_support;
+  const level = support?.support_level;
+  if (!["supported", "experimental", "unverified"].includes(level)) {
+    return {
+      level: "not_recorded",
+      caveat: "Qualification status was not recorded by this suite version.",
+    };
+  }
+  return {
+    level,
+    caveat: typeof support.caveat === "string" && support.caveat
+      ? support.caveat : "Qualification details were not recorded.",
+  };
+}
+
 export function getLlamaBenchMethodologyWarning(files: ResultsFile[]): string {
   const relevant = files.filter(file => Object.keys(file.data?.llamabench || {}).length > 0);
   if (relevant.length < 2) return "";
