@@ -122,8 +122,32 @@ def require_runtime_version(root: Path, engine: str, expected: str) -> str:
     return actual
 
 
+def managed_processes(root: Path, *, run=subprocess.run) -> list[str]:
+    root = qualification_root(root)
+    if os.name == "nt":
+        command = [
+            "powershell", "-NoProfile", "-Command",
+            "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+        ]
+    else:
+        command = ["ps", "-axo", "pid=,command="]
+    result = run(command, capture_output=True, text=True, timeout=30)
+    if result.returncode:
+        raise ValueError("could not inspect processes before qualification uninstall")
+    markers = [str(root / name).casefold() for name in RUNTIME_NAMES.values()]
+    own_pid = str(os.getpid())
+    return [
+        line.strip() for line in result.stdout.splitlines()
+        if any(marker in line.casefold() for marker in markers)
+        and not line.strip().startswith(own_pid + " ")
+    ]
+
+
 def uninstall(root: Path, engine: str) -> None:
     runtime_path(root, engine)
+    active = managed_processes(root)
+    if active:
+        raise ValueError("qualification runtime still has active processes: " + "; ".join(active))
     for name in REMOVABLE_NAMES:
         remove_managed(managed_path(root, name))
 

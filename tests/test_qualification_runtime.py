@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_runtime import (
-    export_verified_bundle, managed_path, require_runtime_version, restore_runtime, runtime_path,
-    snapshot_runtime, uninstall,
+    export_verified_bundle, managed_path, managed_processes, require_runtime_version,
+    restore_runtime, runtime_path, snapshot_runtime, uninstall,
 )
 
 
@@ -40,7 +40,11 @@ def test_uninstall_removes_only_qualification_assets(tmp_path):
         (root / name).mkdir()
     evidence = root / "qualification-evidence"
     evidence.mkdir()
-    uninstall(root, "llamacpp")
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            "scripts.release.qualification_runtime.managed_processes", lambda _root: [],
+        )
+        uninstall(root, "llamacpp")
     assert not runtime_path(root, "llamacpp").exists()
     assert evidence.is_dir()
 
@@ -65,3 +69,13 @@ def test_discovery_rejects_a_different_runtime_version(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="expected vllm 0.27.1"):
         require_runtime_version(tmp_path, "vllm", "0.27.1")
+
+
+def test_process_inspection_finds_only_clone_owned_commands(tmp_path):
+    from types import SimpleNamespace
+    root = repo(tmp_path)
+    output = f"101 /usr/bin/python {root}/llama.cpp/server.py\n102 /usr/bin/python /other/app.py\n"
+    found = managed_processes(
+        root, run=lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=output),
+    )
+    assert found == [f"101 /usr/bin/python {root}/llama.cpp/server.py"]
