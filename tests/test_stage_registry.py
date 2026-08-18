@@ -1,7 +1,8 @@
 import pytest
 
 from scripts.stage_registry import (
-    ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, STAGE_BY_KEY, STAGE_ORDER, STAGE_SPECS,
+    ACCURACY_TESTS, CONCURRENCY_TESTS, JOURNAL_STAGES, LLM_TESTS,
+    SELECTED_RETRY_STAGES, STAGE_BY_KEY, STAGE_ORDER, STAGE_SPECS,
     engine_incompatible_tests, stage_spec,
 )
 
@@ -27,6 +28,14 @@ def test_every_stage_has_result_and_model_ownership():
     assert stage_spec("llamabench").menu_label == "llama-bench (throughput + concurrency)"
     with pytest.raises(ValueError, match="unknown benchmark stage"):
         stage_spec("unknown")
+
+
+def test_recovery_capabilities_are_derived_from_stage_ownership():
+    assert JOURNAL_STAGES == {
+        "llm", "conv", "llamabench", "sustained", "conc_tool", "conc_chat",
+    }
+    assert SELECTED_RETRY_STAGES == JOURNAL_STAGES - {"llamabench"}
+    assert all(stage_spec(key).journal_owned for key in SELECTED_RETRY_STAGES)
 
 
 def test_native_stages_reject_only_the_wrong_engine():

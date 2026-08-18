@@ -12,10 +12,9 @@ from scripts.results.llm_event_stage import event_store_path
 from scripts.results.resume_policy import assess_resume, build_engine_resume_identity
 from scripts.results.run_plan import load_run_plan
 from scripts.runtime.shared import Shared
+from scripts.stage_registry import JOURNAL_STAGES, SELECTED_RETRY_STAGES
 
 
-JOURNAL_STAGES = {"llm", "conv", "llamabench", "conc_tool", "conc_chat", "sustained"}
-SELECTED_RETRY_STAGES = {"llm", "conv", "conc_tool", "conc_chat", "sustained"}
 RETRYABLE_CASE_STATES = {"running", "failed", "interrupted", "invalid", "timed_out"}
 
 
