@@ -25,6 +25,7 @@ from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmar
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.sustained_benchmark import SustainedBenchmark
+from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
@@ -32,6 +33,7 @@ from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
 from scripts.results.sustained_event_stage import SustainedEventStage
+from scripts.results.vllm_bench_event_stage import VllmBenchEventStage
 from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability, TemperatureAvailability
 from scripts.stage_registry import ACCURACY_TESTS
 from scripts.workloads.accuracy_registry import accuracy_spec, selected_questions
@@ -280,6 +282,44 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         benchmark_factory().run(
             engine=engine, models=models, reps=settings["runs"],
             cpu_only=plan.cpu_only, journal=journal,
+        )
+    finally:
+        journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
+def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
+                          benchmark_factory: Callable[[], Any] = VllmBenchBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "vllmbench" not in plan.tests:
+        raise ValueError("runner job does not include the native vLLM bench stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "vllmbench", "committed": True})
+
+    telemetry = create_case_telemetry(settings)
+    journal = VllmBenchEventStage(path, plan, notify, initialize=False)
+    try:
+        benchmark_factory().run(
+            engine=engine, models=models, telemetry=telemetry, journal=journal,
         )
     finally:
         journal.close()
@@ -585,6 +625,8 @@ def main(argv=None) -> int:
             execute_conversation_job(args.event_store, args.job_id)
         elif args.stage == "llamabench":
             execute_llamabench_job(args.event_store, args.job_id)
+        elif args.stage == "vllmbench":
+            execute_vllmbench_job(args.event_store, args.job_id)
         elif args.stage == "sustained":
             execute_sustained_job(args.event_store, args.job_id)
         elif args.stage in ACCURACY_TESTS:

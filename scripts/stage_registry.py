@@ -26,7 +26,7 @@ STAGE_SPECS = (
               default_enabled=True, journal_owned=True, selected_retry=True),
     StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm", menu_label="llama-bench (throughput + concurrency)", native_engine="llamacpp", journal_owned=True),
     StageSpec("llamabenchconc", "llama-bench concurrency", "llamabenchconc", "llm", "llm", "llm", menu_visible=False, native_engine="llamacpp"),
-    StageSpec("vllmbench", "vllm bench (latency + throughput)", "vllmbench", "llm", "llm", "llm", native_engine="vllm"),
+    StageSpec("vllmbench", "vllm bench (latency + throughput)", "vllmbench", "llm", "llm", "llm", native_engine="vllm", journal_owned=True, selected_retry=True),
     StageSpec("sustained", "Sustained load", "sustained", "llm", "llm", "llm",
               journal_owned=True, selected_retry=True),
     StageSpec("emb", "Embeddings", "embeddings", "embeddings", "embedding", "embedding",

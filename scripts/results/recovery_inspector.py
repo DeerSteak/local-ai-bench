@@ -35,7 +35,7 @@ def retryable_case_records(plan, projection):
                 or case.get("parent_id") not in stages
                 or case.get("case_kind") not in {
                     "context", "sustained", "accuracy_question", "embedding_batch",
-                    "image_resolution",
+                    "image_resolution", "vllm_bench_case",
                 }):
             continue
         details = []
@@ -47,6 +47,8 @@ def retryable_case_records(plan, projection):
             details.append("input batch")
         elif case.get("case_kind") == "image_resolution":
             details.append(f"{case['width']}x{case['height']}")
+        elif case.get("case_kind") == "vllm_bench_case":
+            details.append(f"{case['kind']} in{case['input_len']}/out{case['output_len']}")
         elif case.get("case_kind"):
             details.append(str(case["case_kind"]).replace("_", " "))
         records.append({
@@ -66,7 +68,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
     accuracy_stages = stages & set(ACCURACY_TESTS)
-    if stages & {"llm", "conv", "llamabench", "sustained", *ACCURACY_TESTS}:
+    if stages & {"llm", "conv", "llamabench", "vllmbench", "sustained", *ACCURACY_TESTS}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
@@ -96,10 +98,16 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         if not binary:
             raise ValueError("llama-bench runtime required by the saved plan was not found")
         extra["llama-bench"] = Path(binary).resolve()
+    if "vllmbench" in stages:
+        bench_executable = getattr(engine, "bench_executable", None)
+        binary = bench_executable() if callable(bench_executable) else None
+        if not isinstance(binary, (str, Path)):
+            raise ValueError("vLLM bench runtime required by the saved plan was not found")
+        extra["vllm-bench"] = Path(binary).resolve()
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages & {
-            "llm", "conv", "sustained", "emb", "conc_tool", "conc_chat",
+            "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
             *ACCURACY_TESTS,
         }), extra_runtimes=extra,
         extra_artifacts=extra_artifacts,

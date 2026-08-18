@@ -128,6 +128,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/accuracy_event_stage.py` | Per-question accuracy journal ownership plus scored-result and raw-answer projections shared by all five banks |
 | `results/embedding_event_stage.py` | Per-model embedding-batch journal ownership, corpus identity, and compatible throughput projection without retained vectors |
 | `results/image_event_stage.py` | Journal-owned per-resolution image attempts, compatible projection, merged telemetry, and content-addressed artifact metadata |
+| `results/vllm_bench_event_stage.py` | Journal-owned vLLM latency/throughput size cases and compatible native-result projection |
 | `results/local_execution_context.py` | Strict owner-only local-path sidecar bound to a journal job and excluded from outbound artifacts |
 | `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |

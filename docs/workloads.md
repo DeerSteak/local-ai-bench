@@ -419,6 +419,8 @@ KV-cache precision stays consistent within each engine so the server and native 
 
 Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
 
+Each completed latency or throughput size is committed to the event journal before the next subprocess starts. Resume skips committed sizes and gives an interrupted, failed, or timed-out size a new numbered attempt; selected-case retry can target one eligible size without rerunning other completed evidence.
+
 Requires the benchmark extra, which the base vLLM package does not include — setup installs `vllm[bench]` (see [Setup](setup.md)). If `vllm bench` is unavailable the test prints the `pip install 'vllm[bench]'` hint and records nothing rather than failing the run.
 
 Concurrency through vLLM's own tooling (`vllm bench serve`) is not implemented yet. Unlike these two subcommands it requires a *running* server, so it cannot reuse this stage's shape; it would sit alongside `conc_tool`/`conc_chat` as a further cross-check rather than replacing them.
