@@ -1,0 +1,75 @@
+{
+  "version": "6.0-pre5",
+  "engine": "llamacpp",
+  "profile": {
+    "hostname": "Synthetic Recommendation Example",
+    "os": "Synthetic",
+    "backend": "Synthetic",
+    "ram_gb": 32
+  },
+  "llm": {
+    "qwen3.5-4b-q4": {
+      "8K": {
+        "tps_mean": 61.5,
+        "ttft_mean_sec": 0.72,
+        "valid_samples": [{"tokens_per_sec": 61.5}],
+        "memory": {
+          "summary": {"process_rss_gb": {"peak_gb": 5.8}},
+          "headroom": {"absolute_gb": 10.2},
+          "windows": []
+        },
+        "power": {
+          "efficiency": {"per_joule": 10.0, "unit": "tokens_per_joule"},
+          "windows": []
+        }
+      }
+    },
+    "gemma4-12b-q4": {
+      "8K": {
+        "tps_mean": 36.2,
+        "ttft_mean_sec": 0.91,
+        "valid_samples": [{"tokens_per_sec": 36.2}],
+        "memory": {
+          "summary": {"process_rss_gb": {"peak_gb": 13.4}},
+          "headroom": {"absolute_gb": 6.6},
+          "windows": []
+        },
+        "power": {
+          "efficiency": {"per_joule": 6.8, "unit": "tokens_per_joule"},
+          "windows": []
+        }
+      }
+    },
+    "qwen3.5-9b-q4": {
+      "2K": {
+        "tps_mean": 48.9,
+        "ttft_mean_sec": 0.44,
+        "valid_samples": [{"tokens_per_sec": 48.9}]
+      }
+    }
+  },
+  "llm_conversation": {},
+  "embeddings": {},
+  "images": {},
+  "mcq": {},
+  "math": {},
+  "reasoning": {},
+  "code": {
+    "qwen3.5-4b-q4": {"accuracy_pct": 82.0, "correct": 82, "total": 100},
+    "gemma4-12b-q4": {"accuracy_pct": 68.0, "correct": 68, "total": 100},
+    "qwen3.5-9b-q4": {"accuracy_pct": 79.0, "correct": 79, "total": 100}
+  },
+  "tool": {},
+  "concurrency_tool": {},
+  "concurrency_chat": {},
+  "llamabench": {},
+  "llamabenchconc": {},
+  "vllmbench": {},
+  "run": {
+    "schema_version": 5,
+    "status": "complete",
+    "plan": {
+      "effective_config": {"methodology_profile": "synthetic-recommendation-example-v1"}
+    }
+  }
+}

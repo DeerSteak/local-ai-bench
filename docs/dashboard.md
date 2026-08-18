@@ -137,7 +137,7 @@ The repeated-trial view shows each common metric's baseline and candidate mean, 
 
 ## Recommendation artifacts
 
-Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect the view. Recommended, tied, eliminated, and unevaluated candidates are separate groups; eliminated entries show the failed hard constraint and evidence path, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. Interactive constraint entry and shared workspace state belong to Version 6 milestone 11 and are deliberately not implemented in the standalone dashboard.
+Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load the clearly labeled synthetic [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect a recommended, eliminated, and unevaluated candidate derived from [results_recommendation_synthetic.json](../samples/results_recommendation_synthetic.json). Empty outcome groups are hidden; eliminated entries show the failed hard constraint and collapsible evidence references, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. Interactive constraint entry and shared workspace state belong to Version 6 milestone 11 and are deliberately not implemented in the standalone dashboard.
 
 ## Exporting
 

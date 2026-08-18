@@ -9,6 +9,29 @@ export interface RecommendationDisplayItem {
   evidencePath: string | null;
 }
 
+const METRIC_LABELS: Record<string, string> = {
+  accuracy: "Accuracy",
+  efficiency: "Efficiency",
+  memory: "Peak memory",
+  memory_headroom: "Memory headroom",
+  throughput: "Throughput",
+  ttft: "TTFT",
+};
+
+const UNIT_LABELS: Record<string, string> = {
+  GB: "GB",
+  images_per_second: "images/s",
+  percent: "%",
+  seconds: "sec",
+  tokens_per_joule: "tokens/J",
+  tokens_per_second: "tokens/s",
+};
+
+function formattedValue(value: number, unit: string): string {
+  const label = UNIT_LABELS[unit] || unit;
+  return unit === "percent" ? `${value}%` : `${value} ${label}`.trim();
+}
+
 function record(value: unknown): JsonRecord | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? value as JsonRecord
@@ -37,7 +60,9 @@ function evidenceDetail(item: JsonRecord, objective: string): { detail: string, 
   const value = evidence?.value;
   const unit = typeof evidence?.unit === "string" ? evidence.unit : "";
   return {
-    detail: typeof value === "number" ? `${value} ${unit}`.trim() : "Evidence recorded",
+    detail: typeof value === "number"
+      ? `${METRIC_LABELS[objective] || objective}: ${formattedValue(value, unit)}`
+      : "Evidence recorded",
     path: typeof evidence?.evidence_path === "string" ? [evidence.evidence_path, ...(
       Array.isArray(evidence.raw_evidence_paths) ? evidence.raw_evidence_paths.map(String) : []
     )].join(" · ") : null,
@@ -63,9 +88,19 @@ export function buildRecommendationDisplayItems(data: JsonRecord): Recommendatio
     const item = record(value);
     if (!item || typeof item.candidate !== "string") continue;
     const reasons = Array.isArray(item.reasons) ? item.reasons.map(record).filter(Boolean) : [];
-    const detail = reasons.map(reason =>
-      `${String(reason?.constraint)} ${String(reason?.operator)} ${String(reason?.threshold)}`,
-    ).join("; ") || "Constraint not met";
+    const detail = reasons.map(reason => {
+      const metric = String(reason?.constraint);
+      const operator = reason?.operator === "minimum" ? "below minimum" : "above maximum";
+      const measurement = record(reason?.measurement);
+      const unit = typeof measurement?.unit === "string" ? measurement.unit : "";
+      const value = typeof measurement?.value === "number"
+        ? formattedValue(measurement.value, unit)
+        : "measurement unavailable";
+      const threshold = typeof reason?.threshold === "number"
+        ? formattedValue(reason.threshold, unit)
+        : String(reason?.threshold);
+      return `${METRIC_LABELS[metric] || metric}: ${value} (${operator} ${threshold})`;
+    }).join("; ") || "Constraint not met";
     const measurement = record(reasons[0]?.measurement);
     items.push({
       group: "eliminated", candidate: item.candidate, detail,
@@ -78,7 +113,7 @@ export function buildRecommendationDisplayItems(data: JsonRecord): Recommendatio
     const item = record(value);
     if (!item || typeof item.candidate !== "string") continue;
     const missing = Array.isArray(item.missing_evidence)
-      ? item.missing_evidence.map(String).join(", ")
+      ? item.missing_evidence.map(value => METRIC_LABELS[String(value)] || String(value).replaceAll("_", " ")).join(", ")
       : "missing evidence";
     const resolution = record(item.resolution);
     items.push({

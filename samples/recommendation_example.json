@@ -1,12 +1,16 @@
 {
   "schema_version": 1,
   "artifact_type": "recommendation",
+  "display": {
+    "title": "Synthetic multi-model recommendation",
+    "synthetic": true
+  },
   "constraints": {
     "workload": "llm",
     "case": "8K",
-    "accuracy_section": null,
+    "accuracy_section": "code",
     "primary_objective": "throughput",
-    "minimum_accuracy_pct": null,
+    "minimum_accuracy_pct": 75.0,
     "maximum_ttft_sec": 1.0,
     "minimum_throughput": 20.0,
     "concurrency": null,
@@ -15,7 +19,7 @@
     "minimum_efficiency_per_joule": null
   },
   "source_sha256": [
-    "2fff11437d2188d4c4c69c765b1f5076b0c57ad0dd4d9ad1d10fa474da08d26f"
+    "592390ea6616d87e9b707dca78f631d06a94c0e689eb125d343295bbd6f7e529"
   ],
   "verdict": "recommended",
   "recommended": [
@@ -44,7 +48,17 @@
             0.72
           ]
         },
-        "accuracy": null,
+        "accuracy": {
+          "value": 82.0,
+          "unit": "percent",
+          "evidence_path": "code/qwen3.5-4b-q4/accuracy_pct",
+          "raw_evidence_paths": [
+            "answers_code/qwen3.5-4b-q4"
+          ],
+          "trial_values": [
+            82.0
+          ]
+        },
         "memory": {
           "value": 5.8,
           "unit": "GB",
@@ -82,7 +96,44 @@
     }
   ],
   "tied": [],
-  "eliminated": [],
-  "unevaluated": [],
+  "eliminated": [
+    {
+      "candidate": "gemma4-12b-q4",
+      "reasons": [
+        {
+          "constraint": "accuracy",
+          "operator": "minimum",
+          "threshold": 75.0,
+          "measurement": {
+            "value": 68.0,
+            "unit": "percent",
+            "evidence_path": "code/gemma4-12b-q4/accuracy_pct",
+            "raw_evidence_paths": [
+              "answers_code/gemma4-12b-q4"
+            ],
+            "trial_values": [
+              68.0
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "unevaluated": [
+    {
+      "candidate": "qwen3.5-9b-q4",
+      "missing_evidence": [
+        "memory",
+        "memory_headroom",
+        "throughput",
+        "ttft"
+      ],
+      "resolution": {
+        "workload": "llm",
+        "case": "8K",
+        "accuracy_section": "code"
+      }
+    }
+  ],
   "resolution": null
 }
