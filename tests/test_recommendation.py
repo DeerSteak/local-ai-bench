@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from scripts.results.recommendation import (
-    evaluate_recommendation, parse_constraints, validate_recommendation_artifact,
+    candidate_evidence, evaluate_recommendation, parse_constraints,
+    validate_recommendation_artifact,
 )
 from scripts.results.recommendation_cli import main
 from tests.test_result_history import result as history_result
@@ -48,7 +49,7 @@ def request(**changes):
 
 
 def test_constraints_preserve_absent_values_and_reject_invalid_combinations():
-    parsed = parse_constraints({"workload": "llm"})
+    parsed = parse_constraints({"workload": "llm", "case": "8K"})
     assert parsed.maximum_ttft_sec is None
     assert parsed.minimum_throughput is None
     with pytest.raises(ValueError, match="accuracy_section is required"):
@@ -63,14 +64,17 @@ def test_constraints_preserve_absent_values_and_reject_invalid_combinations():
     with pytest.raises(ValueError, match="concurrency or case"):
         parse_constraints({"workload": "concurrency_chat", "case": "2", "concurrency": 2})
     with pytest.raises(ValueError, match="not available for image"):
-        parse_constraints({"workload": "images", "accuracy_section": "code"})
+        parse_constraints({"workload": "images", "case": "1024x1024",
+                           "accuracy_section": "code"})
+    with pytest.raises(ValueError, match="case is required"):
+        parse_constraints({"workload": "llm"})
 
 
 def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
     artifact = evaluate_recommendation(result(), request())
     assert artifact["verdict"] == "recommended"
-    assert [item["candidate"] for item in artifact["recommended"]] == ["accurate"]
-    eliminated = artifact["eliminated"][0]
+    assert [item["candidate"] for item in artifact["candidates"]["recommended"]] == ["accurate"]
+    eliminated = artifact["candidates"]["eliminated"][0]
     assert eliminated["candidate"] == "fast"
     assert eliminated["reasons"] == [{
         "constraint": "accuracy", "operator": "minimum", "threshold": 80.0,
@@ -80,12 +84,13 @@ def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
                 "trial_values": [70.0],
             },
     }]
-    assert "partial" not in [item["candidate"] for item in artifact["recommended"]]
+    assert "partial" not in [item["candidate"] for item in artifact["candidates"]["recommended"]]
 
 
 def test_missing_case_is_unevaluated_not_eliminated_and_names_the_run_needed():
     artifact = evaluate_recommendation(result(), request())
-    partial = next(item for item in artifact["unevaluated"] if item["candidate"] == "partial")
+    partial = next(item for item in artifact["candidates"]["unevaluated"]
+                   if item["candidate"] == "partial")
     assert partial["missing_evidence"] == ["throughput"]
     assert partial["resolution"] == {
         "workload": "llm", "case": "8K", "accuracy_section": "code",
@@ -98,13 +103,13 @@ def test_every_constraint_type_filters_at_its_boundary():
         maximum_memory_gb=12, minimum_memory_headroom_gb=12,
         minimum_efficiency_per_joule=9,
     ))
-    assert [item["candidate"] for item in exact["recommended"]] == ["accurate"]
+    assert [item["candidate"] for item in exact["candidates"]["recommended"]] == ["accurate"]
     failed = evaluate_recommendation(result(), request(
         minimum_accuracy_pct=90.01, maximum_ttft_sec=0.59, minimum_throughput=60.01,
         maximum_memory_gb=11.99, minimum_memory_headroom_gb=12.01,
         minimum_efficiency_per_joule=9.01,
     ))
-    reasons = {reason["constraint"] for item in failed["eliminated"]
+    reasons = {reason["constraint"] for item in failed["candidates"]["eliminated"]
                if item["candidate"] == "accurate" for reason in item["reasons"]}
     assert reasons == {"accuracy", "ttft", "throughput", "memory", "memory_headroom", "efficiency"}
 
@@ -112,9 +117,10 @@ def test_every_constraint_type_filters_at_its_boundary():
 def test_multiple_survivors_require_repeated_trials_and_emit_no_ranked_list():
     artifact = evaluate_recommendation(result(), request(minimum_accuracy_pct=60))
     assert artifact["verdict"] == "insufficient_evidence"
-    assert artifact["recommended"] == []
-    assert artifact["tied"] == []
-    assert {item["candidate"] for item in artifact["unevaluated"]
+    assert artifact["candidates"]["recommended"] == []
+    assert artifact["candidates"]["tied"] == []
+    assert artifact["candidates"]["other_eligible"] == []
+    assert {item["candidate"] for item in artifact["candidates"]["unevaluated"]
             if item["missing_evidence"] == ["qualified_repeated_trial_verdict"]} == {
                 "accurate", "fast",
             }
@@ -143,7 +149,7 @@ def test_qualified_repeated_trials_produce_tied_or_recommended_verdicts():
         request(minimum_accuracy_pct=60),
     )
     assert tied["verdict"] == "tied"
-    assert {item["candidate"] for item in tied["tied"]} == {"fast", "accurate"}
+    assert {item["candidate"] for item in tied["candidates"]["tied"]} == {"fast", "accurate"}
     recommended = evaluate_recommendation(
         repeated_results(
             [90, 90.2, 89.8, 90.1, 89.9],
@@ -152,7 +158,10 @@ def test_qualified_repeated_trials_produce_tied_or_recommended_verdicts():
         request(minimum_accuracy_pct=60),
     )
     assert recommended["verdict"] == "recommended"
-    assert recommended["recommended"][0]["candidate"] == "fast"
+    assert recommended["candidates"]["recommended"][0]["candidate"] == "fast"
+    assert [item["candidate"] for item in recommended["candidates"]["other_eligible"]] == [
+        "accurate",
+    ]
 
 
 def test_top_tie_is_preserved_when_another_survivor_is_reproducibly_worse():
@@ -167,7 +176,12 @@ def test_top_tie_is_preserved_when_another_survivor_is_reproducibly_worse():
         value["code"]["slow"] = {"accuracy_pct": 85}
     artifact = evaluate_recommendation(results, request(minimum_accuracy_pct=60))
     assert artifact["verdict"] == "tied"
-    assert {item["candidate"] for item in artifact["tied"]} == {"fast", "accurate"}
+    assert {item["candidate"] for item in artifact["candidates"]["tied"]} == {
+        "fast", "accurate",
+    }
+    assert [item["candidate"] for item in artifact["candidates"]["other_eligible"]] == [
+        "slow",
+    ]
 
 
 def test_incomplete_or_methodology_unknown_evidence_is_unevaluated():
@@ -176,7 +190,8 @@ def test_incomplete_or_methodology_unknown_evidence_is_unevaluated():
     del incomplete["run"]["plan"]["effective_config"]["methodology_profile"]
     artifact = evaluate_recommendation(incomplete, request())
     assert artifact["verdict"] == "insufficient_evidence"
-    accurate = next(item for item in artifact["unevaluated"] if item["candidate"] == "accurate")
+    accurate = next(item for item in artifact["candidates"]["unevaluated"]
+                    if item["candidate"] == "accurate")
     assert accurate["missing_evidence"] == ["complete_run", "methodology_profile"]
 
 
@@ -187,6 +202,17 @@ def test_incompatible_repeated_results_are_rejected_not_pooled():
         evaluate_recommendation(values, request(minimum_accuracy_pct=60))
 
 
+def test_duplicate_results_cannot_satisfy_independent_trial_minimum():
+    value = result()
+    with pytest.raises(ValueError, match="distinct independent result files"):
+        evaluate_recommendation([value] * 5, request(minimum_accuracy_pct=60))
+
+
+def test_unknown_case_is_a_request_error_with_available_cases():
+    with pytest.raises(ValueError, match="unknown case '8k'.*2K, 8K"):
+        evaluate_recommendation(result(), request(case="8k"))
+
+
 def test_no_code_path_emits_a_composite_score():
     artifact = evaluate_recommendation(result(), request())
     assert "score" not in repr(artifact).lower()
@@ -195,16 +221,31 @@ def test_no_code_path_emits_a_composite_score():
 def test_image_throughput_uses_images_per_second_without_reversing_the_filter():
     value = result()
     value["images"] = {
-        "quick": {"resolutions": {"1024x1024": {"sec_per_image_mean": 2}}},
-        "slow": {"resolutions": {"1024x1024": {"sec_per_image_mean": 4}}},
+        "quick": {"resolutions": {"1024x1024": {
+            "sec_per_image_mean": 3.33, "runs": [3.3, 3.36],
+        }}},
+        "slow": {"resolutions": {"1024x1024": {
+            "sec_per_image_mean": 4, "runs": [3.9, 4.1],
+        }}},
     }
     artifact = evaluate_recommendation(value, {
         "workload": "images", "case": "1024x1024", "primary_objective": "throughput",
-        "minimum_throughput": 0.4,
+        "minimum_throughput": 0.29,
     })
-    assert artifact["recommended"][0]["candidate"] == "quick"
-    assert artifact["recommended"][0]["evidence"]["throughput"]["value"] == 0.5
-    assert artifact["eliminated"][0]["candidate"] == "slow"
+    assert artifact["candidates"]["recommended"][0]["candidate"] == "quick"
+    evidence = artifact["candidates"]["recommended"][0]["evidence"]["throughput"]
+    assert evidence == {
+        "value": 0.3003,
+        "unit": "images_per_second",
+        "evidence_path": "images/quick/resolutions/1024x1024/sec_per_image_mean",
+        "raw_evidence_paths": ["images/quick/resolutions/1024x1024/runs"],
+        "source_value": 3.33,
+        "source_trial_values": [3.33],
+        "source_unit": "seconds_per_image",
+        "derivation": "reciprocal",
+        "trial_values": [0.3003],
+    }
+    assert artifact["candidates"]["eliminated"][0]["candidate"] == "slow"
 
 
 def test_empty_candidate_set_and_malformed_verdict_groups_are_explicit():
@@ -217,9 +258,28 @@ def test_empty_candidate_set_and_malformed_verdict_groups_are_explicit():
         "action": "run_missing_evidence", "workload": "llm", "case": "8K",
     }
     malformed = evaluate_recommendation(result(), request())
-    malformed["recommended"] = []
+    malformed["candidates"]["recommended"] = []
     with pytest.raises(ValueError, match="does not match"):
         validate_recommendation_artifact(malformed)
+    duplicate = evaluate_recommendation(result(), request())
+    duplicate["candidates"]["other_eligible"] = list(
+        duplicate["candidates"]["recommended"])
+    with pytest.raises(ValueError, match="exactly one outcome"):
+        validate_recommendation_artifact(duplicate)
+
+
+def test_shipped_image_sample_uses_real_resolution_paths_and_omits_absent_raw_runs():
+    value = json.loads(Path("samples/results_rtx4090-workstation.json").read_text(encoding="utf-8"))
+    evidence = candidate_evidence(
+        value, parse_constraints({
+            "workload": "images", "case": "1024x1024",
+            "primary_objective": "throughput",
+        }), "sdxl",
+    )["throughput"]
+    assert evidence["value"] == 0.3521
+    assert evidence["evidence_path"] == \
+        "images/sdxl/resolutions/1024x1024/sec_per_image_mean"
+    assert evidence["raw_evidence_paths"] == []
 
 
 def test_cli_writes_a_versioned_artifact_and_normalized_constraints(tmp_path):
@@ -254,4 +314,4 @@ def test_cli_rejects_nonfinite_and_malformed_constraint_files(tmp_path):
 def test_shared_dashboard_conformance_artifact_is_valid():
     artifact = json.loads(Path("samples/recommendation_example.json").read_text(encoding="utf-8"))
     validate_recommendation_artifact(artifact)
-    assert artifact["recommended"][0]["candidate"] == "qwen3.5-4b-q4"
+    assert artifact["candidates"]["recommended"][0]["candidate"] == "qwen3.5-4b-q4"

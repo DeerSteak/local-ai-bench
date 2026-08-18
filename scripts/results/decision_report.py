@@ -51,18 +51,19 @@ def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
         for key, value in as_dict(artifact.get("constraints")).items() if value is not None
     )
     candidates = []
+    candidate_groups = as_dict(artifact.get("candidates"))
     objective = as_dict(artifact.get("constraints")).get("primary_objective")
-    for group in ("recommended", "tied"):
-        for item in artifact.get(group) or ():
+    for group in ("recommended", "tied", "other_eligible"):
+        for item in candidate_groups.get(group) or ():
             evidence = as_dict(as_dict(item.get("evidence")).get(objective))
             candidates.append((
-                group.title(), _text(item.get("candidate")),
+                group.replace("_", " ").title(), _text(item.get("candidate")),
                 f"{_text(evidence.get('value'))} {_text(evidence.get('unit'), '')}".strip(),
                 ", ".join([str(evidence.get("evidence_path")), *(
                     str(path) for path in evidence.get("raw_evidence_paths") or ()
                 )]),
             ))
-    for item in artifact.get("eliminated") or ():
+    for item in candidate_groups.get("eliminated") or ():
         for reason in item.get("reasons") or ():
             measurement = as_dict(reason.get("measurement"))
             detail = f"{reason.get('constraint')} {reason.get('operator')} {reason.get('threshold')}"
@@ -72,7 +73,7 @@ def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
                     str(path) for path in measurement.get("raw_evidence_paths") or ()
                 )]),
             ))
-    for item in artifact.get("unevaluated") or ():
+    for item in candidate_groups.get("unevaluated") or ():
         candidates.append((
             "Unevaluated", _text(item.get("candidate")),
             ", ".join(str(value) for value in item.get("missing_evidence") or ()),

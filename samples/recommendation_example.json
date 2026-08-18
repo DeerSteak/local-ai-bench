@@ -22,118 +22,121 @@
     "592390ea6616d87e9b707dca78f631d06a94c0e689eb125d343295bbd6f7e529"
   ],
   "verdict": "recommended",
-  "recommended": [
-    {
-      "candidate": "qwen3.5-4b-q4",
-      "evidence": {
-        "throughput": {
-          "value": 61.5,
-          "unit": "tokens_per_second",
-          "evidence_path": "llm/qwen3.5-4b-q4/8K/tps_mean",
-          "raw_evidence_paths": [
-            "llm/qwen3.5-4b-q4/8K/valid_samples"
-          ],
-          "trial_values": [
-            61.5
-          ]
-        },
-        "ttft": {
-          "value": 0.72,
-          "unit": "seconds",
-          "evidence_path": "llm/qwen3.5-4b-q4/8K/ttft_mean_sec",
-          "raw_evidence_paths": [
-            "llm/qwen3.5-4b-q4/8K/valid_samples"
-          ],
-          "trial_values": [
-            0.72
-          ]
-        },
-        "accuracy": {
-          "value": 82.0,
-          "unit": "percent",
-          "evidence_path": "code/qwen3.5-4b-q4/accuracy_pct",
-          "raw_evidence_paths": [
-            "answers_code/qwen3.5-4b-q4"
-          ],
-          "trial_values": [
-            82.0
-          ]
-        },
-        "memory": {
-          "value": 5.8,
-          "unit": "GB",
-          "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/summary/process_rss_gb/peak_gb",
-          "raw_evidence_paths": [
-            "llm/qwen3.5-4b-q4/8K/memory/windows"
-          ],
-          "trial_values": [
-            5.8
-          ]
-        },
-        "memory_headroom": {
-          "value": 10.2,
-          "unit": "GB",
-          "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/headroom/absolute_gb",
-          "raw_evidence_paths": [
-            "llm/qwen3.5-4b-q4/8K/memory/windows"
-          ],
-          "trial_values": [
-            10.2
-          ]
-        },
-        "efficiency": {
-          "value": 10.0,
-          "unit": "tokens_per_joule",
-          "evidence_path": "llm/qwen3.5-4b-q4/8K/power/efficiency/per_joule",
-          "raw_evidence_paths": [
-            "llm/qwen3.5-4b-q4/8K/power/windows"
-          ],
-          "trial_values": [
-            10.0
-          ]
-        }
-      }
-    }
-  ],
-  "tied": [],
-  "eliminated": [
-    {
-      "candidate": "gemma4-12b-q4",
-      "reasons": [
-        {
-          "constraint": "accuracy",
-          "operator": "minimum",
-          "threshold": 75.0,
-          "measurement": {
-            "value": 68.0,
-            "unit": "percent",
-            "evidence_path": "code/gemma4-12b-q4/accuracy_pct",
+  "candidates": {
+    "recommended": [
+      {
+        "candidate": "qwen3.5-4b-q4",
+        "evidence": {
+          "throughput": {
+            "value": 61.5,
+            "unit": "tokens_per_second",
+            "evidence_path": "llm/qwen3.5-4b-q4/8K/tps_mean",
             "raw_evidence_paths": [
-              "answers_code/gemma4-12b-q4"
+              "llm/qwen3.5-4b-q4/8K/valid_samples"
             ],
             "trial_values": [
-              68.0
+              61.5
+            ]
+          },
+          "ttft": {
+            "value": 0.72,
+            "unit": "seconds",
+            "evidence_path": "llm/qwen3.5-4b-q4/8K/ttft_mean_sec",
+            "raw_evidence_paths": [
+              "llm/qwen3.5-4b-q4/8K/valid_samples"
+            ],
+            "trial_values": [
+              0.72
+            ]
+          },
+          "accuracy": {
+            "value": 82.0,
+            "unit": "percent",
+            "evidence_path": "code/qwen3.5-4b-q4/accuracy_pct",
+            "raw_evidence_paths": [
+              "answers_code/qwen3.5-4b-q4"
+            ],
+            "trial_values": [
+              82.0
+            ]
+          },
+          "memory": {
+            "value": 5.8,
+            "unit": "GB",
+            "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/summary/process_rss_gb/peak_gb",
+            "raw_evidence_paths": [
+              "llm/qwen3.5-4b-q4/8K/memory/windows"
+            ],
+            "trial_values": [
+              5.8
+            ]
+          },
+          "memory_headroom": {
+            "value": 10.2,
+            "unit": "GB",
+            "evidence_path": "llm/qwen3.5-4b-q4/8K/memory/headroom/absolute_gb",
+            "raw_evidence_paths": [
+              "llm/qwen3.5-4b-q4/8K/memory/windows"
+            ],
+            "trial_values": [
+              10.2
+            ]
+          },
+          "efficiency": {
+            "value": 10.0,
+            "unit": "tokens_per_joule",
+            "evidence_path": "llm/qwen3.5-4b-q4/8K/power/efficiency/per_joule",
+            "raw_evidence_paths": [
+              "llm/qwen3.5-4b-q4/8K/power/windows"
+            ],
+            "trial_values": [
+              10.0
             ]
           }
         }
-      ]
-    }
-  ],
-  "unevaluated": [
-    {
-      "candidate": "qwen3.5-9b-q4",
-      "missing_evidence": [
-        "memory",
-        "memory_headroom",
-        "throughput",
-        "ttft"
-      ],
-      "resolution": {
-        "workload": "llm",
-        "case": "8K",
-        "accuracy_section": "code"
       }
-    }
-  ],
+    ],
+    "tied": [],
+    "other_eligible": [],
+    "eliminated": [
+      {
+        "candidate": "gemma4-12b-q4",
+        "reasons": [
+          {
+            "constraint": "accuracy",
+            "operator": "minimum",
+            "threshold": 75.0,
+            "measurement": {
+              "value": 68.0,
+              "unit": "percent",
+              "evidence_path": "code/gemma4-12b-q4/accuracy_pct",
+              "raw_evidence_paths": [
+                "answers_code/gemma4-12b-q4"
+              ],
+              "trial_values": [
+                68.0
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "unevaluated": [
+      {
+        "candidate": "qwen3.5-9b-q4",
+        "missing_evidence": [
+          "memory",
+          "memory_headroom",
+          "throughput",
+          "ttft"
+        ],
+        "resolution": {
+          "workload": "llm",
+          "case": "8K",
+          "accuracy_section": "code"
+        }
+      }
+    ]
+  },
   "resolution": null
 }

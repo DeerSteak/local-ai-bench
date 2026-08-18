@@ -11,6 +11,7 @@
 .intro { margin: 18px 0 0; color: #53647c; }
 .recommended { border-top: 4px solid #17804d !important; }
 .tied { border-top: 4px solid #2c6f9e !important; }
+.other_eligible { border-top: 4px solid #66758b !important; }
 .eliminated { border-top: 4px solid #a93343 !important; }
 .unevaluated { border-top: 4px solid #c18a18 !important; }
 .constraints { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
