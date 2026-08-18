@@ -1,0 +1,86 @@
+import type { JsonRecord } from "./shared";
+
+export type RecommendationGroup = "recommended" | "tied" | "eliminated" | "unevaluated";
+
+export interface RecommendationDisplayItem {
+  group: RecommendationGroup;
+  candidate: string;
+  detail: string;
+  evidencePath: string | null;
+}
+
+function record(value: unknown): JsonRecord | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : null;
+}
+
+export function isRecommendationArtifact(value: unknown): value is JsonRecord {
+  const data = record(value);
+  return data?.artifact_type === "recommendation"
+    && data?.schema_version === 1
+    && ["recommended", "tied", "insufficient_evidence"].includes(String(data?.verdict))
+    && Array.isArray(data?.recommended)
+    && Array.isArray(data?.tied)
+    && Array.isArray(data?.eliminated)
+    && Array.isArray(data?.unevaluated);
+}
+
+export function recommendationArtifactLoadMode(values: unknown[]): "none" | "single" | "mixed" {
+  const count = values.filter(isRecommendationArtifact).length;
+  if (count === 0) return "none";
+  return count === 1 && values.length === 1 ? "single" : "mixed";
+}
+
+function evidenceDetail(item: JsonRecord, objective: string): { detail: string, path: string | null } {
+  const evidence = record(record(item.evidence)?.[objective]);
+  const value = evidence?.value;
+  const unit = typeof evidence?.unit === "string" ? evidence.unit : "";
+  return {
+    detail: typeof value === "number" ? `${value} ${unit}`.trim() : "Evidence recorded",
+    path: typeof evidence?.evidence_path === "string" ? evidence.evidence_path : null,
+  };
+}
+
+export function buildRecommendationDisplayItems(data: JsonRecord): RecommendationDisplayItem[] {
+  if (!isRecommendationArtifact(data)) return [];
+  const constraints = record(data.constraints);
+  const objective = typeof constraints?.primary_objective === "string"
+    ? constraints.primary_objective
+    : "objective";
+  const items: RecommendationDisplayItem[] = [];
+  for (const group of ["recommended", "tied"] as const) {
+    for (const value of data[group]) {
+      const item = record(value);
+      if (!item || typeof item.candidate !== "string") continue;
+      const evidence = evidenceDetail(item, objective);
+      items.push({ group, candidate: item.candidate, detail: evidence.detail, evidencePath: evidence.path });
+    }
+  }
+  for (const value of data.eliminated) {
+    const item = record(value);
+    if (!item || typeof item.candidate !== "string") continue;
+    const reasons = Array.isArray(item.reasons) ? item.reasons.map(record).filter(Boolean) : [];
+    const detail = reasons.map(reason =>
+      `${String(reason?.constraint)} ${String(reason?.operator)} ${String(reason?.threshold)}`,
+    ).join("; ") || "Constraint not met";
+    const measurement = record(reasons[0]?.measurement);
+    items.push({
+      group: "eliminated", candidate: item.candidate, detail,
+      evidencePath: typeof measurement?.evidence_path === "string" ? measurement.evidence_path : null,
+    });
+  }
+  for (const value of data.unevaluated) {
+    const item = record(value);
+    if (!item || typeof item.candidate !== "string") continue;
+    const missing = Array.isArray(item.missing_evidence)
+      ? item.missing_evidence.map(String).join(", ")
+      : "missing evidence";
+    const resolution = record(item.resolution);
+    items.push({
+      group: "unevaluated", candidate: item.candidate, detail: `Needs: ${missing}`,
+      evidencePath: typeof resolution?.evidence_path === "string" ? resolution.evidence_path : null,
+    });
+  }
+  return items;
+}

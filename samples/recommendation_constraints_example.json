@@ -1,9 +1,9 @@
 {
   "workload": "llm",
   "case": "8K",
-  "accuracy_section": "code",
+  "accuracy_section": null,
   "primary_objective": "throughput",
-  "minimum_accuracy_pct": 70,
+  "minimum_accuracy_pct": null,
   "maximum_ttft_sec": 1,
   "minimum_throughput": 20,
   "concurrency": null,
