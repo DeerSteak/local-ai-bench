@@ -63,7 +63,6 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
-from scripts.app.tk_utils import refresh_tk_layout
 from scripts.app.result_actions import (
     completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
@@ -289,7 +288,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
     loading = ttk.Frame(root, padding=24)
-    loading.grid(sticky="nsew")
+    loading.place(x=0, y=0, relwidth=1, relheight=1)
     loading_status = ttk.Label(loading, text="Discovering local runtimes and models…")
     loading_status.pack(anchor="nw")
     root.protocol("WM_DELETE_WINDOW", lambda: None)
@@ -381,7 +380,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
-    loading.tkraise()
+    loading.lift()
     configuration_screen = build_configuration_screen(
         notebook, tk=tk, ttk=ttk, discovery=discovery, advanced_var=advanced_var,
         preset_var=preset_var, project_status=project_status,
@@ -423,9 +422,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         run_active=lambda: process is not None and process.poll() is None,
     )
     root.update()
-    notebook.bind(
-        "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
-    )
     form = configuration_screen.form
     canvas = configuration_screen.canvas
     configuration_frame = configuration_screen.configuration_frame
