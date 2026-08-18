@@ -5,6 +5,7 @@ import math
 
 from scripts.results.canonical_json import sha256_json
 from scripts.results.result_store import as_dict
+from scripts.results.trial_set import MIN_INTERVAL_TRIALS, analyze_trial_metric, trial_set_compatibility
 
 
 RECOMMENDATION_SCHEMA_VERSION = 1
@@ -179,12 +180,69 @@ def _requirements(constraints: ConstraintSet) -> list[tuple[str, str, float, str
     return checks
 
 
-def evaluate_recommendation(result: dict, request: dict) -> dict:
+def _mean_measurement(measurements: list[dict]) -> dict:
+    first = measurements[0]
+    return {
+        "value": sum(item["value"] for item in measurements) / len(measurements),
+        "unit": first["unit"],
+        "evidence_path": first["evidence_path"],
+        "trial_values": [item["value"] for item in measurements],
+    }
+
+
+def _trial_metric(constraints: ConstraintSet) -> str | None:
+    if constraints.primary_objective == "accuracy":
+        return "accuracy_pct"
+    if constraints.primary_objective == "ttft":
+        return "client_ttft_mean_sec" if constraints.workload == "llm_conversation" \
+            else "ttft_mean_sec"
+    if constraints.primary_objective == "throughput":
+        if constraints.workload == "images":
+            return "sec_per_image_mean"
+        return "aggregate_tps" if constraints.workload.startswith("concurrency_") else "tps_mean"
+    return None
+
+
+def _rank_with_trials(eligible: list[dict], constraints: ConstraintSet) -> tuple[str, list[dict]]:
+    metric = _trial_metric(constraints)
+    if metric is None or any(len(item["evidence"][constraints.primary_objective]["trial_values"])
+                             < MIN_INTERVAL_TRIALS for item in eligible):
+        return "insufficient_evidence", []
+    best = eligible[0]
+    comparisons = []
+    for candidate in eligible[1:]:
+        comparisons.append(analyze_trial_metric(
+            metric,
+            candidate["evidence"][constraints.primary_objective]["trial_values"],
+            best["evidence"][constraints.primary_objective]["trial_values"],
+            paired=True,
+        ))
+    if all(comparison["verdict"] == "unchanged" for comparison in comparisons):
+        return "tied", eligible
+    if all(comparison["verdict"] == "improved" for comparison in comparisons):
+        return "recommended", [best]
+    return "insufficient_evidence", []
+
+
+def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
     """Filter candidates before ranking and preserve every exclusion or evidence gap."""
     constraints = parse_constraints(request)
+    results = result if isinstance(result, list) else [result]
+    if not results or any(not isinstance(item, dict) for item in results):
+        raise ValueError("recommendation requires at least one result object")
+    compatibility = trial_set_compatibility(results)
+    if not compatibility["compatible"]:
+        raise ValueError(
+            f"incompatible recommendation evidence: {', '.join(compatibility['incompatible_fields'])}")
     eligible, eliminated, unevaluated = [], [], []
-    for model in _candidate_models(result, constraints):
-        evidence = candidate_evidence(result, constraints, model)
+    models = sorted(set().union(*(_candidate_models(item, constraints) for item in results)))
+    for model in models:
+        trial_evidence = [candidate_evidence(item, constraints, model) for item in results]
+        evidence = {}
+        for metric in trial_evidence[0]:
+            measurements = [item[metric] for item in trial_evidence]
+            evidence[metric] = _mean_measurement(measurements) \
+                if all(measurement is not None for measurement in measurements) else None
         missing = sorted({metric for metric, *_ in _requirements(constraints)
                           if evidence.get(metric) is None})
         if missing:
@@ -224,23 +282,26 @@ def evaluate_recommendation(result: dict, request: dict) -> dict:
         verdict = "recommended"
         ranked = eligible
     else:
-        # Independent means cannot establish a close ordering; trial evidence is added separately.
-        verdict = "insufficient_evidence"
-        ranked = []
-        for item in eligible:
-            unevaluated.append({
-                "candidate": item["candidate"],
-                "missing_evidence": ["qualified_repeated_trial_verdict"],
-                "resolution": {"objective": objective, "evidence_path": item["evidence"][objective]["evidence_path"]},
-            })
+        verdict, ranked = _rank_with_trials(eligible, constraints)
+        if verdict == "insufficient_evidence":
+            for item in eligible:
+                unevaluated.append({
+                    "candidate": item["candidate"],
+                    "missing_evidence": ["qualified_repeated_trial_verdict"],
+                    "resolution": {
+                        "objective": objective,
+                        "evidence_path": item["evidence"][objective]["evidence_path"],
+                        "minimum_compatible_trials": MIN_INTERVAL_TRIALS,
+                    },
+                })
     return {
         "schema_version": RECOMMENDATION_SCHEMA_VERSION,
         "artifact_type": "recommendation",
         "constraints": request,
-        "source_sha256": [sha256_json(result)],
+        "source_sha256": [sha256_json(item) for item in results],
         "verdict": verdict,
         "recommended": ranked[:1] if verdict == "recommended" else [],
-        "tied": [],
+        "tied": ranked if verdict == "tied" else [],
         "eliminated": eliminated,
         "unevaluated": unevaluated,
     }

@@ -1,6 +1,7 @@
 import pytest
 
 from scripts.results.recommendation import evaluate_recommendation, parse_constraints
+from tests.test_result_history import result as history_result
 
 
 def result():
@@ -57,9 +58,10 @@ def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
     assert eliminated["candidate"] == "fast"
     assert eliminated["reasons"] == [{
         "constraint": "accuracy", "operator": "minimum", "threshold": 80.0,
-        "measurement": {
-            "value": 70.0, "unit": "percent", "evidence_path": "code/fast/accuracy_pct",
-        },
+            "measurement": {
+                "value": 70.0, "unit": "percent", "evidence_path": "code/fast/accuracy_pct",
+                "trial_values": [70.0],
+            },
     }]
     assert "partial" not in [item["candidate"] for item in artifact["recommended"]]
 
@@ -99,6 +101,48 @@ def test_multiple_survivors_require_repeated_trials_and_emit_no_ranked_list():
             if item["missing_evidence"] == ["qualified_repeated_trial_verdict"]} == {
                 "accurate", "fast",
             }
+
+
+def repeated_results(fast_values, accurate_values):
+    results = []
+    for index, (fast, accurate) in enumerate(zip(fast_values, accurate_values)):
+        value = result()
+        value.update({
+            "version": "4.1", "engine": "llamacpp", "profile": {"hostname": "system"},
+            "run": history_result(started=f"2026-01-{index + 1:02d}T00:00:00Z")["run"],
+        })
+        value["llm"]["fast"]["8K"]["tps_mean"] = fast
+        value["llm"]["accurate"]["8K"]["tps_mean"] = accurate
+        results.append(value)
+    return results
+
+
+def test_qualified_repeated_trials_produce_tied_or_recommended_verdicts():
+    tied = evaluate_recommendation(
+        repeated_results(
+            [80, 80.2, 79.8, 80.1, 79.9],
+            [79.5, 79.7, 79.3, 79.6, 79.4],
+        ),
+        request(minimum_accuracy_pct=60),
+    )
+    assert tied["verdict"] == "tied"
+    assert {item["candidate"] for item in tied["tied"]} == {"fast", "accurate"}
+    recommended = evaluate_recommendation(
+        repeated_results(
+            [90, 90.2, 89.8, 90.1, 89.9],
+            [70, 70.2, 69.8, 70.1, 69.9],
+        ),
+        request(minimum_accuracy_pct=60),
+    )
+    assert recommended["verdict"] == "recommended"
+    assert recommended["recommended"][0]["candidate"] == "fast"
+
+
+def test_incompatible_repeated_results_are_rejected_not_pooled():
+    values = repeated_results([80] * 5, [70] * 5)
+    values[-1]["profile"]["hostname"] = "other"
+    with pytest.raises(ValueError, match="hardware_identity"):
+        evaluate_recommendation(values, request(minimum_accuracy_pct=60))
 
 
 def test_no_code_path_emits_a_composite_score():
