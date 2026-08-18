@@ -139,16 +139,18 @@ class EmbeddingEventStage:
             "emb", self._model_id(model),
             {"corpus_hash": self.corpus_hash, "model_state": state},
         )
-        if case_id in self.store.rebuild(self.plan.job_id)["cases"]:
-            raise ValueError("embedding model state already recorded")
-        self.store.append(self.plan.job_id, [
-            JournalEvent("case", case_id, "running", {
+        existing = self.store.rebuild(self.plan.job_id)["cases"].get(case_id)
+        if existing and existing["state"] != "running":
+            return
+        events = []
+        if existing is None:
+            events.append(JournalEvent("case", case_id, "running", {
                 "case_kind": "model_state", "model_short": model["short"],
                 "model_label": model["label"], "corpus_hash": self.corpus_hash,
-            }, parent_id=self.stage_id),
-            JournalEvent("case", case_id, state, {"model_result": result},
-                         parent_id=self.stage_id),
-        ])
+            }, parent_id=self.stage_id))
+        events.append(JournalEvent("case", case_id, state, {"model_result": result},
+                                   parent_id=self.stage_id))
+        self.store.append(self.plan.job_id, events)
         self.export_fn(self.export())
 
     def export(self) -> dict:

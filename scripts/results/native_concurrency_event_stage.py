@@ -129,15 +129,17 @@ class NativeConcurrencyEventStage:
             "llamabenchconc", self._model_id(model), {"model_state": state},
         )
         projection = self.store.rebuild(self.plan.job_id)
-        if case_id in projection["cases"]:
+        existing = projection["cases"].get(case_id)
+        if existing and existing["state"] != "running":
             return
-        self.store.append(self.plan.job_id, [
-            JournalEvent("case", case_id, "running", {
+        events = []
+        if existing is None:
+            events.append(JournalEvent("case", case_id, "running", {
                 "case_kind": "model_state", "model_short": model["short"],
-            }, parent_id=self.stage_id),
-            JournalEvent("case", case_id, state, {"model_result": result},
-                         parent_id=self.stage_id),
-        ])
+            }, parent_id=self.stage_id))
+        events.append(JournalEvent("case", case_id, state, {"model_result": result},
+                                   parent_id=self.stage_id))
+        self.store.append(self.plan.job_id, events)
         self.export_fn(self.export())
 
     def record_model_complete(self, model: dict) -> None:

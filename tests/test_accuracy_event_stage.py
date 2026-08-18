@@ -85,6 +85,15 @@ def test_completed_question_is_not_pending_and_duplicate_commit_is_rejected(tmp_
         stage.close()
 
 
+def test_model_skip_is_idempotent_when_resume_rechecks_missing_model(tmp_path):
+    stage = make_stage(tmp_path / "events.sqlite3")
+    result = {"skipped": True, "skip_reason": "model_not_downloaded"}
+    stage.record_model_state(MODEL, "skipped", result)
+    stage.record_model_state(MODEL, "skipped", result)
+    assert stage.export_results()["model"] == {"label": "Model 4B", **result}
+    stage.close()
+
+
 def test_failed_question_resumes_at_next_attempt_without_rerunning_completed_case(tmp_path):
     path = tmp_path / "events.sqlite3"
     plan = make_plan()

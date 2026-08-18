@@ -50,6 +50,25 @@ def test_native_concurrency_resume_reports_completed_rows_across_interruption(tm
     resumed.close()
 
 
+def test_native_concurrency_resume_closes_reopened_model_state(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    stage = NativeConcurrencyEventStage(path, plan, lambda _: None, resume_identity=identity)
+    stage.record_model_state(MODEL, "timed_out", {"timed_out": True})
+    stage.close()
+    resumed = NativeConcurrencyEventStage(
+        path, plan, lambda _: None, resume=True, resume_identity=identity,
+    )
+    resumed.record_model_state(MODEL, "timed_out", {"timed_out": True})
+    resumed.finish()
+    projection = resumed.store.rebuild(plan.job_id)
+    assert all(case["state"] != "running" for case in projection["cases"].values())
+    assert resumed.export()["model"]["timed_out"] is True
+    resumed.close()
+
+
 def test_native_concurrency_remaining_sweeps_never_include_completed_cells():
     completed = {(512, 128, 1), (512, 256, 1), (512, 256, 2)}
     assert group_remaining_concurrency_sweeps(512, [128, 256], [1, 2], completed) == [

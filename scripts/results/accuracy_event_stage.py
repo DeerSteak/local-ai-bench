@@ -247,16 +247,18 @@ class AccuracyEventStage:
             self.stage_name, self._model_id(model),
             {"bank_hash": self.bank_hash, "model_state": state},
         )
-        if case_id in self.store.rebuild(self.plan.job_id)["cases"]:
-            raise ValueError("accuracy model state already recorded")
-        self.store.append(self.plan.job_id, [
-            JournalEvent("case", case_id, "running", {
+        existing = self.store.rebuild(self.plan.job_id)["cases"].get(case_id)
+        if existing and existing["state"] != "running":
+            return
+        events = []
+        if existing is None:
+            events.append(JournalEvent("case", case_id, "running", {
                 "case_kind": "model_state", "model_short": model["short"],
                 "model_label": model["label"], "bank_hash": self.bank_hash,
-            }, parent_id=self.stage_id),
-            JournalEvent("case", case_id, state, {"model_result": result},
-                         parent_id=self.stage_id),
-        ])
+            }, parent_id=self.stage_id))
+        events.append(JournalEvent("case", case_id, state, {"model_result": result},
+                                   parent_id=self.stage_id))
+        self.store.append(self.plan.job_id, events)
         self.export_fn(self.export_results(), self.export_answers())
 
     def record_model_evidence(self, model: dict, memory, power=None) -> None:

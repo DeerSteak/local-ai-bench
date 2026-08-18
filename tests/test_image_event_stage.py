@@ -107,6 +107,15 @@ def test_model_skip_projects_legacy_shape(tmp_path):
     stage.close()
 
 
+def test_model_skip_is_idempotent_when_resume_rechecks_missing_checkpoint(tmp_path):
+    stage = ImageEventStage(tmp_path / "events.sqlite3", make_plan(), lambda _: None)
+    result = {"skipped": True, "skip_reason": "checkpoint_not_found"}
+    stage.record_model_state(MODEL, "skipped", result)
+    stage.record_model_state(MODEL, "skipped", result)
+    assert stage.export()["sdxl"] == {"label": "SDXL", **result}
+    stage.close()
+
+
 def test_image_artifact_reference_is_strictly_validated(tmp_path):
     stage = ImageEventStage(tmp_path / "events.sqlite3", make_plan(), lambda _: None)
     with pytest.raises(ValueError, match="artifact reference"):

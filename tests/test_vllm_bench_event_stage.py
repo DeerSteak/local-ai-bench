@@ -80,6 +80,22 @@ def test_vllm_model_state_projects_exact_payload(tmp_path):
     stage.close()
 
 
+def test_vllm_reopened_model_failure_can_be_recorded_again(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    stage = VllmBenchEventStage(path, plan, lambda _: None, resume_identity=identity)
+    stage.record_model_state(MODEL, "failed", {"error": "first"})
+    stage.close()
+    resumed = VllmBenchEventStage(
+        path, plan, lambda _: None, resume=True, resume_identity=identity,
+    )
+    resumed.record_model_state(MODEL, "failed", {"error": "second"})
+    assert resumed.export()["model"] == {"error": "second"}
+    resumed.close()
+
+
 @pytest.mark.parametrize("completed", [0, 1, 3])
 def test_vllm_resume_skips_every_case_committed_before_interruption(tmp_path, completed):
     path = tmp_path / "events.sqlite3"
