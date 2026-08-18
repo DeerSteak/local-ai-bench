@@ -12,6 +12,7 @@
     "models": ["REPLACE_WITH_ONE_XSMALL_MODEL"],
     "notes": "Lifecycle smoke qualification; not a full-catalog performance qualification."
   },
+  "environment": {},
   "steps": {
     "install": {"command": ["REPLACE_WITH_INSTALL_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
     "discovery": {"command": ["REPLACE_WITH_DISCOVERY_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_after_seconds": null},

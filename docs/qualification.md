@@ -12,7 +12,7 @@ Use a separate performance qualification when a claim depends on catalog-wide co
 
 ## Recipe
 
-Copy [`samples/qualification_recipe_example.json`](../samples/qualification_recipe_example.json) outside the repository or into a private evidence workspace and replace every placeholder with an argv command. Commands are JSON arrays and are executed directly without a shell. Give install, upgrade, rollback, and uninstall commands an isolated qualification prefix; never point them at the normal installation or model store.
+Copy [`samples/qualification_recipe_example.json`](../samples/qualification_recipe_example.json) outside the repository or into a private evidence workspace and replace every placeholder with an argv command. Commands are JSON arrays and are executed directly without a shell. Give install, upgrade, rollback, and uninstall commands an isolated qualification prefix; never point them at the normal installation or model store. The recipe may record only the allowlisted non-secret runtime environment fields; credentials such as a Hugging Face token must be inherited at execution time and never written into the recipe or evidence.
 
 The cancellation command is the only command that may define `interrupt_after_seconds`. The runner launches it in its own process group, sends the platform interrupt signal after the delay, and accepts only the declared exit codes. Configure the delay so the smoke workload has entered a recoverable stage rather than merely started its launcher.
 

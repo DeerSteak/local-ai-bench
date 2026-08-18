@@ -13,10 +13,14 @@ from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.runtime import config
 
 
-RECIPE_KEYS = {"target", "coverage", "steps"}
+RECIPE_KEYS = {"target", "coverage", "environment", "steps"}
 TARGET_KEYS = {"id", "platform", "architecture", "runtime", "runtime_version", "backend"}
 COVERAGE_KEYS = {"workloads", "models", "notes"}
 STEP_KEYS = {"command", "timeout_seconds", "expected_exit_codes", "interrupt_after_seconds"}
+QUALIFICATION_ENV_KEYS = {
+    "HF_HOME", "TRANSFORMERS_CACHE", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
+    "HIP_VISIBLE_DEVICES",
+}
 
 
 def validate_qualification_recipe(recipe: dict) -> None:
@@ -36,6 +40,11 @@ def validate_qualification_recipe(recipe: dict) -> None:
             raise ValueError(f"qualification recipe coverage requires non-empty {key}")
     if not isinstance(coverage["notes"], str):
         raise ValueError("qualification recipe coverage notes must be text")
+    environment = recipe["environment"]
+    if (not isinstance(environment, dict)
+            or any(key not in QUALIFICATION_ENV_KEYS
+                   or not isinstance(value, str) for key, value in environment.items())):
+        raise ValueError("qualification environment contains an unsafe or unknown field")
     steps = recipe["steps"]
     if not isinstance(steps, dict) or set(steps) != set(QUALIFICATION_LIFECYCLE):
         raise ValueError("qualification recipe must define every lifecycle step")
@@ -78,6 +87,7 @@ def qualification_preview(recipe: dict, output_dir: Path) -> dict:
         "mode": "preview",
         "target": dict(recipe["target"]),
         "coverage": dict(recipe["coverage"]),
+        "environment": dict(recipe["environment"]),
         "output_dir": str(output_dir),
         "checkpoint": str(output_dir / "qualification-state.json"),
         "steps": [
@@ -165,13 +175,15 @@ def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def execute_qualification_step(step: dict, log_path: Path) -> tuple[int, str]:  # pragma: no cover
+def execute_qualification_step(step: dict, log_path: Path, environment: dict,
+                               ) -> tuple[int, str]:  # pragma: no cover
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
     start_new_session = os.name != "nt"
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             step["command"], stdout=log, stderr=subprocess.STDOUT, text=True,
             creationflags=creationflags, start_new_session=start_new_session,
+            env={**os.environ, **environment},
         )
         try:
             interrupt = step["interrupt_after_seconds"]
@@ -218,7 +230,9 @@ def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cov
         log_path = output_dir / f"{QUALIFICATION_LIFECYCLE.index(name) + 1:02d}-{name}.log"
         record["log"] = log_path.name
         _write_json(state_path, state)
-        exit_code, detail = execute_qualification_step(recipe["steps"][name], log_path)
+        exit_code, detail = execute_qualification_step(
+            recipe["steps"][name], log_path, recipe["environment"],
+        )
         record.update({
             "status": "passed" if exit_code in recipe["steps"][name]["expected_exit_codes"]
             else "failed",

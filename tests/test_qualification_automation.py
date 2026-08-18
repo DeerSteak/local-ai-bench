@@ -32,6 +32,7 @@ def recipe():
             "workloads": ["llm"], "models": ["llama3.2:3b-instruct-q4_K_M"],
             "notes": "Lifecycle smoke; not a full catalog performance qualification.",
         },
+        "environment": {"HF_HOME": "/qualification/vllm-cache"},
         "steps": steps,
     }
 
@@ -51,6 +52,13 @@ def test_only_cancellation_can_request_an_automatic_interrupt():
     value = recipe()
     value["steps"]["resume"]["interrupt_after_seconds"] = 2
     with pytest.raises(ValueError, match="only the cancellation"):
+        validate_qualification_recipe(value)
+
+
+def test_recipe_rejects_serialized_credentials():
+    value = recipe()
+    value["environment"]["HF_TOKEN"] = "must-not-be-recorded"
+    with pytest.raises(ValueError, match="unsafe or unknown"):
         validate_qualification_recipe(value)
 
 
