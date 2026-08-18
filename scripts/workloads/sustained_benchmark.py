@@ -93,6 +93,9 @@ def aligned_sustained_windows(
             "power_watts": _window_mean(
                 power_samples, "watts", start, end, measured_offset_sec,
             ),
+            "soc_package_c": _window_mean(
+                temperature_samples, "soc_package_c", start, end, measured_offset_sec,
+            ),
             "cpu_package_c": _window_mean(
                 temperature_samples, "cpu_package_c", start, end, measured_offset_sec,
             ),

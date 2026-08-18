@@ -8,10 +8,17 @@ describe("sustained utilities", () => {
       { timestamp_sec: 30, tokens_per_sec: 39, gpu_die_c: null, power_watts: null },
     ] });
     expect(data).toEqual([
-      { elapsed_min: 0, tokens_per_sec: 42, power_watts: 92, cpu_package_c: undefined, gpu_die_c: 61, gpu_hotspot_c: undefined },
-      { elapsed_min: 0.5, tokens_per_sec: 39, power_watts: null, cpu_package_c: undefined, gpu_die_c: null, gpu_hotspot_c: undefined },
+      { elapsed_min: 0, tokens_per_sec: 42, power_watts: 92, soc_package_c: undefined, cpu_package_c: undefined, gpu_die_c: 61, gpu_hotspot_c: undefined },
+      { elapsed_min: 0.5, tokens_per_sec: 39, power_watts: null, soc_package_c: undefined, cpu_package_c: undefined, gpu_die_c: null, gpu_hotspot_c: undefined },
     ]);
     expect(preferredTemperatureKey(data)).toBe("gpu_die_c");
+  });
+
+  it("prefers a unified SoC package temperature when present", () => {
+    const data = buildSustainedTimeline({
+      series: [{ timestamp_sec: 0, soc_package_c: 43, cpu_package_c: 50 }],
+    });
+    expect(preferredTemperatureKey(data)).toBe("soc_package_c");
   });
 
   it("tolerates absent and malformed series", () => {

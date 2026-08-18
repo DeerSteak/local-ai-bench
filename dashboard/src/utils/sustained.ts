@@ -2,7 +2,7 @@ import { entriesOf } from "./shared";
 import type { ChartRow, ResultsFile } from "../types";
 import type { JsonRecord } from "./shared";
 
-export const SUSTAINED_TEMPERATURE_KEYS = ["cpu_package_c", "gpu_die_c", "gpu_hotspot_c"] as const;
+export const SUSTAINED_TEMPERATURE_KEYS = ["soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c"] as const;
 
 export function sustainedSeries(modelData: JsonRecord[string]): JsonRecord[string][] {
   return Array.isArray(modelData?.series) ? modelData.series : [];
@@ -13,6 +13,7 @@ export function buildSustainedTimeline(modelData: JsonRecord[string]): ChartRow[
     elapsed_min: typeof window.timestamp_sec === "number" ? window.timestamp_sec / 60 : null,
     tokens_per_sec: window.tokens_per_sec,
     power_watts: window.power_watts,
+    soc_package_c: window.soc_package_c,
     cpu_package_c: window.cpu_package_c,
     gpu_die_c: window.gpu_die_c,
     gpu_hotspot_c: window.gpu_hotspot_c,

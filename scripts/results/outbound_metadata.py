@@ -33,7 +33,7 @@ POWER_EFFICIENCY_FIELDS = {"unit", "work_count", "per_joule"}
 TEMPERATURE_BLOCK_FIELDS = {"status", "reason", "windows", "provenance", "case_id"}
 TEMPERATURE_CHANNEL_FIELDS = {"peak_c", "mean_c", "final_c", "valid_samples"}
 TEMPERATURE_SAMPLE_FIELDS = {
-    "timestamp_sec", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c",
+    "timestamp_sec", "soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c",
 }
 SUSTAINED_MODEL_FIELDS = {
     "context_tokens", "server_context_tokens", "target_duration_sec", "actual_duration_sec",
@@ -48,7 +48,7 @@ SUSTAINED_REQUEST_FIELDS = {
 }
 SUSTAINED_SERIES_FIELDS = {
     "timestamp_sec", "duration_sec", "tokens", "tokens_per_sec", "host_ram_used_gb",
-    "process_rss_gb", "accelerator_memory_used_gb", "power_watts", "cpu_package_c",
+    "process_rss_gb", "accelerator_memory_used_gb", "power_watts", "soc_package_c", "cpu_package_c",
     "gpu_die_c", "gpu_hotspot_c",
 }
 SUSTAINED_ANALYSIS_FIELDS = {

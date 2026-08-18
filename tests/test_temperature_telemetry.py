@@ -61,17 +61,17 @@ def test_hwmon_parser_accepts_package_labels_and_rejects_unrelated_or_invalid_se
     assert parse_hwmon_temperature("Tctl", "201000") is None
 
 
-def test_apple_hid_aggregation_uses_only_named_cpu_and_gpu_sensor_families():
+def test_apple_hid_aggregation_combines_named_sensor_families_as_soc_package():
     assert aggregate_apple_hid_temperatures([
         ("pACC MTR Temp Sensor0", 50),
         ("eACC MTR Temp Sensor1", 46),
         ("GPU MTR Temp Sensor0", 44),
         ("gas gauge battery", 31),
         ("PMU tcal", 80),
-    ]) == TemperatureReading(cpu_package_c=48, gpu_die_c=44)
+    ]) == TemperatureReading(soc_package_c=140 / 3)
     assert aggregate_apple_hid_temperatures([
         ("PMU tdie1", 40), ("PMU tdie2", 42), ("NAND CH0 temp", 35),
-    ]) == TemperatureReading(cpu_package_c=41)
+    ]) == TemperatureReading(soc_package_c=41)
     assert aggregate_apple_hid_temperatures([
         ("PMU tdie1", 0), ("GPU MTR Temp Sensor0", 201),
     ]) is None
@@ -80,14 +80,14 @@ def test_apple_hid_aggregation_uses_only_named_cpu_and_gpu_sensor_families():
 def test_darwin_discovery_probes_apple_hid_and_preserves_available_channels():
     class Reader:
         def read(self):
-            return TemperatureReading(cpu_package_c=48, gpu_die_c=45)
+            return TemperatureReading(soc_package_c=48)
 
     status = discover_temperature_source(
         "Darwin", machine_name="arm64", which_fn=lambda _name: None,
         apple_reader_factory=Reader,
     )
     assert status == TemperatureAvailability(
-        True, {"cpu_package_c": "apple-hid", "gpu_die_c": "apple-hid"},
+        True, {"soc_package_c": "apple-hid"},
         locations={},
     )
 
@@ -121,15 +121,15 @@ def test_apple_hid_source_lifecycle_turns_reader_failure_into_missing_evidence()
         def read(self):
             calls.append("read")
             if len(calls) == 1:
-                return TemperatureReading(cpu_package_c=47)
+                return TemperatureReading(soc_package_c=47)
             raise OSError("sensor disappeared")
 
     source = AppleHidTemperatureSource(
-        TemperatureAvailability(True, {"cpu_package_c": "apple-hid"}),
+        TemperatureAvailability(True, {"soc_package_c": "apple-hid"}),
         reader_factory=Reader,
     )
     source.start()
-    assert source.read() == TemperatureReading(cpu_package_c=47)
+    assert source.read() == TemperatureReading(soc_package_c=47)
     assert source.read() == TemperatureReading()
     source.stop()
     assert source.read() == TemperatureReading()
@@ -144,7 +144,7 @@ def test_sampler_starts_and_stops_temperature_source():
 
         def read(self):
             calls.append("read")
-            return TemperatureReading(cpu_package_c=45)
+            return TemperatureReading(soc_package_c=45)
 
         def stop(self):
             calls.append("stop")
@@ -154,7 +154,7 @@ def test_sampler_starts_and_stops_temperature_source():
     assert calls[0] == "start"
     assert "read" in calls
     assert calls[-1] == "stop"
-    assert samples[0].cpu_package_c == 45
+    assert samples[0].soc_package_c == 45
 
 
 def write_hwmon(root: Path, device: str, name: str, label: str, value: str) -> None:
@@ -258,12 +258,13 @@ def test_temperature_block_preserves_aligned_timestamps_and_missing_channels():
         "peak_c": 70, "mean_c": 65, "final_c": 70, "valid_samples": 2,
     }
     assert block["windows"][0]["samples"] == [
-        {"timestamp_sec": 0, "cpu_package_c": None, "gpu_die_c": 60,
+        {"timestamp_sec": 0, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 60,
          "gpu_hotspot_c": None},
-        {"timestamp_sec": 1.25, "cpu_package_c": None, "gpu_die_c": 70,
+        {"timestamp_sec": 1.25, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 70,
          "gpu_hotspot_c": None},
     ]
     assert block["provenance"]["channels"] == {
+        "soc_package_c": {"source": "unsupported", "failed_samples": 0},
         "cpu_package_c": {"source": "unsupported", "failed_samples": 0},
         "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0},
         "gpu_hotspot_c": {"source": "unsupported", "failed_samples": 0},
@@ -306,7 +307,7 @@ def test_sampler_counts_each_missing_temperature_channel_without_losing_memory()
     assert captured.host_ram_used_gb == 10
     assert captured.gpu_die_c == 64
     assert sampler.temperature_failures == {
-        "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
+        "soc_package_c": 1, "cpu_package_c": 1, "gpu_die_c": 0, "gpu_hotspot_c": 1,
     }
 
 

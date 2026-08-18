@@ -285,7 +285,7 @@ class RunPlan:
                 raise ValueError("invalid execution setting: temperature_telemetry_interval_sec")
             sources = settings.get("temperature_sources")
             if not isinstance(sources, dict) or any(
-                    key not in {"cpu_package_c", "gpu_die_c", "gpu_hotspot_c"}
+                    key not in {"soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c"}
                     or not isinstance(value, str) or not value
                     for key, value in sources.items()):
                 raise ValueError("invalid execution setting: temperature_sources")

@@ -26,7 +26,7 @@ MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
 )
-TEMPERATURE_CHANNELS = ("cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
+TEMPERATURE_CHANNELS = ("soc_package_c", "cpu_package_c", "gpu_die_c", "gpu_hotspot_c")
 POWER_SCOPES = ("processor_package", "accelerator", "cpu_package", "whole_system", "unknown")
 ADL_PMLOG_MAX_SENSORS = 256
 ADL_PMLOG_ASIC_POWER = 23
@@ -66,6 +66,7 @@ class TelemetrySample:
     cpu_package_c: float | None = None
     gpu_die_c: float | None = None
     gpu_hotspot_c: float | None = None
+    soc_package_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,7 @@ class TemperatureReading:
     cpu_package_c: float | None = None
     gpu_die_c: float | None = None
     gpu_hotspot_c: float | None = None
+    soc_package_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -295,22 +297,16 @@ def parse_hwmon_temperature(label: str, raw_millicelsius: str) -> tuple[str, flo
 
 def aggregate_apple_hid_temperatures(
         sensors: Sequence[tuple[str, float]]) -> TemperatureReading | None:
-    cpu_values = [
+    soc_values = [
         temperature for name, value in sensors
-        if name.startswith(("pACC MTR Temp Sensor", "eACC MTR Temp Sensor", "PMU tdie"))
+        if name.startswith((
+            "pACC MTR Temp Sensor", "eACC MTR Temp Sensor", "GPU MTR Temp Sensor", "PMU tdie",
+        ))
         and (temperature := _valid_temperature(value)) is not None and temperature > 0
     ]
-    gpu_values = [
-        temperature for name, value in sensors
-        if name.startswith("GPU MTR Temp Sensor")
-        and (temperature := _valid_temperature(value)) is not None and temperature > 0
-    ]
-    if not cpu_values and not gpu_values:
+    if not soc_values:
         return None
-    return TemperatureReading(
-        cpu_package_c=sum(cpu_values) / len(cpu_values) if cpu_values else None,
-        gpu_die_c=sum(gpu_values) / len(gpu_values) if gpu_values else None,
-    )
+    return TemperatureReading(soc_package_c=sum(soc_values) / len(soc_values))
 
 
 class AppleHidTemperatureReader:
@@ -886,10 +882,8 @@ def discover_temperature_source(platform_name: str | None = None, *, which_fn=sh
         except (AttributeError, OSError, ValueError, ctypes.ArgumentError):
             reading = None
         if reading:
-            if reading.cpu_package_c is not None:
-                sources["cpu_package_c"] = "apple-hid"
-            if reading.gpu_die_c is not None:
-                sources["gpu_die_c"] = "apple-hid"
+            if reading.soc_package_c is not None:
+                sources["soc_package_c"] = "apple-hid"
     if platform_name == "Linux":
         cpu_locations = _discover_hwmon_cpu_paths(hwmon_root)
         if "cpu_package_c" in cpu_locations:
@@ -1666,6 +1660,7 @@ class TelemetrySampler:
             cpu_package_c=temperature.cpu_package_c,
             gpu_die_c=temperature.gpu_die_c,
             gpu_hotspot_c=temperature.gpu_hotspot_c,
+            soc_package_c=temperature.soc_package_c,
         )
 
     def _run(self) -> None:
