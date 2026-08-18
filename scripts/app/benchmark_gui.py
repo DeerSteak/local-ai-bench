@@ -282,6 +282,19 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
+    root = tk.Tk()
+    root.title(f"Local AI Bench v{config.VERSION}")
+    root.geometry("1080x820")
+    root.minsize(860, 650)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    loading = ttk.Frame(root, padding=24)
+    loading.grid(sticky="nsew")
+    loading_status = ttk.Label(loading, text="Discovering local runtimes and models…")
+    loading_status.pack(anchor="nw")
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
+    root.update()
+
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
     found_comfyui = find_comfyui_installation(
@@ -311,6 +324,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
+    loading_status.configure(text="Building benchmark controls…")
+    root.update()
 
     default_tests = build_test_entries(inventory)
     default_test_values = [entry.value for entry in default_tests if entry.checked]
@@ -324,13 +339,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     apply_hardware_model_defaults(custom_models, inventory, system_ram_gb)
     custom_model_defaults = {entry.value: entry.checked for entry in custom_models}
     apply_saved_model_selection(custom_models, saved)
-
-    root = tk.Tk()
-    root.title(f"Local AI Bench v{config.VERSION}")
-    root.geometry("1080x820")
-    root.minsize(860, 650)
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
 
     style = ttk.Style(root)
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
@@ -373,6 +381,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
+    loading.tkraise()
     configuration_screen = build_configuration_screen(
         notebook, tk=tk, ttk=ttk, discovery=discovery, advanced_var=advanced_var,
         preset_var=preset_var, project_status=project_status,
@@ -381,11 +390,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         model_vars=model_vars, model_defaults=custom_model_defaults,
         custom_models=custom_models, cap_var=cap_var, tg_vars=tg_vars,
     )
+    root.update()
     config_tab = configuration_screen.frame
     run_log_screen = build_run_log_screen(
         notebook, tk=tk, ttk=ttk, configuration_frame=config_tab,
     )
     history_screen = build_history_screen(notebook, tk=tk, ttk=ttk)
+    root.update()
     log_tab = run_log_screen.frame
     history_tab = history_screen.frame
     engines_tab, engine_management = build_engine_screen(
@@ -411,6 +422,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         llamacpp_model_probe=engine_updates.probe_llamacpp_model,
         run_active=lambda: process is not None and process.poll() is None,
     )
+    root.update()
     notebook.bind(
         "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
     )
@@ -1077,6 +1089,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     start_button.configure(command=start_run)
     stop_button.configure(command=stop_run)
     pause_button.configure(command=toggle_pause)
+    loading.destroy()
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
     root.after(100, poll_output)
