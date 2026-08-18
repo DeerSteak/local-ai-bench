@@ -313,3 +313,17 @@ def evaluate_recommendation(result: dict | list[dict], request: dict) -> dict:
         "eliminated": eliminated,
         "unevaluated": unevaluated,
     }
+
+
+def validate_recommendation_artifact(artifact: dict, *, source_result: dict | None = None) -> None:
+    if not isinstance(artifact, dict) or artifact.get("artifact_type") != "recommendation" \
+            or artifact.get("schema_version") != RECOMMENDATION_SCHEMA_VERSION:
+        raise ValueError("unsupported recommendation artifact")
+    if artifact.get("verdict") not in {"recommended", "tied", "insufficient_evidence"}:
+        raise ValueError("invalid recommendation verdict")
+    parse_constraints(as_dict(artifact.get("constraints")))
+    for field in ("source_sha256", "recommended", "tied", "eliminated", "unevaluated"):
+        if not isinstance(artifact.get(field), list):
+            raise ValueError(f"recommendation artifact field {field} must be a list")
+    if source_result is not None and sha256_json(source_result) not in artifact["source_sha256"]:
+        raise ValueError("recommendation artifact does not cite this result")

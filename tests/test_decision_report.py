@@ -2,10 +2,13 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.results.decision_report import (
     build_report_model, render_html, report_output_paths, write_html_report, write_pdf_report,
 )
 from scripts.results.decision_report_cli import main
+from scripts.results.recommendation import evaluate_recommendation
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -144,3 +147,46 @@ def test_report_renders_explicit_acceptance_without_changing_evidence_readiness(
     assert model.acceptance_decision == "REJECTED"
     assert model.acceptance == (("throughput", "fail", "50.0", "55.0", "2"),)
     assert "Acceptance decision: REJECTED" in render_html(model)
+
+
+def test_report_renders_authoritative_recommendation_without_reevaluating_it():
+    result = load("results_v4_1_complete.json")
+    recommendation = evaluate_recommendation(result, {
+        "workload": "llm", "case": "2K", "primary_objective": "throughput",
+        "minimum_throughput": 40,
+    })
+    model = build_report_model(result, recommendation=recommendation)
+    assert model.recommendation_verdict == "RECOMMENDED"
+    assert model.recommendation_candidates[0] == (
+        "Recommended", "golden", "50.0 tokens_per_second", "llm/golden/2K/tps_mean",
+    )
+    assert "Recommendation: RECOMMENDED" in render_html(model)
+
+
+def test_report_rejects_recommendation_for_a_different_source_result():
+    result = load("results_v4_1_complete.json")
+    other = load("results_v4_1_complete.json")
+    other["profile"]["hostname"] = "other"
+    recommendation = evaluate_recommendation(other, {
+        "workload": "llm", "case": "2K", "primary_objective": "throughput",
+    })
+    with pytest.raises(ValueError, match="does not cite this result"):
+        build_report_model(result, recommendation=recommendation)
+
+
+def test_report_cli_renders_recommendation_after_outbound_metadata_review(tmp_path):
+    result = load("results_v4_1_complete.json")
+    result_path = tmp_path / "result.json"
+    artifact_path = tmp_path / "recommendation.json"
+    report_path = tmp_path / "report.html"
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    artifact_path.write_text(json.dumps(evaluate_recommendation(result, {
+        "workload": "llm", "case": "2K", "primary_objective": "throughput",
+    })), encoding="utf-8")
+    assert main([
+        str(result_path), "--html", str(report_path), "--reviewed-metadata",
+        "--system-alias", "Reviewed system", "--recommendation", str(artifact_path),
+    ]) == 0
+    rendered = report_path.read_text(encoding="utf-8")
+    assert "Recommendation: RECOMMENDED" in rendered
+    assert "Reviewed system" in rendered
