@@ -12,6 +12,14 @@ from scripts.results.result_store import atomic_write_json
 
 
 IDENTITY_NAME = re.compile(r"^[A-Za-z0-9_.:@+-]+$")
+VOLATILE_ENVIRONMENT_FIELDS = {"timestamp"}
+
+
+def stable_environment(environment: dict | None) -> dict:
+    return {
+        key: value for key, value in (environment or {}).items()
+        if key not in VOLATILE_ENVIRONMENT_FIELDS
+    }
 
 
 def file_identity(path: Path) -> dict:
@@ -66,7 +74,7 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
         "execution": sha256_json(plan.execution_identity),
     }
     environment_identity = {
-        "profile_sha256": sha256_json(environment or {}),
+        "profile_sha256": sha256_json(stable_environment(environment)),
     }
     cache = load_digest_cache(digest_cache_path) \
         if digest_cache_path and use_digest_cache else None

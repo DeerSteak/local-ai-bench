@@ -4,7 +4,7 @@ import pytest
 
 from scripts.results.resume_policy import (
     assess_resume, build_engine_resume_identity, build_resume_identity,
-    cached_file_identity, file_identity, load_digest_cache,
+    cached_file_identity, file_identity, load_digest_cache, stable_environment,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -77,6 +77,13 @@ def test_engine_resume_identity_covers_selected_models_runtime_and_methodology(t
     assert identity["runtimes"]["llama-bench"] == file_identity(extra)
     assert len(identity["methodology"]["execution"]) == 64
     assert len(identity["environment"]["profile_sha256"]) == 64
+
+
+def test_resume_environment_excludes_only_the_volatile_run_timestamp():
+    first = {"os": "Darwin", "backend": "metal", "timestamp": "first"}
+    second = {"os": "Darwin", "backend": "metal", "timestamp": "second"}
+    assert stable_environment(first) == {"os": "Darwin", "backend": "metal"}
+    assert stable_environment(first) == stable_environment(second)
 
 
 def test_native_only_identity_does_not_require_server_runtime(tmp_path):
