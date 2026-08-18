@@ -59,7 +59,7 @@ These two tests measure genuinely different things, and their TTFT numbers are *
 
 The single-shot slow-model check applies at its first checkpoint (512 tokens): below 15 tok/s, deeper single-shot contexts are skipped unless `--force-all` is set. When single-shot and conversation run together, the conversation pre-flight also excludes a model with no usable single-shot data, a repeatable runner crash, a first-checkpoint timeout, or that first-checkpoint slow marker. A timeout only at a deeper single-shot context does not by itself exclude conversation. Running `--tests conv` alone has no single-shot pre-flight data, so it attempts every selected model.
 
-When an explicitly validated journal recovery is prepared, single-shot skips contexts already complete, records a new numbered attempt for an interrupted/failed/invalid/timed-out context, and retains every prior attempt as raw evidence. Compatible aggregates use only the latest attempt so a retry does not silently mix old and new samples. The normal benchmark launcher does not expose recovery yet; this behavior is an execution-kernel prerequisite rather than a claim that the current GUI can resume a run.
+When an explicitly validated journal recovery is prepared, single-shot skips contexts already complete, records a new numbered attempt for an interrupted/failed/invalid/timed-out context, and retains every prior attempt as raw evidence. Compatible aggregates use only the latest attempt so a retry does not silently mix old and new samples. Result History exposes this through **Inspect Recovery**, **Resume**, and **Retry Cases**.
 
 Conversation recovery must rebuild a model's cache from a fresh conversation because server KV state is not durable evidence. Reached checkpoints already complete are used only to reconstruct that cache and are not recorded again; the first incomplete checkpoint receives the new attempt. A reconstructed checkpoint cannot newly trigger the slow-model cutoff and prevent recovery from reaching the pending work.
 
@@ -198,11 +198,15 @@ SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and l
 
 Generated sample images are saved under `results/images_<hostname>_<timestamp>/` — see [Project Structure](project-structure.md). If `--out` puts the main JSON elsewhere, the image folder remains under `results/` and is named from that output stem.
 
+Each model/resolution pair is a journal-owned recovery case. All requested repetitions and the representative PNG save attempt complete before the case commits; a compatible resume skips committed resolutions and reruns only the interrupted, failed, or timed-out resolution. Generated PNGs keep their visible legacy names while a content-addressed copy and digest make the saved artifact durable; artifact metadata remains outside the compatible results JSON. Resume identity covers every existing selected checkpoint/workflow asset plus the selected ComfyUI entrypoint and interpreter bytes.
+
 ## Embeddings
 
 Two models — Nomic Embed Text and MixedBread Embed Large — measured on a single real-world task: chunking a real multi-chapter document (`scripts/workloads/data/sample_document.txt`, ~27 chapters) into paragraph-sized pieces (capped at 150 words each) and embedding every chunk from it in one call, the way a RAG ingestion pipeline actually embeds a document — rather than sweeping arbitrary batch sizes that don't correspond to real client behavior. The chunk cap also keeps every chunk safely under any embedding model's context length, regardless of the source document's formatting.
 
 Each model gets `--warmup` discarded calls first — the very first embed call against a freshly-loaded model pays a one-time model-load cost that has nothing to do with steady-state throughput, so it is absorbed before the `--runs` measured calls (default 3) rather than skewing them. Embedding calls use the engine interface's fixed 120-second request timeout.
+
+Each model's complete document batch is one journal-owned recovery case keyed by the model and full corpus-content hash. Its per-call wall/model-load timings, validity, aggregate throughput, and telemetry commit without retaining embedding vectors; a compatible resume skips completed models and reruns only an unfinished model batch. Changing the corpus requires a fork rather than mixing measurements from different input text.
 
 Under llama.cpp, `--llamacpp-no-repack` applies to embedding models because embeddings use the same `llama-server` model-loading path as generation, conversation, accuracy, and HTTP-concurrency workloads. It also applies to llama-bench concurrency through `llama-batched-bench`; the standard native workload is unchanged because `llama-bench` does not support the option. The setting does not affect vLLM or ComfyUI. It changes the runtime's internal weight layout, not the embedding calculation or result quality, and can trade reduced startup time and peak loading memory for lower CPU or partially offloaded throughput.
 
@@ -220,6 +224,8 @@ If you see repeated connection errors or crashes during the embedding tests (som
 All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding is deterministic (temperature 0), each workload makes one measured pass and ignores `--runs`.
 
 Question banks are validated when loaded, before any model inference begins: every question needs an ID and category, IDs must be unique, and each workload requires the fields it consumes during inference and scoring. Scoring repeats the common validation defensively for programmatically supplied questions but omits a missing optional breakdown value instead of discarding completed measurements.
+
+Each accuracy question is a journal-owned recovery case keyed by the model, full question-bank content hash, and question ID. Its graded value, raw response, timeout/token-budget/loop diagnostics, and attempt number commit before the next question starts; the aggregate result and `answers_<test>_*.json` sidecar are projections of those events. A compatible resume skips completed questions, while any bank-content change fails identity validation and requires a fork.
 
 ### MCQ
 
@@ -390,6 +396,8 @@ Like `llamabench`, this workload is inherently llama.cpp-specific and is skipped
 
 For each model, one `llama-batched-bench` subprocess sweeps the configured prompt, generation, and parallel-sequence matrix. Every valid JSONL row is checkpointed as it arrives, so an idle timeout or later failure preserves earlier matrix cases with requested/completed counts and diagnostics. Context fitting, explicit `-ngl`, and engine shutdown remain as before.
 
+Resume preserves the one-process-per-model shape for a fresh run and partitions only the unfinished `(tg, pl)` cells into the fewest Cartesian native sweeps that do not include a committed row. It never duplicates completed evidence or presents selected-row retry that the native command cannot honor.
+
 This build of `llama-batched-bench` prints nothing to stderr and has no `--progress` flag, so progress comes from stdout instead: results are requested as `--output-format jsonl`, one JSON object per (pp, tg, pl) combination, and each line is parsed and logged as it arrives. Blank or non-JSON lines are ignored. The same idle timeout as `llamabench` applies (`config.LLAMABENCH_TIMEOUT`) — the sweep is killed only if no output arrives for that long, not after a fixed total duration.
 
 Each model's `llamabenchconc` result is either `{"entries": [...], "pp": <effective prompt depth>, "ctx_size": <-c value used>}` — where `entries` are the parsed JSONL rows verbatim, with `llama-batched-bench`'s own field names (`pp`, `tg`, `pl`, `n_kv`, `t_pp`, `speed_pp`, `t_tg`, `speed_tg`, `t`, `speed`, ...) — or `{"error": "..."}`.
@@ -412,6 +420,8 @@ Two subcommands run per size, both offline — they load the weights themselves 
 KV-cache precision stays consistent within each engine so the server and native cross-checks do not silently test different cache formats. `llama-bench` and `llama-batched-bench` receive the same `q8_0` cache used by llama-server, falling back to `f16` for tensor split; `vllm bench latency` and `throughput` receive the same supported `fp8` or fallback `auto` selected for the managed vLLM server.
 
 Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
+
+Each completed latency or throughput size is committed to the event journal before the next subprocess starts. Resume skips committed sizes and gives an interrupted, failed, or timed-out size a new numbered attempt; selected-case retry can target one eligible size without rerunning other completed evidence.
 
 Requires the benchmark extra, which the base vLLM package does not include — setup installs `vllm[bench]` (see [Setup](setup.md)). If `vllm bench` is unavailable the test prints the `pip install 'vllm[bench]'` hint and records nothing rather than failing the run.
 

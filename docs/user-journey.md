@@ -24,7 +24,7 @@ Cancel requests interruption, escalates bounded process termination if necessary
 
 ## 6. Resume, retry, or fork
 
-Resume is allowed only when plan, model artifact, runtime, methodology, and case-boundary identity match. Completed valid cases are not rerun. A changed identity requires a fork with a new job/run lineage; a user may also intentionally start a fresh run. Retry targets explicitly failed/incomplete work and never overwrites the prior source evidence. The current GUI records safe resume/fork foundations, while complete moderated pause/resume/retry interaction remains a release gate.
+Resume is allowed only when plan, model artifact, runtime, methodology, and case-boundary identity match. Completed valid cases are not rerun. A changed identity requires a fork with a new job/run lineage; a user may also intentionally start a fresh run. Retry targets explicitly failed/incomplete case-addressable work and never overwrites prior attempt evidence. Result History provides inspect, resume, selected retry, fork, pause, and stop controls.
 
 ## 7. Review evidence
 

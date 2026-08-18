@@ -71,6 +71,7 @@ def test_run_artifact_paths_cover_run_journal_sidecars_images_and_regrades(tmp_p
         "results_Host_20260101_000000_vllm.events.sqlite3-wal",
         "results_Host_20260101_000000_vllm.events.sqlite3-shm",
         "results_Host_20260101_000000_vllm.events.sqlite3-journal",
+        "results_Host_20260101_000000_vllm.events.sqlite3.local.json",
         "log_Host_20260101_000000_vllm.txt",
         "images_Host_20260101_000000_vllm",
         "regraded_results_Host_20260101_000000_vllm.json",
@@ -86,6 +87,8 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     result_path.write_text("{}", encoding="utf-8")
     journal = result_path.with_suffix(".events.sqlite3")
     journal.write_bytes(b"sqlite")
+    local_context = Path(f"{journal.resolve()}.local.json")
+    local_context.write_text("{}", encoding="utf-8")
     wal = Path(f"{journal}-wal")
     wal.write_bytes(b"wal")
     shm = Path(f"{journal}-shm")
@@ -105,7 +108,9 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     removed, failures = delete_run_artifacts(result_path, tmp_path)
 
     assert failures == {}
-    assert set(removed) == {result_path, journal, wal, shm, answer, log, images, regraded}
+    assert set(removed) == {
+        result_path, journal, local_context, wal, shm, answer, log, images, regraded,
+    }
     assert unrelated.is_file()
     assert existing_run_artifacts(result_path, tmp_path) == []
 

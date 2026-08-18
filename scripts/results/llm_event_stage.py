@@ -32,6 +32,14 @@ def event_store_path(result_path: Path) -> Path:
     return Path(result_path).with_suffix(".events.sqlite3")
 
 
+def result_path_from_event_store(path: Path) -> Path:
+    path = Path(path)
+    suffix = ".events.sqlite3"
+    if not path.name.endswith(suffix):
+        raise ValueError("event-store path must end with .events.sqlite3")
+    return path.with_name(f"{path.name[:-len(suffix)]}.json")
+
+
 def measurement_payload(measurement: GenerationMeasurement) -> dict:
     values = asdict(measurement)
     return {key: values[key] for key in MEASUREMENT_FIELDS}
@@ -103,15 +111,16 @@ class LLMEventStage:
             return None
         if case_id in self.recovery_attempts:
             return self.recovery_attempts[case_id]
+        stage = projection["stages"].get(self.stage_id, {})
+        if (stage.get("recovery_scope") == "selected"
+                and case_id not in stage.get("selected_case_ids", [])):
+            return None
         if case.get("recovery") == "retry":
             numbers = [
                 attempt.get("number", 0) for attempt in projection["attempts"].values()
                 if attempt["parent_id"] == case_id
             ]
             return max(numbers, default=0) + 1
-        stage = projection["stages"].get(self.stage_id, {})
-        if stage.get("recovery_scope") == "selected":
-            return None
         raise ValueError("incomplete case was not prepared for recovery")
 
     def record_model_state(self, model: dict, state: str, result: dict) -> None:

@@ -16,10 +16,11 @@ from typing import Any, Protocol
 
 from scripts.runtime import config
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
+from scripts.stage_registry import JOURNAL_STAGES
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
-SUPPORTED_RUNNER_STAGES = {"conc_chat", "conc_tool", "conv", "llamabench", "llm", "sustained"}
+SUPPORTED_RUNNER_STAGES = JOURNAL_STAGES
 
 
 class SupervisedProcess(Protocol):

@@ -182,7 +182,7 @@ class MathBenchmark:
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
             answers_path: Path | None = None,
-            telemetry=None):  # pragma: no cover — orchestrates real engine runs
+            telemetry=None, journal=None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else MathBenchmark.load_questions()
         return Shared.run_accuracy_benchmark(
             section_label="Math", skip_label="math", question_noun="math questions",
@@ -192,4 +192,5 @@ class MathBenchmark:
             rescore_partial_fn=lambda q, text: MathBenchmark.parse_answer(text),
             score_fn=MathBenchmark.score,
             save_fn=save_fn, answers_path=answers_path, progress_stage="math", telemetry=telemetry,
+            journal=journal,
         )

@@ -478,6 +478,7 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
         "action": "fork", "plan_id": "plan-1", "interrupted_attempts": 2,
         "stage_states": {"llm": "interrupted"},
         "case_counts": {"complete": 17, "timed_out": 1},
+        "stage_case_counts": {"llm": {"complete": 17, "timed_out": 1}},
         "retryable_cases": [{
             "case_id": "case_1", "stage": "llm", "label": "model · 8K",
             "state": "timed_out", "model": "model",
@@ -487,6 +488,7 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
     assert "Decision: FORK" in detail
     assert "llm: interrupted" in detail
     assert "complete: 17" in detail
+    assert "llm: complete=17, timed_out=1" in detail
     assert "llm: model · 8K (timed_out)" in detail
     assert "runtime identity changed" in detail
     fork = fork_executor_command(result, tmp_path / "fork.json", python_executable="python")
@@ -535,6 +537,22 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
         ("llm", tag, "Gemma 3 1B"),
     ]
     assert recovery_progress_entries(plan, {"other"}) == []
+
+
+def test_recovery_progress_entries_include_embedding_and_image_models():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp",
+        tests=["emb", "img"], stage_order=["emb", "img"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "nomic-embed-text", "short": "nomic-embed-text"}],
+            "images": [{"short": "sdxl"}],
+        }, effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+    assert [(entry.kind, entry.value, entry.label)
+            for entry in recovery_progress_entries(plan)] == [
+        ("embedding", "nomic-embed-text", "Nomic Embed Text"),
+        ("image", "sdxl", "SDXL"),
+    ]
 
 
 def test_discovery_report_summarizes_readiness_without_mutation():
@@ -610,7 +628,7 @@ def test_history_row_height_tracks_scaled_font_height(line_height, expected):
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     metrics = {
         "total_models": 2, "finished_models": set(), "usable_models": set(),
-        "retries": 0, "valid": 0, "invalid": 0,
+        "retries": 0, "valid": 0, "invalid": 0, "last_completion_elapsed": None,
     }
     metrics = update_progress_metrics(
         metrics, {"kind": "measurement", "stage": "llm", "status": "retrying", "model": "A"},
@@ -620,6 +638,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     terminal = {
         "kind": "model", "stage": "llm", "status": "complete", "model": "A", "usable": True,
+        "elapsed_seconds": 30,
     }
     metrics = update_progress_metrics(metrics, terminal)
     metrics = update_progress_metrics(metrics, terminal)
@@ -628,6 +647,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 2)
     assert metrics["usable_models"] == {("llm", "A")}
+    assert metrics["last_completion_elapsed"] == 30
     assert progress_summary_rows(metrics) == {
         "Finished models": "2 / 2",
         "Usable coverage": "1 / 2",
@@ -636,11 +656,13 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     }
 
 
-@pytest.mark.parametrize(("elapsed", "completed", "total", "expected"), [
-    (60, 1, 4, 180), (60, 4, 4, 0), (60, 0, 4, None), (-1, 1, 4, None),
+@pytest.mark.parametrize(("elapsed", "completed", "total", "calibrated", "expected"), [
+    (60, 1, 4, None, 180), (75, 1, 4, 60, 165), (90, 2, 4, 80, 70),
+    (60, 4, 4, 60, 0), (60, 0, 4, None, None), (-1, 1, 4, None, None),
+    (30, 1, 4, 40, None),
 ])
-def test_remaining_time_estimate(elapsed, completed, total, expected):
-    assert estimate_remaining_seconds(elapsed, completed, total) == expected
+def test_remaining_time_estimate(elapsed, completed, total, calibrated, expected):
+    assert estimate_remaining_seconds(elapsed, completed, total, calibrated) == expected
 
 
 def test_process_resource_usage_includes_child_processes():

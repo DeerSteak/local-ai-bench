@@ -5,13 +5,26 @@ from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
     temperature_telemetry_requested,
 )
-from scripts.runtime.engines.base import GenerationMeasurement
+from scripts.runtime.engines.base import EmbeddingMeasurement, GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
+from scripts.results.accuracy_event_stage import AccuracyEventStage
+from scripts.results.embedding_event_stage import EmbeddingEventStage, export_embeddings
+from scripts.results.image_event_stage import ImageEventStage, export_images
+from scripts.results.local_execution_context import (
+    LocalExecutionContext, write_local_execution_context,
+)
+from scripts.runtime import supervised_stage
+from scripts.runtime.shared import Shared
+from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
+from scripts.results.vllm_bench_event_stage import VllmBenchEventStage
 from scripts.results.run_plan import RunPlan
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 from scripts.runtime.workload_runner import (
-    create_case_telemetry, inherited_power_availability, inherited_temperature_availability,
+    create_case_telemetry, execute_embedding_job, execute_image_job,
+    inherited_power_availability,
+    inherited_temperature_availability,
 )
 
 
@@ -403,6 +416,73 @@ def test_generic_supervisor_projects_native_stage(tmp_path):
     assert result["fake"]["completed_cases"] == 1
 
 
+def test_generic_supervisor_projects_vllm_bench_stage(tmp_path):
+    base = make_plan()
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="vllm", tests=["vllmbench"],
+        stage_order=["vllmbench"], models=base.models,
+        effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec):
+            assert spec.stage == "vllmbench"
+
+        def run(self, callback):
+            stage = VllmBenchEventStage(path.resolve(), plan, lambda _: None, initialize=False)
+            stage.record_case(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                "latency", 512, 128,
+                {"input_len": 512, "output_len": 128, "avg_latency_sec": 1.0}, 1,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(plan, path, "vllmbench", lambda _: None, Supervisor)
+    assert result["fake"]["completed_cases"] == 1
+
+
+def test_generic_supervisor_projects_native_concurrency_stage(tmp_path):
+    base = make_plan()
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp", tests=["llamabenchconc"],
+        stage_order=["llamabenchconc"], models=base.models,
+        effective_config=base.effective_config,
+    )
+    path = tmp_path / "events.sqlite3"
+
+    class Supervisor:
+        def __init__(self, spec): assert spec.stage == "llamabenchconc"
+
+        def run(self, callback):
+            stage = NativeConcurrencyEventStage(
+                path.resolve(), plan, lambda _: None, initialize=False,
+            )
+            model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
+            stage.record_model_plan(model, 512, 2048, 1)
+            stage.record_entry(model, {"pp": 512, "tg": 128, "pl": 1})
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(
+        plan, path, "llamabenchconc", lambda _: None, Supervisor,
+    )
+    assert result["fake"]["completed_cases"] == 1
+
+
 def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
     base = make_plan()
     models = base.models
@@ -440,6 +520,233 @@ def test_generic_supervisor_projects_concurrency_model_family(tmp_path):
 
     result = run_supervised_stage(plan, path, "conc_tool", lambda _: None, Supervisor)
     assert result["fake"]["1"]["aggregate_tps"] == 45
+
+
+def test_supervised_embedding_projects_committed_batch(tmp_path):
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed:model", "short": "embed"}], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+        },
+    )
+    identity = {
+        "plan_id": plan.plan_id,
+        "artifacts": {"corpus:embeddings": {"sha256": "corpus", "size": 1}},
+        "runtimes": {}, "methodology": {},
+    }
+    path = (tmp_path / "results.events.sqlite3").resolve()
+
+    class Supervisor:
+        def __init__(self, spec): assert spec.stage == "emb"
+
+        def run(self, callback):
+            stage = EmbeddingEventStage(
+                path, plan, "corpus", lambda _: None, initialize=False,
+            )
+            stage.record_batch(
+                {"tag": "embed:model", "short": "embed", "label": "Embed"},
+                [EmbeddingMeasurement([], 0.5)], "ok", 2, 1,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(
+        plan, path, "emb", lambda _: None, Supervisor, resume_identity=identity,
+    )
+    assert result["embed"]["chunks_per_sec_mean"] == 4.0
+
+
+def test_supervised_image_projects_committed_resolution(tmp_path):
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    path = (tmp_path / "results.events.sqlite3").resolve()
+
+    class Supervisor:
+        def __init__(self, spec): assert spec.stage == "img"
+
+        def run(self, callback):
+            stage = ImageEventStage(path, plan, lambda _: None, initialize=False)
+            stage.record_resolution(
+                {"short": "sdxl", "label": "SDXL", "checkpoint": "sdxl", "steps": 20},
+                1024, 1024, [2.0], 1,
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(
+        plan, path, "img", lambda _: None, Supervisor, resume_identity=identity,
+    )
+    assert result["sdxl"]["resolutions"]["1024x1024"]["sec_per_image_mean"] == 2.0
+
+
+def test_embedding_runner_reconstructs_plan_and_commits_projection(monkeypatch, tmp_path):
+    from scripts.runtime import workload_runner
+
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "nomic-embed-text", "short": "nomic"}], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512], "llamabench_tg": [128],
+            "sample_size": None, "concurrency_tool_levels": [1],
+            "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
+            "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+        },
+    )
+    identity = {
+        "plan_id": plan.plan_id,
+        "artifacts": {"corpus:embeddings": {"sha256": "corpus", "size": 1}},
+        "runtimes": {}, "methodology": {},
+    }
+    path = tmp_path / "events.sqlite3"
+    owner = EmbeddingEventStage(path, plan, "corpus", lambda _: None,
+                                resume_identity=identity)
+    owner.close()
+
+    class Engine:
+        def start(self, **_kwargs): return True
+        def available(self): return False
+
+    class Benchmark:
+        def run(self, *, models, journal, **_kwargs):
+            assert models[0]["label"] == "Nomic Embed Text"
+            journal.record_batch(
+                models[0], [EmbeddingMeasurement([], 0.5)], "ok", 2, 1,
+            )
+            journal.finish()
+
+    monkeypatch.setattr(workload_runner, "apply_offline_mode", lambda _value: None)
+    monkeypatch.setattr(workload_runner, "configure_runner_engine", lambda *_args: None)
+    monkeypatch.setattr(workload_runner, "create_case_telemetry", lambda _settings: None)
+    monkeypatch.setattr(workload_runner.Shared, "detect_backend", lambda: "cpu")
+    monkeypatch.setattr(workload_runner.Shared, "shutdown_managed", lambda: None)
+    monkeypatch.setattr(workload_runner, "emit", lambda *_args, **_kwargs: None)
+    execute_embedding_job(
+        path, plan.job_id, engine_factory=lambda _name: Engine(),
+        benchmark_factory=lambda: Benchmark(),
+    )
+    assert export_embeddings(path, plan.job_id)["nomic"][
+        "chunks_per_sec_mean"
+    ] == 4.0
+
+
+def test_image_runner_uses_private_paths_and_commits_projection(monkeypatch, tmp_path):
+    from scripts.runtime import workload_runner
+
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512], "llamabench_tg": [128],
+            "sample_size": None, "concurrency_tool_levels": [1],
+            "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
+            "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+        },
+    )
+    identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
+                "methodology": {}}
+    path = tmp_path / "events.sqlite3"
+    owner = ImageEventStage(path, plan, lambda _: None, resume_identity=identity)
+    owner.close()
+    comfyui = (tmp_path / "Custom ComfyUI").resolve()
+    images = (tmp_path / "Custom Images").resolve()
+    write_local_execution_context(
+        path, LocalExecutionContext(plan.job_id, comfyui, images),
+    )
+
+    class Benchmark:
+        def run(self, *, image_models, comfyui_dir, images_dir, journal, **_kwargs):
+            assert image_models[0]["label"] == "SDXL"
+            assert (comfyui_dir, images_dir) == (comfyui, images)
+            journal.record_resolution(image_models[0], 1024, 1024, [2.0], 1)
+            journal.finish()
+
+    monkeypatch.setattr(workload_runner, "apply_offline_mode", lambda _value: None)
+    monkeypatch.setattr(workload_runner, "create_case_telemetry", lambda _settings: None)
+    monkeypatch.setattr(workload_runner.Shared, "shutdown_managed", lambda: None)
+    monkeypatch.setattr(workload_runner, "emit", lambda *_args, **_kwargs: None)
+    execute_image_job(
+        path, plan.job_id, benchmark_factory=lambda: Benchmark(),
+        ensure_comfyui=lambda selected: selected == comfyui,
+    )
+    assert export_images(path, plan.job_id)["sdxl"]["resolutions"]["1024x1024"][
+        "sec_per_image_mean"
+    ] == 2.0
+
+
+def test_supervised_accuracy_projects_committed_question(monkeypatch, tmp_path):
+    questions = [{
+        "id": "q1", "category": "general", "choices": {"A": "x", "B": "y"},
+        "answer": "B",
+    }]
+    monkeypatch.setattr(supervised_stage, "selected_questions", lambda _stage, _sample: questions)
+    monkeypatch.setattr(Shared, "file_hash", lambda _path: "bank-v1")
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["mcq"],
+        stage_order=["mcq"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+        },
+    )
+    path = (tmp_path / "results.events.sqlite3").resolve()
+
+    class Supervisor:
+        def __init__(self, _spec): pass
+
+        def run(self, callback):
+            stage = AccuracyEventStage(
+                path, plan, "mcq", questions, "bank-v1", MCQBenchmark.score,
+                lambda _results, _answers: None, initialize=False,
+            )
+            stage.record_question(
+                {"tag": "fake:model", "short": "fake", "label": "Fake"},
+                "q1", "B", "The answer is B", "ok",
+            )
+            stage.finish()
+            stage.close()
+            callback({"kind": "event"})
+            callback({"kind": "terminal", "status": "complete"})
+            return 0
+
+        @staticmethod
+        def cancel(): pass
+
+    result = run_supervised_stage(plan, path, "mcq", lambda _: None, Supervisor)
+    assert result["fake"]["accuracy_pct"] == 100.0
+    sidecar = json.loads((tmp_path / "answers_mcq_results.json").read_text())
+    assert sidecar["fake"]["answers"][0]["raw_response"] == "The answer is B"
 
 
 def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_path):
@@ -496,8 +803,10 @@ def test_runner_restores_recorded_gpu_split_mode(monkeypatch):
     from scripts.runtime.workload_runner import apply_runner_settings
 
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
-    apply_runner_settings({"gpu_split_mode": "tensor"})
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 300)
+    apply_runner_settings({"gpu_split_mode": "tensor", "run_timeout_seconds": 7})
     assert config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
+    assert config.RUN_TIMEOUT == 7
 
 
 def test_legacy_runner_plan_defaults_gpu_split_to_layer(monkeypatch):

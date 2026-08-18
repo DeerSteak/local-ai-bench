@@ -36,7 +36,6 @@ from scripts.app.benchmark_frontend import (
     apply_saved_test_selection,
     build_benchmark_command,
     build_frontend_state,
-    frontend_state_from_run_plan,
     frontend_state_availability_errors,
     build_model_entries,
     build_test_entries,
@@ -64,7 +63,7 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
-from scripts.app.tk_utils import refresh_tk_layout
+from scripts.app.tk_utils import schedule_tk_layout_refresh
 from scripts.app.result_actions import (
     completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
@@ -283,6 +282,19 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
+    root = tk.Tk()
+    root.title(f"Local AI Bench v{config.VERSION}")
+    root.geometry("1080x820")
+    root.minsize(860, 650)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    loading = ttk.Frame(root, padding=24)
+    loading.place(x=0, y=0, relwidth=1, relheight=1)
+    loading_status = ttk.Label(loading, text="Discovering local runtimes and models…")
+    loading_status.pack(anchor="nw")
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
+    root.update()
+
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
     found_comfyui = find_comfyui_installation(
@@ -312,6 +324,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
+    loading_status.configure(text="Building benchmark controls…")
+    root.update()
 
     default_tests = build_test_entries(inventory)
     default_test_values = [entry.value for entry in default_tests if entry.checked]
@@ -325,13 +339,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     apply_hardware_model_defaults(custom_models, inventory, system_ram_gb)
     custom_model_defaults = {entry.value: entry.checked for entry in custom_models}
     apply_saved_model_selection(custom_models, saved)
-
-    root = tk.Tk()
-    root.title(f"Local AI Bench v{config.VERSION}")
-    root.geometry("1080x820")
-    root.minsize(860, 650)
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
 
     style = ttk.Style(root)
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
@@ -374,6 +381,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
+    loading.lift()
     configuration_screen = build_configuration_screen(
         notebook, tk=tk, ttk=ttk, discovery=discovery, advanced_var=advanced_var,
         preset_var=preset_var, project_status=project_status,
@@ -382,11 +390,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         model_vars=model_vars, model_defaults=custom_model_defaults,
         custom_models=custom_models, cap_var=cap_var, tg_vars=tg_vars,
     )
+    root.update()
     config_tab = configuration_screen.frame
     run_log_screen = build_run_log_screen(
         notebook, tk=tk, ttk=ttk, configuration_frame=config_tab,
     )
     history_screen = build_history_screen(notebook, tk=tk, ttk=ttk)
+    root.update()
     log_tab = run_log_screen.frame
     history_tab = history_screen.frame
     engines_tab, engine_management = build_engine_screen(
@@ -412,8 +422,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         llamacpp_model_probe=engine_updates.probe_llamacpp_model,
         run_active=lambda: process is not None and process.poll() is None,
     )
+    root.update()
     notebook.bind(
-        "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
+        "<<NotebookTabChanged>>", lambda _event: schedule_tk_layout_refresh(root), add="+",
     )
     form = configuration_screen.form
     canvas = configuration_screen.canvas
@@ -771,23 +782,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(stages, entries, engines=engines)
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    def fallback_history_fork(source_path, output_path, plan):
-        nonlocal pending_fork_source
-        try:
-            state = frontend_state_from_run_plan(plan, collect_options())
-            state["gui_options"]["out"] = str(output_path)
-            apply_frontend_state(state)
-        except (KeyError, ValueError) as exc:
-            messagebox.showerror("Fork unavailable", str(exc), parent=root)
-            return
-        pending_fork_source = source_path
-        notebook.select(config_tab)
-        root.after(0, start_run)
-
     history_process = HistoryProcessActions(
         root=root, filedialog=filedialog, messagebox=messagebox,
         process_active=lambda: process is not None and process.poll() is None,
-        launch=launch_history_process, fallback_fork=fallback_history_fork,
+        launch=launch_history_process,
     )
     history_actions = HistoryActions(
         history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
@@ -820,7 +818,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     process = None
     active_process_kind = None
     active_result_paths: list[Path] = []
-    pending_fork_source = None
     process_control_path = None
     process_paused = False
     process_exit_observed_at = None
@@ -874,7 +871,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def update_progress(event):
         nonlocal progress_metrics
-        progress_screen.update(event)
+        elapsed = (None if progress_started_at is None
+                   else time.monotonic() - progress_started_at)
+        progress_screen.update({**event, "elapsed_seconds": elapsed})
         progress_metrics = progress_screen.metrics
 
     def append_log(text):
@@ -939,6 +938,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             completed = len(progress_metrics.get("finished_models", ()))
             remaining = estimate_remaining_seconds(
                 elapsed, completed, progress_metrics.get("total_models", 0),
+                progress_metrics.get("last_completion_elapsed"),
             )
             estimate = "calibrating" if remaining is None else f"about {remaining // 60}m {remaining % 60}s"
             usage = process_resource_usage(process.pid)
@@ -988,7 +988,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_files.bind()
 
     def start_run():
-        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
+        nonlocal process, active_process_kind, active_result_paths
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -1010,7 +1010,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             )
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
-            pending_fork_source = None
             return
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
@@ -1024,19 +1023,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
         command = preparation.command
-        if pending_fork_source is not None:
-            command.extend(["--fork-plan", str(pending_fork_source)])
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
         try:
             process, control_path = launch_controlled_process(
                 command, creationflags=creationflags,
             )
         except OSError as exc:
-            pending_fork_source = None
             messagebox.showerror("Benchmark could not start", str(exc), parent=root)
             return
         begin_process_control(control_path)
-        pending_fork_source = None
         active_process_kind = "benchmark"
         active_result_paths = []
         log_text.configure(state="normal")
@@ -1097,6 +1092,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     start_button.configure(command=start_run)
     stop_button.configure(command=stop_run)
     pause_button.configure(command=toggle_pause)
+    loading.destroy()
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
     root.after(100, poll_output)

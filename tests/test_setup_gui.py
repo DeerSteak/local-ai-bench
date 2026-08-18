@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.app.tk_utils import schedule_tk_layout_refresh
+
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
     build_setup_plan,
@@ -184,6 +186,21 @@ def test_refresh_tk_layout_flushes_now_and_after_idle():
     refresh_tk_layout(Widget())
 
     assert calls == ["refresh", "scheduled", "refresh"]
+
+
+def test_scheduled_tk_layout_refresh_does_not_flush_synchronously():
+    calls = []
+
+    class Widget:
+        def update_idletasks(self):
+            calls.append("refresh")
+
+        def after_idle(self, callback):
+            calls.append("scheduled")
+
+    schedule_tk_layout_refresh(Widget())
+
+    assert calls == ["scheduled"]
 
 
 def test_engine_checkbox_label_marks_experimental_and_unavailable_engines():

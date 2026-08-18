@@ -60,11 +60,13 @@ class EmbeddingBenchmark:
         return chunks
 
     def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            telemetry=None):  # pragma: no cover — orchestrates real engine runs
-        results = {}
+            telemetry=None, journal=None):  # pragma: no cover — orchestrates real engine runs
+        results = journal.export() if journal else {}
 
         if not engine.ensure_running():
             Shared.err("Inference engine not running — skipping embedding benchmarks")
+            if journal:
+                raise RuntimeError("inference engine unavailable in supervised embedding runner")
             return results
 
         crash_cache = load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
@@ -84,10 +86,19 @@ class EmbeddingBenchmark:
 
             emit_progress("model", "emb", "running", label, model_id=tag)
             telemetry_active = False
+            attempt_number = 1
             try:
+                attempt_number = journal.next_attempt(model) if journal else 1
+                if journal and attempt_number is None:
+                    results = journal.export()
+                    continue
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "model_not_downloaded",
+                        })
                     continue
 
                 Shared.ok(f"Using model: {tag}")
@@ -98,6 +109,8 @@ class EmbeddingBenchmark:
                 )
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
                 if telemetry:
@@ -130,6 +143,24 @@ class EmbeddingBenchmark:
 
                 valid_samples = [sample for sample in samples
                                  if not embedding_validation_errors(sample)]
+                if journal:
+                    memory = telemetry.finish_case() if telemetry_active and telemetry else None
+                    telemetry_active = False
+                    power = getattr(telemetry, "last_power", None) if telemetry else None
+                    power = add_power_efficiency(
+                        power, "embeddings_per_joule", len(chunks) * len(valid_samples),
+                    )
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
+                    journal.record_batch(
+                        model, samples, status, len(chunks), config.N_RUNS,
+                        attempt_number=attempt_number, memory=memory, power=power,
+                        crash_detail=(
+                            "The engine's runner crashed repeatedly embedding this document "
+                            f"({crashed_at})"
+                        ) if status == "crashed" else None,
+                    )
+                    results = journal.export()
+                    continue
                 rates = [len(chunks) / sample.client_wall_sec for sample in valid_samples]
                 if rates:
                     results[short] = {
@@ -184,6 +215,12 @@ class EmbeddingBenchmark:
                 Shared.err(f"{label}: unexpected error running the embedding benchmark — {exc} — "
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
+                if journal:
+                    journal.record_batch(
+                        model, [], "failed", len(chunks), config.N_RUNS,
+                        attempt_number=attempt_number, failure_result=results[short],
+                    )
+                    results = journal.export()
             finally:
                 if telemetry_active and telemetry:
                     memory = telemetry.finish_case()
@@ -196,8 +233,11 @@ class EmbeddingBenchmark:
                             results[short]["power"] = add_power_efficiency(
                                 power, "embeddings_per_joule", work,
                             )
-                if save_fn:
+                if save_fn and not journal:
                     save_fn(results)
                 emit_model_finished("emb", label, results.get(short), model_id=tag)
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from scripts.results.run_plan import load_run_plan
-from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
 def recovery_executor_command(result_path: Path, python_executable=sys.executable) -> list[str]:
@@ -38,6 +38,12 @@ def format_recovery_inspection(report: dict) -> str:
     lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
     lines += ["", "Cases:"]
     lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]
+    stage_counts = report.get("stage_case_counts", {})
+    if stage_counts:
+        lines += ["", "Workload case coverage:"]
+        for stage, counts in stage_counts.items():
+            summary = ", ".join(f"{state}={count}" for state, count in counts.items())
+            lines.append(f"  {stage}: {summary or 'none committed'}")
     retryable = report.get("retryable_cases", [])
     if retryable:
         lines += ["", "Retry candidates:"]
@@ -58,7 +64,7 @@ def fork_review_report(result_path: Path) -> dict:
             stage: run.get("stages", {}).get(stage, {}).get("status", "pending")
             for stage in plan.stage_order
         },
-        "case_counts": {}, "retryable_cases": [],
+        "case_counts": {}, "stage_case_counts": {}, "retryable_cases": [],
         "reasons": ["fork creates a new run and leaves the source unchanged"],
     }
 
@@ -78,5 +84,18 @@ def recovery_progress_entries(plan, model_shorts=None) -> list:
             entries.append(SimpleNamespace(
                 checked=True, kind=kind, value=key[1],
                 label=labels.get(model.get("tag"), model.get("tag") or model.get("short")),
+            ))
+    catalogs = {
+        "embeddings": ("embedding", {model["short"]: model["label"] for model in EMBED_MODELS}),
+        "images": ("image", {model["short"]: model["label"] for model in IMAGE_MODELS}),
+    }
+    for family, (kind, family_labels) in catalogs.items():
+        for model in plan.models[family]:
+            short = model["short"]
+            if model_shorts is not None and short not in model_shorts:
+                continue
+            entries.append(SimpleNamespace(
+                checked=True, kind=kind, value=short,
+                label=family_labels.get(short, short),
             ))
     return entries

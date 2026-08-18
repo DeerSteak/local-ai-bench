@@ -12,6 +12,14 @@ from scripts.results.result_store import atomic_write_json
 
 
 IDENTITY_NAME = re.compile(r"^[A-Za-z0-9_.:@+-]+$")
+VOLATILE_ENVIRONMENT_FIELDS = {"timestamp"}
+
+
+def stable_environment(environment: dict | None) -> dict:
+    return {
+        key: value for key, value in (environment or {}).items()
+        if key not in VOLATILE_ENVIRONMENT_FIELDS
+    }
 
 
 def file_identity(path: Path) -> dict:
@@ -43,10 +51,11 @@ def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
 
 def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
                                  include_engine_runtime=True, extra_runtimes=None,
+                                 extra_artifacts=None,
                                  digest_cache_path=None, environment=None,
                                  use_digest_cache=True) -> dict:
     """Resolve byte identities for every journal-backed model and runtime in a plan."""
-    artifacts = {}
+    artifacts = dict(extra_artifacts or {})
     tags = {
         model["tag"] for family in model_families
         for model in plan.models[family] if model.get("tag")
@@ -65,7 +74,7 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
         "execution": sha256_json(plan.execution_identity),
     }
     environment_identity = {
-        "profile_sha256": sha256_json(environment or {}),
+        "profile_sha256": sha256_json(stable_environment(environment)),
     }
     cache = load_digest_cache(digest_cache_path) \
         if digest_cache_path and use_digest_cache else None

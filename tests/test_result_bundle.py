@@ -8,6 +8,8 @@ from scripts.results.result_bundle import (
     aggregate_reproduction_errors, export_result_bundle, import_result_bundle,
     methodology_availability_errors, verify_result_bundle,
 )
+from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import local_execution_path
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "results_v4_1_complete.json"
@@ -56,6 +58,15 @@ def test_bundle_export_applies_private_aliases_and_retains_source_identity(tmp_p
     assert identity["aliases_applied"] == ["system", "hardware"]
     assert len(identity["source_sha256"]) == 64
     assert json.loads(FIXTURE.read_text())["profile"]["hostname"] == "commercial-golden-system"
+
+
+def test_bundle_export_refuses_private_local_execution_context(tmp_path):
+    result = tmp_path / "results_private.json"
+    result.write_bytes(FIXTURE.read_bytes())
+    private = local_execution_path(event_store_path(result))
+    private.write_text('{"comfyui_dir":"/private/path"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="private local execution context"):
+        export_result_bundle(result, tmp_path / "private.labresult", [private])
 
 
 def test_bundle_verifier_rejects_tampered_payload(tmp_path):

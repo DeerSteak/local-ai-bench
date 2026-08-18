@@ -69,6 +69,7 @@
 | `local_ai_bench_config.json` | Versioned, gitignored setup handoff containing validated non-secret ComfyUI and llama.cpp tool paths plus detected NVIDIA or ROCm GPU topology |
 | `.benchmark_frontend_state.json` | Gitignored GUI/terminal selection and execution settings plus the last GUI preset name; stale or invalid values fall back to current defaults |
 | `.resume_digest_cache.json` | Gitignored local path/metadata cache for previously computed model/runtime content identities; portable journals contain only size and SHA-256 |
+| `results_*.events.sqlite3.local.json` | Owner-only run-local execution paths required to recover isolated image workloads; never portable or bundleable and deleted with the run |
 | `.coveragerc` | Coverage config for the test suite — excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Keyed `{engine_name: {tag: detail}}`: a crash is scoped to the engine that produced it, since the same catalog tag is a different runtime and a different weight file per engine (see [Engines](engines.md)) |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
@@ -124,6 +125,12 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/resume_policy.py` | Content-based plan, artifact, runtime, and methodology identity plus safe case-boundary resume/fork decisions |
 | `results/recovery_inspector.py` | Read-only resume/fork eligibility, identity revalidation, and durable coverage report |
 | `results/recovery_executor.py` | State-changing ordered recovery for plans composed entirely of journal-owned stages |
+| `results/accuracy_event_stage.py` | Per-question accuracy journal ownership plus scored-result and raw-answer projections shared by all five banks |
+| `results/embedding_event_stage.py` | Per-model embedding-batch journal ownership, corpus identity, and compatible throughput projection without retained vectors |
+| `results/image_event_stage.py` | Journal-owned per-resolution image attempts, compatible projection, merged telemetry, and content-addressed artifact metadata |
+| `results/vllm_bench_event_stage.py` | Journal-owned vLLM latency/throughput size cases and compatible native-result projection |
+| `results/native_concurrency_event_stage.py` | Journal-owned streamed llama-batched-bench rows and compatible concurrency projection |
+| `results/local_execution_context.py` | Strict owner-only local-path sidecar bound to a journal job and excluded from outbound artifacts |
 | `results/retry_executor.py` | Explicit selected-case retry for eligible stopped journal context/level cases |
 | `results/fork_executor.py` | Reviewed new-job execution of a saved journal-owned plan without changing its source result |
 | `runtime/pause_control.py` | Short-lived cooperative pause state plus schema-4 pause-transition evidence shared across GUI-launched parent and workload processes |
@@ -174,6 +181,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/code_sandbox.py` | Generated-Python child boundary with static policy and bounded resources/output |
 | `workloads/tool_benchmark.py` | Tool-calling accuracy test |
 | `workloads/accuracy_scoring.py` | Shared accuracy-bank aggregation with workload-owned correctness callbacks |
+| `workloads/accuracy_registry.py` | Shared accuracy class and question-bank metadata for supervised execution and recovery identity |
 | `results/regrade.py` | Offline utility that reapplies current accuracy graders to matching raw-answer sidecars and writes separate `regraded_*.json` copies |
 | `workloads/llamabench_benchmark.py` | Opt-in `llamabench` test — llama.cpp's own separate prefill and depth-aware decode sweeps across installed models, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench)) |
 | `workloads/vllm_benchmark.py` | Opt-in `vllmbench` test — vLLM's own `vllm bench latency`/`throughput` sweep, bypassing the HTTP engine (see [Workloads](workloads.md#vllm-bench)) |

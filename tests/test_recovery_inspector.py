@@ -1,9 +1,15 @@
 import json
+from types import SimpleNamespace
 
 from scripts.results import recovery_inspector
 from scripts.results.event_store import EventStore, JournalEvent
-from scripts.results.recovery_inspector import current_resume_identity, inspect_recovery, retryable_case_records
+from scripts.results.recovery_inspector import (
+    compatible_environment_identity, current_resume_identity, inspect_recovery,
+    legacy_environment_identity,
+    retryable_case_records, workload_case_counts,
+)
 from scripts.results.run_plan import RunPlan
+from scripts.stage_registry import STAGE_ORDER
 
 
 def make_result(tmp_path):
@@ -41,6 +47,7 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
     assert report["action"] == "resume" and report["can_resume"] is True
     assert report["stage_states"] == {"llm": "running"}
     assert report["case_counts"] == {"running": 1}
+    assert report["stage_case_counts"] == {"llm": {"running": 1}}
     assert len(report["retryable_cases"]) == 1
     assert report["retryable_cases"][0] == {
         "case_id": plan.case_id(
@@ -50,6 +57,29 @@ def test_recovery_inspector_reports_durable_coverage_without_mutation(tmp_path):
     }
     assert report["interrupted_attempts"] == 1
     assert result.with_suffix(".events.sqlite3").read_bytes() == before
+
+
+def test_workload_case_coverage_is_reported_for_every_registered_stage():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=list(STAGE_ORDER),
+        stage_order=list(STAGE_ORDER), models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
+    cases = {}
+    for stage in STAGE_ORDER:
+        cases[f"{stage}-complete"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "measurement", "state": "complete",
+        }
+        cases[f"{stage}-failed"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "measurement", "state": "failed",
+        }
+        cases[f"{stage}-metadata"] = {
+            "parent_id": plan.stage_id(stage), "case_kind": "model_state", "state": "skipped",
+        }
+    assert workload_case_counts(plan, {"cases": cases}, STAGE_ORDER) == {
+        stage: {"complete": 1, "failed": 1} for stage in STAGE_ORDER
+    }
 
 
 def test_recovery_inspector_requires_fork_when_current_identity_changes(tmp_path):
@@ -74,6 +104,108 @@ def test_current_recovery_identity_bypasses_persistent_digest_cache(monkeypatch,
     )
     assert identity == {"identity": "fresh"}
     assert seen["use_digest_cache"] is False
+
+
+def test_legacy_environment_identity_reuses_only_saved_timestamp():
+    current = {"hostname": "host", "backend": "metal", "timestamp": "now"}
+    first = legacy_environment_identity(current, {"timestamp": "then"})
+    second = legacy_environment_identity(
+        {**current, "timestamp": "later"}, {"timestamp": "then"},
+    )
+    assert first == second
+    assert legacy_environment_identity(current, {}) is None
+
+
+def test_compatible_environment_identity_returns_saved_legacy_hash_only_on_exact_match():
+    profile = {"hostname": "host", "backend": "metal", "timestamp": "now"}
+    current = {"environment": {"profile_sha256": "stable"}, "plan_id": "plan"}
+    legacy = legacy_environment_identity(profile, {"timestamp": "then"})
+    saved = {"environment": legacy}
+    assert compatible_environment_identity(
+        current, profile, saved, {"timestamp": "then"},
+    )["environment"] == legacy
+    assert compatible_environment_identity(
+        current, profile, {"environment": {"profile_sha256": "other"}},
+        {"timestamp": "then"},
+    ) == current
+
+
+def test_current_embedding_identity_includes_model_family_and_corpus(monkeypatch, tmp_path):
+    corpus = tmp_path / "corpus.txt"
+    corpus.write_text("stable embedding input", encoding="utf-8")
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["emb"],
+        stage_order=["emb"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "embed", "short": "embed"}], "images": [],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    seen = {}
+
+    def build(*args, **kwargs):
+        seen.update(kwargs)
+        return {"identity": "embedding"}
+
+    monkeypatch.setattr(recovery_inspector, "build_engine_resume_identity", build)
+    monkeypatch.setattr(recovery_inspector.EmbeddingBenchmark, "EMBED_DOCUMENT_PATH", corpus)
+    identity = current_resume_identity(plan, profile={"os": "test"}, engine=object())
+    assert identity == {"identity": "embedding"}
+    assert seen["model_families"] == ["embeddings"]
+    assert seen["extra_artifacts"] == {"corpus:embeddings": corpus}
+
+
+def test_current_image_identity_uses_private_runtime_and_model_assets(monkeypatch, tmp_path):
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    event_path = tmp_path / "events.sqlite3"
+    asset = tmp_path / "model.safetensors"
+    runtime = tmp_path / "main.py"
+    seen = {}
+
+    def build(*args, **kwargs):
+        seen.update(kwargs)
+        return {"identity": "image"}
+
+    monkeypatch.setattr(recovery_inspector, "build_engine_resume_identity", build)
+    monkeypatch.setattr(
+        recovery_inspector, "load_local_execution_context",
+        lambda _path, _job: SimpleNamespace(comfyui_dir=tmp_path),
+    )
+    monkeypatch.setattr(recovery_inspector, "image_resume_artifacts",
+                        lambda _models: {"image:sdxl:checkpoint": asset})
+    monkeypatch.setattr(recovery_inspector, "image_resume_runtimes",
+                        lambda _path: {"comfyui-main": runtime})
+    identity = current_resume_identity(
+        plan, profile={"os": "test"}, engine=object(), event_path=event_path,
+    )
+    assert identity == {"identity": "image"}
+    assert seen["include_engine_runtime"] is False
+    assert seen["extra_artifacts"] == {"image:sdxl:checkpoint": asset}
+    assert seen["extra_runtimes"] == {"comfyui-main": runtime}
+
+
+def test_retryable_image_resolution_has_resolution_label():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp", tests=["img"],
+        stage_order=["img"], models={
+            "llm": [], "concurrency": [], "embeddings": [], "images": [{"short": "sdxl"}],
+        }, effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
+                             "force_all": False},
+    )
+    assert retryable_case_records(plan, {"cases": {"case_image": {
+        "state": "timed_out", "parent_id": plan.stage_id("img"),
+        "case_kind": "image_resolution", "model_short": "sdxl",
+        "width": 1024, "height": 1024,
+    }}}) == [{
+        "case_id": "case_image", "stage": "img", "state": "timed_out",
+        "model": "sdxl", "label": "sdxl · 1024x1024",
+    }]
 
 
 def test_recovery_inspector_rejects_result_without_journal(tmp_path):

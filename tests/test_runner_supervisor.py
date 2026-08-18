@@ -9,6 +9,7 @@ from scripts.runtime import config
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.vllm_bench_event_stage import VllmBenchEventStage, export_vllm_bench
 from scripts.results.run_plan import RunPlan
 from scripts.runtime import runner_supervisor
 from scripts.runtime import workload_runner
@@ -35,7 +36,6 @@ def test_runner_command_is_fixed_and_contains_no_caller_command_surface(tmp_path
 
 @pytest.mark.parametrize("value", [
     RunnerSpec("bad", "llm", Path("/tmp/events")),
-    RunnerSpec("job_x", "img", Path("/tmp/events")),
     RunnerSpec("job_x", "llm", Path("relative")),
 ])
 def test_runner_spec_rejects_unowned_or_unsupported_execution(value):
@@ -397,6 +397,42 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
     result = export_native_bench_section(path, plan.job_id)["fake"]
     assert result["completed_cases"] == 1
     assert result["prefill_entries"][0]["avg_ts"] == 100
+
+
+def test_vllm_bench_runner_reconstructs_plan_and_commits_case(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="vllm", tests=["vllmbench"],
+        stage_order=["vllmbench"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+            "memory_telemetry": False, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "max_prompt_tokens": None, "context_lengths": [512],
+            "llamabench_pp": [512], "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1], "concurrency_chat_levels": [1],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
+            "concurrency_chat_soft_exit_floor": 1,
+        },
+    )
+    owner = VllmBenchEventStage(path, plan, lambda _: None)
+    owner.close()
+
+    class Benchmark:
+        def run(self, **kwargs):
+            model = kwargs["models"][0]
+            kwargs["journal"].record_case(
+                model, "throughput", 512, 128,
+                {"input_len": 512, "output_len": 128, "requests_per_sec": 2.0}, 1,
+            )
+            kwargs["journal"].finish()
+
+    workload_runner.execute_vllmbench_job(
+        path, plan.job_id, engine_factory=lambda _: object(), benchmark_factory=Benchmark,
+    )
+    assert export_vllm_bench(path, plan.job_id)["fake"]["completed_cases"] == 1
 
 
 def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):

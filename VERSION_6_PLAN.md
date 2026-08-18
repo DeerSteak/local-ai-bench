@@ -421,13 +421,13 @@ It ranks below the items above because it costs users time rather than correctne
 
 ## Acceptance criteria
 
-- [ ] Every workload — accuracy, embeddings, images, and native — has a registered event stage.
-- [ ] An interruption re-runs only unfinished cases, verified per workload by a test interrupting at first, middle, and last case.
-- [ ] A question-bank change invalidates resume rather than continuing onto mismatched evidence.
-- [ ] Timeout and partial-response semantics are preserved exactly across a resume boundary.
-- [ ] JSON-level recovery is removed for every migrated workload; any deferral is a named exception with its parity failure recorded, remains wholly on the old authority, and exposes no second recovery path.
-- [ ] A test asserts every registered workload has a stage, preventing silent regression.
-- [ ] Recovery inspection reports accurate remaining work for every workload.
+- [x] Every workload — accuracy, embeddings, images, and native — has a registered event stage.
+- [x] An interruption re-runs only unfinished cases, verified per workload by a test interrupting at first, middle, and last case.
+- [x] A question-bank change invalidates resume rather than continuing onto mismatched evidence.
+- [x] Timeout and partial-response semantics are preserved exactly across a resume boundary.
+- [x] JSON-level recovery is removed for every migrated workload; no deferral or second recovery path remains.
+- [x] A test asserts every registered workload has a stage, preventing silent regression.
+- [x] Recovery inspection reports accurate remaining work for every workload.
 
 ---
 

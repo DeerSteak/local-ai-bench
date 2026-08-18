@@ -277,7 +277,6 @@ def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
         root=object(), filedialog=object(),
         messagebox=SimpleNamespace(askyesno=lambda *_args, **_kwargs: True),
         process_active=lambda: False, launch=lambda *args: launches.append(args),
-        fallback_fork=lambda *_args: None,
     )
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
@@ -306,7 +305,7 @@ def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
 
 def build_history_process_controller(tmp_path, *, stages, destination="fork.json"):
     plan = SimpleNamespace(stage_order=stages, engine_name="llamacpp")
-    launches, fallbacks = [], []
+    launches = []
     controller = HistoryProcessActions(
         root=object(),
         filedialog=SimpleNamespace(
@@ -314,13 +313,12 @@ def build_history_process_controller(tmp_path, *, stages, destination="fork.json
         ),
         messagebox=MessageRecorder(), process_active=lambda: False,
         launch=lambda *args: launches.append(args),
-        fallback_fork=lambda *args: fallbacks.append(args),
     )
-    return controller, plan, launches, fallbacks
+    return controller, plan, launches
 
 
 def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
-    controller, plan, launches, fallbacks = build_history_process_controller(
+    controller, plan, launches = build_history_process_controller(
         tmp_path, stages=["llm", "conv"],
     )
     source = tmp_path / "source.json"
@@ -348,30 +346,10 @@ def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
         "Forked run is active. The source evidence remains unchanged.",
         ["llm", "conv"], ["llm", "conv"], ["llamacpp"], "Fork could not start",
     )]
-    assert not fallbacks
-
-
-def test_history_process_fork_routes_unsupported_plan_to_frontend(monkeypatch, tmp_path):
-    controller, plan, launches, fallbacks = build_history_process_controller(
-        tmp_path, stages=["img"],
-    )
-    source = tmp_path / "source.json"
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
-    )
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.history_process.format_recovery_inspection",
-        lambda _report: "inspection",
-    )
-
-    controller.start("fork", source, {"action": "fork"})
-
-    assert fallbacks == [(source, (tmp_path / "fork.json").resolve(), plan)]
-    assert not launches
 
 
 def test_history_process_retry_launches_only_selected_cases(monkeypatch, tmp_path):
-    controller, plan, launches, _fallbacks = build_history_process_controller(
+    controller, plan, launches = build_history_process_controller(
         tmp_path, stages=["llm"],
     )
     result = tmp_path / "result.json"

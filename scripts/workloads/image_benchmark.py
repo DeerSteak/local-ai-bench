@@ -1,15 +1,64 @@
 """image_benchmark.py — ComfyUI-driven image generation benchmark."""
 
 import time
+import shutil
 from pathlib import Path
 
 import requests
 
 from scripts.runtime import config
+from scripts.results.content_store import ContentStore
 from scripts.runtime.shared import Shared
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.runtime.telemetry import add_power_efficiency
+
+
+IMAGE_WORKFLOW_ASSETS = {
+    "flux": (("clip", "t5xxl_fp16.safetensors"), ("clip", "clip_l.safetensors"),
+             ("vae", "ae.safetensors")),
+    "flux2": (("clip", "mistral_3_small_flux2_fp8.safetensors"),
+              ("vae", "flux2-vae.safetensors")),
+    "sd3": (("clip", "clip_l.safetensors"), ("clip", "clip_g.safetensors"),
+            ("clip", "t5xxl_fp16.safetensors")),
+}
+
+
+def image_resume_artifacts(models: list[dict]) -> dict[str, Path]:
+    """Return existing selected image inputs under path-free logical names."""
+    artifacts = {}
+    for model in models:
+        short = model["short"]
+        paths = [("checkpoint", "checkpoints", model["checkpoint"])]
+        paths.extend((f"{folder}:{name}", folder, name)
+                     for folder, name in IMAGE_WORKFLOW_ASSETS.get(model["workflow"], ()))
+        for logical, folder, name in paths:
+            path = config.COMFYUI_MODELS_DIR / folder / name
+            if path.is_file():
+                artifacts[f"image:{short}:{logical}"] = path
+    return artifacts
+
+
+def image_resume_runtimes(comfyui_dir: Path) -> dict[str, Path]:
+    """Return existing ComfyUI entrypoint/interpreter files for resume identity."""
+    runtimes = {}
+    main = Path(comfyui_dir) / "main.py"
+    if main.is_file():
+        runtimes["comfyui-main"] = main
+    try:
+        python = Path(Shared.find_comfyui_python(Path(comfyui_dir)))
+    except (OSError, TypeError, ValueError):
+        python = None
+    if python is not None and python.is_file():
+        runtimes["comfyui-python"] = python
+    return runtimes
+
+
+def display_image_path(path: Path) -> Path:
+    try:
+        return path.relative_to(config.SCRIPT_DIR)
+    except ValueError:
+        return path
 
 
 class ImageBenchmark:
@@ -339,13 +388,34 @@ class ImageBenchmark:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)
 
+    @staticmethod
+    def save_representative_image(img: dict, dest: Path, comfyui_dir: Path) -> bool:
+        try:
+            ImageBenchmark.save_comfyui_image(img, dest)
+            Shared.ok(f"Saved image → {display_image_path(dest)}")
+            return True
+        except Exception as exc:
+            Shared.warn(f"HTTP image fetch failed ({exc}) — trying direct file copy")
+        subfolder = img.get("subfolder", "")
+        source = (comfyui_dir / "output" / subfolder / img["filename"]
+                  if subfolder else comfyui_dir / "output" / img["filename"])
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+            Shared.ok(f"Saved image (file copy) → {display_image_path(dest)}")
+            return True
+        except Exception as exc:
+            Shared.warn(f"Could not save image: {exc}")
+            return False
+
     def run(self, image_models, resolutions, seed, prompt,  # pragma: no cover — orchestrates real ComfyUI runs
-            comfyui_dir, timeout=None, save_fn=None, images_dir=None, telemetry=None):
+            comfyui_dir, timeout=None, save_fn=None, images_dir=None, telemetry=None,
+            journal=None):
         if timeout is None:
             timeout = config.RUN_TIMEOUT
         if images_dir is None:
             images_dir = config.RESULTS_DIR / "images"
-        results = {}
+        results = journal.export() if journal else {}
         Shared.section("Image Generation via ComfyUI")
 
         checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
@@ -360,19 +430,29 @@ class ImageBenchmark:
             scheduler  = model["scheduler"]
             short      = model["short"]
             model_resolutions = model.get("resolutions", resolutions)
+            pending = (journal.pending_resolutions(model, model_resolutions)
+                       if journal else [(w, h, 1) for w, h in model_resolutions])
+            if not pending:
+                continue
 
             emit_progress("model", "img", "running", label, model_id=short)
             telemetry_active = False
+            segment_work = 0
             try:
                 ckpt_path = checkpoints_dir / checkpoint
                 if not ckpt_path.exists():
                     Shared.warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")
                     Shared.log(f"Download and place at: {ckpt_path}")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "checkpoint_not_found",
+                        })
                     continue
 
                 Shared.ok(f"{label}: checkpoint found ({ckpt_path.stat().st_size / (1024**3):.1f} GB)")
-                results[short] = {"label": label, "checkpoint": checkpoint,
-                                  "steps": steps, "resolutions": {}}
+                if not journal:
+                    results[short] = {"label": label, "checkpoint": checkpoint,
+                                      "steps": steps, "resolutions": {}}
 
                 if telemetry:
                     telemetry.begin_model_load()
@@ -394,19 +474,28 @@ class ImageBenchmark:
                     warmup_ok = False
                     if not Shared.comfyui_available():
                         if not ImageBenchmark.handle_crashed_warmup(comfyui_dir, label):
+                            if journal:
+                                raise RuntimeError("ComfyUI could not recover after image warmup")
                             return results
 
                 if not warmup_ok:
+                    if journal:
+                        for w, h, attempt_number in pending:
+                            journal.record_resolution(
+                                model, w, h, [], config.N_RUNS, "failed",
+                                attempt_number=attempt_number, failure_detail="warmup failed",
+                            )
                     continue
 
                 img_dir = images_dir
 
                 model_timed_out = False
-                for (w, h) in model_resolutions:
+                for w, h, attempt_number in pending:
                     res_label = f"{w}x{h}"
                     Shared.log(f"{label} @ {res_label} — {config.N_RUNS} runs ...")
                     times = []
                     last_images: list[dict] = []
+                    resolution_status = "ok"
 
                     for run_i in range(config.N_RUNS):
                         if telemetry:
@@ -428,12 +517,14 @@ class ImageBenchmark:
                         except TimeoutError:
                             Shared.err(f"Run {run_i+1} timed out — skipping {label}")
                             model_timed_out = True
-                            results[short]["timed_out"] = res_label
+                            resolution_status = "timed_out"
+                            if not journal:
+                                results[short]["timed_out"] = res_label
                             break
                         except Exception as e:
                             Shared.err(f"Run {run_i+1} failed: {e}")
 
-                    if times:
+                    if times and not journal:
                         results[short]["resolutions"][res_label] = {
                             "sec_per_image_mean":  round(Shared.mean(times),  2),
                             "sec_per_image_stdev": round(Shared.stdev(times) if len(times) > 1 else 0.0, 2),
@@ -443,30 +534,30 @@ class ImageBenchmark:
                         Shared.ok(f"{label} @ {res_label}: "
                            f"{results[short]['resolutions'][res_label]['sec_per_image_mean']:.1f}s/image")
 
+                    artifact = None
                     if not last_images:
                         Shared.warn(f"{label} @ {res_label}: no images in ComfyUI history response — skipping save")
                     else:
                         img  = last_images[0]
                         dest = img_dir / f"{short}_{res_label}.png"
-                        saved = False
-                        try:
-                            ImageBenchmark.save_comfyui_image(img, dest)
-                            Shared.ok(f"Saved image → {dest.relative_to(config.SCRIPT_DIR)}")
-                            saved = True
-                        except Exception as e:
-                            Shared.warn(f"HTTP image fetch failed ({e}) — trying direct file copy")
-                        if not saved:
-                            # Fallback: copy directly from ComfyUI's output directory
-                            subfolder = img.get("subfolder", "")
-                            src = (comfyui_dir / "output" / subfolder / img["filename"]
-                                   if subfolder else comfyui_dir / "output" / img["filename"])
-                            try:
-                                import shutil
-                                dest.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(src, dest)
-                                Shared.ok(f"Saved image (file copy) → {dest.relative_to(config.SCRIPT_DIR)}")
-                            except Exception as e:
-                                Shared.warn(f"Could not save image: {e}")
+                        saved = ImageBenchmark.save_representative_image(
+                            img, dest, comfyui_dir,
+                        )
+
+                        if saved:
+                            artifact = ContentStore(img_dir / ".artifacts").put_file(
+                                dest, "image/png",
+                            ).to_dict()
+
+                    if journal:
+                        if not times and resolution_status == "ok":
+                            resolution_status = "failed"
+                        journal.record_resolution(
+                            model, w, h, times, config.N_RUNS, resolution_status,
+                            attempt_number=attempt_number, artifact=artifact,
+                        )
+                        segment_work += len(times)
+                        results = journal.export()
 
                     if model_timed_out:
                         Shared.warn(f"{label}: timed out — moving to next model")
@@ -475,7 +566,16 @@ class ImageBenchmark:
             finally:
                 if telemetry_active and telemetry:
                     memory = telemetry.finish_case()
-                    if isinstance(results.get(short), dict):
+                    if journal:
+                        power = getattr(telemetry, "last_power", None)
+                        journal.record_model_evidence(
+                            model, memory,
+                            add_power_efficiency(
+                                power, "images_per_joule", segment_work,
+                            ),
+                        )
+                        results = journal.export()
+                    elif isinstance(results.get(short), dict):
                         results[short]["memory"] = memory
                         if (power := getattr(telemetry, "last_power", None)) is not None:
                             work = sum(
@@ -486,10 +586,13 @@ class ImageBenchmark:
                             results[short]["power"] = add_power_efficiency(
                                 power, "images_per_joule", work,
                             )
-                if save_fn:
+                if save_fn and not journal:
                     save_fn(results)
                 Shared.log(f"Unloading {label} from VRAM ...")
                 ImageBenchmark.comfyui_free_models()
                 emit_model_finished("img", label, results.get(short), model_id=short)
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

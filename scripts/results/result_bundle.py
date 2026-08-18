@@ -39,7 +39,8 @@ def export_result_bundle(result_path: Path, bundle_path: Path,
                          artifacts: list[Path] | None = None, *,
                          system_alias: str | None = None,
                          hardware_alias: str | None = None) -> dict:
-    result = json.loads(Path(result_path).read_text(encoding="utf-8"))
+    result_path = Path(result_path).resolve()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
     validate_json_data(result)
     result = prepare_outbound_result(
         result, system_alias=system_alias, hardware_alias=hardware_alias,
@@ -47,12 +48,15 @@ def export_result_bundle(result_path: Path, bundle_path: Path,
     files = {"result.json": canonical_json_bytes(result)}
     artifact_records = []
     for artifact in artifacts or []:
-        data = Path(artifact).read_bytes()
+        artifact = Path(artifact).resolve()
+        if artifact.name.endswith(".events.sqlite3.local.json"):
+            raise ValueError("private local execution context cannot be exported")
+        data = artifact.read_bytes()
         digest = _digest(data)
-        name = f"artifacts/{digest}{Path(artifact).suffix.lower()}"
+        name = f"artifacts/{digest}{artifact.suffix.lower()}"
         files.setdefault(name, data)
         artifact_records.append({
-            "bundle_path": name, "original_name": Path(artifact).name,
+            "bundle_path": name, "original_name": artifact.name,
             "sha256": digest, "size": len(data),
         })
     manifest = {

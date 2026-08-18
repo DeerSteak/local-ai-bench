@@ -10,6 +10,14 @@ Select one to six results with the platform's normal multi-selection keys, then 
 
 The dashboard preserves missing measurements as missing and displays methodology, accuracy-setting, reliability, and validity warnings rather than presenting unlike evidence as silently equivalent.
 
+## Resume, retry, and fork
+
+Select an interrupted or failed result and choose **Inspect Recovery** to verify its journal, current model/runtime/input identities, durable case coverage, and eligible retries without changing any files. **Resume** repeats that gate, asks for confirmation, skips completed cases, and continues remaining journal-owned stages. **Retry Cases** reopens only the selected failed or incomplete contexts, questions, embedding batches, image resolutions, or concurrency levels. **Fork** always creates a distinct output and job while preserving source provenance; the original result is never overwritten.
+
+To exercise image recovery deliberately, start an image-only run and wait until the Run Log reports that the first measured resolution finished and its representative image was saved. Click **Stop Benchmark** once in the progress window, then inspect and resume the interrupted result here. From a terminal, press `Ctrl+C` once in the terminal running `run_bench.sh`; do not kill ComfyUI separately. A correct inspection reports the saved resolution complete and later resolutions remaining, and resumed execution does not generate the completed resolution again.
+
+Image recovery stores the selected ComfyUI and generated-image directories in an owner-only `*.events.sqlite3.local.json` sidecar. It is bound to the journal job, excluded from portable results and bundles, and removed with **Delete**. Missing or changed model/runtime/input identity requires **Fork**; a missing or malformed private sidecar stops recovery instead of guessing local paths.
+
 Backend comparisons retain the raw delta, provisional practical-change threshold, each side's recorded within-run dispersion, and the valid sample counts behind it. Missing dispersion is reported as insufficient rather than zero, and every single-run comparison states that repeated trials are required for a regression verdict.
 
 ## Repeated-trial comparison
