@@ -7,6 +7,7 @@ import math
 import os
 import platform
 import re
+import shutil
 import secrets
 import signal
 import subprocess
@@ -143,13 +144,21 @@ class VllmEngine(InferenceEngine):
     SPAWN_LOG_LINES = 200
 
     def __init__(self):
+        qualification = bool(os.environ.get("LOCAL_AI_BENCH_QUALIFICATION"))
         setup = load_setup_config(config.SETUP_CONFIG_PATH)
-        self._launcher = configured_vllm_path(setup, "launcher") or find_vllm_launcher()
-        self._executable = configured_vllm_path(setup, "executable") or find_vllm_binary(
-            platform_name=platform.system())
+        self._launcher = None if qualification else (
+            configured_vllm_path(setup, "launcher") or find_vllm_launcher()
+        )
+        self._executable = find_vllm_binary(
+            platform_name=platform.system(), venv_dir=config.VLLM_VENV,
+            which_fn=(lambda _name: None) if qualification else shutil.which,
+        ) if qualification else (
+            configured_vllm_path(setup, "executable") or find_vllm_binary(
+                platform_name=platform.system())
+        )
         # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
         # an externally-managed server we talk to but never spawn or stop ourselves.
-        self._server_url = configured_vllm_path(setup, "server_url")
+        self._server_url = None if qualification else configured_vllm_path(setup, "server_url")
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
         self._gpu_fingerprint = json.dumps(configured_gpu_devices(setup), sort_keys=True)
         recorded_home = configured_vllm_path(setup, "hf_home")
