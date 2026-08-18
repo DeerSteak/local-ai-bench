@@ -98,6 +98,21 @@ def recipe_digest(recipe: dict) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def execution_recipe_gaps(recipe: dict) -> list[str]:
+    validate_qualification_recipe(recipe)
+    gaps = []
+    for key, value in recipe["target"].items():
+        if "REPLACE_" in value:
+            gaps.append(f"target.{key}")
+    for key in ("workloads", "models"):
+        if any("REPLACE_" in value for value in recipe["coverage"][key]):
+            gaps.append(f"coverage.{key}")
+    for name, step in recipe["steps"].items():
+        if any("REPLACE_" in argument for argument in step["command"]):
+            gaps.append(f"steps.{name}.command")
+    return gaps
+
+
 def initial_run_state(recipe: dict) -> dict:
     return {
         "schema": "qualification-run-v1", "recipe_digest": recipe_digest(recipe),
@@ -184,6 +199,9 @@ def execute_qualification_step(step: dict, log_path: Path) -> tuple[int, str]:  
 
 def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cover
     validate_qualification_recipe(recipe)
+    gaps = execution_recipe_gaps(recipe)
+    if gaps:
+        raise ValueError("qualification recipe has unresolved placeholders: " + ", ".join(gaps))
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     state_path = output_dir / "qualification-state.json"

@@ -5,7 +5,7 @@ import pytest
 
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_automation import (
-    initial_run_state, load_qualification_recipe, next_qualification_step,
+    execution_recipe_gaps, initial_run_state, load_qualification_recipe, next_qualification_step,
     qualification_entry_from_run, qualification_preview, recipe_digest,
     validate_qualification_recipe,
 )
@@ -70,6 +70,17 @@ def test_published_example_recipe_stays_valid():
     root = Path(__file__).resolve().parents[1]
     loaded = load_qualification_recipe(root / "samples/qualification_recipe_example.json")
     assert loaded["target"]["platform"] == "macos"
+    assert execution_recipe_gaps(loaded) == [
+        "target.runtime_version", "coverage.models", "steps.install.command",
+        "steps.discovery.command", "steps.first_valid_run.command",
+        "steps.cancellation.command", "steps.resume.command",
+        "steps.report_generation.command", "steps.bundle_export.command",
+        "steps.upgrade.command", "steps.rollback.command", "steps.uninstall.command",
+    ]
+
+
+def test_execution_preflight_accepts_a_fully_resolved_recipe():
+    assert execution_recipe_gaps(recipe()) == []
 
 
 def test_checkpoint_resumes_at_first_step_that_has_not_passed():
