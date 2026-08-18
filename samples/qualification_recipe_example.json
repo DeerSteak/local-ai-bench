@@ -14,15 +14,15 @@
   },
   "environment": {},
   "steps": {
-    "install": {"command": ["bench-env/bin/python", "-m", "scripts.release.qualification_install", "--root", "REPLACE_WITH_DISPOSABLE_CLONE", "--engine", "llamacpp", "--model", "REPLACE_WITH_ONE_XSMALL_MODEL", "--execute", "--confirm-isolated-root"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "discovery": {"command": ["REPLACE_WITH_DISCOVERY_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "first_valid_run": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "cancellation": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [130], "interrupt_after_seconds": 30},
-    "resume": {"command": ["REPLACE_WITH_RESUME_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "report_generation": {"command": ["REPLACE_WITH_REPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "bundle_export": {"command": ["REPLACE_WITH_BUNDLE_EXPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "upgrade": {"command": ["REPLACE_WITH_UPGRADE_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "rollback": {"command": ["REPLACE_WITH_ROLLBACK_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_after_seconds": null},
-    "uninstall": {"command": ["REPLACE_WITH_UNINSTALL_COMMAND"], "timeout_seconds": 1800, "expected_exit_codes": [0], "interrupt_after_seconds": null}
+    "install": {"command": ["bench-env/bin/python", "-m", "scripts.release.qualification_install", "--root", "REPLACE_WITH_DISPOSABLE_CLONE", "--engine", "llamacpp", "--model", "REPLACE_WITH_ONE_XSMALL_MODEL", "--execute", "--confirm-isolated-root"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "discovery": {"command": ["REPLACE_WITH_DISCOVERY_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "first_valid_run": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "cancellation": {"command": ["REPLACE_WITH_SMOKE_RUN_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [130], "interrupt_when_log_contains": "\"kind\":\"model\",\"stage\":\"llm\",\"status\":\"running\""},
+    "resume": {"command": ["REPLACE_WITH_RESUME_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "report_generation": {"command": ["REPLACE_WITH_REPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "bundle_export": {"command": ["REPLACE_WITH_BUNDLE_EXPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "upgrade": {"command": ["REPLACE_WITH_UPGRADE_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "rollback": {"command": ["REPLACE_WITH_ROLLBACK_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
+    "uninstall": {"command": ["REPLACE_WITH_UNINSTALL_COMMAND"], "timeout_seconds": 1800, "expected_exit_codes": [0], "interrupt_when_log_contains": null}
   }
 }

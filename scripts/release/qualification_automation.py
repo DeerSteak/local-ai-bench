@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from scripts.runtime import config
 RECIPE_KEYS = {"target", "coverage", "environment", "steps"}
 TARGET_KEYS = {"id", "platform", "architecture", "runtime", "runtime_version", "backend"}
 COVERAGE_KEYS = {"workloads", "models", "notes"}
-STEP_KEYS = {"command", "timeout_seconds", "expected_exit_codes", "interrupt_after_seconds"}
+STEP_KEYS = {
+    "command", "timeout_seconds", "expected_exit_codes", "interrupt_when_log_contains",
+}
 QUALIFICATION_ENV_KEYS = {
     "HF_HOME", "TRANSFORMERS_CACHE", "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES",
     "HIP_VISIBLE_DEVICES",
@@ -62,13 +65,11 @@ def validate_qualification_recipe(recipe: dict) -> None:
         if (not isinstance(exit_codes, list) or not exit_codes
                 or any(not isinstance(code, int) or isinstance(code, bool) for code in exit_codes)):
             raise ValueError(f"qualification step {name} requires expected exit codes")
-        interrupt = step["interrupt_after_seconds"]
-        if interrupt is not None and (
-                not isinstance(interrupt, int) or isinstance(interrupt, bool) or interrupt < 1
-                or interrupt >= timeout):
-            raise ValueError(f"qualification step {name} has an invalid interrupt delay")
+        interrupt = step["interrupt_when_log_contains"]
+        if interrupt is not None and (not isinstance(interrupt, str) or not interrupt):
+            raise ValueError(f"qualification step {name} has an invalid interrupt marker")
         if (name == "cancellation") != (interrupt is not None):
-            raise ValueError("only the cancellation step may define an interrupt delay")
+            raise ValueError("only the cancellation step may define an interrupt marker")
 
 
 def load_qualification_recipe(path: Path) -> dict:
@@ -95,7 +96,8 @@ def qualification_preview(recipe: dict, output_dir: Path) -> dict:
                 "name": name,
                 "command": list(recipe["steps"][name]["command"]),
                 "timeout_seconds": recipe["steps"][name]["timeout_seconds"],
-                "interrupt_after_seconds": recipe["steps"][name]["interrupt_after_seconds"],
+                "interrupt_when_log_contains":
+                    recipe["steps"][name]["interrupt_when_log_contains"],
             }
             for name in QUALIFICATION_LIFECYCLE
         ],
@@ -175,6 +177,13 @@ def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def log_contains_marker(path: Path, marker: str) -> bool:
+    try:
+        return marker in path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+
 def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                                ) -> tuple[int, str]:  # pragma: no cover
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
@@ -186,19 +195,23 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
             env={**os.environ, **environment},
         )
         try:
-            interrupt = step["interrupt_after_seconds"]
+            interrupt = step["interrupt_when_log_contains"]
             if interrupt is not None:
-                try:
-                    exit_code = process.wait(timeout=interrupt)
-                    return exit_code, f"process exited before interruption with code {exit_code}"
-                except subprocess.TimeoutExpired:
-                    pass
+                deadline = time.monotonic() + step["timeout_seconds"]
+                while not log_contains_marker(log_path, interrupt):
+                    exit_code = process.poll()
+                    if exit_code is not None:
+                        return exit_code, f"process exited before interruption with code {exit_code}"
+                    if time.monotonic() >= deadline:
+                        process.kill()
+                        process.wait()
+                        return -1, "interruption marker was not observed before timeout"
+                    time.sleep(0.2)
                 if os.name == "nt":
                     process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
                 else:
                     os.killpg(process.pid, signal.SIGINT)
-            remaining = step["timeout_seconds"] - (interrupt or 0)
-            exit_code = process.wait(timeout=remaining)
+            exit_code = process.wait(timeout=step["timeout_seconds"])
             return exit_code, f"process exited with code {exit_code}"
         except subprocess.TimeoutExpired:
             if os.name == "nt":

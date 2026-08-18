@@ -6,7 +6,7 @@ import pytest
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_automation import (
     execution_recipe_gaps, initial_run_state, load_qualification_recipe, next_qualification_step,
-    qualification_entry_from_run, qualification_preview, recipe_digest,
+    log_contains_marker, qualification_entry_from_run, qualification_preview, recipe_digest,
     validate_qualification_recipe,
 )
 
@@ -15,12 +15,13 @@ def recipe():
     steps = {
         name: {
             "command": ["tool", name], "timeout_seconds": 60,
-            "expected_exit_codes": [0], "interrupt_after_seconds": None,
+            "expected_exit_codes": [0], "interrupt_when_log_contains": None,
         }
         for name in QUALIFICATION_LIFECYCLE
     }
     steps["cancellation"].update({
-        "expected_exit_codes": [130], "interrupt_after_seconds": 5,
+        "expected_exit_codes": [130],
+        "interrupt_when_log_contains": '"kind":"model","stage":"llm","status":"running"',
     })
     return {
         "target": {
@@ -50,7 +51,7 @@ def test_recipe_requires_every_lifecycle_step_and_never_accepts_shell_text():
 
 def test_only_cancellation_can_request_an_automatic_interrupt():
     value = recipe()
-    value["steps"]["resume"]["interrupt_after_seconds"] = 2
+    value["steps"]["resume"]["interrupt_when_log_contains"] = "running"
     with pytest.raises(ValueError, match="only the cancellation"):
         validate_qualification_recipe(value)
 
@@ -89,6 +90,13 @@ def test_published_example_recipe_stays_valid():
 
 def test_execution_preflight_accepts_a_fully_resolved_recipe():
     assert execution_recipe_gaps(recipe()) == []
+
+
+def test_interruption_marker_is_read_from_the_live_step_log(tmp_path):
+    log = tmp_path / "step.log"
+    assert log_contains_marker(log, '"status":"running"') is False
+    log.write_text('prefix {"status":"running"}\n')
+    assert log_contains_marker(log, '"status":"running"') is True
 
 
 def test_checkpoint_resumes_at_first_step_that_has_not_passed():

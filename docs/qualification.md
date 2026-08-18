@@ -18,7 +18,7 @@ The bundled install step uses `scripts.release.qualification_install` to install
 
 On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. Create `bench-env`, install `requirements.txt`, and then let the recipe install the engine and smoke model. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
 
-The cancellation command is the only command that may define `interrupt_after_seconds`. The runner launches it in its own process group, sends the platform interrupt signal after the delay, and accepts only the declared exit codes. Configure the delay so the smoke workload has entered a recoverable stage rather than merely started its launcher.
+The cancellation command is the only command that may define `interrupt_when_log_contains`. The runner launches it in its own process group, waits for the structured model-running progress event in its live log, sends the platform interrupt signal, and accepts only the declared exit codes. Slow installation, model loading, or server startup therefore cannot cause a premature cancellation.
 
 ## Preview and execution
 
