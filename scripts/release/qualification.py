@@ -158,3 +158,32 @@ def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
             "known_failures": evidence.get("known_failures", []) if evidence else [],
         })
     return rows
+
+
+def normalize_architecture(value: str) -> str:
+    return {"AMD64": "x86_64", "x86-64": "x86_64", "arm64": "arm64"}.get(value, value)
+
+
+def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime: str,
+                           runtime_version: str | None, backend: str,
+                           current_version: str, entries=QUALIFICATION_MATRIX) -> dict:
+    platform = platform_name(system, wsl=wsl)
+    architecture = normalize_architecture(architecture)
+    evidence = qualification_entry(
+        platform, architecture, runtime, backend, runtime_version, entries,
+    ) if runtime_version else None
+    support_level = derive_support_level(evidence, current_version)
+    caveat = {
+        "supported": "Full lifecycle qualification recorded for this exact runtime.",
+        "experimental": "Qualification is partial or stale; review its recorded gaps.",
+        "unverified": "No full lifecycle qualification matches this exact runtime.",
+    }[support_level]
+    return {
+        "support_level": support_level, "caveat": caveat,
+        "qualification_id": evidence.get("id") if evidence else None,
+        "qualified_at": evidence.get("qualified_at") if evidence else None,
+        "suite_version": evidence.get("suite_version") if evidence else None,
+        "runtime_version": runtime_version, "platform": platform,
+        "architecture": architecture, "backend": backend,
+        "stale": qualification_is_stale(evidence, current_version) if evidence else False,
+    }

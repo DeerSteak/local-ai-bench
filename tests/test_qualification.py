@@ -1,7 +1,7 @@
 import pytest
 
 from scripts.release.qualification import (
-    QUALIFICATION_LIFECYCLE, derive_support_level, platform_name,
+    QUALIFICATION_LIFECYCLE, derive_support_level, engine_support_profile, platform_name,
     qualification_entry, qualification_is_stale, qualification_rows,
     validate_qualification_entry,
     validate_qualification_matrix,
@@ -86,3 +86,20 @@ def test_runtime_lookup_can_require_the_exact_qualified_version():
     assert qualification_entry(
         "linux", "x86_64", "llamacpp", "cuda", "b7000", [evidence],
     ) is None
+
+
+def test_execution_support_profile_requires_exact_runtime_evidence():
+    evidence = entry()
+    supported = engine_support_profile(
+        system="Linux", architecture="AMD64", wsl=False, runtime="llamacpp",
+        runtime_version="b6000", backend="cuda", current_version="6.0-pre8",
+        entries=[evidence],
+    )
+    unverified = engine_support_profile(
+        system="Linux", architecture="x86_64", wsl=False, runtime="llamacpp",
+        runtime_version="b6001", backend="cuda", current_version="6.0-pre8",
+        entries=[evidence],
+    )
+    assert supported["support_level"] == "supported"
+    assert supported["qualification_id"] == evidence["id"]
+    assert unverified["support_level"] == "unverified"

@@ -11,17 +11,26 @@ class Engine:
 
 
 def hardware():
-    return {"hostname": "host", "backend": "metal", "timestamp": "now"}
+    return {"hostname": "host", "os": "Darwin 25.0", "arch": "arm64",
+            "backend": "metal", "timestamp": "now"}
 
 
 def test_engine_backed_profile_records_hardware_and_effective_backend():
     engine = Engine()
     profile = build_execution_profile(
         engine, ["llm", "img"], cpu_only=False, hardware_profile=hardware(),
+        runtime_version="b6000",
     )
     assert profile == {
-        "hostname": "host", "timestamp": "now", "hardware_backend": "metal",
-        "backend": "cuda",
+        "hostname": "host", "os": "Darwin 25.0", "arch": "arm64",
+        "timestamp": "now", "hardware_backend": "metal",
+        "backend": "cuda", "engine_support": {
+            "support_level": "unverified",
+            "caveat": "No full lifecycle qualification matches this exact runtime.",
+            "qualification_id": None, "qualified_at": None, "suite_version": None,
+            "runtime_version": "b6000", "platform": "macos", "architecture": "arm64",
+            "backend": "cuda", "stale": False,
+        },
     }
     assert engine.calls == [("metal", False)]
 
@@ -29,7 +38,7 @@ def test_engine_backed_profile_records_hardware_and_effective_backend():
 def test_cpu_only_profile_uses_the_same_runtime_policy_as_execution():
     engine = Engine()
     assert build_execution_profile(
-        engine, ["emb"], cpu_only=True, hardware_profile=hardware(),
+        engine, ["emb"], cpu_only=True, hardware_profile=hardware(), runtime_version="b6000",
     )["backend"] == "cpu"
     assert engine.calls == [("metal", True)]
 
@@ -37,7 +46,7 @@ def test_cpu_only_profile_uses_the_same_runtime_policy_as_execution():
 def test_image_only_profile_does_not_consult_the_inference_engine():
     engine = Engine()
     profile = build_execution_profile(
-        engine, ["img"], cpu_only=False, hardware_profile=hardware(),
+        engine, ["img"], cpu_only=False, hardware_profile=hardware(), runtime_version="b6000",
     )
     assert profile["backend"] == profile["hardware_backend"] == "metal"
     assert engine.calls == []

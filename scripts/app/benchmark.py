@@ -887,13 +887,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        profile = build_execution_profile(
-            engine, tests, cpu_only=args.cpu_only, hardware_profile=hardware_profile,
-        )
-        hardware_backend = profile["hardware_backend"]
         runtime_version = (
             engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
         )
+        profile = build_execution_profile(
+            engine, tests, cpu_only=args.cpu_only, engine_name=engine_name,
+            hardware_profile=hardware_profile, runtime_version=runtime_version,
+        )
+        hardware_backend = profile["hardware_backend"]
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(
@@ -911,6 +912,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Engine:    {engine_name}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
+        Shared.output(
+            f"  Support:   {profile['engine_support']['support_level']} — "
+            f"{profile['engine_support']['caveat']}"
+        )
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         Shared.output(
             f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
