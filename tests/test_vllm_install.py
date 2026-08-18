@@ -245,12 +245,10 @@ def test_linux_rocm_is_supported_and_pins_python_312():
     assert result.requires_python == (3, 12)
 
 
-def test_strix_halo_gfx1151_is_experimental_not_supported():
-    result = support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=["gfx1151"])
-    assert result.status == "experimental"
-    assert result.method == "rocm_wheel"  # still installable, but the user is warned
-    assert "gfx1151" in result.reason
-    assert "amd-strix-halo-vllm-toolboxes" in result.reason
+def test_strix_halo_gfx1151_uses_the_official_rocm_wheel_path():
+    result = support(rocm_ok=True, rocm_version=(7, 2), rocm_gfx_targets=["gfx1151"])
+    assert (result.status, result.method) == ("supported", "rocm_wheel")
+    assert result.requires_python == (3, 12)
 
 
 def test_every_wheel_target_stays_supported():

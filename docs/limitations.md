@@ -36,7 +36,7 @@ Running the same model on two engines does not run the same file. llama.cpp uses
 
 A cross-engine chart therefore answers "how fast does each runtime serve this model, quantized the way that runtime does 4-bit" — not "how much faster is one runtime than the other on identical weights." Treat an accuracy difference between engines as a property of the weights at least as much as of the runtime, and do not attribute a throughput difference solely to the serving stack without accounting for the quantization and its memory footprint, which also differ.
 
-The 4-bit weights are also not equally portable. AWQ and GPTQ Marlin kernels are CUDA-centric; on ROCm they are narrower, and on an untargeted gfx (such as `gfx1151`/Strix Halo) loading an AWQ checkpoint is known to be unreliable. A model that benchmarks on one backend may therefore be unavailable on another, which is a coverage difference rather than a performance result.
+The 4-bit weights are also not equally portable. AWQ and GPTQ Marlin kernels remain more mature on CUDA; a current ROCm wheel may include `gfx1151` while a particular quantized model or kernel path still fails. A model that benchmarks on one backend may therefore be unavailable on another, which is a coverage difference rather than a performance result.
 
 Cross-engine qualification is exact to the recorded platform, architecture, runtime version, backend, suite version, and lifecycle evidence. Consult the generated [engine qualification matrix](engines.md#qualification-matrix) for current status; an absent row is unverified, and vLLM requires an explicit experimental acknowledgment until its exact configuration completes the full lifecycle.
 

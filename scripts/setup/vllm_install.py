@@ -18,15 +18,14 @@ from scripts.runtime.log_redaction import redact_log_text
 
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
 NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
-# Pointed at, never pulled — see docs/setup.md's Strix Halo note.
-STRIX_HALO_TOOLBOX_URL = "https://github.com/kyuz0/amd-strix-halo-vllm-toolboxes"
-
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
 
 # gfx targets the prebuilt ROCm wheels ship kernels for; anything else is experimental.
-VLLM_ROCM_WHEEL_TARGETS = ("gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1200", "gfx1201")
+VLLM_ROCM_WHEEL_TARGETS = (
+    "gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1150", "gfx1151", "gfx1200", "gfx1201",
+)
 
 # The ROCm and Metal builds publish CPython 3.12 wheels only; CUDA spans a range.
 CUDA_PYTHON_RANGE = ((3, 10), (3, 13))
@@ -124,9 +123,8 @@ def vllm_platform_support(*, os_name: str, machine: str,
             return VllmSupport("experimental", "rocm_wheel",
                                f"vLLM's prebuilt ROCm wheels ship no kernels for "
                                f"{', '.join(untargeted)} — they target "
-                               f"{', '.join(VLLM_ROCM_WHEEL_TARGETS)}. A TheRock-based "
-                               f"container is the known-working route ({STRIX_HALO_TOOLBOX_URL}); "
-                               "installing these wheels here may not produce a usable vLLM",
+                               f"{', '.join(VLLM_ROCM_WHEEL_TARGETS)}; installing these wheels "
+                               "here may not produce a usable vLLM",
                                requires_python=PINNED_PYTHON)
         return VllmSupport("supported", "rocm_wheel",
                            "Linux + AMD ROCm has prebuilt wheels, published for CPython 3.12 only",

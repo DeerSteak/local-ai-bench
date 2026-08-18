@@ -26,7 +26,8 @@ def qualification_model(tag: str, catalog=None) -> dict:
 
 def qualification_install_plan(*, root: Path, engine: str, model_tag: str,
                                system: str, machine: str, nvidia: bool,
-                               rocm: bool, vllm_support=None) -> dict:
+                               rocm: bool, runtime_version: str | None = None,
+                               vllm_support=None) -> dict:
     root = Path(root).resolve()
     model = qualification_model(model_tag)
     if engine not in {"llamacpp", "vllm"}:
@@ -36,11 +37,14 @@ def qualification_install_plan(*, root: Path, engine: str, model_tag: str,
     if engine == "vllm" and (vllm_support is None or not vllm_support.installable):
         detail = vllm_support.detail if vllm_support is not None else "support was not inspected"
         raise ValueError(f"vLLM cannot be installed on this target: {detail}")
+    if engine == "vllm" and not runtime_version:
+        raise ValueError("vLLM qualification requires an exact ROCm wheel version")
     runtime_dir = root / ("llama.cpp" if engine == "llamacpp" else "vllm-env")
     cache_dir = root / "qualification-cache"
     models_dir = root / "models"
     return {
         "mode": "preview", "root": str(root), "engine": engine,
+        "runtime_version": runtime_version,
         "model": {"tag": model_tag, "label": model["label"]},
         "platform": {"system": system, "machine": machine,
                      "nvidia": nvidia, "rocm": rocm},
@@ -52,7 +56,8 @@ def qualification_install_plan(*, root: Path, engine: str, model_tag: str,
     }
 
 
-def inspect_install_plan(root: Path, engine: str, model_tag: str) -> tuple[dict, object, object]:
+def inspect_install_plan(root: Path, engine: str, model_tag: str,
+                         runtime_version: str | None = None) -> tuple[dict, object, object]:
     nvidia = discover_nvidia()
     rocm = discover_rocm()
     rocm_available = rocm.available and not nvidia.available
@@ -69,7 +74,7 @@ def inspect_install_plan(root: Path, engine: str, model_tag: str) -> tuple[dict,
     plan = qualification_install_plan(
         root=root, engine=engine, model_tag=model_tag, system=platform.system(),
         machine=platform.machine(), nvidia=nvidia.available, rocm=rocm_available,
-        vllm_support=support,
+        runtime_version=runtime_version, vllm_support=support,
     )
     return plan, nvidia, rocm
 
@@ -100,7 +105,9 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
             rocm_version=rocm_version() if rocm_available else None,
             rocm_gfx_targets=rocm.gfx_targets if rocm_available else [],
         )
-        installed = install_vllm(support, log=log, venv_dir=runtime_dir)
+        installed = install_vllm(
+            support, log=log, venv_dir=runtime_dir, version=plan["runtime_version"],
+        )
         model_cache = Path(os.environ.get("HF_HOME", root / "qualification-vllm-cache"))
     if not installed:
         return False
@@ -117,10 +124,13 @@ def main(argv=None) -> int:  # pragma: no cover
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--engine", required=True, choices=("llamacpp", "vllm"))
     parser.add_argument("--model", required=True)
+    parser.add_argument("--runtime-version")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm-isolated-root", action="store_true")
     args = parser.parse_args(argv)
-    plan, nvidia, rocm = inspect_install_plan(args.root, args.engine, args.model)
+    plan, nvidia, rocm = inspect_install_plan(
+        args.root, args.engine, args.model, args.runtime_version,
+    )
     print(json.dumps(plan, indent=2))
     if not args.execute:
         return 0

@@ -40,7 +40,8 @@ def test_vllm_plan_rejects_an_uninstallable_platform(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="cannot be installed"):
         qualification_install_plan(
             root=tmp_path, engine="vllm", model_tag="tiny", system="Darwin",
-            machine="arm64", nvidia=False, rocm=False, vllm_support=Support(False),
+            machine="arm64", nvidia=False, rocm=False, runtime_version="0.27.1+rocm723",
+            vllm_support=Support(False),
         )
 
 
@@ -49,7 +50,18 @@ def test_vllm_plan_accepts_installable_support_and_records_exact_model(tmp_path,
     monkeypatch.setattr("scripts.release.qualification_install.LLM_MODELS", CATALOG)
     plan = qualification_install_plan(
         root=tmp_path, engine="vllm", model_tag="tiny", system="Linux",
-        machine="x86_64", nvidia=True, rocm=False, vllm_support=Support(True),
+        machine="x86_64", nvidia=True, rocm=False,
+        runtime_version="0.27.1+rocm723", vllm_support=Support(True),
     )
     assert plan["runtime_dir"] == str(tmp_path / "vllm-env")
     assert plan["model"] == {"tag": "tiny", "label": "Tiny"}
+    assert plan["runtime_version"] == "0.27.1+rocm723"
+
+
+def test_vllm_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypatch):
+    monkeypatch.setattr("scripts.release.qualification_install.LLM_MODELS", CATALOG)
+    with pytest.raises(ValueError, match="exact ROCm wheel version"):
+        qualification_install_plan(
+            root=tmp_path, engine="vllm", model_tag="tiny", system="Linux",
+            machine="x86_64", nvidia=True, rocm=False, vllm_support=Support(True),
+        )
