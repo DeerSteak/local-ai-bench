@@ -59,7 +59,7 @@ After reviewing every command and ensuring required permissions are already avai
 qualification-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001 --execute
 ```
 
-Each step has a separate numbered log. `qualification-state.json` is atomically checkpointed before and after every step, and rerunning the same command resumes at the first step that has not passed. A changed recipe is rejected for an existing checkpoint; use a new evidence directory when the target, coverage, command, or timeout changes. Automation revisions use a new `-vN` evidence directory, so an older attempt remains available for audit and never needs to be deleted before retrying updated qualification code. Native Windows currently uses revision v9 for durable Ctrl-Break cancellation, while other targets remain on v8.
+Each step has a separate numbered log. `qualification-state.json` is atomically checkpointed before and after every step, and rerunning the same command resumes at the first step that has not passed. A changed recipe is rejected for an existing checkpoint; use a new evidence directory when the target, coverage, command, or timeout changes. Automation revisions use a new `-vN` evidence directory, so an older attempt remains available for audit and never needs to be deleted before retrying updated qualification code. All current targets use revision v9.
 
 On POSIX systems the runner normalizes every evidence directory to mode `755` and every evidence file to mode `644` after each step, including failed and partial runs. If the launcher itself was invoked through `sudo`, ownership is returned to `SUDO_UID:SUDO_GID`; qualification artifacts must not remain accessible only to root.
 

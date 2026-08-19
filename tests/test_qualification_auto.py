@@ -31,7 +31,7 @@ def test_target_detection_selects_every_applicable_runtime(
 
 
 def test_pinned_versions_are_complete_for_every_automatic_target():
-    assert AUTOMATION_REVISION == "v8"
+    assert AUTOMATION_REVISION == "v9"
     targets = [
         "macos-m5-pro-llamacpp-metal", "geforce-wsl2-vllm-cuda",
         "radeon-wsl2-vllm-rocm", "ryzen-ai-halo-vllm-rocm", "dgx-spark-vllm-cuda",
@@ -43,7 +43,7 @@ def test_pinned_versions_are_complete_for_every_automatic_target():
 def test_only_native_windows_uses_fresh_post_ctrl_break_evidence():
     assert evidence_revision("geforce-windows-llamacpp-cuda") == "v9"
     assert evidence_revision("radeon-windows-llamacpp-vulkan") == "v9"
-    assert evidence_revision("radeon-wsl2-llamacpp-rocm") == "v8"
+    assert evidence_revision("radeon-wsl2-llamacpp-rocm") == "v9"
 
 
 def test_automatic_recipe_records_detected_identity_and_pinned_target(tmp_path):
