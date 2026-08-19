@@ -16,7 +16,7 @@ This generated matrix reports the current evidence-backed status of each platfor
 | windows | x86_64 | llamacpp | cuda | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
-| wsl2 | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | cuda | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | linux | x86_64 | vllm | cuda | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | No qualification record |

@@ -49,6 +49,37 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
             "qualification-manifest.json",
         ],
     },
+    {
+        "id": "geforce-wsl2-llamacpp-cuda",
+        "platform": "wsl2",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "b10488",
+        "backend": "cuda",
+        "accelerator": (
+            "Intel(R) Core(TM) Ultra 7 270K Plus\n"
+            "NVIDIA GeForce RTX 5060 Ti 55 GB"
+        ),
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "lifecycle": {step: "passed" for step in QUALIFICATION_LIFECYCLE},
+        "known_failures": [],
+        "evidence": [
+            "qualification-evidence/geforce-wsl2-llamacpp-cuda-b10488-v7/"
+            "qualification-manifest.json",
+        ],
+    },
 )
 QUALIFICATION_TARGETS = (
     {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},

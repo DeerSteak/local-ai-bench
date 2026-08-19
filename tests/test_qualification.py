@@ -55,6 +55,18 @@ def test_reviewed_macos_m5_pro_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_geforce_wsl2_qualification_is_supported():
+    evidence = qualification_entry(
+        "wsl2", "x86_64", "llamacpp", "cuda", "b10488",
+        accelerator=(
+            "Intel(R) Core(TM) Ultra 7 270K Plus\n"
+            "NVIDIA GeForce RTX 5060 Ti 55 GB"
+        ),
+    )
+    assert evidence == QUALIFICATION_MATRIX[1]
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_staleness_downgrades_at_release_boundary():
     evidence = entry(suite_version="6.0")
     assert qualification_is_stale(evidence, "6.1") is False
