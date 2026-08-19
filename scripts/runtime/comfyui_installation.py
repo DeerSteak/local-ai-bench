@@ -8,6 +8,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import psutil
+
 
 def normalize_comfyui_dir(path: Path) -> Path | None:
     """Return the ComfyUI program directory for manual or portable layouts."""
@@ -132,6 +134,58 @@ def find_comfyui_python(comfyui_dir: Path, environ: dict[str, str] | None = None
         virtual_env = Path(env["VIRTUAL_ENV"])
         candidates.extend([virtual_env / "bin" / "python", virtual_env / "Scripts" / "python.exe"])
     return str(next((path for path in candidates if path.is_file()), Path(sys.executable)))
+
+
+def comfyui_command_matches(cmdline: list[str], cwd: str | None, comfyui_dir: Path) -> bool:
+    expected = (Path(comfyui_dir) / "main.py").resolve()
+    base = Path(cwd) if cwd else None
+    for argument in cmdline:
+        candidate = Path(argument)
+        if candidate.name.casefold() != "main.py":
+            continue
+        if not candidate.is_absolute() and base is not None:
+            candidate = base / candidate
+        try:
+            if candidate.resolve() == expected:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def stop_running_comfyui(comfyui_dir: Path, *, process_iter=psutil.process_iter,
+                         wait_procs=psutil.wait_procs) -> int:
+    """Stop only ComfyUI processes launched from the selected installation."""
+    matched = []
+    for process in process_iter(["cmdline", "cwd"]):
+        try:
+            info = process.info
+            if comfyui_command_matches(info.get("cmdline") or [], info.get("cwd"), comfyui_dir):
+                matched.append(process)
+        except (psutil.Error, OSError):
+            continue
+    targets = []
+    for process in matched:
+        try:
+            targets.extend(process.children(recursive=True))
+        except psutil.Error:
+            pass
+        targets.append(process)
+    unique = list({process.pid: process for process in targets}.values())
+    for process in unique:
+        try:
+            process.terminate()
+        except psutil.Error:
+            pass
+    _, alive = wait_procs(unique, timeout=10) if unique else ([], [])
+    for process in alive:
+        try:
+            process.kill()
+        except psutil.Error:
+            pass
+    if alive:
+        wait_procs(alive, timeout=5)
+    return len(matched)
 
 
 def _model_paths_section(name: str, models_dir: Path) -> str:

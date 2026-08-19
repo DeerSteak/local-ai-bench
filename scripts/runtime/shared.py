@@ -25,6 +25,7 @@ from scripts.runtime.comfyui_installation import (
     checkpoint_names_from_object_info,
     find_comfyui_python,
     managed_checkpoints_visible,
+    stop_running_comfyui,
     write_extra_model_paths,
 )
 from scripts.runtime import hardware
@@ -328,8 +329,13 @@ class Shared:
                 }
                 if not managed_checkpoints_visible(available, managed):
                     Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
-                    Shared.warn("Stop ComfyUI and retry so Local AI Bench can launch it with the correct configuration")
-                    return False
+                    if not stop_running_comfyui(comfyui_dir):
+                        Shared.warn("The running server belongs to another ComfyUI installation; stop it and retry")
+                        return False
+                    if Shared.comfyui_available():
+                        Shared.warn("ComfyUI is still reachable after stopping the selected installation")
+                        return False
+                    Shared.log("Restarting the selected ComfyUI installation with the managed model path ...")
             except Exception as exc:
                 Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
                 return False

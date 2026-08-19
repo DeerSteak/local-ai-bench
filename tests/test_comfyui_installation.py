@@ -7,6 +7,7 @@ from scripts.runtime.comfyui_installation import (
     add_managed_models_to_comfyui,
     checkpoint_names_from_object_info,
     common_comfyui_candidates,
+    comfyui_command_matches,
     comfyui_dirs_from_commands,
     find_comfyui_python,
     managed_checkpoints_visible,
@@ -14,6 +15,7 @@ from scripts.runtime.comfyui_installation import (
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
     running_comfyui_dirs,
+    stop_running_comfyui,
     write_extra_model_paths,
 )
 
@@ -100,6 +102,50 @@ def test_process_commands_find_absolute_main_py_paths():
         "python /other/script.py",
     ]
     assert comfyui_dirs_from_commands(commands, "Linux") == [Path("/opt/Comfy UI/ComfyUI")]
+
+
+def test_process_match_is_scoped_to_the_selected_comfyui_installation(tmp_path):
+    selected = tmp_path / "selected" / "ComfyUI"
+    other = tmp_path / "other" / "ComfyUI"
+    assert comfyui_command_matches(["python", "main.py", "--listen"], str(selected), selected)
+    assert comfyui_command_matches(["python", str(selected / "main.py")], None, selected)
+    assert not comfyui_command_matches(["python", str(other / "main.py")], None, selected)
+
+
+def test_stop_running_comfyui_terminates_only_matching_process_tree(tmp_path):
+    class Process:
+        def __init__(self, pid, command, children=()):
+            self.pid = pid
+            self.info = {"cmdline": command, "cwd": str(tmp_path)}
+            self._children = list(children)
+            self.terminated = False
+
+        def children(self, recursive=False):
+            assert recursive
+            return self._children
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            raise AssertionError("graceful termination should be enough")
+
+    child = Process(2, ["worker"])
+    selected = Process(1, ["python", "ComfyUI/main.py", "--listen"], [child])
+    foreign = Process(3, ["python", "other/main.py", "--listen"])
+    waits = []
+
+    def wait(processes, timeout):
+        waits.append(([process.pid for process in processes], timeout))
+        return processes, []
+
+    stopped = stop_running_comfyui(
+        tmp_path / "ComfyUI", process_iter=lambda _attrs: [selected, foreign], wait_procs=wait,
+    )
+    assert stopped == 1
+    assert selected.terminated and child.terminated
+    assert not foreign.terminated
+    assert waits == [([2, 1], 10)]
 
 
 def test_process_discovery_tolerates_permission_denial(monkeypatch):
