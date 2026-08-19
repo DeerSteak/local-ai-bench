@@ -71,6 +71,7 @@ class LlamaBenchBenchmark:
         """Builds standalone prompt-processing tests so avg_ts is true prefill throughput."""
         return [
             *cls._base_command(binary, model_path, batch_size, ubatch_size, reps, ngl),
+            "-c", str(max(pp)),
             "-p", ",".join(str(v) for v in pp),
             "-n", "0",
             "-d", "0",
@@ -82,6 +83,7 @@ class LlamaBenchBenchmark:
         """Builds generation tests at each prefilled depth so avg_ts is true decode throughput."""
         return [
             *cls._base_command(binary, model_path, batch_size, ubatch_size, reps, ngl),
+            "-c", str(max(pp) + max(tg)),
             "-p", "0",
             "-n", ",".join(str(v) for v in tg),
             "-d", ",".join(str(v) for v in pp),

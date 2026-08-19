@@ -80,6 +80,7 @@ def test_build_prefill_command_shape():
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
         "-r", "3", "-o", "jsonl",
         "--progress",
+        "-c", "2048",
         "-p", "512,2048", "-n", "0", "-d", "0",
     ]
 
@@ -103,6 +104,7 @@ def test_build_decode_command_shape():
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
         "-r", "3", "-o", "jsonl",
         "--progress",
+        "-c", "2560",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
     ]
 
@@ -139,6 +141,7 @@ def test_build_decode_command_uses_depth_and_tg_cross_product():
     assert cmd[cmd.index("-p") + 1] == "0"
     assert cmd[cmd.index("-n") + 1] == "128,512"
     assert cmd[cmd.index("-d") + 1] == "512,2048"
+    assert cmd[cmd.index("-c") + 1] == "2560"
 
 
 def test_build_decode_command_cpu_only_ngl():
