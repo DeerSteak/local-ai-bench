@@ -11,7 +11,8 @@ from scripts.release.qualification_automation import (
     execution_recipe_gaps, finalize_qualification_run, initial_run_state,
     load_qualification_recipe, next_qualification_step,
     log_contains_marker, make_evidence_accessible, qualification_entry_from_run,
-    normalize_process_exit_code, qualification_preview, recipe_digest,
+    normalize_process_exit_code, qualification_log_footer, qualification_log_header,
+    qualification_preview, recipe_digest,
     sudo_invoking_owner, validate_qualification_recipe,
 )
 
@@ -265,3 +266,22 @@ def test_timeouts_must_be_positive_integer_seconds(value):
     candidate["steps"]["install"]["timeout_seconds"] = value
     with pytest.raises(ValueError, match="positive timeout"):
         validate_qualification_recipe(candidate)
+
+
+def test_qualification_log_transcript_records_reproducible_step_context(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    step = {"command": ["python", "-m", "module", "value with spaces"],
+            "timeout_seconds": 42}
+    header = qualification_log_header(
+        step, {"HF_HOME": "/cache", "LOCAL_AI_BENCH_QUALIFICATION": "1"},
+        "2026-08-19T00:00:00+00:00",
+    )
+    assert "started_at: 2026-08-19T00:00:00+00:00" in header
+    assert f"working_directory: {tmp_path}" in header
+    assert "timeout_seconds: 42" in header
+    assert "command: python -m module 'value with spaces'" in header
+    assert '"HF_HOME": "/cache"' in header
+    footer = qualification_log_footer(1, "process exited with code 1", "finished")
+    assert "finished_at: finished" in footer
+    assert "exit_code: 1" in footer
+    assert "detail: process exited with code 1" in footer

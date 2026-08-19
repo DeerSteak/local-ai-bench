@@ -4,6 +4,7 @@ import json
 import hashlib
 import os
 import signal
+import shlex
 import subprocess
 import sys
 import time
@@ -233,16 +234,45 @@ def normalize_process_exit_code(exit_code: int, *, platform_name: str | None = N
     return exit_code
 
 
+def qualification_log_header(step: dict, environment: dict, started_at: str) -> str:
+    return "\n".join((
+        "=== qualification step ===",
+        f"started_at: {started_at}",
+        f"working_directory: {Path.cwd()}",
+        f"timeout_seconds: {step['timeout_seconds']}",
+        f"command: {shlex.join(step['command'])}",
+        "environment_overrides: " + json.dumps(environment, sort_keys=True),
+        "--- subprocess output ---",
+    )) + "\n"
+
+
+def qualification_log_footer(exit_code: int, detail: str, finished_at: str) -> str:
+    return "\n".join((
+        "--- qualification outcome ---",
+        f"finished_at: {finished_at}",
+        f"exit_code: {exit_code}",
+        f"detail: {detail}",
+    )) + "\n"
+
+
 def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                                ) -> tuple[int, str]:  # pragma: no cover
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
     start_new_session = os.name != "nt"
     with log_path.open("w", encoding="utf-8") as log:
+        log.write(qualification_log_header(step, environment, _timestamp()))
+        log.flush()
         process = subprocess.Popen(
             step["command"], stdout=log, stderr=subprocess.STDOUT, text=True,
             creationflags=creationflags, start_new_session=start_new_session,
             env={**os.environ, **environment},
         )
+
+        def finish(exit_code: int, detail: str) -> tuple[int, str]:
+            log.write(qualification_log_footer(exit_code, detail, _timestamp()))
+            log.flush()
+            return exit_code, detail
+
         try:
             interrupt = step["interrupt_when_log_contains"]
             if interrupt is not None:
@@ -251,11 +281,13 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                     exit_code = process.poll()
                     if exit_code is not None:
                         exit_code = normalize_process_exit_code(exit_code)
-                        return exit_code, f"process exited before interruption with code {exit_code}"
+                        return finish(
+                            exit_code, f"process exited before interruption with code {exit_code}",
+                        )
                     if time.monotonic() >= deadline:
                         process.kill()
                         process.wait()
-                        return -1, "interruption marker was not observed before timeout"
+                        return finish(-1, "interruption marker was not observed before timeout")
                     time.sleep(0.2)
                 if os.name == "nt":
                     process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
@@ -264,14 +296,14 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
             exit_code = normalize_process_exit_code(
                 process.wait(timeout=step["timeout_seconds"]),
             )
-            return exit_code, f"process exited with code {exit_code}"
+            return finish(exit_code, f"process exited with code {exit_code}")
         except subprocess.TimeoutExpired:
             if os.name == "nt":
                 process.kill()
             else:
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            return -1, f"step exceeded {step['timeout_seconds']} seconds"
+            return finish(-1, f"step exceeded {step['timeout_seconds']} seconds")
 
 
 def finalize_qualification_run(recipe: dict, state: dict, output_dir: Path) -> Path | None:
