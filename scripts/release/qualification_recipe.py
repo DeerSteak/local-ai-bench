@@ -67,7 +67,7 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             f"target {target_id} requires accelerator identity containing {expected!r}; "
             f"detected {accelerator_identity!r}"
         )
-    py = str(Path(python_executable).resolve())
+    py = os.path.abspath(python_executable)
     result = output / "smoke-result.json"
     interrupted = output / "interrupted-result.json"
     lifecycle = [py, "-m", "scripts.release.qualification_runtime"]

@@ -40,6 +40,18 @@ def test_vllm_recipe_uses_private_cache_and_acknowledges_experimental_engine(tmp
     assert "--ack-experimental-engine" in recipe["steps"]["first_valid_run"]["command"]
 
 
+def test_recipe_preserves_virtualenv_python_symlink_path(tmp_path):
+    venv_python = tmp_path / "qualification-env" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to("/usr/bin/python3")
+    recipe = build_recipe(
+        target_id="macos-m5-pro-llamacpp-metal", root=tmp_path,
+        output=tmp_path / "evidence", baseline_version="b1", target_version="b2",
+        python_executable=str(venv_python), accelerator_identity="M5 Pro",
+    )
+    assert recipe["steps"]["install"]["command"][0] == str(venv_python)
+
+
 def test_recipe_rejects_a_different_accelerator_on_same_backend(tmp_path):
     with pytest.raises(ValueError, match="requires accelerator identity"):
         build_recipe(
