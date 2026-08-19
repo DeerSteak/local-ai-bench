@@ -1,7 +1,9 @@
 import pytest
 
+from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_auto import (
-    PINNED_VERSIONS, automatic_recipes, detected_targets, target_versions,
+    AUTOMATION_REVISION, PINNED_VERSIONS, automatic_recipes, detected_targets,
+    execution_summary, target_versions,
 )
 
 
@@ -44,3 +46,20 @@ def test_automatic_recipe_records_detected_identity_and_pinned_target(tmp_path):
     assert recipe["target"]["runtime_version"] == PINNED_VERSIONS["llamacpp"][1]
     assert recipe["target"]["accelerator"] == "MacBook Pro\nM5 Pro 48 GB"
     assert PINNED_VERSIONS["llamacpp"][1] in output.name
+    assert output.name.endswith(AUTOMATION_REVISION)
+
+
+def test_failed_execution_summary_points_directly_to_step_log(tmp_path):
+    steps = {
+        name: {"status": "pending", "detail": None, "log": None}
+        for name in QUALIFICATION_LIFECYCLE
+    }
+    steps["install"] = {
+        "status": "failed", "detail": "missing dependency", "log": "01-install.log",
+    }
+    state = {"steps": steps}
+    assert execution_summary({"id": "mac"}, state, tmp_path) == {
+        "target": "mac", "status": "failed", "failed_step": "install",
+        "detail": "missing dependency", "log": str(tmp_path / "01-install.log"),
+        "evidence_dir": str(tmp_path),
+    }

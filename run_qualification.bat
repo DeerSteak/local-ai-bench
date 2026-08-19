@@ -18,42 +18,43 @@ if "%~4"=="" (
 set "EXECUTE=%~5"
 if not "%EXECUTE%"=="" if not "%EXECUTE%"=="--execute" goto usage
 
-if not exist "bench-env\Scripts\python.exe" (
-  py -3 -m venv bench-env || exit /b 1
-  bench-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
-  bench-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
+if not exist "qualification-env\Scripts\python.exe" (
+  py -3 -m venv qualification-env || exit /b 1
+  qualification-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
 )
+qualification-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
 
-bench-env\Scripts\python.exe -m scripts.release.qualification_recipe --target "%TARGET%" --root "%CD%" --output "%OUTPUT_DIR%" --baseline-version "%BASELINE_VERSION%" --target-version "%TARGET_VERSION%" || exit /b 1
+qualification-env\Scripts\python.exe -m scripts.release.qualification_recipe --target "%TARGET%" --root "%CD%" --output "%OUTPUT_DIR%" --baseline-version "%BASELINE_VERSION%" --target-version "%TARGET_VERSION%" || exit /b 1
 if "%EXECUTE%"=="--execute" (
-  bench-env\Scripts\python.exe -m scripts.release.qualification_automation "%OUTPUT_DIR%\qualification-recipe.json" --output "%OUTPUT_DIR%" --execute
+  qualification-env\Scripts\python.exe -m scripts.release.qualification_automation "%OUTPUT_DIR%\qualification-recipe.json" --output "%OUTPUT_DIR%" --execute
 ) else (
-  bench-env\Scripts\python.exe -m scripts.release.qualification_automation "%OUTPUT_DIR%\qualification-recipe.json" --output "%OUTPUT_DIR%"
+  qualification-env\Scripts\python.exe -m scripts.release.qualification_automation "%OUTPUT_DIR%\qualification-recipe.json" --output "%OUTPUT_DIR%"
 )
 exit /b %ERRORLEVEL%
 
 :auto_preview
 call bootstrap_qualification.bat || exit /b 1
 call :ensure_env || exit /b 1
-bench-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%"
+qualification-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%"
 exit /b %ERRORLEVEL%
 
 :auto_execute
 call bootstrap_qualification.bat --execute || exit /b 1
 call :ensure_env || exit /b 1
-bench-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%" --execute
+qualification-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%" --execute
 exit /b %ERRORLEVEL%
 
 :ensure_env
-if exist "bench-env\Scripts\python.exe" exit /b 0
-py -3 -m venv bench-env || exit /b 1
-bench-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
-bench-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
+if not exist "qualification-env\Scripts\python.exe" (
+  py -3 -m venv qualification-env || exit /b 1
+  qualification-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
+)
+qualification-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
 exit /b 0
 
 :list_targets
-if exist "bench-env\Scripts\python.exe" (
-  bench-env\Scripts\python.exe -m scripts.release.qualification_recipe --list-targets
+if exist "qualification-env\Scripts\python.exe" (
+  qualification-env\Scripts\python.exe -m scripts.release.qualification_recipe --list-targets
 ) else (
   py -3 -m scripts.release.qualification_recipe --list-targets
 )

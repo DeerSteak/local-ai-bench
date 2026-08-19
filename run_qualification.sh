@@ -9,7 +9,7 @@ elif command -v python3.12 >/dev/null 2>&1; then
 else
     QUALIFICATION_PYTHON="python3"
 fi
-VENV="$ROOT/bench-env"
+VENV="$ROOT/qualification-env"
 
 usage() {
     echo "Usage: $0 TARGET BASELINE_VERSION TARGET_VERSION [OUTPUT_DIR] [--execute]"
@@ -31,8 +31,8 @@ if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
     if [ ! -x "$VENV/bin/python" ]; then
         "$QUALIFICATION_PYTHON" -m venv "$VENV"
         "$VENV/bin/python" -m pip install --upgrade pip
-        "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
     fi
+    "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
     cd "$ROOT"
     COMMAND=("$VENV/bin/python" -m scripts.release.qualification_auto --root "$ROOT")
     if [ "${1:-}" = "--execute" ]; then COMMAND+=(--execute); fi
@@ -56,8 +56,8 @@ fi
 if [ ! -x "$VENV/bin/python" ]; then
     "$QUALIFICATION_PYTHON" -m venv "$VENV"
     "$VENV/bin/python" -m pip install --upgrade pip
-    "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
 fi
+"$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
 
 cd "$ROOT"
 "$VENV/bin/python" -m scripts.release.qualification_recipe \

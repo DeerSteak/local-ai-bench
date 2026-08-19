@@ -12,7 +12,7 @@ Use a separate performance qualification when a claim depends on catalog-wide co
 
 ## Launchers
 
-Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates `bench-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate.
+Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates the dedicated `qualification-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate.
 
 Review the preview, then run the same launcher with `--execute`. Execution installs host prerequisites, the selected runtime builds, and the smoke model, then completes the entire resumable lifecycle unattended:
 
@@ -38,7 +38,7 @@ The launchers generate the production recipe; [`samples/qualification_recipe_exa
 
 The bundled install step uses `scripts.release.qualification_install` to install the selected llama.cpp or vLLM runtime and download only the recorded smoke model beneath a disposable repository clone. It previews by default and requires both `--execute` and `--confirm-isolated-root` before changing that clone. Runtime installation still obeys the platform support checks; an unsupported vLLM combination fails instead of falling back to another backend. Every engine installation requires `--runtime-version`; vLLM records the complete wheel identity, including a ROCm local-version suffix such as `0.27.1+rocm723`, while llama.cpp records its exact `bNNNNN` release. Qualification never installs a floating latest build. A vLLM recipe sets `HF_HOME` to the disposable clone's `qualification-vllm-cache` directory so installation and the later smoke run resolve the same weights.
 
-On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. Create `bench-env`, install `requirements.txt`, and then let the recipe install the engine and smoke model. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
+On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. The launcher creates `qualification-env`, refreshes `requirements.txt` on every invocation, and then installs the engine and smoke model. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
 
 The cancellation command is the only command that may define `interrupt_when_log_contains`. The runner launches it in its own process group, waits for the structured model-running progress event in its live log, sends the platform interrupt signal, and accepts only the declared exit codes. Slow installation, model loading, or server startup therefore cannot cause a premature cancellation.
 
@@ -47,13 +47,13 @@ The cancellation command is the only command that may define `interrupt_when_log
 The low-level runner remains preview-first. The top-level launcher writes only the generated recipe and its parent evidence directory before showing this preview; it does not install a runtime, download a model, or launch a workload until `--execute` is supplied:
 
 ```bash
-bench-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001
+qualification-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001
 ```
 
 After reviewing every command and ensuring required permissions are already available, opt into execution:
 
 ```bash
-bench-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001 --execute
+qualification-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001 --execute
 ```
 
 Each step has a separate numbered log. `qualification-state.json` is atomically checkpointed before and after every step, and rerunning the same command resumes at the first step that has not passed. A changed recipe is rejected for an existing checkpoint; use a new evidence directory when the target, coverage, command, or timeout changes.

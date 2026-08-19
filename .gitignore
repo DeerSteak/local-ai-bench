@@ -182,6 +182,7 @@ cython_debug/
 .cursorindexingignore
 ComfyUI/
 bench-env/
+qualification-env/
 /models/
 .DS_Store
 hf.txt

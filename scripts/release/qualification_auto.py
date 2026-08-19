@@ -9,7 +9,9 @@ import re
 import sys
 from pathlib import Path
 
-from scripts.release.qualification_automation import qualification_preview, run_qualification
+from scripts.release.qualification_automation import (
+    next_qualification_step, qualification_preview, run_qualification,
+)
 from scripts.release.qualification_recipe import build_recipe, write_recipe
 from scripts.runtime.shared import Shared
 
@@ -22,6 +24,7 @@ PINNED_VERSIONS = {
         "0.26.1rc1.dev925+gf1178f3a0", "0.26.1rc1.dev925+gf1178f3a0",
     ),
 }
+AUTOMATION_REVISION = "v2"
 
 
 def detected_targets(system: str, machine: str, hostname: str, *, wsl: bool) -> list[str]:
@@ -71,7 +74,7 @@ def automatic_recipes(root: Path, output_root: Path, *, system: str | None = Non
     recipes = []
     for target_id in detected_targets(system, machine, hostname, wsl=wsl):
         baseline, target = target_versions(target_id)
-        output = Path(output_root) / f"{target_id}-{safe_version(target)}"
+        output = Path(output_root) / f"{target_id}-{safe_version(target)}-{AUTOMATION_REVISION}"
         recipe = build_recipe(
             target_id=target_id, root=root, output=output,
             baseline_version=baseline, target_version=target,
@@ -79,6 +82,17 @@ def automatic_recipes(root: Path, output_root: Path, *, system: str | None = Non
         )
         recipes.append((output, recipe))
     return recipes
+
+
+def execution_summary(target: dict, state: dict, output: Path) -> dict:
+    failed_step = next_qualification_step(state)
+    record = state["steps"].get(failed_step, {}) if failed_step else {}
+    return {
+        "target": target["id"], "status": "passed" if failed_step is None else "failed",
+        "failed_step": failed_step, "detail": record.get("detail"),
+        "log": str(Path(output) / record["log"]) if record.get("log") else None,
+        "evidence_dir": str(output),
+    }
 
 
 def main(argv=None) -> int:  # pragma: no cover
@@ -90,16 +104,19 @@ def main(argv=None) -> int:  # pragma: no cover
     try:
         recipes = automatic_recipes(args.root.resolve(), args.output.resolve())
         summaries = []
+        failed = False
         for output, recipe in recipes:
             recipe_path = output / "qualification-recipe.json"
             write_recipe(recipe_path, recipe)
             if args.execute:
                 state = run_qualification(recipe, output)
-                summaries.append({"target": recipe["target"], "state": state})
+                summary = execution_summary(recipe["target"], state, output)
+                summaries.append(summary)
+                failed = failed or summary["status"] == "failed"
             else:
                 summaries.append(qualification_preview(recipe, output))
         print(json.dumps(summaries, indent=2))
-        return 0
+        return 1 if failed else 0
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
