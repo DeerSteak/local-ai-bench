@@ -1393,11 +1393,27 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
     }
 
 
-def default_memory_sources(which_fn=shutil.which) -> dict[str, str]:
+def rocm_memory_is_discrete(run_fn=subprocess.run, which_fn=shutil.which) -> bool:
+    executable = which_fn("rocminfo")
+    if not executable:
+        return False
+    try:
+        result = run_fn(
+            [executable], capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode:
+        return False
+    names = hardware.rocminfo_gpu_names(result.stdout)
+    return bool(names) and all(hardware.classify_gpu(name) == "discrete" for name in names)
+
+
+def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict[str, str]:
     accelerator = "unsupported"
     if which_fn("nvidia-smi"):
         accelerator = "nvidia-smi"
-    elif which_fn("rocm-smi"):
+    elif which_fn("rocm-smi") and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
     return {
         "host_ram_used_gb": "psutil",
@@ -1640,13 +1656,14 @@ class TelemetrySampler:
         temperature_uses_nvidia = isinstance(self.temperature_source, PollingTemperatureSource) \
             and "nvidia-smi" in self.temperature_source.availability.sources.values()
         memory_uses_nvidia = "nvidia-smi" in self.memory_sources.values()
+        memory_uses_rocm = "rocm-smi" in self.memory_sources.values()
         nvidia_captured = memory_uses_nvidia or power_uses_nvidia or temperature_uses_nvidia
         nvidia = self.nvidia_query_fn() if nvidia_captured else None
         vram = (
             (nvidia.memory_used_gb, nvidia.memory_total_gb)
             if memory_uses_nvidia and nvidia and nvidia.memory_used_gb is not None
             and nvidia.memory_total_gb is not None
-            else (None if memory_uses_nvidia else query_sampler_vram_usage())
+            else query_sampler_vram_usage() if memory_uses_rocm else None
         )
         if isinstance(self.temperature_source, PollingTemperatureSource):
             temperature = self.temperature_source.read(
