@@ -97,6 +97,23 @@ def test_reviewed_dgx_spark_vllm_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+@pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [
+    ("llamacpp", "0.1.2-dev", "geforce-rtx-5090-wsl2-llamacpp-cuda"),
+    ("vllm", "0.27.1", "geforce-rtx-5090-wsl2-vllm-cuda"),
+])
+def test_reviewed_geforce_rtx_5090_wsl2_qualifications_are_supported(
+        runtime, runtime_version, entry_id):
+    evidence = qualification_entry(
+        "wsl2", "x86_64", runtime, "cuda", runtime_version,
+        accelerator=(
+            "AMD Ryzen 7 9850X3D 8-Core Processor\n"
+            "NVIDIA GeForce RTX 5090 51 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == entry_id
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_staleness_downgrades_at_release_boundary():
     evidence = entry(suite_version="6.0")
     assert qualification_is_stale(evidence, "6.1") is False

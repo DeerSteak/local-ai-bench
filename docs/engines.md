@@ -14,7 +14,7 @@ Support is derived from the recorded qualification results below. A supported en
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | vllm | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | wsl2 | x86_64 | vllm | rocm | Unverified | No qualification record |
 | linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |

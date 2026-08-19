@@ -10,7 +10,7 @@ def test_rendered_matrix_includes_reviewed_support_and_defaults_others_to_unveri
     assert "| windows | x86_64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |" in rendered
     assert "| linux | aarch64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |" in rendered
     assert "| linux | aarch64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |" in rendered
-    assert "| wsl2 | x86_64 | vllm | cuda | Unverified | No qualification record |" in rendered
+    assert "| wsl2 | x86_64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |" in rendered
 
 
 def test_document_drift_is_detected_and_replacement_is_exact(tmp_path, monkeypatch):

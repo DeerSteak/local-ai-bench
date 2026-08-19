@@ -147,6 +147,64 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
             "results_qualification_dgx-spark-vllm-cuda.json",
         ],
     },
+    {
+        "id": "geforce-rtx-5090-wsl2-llamacpp-cuda",
+        "platform": "wsl2",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "cuda",
+        "accelerator": (
+            "AMD Ryzen 7 9850X3D 8-Core Processor\n"
+            "NVIDIA GeForce RTX 5090 51 GB"
+        ),
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/geforce-rtx-5090-wsl2-llamacpp-cuda/"
+            "results_qualification_geforce-wsl2-llamacpp-cuda.json",
+        ],
+    },
+    {
+        "id": "geforce-rtx-5090-wsl2-vllm-cuda",
+        "platform": "wsl2",
+        "architecture": "x86_64",
+        "runtime": "vllm",
+        "runtime_version": "0.27.1",
+        "backend": "cuda",
+        "accelerator": (
+            "AMD Ryzen 7 9850X3D 8-Core Processor\n"
+            "NVIDIA GeForce RTX 5090 51 GB"
+        ),
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "vllmbench",
+            ],
+            "models": ["granite4.1:3b-q4_K_M", "nomic-embed-text"],
+            "notes": (
+                "Smallest complete-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/geforce-rtx-5090-wsl2-vllm-cuda/"
+            "results_qualification_geforce-wsl2-vllm-cuda.json",
+        ],
+    },
 )
 QUALIFICATION_TARGETS = tuple(
     {key: value for key, value in target.items() if key != "id"} for target in TARGETS
