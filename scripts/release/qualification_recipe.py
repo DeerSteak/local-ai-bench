@@ -93,6 +93,7 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
         lifecycle_smoke.append("--ack-experimental-engine")
     environment = {
         "LOCAL_AI_BENCH_PROGRESS": "1", "LOCAL_AI_BENCH_QUALIFICATION": "1",
+        "PYTHONUTF8": "1",
     }
     if engine == "vllm":
         environment["HF_HOME"] = str(root / "qualification-vllm-cache")

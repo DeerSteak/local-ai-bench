@@ -23,7 +23,7 @@ from scripts.results.run_plan import RunPlan
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
-from scripts.runtime.shared import Shared
+from scripts.runtime.shared import Shared, _console_safe_text
 from scripts.results.regrade import answer_sidecar_path
 from scripts.results.result_store import atomic_write_json
 from scripts.stage_registry import ACCURACY_TESTS
@@ -38,10 +38,11 @@ class RunnerLike(Protocol):
 def relay_runner_log(text: str) -> None:
     """Relay runner timestamps unchanged while redacting ordinary log lines."""
     if text.startswith(PROGRESS_PREFIX):
-        sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
+        output = text if text.endswith("\n") else f"{text}\n"
+        sys.stdout.write(_console_safe_text(output))
         sys.stdout.flush()
         return
-    sys.stdout.write(f"{redact_log_text(text.rstrip())}\n")
+    sys.stdout.write(_console_safe_text(f"{redact_log_text(text.rstrip())}\n"))
     sys.stdout.flush()
 
 

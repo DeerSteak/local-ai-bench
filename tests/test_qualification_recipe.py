@@ -24,6 +24,7 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     assert "llm" in recipe["coverage"]["workloads"]
     assert "emb" in recipe["coverage"]["workloads"]
     assert "sustained" in recipe["coverage"]["workloads"]
+    assert recipe["environment"]["PYTHONUTF8"] == "1"
     assert recipe["steps"]["install"]["command"][-2:] == [
         "--inventory", str(tmp_path / "evidence" / "baseline-installation.json"),
     ]

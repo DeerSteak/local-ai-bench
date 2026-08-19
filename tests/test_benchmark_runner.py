@@ -1,4 +1,6 @@
 import json
+import io
+import sys
 from types import SimpleNamespace
 
 from scripts.app.benchmark import (
@@ -136,6 +138,15 @@ def test_relayed_log_is_still_redacted(capsys):
     assert out.rstrip() == redact_log_text(f"downloading with token {secret}")
     if redact_log_text(secret) != secret:
         assert secret not in out
+
+
+def test_relayed_log_never_crashes_a_legacy_windows_console(monkeypatch):
+    output = io.BytesIO()
+    console = io.TextIOWrapper(output, encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", console)
+    relay_runner_log("[23:09:27] ✓ model loaded\n")
+    console.flush()
+    assert output.getvalue().decode("cp1252") == "[23:09:27] ? model loaded\n"
 
 
 def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path):
