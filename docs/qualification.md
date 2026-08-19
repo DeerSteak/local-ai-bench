@@ -12,23 +12,25 @@ Use a separate performance qualification when a claim depends on catalog-wide co
 
 ## Launchers
 
-Use a disposable clone and run `./run_qualification.sh --list-targets` on macOS, Linux, or WSL2, or `run_qualification.bat --list-targets` on Windows. Each launcher creates `bench-env` and installs `requirements.txt` when needed, generates a concrete recipe for the detected accelerator, and previews it by default. It refuses a target whose expected accelerator name is absent from the shared machine identity, which keeps Radeon and Intel Vulkan evidence separate.
+Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates `bench-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate.
 
-Pass an exact rollback baseline first and the newer version being qualified second. The baseline is installed, exercised, and snapshotted; the qualification target is then installed, version-checked, and smoke-tested by the upgrade step before rollback restores and verifies the baseline. Review the preview, then repeat the same command with `--execute` as the final argument:
+Review the preview, then run the same launcher with `--execute`. Execution installs host prerequisites, the selected runtime builds, and the smoke model, then completes the entire resumable lifecycle unattended:
 
 ```bash
-./run_qualification.sh macos-m5-pro-llamacpp-metal bPREVIOUS bCURRENT qualification-evidence/m5-pro
-./run_qualification.sh macos-m5-pro-llamacpp-metal bPREVIOUS bCURRENT qualification-evidence/m5-pro --execute
+./run_qualification.sh
+./run_qualification.sh --execute
 ```
 
 On Windows:
 
 ```text
-run_qualification.bat geforce-windows-llamacpp-cuda bPREVIOUS bCURRENT qualification-evidence\geforce
-run_qualification.bat geforce-windows-llamacpp-cuda bPREVIOUS bCURRENT qualification-evidence\geforce --execute
+run_qualification.bat
+run_qualification.bat --execute
 ```
 
-For a newly installed host, `bootstrap_qualification.sh` or `bootstrap_qualification.bat` previews the prerequisite package-manager commands and performs them only with `--execute`. The bootstrap covers Git, Python, venv support, CMake, and a C++ compiler where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.
+The main launcher calls `bootstrap_qualification.sh` or `bootstrap_qualification.bat` itself. The bootstrap covers Git, Python, venv support, CMake, and a C++ compiler where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.
+
+The reviewed pins are llama.cpp `b10486 → b10488`, CUDA vLLM `0.27.0 → 0.27.1`, ROCm vLLM `0.27.1+rocm723`, and DGX Spark CUDA 13 nightly `0.26.1rc1.dev925+gf1178f3a0`. Wheel channels that retain only one suitable current artifact reinstall that exact build for the update/rollback mechanics instead of selecting an older or incompatible package. Updating these pins is a reviewed code change; qualification never floats to an unreviewed release at execution time.
 
 ## Recipe internals
 

@@ -22,6 +22,22 @@ if [ "${1:-}" = "--list-targets" ]; then
     fi
     exec "$QUALIFICATION_PYTHON" -m scripts.release.qualification_recipe --list-targets
 fi
+if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
+    if [ "${1:-}" = "--execute" ]; then
+        "$ROOT/bootstrap_qualification.sh" --execute
+    else
+        "$ROOT/bootstrap_qualification.sh"
+    fi
+    if [ ! -x "$VENV/bin/python" ]; then
+        "$QUALIFICATION_PYTHON" -m venv "$VENV"
+        "$VENV/bin/python" -m pip install --upgrade pip
+        "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
+    fi
+    cd "$ROOT"
+    COMMAND=("$VENV/bin/python" -m scripts.release.qualification_auto --root "$ROOT")
+    if [ "${1:-}" = "--execute" ]; then COMMAND+=(--execute); fi
+    exec "${COMMAND[@]}"
+fi
 if [ "$#" -lt 3 ]; then
     usage
     exit 2

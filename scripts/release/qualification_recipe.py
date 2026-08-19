@@ -54,8 +54,8 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
     if target_id not in TARGETS:
         raise ValueError(f"unknown qualification target: {target_id}")
     from scripts.release.qualification_automation import validate_qualification_recipe
-    if not baseline_version or not target_version or baseline_version == target_version:
-        raise ValueError("baseline and target runtime versions must be distinct")
+    if not baseline_version or not target_version:
+        raise ValueError("baseline and target runtime versions are required")
     root, output = Path(root).resolve(), Path(output).resolve()
     platform_name, architecture, engine, backend = TARGETS[target_id]
     if accelerator_identity is None:

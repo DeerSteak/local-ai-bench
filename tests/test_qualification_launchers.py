@@ -11,6 +11,8 @@ def test_unix_launcher_bootstraps_then_previews_by_default():
     assert 'python" -m pip install -r' in text
     assert "qualification_recipe" in text
     assert 'if [ "$EXECUTE" = "--execute" ]' in text
+    assert "scripts.release.qualification_auto" in text
+    assert 'bootstrap_qualification.sh" --execute' in text
 
 
 def test_windows_launcher_bootstraps_then_previews_by_default():
@@ -18,6 +20,8 @@ def test_windows_launcher_bootstraps_then_previews_by_default():
     assert "py -3 -m venv bench-env" in text
     assert "qualification_recipe" in text
     assert 'if "%EXECUTE%"=="--execute"' in text
+    assert "scripts.release.qualification_auto" in text
+    assert "bootstrap_qualification.bat --execute" in text
 
 
 def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():

@@ -3,6 +3,8 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 if "%~1"=="--list-targets" goto list_targets
+if "%~1"=="" goto auto_preview
+if "%~1"=="--execute" goto auto_execute
 if "%~3"=="" goto usage
 
 set "TARGET=%~1"
@@ -29,6 +31,25 @@ if "%EXECUTE%"=="--execute" (
   bench-env\Scripts\python.exe -m scripts.release.qualification_automation "%OUTPUT_DIR%\qualification-recipe.json" --output "%OUTPUT_DIR%"
 )
 exit /b %ERRORLEVEL%
+
+:auto_preview
+call bootstrap_qualification.bat || exit /b 1
+call :ensure_env || exit /b 1
+bench-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%"
+exit /b %ERRORLEVEL%
+
+:auto_execute
+call bootstrap_qualification.bat --execute || exit /b 1
+call :ensure_env || exit /b 1
+bench-env\Scripts\python.exe -m scripts.release.qualification_auto --root "%CD%" --execute
+exit /b %ERRORLEVEL%
+
+:ensure_env
+if exist "bench-env\Scripts\python.exe" exit /b 0
+py -3 -m venv bench-env || exit /b 1
+bench-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
+bench-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
+exit /b 0
 
 :list_targets
 if exist "bench-env\Scripts\python.exe" (

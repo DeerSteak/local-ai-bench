@@ -20,11 +20,11 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     assert recipe["steps"]["resume"]["command"][-1].endswith("interrupted-result.json")
 
 
-def test_recipe_requires_a_real_version_transition(tmp_path):
-    with pytest.raises(ValueError, match="must be distinct"):
+def test_recipe_requires_both_lifecycle_versions(tmp_path):
+    with pytest.raises(ValueError, match="are required"):
         build_recipe(
             target_id="macos-m5-pro-llamacpp-metal", root=tmp_path,
-            output=tmp_path / "evidence", baseline_version="b1", target_version="b1",
+            output=tmp_path / "evidence", baseline_version="", target_version="b1",
             accelerator_identity="MacBook Pro / M5 Pro",
         )
 
