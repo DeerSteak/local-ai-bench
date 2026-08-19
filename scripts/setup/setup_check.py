@@ -73,6 +73,13 @@ from scripts.setup.vllm_install import (
 from scripts.app.interface_mode import select_interface_mode
 
 
+def accessible_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def main() -> None:  # pragma: no cover - real interactive installer
     # Repo root, one level up — sourced from config.py rather than redefined here.
     SCRIPT_DIR   = config.SCRIPT_DIR
@@ -373,7 +380,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     # Triton JIT-compiles a CUDA helper on import, so vLLM cannot start without these.
     _vllm_python = config.VLLM_VENV / "bin" / "python"
     _vllm_include_dir = python_include_dir(
-        str(_vllm_python) if _vllm_python.is_file() else sys.executable)
+        str(_vllm_python) if accessible_file(_vllm_python) else sys.executable)
     missing_python_header = missing_python_headers(_vllm_include_dir)
     missing_header_version = python_version_from_include_dir(_vllm_include_dir) or sys.version_info[:2]
     header_command = next(
