@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,3 +27,12 @@ def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():
     assert "GPU drivers and CUDA/ROCm SDKs are intentionally not changed" in unix
     assert 'if not "%~1"=="--execute"' in windows
     assert "winget install --id Python.Python.3.12" in windows
+
+
+def test_target_listing_does_not_require_installed_site_packages():
+    result = subprocess.run(
+        [sys.executable, "-S", "-m", "scripts.release.qualification_recipe", "--list-targets"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "macos-m5-pro-llamacpp-metal" in result.stdout

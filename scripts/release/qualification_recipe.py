@@ -1,15 +1,13 @@
 """Generate concrete qualification recipes for supported platform targets."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import platform
 import sys
 from pathlib import Path
-
-from scripts.release.qualification_automation import validate_qualification_recipe
-from scripts.runtime.shared import Shared
-
 
 SMOKE_MODEL = "gemma3:1b-it-q4_K_M"
 INTERRUPT_MARKER = '"kind":"model","stage":"llm","status":"running"'
@@ -55,11 +53,14 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
                  model: str = SMOKE_MODEL, accelerator_identity: str | None = None) -> dict:
     if target_id not in TARGETS:
         raise ValueError(f"unknown qualification target: {target_id}")
+    from scripts.release.qualification_automation import validate_qualification_recipe
     if not baseline_version or not target_version or baseline_version == target_version:
         raise ValueError("baseline and target runtime versions must be distinct")
     root, output = Path(root).resolve(), Path(output).resolve()
     platform_name, architecture, engine, backend = TARGETS[target_id]
-    accelerator_identity = accelerator_identity or Shared.get_hostname()
+    if accelerator_identity is None:
+        from scripts.runtime.shared import Shared
+        accelerator_identity = Shared.get_hostname()
     expected = TARGET_ACCELERATORS[target_id]
     if expected.lower() not in accelerator_identity.lower():
         raise ValueError(
