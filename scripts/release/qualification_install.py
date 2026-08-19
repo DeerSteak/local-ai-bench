@@ -1,4 +1,4 @@
-"""Install an isolated engine runtime and smoke model for qualification."""
+"""Install isolated runtimes and minimum workload models for qualification."""
 
 import argparse
 import json
@@ -8,12 +8,22 @@ import sys
 from pathlib import Path
 
 from scripts.setup import llamacpp_install
-from scripts.setup.model_download import provision_catalog_models
-from scripts.setup.setup_discovery import discover_nvidia, discover_rocm, rocm_version
+from scripts.runtime.comfyui_installation import find_image_asset
+from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
+from scripts.setup.comfyui_install import ensure as ensure_comfyui
+from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
+from scripts.setup.model_download import download_hf_files, provision_catalog_models
+from scripts.setup.setup_discovery import (
+    discover_nvidia, discover_rocm, discover_windows_gpu, rocm_version,
+)
 from scripts.setup.vllm_install import (
     install_vllm, vllm_platform_support,
 )
-from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+
+
+SMALLEST_EMBEDDING_MODEL = EMBED_MODELS[0]["tag"]
+SMALLEST_IMAGE_MODEL = IMAGE_MODELS[0]["short"]
 
 
 def qualification_model(tag: str, catalog=None) -> dict:
@@ -46,6 +56,10 @@ def qualification_install_plan(*, root: Path, engine: str, model_tag: str,
         "mode": "preview", "root": str(root), "engine": engine,
         "runtime_version": runtime_version,
         "model": {"tag": model_tag, "label": model["label"]},
+        "coverage_models": {
+            "llm": model_tag, "embeddings": SMALLEST_EMBEDDING_MODEL,
+            "images": SMALLEST_IMAGE_MODEL if engine == "llamacpp" else None,
+        },
         "platform": {"system": system, "machine": machine,
                      "nvidia": nvidia, "rocm": rocm},
         "runtime_dir": str(runtime_dir), "models_dir": str(models_dir),
@@ -112,10 +126,47 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
     if not installed:
         return False
     provision_catalog_models(
-        [model], [plan["engine"]], models_dir=Path(plan["models_dir"]),
+        [model, EMBED_MODELS[0]], [plan["engine"]], models_dir=Path(plan["models_dir"]),
         vllm_cache=model_cache, load_token=lambda: os.environ.get("HF_TOKEN"),
         issues=issues, info=log, warn=log, fail=log, ok=log,
     )
+    if plan["coverage_models"]["images"] is None:
+        return not issues
+    comfyui_root = root / "qualification-comfyui-runtime"
+    comfyui_dir = comfyui_root / "ComfyUI"
+    portable_python = comfyui_root / "python_embeded" / "python.exe"
+    display = discover_windows_gpu()
+    windows_gpu = "nvidia" if nvidia.available else display.vendor
+    ensure_comfyui(
+        comfyui_dir, comfyui_root, plan["platform"]["system"], windows_gpu,
+        compute_capability=nvidia.compute_capability, issues=issues,
+        info=log, warn=log, fail=log, ok=log,
+    )
+    image_models_dir = Path(plan["models_dir"]) / "comfyui"
+    extra_paths = image_models_dir / "extra_model_paths.yaml"
+    prepared = prepare_comfyui_runtime(
+        comfyui_dir, image_models_dir, extra_paths, portable_python=portable_python,
+        intel_xpu=display.vendor == "intel", rocm=rocm.available and not nvidia.available,
+        issues=issues, info=log, warn=log, fail=log, ok=log,
+    )
+    if prepared:
+        def asset(name, subdir):
+            return find_image_asset(name, image_models_dir, subdir, comfyui_dir)
+
+        def download(repo, filename, token=None, dest_dir: Path | None = None, save_as=None):
+            if dest_dir is None:
+                raise ValueError("qualification image download requires a destination")
+            return download_hf_files(
+                repo, filename, dest_dir, token=token, save_as=save_as, warn=log,
+            )
+
+        found = provision_comfyui_assets(
+            [IMAGE_MODELS[0]], image_models_dir, find_asset=asset, download=download,
+            load_token=lambda: os.environ.get("HF_TOKEN"), info=log, warn=log,
+            fail=log, ok=log,
+        )
+        if IMAGE_MODELS[0]["checkpoint"] not in found:
+            issues.append("smallest image checkpoint was not provisioned")
     return not issues
 
 

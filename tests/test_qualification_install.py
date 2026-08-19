@@ -33,6 +33,9 @@ def test_llamacpp_plan_keeps_runtime_models_and_cache_under_isolated_root(tmp_pa
     assert plan["models_dir"] == str(tmp_path / "models")
     assert plan["cache_dir"] == str(tmp_path / "qualification-cache")
     assert plan["runtime_version"] == "b7000"
+    assert plan["coverage_models"] == {
+        "llm": "tiny", "embeddings": "nomic-embed-text", "images": "sd15",
+    }
     assert not (tmp_path / "llama.cpp").exists()
 
 
@@ -57,6 +60,7 @@ def test_vllm_plan_accepts_installable_support_and_records_exact_model(tmp_path,
     assert plan["runtime_dir"] == str(tmp_path / "vllm-env")
     assert plan["model"] == {"tag": "tiny", "label": "Tiny"}
     assert plan["runtime_version"] == "0.27.1+rocm723"
+    assert plan["coverage_models"]["images"] is None
 
 
 def test_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypatch):
