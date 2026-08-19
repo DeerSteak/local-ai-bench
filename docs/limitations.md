@@ -38,7 +38,7 @@ A cross-engine chart therefore answers "how fast does each runtime serve this mo
 
 The 4-bit weights are also not equally portable. AWQ and GPTQ Marlin kernels remain more mature on CUDA; a current ROCm wheel may include `gfx1151` while a particular quantized model or kernel path still fails. A model that benchmarks on one backend may therefore be unavailable on another, which is a coverage difference rather than a performance result.
 
-Cross-engine qualification is exact to the recorded platform, architecture, runtime version, backend, suite version, and lifecycle evidence. Consult the generated [engine qualification matrix](engines.md#qualification-matrix) for current status; an absent row is unverified, and vLLM requires an explicit experimental acknowledgment until its exact configuration completes the full lifecycle.
+Cross-engine qualification is exact to the recorded platform, architecture, runtime version, backend, suite version, lifecycle, and smallest-model workload coverage. Consult the generated [engine qualification matrix](engines.md#qualification-matrix) for current status; an absent or lifecycle-only row is unverified, and vLLM requires an explicit experimental acknowledgment until its exact configuration completes comprehensive qualification.
 
 ## Recommendations
 

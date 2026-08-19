@@ -117,8 +117,9 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
         set(entry["coverage"]["workloads"]) == set(qualification_workloads(entry["runtime"]))
         and required_models <= set(entry["coverage"]["models"])
     )
-    if (states == {"passed"} and complete_coverage
-            and not qualification_is_stale(entry, current_version)):
+    if not complete_coverage:
+        return "unverified"
+    if states == {"passed"} and not qualification_is_stale(entry, current_version):
         return "supported"
     if "passed" in states:
         return "experimental"

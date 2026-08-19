@@ -56,10 +56,10 @@ def test_support_level_cannot_be_set_in_evidence():
         validate_qualification_entry(entry(support_level="supported"))
 
 
-def test_complete_lifecycle_without_required_workload_coverage_is_experimental():
+def test_complete_lifecycle_without_required_workload_coverage_is_unverified():
     evidence = entry()
     evidence["coverage"]["workloads"].remove("img")
-    assert derive_support_level(evidence, "6.0-pre8") == "experimental"
+    assert derive_support_level(evidence, "6.0-pre8") == "unverified"
 
 
 def test_partial_evidence_requires_every_gap_to_be_documented():

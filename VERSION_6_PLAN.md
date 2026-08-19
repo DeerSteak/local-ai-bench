@@ -455,11 +455,12 @@ This is mostly process rather than code, which is exactly why it is worth doing 
 
 The maintainer builds validation and presentation, performs each real install/run/lifecycle checklist, records the evidence and failures, and applies the derived support rule without silently changing it. No automated test may claim that hardware was qualified.
 
-For a one-person team, the lifecycle is driven by `scripts.release.qualification_automation`: a reviewed recipe previews without side effects, executes only with an explicit flag, checkpoints each step for resume, captures per-step logs, automatically interrupts the cancellation run, and emits a qualification entry. A representative smoke model is sufficient for lifecycle qualification; catalog-wide performance and compatibility claims remain separate evidence.
+For a one-person team, qualification is driven by `scripts.release.qualification_automation`: a reviewed recipe previews without side effects, executes only with an explicit flag, checkpoints each step for resume, captures per-step logs, automatically interrupts the cancellation run, verifies measured results from the smallest compatible model in every supported workload on both baseline and target runtimes, and emits a qualification entry carrying that exact coverage. Catalog-wide performance and model-specific compatibility claims remain separate evidence.
 
 ## Acceptance criteria
 
 - [x] A machine-readable matrix records platform, runtime, version, backend, date, suite version, and per-lifecycle-step results.
+- [x] A supported entry records measured smallest-model evidence for every workload compatible with its runtime; lifecycle-only evidence remains unverified.
 - [x] Support level is derived from evidence; no code path sets it manually, asserted by test.
 - [x] Anything without qualification evidence is unverified by default.
 - [x] Experimental and unverified paths are labeled in the UI at selection time, and the choice is recorded in the run profile.

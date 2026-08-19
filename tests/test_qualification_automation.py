@@ -32,7 +32,7 @@ def recipe():
         },
         "coverage": {
             "workloads": ["llm"], "models": ["llama3.2:3b-instruct-q4_K_M"],
-            "notes": "Lifecycle smoke; not a full catalog performance qualification.",
+            "notes": "Smallest-model workload coverage; not performance qualification.",
         },
         "environment": {"HF_HOME": "/qualification/vllm-cache"},
         "steps": steps,
