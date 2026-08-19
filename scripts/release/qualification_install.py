@@ -24,6 +24,13 @@ from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 SMALLEST_EMBEDDING_MODEL = EMBED_MODELS[0]["tag"]
 SMALLEST_IMAGE_MODEL = IMAGE_MODELS[0]["short"]
+QUALIFICATION_DGX_CU130_INDEX = (
+    "https://wheels.vllm.ai/cba06764d7a9da41e6f535d6355c13f725574f07/cu130"
+)
+
+
+def qualification_vllm_index(method: str | None) -> str | None:
+    return QUALIFICATION_DGX_CU130_INDEX if method == "nightly_cu130" else None
 
 
 def qualification_model(tag: str, catalog=None) -> dict:
@@ -121,6 +128,7 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
         )
         installed = install_vllm(
             support, log=log, venv_dir=runtime_dir, version=plan["runtime_version"],
+            index_url=qualification_vllm_index(support.method),
         )
         model_cache = Path(os.environ.get("HF_HOME", root / "qualification-vllm-cache"))
     if not installed:

@@ -242,14 +242,17 @@ def fetch_vllm_versions(*, opener=urllib.request.urlopen) -> list[str]:
 
 
 def vllm_install_command(method: str, python_exe: str, uv_available: bool,
-                         version: str | None = None) -> list[str]:
+                         version: str | None = None,
+                         index_url: str | None = None) -> list[str]:
     """Argv that installs vLLM into the venv owned by `python_exe`."""
     normalized = normalize_exact_vllm_version(version) if version else None
     package = f"vllm[bench]=={normalized}" if normalized else VLLM_PACKAGE
     extra = {
         "cuda_wheel": ([package, "--torch-backend=auto"] if uv_available else [package]),
         "rocm_wheel": [package, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
-        "nightly_cu130": ["-U", package, "--extra-index-url", NIGHTLY_CU130_INDEX],
+        "nightly_cu130": [
+            "-U", package, "--extra-index-url", index_url or NIGHTLY_CU130_INDEX,
+        ],
     }[method]
     if uv_available:
         return ["uv", "pip", "install", "--python", python_exe] + extra
@@ -469,7 +472,8 @@ def find_vllm_server(ports=None, timeout: float = 2.0, open_fn=None) -> str | No
 
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
                  venv_dir: Path | None = None,
-                 version: str | None = None) -> bool:  # pragma: no cover
+                 version: str | None = None,
+                 index_url: str | None = None) -> bool:  # pragma: no cover
     """Install vLLM per `support.method`. Real network/venv side effects."""
     if support.method is None:
         return False
@@ -489,7 +493,7 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
             return False
     venv_python = venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
     command = vllm_install_command(
-        support.method, str(venv_python), bool(shutil.which("uv")), version,
+        support.method, str(venv_python), bool(shutil.which("uv")), version, index_url,
     )
     log(f"Installing vLLM ({support.method}) — this downloads several GB ...")
     return run(command).returncode == 0

@@ -398,6 +398,16 @@ def test_rocm_and_nightly_commands_use_their_own_indexes():
     assert NIGHTLY_CU130_INDEX in nightly
 
 
+def test_nightly_command_accepts_an_immutable_qualification_index():
+    immutable = "https://wheels.vllm.ai/commit/cu130"
+    command = vllm_install_command(
+        "nightly_cu130", "/v/bin/python", uv_available=True,
+        version="0.26.1rc1.dev950+gcba06764d", index_url=immutable,
+    )
+    assert immutable in command
+    assert NIGHTLY_CU130_INDEX not in command
+
+
 def test_find_vllm_binary_prefers_a_system_install():
     assert find_vllm_binary(
         platform_name="Linux", venv_dir=Path("/proj/vllm-env"),

@@ -21,7 +21,7 @@ PINNED_VERSIONS = {
     "vllm-cuda": ("0.27.0", "0.27.1"),
     "vllm-rocm": ("0.27.1+rocm723", "0.27.1+rocm723"),
     "vllm-cu130": (
-        "0.26.1rc1.dev925+gf1178f3a0", "0.26.1rc1.dev925+gf1178f3a0",
+        "0.26.1rc1.dev950+gcba06764d", "0.26.1rc1.dev950+gcba06764d",
     ),
 }
 AUTOMATION_REVISION = "v7"

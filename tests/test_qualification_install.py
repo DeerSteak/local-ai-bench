@@ -3,7 +3,8 @@ from dataclasses import dataclass
 import pytest
 
 from scripts.release.qualification_install import (
-    qualification_install_plan, qualification_model,
+    QUALIFICATION_DGX_CU130_INDEX,
+    qualification_install_plan, qualification_model, qualification_vllm_index,
 )
 
 
@@ -70,3 +71,9 @@ def test_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypa
             root=tmp_path, engine="vllm", model_tag="tiny", system="Linux",
             machine="x86_64", nvidia=True, rocm=False, vllm_support=Support(True),
         )
+
+
+def test_dgx_qualification_uses_an_immutable_commit_index():
+    assert qualification_vllm_index("nightly_cu130") == QUALIFICATION_DGX_CU130_INDEX
+    assert "cba06764d7a9da41e6f535d6355c13f725574f07" in QUALIFICATION_DGX_CU130_INDEX
+    assert qualification_vllm_index("cuda_wheel") is None
