@@ -39,8 +39,8 @@ TARGET_ACCELERATORS = {
     "geforce-wsl2-vllm-cuda": "NVIDIA GeForce",
     "nvidia-linux-llamacpp-cuda": "NVIDIA",
     "nvidia-linux-vllm-cuda": "NVIDIA",
-    "ryzen-ai-halo-llamacpp-rocm": "AMD Radeon 8060S",
-    "ryzen-ai-halo-vllm-rocm": "AMD Radeon 8060S",
+    "ryzen-ai-halo-llamacpp-rocm": "Radeon 8060S",
+    "ryzen-ai-halo-vllm-rocm": "Radeon 8060S",
     "dgx-spark-llamacpp-cuda": "NVIDIA GB10",
     "dgx-spark-vllm-cuda": "NVIDIA GB10",
 }

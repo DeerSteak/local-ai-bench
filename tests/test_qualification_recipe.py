@@ -87,3 +87,18 @@ def test_recipe_rejects_a_different_accelerator_on_same_backend(tmp_path):
             output=tmp_path / "evidence", baseline_version="b1", target_version="b2",
             accelerator_identity="AMD Radeon RX 9070 XT",
         )
+
+
+@pytest.mark.parametrize("target_id", (
+    "ryzen-ai-halo-llamacpp-rocm", "ryzen-ai-halo-vllm-rocm",
+))
+def test_ryzen_ai_halo_accepts_linux_cpu_and_gpu_identity_format(tmp_path, target_id):
+    recipe = build_recipe(
+        target_id=target_id, root=tmp_path, output=tmp_path / "evidence",
+        baseline_version="baseline", target_version="target",
+        accelerator_identity=(
+            "AMD Ryzen AI MAX+395 w/ Radeon 8060S\n"
+            "AMD Ryzen AI Max+ 395 w/ Radeon 8060S 125 GB"
+        ),
+    )
+    assert recipe["target"]["accelerator"].endswith("Radeon 8060S 125 GB")

@@ -118,6 +118,17 @@ def test_runtime_lookup_distinguishes_accelerators_with_the_same_backend():
     ) is None
 
 
+def test_runtime_lookup_matches_ryzen_ai_halo_identity_by_gpu_model():
+    evidence = entry(
+        backend="rocm",
+        accelerator="AMD Ryzen AI MAX+395 w/ Radeon 8060S\nAMD Ryzen AI Max+ 395 125 GB",
+    )
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "rocm", "b6000", [evidence],
+        accelerator="Radeon 8060S",
+    ) == evidence
+
+
 def test_execution_support_profile_requires_exact_runtime_evidence():
     evidence = entry()
     supported = engine_support_profile(
