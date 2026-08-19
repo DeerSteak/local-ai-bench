@@ -106,6 +106,7 @@ def test_native_commands_use_the_engine_cache_policy(builder):
         "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128, "fp8",
     )
     assert command[command.index("--kv-cache-dtype") + 1] == "fp8"
+    assert "--enforce-eager" in command
 
 
 def test_native_commands_accept_a_lower_platform_memory_reservation():

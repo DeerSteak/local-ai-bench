@@ -88,6 +88,7 @@ class VllmBenchBenchmark:
             "--input-len", str(input_len),
             "--output-len", str(output_len),
             "--gpu-memory-utilization", str(gpu_memory_utilization),
+            "--enforce-eager",
         ]
         if kv_cache_dtype != "auto":
             command += ["--kv-cache-dtype", kv_cache_dtype]
