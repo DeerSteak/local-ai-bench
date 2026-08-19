@@ -1,7 +1,16 @@
 import pytest
 
 from scripts.release.qualification_automation import execution_recipe_gaps
-from scripts.release.qualification_recipe import TARGETS, TARGET_ACCELERATORS, build_recipe
+from scripts.release.qualification_recipe import (
+    TARGETS, TARGET_ACCELERATORS, build_recipe, mpi_library_path,
+)
+
+
+def test_mpi_library_path_finds_fedora_and_debian_openmpi_layouts():
+    assert mpi_library_path(["/usr/lib64/openmpi/lib"]) == "/usr/lib64/openmpi/lib"
+    assert mpi_library_path(["/usr/lib/x86_64-linux-gnu/openmpi/lib"]) == \
+        "/usr/lib/x86_64-linux-gnu/openmpi/lib"
+    assert mpi_library_path([]) is None
 
 
 @pytest.mark.parametrize("target_id", TARGETS)

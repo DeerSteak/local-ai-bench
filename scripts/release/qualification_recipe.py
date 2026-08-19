@@ -50,6 +50,14 @@ TARGET_ACCELERATORS = {
 }
 
 
+def mpi_library_path(existing_dirs=None) -> str | None:
+    candidates = ("/usr/lib64/openmpi/lib", "/usr/lib/x86_64-linux-gnu/openmpi/lib")
+    existing = {str(path) for path in existing_dirs} if existing_dirs is not None else {
+        path for path in candidates if Path(path).is_dir()
+    }
+    return next((path for path in candidates if path in existing), None)
+
+
 def step(command, timeout=3600, exit_codes=(0,), interrupt=None):
     return {
         "command": [str(item) for item in command], "timeout_seconds": timeout,
@@ -101,6 +109,11 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
     }
     if engine == "vllm":
         environment["HF_HOME"] = str(root / "qualification-vllm-cache")
+        if mpi_path := mpi_library_path():
+            inherited = os.environ.get("LD_LIBRARY_PATH")
+            environment["LD_LIBRARY_PATH"] = (
+                f"{mpi_path}{os.pathsep}{inherited}" if inherited else mpi_path
+            )
     recipe = {
         "target": {
             "id": target_id, "platform": platform_name, "architecture": architecture,
