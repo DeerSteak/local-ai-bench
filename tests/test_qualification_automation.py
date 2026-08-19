@@ -11,7 +11,8 @@ from scripts.release.qualification_automation import (
     execution_recipe_gaps, finalize_qualification_run, initial_run_state,
     load_qualification_recipe, next_qualification_step,
     log_contains_marker, make_evidence_accessible, qualification_entry_from_run,
-    qualification_preview, recipe_digest, sudo_invoking_owner, validate_qualification_recipe,
+    normalize_process_exit_code, qualification_preview, recipe_digest,
+    sudo_invoking_owner, validate_qualification_recipe,
 )
 
 
@@ -102,6 +103,11 @@ def test_interruption_marker_is_read_from_the_live_step_log(tmp_path):
     assert log_contains_marker(log, '"status":"running"') is False
     log.write_text('prefix {"status":"running"}\n')
     assert log_contains_marker(log, '"status":"running"') is True
+
+
+def test_windows_ctrl_break_exit_code_is_normalized_to_the_recipe_value():
+    assert normalize_process_exit_code(0xC000013A, platform_name="nt") == -1073741510
+    assert normalize_process_exit_code(130, platform_name="posix") == 130
 
 
 def test_checkpoint_resumes_at_first_step_that_has_not_passed():

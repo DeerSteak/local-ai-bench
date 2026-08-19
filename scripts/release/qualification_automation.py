@@ -222,6 +222,13 @@ def log_contains_marker(path: Path, marker: str) -> bool:
         return False
 
 
+def normalize_process_exit_code(exit_code: int, *, platform_name: str | None = None) -> int:
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name == "nt" and exit_code >= 2 ** 31:
+        return exit_code - 2 ** 32
+    return exit_code
+
+
 def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                                ) -> tuple[int, str]:  # pragma: no cover
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
@@ -239,6 +246,7 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                 while not log_contains_marker(log_path, interrupt):
                     exit_code = process.poll()
                     if exit_code is not None:
+                        exit_code = normalize_process_exit_code(exit_code)
                         return exit_code, f"process exited before interruption with code {exit_code}"
                     if time.monotonic() >= deadline:
                         process.kill()
@@ -249,7 +257,9 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
                     process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
                 else:
                     os.killpg(process.pid, signal.SIGINT)
-            exit_code = process.wait(timeout=step["timeout_seconds"])
+            exit_code = normalize_process_exit_code(
+                process.wait(timeout=step["timeout_seconds"]),
+            )
             return exit_code, f"process exited with code {exit_code}"
         except subprocess.TimeoutExpired:
             if os.name == "nt":
