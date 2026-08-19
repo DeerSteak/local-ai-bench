@@ -105,7 +105,12 @@ def automatic_recipes(root: Path, output_root: Path, *, system: str | None = Non
 
 def execution_summary(target: dict, state: dict, output: Path) -> dict:
     failed_step = next_qualification_step(state)
-    record = state["steps"].get(failed_step, {}) if failed_step else {}
+    finalization_error = state.get("finalization_error") if failed_step is None else None
+    if finalization_error:
+        failed_step = "finalization"
+        record = {"detail": finalization_error, "log": None}
+    else:
+        record = state["steps"].get(failed_step, {}) if failed_step else {}
     return {
         "target": target["id"], "status": "passed" if failed_step is None else "failed",
         "failed_step": failed_step, "detail": record.get("detail"),

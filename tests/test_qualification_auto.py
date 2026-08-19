@@ -85,3 +85,19 @@ def test_failed_execution_summary_points_directly_to_step_log(tmp_path):
         "detail": "missing dependency", "log": str(tmp_path / "01-install.log"),
         "evidence_dir": str(tmp_path),
     }
+
+
+def test_finalization_failure_never_reports_a_passed_qualification(tmp_path):
+    steps = {
+        name: {"status": "passed", "detail": None, "log": f"{name}.log"}
+        for name in QUALIFICATION_LIFECYCLE
+    }
+    state = {
+        "steps": steps,
+        "finalization_error": "qualification evidence is incomplete: target bundle is missing",
+    }
+    assert execution_summary({"id": "ryzen"}, state, tmp_path) == {
+        "target": "ryzen", "status": "failed", "failed_step": "finalization",
+        "detail": "qualification evidence is incomplete: target bundle is missing",
+        "log": None, "evidence_dir": str(tmp_path),
+    }
