@@ -24,7 +24,7 @@ PINNED_VERSIONS = {
         "0.26.1rc1.dev950+gcba06764d", "0.26.1rc1.dev950+gcba06764d",
     ),
 }
-AUTOMATION_REVISION = "v7"
+AUTOMATION_REVISION = "v8"
 
 
 def detected_targets(system: str, machine: str, hostname: str, *, wsl: bool) -> list[str]:

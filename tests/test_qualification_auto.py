@@ -29,6 +29,7 @@ def test_target_detection_selects_every_applicable_runtime(
 
 
 def test_pinned_versions_are_complete_for_every_automatic_target():
+    assert AUTOMATION_REVISION == "v8"
     targets = [
         "macos-m5-pro-llamacpp-metal", "geforce-wsl2-vllm-cuda",
         "ryzen-ai-halo-vllm-rocm", "dgx-spark-vllm-cuda",
