@@ -53,10 +53,10 @@ def test_private_context_missing_or_malformed_is_a_stable_validation_error(tmp_p
         load_local_execution_context(event_path, "job_example")
 
 
-def test_image_directory_uses_result_stem_without_exporting_output_parent(tmp_path):
+def test_image_directory_is_grouped_beside_its_result(tmp_path):
     assert images_dir_for_result(
-        tmp_path / "elsewhere" / "results_System_20260101.json", tmp_path / "results",
-    ) == (tmp_path / "results" / "images_System_20260101").resolve()
+        tmp_path / "elsewhere" / "results_System_20260101.json",
+    ) == (tmp_path / "elsewhere" / "images_System_20260101").resolve()
     assert images_dir_for_result(
-        tmp_path / "custom.json", tmp_path / "results",
-    ) == (tmp_path / "results" / "images_custom").resolve()
+        tmp_path / "custom.json",
+    ) == (tmp_path / "images_custom").resolve()

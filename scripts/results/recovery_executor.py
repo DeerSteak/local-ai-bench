@@ -234,7 +234,7 @@ def fork_journal_run(source_path, output_path, *, identity_builder=None,
             journal_path,
             LocalExecutionContext(
                 plan.job_id, source_context.comfyui_dir,
-                images_dir_for_result(output_path, config.RESULTS_DIR),
+                images_dir_for_result(output_path),
             ),
         )
     data = {"run": build_run_manifest(plan=plan, repo_root=Path(__file__).parents[2])}

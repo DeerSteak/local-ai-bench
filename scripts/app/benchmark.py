@@ -1123,7 +1123,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         journal_stages = set(tests) & JOURNAL_STAGES
         image_dir = None
         if "img" in journal_stages:
-            image_dir = images_dir_for_result(Path(out_path), config.RESULTS_DIR)
+            image_dir = images_dir_for_result(Path(out_path))
             write_local_execution_context(
                 event_store_path(Path(out_path)),
                 LocalExecutionContext(plan.job_id, comfyui_dir.resolve(), image_dir),

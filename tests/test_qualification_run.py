@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_coverage import qualification_arguments
-from scripts.release.qualification_run import benchmark_wrapper
+from scripts.release.qualification_run import benchmark_wrapper, default_result_path
 from scripts.release.qualification_targets import TARGET_ENGINES, TARGETS, target_engine
 
 
@@ -29,3 +29,10 @@ def test_qualification_arguments_are_the_normal_smallest_model_benchmark():
 
 def test_unix_qualification_uses_the_shipped_benchmark_wrapper(tmp_path):
     assert benchmark_wrapper(tmp_path) == [str(tmp_path / "run_bench.sh")]
+
+
+def test_default_qualification_result_is_grouped_under_ignored_target_directory(tmp_path):
+    assert default_result_path(tmp_path, "dgx-spark-vllm-cuda") == (
+        tmp_path / "qualification-evidence" / "dgx-spark-vllm-cuda"
+        / "results_qualification_dgx-spark-vllm-cuda.json"
+    )

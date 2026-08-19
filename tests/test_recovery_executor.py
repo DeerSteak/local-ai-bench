@@ -107,7 +107,7 @@ def test_image_fork_rebinds_private_paths_to_new_job_and_output(tmp_path, monkey
     def runner(plan, journal, stage, save, saved_identity, resume):
         context = load_local_execution_context(journal, plan.job_id)
         assert context.comfyui_dir == comfyui
-        assert context.images_dir == images_dir_for_result(output, tmp_path)
+        assert context.images_dir == images_dir_for_result(output)
         child = ImageEventStage(
             journal, plan, save, resume_identity=saved_identity,
         )

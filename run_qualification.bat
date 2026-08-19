@@ -8,7 +8,7 @@ if not "%~3"=="" goto usage
 
 set "TARGET=%~1"
 set "RESULT=%~2"
-if "%RESULT%"=="" set "RESULT=%CD%\results_qualification_%TARGET%.json"
+if "%RESULT%"=="" set "RESULT=%CD%\qualification-evidence\%TARGET%\results_qualification_%TARGET%.json"
 powershell.exe -NoProfile -Command "$text = Get-Content -Raw 'scripts\release\qualification_targets.py'; $ids = [regex]::Matches($text, '\"id\": \"([^\"]+)\"') | ForEach-Object { $_.Groups[1].Value }; if ($ids -notcontains $env:TARGET) { exit 1 }" || (
   echo Unknown qualification target: %TARGET% 1>&2
   exit /b 2

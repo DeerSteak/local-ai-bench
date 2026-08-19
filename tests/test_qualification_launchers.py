@@ -11,6 +11,7 @@ def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
+    assert '$ROOT/qualification-evidence/$TARGET/results_qualification_${TARGET}.json' in text
 
 
 def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
@@ -21,6 +22,11 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "qualification_automation" not in text
     assert "powershell.exe -NoProfile" in text
     assert "for /f" not in text
+    assert "%CD%\\qualification-evidence\\%TARGET%\\results_qualification_%TARGET%.json" in text
+
+
+def test_default_qualification_output_directory_is_gitignored():
+    assert "/qualification-evidence/" in (ROOT / ".gitignore").read_text().splitlines()
 
 
 def test_posix_qualification_launcher_has_valid_shell_syntax():

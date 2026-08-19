@@ -20,7 +20,12 @@ def benchmark_wrapper(root: Path) -> list[str]:
     return [str(root / "run_bench.sh")]
 
 
+def default_result_path(root: Path, target_id: str) -> Path:
+    return root / "qualification-evidence" / target_id / f"results_qualification_{target_id}.json"
+
+
 def run_qualification(target_id: str, root: Path, result: Path) -> None:  # pragma: no cover
+    result.parent.mkdir(parents=True, exist_ok=True)
     engine = target_engine(target_id)
     model = qualification_llm_model(engine)["tag"]
     command = [
@@ -50,7 +55,7 @@ def main(argv=None) -> int:  # pragma: no cover
     if not args.target:
         parser.error("target is required")
     root = args.root.resolve()
-    result = (args.result or root / f"results_qualification_{args.target}.json").resolve()
+    result = (args.result or default_result_path(root, args.target)).resolve()
     try:
         run_qualification(args.target, root, result)
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:

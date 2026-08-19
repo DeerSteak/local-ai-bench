@@ -18,7 +18,7 @@ if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
 fi
 
 TARGET="$1"
-RESULT="${2:-$ROOT/results_qualification_${TARGET}.json}"
+RESULT="${2:-$ROOT/qualification-evidence/$TARGET/results_qualification_${TARGET}.json}"
 if ! grep -Fq "{\"id\": \"$TARGET\"," "$ROOT/scripts/release/qualification_targets.py"; then
     echo "Unknown qualification target: $TARGET" >&2
     exit 2

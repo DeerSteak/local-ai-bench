@@ -32,7 +32,7 @@ The launcher calls the normal `setup.sh` or `setup.bat` with a qualification pre
 
 A platform-provided vLLM launcher is sufficient for ordinary serving but not for the native `vllm bench` workload. During vLLM qualification, setup therefore installs the pinned native vLLM CLI alongside a launcher when no `vllm` executable is available; serving continues to use the platform launcher while the native benchmark uses the installed CLI.
 
-The default result is `results_qualification_TARGET.json`; pass a second argument to choose another path. Normal image outputs remain beside the result using the benchmark's standard naming. A zero exit means the ordinary result reports a complete run and every required workload contains complete measured evidence. Errors, timeouts, skipped required cases, missing sections, or incomplete requested counts fail qualification.
+The default result is `qualification-evidence/TARGET/results_qualification_TARGET.json`; the target directory also receives the journal, local context, accuracy sidecars, and normal generated-image directory. `qualification-evidence/` is gitignored so an active or concurrent qualification run does not make the recorded source tree dirty. Pass a second argument to choose another result path. A zero exit means the ordinary result reports a complete run and every required workload contains complete measured evidence. Errors, timeouts, skipped required cases, missing sections, or incomplete requested counts fail qualification.
 
 ## Support records
 
