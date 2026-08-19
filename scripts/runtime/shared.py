@@ -316,6 +316,27 @@ class Shared:
         return find_comfyui_python(comfyui_dir)
 
     @staticmethod
+    def stop_stale_qualification_comfyui(comfyui_dir: Path, processes=None) -> bool:
+        """Stop only ComfyUI processes launched from this disposable qualification tree."""
+        if not os.environ.get("LOCAL_AI_BENCH_QUALIFICATION"):
+            return False
+        target = str(Path(comfyui_dir).resolve()).casefold()
+        processes = psutil.process_iter(["cmdline"]) if processes is None else processes
+        stopped = False
+        for process in processes:
+            try:
+                command = " ".join(process.info.get("cmdline") or []).casefold()
+                if target not in command or "main.py" not in command:
+                    continue
+                for child in process.children(recursive=True):
+                    child.terminate()
+                process.terminate()
+                stopped = True
+            except (psutil.Error, OSError):
+                continue
+        return stopped
+
+    @staticmethod
     def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
         """Start ComfyUI if not already running. Returns whether it's now available."""
         if Shared.comfyui_available():
@@ -327,6 +348,12 @@ class Shared:
                     if (config.COMFYUI_MODELS_DIR / "checkpoints" / model["checkpoint"]).is_file()
                 }
                 if not managed_checkpoints_visible(available, managed):
+                    if Shared.stop_stale_qualification_comfyui(comfyui_dir):
+                        Shared.warn("Stopped stale ComfyUI from the disposable qualification runtime")
+                        for _ in range(20):
+                            if not Shared.comfyui_available():
+                                return Shared.ensure_comfyui(comfyui_dir)
+                            time.sleep(0.25)
                     Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
                     Shared.warn("Stop ComfyUI and retry so Local AI Bench can launch it with the correct configuration")
                     return False
