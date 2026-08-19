@@ -175,6 +175,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_cpu_offload_gb = 0
         self._gpu_visible = True
         self._kv_cache_dtype = "auto"
+        self._runtime_backend = "auto"
         self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
 
@@ -228,6 +229,7 @@ class VllmEngine(InferenceEngine):
 
     def configure_kv_cache(self, runtime_backend: str) -> str:
         """Select one cache policy for every locally managed vLLM workload."""
+        self._runtime_backend = runtime_backend
         self._kv_cache_dtype = (
             "auto" if self._server_url else self.supported_kv_cache_dtype(runtime_backend)
         )
@@ -661,8 +663,10 @@ class VllmEngine(InferenceEngine):
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(config.VLLM_GPU_MEMORY_UTILIZATION)]
-        if self._kv_cache_dtype != "auto":
+        if self._kv_cache_dtype != "auto" and not embedding:
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
+        if self._runtime_backend == "cuda" and not embedding:
+            options += ["--attention-backend", "FLASH_ATTN"]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
         if cpu_offload_gb:
