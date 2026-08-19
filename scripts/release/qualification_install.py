@@ -164,7 +164,9 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
             return False
         write_setup_config(
             root / "local_ai_bench_config.json", comfyui_dir=None,
-            llamacpp_tools={}, vllm=qualification_vllm_handoff(
+            llamacpp_tools={}, gpu_devices=[
+                {**gpu, "vendor": "nvidia", "backend": "cuda"} for gpu in nvidia.gpus
+            ], vllm=qualification_vllm_handoff(
                 runtime_dir, model_cache, system=plan["platform"]["system"],
             ),
         )

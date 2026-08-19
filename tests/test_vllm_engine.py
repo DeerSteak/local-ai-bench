@@ -132,6 +132,19 @@ def test_cpu_offload_is_only_added_when_calibrated(engine):
     assert command[command.index("--cpu-offload-gb") + 1] == "8"
 
 
+def test_dgx_reserves_host_memory_on_unified_gb10():
+    from scripts.runtime.engines.vllm import vllm_gpu_memory_utilization
+    assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA GB10"}]) == 0.70
+    assert vllm_gpu_memory_utilization("x86_64", [{"name": "NVIDIA GB10"}]) == 0.90
+    assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA H100"}]) == 0.90
+
+
+def test_server_command_uses_selected_platform_memory_reservation(engine):
+    engine._gpu_memory_utilization = 0.70
+    command = engine.server_command("org/m", 4096)
+    assert command[command.index("--gpu-memory-utilization") + 1] == "0.7"
+
+
 @pytest.mark.parametrize(("available", "expected"), [
     (-3.53, 8),
     (-2.05, 6),

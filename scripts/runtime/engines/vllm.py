@@ -133,6 +133,13 @@ def offload_calibration_timeout(load_timeout: int, requested_timeout: int) -> in
     return max(requested_timeout, load_timeout * attempts)
 
 
+def vllm_gpu_memory_utilization(machine: str, devices: list[dict]) -> float:
+    names = " ".join(str(device.get("name", "")) for device in devices).casefold()
+    if machine.casefold() in {"arm64", "aarch64"} and "gb10" in names:
+        return 0.70
+    return config.VLLM_GPU_MEMORY_UTILIZATION
+
+
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -154,7 +161,11 @@ class VllmEngine(InferenceEngine):
         # an externally-managed server we talk to but never spawn or stop ourselves.
         self._server_url = configured_vllm_path(setup, "server_url")
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
-        self._gpu_fingerprint = json.dumps(configured_gpu_devices(setup), sort_keys=True)
+        gpu_devices = configured_gpu_devices(setup)
+        self._gpu_fingerprint = json.dumps(gpu_devices, sort_keys=True)
+        self._gpu_memory_utilization = vllm_gpu_memory_utilization(
+            platform.machine(), gpu_devices,
+        )
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -654,7 +665,7 @@ class VllmEngine(InferenceEngine):
         over bare `vllm serve` because it carries that platform's environment."""
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
-                    "--gpu-memory-utilization", str(config.VLLM_GPU_MEMORY_UTILIZATION)]
+                    "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
         if self._kv_cache_dtype != "auto" and not embedding:
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
