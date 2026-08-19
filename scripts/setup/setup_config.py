@@ -46,6 +46,19 @@ def write_setup_config(path: Path, *, comfyui_dir: Path | None,
         raise
 
 
+def vllm_setup_config(*, executable: str | None, launcher: str | None,
+                      server_url: str | None, launcher_extra_args: list[str],
+                      hf_home: Path | str) -> dict:
+    """Build the vLLM handoff consumed by both setup and benchmark engines."""
+    return {
+        "executable": executable,
+        "launcher": launcher,
+        "server_url": server_url,
+        "launcher_extra_args": list(launcher_extra_args),
+        "hf_home": str(hf_home),
+    }
+
+
 def configured_comfyui_dir(data: dict) -> str | None:
     value = data.get("comfyui", {}).get("program_dir")
     return value if isinstance(value, str) and value else None

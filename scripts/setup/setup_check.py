@@ -46,7 +46,9 @@ from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
 from scripts.setup.setup_selection import additional_disk_space_needed, select_models
-from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config, write_setup_config
+from scripts.setup.setup_config import (
+    configured_comfyui_dir, load_setup_config, vllm_setup_config, write_setup_config,
+)
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
     discover_linux_intel_gpu, discover_metal, discover_nvidia, discover_rocm,
@@ -898,13 +900,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
             [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
             if nvidia_ok else rocm_gpus
         ),
-        vllm={
-            "executable": VLLM_BIN,
-            "launcher": VLLM_LAUNCHER,
-            "server_url": VLLM_SERVER_URL,
-            "launcher_extra_args": VLLM_LAUNCHER_ARGS,
-            "hf_home": str(VLLM_CACHE_HOME),
-        } if vllm_found else {},
+        vllm=vllm_setup_config(
+            executable=VLLM_BIN, launcher=VLLM_LAUNCHER,
+            server_url=VLLM_SERVER_URL, launcher_extra_args=VLLM_LAUNCHER_ARGS,
+            hf_home=VLLM_CACHE_HOME,
+        ) if vllm_found else {},
     )
 
     section("Summary")

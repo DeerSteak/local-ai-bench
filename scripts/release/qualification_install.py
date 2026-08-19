@@ -17,8 +17,9 @@ from scripts.setup.model_download import download_hf_files, provision_catalog_mo
 from scripts.setup.setup_discovery import (
     discover_nvidia, discover_rocm, discover_windows_gpu, rocm_version,
 )
+from scripts.setup.setup_config import vllm_setup_config, write_setup_config
 from scripts.setup.vllm_install import (
-    install_vllm, vllm_platform_support,
+    find_vllm_binary, install_vllm, vllm_platform_support,
 )
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
@@ -46,6 +47,19 @@ def validate_vllm_runtime(runtime_dir: Path, run_fn=subprocess.run) -> tuple[boo
         return False, str(exc)
     output = (result.stdout or result.stderr).strip()
     return result.returncode == 0 and bool(output), output or f"exit code {result.returncode}"
+
+
+def qualification_vllm_handoff(runtime_dir: Path, model_cache: Path,
+                               *, system: str) -> dict:
+    executable = find_vllm_binary(
+        platform_name=system, venv_dir=runtime_dir, which_fn=lambda _name: None,
+    )
+    if executable is None:
+        raise ValueError(f"vLLM executable was not found in {runtime_dir}")
+    return vllm_setup_config(
+        executable=executable, launcher=None, server_url=None,
+        launcher_extra_args=[], hf_home=model_cache,
+    )
 
 
 def qualification_model(tag: str, catalog=None) -> dict:
@@ -153,6 +167,12 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
         if not valid:
             log(f"Installed vLLM could not be imported: {detail}")
             return False
+        write_setup_config(
+            root / "local_ai_bench_config.json", comfyui_dir=None,
+            llamacpp_tools={}, vllm=qualification_vllm_handoff(
+                runtime_dir, model_cache, system=plan["platform"]["system"],
+            ),
+        )
     provision_catalog_models(
         [model, EMBED_MODELS[0]], [plan["engine"]], models_dir=Path(plan["models_dir"]),
         vllm_cache=model_cache, load_token=lambda: os.environ.get("HF_TOKEN"),

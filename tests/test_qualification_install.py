@@ -4,7 +4,8 @@ import pytest
 
 from scripts.release.qualification_install import (
     QUALIFICATION_DGX_CU130_INDEX,
-    qualification_install_plan, qualification_model, qualification_vllm_index,
+    qualification_install_plan, qualification_model, qualification_vllm_handoff,
+    qualification_vllm_index,
     validate_vllm_runtime,
 )
 
@@ -102,3 +103,15 @@ def test_vllm_runtime_validation_preserves_import_failure_detail(tmp_path):
     assert validate_vllm_runtime(tmp_path / "vllm-env", lambda *_args, **_kwargs: result) == (
         False, "libmpi_cxx.so.40: not found",
     )
+
+
+def test_qualification_handoff_selects_the_managed_runtime_and_cache(tmp_path):
+    runtime = tmp_path / "vllm-env"
+    executable = runtime / "bin" / "vllm"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    cache = tmp_path / "qualification-vllm-cache"
+    assert qualification_vllm_handoff(runtime, cache, system="Linux") == {
+        "executable": str(executable), "launcher": None, "server_url": None,
+        "launcher_extra_args": [], "hf_home": str(cache),
+    }
