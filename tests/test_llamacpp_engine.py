@@ -1199,6 +1199,7 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
     monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
     engine = LlamaCppEngine()
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
     engine._gpu_visible = gpu_visible
 
     engine._ensure_model("tag", 2048)
@@ -1234,6 +1235,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     engine = LlamaCppEngine()
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
 
     engine._ensure_model("tag", num_ctx, n_parallel=n_parallel)
 
