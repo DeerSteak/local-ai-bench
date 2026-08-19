@@ -26,8 +26,8 @@ EVIDENCE_MARKERS = {
     "emb": {"valid_runs", "n_runs"},
     "mcq": {"answered"}, "math": {"answered"}, "reasoning": {"answered"},
     "code": {"answered"}, "tool": {"answered"},
-    "conc_tool": {"completed_cases"}, "conc_chat": {"completed_cases"},
-    "sustained": {"series"}, "llamabench": {"entries"},
+    "conc_tool": {"valid_runs"}, "conc_chat": {"valid_runs"},
+    "sustained": {"series"}, "llamabench": {"completed_cases"},
     "llamabenchconc": {"entries"}, "vllmbench": {"entries"}, "img": {"valid_runs", "n_runs"},
 }
 
@@ -92,6 +92,11 @@ def qualification_command(engine: str, model: str, result: Path,
 
 def run_qualification_coverage(engine: str, model: str, result: Path,
                                comfyui: Path | None = None) -> None:  # pragma: no cover
+    result = Path(result)
+    if result.is_file():
+        existing = json.loads(result.read_text(encoding="utf-8"))
+        if not workload_coverage_errors(existing, qualification_workloads(engine)):
+            return
     completed = subprocess.run(qualification_command(engine, model, result, comfyui))
     if completed.returncode:
         raise RuntimeError(f"qualification workloads failed with code {completed.returncode}")
