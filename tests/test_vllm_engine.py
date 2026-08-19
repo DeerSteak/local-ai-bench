@@ -75,7 +75,15 @@ def _delta_chunk(content=None, finish=None, tool_calls=None):
 
 # ── command construction ──
 
-def test_launcher_is_preferred_and_pins_the_port(engine):
+def test_managed_runtime_is_preferred_over_a_platform_launcher(engine):
+    engine._launcher = "/usr/bin/vllm-launch"
+    command = engine.server_command("org/m", 4096)
+    assert command[:3] == ["/usr/bin/vllm", "serve", "org/m"]
+    assert "--port" in command
+
+
+def test_platform_launcher_is_the_fallback_when_no_executable_exists(engine):
+    engine._executable = None
     engine._launcher = "/usr/bin/vllm-launch"
     command = engine.server_command("org/m", 4096)
     assert command[0] == "/usr/bin/vllm-launch"
@@ -269,6 +277,8 @@ def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, mon
 
 def test_host_offload_limit_accounts_for_per_worker_tensor_parallel_allocation(
         engine, monkeypatch):
+    engine._executable = None
+    engine._launcher = "/usr/bin/vllm-launch"
     engine._launcher_extra_args = ["--tensor-parallel-size", "4"]
     memory = type("Memory", (), {"available": 72 * 1024 ** 3})()
     monkeypatch.setattr(vllm_module.psutil, "virtual_memory", lambda: memory)
@@ -602,9 +612,11 @@ def test_resume_artifacts_raise_for_an_uncached_model(engine):
         engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
 
 
-def test_resume_runtime_prefers_the_launcher(engine):
+def test_resume_runtime_prefers_the_managed_executable(engine):
     assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm").resolve()}
     engine._launcher = "/usr/bin/vllm-launch"
+    assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm").resolve()}
+    engine._executable = None
     assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm-launch").resolve()}
 
 
@@ -740,6 +752,7 @@ def test_launcher_stop_interrupts_before_escalating(engine, monkeypatch):
         def send_signal(self, sig): pass
 
     engine._launcher = "/usr/bin/vllm-launch"
+    engine._executable = None
     engine._proc = Proc()
     monkeypatch.setattr("os.getpgid", lambda pid: pid)
     monkeypatch.setattr("os.killpg", lambda pgid, sig: signalled.append(sig))
@@ -903,6 +916,26 @@ def test_is_installed_true_with_only_a_server_url(engine):
     engine._executable = None
     engine._server_url = "http://gpu-box:8000"
     assert engine.is_installed() is True
+
+
+def test_managed_runtime_wins_over_a_saved_external_server(monkeypatch, tmp_path):
+    from scripts.setup.setup_config import vllm_setup_config, write_setup_config
+
+    setup_path = tmp_path / "setup.json"
+    write_setup_config(
+        setup_path, comfyui_dir=None, llamacpp_tools={},
+        vllm=vllm_setup_config(
+            executable="/managed/vllm", launcher="/usr/bin/vllm-launch",
+            server_url="http://localhost:8000", launcher_extra_args=["--flag"],
+            hf_home=tmp_path / "cache",
+        ),
+    )
+    monkeypatch.setattr(config, "SETUP_CONFIG_PATH", setup_path)
+    selected = VllmEngine()
+    assert selected._local_runtime == "/managed/vllm"
+    assert selected.external_server_url() is None
+    assert selected.runtime_launcher() is None
+    assert selected.launcher_extra_args == []
 
 
 def test_base_url_prefers_the_configured_server(engine):

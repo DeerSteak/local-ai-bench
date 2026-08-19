@@ -17,6 +17,8 @@ from scripts.setup.vllm_install import (
     build_tools_command,
     missing_build_tools,
     missing_python_headers,
+    missing_shared_library,
+    openmpi_runtime_package_command,
     python_dev_package_command,
     running_as_root,
     python_version_from_include_dir,
@@ -37,6 +39,7 @@ from scripts.setup.vllm_install import (
     normalize_vllm_version,
     vllm_install_command,
     vllm_platform_support,
+    vllm_runtime_import_error,
 )
 
 
@@ -451,6 +454,50 @@ def test_install_build_tools_is_idempotent_and_propagates_failure(monkeypatch, t
     )
     failed = type("Result", (), {"returncode": 1})()
     assert not install_vllm_build_tools(tmp_path, run=lambda _command: failed)
+
+
+def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=1, stdout="",
+            stderr="OSError: libmpi_cxx.so.40: cannot open shared object file",
+        )
+
+    error = vllm_runtime_import_error(tmp_path / "vllm-env", run=run)
+    assert missing_shared_library(error) == "libmpi_cxx.so.40"
+    assert calls[0][0] == [
+        str(tmp_path / "vllm-env" / "bin" / "python"),
+        "-c", "import torch; import vllm",
+    ]
+    assert calls[0][1]["timeout"] == 60
+
+
+def test_runtime_import_probe_accepts_a_loadable_environment(tmp_path):
+    result = SimpleNamespace(returncode=0, stdout="", stderr="")
+    assert vllm_runtime_import_error(tmp_path, run=lambda *_args, **_kwargs: result) is None
+    assert missing_shared_library("unrelated import failure") is None
+
+
+def test_openmpi_runtime_package_uses_the_first_available_apt_package(monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    command = openmpi_runtime_package_command(
+        which_fn=lambda name: f"/usr/bin/{name}",
+        package_available=lambda name: name == "libopenmpi40",
+    )
+    assert command == ["sudo", "apt-get", "install", "-y", "libopenmpi40"]
+
+
+def test_openmpi_runtime_package_falls_back_and_requires_apt(monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    command = openmpi_runtime_package_command(
+        which_fn=lambda name: f"/usr/bin/{name}",
+        package_available=lambda name: name == "libopenmpi3t64",
+    )
+    assert command == ["apt-get", "install", "-y", "libopenmpi3t64"]
+    assert openmpi_runtime_package_command(which_fn=lambda _name: None) is None
 
 
 def test_find_vllm_binary_prefers_a_system_install():

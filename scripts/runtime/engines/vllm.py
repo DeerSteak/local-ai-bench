@@ -159,7 +159,8 @@ class VllmEngine(InferenceEngine):
         )
         # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
         # an externally-managed server we talk to but never spawn or stop ourselves.
-        self._server_url = configured_vllm_path(setup, "server_url")
+        configured_server_url = configured_vllm_path(setup, "server_url")
+        self._server_url = configured_server_url if self._local_runtime is None else None
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
         gpu_devices = configured_gpu_devices(setup)
         self._gpu_fingerprint = json.dumps(gpu_devices, sort_keys=True)
@@ -182,6 +183,14 @@ class VllmEngine(InferenceEngine):
         self._kv_cache_dtype = "auto"
         self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
+
+    @property
+    def _local_runtime(self) -> str | None:
+        return self._executable or self._launcher
+
+    @property
+    def _uses_launcher(self) -> bool:
+        return self._executable is None and self._launcher is not None
 
     @property
     def _offload_cache_path(self) -> Path:
@@ -209,7 +218,7 @@ class VllmEngine(InferenceEngine):
         temporary.replace(target)
 
     def _offload_key(self, tag: str, repo: str) -> str:
-        runtime = self._launcher or self._executable or "external"
+        runtime = self._local_runtime or "external"
         try:
             runtime_mtime = Path(runtime).stat().st_mtime_ns
         except OSError:
@@ -223,7 +232,8 @@ class VllmEngine(InferenceEngine):
     def _host_offload_limit_gb(self) -> int:
         available = psutil.virtual_memory().available / (1024 ** 3)
         usable = max(0, int(available - config.VLLM_OFFLOAD_HOST_RESERVE_GB))
-        per_worker = usable // tensor_parallel_size(self._launcher_extra_args)
+        launcher_args = self._launcher_extra_args if self._uses_launcher else []
+        per_worker = usable // tensor_parallel_size(launcher_args)
         return per_worker // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
 
     @staticmethod
@@ -244,7 +254,7 @@ class VllmEngine(InferenceEngine):
 
     @property
     def launcher_extra_args(self) -> list[str]:
-        return list(self._launcher_extra_args)
+        return list(self._launcher_extra_args) if self._uses_launcher else []
 
     # ── model resolution ──
 
@@ -377,7 +387,7 @@ class VllmEngine(InferenceEngine):
         return self._executable
 
     def runtime_launcher(self) -> str | None:
-        return self._launcher
+        return self._launcher if self._uses_launcher else None
 
     def external_server_url(self) -> str | None:
         return self._server_url
@@ -413,7 +423,7 @@ class VllmEngine(InferenceEngine):
             Shared.err(f"vLLM model cache not found at {self._cache_home} — "
                        "run setup_check.py to download at least one model first")
             return False
-        Shared.ok(f"vLLM found at {self._launcher or self._executable} — models load on demand per test")
+        Shared.ok(f"vLLM found at {self._local_runtime} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper
@@ -440,10 +450,10 @@ class VllmEngine(InferenceEngine):
     def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Signal the whole process group, so the EngineCore child dies with the server."""
         proc = self._proc
-        launcher_was_running = self._launcher is not None and proc is not None
+        launcher_was_running = self._uses_launcher and proc is not None
         if proc is not None and proc.poll() is None:
             # Container launchers handle an interactive interrupt by stopping their container.
-            self._signal_group(signal.SIGINT if self._launcher else signal.SIGTERM)
+            self._signal_group(signal.SIGINT if self._uses_launcher else signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -514,7 +524,7 @@ class VllmEngine(InferenceEngine):
         return tuple(path.resolve() for path in paths if path.exists())
 
     def resume_runtime_paths(self) -> dict[str, Path]:
-        runtime = self._launcher or self._executable
+        runtime = self._local_runtime
         if runtime is None:
             raise ValueError("cannot identify vLLM runtime for resume")
         return {"vllm": Path(runtime).resolve()}
@@ -666,8 +676,7 @@ class VllmEngine(InferenceEngine):
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None,
                        cpu_offload_gb: int = 0) -> list[str]:
-        """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
-        over bare `vllm serve` because it carries that platform's environment."""
+        """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
@@ -683,12 +692,12 @@ class VllmEngine(InferenceEngine):
         if tool_parser:
             # tool_calls stay empty unless the frontend parser is enabled explicitly.
             options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+        if self._executable:
+            return [self._executable, "serve", repo, "--host", "127.0.0.1",
+                    "--port", str(config.VLLM_PORT), *options]
         if self._launcher:
             return [self._launcher, "-p", str(config.VLLM_PORT), "-m", repo, *options]
-        if not self._executable:
-            raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
-        return [self._executable, "serve", repo, "--host", "127.0.0.1",
-                "--port", str(config.VLLM_PORT), *options]
+        raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, deadline: float | None = None,
@@ -837,7 +846,7 @@ class VllmEngine(InferenceEngine):
             token = token_file.read_text(encoding="utf-8").strip()
             if token:
                 env["HF_TOKEN"] = token
-        if (self._launcher is None and self._server_url is None
+        if (not self._uses_launcher and self._server_url is None
                 and Shared.detect_wsl(platform.system(), platform.release())):
             env.setdefault("VLLM_WSL2_ENABLE_PIN_MEMORY", "1")
         return env

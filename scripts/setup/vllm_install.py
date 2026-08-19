@@ -438,6 +438,7 @@ def python_dev_package_command(package_manager: str, python_version: tuple[int, 
 
 # FlashInfer and Triton JIT-compile kernels at runtime; ninja drives those builds.
 VLLM_BUILD_TOOLS = ("ninja",)
+OPENMPI_RUNTIME_PACKAGES = ("libopenmpi40", "libopenmpi3t64", "libopenmpi3")
 
 
 def missing_build_tools(venv_dir: Path, exists_fn=None) -> list[str]:
@@ -461,6 +462,42 @@ def install_vllm_build_tools(venv_dir: Path, *, log=print,
     command = build_tools_command(str(python), missing)
     log(f"Installing vLLM build tools ({', '.join(missing)}) ...")
     return command is not None and run(command).returncode == 0
+
+
+def vllm_runtime_import_error(venv_dir: Path, *, run=subprocess.run) -> str | None:
+    python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
+        ("python.exe" if os.name == "nt" else "python")
+    try:
+        result = run(
+            [str(python), "-c", "import torch; import vllm"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return str(exc)
+    return None if result.returncode == 0 else (result.stderr or result.stdout).strip()
+
+
+def missing_shared_library(error: str | None) -> str | None:
+    match = re.search(r"(lib[\w.+-]+\.so(?:\.\d+)*): cannot open shared object file", error or "")
+    return match.group(1) if match else None
+
+
+def openmpi_runtime_package_command(*, which_fn=shutil.which,
+                                    package_available=None) -> list[str] | None:
+    if not which_fn("apt-get") or not which_fn("apt-cache"):
+        return None
+    if package_available is None:
+        def apt_package_available(name):
+            return subprocess.run(
+                ["apt-cache", "show", name], stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode == 0
+        package_available = apt_package_available
+    package = next((name for name in OPENMPI_RUNTIME_PACKAGES if package_available(name)), None)
+    if package is None:
+        return None
+    prefix = [] if running_as_root() else ["sudo"]
+    return prefix + ["apt-get", "install", "-y", package]
 
 
 def vllm_server_reachable(url: str | None = None, timeout: float = 2.0, open_fn=None) -> bool:
