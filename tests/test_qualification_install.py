@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import pytest
 
 from scripts.release.qualification_install import (
-    QUALIFICATION_DGX_CU130_INDEX,
     qualification_install_plan, qualification_model, qualification_vllm_handoff,
     qualification_vllm_index,
     validate_vllm_runtime,
@@ -75,9 +74,10 @@ def test_plan_never_leaves_the_qualification_version_floating(tmp_path, monkeypa
         )
 
 
-def test_dgx_qualification_uses_an_immutable_commit_index():
-    assert qualification_vllm_index("nightly_cu130") == QUALIFICATION_DGX_CU130_INDEX
-    assert "cba06764d7a9da41e6f535d6355c13f725574f07" in QUALIFICATION_DGX_CU130_INDEX
+def test_dgx_qualification_uses_the_reviewed_cuda_13_release_index():
+    index = qualification_vllm_index("cu130_wheel")
+    assert index is not None
+    assert index.endswith("/0.27.1/cu130")
     assert qualification_vllm_index("cuda_wheel") is None
 
 

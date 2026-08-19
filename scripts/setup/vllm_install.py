@@ -17,7 +17,8 @@ from scripts.runtime import config
 from scripts.runtime.log_redaction import redact_log_text
 
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
-NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
+DGX_CU130_VERSION = "0.27.1"
+DGX_CU130_INDEX = f"https://wheels.vllm.ai/{DGX_CU130_VERSION}/cu130"
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
@@ -35,7 +36,7 @@ PINNED_PYTHON = (3, 12)
 @dataclass(frozen=True)
 class VllmSupport:
     status: str            # "supported" | "experimental" | "unsupported"
-    method: str | None     # "cuda_wheel" | "rocm_wheel" | "nightly_cu130"
+    method: str | None     # "cuda_wheel" | "rocm_wheel" | "cu130_wheel"
     reason: str
     requires_python: tuple[int, int] | None = None
     # Set only when the sole obstacle is the interpreter, so setup knows an offer can clear it.
@@ -88,9 +89,9 @@ def vllm_platform_support(*, os_name: str, machine: str,
 
     if nvidia_ok:
         if is_dgx_spark(machine, gpu_names):
-            return VllmSupport("experimental", "nightly_cu130",
+            return VllmSupport("experimental", "cu130_wheel",
                                "DGX Spark (GB10, sm_121) is not covered by stock wheels — "
-                               "the CUDA 13 nightly build is the only working path, and "
+                               "the reviewed CUDA 13 build is the only working path, and "
                                "plain wheels would silently install CPU-only PyTorch",
                                requires_python=PINNED_PYTHON)
         capability = parse_compute_capability(compute_cap)
@@ -250,8 +251,9 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool,
     extra = {
         "cuda_wheel": ([package, "--torch-backend=auto"] if uv_available else [package]),
         "rocm_wheel": [package, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
-        "nightly_cu130": [
-            "-U", package, "--extra-index-url", index_url or NIGHTLY_CU130_INDEX,
+        "cu130_wheel": [
+            "-U", f"vllm[bench]=={normalized or DGX_CU130_VERSION}",
+            "--extra-index-url", index_url or DGX_CU130_INDEX,
         ],
     }[method]
     if uv_available:
@@ -448,6 +450,18 @@ def build_tools_command(python_exe: str, tools) -> list[str] | None:
     return [python_exe, "-m", "pip", "install", *tools] if tools else None
 
 
+def install_vllm_build_tools(venv_dir: Path, *, log=print,
+                             run=subprocess.run) -> bool:
+    missing = missing_build_tools(venv_dir)
+    if not missing:
+        return True
+    python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
+        ("python.exe" if os.name == "nt" else "python")
+    command = build_tools_command(str(python), missing)
+    log(f"Installing vLLM build tools ({', '.join(missing)}) ...")
+    return command is not None and run(command).returncode == 0
+
+
 def vllm_server_reachable(url: str | None = None, timeout: float = 2.0, open_fn=None) -> bool:
     """True if an OpenAI-compatible vLLM server answers at `url`."""
     url = url or config.VLLM_URL
@@ -496,4 +510,6 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
         support.method, str(venv_python), bool(shutil.which("uv")), version, index_url,
     )
     log(f"Installing vLLM ({support.method}) — this downloads several GB ...")
-    return run(command).returncode == 0
+    return run(command).returncode == 0 and install_vllm_build_tools(
+        venv_dir, log=log, run=run,
+    )

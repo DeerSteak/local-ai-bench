@@ -14,15 +14,14 @@ from scripts.release.qualification_automation import (
 )
 from scripts.release.qualification_recipe import build_recipe, write_recipe
 from scripts.runtime.shared import Shared
+from scripts.setup.vllm_install import DGX_CU130_VERSION
 
 
 PINNED_VERSIONS = {
     "llamacpp": ("b10486", "b10488"),
     "vllm-cuda": ("0.27.0", "0.27.1"),
     "vllm-rocm": ("0.27.1+rocm723", "0.27.1+rocm723"),
-    "vllm-cu130": (
-        "0.26.1rc1.dev950+gcba06764d", "0.26.1rc1.dev950+gcba06764d",
-    ),
+    "vllm-cu130": (DGX_CU130_VERSION, DGX_CU130_VERSION),
 }
 AUTOMATION_REVISION = "v9"
 WINDOWS_AUTOMATION_REVISION = "v9"

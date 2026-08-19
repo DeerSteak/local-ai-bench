@@ -19,20 +19,15 @@ from scripts.setup.setup_discovery import (
 )
 from scripts.setup.setup_config import vllm_setup_config, write_setup_config
 from scripts.setup.vllm_install import (
-    find_vllm_binary, install_vllm, vllm_platform_support,
+    DGX_CU130_INDEX, find_vllm_binary, install_vllm, vllm_platform_support,
 )
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
 SMALLEST_EMBEDDING_MODEL = EMBED_MODELS[0]["tag"]
 SMALLEST_IMAGE_MODEL = IMAGE_MODELS[0]["short"]
-QUALIFICATION_DGX_CU130_INDEX = (
-    "https://wheels.vllm.ai/cba06764d7a9da41e6f535d6355c13f725574f07/cu130"
-)
-
-
 def qualification_vllm_index(method: str | None) -> str | None:
-    return QUALIFICATION_DGX_CU130_INDEX if method == "nightly_cu130" else None
+    return DGX_CU130_INDEX if method == "cu130_wheel" else None
 
 
 def validate_vllm_runtime(runtime_dir: Path, run_fn=subprocess.run) -> tuple[bool, str]:

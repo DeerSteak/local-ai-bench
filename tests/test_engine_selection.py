@@ -40,7 +40,7 @@ def test_terminal_picker_cancel_exits():
 
 
 SUPPORTED = VllmSupport("supported", "cuda_wheel", "CUDA wheels available")
-EXPERIMENTAL = VllmSupport("experimental", "nightly_cu130", "DGX Spark nightly wheels")
+EXPERIMENTAL = VllmSupport("experimental", "cu130_wheel", "DGX Spark CUDA 13 wheels")
 UNSUPPORTED = VllmSupport("unsupported", None, "no upstream Windows support")
 
 

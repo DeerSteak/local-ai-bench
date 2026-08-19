@@ -8,7 +8,8 @@ from types import SimpleNamespace
 from scripts.setup.vllm_install import (
     ROCM_WHEEL_INDEX,
     VLLM_ROCM_WHEEL_TARGETS,
-    NIGHTLY_CU130_INDEX,
+    DGX_CU130_INDEX,
+    DGX_CU130_VERSION,
     hf_cache_model_complete,
     hf_cache_model_dir,
     hf_cache_snapshot_dir,
@@ -226,7 +227,7 @@ def test_unknown_compute_capability_does_not_block_install():
 
 def test_dgx_spark_uses_the_cuda_13_nightly_path():
     result = support(nvidia_ok=True, machine="aarch64", gpu_names=["NVIDIA GB10"])
-    assert (result.status, result.method) == ("experimental", "nightly_cu130")
+    assert (result.status, result.method) == ("experimental", "cu130_wheel")
     assert result.requires_python == (3, 12)
 
 
@@ -390,28 +391,58 @@ def test_install_commands_target_the_venv_interpreter():
 
 def test_every_install_method_requests_the_bench_extra():
     """`vllm bench` deps ship only with the extra, and the vllmbench test needs them."""
-    for method in ("cuda_wheel", "rocm_wheel", "nightly_cu130"):
+    for method in ("cuda_wheel", "rocm_wheel", "cu130_wheel"):
         for uv_available in (True, False):
             command = vllm_install_command(method, "/v/bin/python", uv_available=uv_available)
-            assert "vllm[bench]" in command
+            assert any(item.startswith("vllm[bench]") for item in command)
             assert "vllm" not in command
 
 
 def test_rocm_and_nightly_commands_use_their_own_indexes():
     rocm = vllm_install_command("rocm_wheel", "/v/bin/python", uv_available=False)
     assert ROCM_WHEEL_INDEX in rocm
-    nightly = vllm_install_command("nightly_cu130", "/v/bin/python", uv_available=True)
-    assert NIGHTLY_CU130_INDEX in nightly
+    cu130 = vllm_install_command("cu130_wheel", "/v/bin/python", uv_available=True)
+    assert DGX_CU130_INDEX in cu130
+    assert f"vllm[bench]=={DGX_CU130_VERSION}" in cu130
 
 
 def test_nightly_command_accepts_an_immutable_qualification_index():
     immutable = "https://wheels.vllm.ai/commit/cu130"
     command = vllm_install_command(
-        "nightly_cu130", "/v/bin/python", uv_available=True,
+        "cu130_wheel", "/v/bin/python", uv_available=True,
         version="0.26.1rc1.dev950+gcba06764d", index_url=immutable,
     )
     assert immutable in command
-    assert NIGHTLY_CU130_INDEX not in command
+    assert DGX_CU130_INDEX not in command
+
+
+def test_install_build_tools_uses_the_managed_environment(monkeypatch, tmp_path):
+    from scripts.setup.vllm_install import install_vllm_build_tools
+    monkeypatch.setattr(
+        "scripts.setup.vllm_install.missing_build_tools", lambda _path: ["ninja"],
+    )
+    calls = []
+    result = type("Result", (), {"returncode": 0})()
+    assert install_vllm_build_tools(
+        tmp_path / "vllm-env", run=lambda command: calls.append(command) or result,
+    )
+    assert calls == [[
+        str(tmp_path / "vllm-env" / "bin" / "python"),
+        "-m", "pip", "install", "ninja",
+    ]]
+
+
+def test_install_build_tools_is_idempotent_and_propagates_failure(monkeypatch, tmp_path):
+    from scripts.setup.vllm_install import install_vllm_build_tools
+    monkeypatch.setattr("scripts.setup.vllm_install.missing_build_tools", lambda _path: [])
+    assert install_vllm_build_tools(
+        tmp_path, run=lambda _command: pytest.fail("nothing should be installed"),
+    )
+    monkeypatch.setattr(
+        "scripts.setup.vllm_install.missing_build_tools", lambda _path: ["ninja"],
+    )
+    failed = type("Result", (), {"returncode": 1})()
+    assert not install_vllm_build_tools(tmp_path, run=lambda _command: failed)
 
 
 def test_find_vllm_binary_prefers_a_system_install():

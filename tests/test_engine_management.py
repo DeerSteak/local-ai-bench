@@ -53,7 +53,7 @@ def test_vllm_update_support_detects_dgx_spark_from_recorded_gpu():
     setup = {"gpu": {"devices": [{"name": "NVIDIA GB10 Superchip", "backend": "cuda"}]}}
     support = vllm_update_support(status, setup, "aarch64")
     assert support is not None
-    assert support.method == "nightly_cu130"
+    assert support.method == "cu130_wheel"
 
 
 def test_vllm_update_support_rejects_non_managed_and_unknown_backends():

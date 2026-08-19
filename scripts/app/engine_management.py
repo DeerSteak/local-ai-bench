@@ -159,7 +159,7 @@ def vllm_update_support(status: EngineStatus, setup: dict,
         names = [str(device.get("name", "")) for device in configured_gpu_devices(setup)]
         if is_dgx_spark(machine, names):
             return VllmSupport(
-                "experimental", "nightly_cu130", "Update the app-managed CUDA 13 nightly.",
+                "experimental", "cu130_wheel", "Update the app-managed CUDA 13 runtime.",
                 requires_python=PINNED_PYTHON,
             )
         return VllmSupport(

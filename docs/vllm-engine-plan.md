@@ -71,7 +71,7 @@ All of this lands in `scripts/setup/`. Per the repo's safety rules, none of it g
 ```
 VllmSupport(status, method, reason, python_requirement)
   status:  "supported" | "experimental" | "unsupported"
-  method:  "cuda_wheel" | "rocm_wheel" | "cpu_wheel" | "nightly_cu130" | None
+  method:  "cuda_wheel" | "rocm_wheel" | "cpu_wheel" | "cu130_wheel" | None
 ```
 
 Every row of the matrix table above becomes at least one test case in `tests/test_vllm_install.py`. This is the piece worth getting right; the installer around it is glue.
@@ -81,7 +81,7 @@ Every row of the matrix table above becomes at least one test case in `tests/tes
 - `cuda_wheel` → `uv pip install vllm --torch-backend=auto` (fall back to `pip` + the matching `download.pytorch.org` extra index when `uv` is absent).
 - `rocm_wheel` → `--extra-index-url https://wheels.vllm.ai/rocm/`.
 - `cpu_wheel` → plain wheel; record the `LD_PRELOAD` requirement for the engine to apply at spawn time.
-- `nightly_cu130` (DGX Spark) → gated behind an explicit opt-in prompt, since it installs a nightly build.
+- `cu130_wheel` (DGX Spark) → gated behind an explicit opt-in prompt because the platform remains experimental.
 - `unsupported` (includes macOS unconditionally) → print the reason and the realistic alternative (WSL2 on Windows, Docker for XPU) and continue setup without vLLM. Never auto-install the third-party Windows fork.
 
 **4. Setup plan / selection UI.** *(done)* vLLM is opt-in, not automatic — it is a multi-GB install on top of an existing llama.cpp install. Add it to both frontends:

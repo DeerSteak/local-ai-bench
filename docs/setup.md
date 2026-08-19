@@ -120,7 +120,7 @@ On Linux, that tab can update and rebuild a project-owned `llama.cpp/` checkout.
 
 An app-managed llama.cpp runtime also shows **Change…** beside its version. The dialog loads the ten most recent published, non-prerelease `bNNNNN` releases and accepts a specific numeric build or `bNNNNN` tag, allowing either upgrades or downgrades on Linux, macOS, and Windows. A Mac still using Homebrew can use the main update action once to install the latest managed release; subsequent arbitrary-version changes use **Change…**. The Homebrew formula remains untouched.
 
-An app-managed vLLM runtime on a supported stable CUDA or ROCm wheel platform also shows **Change…** beside its version. The dialog loads the ten newest non-yanked stable releases from PyPI and accepts a specific stable PEP 440 version such as `0.10.2`; the exact `vllm[bench]==VERSION` environment is staged, validated, recreated at the final path, and rolled back on failure through the ordinary managed-vLLM update flow. Experimental nightly platforms such as DGX Spark do not expose stable version selection because their CUDA 13 wheel channel does not provide the same reproducible stable-version set.
+An app-managed vLLM runtime on a supported stable CUDA or ROCm wheel platform also shows **Change…** beside its version. The dialog loads the ten newest non-yanked stable releases from PyPI and accepts a specific stable PEP 440 version such as `0.10.2`; the exact `vllm[bench]==VERSION` environment is staged, validated, recreated at the final path, and rolled back on failure through the ordinary managed-vLLM update flow. Experimental DGX Spark does not expose arbitrary version selection; setup and qualification share one reviewed CUDA 13 version and wheel index instead.
 
 **Whatever models you select later are downloaded for every selected engine.** The model picker is not per-engine — the point is to compare the same models on the same hardware across engines.
 
@@ -144,7 +144,7 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | Linux + AMD ROCm (gfx90a/942/950, RX 7900/9000) | Supported | Prebuilt wheels from `wheels.vllm.ai/rocm`; needs ROCm 6.3+ and a CPython 3.12 interpreter, which is the only version those wheels are published for |
 | Linux + AMD ROCm (gfx1150/1151, including Strix Halo) | Supported install path | Current official ROCm wheels include these RDNA 3.5 targets; exact-build platform support still requires qualification |
 | Linux + AMD ROCm, any other gfx target | Experimental | Setup may offer the ROCm wheel, but reports when its published kernel target list does not match the detected GPU |
-| DGX Spark (GB10) | Experimental | CUDA 13 nightly wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
+| DGX Spark (GB10) | Experimental | Reviewed CUDA 13 wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
 | macOS | Not offered | Out of scope for this project — see the design note below |
 | Windows (native) | Not offered | vLLM has no upstream Windows support — see [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2) |
 | Linux + Intel XPU | Not offered | No prebuilt wheels exist; the source build is out of scope for this script |
@@ -277,7 +277,7 @@ An older preinstalled `vllm-launch` remains discoverable as an external platform
 
 **Linux (Intel Arc) — experimental** — `lspci` detection records `hardware_backend: "xpu"`, but setup does not build llama.cpp's SYCL backend, so LLM inference remains CPU unless you supply a manual `-DGGML_SYCL=ON` build. For image generation, setup checks for Intel's compute runtime and prints installation commands when it is absent; when image models are selected, it installs PyTorch's XPU wheels. This path has not been verified on real Arc hardware by the project maintainer.
 
-**DGX Spark** — Uses the normal Linux NVIDIA source-build path for llama.cpp; its ARM64 architecture does not require a separate prebuilt package. The optional vLLM install is the exception: GB10 needs the CUDA 13 nightly wheels, since the stock aarch64 wheels pull CPU-only PyTorch — see [Choosing engines](#choosing-engines).
+**DGX Spark** — Uses the normal Linux NVIDIA source-build path for llama.cpp; its ARM64 architecture does not require a separate prebuilt package. The optional vLLM install is the exception: GB10 needs the reviewed CUDA 13 wheel channel, since the stock aarch64 wheels pull CPU-only PyTorch — see [Choosing engines](#choosing-engines).
 
 **macOS and Linux** — If setup reports a permissions error, fix ownership or permissions for the named path and rerun it as your normal user. Avoid running the whole setup under `sudo`, which can leave the project environment and downloaded files owned by root.
 
