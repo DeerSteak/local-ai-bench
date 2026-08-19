@@ -441,9 +441,9 @@ This is mostly process rather than code, which is exactly why it is worth doing 
 
 ## Implementation outline
 
-1. **Define the qualification lifecycle** as an explicit ordered checklist a platform must pass end to end: install, discovery, first valid run, cancellation, resume, report generation, bundle export, upgrade, rollback, and uninstall. The first valid run uses the smallest compatible model for every supported workload and fails if any required result section is absent; partial passes are recorded as partial, not rounded up.
-2. **Create `scripts/release/qualification.py`** holding the matrix as data — platform, runtime, version, GPU backend, date, suite version, lifecycle results, and known failures — with pure functions to validate an entry and to derive a support level from it. Support level is derived from evidence, never hand-set.
-3. **Define three support levels** with explicit evidence requirements: supported (full lifecycle passed on a recorded date and suite version), experimental (partial evidence, specific known gaps recorded), and unverified (no qualification evidence). Absence of evidence yields unverified, which is the default for anything not deliberately qualified.
+1. **Define qualification through the shipped paths**: run the ordinary setup and benchmark wrappers with the smallest compatible LLM, embedding, and image model across every workload supported by that engine. The resulting benchmark JSON and generated images are the evidence; any missing or incomplete required section fails qualification.
+2. **Create `scripts/release/qualification.py`** holding the matrix as data — platform, runtime, version, GPU backend, date, suite version, workload coverage, and benchmark evidence — with pure functions to validate an entry and derive its support level. Support level is derived from evidence, never hand-set.
+3. **Define three support levels** with explicit evidence requirements: supported (a complete current qualification result), experimental (recorded evidence that is stale), and unverified (no matching complete qualification evidence). Absence of evidence yields unverified, which is the default for anything not deliberately qualified.
 4. **Enforce support level in the UI**, not only in docs. An experimental or unverified engine is labeled at the point of selection, and choosing it records that choice in the run profile so any resulting evidence carries the caveat with it permanently.
 5. **Gate vLLM behind an explicit experimental acknowledgment** until it passes qualification on real hardware, consistent with what [limitations.md](docs/limitations.md) already says. Do not remove the code; label it accurately.
 6. **Mark WSL2 runs in the matrix** as their own platform row rather than a variant of Linux — the existing `wsl: true` profile flag and its dashboard tag already establish this distinction, and the matrix should follow it rather than contradict it.
@@ -464,7 +464,7 @@ For a one-person team, platform qualification uses the normal setup and benchmar
 - [x] Support level is derived from evidence; no code path sets it manually, asserted by test.
 - [x] Anything without qualification evidence is unverified by default.
 - [x] Experimental and unverified paths are labeled in the UI at selection time, and the choice is recorded in the run profile.
-- [x] vLLM is presented as experimental until it passes the full lifecycle on real hardware.
+- [x] vLLM is presented as experimental until its shipped setup and complete workload set pass on real hardware.
 - [x] WSL2 is its own matrix row, consistent with the existing profile flag.
 - [x] Release readiness fails when a support claim lacks a qualification record.
 - [x] The published matrix is generated from the data and cannot drift from it.

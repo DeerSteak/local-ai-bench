@@ -9,7 +9,7 @@ if not "%~3"=="" goto usage
 set "TARGET=%~1"
 set "RESULT=%~2"
 if "%RESULT%"=="" set "RESULT=%CD%\results_qualification_%TARGET%.json"
-findstr /c:"\"%TARGET%\":" scripts\release\qualification_targets.py >nul || (
+findstr /c:"{\"id\": \"%TARGET%\"," scripts\release\qualification_targets.py >nul || (
   echo Unknown qualification target: %TARGET% 1>&2
   exit /b 2
 )
@@ -24,7 +24,7 @@ exit /b %ERRORLEVEL%
 if exist bench-env\Scripts\python.exe (
   bench-env\Scripts\python.exe -m scripts.release.qualification_run --list-targets
 ) else (
-  findstr /r /c:"^    \".*\": \".*\",$" scripts\release\qualification_targets.py
+  for /f tokens^=4^ delims^=^\" %%T in ('findstr /c:"{\"id\":" scripts\release\qualification_targets.py') do echo %%T
 )
 exit /b %ERRORLEVEL%
 

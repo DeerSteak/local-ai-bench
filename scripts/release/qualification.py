@@ -8,9 +8,9 @@ from scripts.release.qualification_coverage import (
     SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL, SMALLEST_LLM_MODEL,
     qualification_workloads,
 )
+from scripts.release.qualification_targets import TARGETS
 
 
-SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
 QUALIFICATION_MATRIX: tuple[dict, ...] = (
     {
@@ -69,21 +69,8 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
 )
-QUALIFICATION_TARGETS = (
-    {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon 8060S"},
-    {"platform": "linux", "architecture": "aarch64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GB10"},
-    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
-    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "AMD Radeon"},
-    {"platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "Intel Arc Pro B65"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA"},
-    {"platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "Radeon 8060S"},
-    {"platform": "linux", "architecture": "aarch64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GB10"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
-    {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
+QUALIFICATION_TARGETS = tuple(
+    {key: value for key, value in target.items() if key != "id"} for target in TARGETS
 )
 
 ENTRY_KEYS = {

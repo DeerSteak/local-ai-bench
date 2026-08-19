@@ -4,7 +4,7 @@ import pytest
 
 from scripts.release.qualification_coverage import qualification_arguments
 from scripts.release.qualification_run import benchmark_wrapper
-from scripts.release.qualification_targets import target_engine
+from scripts.release.qualification_targets import TARGET_ENGINES, TARGETS, target_engine
 
 
 def test_target_engine_is_explicit_and_rejects_unknown_targets():
@@ -12,6 +12,10 @@ def test_target_engine_is_explicit_and_rejects_unknown_targets():
     assert target_engine("macos-m5-pro-llamacpp-metal") == "llamacpp"
     with pytest.raises(ValueError, match="unknown qualification target"):
         target_engine("guessed-platform")
+
+
+def test_target_engines_are_derived_from_the_platform_registry():
+    assert TARGET_ENGINES == {target["id"]: target["runtime"] for target in TARGETS}
 
 
 def test_qualification_arguments_are_the_normal_smallest_model_benchmark():

@@ -1,9 +1,6 @@
 """Representative smallest-model workload coverage for platform qualification."""
 
-import argparse
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
@@ -151,49 +148,3 @@ def qualification_arguments(engine: str, model: str, result: Path) -> list[str]:
     else:
         command.append("--ack-experimental-engine")
     return command
-
-
-def qualification_command(engine: str, model: str, result: Path,
-                          comfyui: Path | None = None) -> list[str]:
-    arguments = qualification_arguments(engine, model, result)
-    arguments = arguments[2:]
-    if comfyui is not None:
-        arguments += ["--comfyui", str(comfyui)]
-    return [sys.executable, "-m", "scripts.app.benchmark", *arguments]
-
-
-def run_qualification_coverage(engine: str, model: str, result: Path,
-                               comfyui: Path | None = None) -> None:  # pragma: no cover
-    result = Path(result)
-    if result.is_file():
-        existing = json.loads(result.read_text(encoding="utf-8"))
-        if not workload_coverage_errors(existing, qualification_workloads(engine)):
-            return
-    completed = subprocess.run(qualification_command(engine, model, result, comfyui))
-    if completed.returncode:
-        raise RuntimeError(f"qualification workloads failed with code {completed.returncode}")
-    data = json.loads(Path(result).read_text(encoding="utf-8"))
-    errors = workload_coverage_errors(data, qualification_workloads(engine))
-    if errors:
-        for detail in workload_failure_details(data, qualification_workloads(engine)):
-            print(f"qualification failure detail: {detail}", file=sys.stderr)
-        raise ValueError("; ".join(errors))
-
-
-def main(argv=None) -> int:  # pragma: no cover
-    parser = argparse.ArgumentParser(description="Run and verify qualification workloads")
-    parser.add_argument("--engine", required=True, choices=("llamacpp", "vllm"))
-    parser.add_argument("--model", required=True)
-    parser.add_argument("--result", required=True, type=Path)
-    parser.add_argument("--comfyui", type=Path)
-    args = parser.parse_args(argv)
-    try:
-        run_qualification_coverage(args.engine, args.model, args.result, args.comfyui)
-        return 0
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())

@@ -1,10 +1,8 @@
-import json
-
 import pytest
 
 from scripts.release.qualification_coverage import (
-    RESULT_SECTIONS, qualification_command, qualification_workloads,
-    run_qualification_coverage, workload_coverage_errors, workload_failure_details,
+    RESULT_SECTIONS, qualification_arguments, qualification_workloads,
+    workload_coverage_errors, workload_failure_details,
 )
 
 
@@ -111,16 +109,6 @@ def test_failure_details_truncate_large_runtime_output():
     ]
 
 
-def test_completed_valid_result_is_reused_without_repeating_workloads(monkeypatch, tmp_path):
-    result_path = tmp_path / "result.json"
-    result_path.write_text(json.dumps(complete_result(qualification_workloads("vllm"))))
-    monkeypatch.setattr(
-        "scripts.release.qualification_coverage.subprocess.run",
-        lambda *_args, **_kwargs: pytest.fail("completed coverage must not be repeated"),
-    )
-    run_qualification_coverage("vllm", "tiny", result_path)
-
-
 def test_incomplete_run_never_qualifies_even_with_populated_sections():
     workloads = qualification_workloads("vllm")
     result = complete_result(workloads)
@@ -130,9 +118,8 @@ def test_incomplete_run_never_qualifies_even_with_populated_sections():
 
 
 def test_llamacpp_coverage_uses_smallest_models_and_all_native_workloads(tmp_path):
-    command = qualification_command(
+    command = qualification_arguments(
         "llamacpp", "gemma3:1b-it-q4_K_M", tmp_path / "result.json",
-        tmp_path / "ComfyUI",
     )
     assert command[command.index("--embedding-models") + 1] == "nomic-embed-text"
     assert command[command.index("--image-models") + 1] == "sd15"
@@ -142,7 +129,7 @@ def test_llamacpp_coverage_uses_smallest_models_and_all_native_workloads(tmp_pat
 
 
 def test_vllm_coverage_uses_vllmbench_without_engine_independent_images(tmp_path):
-    command = qualification_command("vllm", "tiny", tmp_path / "result.json")
+    command = qualification_arguments("vllm", "tiny", tmp_path / "result.json")
     tests = command[command.index("--tests") + 1:command.index("--llm-models")]
     assert "vllmbench" in tests
     assert "img" not in tests

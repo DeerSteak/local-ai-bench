@@ -7,7 +7,7 @@ if [ "${1:-}" = "--list-targets" ]; then
     if [ -x "$ROOT/bench-env/bin/python" ]; then
         exec "$ROOT/bench-env/bin/python" -m scripts.release.qualification_run --list-targets
     fi
-    sed -n 's/^    "\([^"]*\)": ".*",$/\1/p' "$ROOT/scripts/release/qualification_targets.py"
+    sed -n 's/^    {"id": "\([^"]*\)".*$/\1/p' "$ROOT/scripts/release/qualification_targets.py"
     exit 0
 fi
 
@@ -19,7 +19,7 @@ fi
 
 TARGET="$1"
 RESULT="${2:-$ROOT/results_qualification_${TARGET}.json}"
-if ! grep -Fq "\"$TARGET\":" "$ROOT/scripts/release/qualification_targets.py"; then
+if ! grep -Fq "{\"id\": \"$TARGET\"," "$ROOT/scripts/release/qualification_targets.py"; then
     echo "Unknown qualification target: $TARGET" >&2
     exit 2
 fi
