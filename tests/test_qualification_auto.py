@@ -18,6 +18,8 @@ from scripts.release.qualification_auto import (
      ["intel-arc-windows-llamacpp-vulkan"]),
     ("Linux", "x86_64", "CPU\nNVIDIA GeForce RTX 5090", True,
      ["geforce-wsl2-llamacpp-cuda", "geforce-wsl2-vllm-cuda"]),
+    ("Linux", "x86_64", "CPU\nAMD Radeon RX 9060 XT", True,
+     ["radeon-wsl2-llamacpp-rocm", "radeon-wsl2-vllm-rocm"]),
     ("Linux", "x86_64", "Ryzen AI Max+ 395\nAMD Radeon 8060S", False,
      ["ryzen-ai-halo-llamacpp-rocm", "ryzen-ai-halo-vllm-rocm"]),
     ("Linux", "aarch64", "NVIDIA GB10", False,
@@ -32,7 +34,7 @@ def test_pinned_versions_are_complete_for_every_automatic_target():
     assert AUTOMATION_REVISION == "v8"
     targets = [
         "macos-m5-pro-llamacpp-metal", "geforce-wsl2-vllm-cuda",
-        "ryzen-ai-halo-vllm-rocm", "dgx-spark-vllm-cuda",
+        "radeon-wsl2-vllm-rocm", "ryzen-ai-halo-vllm-rocm", "dgx-spark-vllm-cuda",
     ]
     assert all(all(target_versions(target)) for target in targets)
     assert PINNED_VERSIONS["vllm-rocm"][1] == "0.27.1+rocm723"

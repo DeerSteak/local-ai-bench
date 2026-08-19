@@ -40,6 +40,8 @@ def detected_targets(system: str, machine: str, hostname: str, *, wsl: bool) -> 
             return ["radeon-windows-llamacpp-vulkan"]
     if system == "Linux" and wsl and ("nvidia" in identity or "geforce" in identity):
         return ["geforce-wsl2-llamacpp-cuda", "geforce-wsl2-vllm-cuda"]
+    if system == "Linux" and wsl and "radeon rx 9060 xt" in identity:
+        return ["radeon-wsl2-llamacpp-rocm", "radeon-wsl2-vllm-rocm"]
     if system == "Linux" and machine in {"arm64", "aarch64"} and "gb10" in identity:
         return ["dgx-spark-llamacpp-cuda", "dgx-spark-vllm-cuda"]
     if system == "Linux" and any(value in identity for value in ("8060s", "ryzen ai max")):

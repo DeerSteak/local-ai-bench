@@ -103,3 +103,16 @@ def test_ryzen_ai_halo_accepts_linux_cpu_and_gpu_identity_format(tmp_path, targe
         ),
     )
     assert recipe["target"]["accelerator"].endswith("Radeon 8060S 125 GB")
+
+
+@pytest.mark.parametrize("target_id", (
+    "radeon-wsl2-llamacpp-rocm", "radeon-wsl2-vllm-rocm",
+))
+def test_radeon_wsl_targets_require_the_rx_9060_xt_identity(tmp_path, target_id):
+    recipe = build_recipe(
+        target_id=target_id, root=tmp_path, output=tmp_path / "evidence",
+        baseline_version="baseline", target_version="target",
+        accelerator_identity="AMD Ryzen 7 5800XT\nAMD Radeon RX 9060 XT 16 GB",
+    )
+    assert recipe["target"]["platform"] == "wsl2"
+    assert recipe["target"]["backend"] == "rocm"
