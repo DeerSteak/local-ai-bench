@@ -265,3 +265,11 @@ LLM_MODELS_LARGE = sorted([
 ], key=lambda m: m["params_b"])
 
 LLM_MODELS = LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+
+
+def qualification_llm_model(engine: str) -> dict:
+    if engine == "llamacpp":
+        return LLM_MODELS[0]
+    if engine == "vllm":
+        return next(model for model in LLM_MODELS if model.get("vllm_tool_parser"))
+    raise ValueError(f"unknown qualification engine: {engine}")

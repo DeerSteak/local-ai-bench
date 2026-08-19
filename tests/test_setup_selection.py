@@ -14,7 +14,10 @@ def test_qualification_model_selection_is_the_smallest_complete_engine_set():
     assert [model["tag"] for model in llm] == ["gemma3:1b-it-q4_K_M"]
     assert [model["short"] for model in images] == ["sd15"]
     assert [model["tag"] for model in embeddings] == ["nomic-embed-text"]
-    assert qualification_model_selection("vllm")[1] == []
+    vllm_llm, vllm_images, _ = qualification_model_selection("vllm")
+    assert [model["tag"] for model in vllm_llm] == ["granite4.1:3b-q4_K_M"]
+    assert vllm_llm[0]["vllm_tool_parser"] == "granite4"
+    assert vllm_images == []
     with pytest.raises(ValueError, match="unknown qualification engine"):
         qualification_model_selection("invented")
 

@@ -4,7 +4,7 @@
 
 ## Platform qualification
 
-Support is derived from the recorded qualification results below. A supported entry requires complete measured smallest-model evidence from every compatible workload; missing evidence is unverified and is never treated as a support claim.
+Support is derived from the recorded qualification results below. A supported entry requires complete measured evidence from every compatible workload using the smallest model that supports the engine's required workload set; missing evidence is unverified and is never treated as a support claim.
 
 <!-- qualification-matrix:start -->
 | Platform | Architecture | Runtime | Backend | Support | Evidence |

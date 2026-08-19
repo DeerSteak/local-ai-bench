@@ -11,7 +11,7 @@ def complete_result(workloads):
     for workload in workloads:
         marker = next(iter({
             "sustained": {"series"}, "llamabench": {"completed_cases"},
-            "llamabenchconc": {"entries"}, "vllmbench": {"entries"},
+            "llamabenchconc": {"entries"}, "vllmbench": {"latency_entries"},
             "mcq": {"answered"}, "math": {"answered"}, "reasoning": {"answered"},
             "code": {"answered"}, "tool": {"answered"},
             "conc_tool": {"valid_runs"}, "conc_chat": {"valid_runs"},
@@ -61,7 +61,8 @@ def test_real_native_and_server_concurrency_shapes_count_as_evidence():
     ("mcq", {"model": {"total": 2, "answered": 1}}),
     ("llamabench", {"model": {"requested_cases": 6, "completed_cases": 1}}),
     ("vllmbench", {"model": {
-        "entries": [{"elapsed_sec": 1}], "requested_cases": 4, "completed_cases": 3,
+        "latency_entries": [{"elapsed_sec": 1}],
+        "requested_cases": 4, "completed_cases": 3,
     }}),
 ])
 def test_partial_measurements_do_not_satisfy_qualification(workload, section):
@@ -89,6 +90,24 @@ def test_measurement_with_model_error_does_not_satisfy_qualification():
     assert workload_coverage_errors(result, ["llamabench"]) == [
         "llamabench did not complete all requested qualification evidence",
     ]
+
+
+def test_wrong_code_answer_error_is_scoring_evidence_not_runtime_failure():
+    result = {"run": {"status": "complete"}, "code": {"model": {
+        "total": 1, "answered": 1,
+        "incorrect": [{"id": "code_052", "error": "SyntaxError: invalid syntax"}],
+    }}}
+    assert workload_coverage_errors(result, ["code"]) == []
+    assert workload_failure_details(result, ["code"]) == []
+
+
+def test_vllm_bench_native_result_lists_are_measurement_evidence():
+    result = {"run": {"status": "complete"}, "vllmbench": {"model": {
+        "latency_entries": [{"avg_latency_sec": 1.2}],
+        "throughput_entries": [{"requests_per_sec": 2.3}],
+        "requested_cases": 2, "completed_cases": 2,
+    }}}
+    assert workload_coverage_errors(result, ["vllmbench"]) == []
 
 
 def test_failure_details_include_model_error_and_incomplete_counts():

@@ -12,7 +12,7 @@ from scripts.setup.model_inventory import (
 from scripts.setup.setup_console import BOLD, CYAN, RESET, YELLOW, warn
 from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
-    LLM_MODELS_SMALL, LLM_MODELS_XSMALL,
+    LLM_MODELS_SMALL, LLM_MODELS_XSMALL, qualification_llm_model,
 )
 
 
@@ -58,7 +58,7 @@ def qualification_model_selection(engine: str) -> tuple[list[dict], list[dict], 
     if engine not in {LLAMACPP, VLLM}:
         raise ValueError(f"unknown qualification engine: {engine}")
     images = [IMAGE_MODELS[0]] if engine == LLAMACPP else []
-    return [LLM_MODELS_XSMALL[0]], images, [EMBED_MODELS[0]]
+    return [qualification_llm_model(engine)], images, [EMBED_MODELS[0]]
 
 
 def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,

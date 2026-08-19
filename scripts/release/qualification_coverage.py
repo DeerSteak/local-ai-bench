@@ -3,10 +3,9 @@
 import json
 from pathlib import Path
 
-from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, qualification_llm_model
 
 
-SMALLEST_LLM_MODEL = LLM_MODELS[0]["tag"]
 SMALLEST_EMBEDDING_MODEL = EMBED_MODELS[0]["tag"]
 SMALLEST_IMAGE_MODEL = IMAGE_MODELS[0]["short"]
 
@@ -25,7 +24,9 @@ EVIDENCE_MARKERS = {
     "code": {"answered"}, "tool": {"answered"},
     "conc_tool": {"valid_runs"}, "conc_chat": {"valid_runs"},
     "sustained": {"series"}, "llamabench": {"completed_cases"},
-    "llamabenchconc": {"entries"}, "vllmbench": {"entries"}, "img": {"valid_runs", "n_runs"},
+    "llamabenchconc": {"entries"},
+    "vllmbench": {"latency_entries", "throughput_entries"},
+    "img": {"valid_runs", "n_runs"},
 }
 DIAGNOSTIC_KEYS = {
     "error", "skip_reason", "invalid_runs", "timed_out", "timed_out_at", "crashed",
@@ -58,9 +59,10 @@ def _has_evidence(value, markers: set[str]) -> bool:
     return False
 
 
-def _incomplete_evidence(value) -> bool:
+def _incomplete_evidence(value, *, scoring_detail: bool = False) -> bool:
     if isinstance(value, dict):
-        if any(value.get(key) for key in ("error", "timed_out", "crashed", "skipped")):
+        if not scoring_detail and any(
+                value.get(key) for key in ("error", "timed_out", "crashed", "skipped")):
             return True
         pairs = (
             ("requested_cases", "completed_cases"),
@@ -74,18 +76,21 @@ def _incomplete_evidence(value) -> bool:
         if "requested_runs" not in value and "n_runs" in value and "valid_runs" in value \
                 and value["n_runs"] != value["valid_runs"]:
             return True
-        return any(_incomplete_evidence(child) for child in value.values())
+        return any(
+            _incomplete_evidence(child, scoring_detail=scoring_detail or key == "incorrect")
+            for key, child in value.items()
+        )
     if isinstance(value, list):
-        return any(_incomplete_evidence(child) for child in value)
+        return any(_incomplete_evidence(child, scoring_detail=scoring_detail) for child in value)
     return False
 
 
 def workload_failure_details(result: dict, workloads: list[str], limit: int = 4000) -> list[str]:
     details = []
 
-    def collect(value, path):
+    def collect(value, path, *, scoring_detail=False):
         if isinstance(value, dict):
-            for key in DIAGNOSTIC_KEYS:
+            for key in (() if scoring_detail else DIAGNOSTIC_KEYS):
                 if key in value and value[key] not in (None, False, "", []):
                     rendered = json.dumps(value[key], ensure_ascii=False) \
                         if not isinstance(value[key], str) else value[key]
@@ -107,10 +112,10 @@ def workload_failure_details(result: dict, workloads: list[str], limit: int = 40
                     f"{path}: valid_runs={value['valid_runs']}, n_runs={value['n_runs']}"
                 )
             for key, child in value.items():
-                collect(child, f"{path}.{key}")
+                collect(child, f"{path}.{key}", scoring_detail=scoring_detail or key == "incorrect")
         elif isinstance(value, list):
             for index, child in enumerate(value):
-                collect(child, f"{path}[{index}]")
+                collect(child, f"{path}[{index}]", scoring_detail=scoring_detail)
 
     for workload in workloads:
         section = RESULT_SECTIONS[workload]

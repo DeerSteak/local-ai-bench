@@ -7,10 +7,11 @@ import sys
 from pathlib import Path
 
 from scripts.release.qualification_coverage import (
-    SMALLEST_LLM_MODEL, qualification_arguments, qualification_workloads,
+    qualification_arguments, qualification_workloads,
     workload_coverage_errors, workload_failure_details,
 )
 from scripts.release.qualification_targets import TARGET_ENGINES, target_engine
+from scripts.workloads.models import qualification_llm_model
 
 
 def benchmark_wrapper(root: Path) -> list[str]:
@@ -21,9 +22,10 @@ def benchmark_wrapper(root: Path) -> list[str]:
 
 def run_qualification(target_id: str, root: Path, result: Path) -> None:  # pragma: no cover
     engine = target_engine(target_id)
+    model = qualification_llm_model(engine)["tag"]
     command = [
         *benchmark_wrapper(root),
-        *qualification_arguments(engine, SMALLEST_LLM_MODEL, result),
+        *qualification_arguments(engine, model, result),
     ]
     completed = subprocess.run(command, cwd=root)
     if completed.returncode:

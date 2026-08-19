@@ -35,6 +35,20 @@ def test_support_level_is_derived_from_complete_stale_and_absent_evidence():
     assert derive_support_level(None, "6.0-pre8") == "unverified"
 
 
+def test_vllm_support_requires_its_smallest_tool_capable_model():
+    evidence = entry(runtime="vllm", coverage={
+        "workloads": [
+            "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+            "conc_tool", "conc_chat", "sustained", "vllmbench",
+        ],
+        "models": ["granite4.1:3b-q4_K_M", "nomic-embed-text"],
+        "notes": "Smallest complete vLLM model coverage.",
+    })
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    evidence["coverage"]["models"][0] = "gemma3:1b-it-q4_K_M"
+    assert derive_support_level(evidence, "6.0-pre8") == "unverified"
+
+
 def test_reviewed_macos_m5_pro_qualification_is_supported():
     evidence = qualification_entry(
         "macos", "arm64", "llamacpp", "metal", "b10488",

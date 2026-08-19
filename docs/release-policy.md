@@ -26,7 +26,7 @@ For each candidate configuration, perform clean install, first launch, setup can
 
 The generated matrices in [Engines](engines.md#qualification-matrix) and [Setup](setup.md#qualification-matrix) are the published authority. `scripts/release/qualification.py` stores exact qualification evidence and derives supported, experimental, or unverified status; the generated sections must never be edited by hand. An entry is supported only when its ordinary benchmark result contains complete measured evidence for every required smallest-model workload and its suite version is no more than one minor release old. Clean install, repair, upgrade, rollback, uninstall, packaging, and offline readiness remain separate release gates. Stale evidence is experimental, and absent or incomplete evidence is unverified.
 
-The [qualification launcher](qualification.md) runs the shipped setup and benchmark paths and requires populated evidence from every compatible workload using its smallest model. This proves breadth of functional operation without running the full catalog; model-specific compatibility, comparative performance, full-bank accuracy, and production-duration soak claims require their own broader evidence.
+The [qualification launcher](qualification.md) runs the shipped setup and benchmark paths and requires populated evidence from every compatible workload using the smallest model that supports the engine's complete required workload set. This proves breadth of functional operation without running the full catalog; model-specific compatibility, comparative performance, full-bank accuracy, and production-duration soak claims require their own broader evidence.
 
 ## Stable-release criteria
 

@@ -28,7 +28,7 @@ On Windows:
 run_qualification.bat geforce-windows-llamacpp-cuda
 ```
 
-The launcher calls the normal `setup.sh` or `setup.bat` with a qualification preset that selects exactly one engine and the catalog's smallest LLM, embedding, and, for llama.cpp, image model. It then calls the normal `run_bench.sh` or `run_bench.bat` with those explicit selections. Existing installations and downloads are reused by the same setup code used by every other user.
+The launcher calls the normal `setup.sh` or `setup.bat` with a qualification preset that selects exactly one engine, the smallest LLM that supports every required engine workload, the smallest embedding model, and, for llama.cpp, the smallest image model. This is Gemma 3 1B for llama.cpp and Granite 4.1 3B for vLLM because vLLM requires a model-specific tool-call parser. It then calls the normal `run_bench.sh` or `run_bench.bat` with those explicit selections. Existing installations and downloads are reused by the same setup code used by every other user.
 
 The default result is `results_qualification_TARGET.json`; pass a second argument to choose another path. Normal image outputs remain beside the result using the benchmark's standard naming. A zero exit means the ordinary result reports a complete run and every required workload contains complete measured evidence. Errors, timeouts, skipped required cases, missing sections, or incomplete requested counts fail qualification.
 

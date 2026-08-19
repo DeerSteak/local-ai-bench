@@ -5,10 +5,11 @@ from datetime import date
 from pathlib import Path
 
 from scripts.release.qualification_coverage import (
-    SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL, SMALLEST_LLM_MODEL,
+    SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL,
     qualification_workloads,
 )
 from scripts.release.qualification_targets import TARGETS
+from scripts.workloads.models import qualification_llm_model
 
 
 MAX_QUALIFICATION_RELEASE_AGE = 1
@@ -135,7 +136,9 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     if entry is None:
         return "unverified"
     validate_qualification_entry(entry)
-    required_models = {SMALLEST_LLM_MODEL, SMALLEST_EMBEDDING_MODEL}
+    required_models = {
+        qualification_llm_model(entry["runtime"])["tag"], SMALLEST_EMBEDDING_MODEL,
+    }
     if entry["runtime"] == "llamacpp":
         required_models.add(SMALLEST_IMAGE_MODEL)
     complete_coverage = (
