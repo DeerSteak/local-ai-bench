@@ -62,6 +62,13 @@ def target_versions(target_id: str) -> tuple[str, str]:
     return PINNED_VERSIONS["vllm-cuda"]
 
 
+def select_runtime_targets(targets: list[str], *, vllm_only: bool) -> list[str]:
+    selected = [target for target in targets if not vllm_only or "-vllm-" in target]
+    if vllm_only and not selected:
+        raise ValueError("no automatic vLLM qualification target matches this machine")
+    return selected
+
+
 def safe_version(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value)
 
@@ -72,14 +79,18 @@ def evidence_revision(target_id: str) -> str:
 
 def automatic_recipes(root: Path, output_root: Path, *, system: str | None = None,
                       machine: str | None = None, hostname: str | None = None,
-                      wsl: bool | None = None) -> list[tuple[Path, dict]]:
+                      wsl: bool | None = None,
+                      vllm_only: bool = False) -> list[tuple[Path, dict]]:
     system = system or platform.system()
     machine = machine or platform.machine()
     hostname = hostname or Shared.get_hostname()
     if wsl is None:
         wsl = Shared.detect_wsl(system, platform.release())
     recipes = []
-    for target_id in detected_targets(system, machine, hostname, wsl=wsl):
+    target_ids = select_runtime_targets(
+        detected_targets(system, machine, hostname, wsl=wsl), vllm_only=vllm_only,
+    )
+    for target_id in target_ids:
         baseline, target = target_versions(target_id)
         revision = evidence_revision(target_id)
         output = Path(output_root) / f"{target_id}-{safe_version(target)}-{revision}"
@@ -108,9 +119,12 @@ def main(argv=None) -> int:  # pragma: no cover
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, default=Path("qualification-evidence"))
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--vllm-only", action="store_true")
     args = parser.parse_args(argv)
     try:
-        recipes = automatic_recipes(args.root.resolve(), args.output.resolve())
+        recipes = automatic_recipes(
+            args.root.resolve(), args.output.resolve(), vllm_only=args.vllm_only,
+        )
         summaries = []
         failed = False
         for output, recipe in recipes:

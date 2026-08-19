@@ -15,6 +15,7 @@ def test_unix_launcher_bootstraps_then_previews_by_default():
     assert "scripts.release.qualification_auto" in text
     assert 'bootstrap_qualification.sh" --execute' in text
     assert "/usr/lib/wsl/lib" in text
+    assert "--vllm-only" in text
 
 
 def test_windows_launcher_bootstraps_then_previews_by_default():

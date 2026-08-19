@@ -19,6 +19,7 @@ Review the preview, then run the same launcher with `--execute`. Execution insta
 ```bash
 ./run_qualification.sh
 ./run_qualification.sh --execute
+./run_qualification.sh --execute --vllm-only
 ```
 
 On Windows:

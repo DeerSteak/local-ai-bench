@@ -3,7 +3,7 @@ import pytest
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_auto import (
     AUTOMATION_REVISION, PINNED_VERSIONS, automatic_recipes, detected_targets,
-    evidence_revision, execution_summary, target_versions,
+    evidence_revision, execution_summary, select_runtime_targets, target_versions,
 )
 
 
@@ -56,6 +56,19 @@ def test_automatic_recipe_records_detected_identity_and_pinned_target(tmp_path):
     assert recipe["target"]["accelerator"] == "MacBook Pro\nM5 Pro 48 GB"
     assert PINNED_VERSIONS["llamacpp"][1] in output.name
     assert output.name.endswith(AUTOMATION_REVISION)
+
+
+def test_vllm_only_selects_only_the_vllm_target(tmp_path):
+    recipes = automatic_recipes(
+        tmp_path, tmp_path / "evidence", system="Linux", machine="aarch64",
+        hostname="NVIDIA GB10", wsl=False, vllm_only=True,
+    )
+    assert [recipe[1]["target"]["id"] for recipe in recipes] == ["dgx-spark-vllm-cuda"]
+
+
+def test_vllm_only_rejects_a_machine_without_a_vllm_target():
+    with pytest.raises(ValueError, match="no automatic vLLM qualification target"):
+        select_runtime_targets(["macos-m5-pro-llamacpp-metal"], vllm_only=True)
 
 
 def test_failed_execution_summary_points_directly_to_step_log(tmp_path):

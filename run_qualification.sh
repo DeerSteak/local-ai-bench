@@ -10,6 +10,7 @@ VENV="$ROOT/qualification-env"
 
 usage() {
     echo "Usage: $0 TARGET BASELINE_VERSION TARGET_VERSION [OUTPUT_DIR] [--execute]"
+    echo "       $0 [--execute] [--vllm-only]"
     echo "       $0 --list-targets"
 }
 
@@ -23,8 +24,17 @@ if [ "${1:-}" = "--list-targets" ]; then
     fi
     exec "$QUALIFICATION_PYTHON" -m scripts.release.qualification_recipe --list-targets
 fi
-if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
-    if [ "${1:-}" = "--execute" ]; then
+if [ "$#" -eq 0 ] || [ "${1:-}" = "--execute" ] || [ "${1:-}" = "--vllm-only" ]; then
+    EXECUTE_AUTO=false
+    VLLM_ONLY=false
+    for ARG in "$@"; do
+        case "$ARG" in
+            --execute) EXECUTE_AUTO=true ;;
+            --vllm-only) VLLM_ONLY=true ;;
+            *) usage; exit 2 ;;
+        esac
+    done
+    if [ "$EXECUTE_AUTO" = true ]; then
         "$ROOT/bootstrap_qualification.sh" --execute
     else
         "$ROOT/bootstrap_qualification.sh"
@@ -41,7 +51,8 @@ if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
     "$VENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt"
     cd "$ROOT"
     COMMAND=("$VENV/bin/python" -m scripts.release.qualification_auto --root "$ROOT")
-    if [ "${1:-}" = "--execute" ]; then COMMAND+=(--execute); fi
+    if [ "$EXECUTE_AUTO" = true ]; then COMMAND+=(--execute); fi
+    if [ "$VLLM_ONLY" = true ]; then COMMAND+=(--vllm-only); fi
     exec "${COMMAND[@]}"
 fi
 if [ "$#" -lt 3 ]; then
