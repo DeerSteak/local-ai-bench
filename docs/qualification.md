@@ -12,7 +12,7 @@ Use a separate performance qualification when a claim depends on catalog-wide co
 
 ## Launchers
 
-Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates the dedicated `qualification-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate.
+Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates the dedicated `qualification-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate. WSL2 distinguishes NVIDIA CUDA from AMD ROCm and currently recognizes the Radeon RX 9060 XT as its reviewed RDNA4 qualification target.
 
 Review the preview, then run the same launcher with `--execute`. Execution installs host prerequisites, the selected runtime builds, the smallest LLM and embedding models, and the smallest image model plus an isolated ComfyUI runtime where applicable, then completes the entire resumable lifecycle unattended:
 

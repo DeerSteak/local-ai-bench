@@ -17,10 +17,12 @@ This generated matrix reports the current evidence-backed status of each platfor
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | linux | x86_64 | vllm | cuda | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | No qualification record |
 | linux | aarch64 | vllm | cuda | Unverified | No qualification record |
 | wsl2 | x86_64 | vllm | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | vllm | rocm | Unverified | No qualification record |
 <!-- qualification-matrix:end -->
 
 **Contents**

@@ -251,6 +251,12 @@ def test_strix_halo_gfx1151_uses_the_official_rocm_wheel_path():
     assert result.requires_python == (3, 12)
 
 
+def test_rx_9060_xt_gfx1200_uses_the_official_rocm_wheel_path():
+    result = support(rocm_ok=True, rocm_version=(7, 2), rocm_gfx_targets=["gfx1200"])
+    assert (result.status, result.method) == ("supported", "rocm_wheel")
+    assert result.requires_python == (3, 12)
+
+
 def test_every_wheel_target_stays_supported():
     for target in VLLM_ROCM_WHEEL_TARGETS:
         result = support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=[target])
