@@ -28,7 +28,7 @@ run_qualification.bat
 run_qualification.bat --execute
 ```
 
-The main launcher calls `bootstrap_qualification.sh` or `bootstrap_qualification.bat` itself. The bootstrap covers Git, Python, venv support, CMake, and a C++ compiler where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.
+The main launcher calls `bootstrap_qualification.sh` or `bootstrap_qualification.bat` itself. The bootstrap covers Git, Python, venv support, CMake, a C++ compiler, and the OpenMPI runtime required by the reviewed ROCm PyTorch wheel where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.
 
 The reviewed pins are llama.cpp `b10486 → b10488`, CUDA vLLM `0.27.0 → 0.27.1`, ROCm vLLM `0.27.1+rocm723`, and DGX Spark CUDA 13 nightly `0.26.1rc1.dev925+gf1178f3a0`. Wheel channels that retain only one suitable current artifact reinstall that exact build for the update/rollback mechanics instead of selecting an older or incompatible package. Updating these pins is a reviewed code change; qualification never floats to an unreviewed release at execution time.
 

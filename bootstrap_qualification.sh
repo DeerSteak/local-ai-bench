@@ -27,13 +27,13 @@ if [ "$SYSTEM" = "Darwin" ]; then
 fi
 
 if command -v apt-get >/dev/null 2>&1; then
-    COMMAND=(sudo -n apt-get install -y git cmake build-essential curl python3 python3-venv python3-dev)
+    COMMAND=(sudo -n apt-get install -y git cmake build-essential curl libopenmpi-dev python3 python3-venv python3-dev)
     UPDATE=(sudo -n apt-get update)
 elif command -v dnf >/dev/null 2>&1; then
-    COMMAND=(sudo -n dnf install -y git cmake gcc-c++ make curl python3 python3-devel)
+    COMMAND=(sudo -n dnf install -y git cmake gcc-c++ make curl openmpi-devel python3 python3-devel)
     UPDATE=()
 else
-    echo "Unsupported host package manager; install Git, CMake, a C++ compiler, curl, and Python 3.11+." >&2
+    echo "Unsupported host package manager; install Git, CMake, a C++ compiler, curl, OpenMPI, and Python 3.11+." >&2
     exit 1
 fi
 

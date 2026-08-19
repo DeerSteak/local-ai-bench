@@ -33,6 +33,7 @@ def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():
     assert "GPU drivers and CUDA/ROCm SDKs are intentionally not changed" in unix
     assert "python3.12-venv" not in unix
     assert "uv" in unix and "python install 3.12" in unix
+    assert "libopenmpi-dev" in unix and "openmpi-devel" in unix
     assert 'if not "%~1"=="--execute"' in windows
     assert "winget install --id Python.Python.3.12" in windows
 
