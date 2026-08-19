@@ -32,7 +32,7 @@ if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
         "$QUALIFICATION_PYTHON" -m venv "$VENV"
         "$VENV/bin/python" -m pip install --upgrade pip
     fi
-    "$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
+    "$VENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt"
     cd "$ROOT"
     COMMAND=("$VENV/bin/python" -m scripts.release.qualification_auto --root "$ROOT")
     if [ "${1:-}" = "--execute" ]; then COMMAND+=(--execute); fi
@@ -57,7 +57,7 @@ if [ ! -x "$VENV/bin/python" ]; then
     "$QUALIFICATION_PYTHON" -m venv "$VENV"
     "$VENV/bin/python" -m pip install --upgrade pip
 fi
-"$VENV/bin/python" -m pip install -r "$ROOT/requirements.txt"
+"$VENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt"
 
 cd "$ROOT"
 "$VENV/bin/python" -m scripts.release.qualification_recipe \

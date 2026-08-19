@@ -4,6 +4,10 @@ set -euo pipefail
 MODE="${1:-}"
 SYSTEM="$(uname -s)"
 if [ "$SYSTEM" = "Darwin" ]; then
+    if command -v python3.12 >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+        echo "Qualification host prerequisites are already installed."
+        exit 0
+    fi
     if ! command -v brew >/dev/null 2>&1; then
         echo "Homebrew is required to install Python 3.12 unattended; install it from https://brew.sh and rerun." >&2
         exit 1

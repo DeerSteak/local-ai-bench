@@ -86,7 +86,26 @@ def install_runtime(root: Path, engine: str, model: str, version: str,
         snapshot_runtime(root, engine)
 
 
+def archive_smoke_artifacts(output: Path) -> list[Path]:
+    output = Path(output)
+    journal = output.with_suffix(".events.sqlite3")
+    artifacts = [output, journal, journal.with_suffix(journal.suffix + ".local.json")]
+    existing = [path for path in artifacts if path.exists()]
+    if not existing:
+        return []
+    retry = 1
+    while any(path.with_name(f"{path.name}.retry-{retry}").exists() for path in existing):
+        retry += 1
+    archived = []
+    for path in existing:
+        destination = path.with_name(f"{path.name}.retry-{retry}")
+        path.replace(destination)
+        archived.append(destination)
+    return archived
+
+
 def smoke_runtime(engine: str, output: Path) -> None:  # pragma: no cover
+    archive_smoke_artifacts(output)
     command = [
         sys.executable, "-m", "scripts.app.benchmark", "--quick", "--engine", engine,
         "--out", str(output),

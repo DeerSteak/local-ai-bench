@@ -22,7 +22,7 @@ if not exist "qualification-env\Scripts\python.exe" (
   py -3 -m venv qualification-env || exit /b 1
   qualification-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
 )
-qualification-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
+qualification-env\Scripts\python.exe -m pip install --quiet -r requirements.txt || exit /b 1
 
 qualification-env\Scripts\python.exe -m scripts.release.qualification_recipe --target "%TARGET%" --root "%CD%" --output "%OUTPUT_DIR%" --baseline-version "%BASELINE_VERSION%" --target-version "%TARGET_VERSION%" || exit /b 1
 if "%EXECUTE%"=="--execute" (
@@ -49,7 +49,7 @@ if not exist "qualification-env\Scripts\python.exe" (
   py -3 -m venv qualification-env || exit /b 1
   qualification-env\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
 )
-qualification-env\Scripts\python.exe -m pip install -r requirements.txt || exit /b 1
+qualification-env\Scripts\python.exe -m pip install --quiet -r requirements.txt || exit /b 1
 exit /b 0
 
 :list_targets
