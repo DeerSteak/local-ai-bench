@@ -14,18 +14,18 @@ Use a separate performance qualification when a claim depends on catalog-wide co
 
 Use a disposable clone and run `./run_qualification.sh --list-targets` on macOS, Linux, or WSL2, or `run_qualification.bat --list-targets` on Windows. Each launcher creates `bench-env` and installs `requirements.txt` when needed, generates a concrete recipe for the detected accelerator, and previews it by default. It refuses a target whose expected accelerator name is absent from the shared machine identity, which keeps Radeon and Intel Vulkan evidence separate.
 
-Pass the exact version being qualified first and a distinct upgrade version second. The first version is installed, exercised, snapshotted, restored by rollback, and recorded as the qualified runtime; the second exists only to prove the upgrade path. Review the preview, then repeat the same command with `--execute` as the final argument:
+Pass an exact rollback baseline first and the newer version being qualified second. The baseline is installed, exercised, and snapshotted; the qualification target is then installed, version-checked, and smoke-tested by the upgrade step before rollback restores and verifies the baseline. Review the preview, then repeat the same command with `--execute` as the final argument:
 
 ```bash
-./run_qualification.sh macos-m5-pro-llamacpp-metal bLATEST bNEXT qualification-evidence/m5-pro
-./run_qualification.sh macos-m5-pro-llamacpp-metal bLATEST bNEXT qualification-evidence/m5-pro --execute
+./run_qualification.sh macos-m5-pro-llamacpp-metal bPREVIOUS bCURRENT qualification-evidence/m5-pro
+./run_qualification.sh macos-m5-pro-llamacpp-metal bPREVIOUS bCURRENT qualification-evidence/m5-pro --execute
 ```
 
 On Windows:
 
 ```text
-run_qualification.bat geforce-windows-llamacpp-cuda bLATEST bNEXT qualification-evidence\geforce
-run_qualification.bat geforce-windows-llamacpp-cuda bLATEST bNEXT qualification-evidence\geforce --execute
+run_qualification.bat geforce-windows-llamacpp-cuda bPREVIOUS bCURRENT qualification-evidence\geforce
+run_qualification.bat geforce-windows-llamacpp-cuda bPREVIOUS bCURRENT qualification-evidence\geforce --execute
 ```
 
 For a newly installed host, `bootstrap_qualification.sh` or `bootstrap_qualification.bat` previews the prerequisite package-manager commands and performs them only with `--execute`. The bootstrap covers Git, Python, venv support, CMake, and a C++ compiler where applicable. It deliberately does not alter GPU drivers, CUDA/ROCm SDKs, firmware, or reboot state; those platform-image prerequisites require administrator review because silently replacing them would invalidate the identity being qualified.

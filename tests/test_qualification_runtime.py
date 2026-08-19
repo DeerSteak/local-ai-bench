@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_runtime import (
-    export_verified_bundle, managed_path, managed_processes, require_runtime_version,
+    export_verified_bundle, managed_path, managed_processes, require_runtime_version, smoke_runtime,
     restore_runtime, runtime_path, snapshot_runtime, uninstall,
 )
 
@@ -79,3 +79,16 @@ def test_process_inspection_finds_only_clone_owned_commands(tmp_path):
         root, run=lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=output),
     )
     assert found == [f"101 /usr/bin/python {root}/llama.cpp/server.py"]
+
+
+def test_upgraded_runtime_smoke_uses_quick_selected_engine(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    calls = []
+    monkeypatch.setattr(
+        "scripts.release.qualification_runtime.subprocess.run",
+        lambda command: calls.append(command) or SimpleNamespace(returncode=0),
+    )
+    smoke_runtime("vllm", tmp_path / "upgraded.json")
+    assert "--quick" in calls[0]
+    assert calls[0][calls[0].index("--engine") + 1] == "vllm"
+    assert "--ack-experimental-engine" in calls[0]

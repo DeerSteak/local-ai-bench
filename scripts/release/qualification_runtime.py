@@ -84,6 +84,18 @@ def install_runtime(root: Path, engine: str, model: str, version: str,
         snapshot_runtime(root, engine)
 
 
+def smoke_runtime(engine: str, output: Path) -> None:  # pragma: no cover
+    command = [
+        sys.executable, "-m", "scripts.app.benchmark", "--quick", "--engine", engine,
+        "--out", str(output),
+    ]
+    if engine == "vllm":
+        command.append("--ack-experimental-engine")
+    result = subprocess.run(command)
+    if result.returncode:
+        raise RuntimeError(f"{engine} upgraded-runtime smoke failed with code {result.returncode}")
+
+
 def runtime_version(root: Path, engine: str) -> str:
     root = qualification_root(root)
     if engine == "llamacpp":
@@ -169,6 +181,7 @@ def main(argv=None) -> int:  # pragma: no cover
     parser.add_argument("--result", type=Path)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--alias")
+    parser.add_argument("--smoke-output", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.action == "bundle":
@@ -186,6 +199,10 @@ def main(argv=None) -> int:  # pragma: no cover
                 "engine": args.engine,
                 "version": require_runtime_version(args.root, args.engine, args.version),
             }))
+            if args.action == "upgrade":
+                if not args.smoke_output:
+                    parser.error("upgrade requires --smoke-output")
+                smoke_runtime(args.engine, args.smoke_output)
         elif args.action == "discover":
             actual = (require_runtime_version(args.root, args.engine, args.version)
                       if args.version else runtime_version(args.root, args.engine))

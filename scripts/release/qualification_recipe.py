@@ -84,7 +84,7 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
     recipe = {
         "target": {
             "id": target_id, "platform": platform_name, "architecture": architecture,
-            "runtime": engine, "runtime_version": baseline_version, "backend": backend,
+            "runtime": engine, "runtime_version": target_version, "backend": backend,
             "accelerator": accelerator_identity,
         },
         "coverage": {
@@ -115,6 +115,7 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             "upgrade": step(lifecycle + [
                 "upgrade", "--root", root, "--engine", engine,
                 "--model", model, "--version", target_version,
+                "--smoke-output", output / "upgraded-smoke-result.json",
             ]),
             "rollback": step(lifecycle + [
                 "rollback", "--root", root, "--engine", engine, "--version", baseline_version,

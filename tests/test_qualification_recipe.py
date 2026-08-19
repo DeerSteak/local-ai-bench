@@ -14,7 +14,8 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     )
     assert execution_recipe_gaps(recipe) == []
     assert recipe["target"]["id"] == target_id
-    assert recipe["target"]["runtime_version"] == "baseline"
+    assert recipe["target"]["runtime_version"] == "target"
+    assert "--smoke-output" in recipe["steps"]["upgrade"]["command"]
     assert recipe["steps"]["cancellation"]["interrupt_when_log_contains"]
     assert recipe["steps"]["resume"]["command"][-1].endswith("interrupted-result.json")
 
