@@ -39,6 +39,15 @@ def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():
     assert "winget install --id Python.Python.3.12" in windows
 
 
+def test_unix_launcher_keeps_work_unprivileged_and_bootstrap_authenticates_once():
+    launcher = (ROOT / "run_qualification.sh").read_text()
+    bootstrap = (ROOT / "bootstrap_qualification.sh").read_text()
+    assert 'if [ "$(id -u)" -eq 0 ]' in launcher
+    assert "Do not run qualification with sudo" in launcher
+    assert "sudo -v" in bootstrap
+    assert "sudo -n apt-get" in bootstrap
+
+
 def test_posix_launcher_accepts_python_314_for_its_own_environment(tmp_path):
     python = tmp_path / "python3.14"
     python.write_text("#!/bin/sh\nexit 0\n")

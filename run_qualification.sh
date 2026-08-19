@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Do not run qualification with sudo; the bootstrap requests administrator access when needed." >&2
+    exit 1
+fi
 source "$ROOT/qualification_python.sh"
 PATH="${HOME}/.local/bin:${PATH}"
 if [ -d /usr/lib/wsl/lib ]; then PATH="/usr/lib/wsl/lib:${PATH}"; fi

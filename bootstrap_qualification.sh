@@ -48,6 +48,7 @@ if [ "$MODE" != "--execute" ]; then
     echo "Repeat with --execute after reviewing the commands."
     exit 0
 fi
+sudo -v
 if [ "${#UPDATE[@]}" -gt 0 ]; then "${UPDATE[@]}"; fi
 "${COMMAND[@]}"
 if ! qualification_python_312 >/dev/null; then
