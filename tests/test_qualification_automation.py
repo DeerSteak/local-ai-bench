@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -185,6 +187,29 @@ def test_evidence_permissions_are_readable_and_directories_traversable(tmp_path)
     assert output.stat().st_mode & 0o777 == 0o755
     assert nested.stat().st_mode & 0o777 == 0o755
     assert artifact.stat().st_mode & 0o777 == 0o644
+
+
+def test_windows_evidence_access_never_resolves_posix_ownership_operations(tmp_path):
+    calls = []
+    make_evidence_accessible(
+        tmp_path / "not-created", platform_name="nt",
+        chmod=lambda *_args: calls.append("chmod"),
+        chown=lambda *_args: calls.append("chown"),
+    )
+    assert calls == []
+    assert not (tmp_path / "not-created").exists()
+
+
+def test_qualification_automation_imports_when_os_chown_is_unavailable():
+    command = (
+        "import os; del os.chown; "
+        "import scripts.release.qualification_automation"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", command], cwd=Path(__file__).resolve().parents[1],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_root_qualification_returns_evidence_to_sudo_invoking_user(tmp_path):

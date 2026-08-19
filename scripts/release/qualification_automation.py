@@ -190,9 +190,11 @@ def sudo_invoking_owner(environ: Mapping[str, str], effective_uid: int) -> tuple
 
 
 def make_evidence_accessible(output_dir: Path, *, environ=None, effective_uid=None,
-                             chmod=os.chmod, chown=os.chown) -> None:
-    if os.name == "nt":
+                             chmod=None, chown=None, platform_name=None) -> None:
+    if (os.name if platform_name is None else platform_name) == "nt":
         return
+    chmod = os.chmod if chmod is None else chmod
+    chown = os.chown if chown is None else chown
     output_dir = Path(output_dir).resolve()
     active_environ: Mapping[str, str] = os.environ if environ is None else environ
     owner = sudo_invoking_owner(
