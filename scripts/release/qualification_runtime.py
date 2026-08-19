@@ -10,11 +10,11 @@ from pathlib import Path
 
 from scripts.release.qualification_install import inspect_install_plan, install_qualification_stack
 from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.runtime_identity import parse_runtime_version
 
 
 RUNTIME_NAMES = {"llamacpp": "llama.cpp", "vllm": "vllm-env"}
+RUNTIME_VERSION_MARKER = ".qualification-runtime-version"
 REMOVABLE_NAMES = {
     "llama.cpp", "vllm-env", "qualification-runtime-baseline",
     "qualification-cache", "qualification-vllm-cache", "models",
@@ -80,6 +80,8 @@ def install_runtime(root: Path, engine: str, model: str, version: str,
     plan, nvidia, rocm = inspect_install_plan(root, engine, model, version)
     if not install_qualification_stack(plan, nvidia, rocm):
         raise RuntimeError(f"failed to install {engine} {version}")
+    if engine == "llamacpp":
+        (target / RUNTIME_VERSION_MARKER).write_text(version + "\n", encoding="utf-8")
     if snapshot:
         snapshot_runtime(root, engine)
 
@@ -100,6 +102,17 @@ def runtime_version(root: Path, engine: str) -> str:
     root = qualification_root(root)
     if engine == "llamacpp":
         source = runtime_path(root, engine)
+        executable_name = "llama-server.exe" if os.name == "nt" else "llama-server"
+        executable = next(
+            (path for path in source.rglob(executable_name) if path.is_file()), None,
+        )
+        if executable is None:
+            raise ValueError("llama-server was not discovered in the qualification runtime")
+        marker = source / RUNTIME_VERSION_MARKER
+        if marker.is_file():
+            recorded = marker.read_text(encoding="utf-8").strip()
+            if recorded:
+                return recorded
         if (source / ".git").is_dir():
             tag = subprocess.run(
                 ["git", "-C", str(source), "describe", "--tags", "--exact-match", "HEAD"],
@@ -107,12 +120,6 @@ def runtime_version(root: Path, engine: str) -> str:
             )
             if tag.returncode == 0 and tag.stdout.strip():
                 return tag.stdout.strip()
-        executable = find_llamacpp_tool(
-            "llama-server", vendored_dir=runtime_path(root, engine),
-            platform_name="Windows" if os.name == "nt" else None,
-        )
-        if executable is None:
-            raise ValueError("llama-server was not discovered in the qualification runtime")
         command = [str(executable), "--version"]
     elif engine == "vllm":
         binary = "python.exe" if os.name == "nt" else "python"

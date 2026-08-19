@@ -94,7 +94,8 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             version: str | None = None) -> bool:
     release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
     if platform_name == "Darwin":
-        info("Downloading the latest official llama.cpp macOS release ...")
+        label = version or "latest"
+        info(f"Downloading the {label} official llama.cpp macOS release ...")
         if release_fetcher:
             result = update_macos_llamacpp(
                 runtime_dir, platform.machine(), release_fetcher=release_fetcher,

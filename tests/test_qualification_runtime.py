@@ -3,8 +3,9 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_runtime import (
-    export_verified_bundle, managed_path, managed_processes, require_runtime_version, smoke_runtime,
-    restore_runtime, runtime_path, snapshot_runtime, uninstall,
+    RUNTIME_VERSION_MARKER, export_verified_bundle, managed_path, managed_processes,
+    require_runtime_version, runtime_version, smoke_runtime, restore_runtime, runtime_path,
+    snapshot_runtime, uninstall,
 )
 
 
@@ -18,6 +19,7 @@ def test_runtime_snapshot_and_restore_are_confined_to_clone(tmp_path):
     root = repo(tmp_path)
     runtime = root / "llama.cpp"
     runtime.mkdir()
+    (runtime / "llama-server").touch()
     (runtime / "version.txt").write_text("baseline")
     snapshot_runtime(root, "llamacpp")
     (runtime / "version.txt").write_text("upgrade")
@@ -92,3 +94,12 @@ def test_upgraded_runtime_smoke_uses_quick_selected_engine(monkeypatch, tmp_path
     assert "--quick" in calls[0]
     assert calls[0][calls[0].index("--engine") + 1] == "vllm"
     assert "--ack-experimental-engine" in calls[0]
+
+
+def test_llamacpp_qualification_uses_recorded_release_artifact_identity(tmp_path):
+    root = repo(tmp_path)
+    runtime = root / "llama.cpp"
+    runtime.mkdir()
+    (runtime / "llama-server").touch()
+    (runtime / RUNTIME_VERSION_MARKER).write_text("b10486\n")
+    assert runtime_version(root, "llamacpp") == "b10486"
