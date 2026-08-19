@@ -1,7 +1,7 @@
 import pytest
 
 from scripts.release.qualification import (
-    QUALIFICATION_LIFECYCLE, derive_support_level, engine_selection_label,
+    QUALIFICATION_LIFECYCLE, QUALIFICATION_MATRIX, derive_support_level, engine_selection_label,
     engine_support_profile, experimental_acknowledgement_required,
     experimental_engine_ack_error, platform_name,
     qualification_entry, qualification_is_stale, qualification_rows,
@@ -42,6 +42,15 @@ def test_support_level_is_derived_from_complete_partial_and_absent_evidence():
     assert derive_support_level(entry({step: "not_tested" for step in QUALIFICATION_LIFECYCLE}),
                                 "6.0-pre8") == "unverified"
     assert derive_support_level(None, "6.0-pre8") == "unverified"
+
+
+def test_reviewed_macos_m5_pro_qualification_is_supported():
+    evidence = qualification_entry(
+        "macos", "arm64", "llamacpp", "metal", "b10488",
+        accelerator="MacBook Pro\nM5 Pro 48 GB",
+    )
+    assert evidence == QUALIFICATION_MATRIX[0]
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
 def test_staleness_downgrades_at_release_boundary():

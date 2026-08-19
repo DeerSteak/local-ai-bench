@@ -17,7 +17,36 @@ QUALIFICATION_LIFECYCLE = (
 LIFECYCLE_STATES = {"passed", "failed", "not_tested"}
 SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
-QUALIFICATION_MATRIX: tuple[dict, ...] = ()
+QUALIFICATION_MATRIX: tuple[dict, ...] = (
+    {
+        "id": "macos-m5-pro-llamacpp-metal",
+        "platform": "macos",
+        "architecture": "arm64",
+        "runtime": "llamacpp",
+        "runtime_version": "b10488",
+        "backend": "metal",
+        "accelerator": "MacBook Pro\nM5 Pro 48 GB",
+        "qualified_at": "2026-08-18",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "lifecycle": {step: "passed" for step in QUALIFICATION_LIFECYCLE},
+        "known_failures": [],
+        "evidence": [
+            "qualification-evidence/macos-m5-pro-llamacpp-metal-b10488-v6/"
+            "qualification-manifest.json",
+        ],
+    },
+)
 QUALIFICATION_TARGETS = (
     {"platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},
     {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA"},

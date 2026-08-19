@@ -9,11 +9,12 @@ This generated matrix reports the current evidence-backed status of each platfor
 <!-- qualification-matrix:start -->
 | Platform | Architecture | Runtime | Backend | Support | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| macos | arm64 | llamacpp | metal | Unverified | No qualification record |
+| macos | arm64 | llamacpp | metal | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
 | linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | linux | aarch64 | llamacpp | cuda | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Unverified | No qualification record |
 | linux | x86_64 | vllm | cuda | Unverified | No qualification record |
