@@ -58,6 +58,28 @@ def _has_evidence(value, markers: set[str]) -> bool:
     return False
 
 
+def _incomplete_evidence(value) -> bool:
+    if isinstance(value, dict):
+        if any(value.get(key) for key in ("error", "timed_out", "crashed", "skipped")):
+            return True
+        pairs = (
+            ("requested_cases", "completed_cases"),
+            ("requested_runs", "valid_runs"),
+            ("total", "answered"),
+        )
+        for requested_key, completed_key in pairs:
+            if requested_key in value and completed_key in value \
+                    and value[requested_key] != value[completed_key]:
+                return True
+        if "requested_runs" not in value and "n_runs" in value and "valid_runs" in value \
+                and value["n_runs"] != value["valid_runs"]:
+            return True
+        return any(_incomplete_evidence(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_incomplete_evidence(child) for child in value)
+    return False
+
+
 def workload_coverage_errors(result: dict, workloads: list[str]) -> list[str]:
     errors = []
     if result.get("run", {}).get("status") != "complete":
@@ -67,6 +89,8 @@ def workload_coverage_errors(result: dict, workloads: list[str]) -> list[str]:
         value = result.get(section)
         if not isinstance(value, dict) or not _has_evidence(value, EVIDENCE_MARKERS[workload]):
             errors.append(f"{workload} produced no measured result evidence")
+        elif _incomplete_evidence(value):
+            errors.append(f"{workload} did not complete all requested qualification evidence")
     return errors
 
 

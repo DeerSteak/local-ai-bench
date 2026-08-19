@@ -57,6 +57,42 @@ def test_real_native_and_server_concurrency_shapes_count_as_evidence():
     ) == []
 
 
+@pytest.mark.parametrize(("workload", "section"), [
+    ("llm", {"model": {"0.5K": {"requested_runs": 2, "valid_runs": 1}}}),
+    ("img", {"model": {"512x512": {"n_runs": 2, "valid_runs": 1}}}),
+    ("mcq", {"model": {"total": 2, "answered": 1}}),
+    ("llamabench", {"model": {"requested_cases": 6, "completed_cases": 1}}),
+    ("vllmbench", {"model": {
+        "entries": [{"elapsed_sec": 1}], "requested_cases": 4, "completed_cases": 3,
+    }}),
+])
+def test_partial_measurements_do_not_satisfy_qualification(workload, section):
+    marker = next(iter({
+        "llm": {"valid_runs"}, "img": {"valid_runs"}, "mcq": {"answered"},
+        "llamabench": {"completed_cases"}, "vllmbench": {"completed_cases"},
+    }[workload]))
+    assert _has_marker(section, marker)
+    result = {"run": {"status": "complete"}, RESULT_SECTIONS[workload]: section}
+    assert workload_coverage_errors(result, [workload]) == [
+        f"{workload} did not complete all requested qualification evidence",
+    ]
+
+
+def _has_marker(value, marker):
+    if isinstance(value, dict):
+        return marker in value or any(_has_marker(child, marker) for child in value.values())
+    return False
+
+
+def test_measurement_with_model_error_does_not_satisfy_qualification():
+    result = {"run": {"status": "complete"}, "llamabench": {"model": {
+        "requested_cases": 6, "completed_cases": 1, "error": "context creation failed",
+    }}}
+    assert workload_coverage_errors(result, ["llamabench"]) == [
+        "llamabench did not complete all requested qualification evidence",
+    ]
+
+
 def test_completed_valid_result_is_reused_without_repeating_workloads(monkeypatch, tmp_path):
     result_path = tmp_path / "result.json"
     result_path.write_text(json.dumps(complete_result(qualification_workloads("vllm"))))
