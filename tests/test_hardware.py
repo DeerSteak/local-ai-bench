@@ -16,6 +16,20 @@ def test_parse_size_gb_malformed_returns_zero():
     assert hardware.parse_size_gb("who knows") == 0.0
 
 
+def test_nvidia_smi_resolves_the_wsl_driver_location_when_path_omits_it(tmp_path):
+    executable = tmp_path / "nvidia-smi"
+    executable.write_text("driver bridge")
+    assert hardware.nvidia_smi_executable(
+        which_fn=lambda _name: None, wsl_path=executable,
+    ) == str(executable)
+
+
+def test_nvidia_smi_prefers_the_normal_path_discovery(tmp_path):
+    assert hardware.nvidia_smi_executable(
+        which_fn=lambda _name: "/usr/bin/nvidia-smi", wsl_path=tmp_path / "other",
+    ) == "/usr/bin/nvidia-smi"
+
+
 # ── classify_gpu ──
 
 def test_classify_gpu_amd_discrete():

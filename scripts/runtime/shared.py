@@ -490,7 +490,7 @@ class Shared:
             # NVIDIA first, then AMD via rocminfo, then lspci fallback
             try:
                 out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    [hardware.nvidia_smi_executable(), "--query-gpu=name", "--format=csv,noheader"],
                     capture_output=True, text=True, timeout=10,
                 ).stdout.strip()
                 if out:

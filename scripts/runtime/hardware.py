@@ -3,10 +3,18 @@ setup_check.py's picker — see docs/setup.md#memory-fit-estimate."""
 
 import json
 import re
+import shutil
+from pathlib import Path
 
 MEMORY_OVERHEAD_MULTIPLIER = 1.2
 VRAM_RESERVE_GB = 1.0
 RAM_RESERVE_GB  = 8.0
+
+
+def nvidia_smi_executable(*, which_fn=shutil.which,
+                          wsl_path: Path = Path("/usr/lib/wsl/lib/nvidia-smi")) -> str:
+    discovered = which_fn("nvidia-smi")
+    return discovered or (str(wsl_path) if wsl_path.is_file() else "nvidia-smi")
 
 
 def detect_wsl(os_name: str, release: str) -> bool:

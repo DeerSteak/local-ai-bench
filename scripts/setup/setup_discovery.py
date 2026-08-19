@@ -102,7 +102,7 @@ def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscove
 def discover_nvidia() -> NvidiaDiscovery:
     try:
         inventory = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+            [hardware.nvidia_smi_executable(), "--query-gpu=name,memory.total,driver_version",
              "--format=csv,noheader"], text=True, stderr=subprocess.DEVNULL,
         )
         gpus = hardware.parse_nvidia_gpus(inventory)
@@ -110,14 +110,14 @@ def discover_nvidia() -> NvidiaDiscovery:
         return NvidiaDiscovery([], None, None)
     try:
         capability = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            [hardware.nvidia_smi_executable(), "--query-gpu=compute_cap", "--format=csv,noheader"],
             text=True, stderr=subprocess.DEVNULL,
         ).strip().splitlines()[0].strip()
     except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
         capability = None
     try:
         summary = subprocess.check_output(
-            ["nvidia-smi"], text=True, stderr=subprocess.DEVNULL,
+            [hardware.nvidia_smi_executable()], text=True, stderr=subprocess.DEVNULL,
         )
         max_cuda = hardware.parse_nvidia_max_cuda_version(summary)
     except (FileNotFoundError, subprocess.CalledProcessError):

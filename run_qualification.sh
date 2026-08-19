@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$ROOT/qualification_python.sh"
 PATH="${HOME}/.local/bin:${PATH}"
+if [ -d /usr/lib/wsl/lib ]; then PATH="/usr/lib/wsl/lib:${PATH}"; fi
 QUALIFICATION_PYTHON="$(qualification_python || true)"
 VENV="$ROOT/qualification-env"
 
