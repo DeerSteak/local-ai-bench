@@ -46,6 +46,8 @@ def test_unix_launcher_keeps_work_unprivileged_and_bootstrap_authenticates_once(
     assert "Do not run qualification with sudo" in launcher
     assert "sudo -v" in bootstrap
     assert "sudo -n apt-get" in bootstrap
+    assert 'sudo -n chown -R "$(id -u):$(id -g)" "$MANAGED_PATH"' in bootstrap
+    assert 'MANAGED_PATH="$ROOT/$MANAGED"' in bootstrap
 
 
 def test_posix_launcher_accepts_python_314_for_its_own_environment(tmp_path):

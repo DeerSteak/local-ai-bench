@@ -49,6 +49,14 @@ if [ "$MODE" != "--execute" ]; then
     exit 0
 fi
 sudo -v
+for MANAGED in \
+    qualification-env vllm-env qualification-cache qualification-vllm-cache \
+    qualification-comfyui-runtime qualification-runtime-baseline qualification-evidence; do
+    MANAGED_PATH="$ROOT/$MANAGED"
+    if [ -e "$MANAGED_PATH" ] && [ ! -L "$MANAGED_PATH" ]; then
+        sudo -n chown -R "$(id -u):$(id -g)" "$MANAGED_PATH"
+    fi
+done
 if [ "${#UPDATE[@]}" -gt 0 ]; then "${UPDATE[@]}"; fi
 "${COMMAND[@]}"
 if ! qualification_python_312 >/dev/null; then
