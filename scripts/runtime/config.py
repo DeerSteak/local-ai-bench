@@ -151,6 +151,7 @@ VLLMBENCH_ITERS = 3
 VLLMBENCH_WARMUP_ITERS = 1
 VLLMBENCH_NUM_PROMPTS = 32
 VLLMBENCH_TIMEOUT = 1800
+VLLM_COLD_IMPORT_TIMEOUT = 300
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth

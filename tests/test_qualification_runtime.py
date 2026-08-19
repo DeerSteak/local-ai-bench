@@ -82,6 +82,23 @@ def test_discovery_rejects_a_different_runtime_version(monkeypatch, tmp_path):
         require_runtime_version(tmp_path, "vllm", "0.27.1")
 
 
+def test_vllm_version_discovery_allows_a_slow_cold_import(tmp_path):
+    from types import SimpleNamespace
+
+    root = repo(tmp_path)
+    python = root / "vllm-env" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="0.27.1\n", stderr="")
+
+    assert runtime_version(root, "vllm", run=run) == "0.27.1"
+    assert calls[0][1]["timeout"] == 300
+
+
 def test_process_inspection_finds_only_clone_owned_commands(tmp_path):
     from types import SimpleNamespace
     root = repo(tmp_path)

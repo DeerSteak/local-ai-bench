@@ -18,7 +18,7 @@ from scripts.setup.vllm_install import VllmSupport, install_vllm
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
 from scripts.setup.directory_transaction import DirectorySwapError, swap_staged_directory
 from scripts.setup.resumable_download import download_file
-from scripts.runtime import hardware
+from scripts.runtime import config, hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
 from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_version, source_commit_version
 
@@ -604,7 +604,10 @@ def validate_vllm_environment(venv_dir: Path, *, run=subprocess.run,
     if not executable.is_file():
         return RuntimeUpdateResult(False, f"Staged vLLM executable is missing: {executable}")
     try:
-        result = run([str(executable), "--version"], capture_output=True, text=True, timeout=30)
+        result = run(
+            [str(executable), "--version"], capture_output=True, text=True,
+            timeout=config.VLLM_COLD_IMPORT_TIMEOUT,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return RuntimeUpdateResult(False, f"Staged vLLM validation failed: {exc}")
     output = (result.stdout or result.stderr or "").strip()

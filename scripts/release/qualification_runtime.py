@@ -16,6 +16,7 @@ from scripts.release.qualification_evidence import (
 from scripts.results.decision_report import load_result, write_html_report
 from scripts.results.outbound_metadata import prepare_outbound_result
 from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
+from scripts.runtime import config
 from scripts.setup.runtime_identity import parse_runtime_version
 
 
@@ -121,7 +122,7 @@ def smoke_runtime(root: Path, engine: str, model: str, output: Path) -> None:  #
     run_qualification_coverage(engine, model, output, comfyui)
 
 
-def runtime_version(root: Path, engine: str) -> str:
+def runtime_version(root: Path, engine: str, *, run=subprocess.run) -> str:
     root = qualification_root(root)
     if engine == "llamacpp":
         source = runtime_path(root, engine)
@@ -137,7 +138,7 @@ def runtime_version(root: Path, engine: str) -> str:
             if recorded:
                 return recorded
         if (source / ".git").is_dir():
-            tag = subprocess.run(
+            tag = run(
                 ["git", "-C", str(source), "describe", "--tags", "--exact-match", "HEAD"],
                 capture_output=True, text=True, timeout=30,
             )
@@ -150,7 +151,8 @@ def runtime_version(root: Path, engine: str) -> str:
                    "-c", "import vllm; print(vllm.__version__)"]
     else:
         raise ValueError(f"unsupported qualification engine: {engine}")
-    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    timeout = config.VLLM_COLD_IMPORT_TIMEOUT if engine == "vllm" else 30
+    result = run(command, capture_output=True, text=True, timeout=timeout)
     output = (result.stdout or result.stderr).strip()
     if result.returncode or not output:
         raise ValueError(output or f"{engine} version discovery failed")

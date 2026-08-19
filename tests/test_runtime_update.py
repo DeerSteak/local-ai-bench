@@ -110,6 +110,20 @@ def test_validate_vllm_environment_captures_version(tmp_path):
     assert result.version == "vllm 0.10.0"
 
 
+def test_validate_vllm_environment_allows_a_slow_cold_import(tmp_path):
+    executable = vllm_executable(tmp_path)
+    executable.parent.mkdir()
+    executable.touch()
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="vllm 0.27.1\n", stderr="")
+
+    assert validate_vllm_environment(tmp_path, run=run).success
+    assert calls[0][1]["timeout"] == 300
+
+
 def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path):
     target = tmp_path / "vllm-env"
     target.mkdir()

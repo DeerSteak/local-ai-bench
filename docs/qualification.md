@@ -40,6 +40,8 @@ The bundled install step uses `scripts.release.qualification_install` to install
 
 On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. The POSIX launcher accepts the newest supported interpreter present, including Python 3.14, for `qualification-env`; when a Linux or WSL2 host lacks Python 3.12, executable bootstrap installs a private uv-managed 3.12 for the isolated vLLM environment because the pinned CUDA wheel does not support 3.14 and the pinned ROCm/DGX builds specifically require 3.12. This does not replace the system interpreter or install a different GPU stack. The launcher refreshes `requirements.txt` on every invocation and then installs the runtime and minimum coverage models. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
 
+Cold vLLM environment probes allow five minutes because the first import may initialize large CUDA or ROCm libraries, especially from a Windows-mounted WSL2 clone. This timeout applies only to environment validation, not benchmark requests.
+
 The cancellation command is the only command that may define `interrupt_when_log_contains`. The runner launches it in its own process group, waits for the structured model-running progress event in its live log, sends the platform interrupt signal, and accepts only the declared exit codes. Slow installation, model loading, or server startup therefore cannot cause a premature cancellation.
 
 ## Preview and execution
