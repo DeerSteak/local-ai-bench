@@ -70,6 +70,32 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
     {
+        "id": "geforce-windows-llamacpp-cuda",
+        "platform": "windows",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "cuda",
+        "accelerator": "NVIDIA GeForce RTX 5060 Ti / 31.8574 GB VRAM",
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/geforce-windows-llamacpp-cuda/"
+            "results_qualification_geforce-windows-llamacpp-cuda.json",
+        ],
+    },
+    {
         "id": "dgx-spark-llamacpp-cuda",
         "platform": "linux",
         "architecture": "aarch64",

@@ -70,12 +70,21 @@ def test_reviewed_geforce_wsl2_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_geforce_windows_qualification_is_supported():
+    evidence = qualification_entry(
+        "windows", "x86_64", "llamacpp", "cuda", "0.1.2-dev",
+        accelerator="NVIDIA GeForce RTX 5060 Ti / 31.8574 GB VRAM",
+    )
+    assert evidence == QUALIFICATION_MATRIX[2]
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_reviewed_dgx_spark_llamacpp_qualification_is_supported():
     evidence = qualification_entry(
         "linux", "aarch64", "llamacpp", "cuda", "0.1.2-dev",
         accelerator="NVIDIA GB10 122 GB",
     )
-    assert evidence == QUALIFICATION_MATRIX[2]
+    assert evidence == QUALIFICATION_MATRIX[3]
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
@@ -84,7 +93,7 @@ def test_reviewed_dgx_spark_vllm_qualification_is_supported():
         "linux", "aarch64", "vllm", "cuda", "0.27.1",
         accelerator="NVIDIA GB10 122 GB",
     )
-    assert evidence == QUALIFICATION_MATRIX[3]
+    assert evidence == QUALIFICATION_MATRIX[4]
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 

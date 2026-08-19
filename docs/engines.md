@@ -10,7 +10,7 @@ Support is derived from the recorded qualification results below. A supported en
 | Platform | Architecture | Runtime | Backend | Support | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | macos | arm64 | llamacpp | metal | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
