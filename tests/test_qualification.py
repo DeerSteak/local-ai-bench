@@ -70,6 +70,15 @@ def test_reviewed_geforce_wsl2_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_dgx_spark_llamacpp_qualification_is_supported():
+    evidence = qualification_entry(
+        "linux", "aarch64", "llamacpp", "cuda", "0.1.2-dev",
+        accelerator="NVIDIA GB10 122 GB",
+    )
+    assert evidence == QUALIFICATION_MATRIX[2]
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_staleness_downgrades_at_release_boundary():
     evidence = entry(suite_version="6.0")
     assert qualification_is_stale(evidence, "6.1") is False

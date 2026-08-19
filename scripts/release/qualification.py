@@ -69,6 +69,32 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
             "smoke-result.json",
         ],
     },
+    {
+        "id": "dgx-spark-llamacpp-cuda",
+        "platform": "linux",
+        "architecture": "aarch64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "cuda",
+        "accelerator": "NVIDIA GB10 122 GB",
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/dgx-spark-llamacpp-cuda/"
+            "results_qualification_dgx-spark-llamacpp-cuda.json",
+        ],
+    },
 )
 QUALIFICATION_TARGETS = tuple(
     {key: value for key, value in target.items() if key != "id"} for target in TARGETS

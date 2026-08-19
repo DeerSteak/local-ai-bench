@@ -10,19 +10,19 @@ This generated matrix reports the current evidence-backed status of each platfor
 | Platform | Architecture | Runtime | Backend | Support | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | macos | arm64 | llamacpp | metal | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |
-| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
-| linux | aarch64 | llamacpp | cuda | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | cuda | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
-| linux | x86_64 | vllm | cuda | Unverified | No qualification record |
-| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
-| linux | aarch64 | vllm | cuda | Unverified | No qualification record |
 | wsl2 | x86_64 | vllm | cuda | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | wsl2 | x86_64 | vllm | rocm | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |
+| linux | x86_64 | vllm | cuda | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
+| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
+| linux | aarch64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| linux | aarch64 | vllm | cuda | Unverified | No qualification record |
 <!-- qualification-matrix:end -->
 
 **Contents**
