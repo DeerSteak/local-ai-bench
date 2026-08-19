@@ -14,6 +14,9 @@ QUALIFICATION_LIFECYCLE = (
     "install", "discovery", "first_valid_run", "cancellation", "resume",
     "report_generation", "bundle_export", "upgrade", "rollback", "uninstall",
 )
+PLATFORM_QUALIFICATION_STEPS = tuple(
+    step for step in QUALIFICATION_LIFECYCLE if step != "uninstall"
+)
 LIFECYCLE_STATES = {"passed", "failed", "not_tested"}
 SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
@@ -135,16 +138,16 @@ def validate_qualification_entry(entry: dict) -> None:
             or any(not isinstance(item, str) or not item.strip() for item in evidence)
             or any(state == "passed" for state in lifecycle.values()) and not evidence):
         raise ValueError("qualification evidence references are invalid")
-    if set(lifecycle.values()) == {"passed"} and not any(
+    if all(lifecycle[step] == "passed" for step in PLATFORM_QUALIFICATION_STEPS) and not any(
             Path(item).name == "qualification-manifest.json" for item in evidence):
-        raise ValueError("complete qualification requires a final evidence manifest")
+        raise ValueError("complete platform qualification requires a final evidence manifest")
 
 
 def derive_support_level(entry: dict | None, current_version: str) -> str:
     if entry is None:
         return "unverified"
     validate_qualification_entry(entry)
-    states = set(entry["lifecycle"].values())
+    states = {entry["lifecycle"][step] for step in PLATFORM_QUALIFICATION_STEPS}
     required_models = {SMALLEST_LLM_MODEL, SMALLEST_EMBEDDING_MODEL}
     if entry["runtime"] == "llamacpp":
         required_models.add(SMALLEST_IMAGE_MODEL)
@@ -154,7 +157,9 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     )
     if not complete_coverage:
         return "unverified"
-    if states == {"passed"} and not qualification_is_stale(entry, current_version):
+    cleanup_attempted = entry["lifecycle"]["uninstall"] != "not_tested"
+    if states == {"passed"} and cleanup_attempted and not qualification_is_stale(
+            entry, current_version):
         return "supported"
     if "passed" in states:
         return "experimental"

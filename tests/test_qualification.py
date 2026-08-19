@@ -38,6 +38,8 @@ def entry(states=None, **overrides):
 
 def test_support_level_is_derived_from_complete_partial_and_absent_evidence():
     assert derive_support_level(entry(), "6.0-pre8") == "supported"
+    assert derive_support_level(entry({"uninstall": "failed"}), "6.0-pre8") == "supported"
+    assert derive_support_level(entry({"uninstall": "not_tested"}), "6.0-pre8") == "experimental"
     assert derive_support_level(entry({"rollback": "failed"}), "6.0-pre8") == "experimental"
     assert derive_support_level(entry({step: "not_tested" for step in QUALIFICATION_LIFECYCLE}),
                                 "6.0-pre8") == "unverified"
@@ -68,6 +70,13 @@ def test_support_level_cannot_be_set_in_evidence():
 def test_complete_lifecycle_requires_the_verified_final_manifest():
     with pytest.raises(ValueError, match="final evidence manifest"):
         validate_qualification_entry(entry(evidence=["qualification-state.json"]))
+
+
+def test_failed_cleanup_still_requires_the_verified_platform_manifest():
+    with pytest.raises(ValueError, match="final evidence manifest"):
+        validate_qualification_entry(entry(
+            {"uninstall": "failed"}, evidence=["qualification-state.json"],
+        ))
 
 
 def test_complete_lifecycle_without_required_workload_coverage_is_unverified():

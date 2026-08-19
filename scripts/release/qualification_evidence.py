@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scripts.release.qualification import QUALIFICATION_LIFECYCLE
+from scripts.release.qualification import QUALIFICATION_LIFECYCLE, PLATFORM_QUALIFICATION_STEPS
 from scripts.release.qualification_coverage import qualification_workloads, workload_coverage_errors
 from scripts.results.result_bundle import verify_result_bundle
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
@@ -211,11 +211,14 @@ def final_evidence_errors(recipe: dict, state: dict, output: Path, *, host: dict
     output = Path(output)
     errors = []
     for step in QUALIFICATION_LIFECYCLE:
-        if state.get("steps", {}).get(step, {}).get("status") != "passed":
+        if (step in PLATFORM_QUALIFICATION_STEPS
+                and state.get("steps", {}).get(step, {}).get("status") != "passed"):
             errors.append(f"lifecycle step did not pass: {step}")
         log = state.get("steps", {}).get(step, {}).get("log")
         if not log or not (output / log).is_file():
             errors.append(f"lifecycle log is missing: {step}")
+    if state.get("steps", {}).get("uninstall", {}).get("status") not in {"passed", "failed"}:
+        errors.append("uninstall cleanup was not attempted")
     engine = recipe["target"]["runtime"]
     target = recipe["target"]
     workloads = qualification_workloads(engine)

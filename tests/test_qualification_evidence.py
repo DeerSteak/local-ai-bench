@@ -126,6 +126,29 @@ def test_final_gate_reports_every_missing_evidence_class(tmp_path, monkeypatch):
     assert all(f"lifecycle log is missing: {name}" in errors for name in QUALIFICATION_LIFECYCLE)
 
 
+def test_final_gate_requires_an_uninstall_attempt(tmp_path, monkeypatch):
+    state = {"steps": {
+        name: {"status": "passed", "log": f"{name}.log"} for name in QUALIFICATION_LIFECYCLE
+    }}
+    state["steps"]["uninstall"]["status"] = "pending"
+    recipe = {
+        "target": {
+            "runtime": "vllm", "runtime_version": "1.1", "platform": "linux",
+            "architecture": "x86_64", "backend": "cuda", "accelerator": "GPU",
+        },
+        "steps": {"install": {"command": [
+            "tool", "--root", str(tmp_path), "--version", "1.0",
+        ]}},
+    }
+    errors = final_evidence_errors(
+        recipe, state, tmp_path,
+        host={"probes": {"kernel": {"status": "captured"},
+                          "accelerator_driver": {"status": "captured"}}},
+        source={"commit": {"status": "captured"}, "tracked_worktree_dirty": False},
+    )
+    assert "uninstall cleanup was not attempted" in errors
+
+
 def test_final_manifest_verifier_rejects_missing_and_modified_files(tmp_path):
     artifact = tmp_path / "result.json"
     artifact.write_text("original")
@@ -159,6 +182,9 @@ def test_complete_cross_platform_evidence_builds_a_verified_manifest(engine, tmp
         log = f"{name}.log"
         (tmp_path / log).write_text("passed")
         state["steps"][name] = {"status": "passed", "log": log}
+    state["steps"]["uninstall"].update({
+        "status": "failed", "detail": "cleanup access denied",
+    })
 
     def result():
         value = {

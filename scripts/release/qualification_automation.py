@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from scripts.release.qualification import QUALIFICATION_LIFECYCLE
+from scripts.release.qualification import QUALIFICATION_LIFECYCLE, PLATFORM_QUALIFICATION_STEPS
 from scripts.release.qualification_evidence import build_final_manifest, verify_final_manifest
 from scripts.runtime import config
 
@@ -144,7 +144,8 @@ def initial_run_state(recipe: dict) -> dict:
 
 def next_qualification_step(state: dict) -> str | None:
     for name in QUALIFICATION_LIFECYCLE:
-        if state["steps"][name]["status"] != "passed":
+        status = state["steps"][name]["status"]
+        if status != "passed" and (name in PLATFORM_QUALIFICATION_STEPS or status != "failed"):
             return name
     return None
 
@@ -281,10 +282,11 @@ def finalize_qualification_run(recipe: dict, state: dict, output_dir: Path) -> P
         verify_final_manifest(output_dir)
     except ValueError as exc:
         manifest_path.unlink(missing_ok=True)
-        record = state["steps"]["uninstall"]
-        record.update({"status": "failed", "detail": str(exc), "finished_at": _timestamp()})
+        state["finalization_error"] = str(exc)
         _write_json(state_path, state)
         return None
+    state.pop("finalization_error", None)
+    _write_json(state_path, state)
     return manifest_path
 
 

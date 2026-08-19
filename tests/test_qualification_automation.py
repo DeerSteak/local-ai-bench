@@ -121,6 +121,14 @@ def test_checkpoint_resumes_at_first_step_that_has_not_passed():
     assert next_qualification_step(state) is None
 
 
+def test_failed_uninstall_is_recorded_without_blocking_platform_completion():
+    state = initial_run_state(recipe())
+    for step in QUALIFICATION_LIFECYCLE:
+        state["steps"][step]["status"] = "passed"
+    state["steps"]["uninstall"]["status"] = "failed"
+    assert next_qualification_step(state) is None
+
+
 def test_recipe_digest_is_stable_and_changes_with_coverage():
     first = recipe()
     second = recipe()
@@ -153,8 +161,8 @@ def test_finalization_refuses_to_leave_a_pass_when_evidence_is_incomplete(monkey
     )
 
     assert finalize_qualification_run(recipe(), state, tmp_path) is None
-    assert state["steps"]["uninstall"]["status"] == "failed"
-    assert state["steps"]["uninstall"]["detail"] == "target bundle missing"
+    assert state["steps"]["uninstall"]["status"] == "passed"
+    assert state["finalization_error"] == "target bundle missing"
     assert not (tmp_path / "qualification-manifest.json").exists()
 
 
