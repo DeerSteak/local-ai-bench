@@ -137,6 +137,14 @@ def test_bootstrap_plan_is_empty_when_an_in_range_interpreter_exists():
         python_version=(3, 12), which_fn=lambda _name: None) == []
 
 
+def test_rocm_bootstrap_installs_pinned_python_when_only_newer_python_exists():
+    plan = python_bootstrap_plan(
+        python_version=(3, 13), requires_python=(3, 12),
+        which_fn=lambda name: name if name in {"python3.13", "uv"} else None,
+    )
+    assert plan == [["uv", "python", "install", "3.12"]]
+
+
 def test_bootstrap_plan_installs_uv_only_when_it_is_missing():
     without_uv = python_bootstrap_plan(python_version=(3, 14), which_fn=lambda _name: None)
     assert len(without_uv) == 2

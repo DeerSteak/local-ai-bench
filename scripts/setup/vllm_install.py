@@ -167,10 +167,11 @@ UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
 
 
 def python_bootstrap_plan(*, python_version: tuple[int, int],
+                          requires_python: tuple[int, int] | None = None,
                           which_fn=shutil.which) -> list[list[str]]:
     """Commands that put a vLLM-compatible interpreter on PATH, empty when one already is.
     Needed on distros whose only system Python is newer than vLLM's wheels — see docs/setup.md."""
-    if resolve_python(None, python_version, which_fn) is not None:
+    if resolve_python(requires_python, python_version, which_fn) is not None:
         return []
     plan = []
     if which_fn("uv") is None:

@@ -7,6 +7,7 @@ from scripts.setup.engine_selection import (
     engines_needing_install,
     needs_python_headers,
     qualification_engines_needing_install,
+    qualification_setup_failed,
     select_engines,
     find_entry as _find_entry,
     selected_engine_names,
@@ -158,6 +159,12 @@ def test_vllm_qualification_installs_native_bench_beside_a_launcher():
     assert qualification_engines_needing_install(
         entries, VLLM, vllm_bench_found=True,
     ) == []
+
+
+def test_qualification_setup_failure_blocks_the_benchmark_launch():
+    assert qualification_setup_failed(VLLM, ["Install vLLM manually"])
+    assert not qualification_setup_failed(VLLM, [])
+    assert not qualification_setup_failed(None, ["Install vLLM manually"])
 
 
 def test_a_disabled_engine_never_counts_as_selected_or_installable():

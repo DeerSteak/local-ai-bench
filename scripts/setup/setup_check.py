@@ -61,7 +61,8 @@ from scripts.setup.setup_console import (
 )
 from scripts.setup.engine_selection import (
     LLAMACPP, VLLM, apply_engine_preset, build_engine_entries, engines_needing_install,
-    needs_python_headers, qualification_engines_needing_install, select_engines,
+    needs_python_headers, qualification_engines_needing_install, qualification_setup_failed,
+    select_engines,
     selected_engine_names,
 )
 from scripts.setup.vllm_install import (
@@ -69,7 +70,7 @@ from scripts.setup.vllm_install import (
     install_vllm, install_vllm_build_tools, missing_python_headers,
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
     read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
-    PINNED_PYTHON, python_bootstrap_plan, run_python_bootstrap,
+    PINNED_PYTHON, python_bootstrap_plan, resolve_python, run_python_bootstrap,
 )
 from scripts.app.interface_mode import select_interface_mode
 
@@ -418,11 +419,22 @@ def main() -> None:  # pragma: no cover - real interactive installer
         compute_cap=nvidia_compute_cap, rocm_version=rocm_version() if rocm_ok else None,
         rocm_gfx_targets=rocm_gfx,
     )
-    if not vllm_found and vllm_support.needs_python_bootstrap:
-        bootstrap_plan = python_bootstrap_plan(python_version=sys.version_info[:2])
+    qualification_needs_native_vllm = args.qualification == VLLM and VLLM_BIN is None
+    missing_required_python = resolve_python(
+        vllm_support.requires_python, sys.version_info[:2],
+    ) is None
+    if ((not vllm_found and vllm_support.needs_python_bootstrap)
+            or (qualification_needs_native_vllm and missing_required_python)):
+        bootstrap_plan = python_bootstrap_plan(
+            python_version=sys.version_info[:2],
+            requires_python=vllm_support.requires_python,
+        )
         if bootstrap_plan:
-            warn(f"vLLM needs Python 3.10–3.13 and this system only has "
-                 f"{sys.version_info.major}.{sys.version_info.minor}")
+            python_requirement = (
+                f"Python {vllm_support.requires_python[0]}.{vllm_support.requires_python[1]}"
+                if vllm_support.requires_python else "Python 3.10–3.13"
+            )
+            warn(f"vLLM needs {python_requirement} and no matching interpreter was found")
             info("Setup can install a private CPython "
                  f"{PINNED_PYTHON[0]}.{PINNED_PYTHON[1]} for vLLM to build its venv from. "
                  "This downloads uv from astral.sh and does not change your system Python.")
@@ -936,6 +948,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if _gui_progress_path is not None:
         _gui_progress_status[0] = "complete" if not issues else "action_items"
         finish_setup_progress(_gui_progress_path, _gui_progress_status[0])
+
+    if qualification_setup_failed(args.qualification, issues):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":  # pragma: no cover

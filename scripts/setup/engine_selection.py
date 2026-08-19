@@ -74,6 +74,10 @@ def qualification_engines_needing_install(entries: list[dict], engine: str | Non
     return pending
 
 
+def qualification_setup_failed(engine: str | None, issues: list[str]) -> bool:
+    return engine is not None and bool(issues)
+
+
 def apply_engine_preset(entries: list[dict], engine: str) -> list[dict]:
     target = find_entry(entries, engine)
     if target is None or not target["enabled"]:
