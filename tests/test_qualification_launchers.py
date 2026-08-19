@@ -34,7 +34,22 @@ def test_target_listing_needs_no_python_environment():
         cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "macos-m5-pro-llamacpp-metal" in result.stdout
+    assert result.stdout.splitlines() == [
+        "macos-m5-pro-llamacpp-metal",
+        "geforce-windows-llamacpp-cuda",
+        "radeon-windows-llamacpp-vulkan",
+        "intel-arc-windows-llamacpp-vulkan",
+        "geforce-wsl2-llamacpp-cuda",
+        "geforce-wsl2-vllm-cuda",
+        "radeon-wsl2-llamacpp-rocm",
+        "radeon-wsl2-vllm-rocm",
+        "nvidia-linux-llamacpp-cuda",
+        "nvidia-linux-vllm-cuda",
+        "ryzen-ai-halo-llamacpp-rocm",
+        "ryzen-ai-halo-vllm-rocm",
+        "dgx-spark-llamacpp-cuda",
+        "dgx-spark-vllm-cuda",
+    ]
 
 
 def test_unknown_target_is_rejected_before_setup():
