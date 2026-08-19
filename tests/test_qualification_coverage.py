@@ -4,7 +4,7 @@ import pytest
 
 from scripts.release.qualification_coverage import (
     RESULT_SECTIONS, qualification_command, qualification_workloads,
-    run_qualification_coverage, workload_coverage_errors,
+    run_qualification_coverage, workload_coverage_errors, workload_failure_details,
 )
 
 
@@ -90,6 +90,24 @@ def test_measurement_with_model_error_does_not_satisfy_qualification():
     }}}
     assert workload_coverage_errors(result, ["llamabench"]) == [
         "llamabench did not complete all requested qualification evidence",
+    ]
+
+
+def test_failure_details_include_model_error_and_incomplete_counts():
+    result = {"llamabench": {"gemma3-1b": {
+        "requested_cases": 6, "completed_cases": 1,
+        "error": "failed to create context",
+    }}}
+    assert workload_failure_details(result, ["llamabench"]) == [
+        "llamabench.gemma3-1b.error: failed to create context",
+        "llamabench.gemma3-1b: completed_cases=1, requested_cases=6",
+    ]
+
+
+def test_failure_details_truncate_large_runtime_output():
+    result = {"vllmbench": {"model": {"error": "x" * 100}}}
+    assert workload_failure_details(result, ["vllmbench"], limit=20) == [
+        "vllmbench.model.erro... [truncated]",
     ]
 
 

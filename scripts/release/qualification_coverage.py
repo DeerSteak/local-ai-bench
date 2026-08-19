@@ -30,6 +30,9 @@ EVIDENCE_MARKERS = {
     "sustained": {"series"}, "llamabench": {"completed_cases"},
     "llamabenchconc": {"entries"}, "vllmbench": {"entries"}, "img": {"valid_runs", "n_runs"},
 }
+DIAGNOSTIC_KEYS = {
+    "error", "skip_reason", "invalid_runs", "timed_out", "timed_out_at", "crashed",
+}
 
 
 def qualification_workloads(engine: str) -> list[str]:
@@ -80,6 +83,45 @@ def _incomplete_evidence(value) -> bool:
     return False
 
 
+def workload_failure_details(result: dict, workloads: list[str], limit: int = 4000) -> list[str]:
+    details = []
+
+    def collect(value, path):
+        if isinstance(value, dict):
+            for key in DIAGNOSTIC_KEYS:
+                if key in value and value[key] not in (None, False, "", []):
+                    rendered = json.dumps(value[key], ensure_ascii=False) \
+                        if not isinstance(value[key], str) else value[key]
+                    details.append(f"{path}.{key}: {rendered}")
+            for requested_key, completed_key in (
+                ("requested_cases", "completed_cases"),
+                ("requested_runs", "valid_runs"),
+                ("total", "answered"),
+            ):
+                if requested_key in value and completed_key in value \
+                        and value[requested_key] != value[completed_key]:
+                    details.append(
+                        f"{path}: {completed_key}={value[completed_key]}, "
+                        f"{requested_key}={value[requested_key]}"
+                    )
+            if "requested_runs" not in value and "n_runs" in value and "valid_runs" in value \
+                    and value["n_runs"] != value["valid_runs"]:
+                details.append(
+                    f"{path}: valid_runs={value['valid_runs']}, n_runs={value['n_runs']}"
+                )
+            for key, child in value.items():
+                collect(child, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                collect(child, f"{path}[{index}]")
+
+    for workload in workloads:
+        section = RESULT_SECTIONS[workload]
+        collect(result.get(section), section)
+    return [detail if len(detail) <= limit else detail[:limit] + "... [truncated]"
+            for detail in dict.fromkeys(details)]
+
+
 def workload_coverage_errors(result: dict, workloads: list[str]) -> list[str]:
     errors = []
     if result.get("run", {}).get("status") != "complete":
@@ -127,6 +169,8 @@ def run_qualification_coverage(engine: str, model: str, result: Path,
     data = json.loads(Path(result).read_text(encoding="utf-8"))
     errors = workload_coverage_errors(data, qualification_workloads(engine))
     if errors:
+        for detail in workload_failure_details(data, qualification_workloads(engine)):
+            print(f"qualification failure detail: {detail}", file=sys.stderr)
         raise ValueError("; ".join(errors))
 
 
