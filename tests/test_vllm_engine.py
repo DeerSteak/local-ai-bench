@@ -99,17 +99,15 @@ def test_fp8_cache_is_selected_only_for_supported_accelerator_backends(engine):
     assert "--kv-cache-dtype" not in engine.server_command("org/m", 4096)
 
 
-def test_cuda_generation_avoids_uninstalled_flashinfer_backend(engine):
-    engine.configure_kv_cache("cuda")
-    command = engine.server_command("org/m", 4096)
-    assert command[command.index("--attention-backend") + 1] == "FLASH_ATTN"
-
-
-def test_embedding_does_not_use_quantized_kv_cache_or_decoder_attention_backend(engine):
+def test_embedding_does_not_use_quantized_kv_cache(engine):
     engine.configure_kv_cache("cuda")
     command = engine.server_command("org/m", None, embedding=True)
     assert "--kv-cache-dtype" not in command
-    assert "--attention-backend" not in command
+
+
+def test_cuda_generation_leaves_attention_backend_selection_to_vllm(engine):
+    engine.configure_kv_cache("cuda")
+    assert "--attention-backend" not in engine.server_command("org/m", 4096)
 
 
 def test_external_server_cache_policy_remains_unmanaged(engine):
