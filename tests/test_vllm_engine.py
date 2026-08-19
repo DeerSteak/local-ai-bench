@@ -149,7 +149,7 @@ def test_native_bench_reserves_more_transient_memory_than_the_server(engine):
     engine._gpu_memory_utilization = 0.90
     assert engine.bench_gpu_memory_utilization() == 0.85
     engine._gpu_memory_utilization = 0.70
-    assert engine.bench_gpu_memory_utilization() == 0.70
+    assert engine.bench_gpu_memory_utilization() == 0.10
 
 
 @pytest.mark.parametrize(("available", "expected"), [

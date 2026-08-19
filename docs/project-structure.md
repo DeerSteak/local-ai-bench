@@ -140,7 +140,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/sustained_benchmark.py` / `workloads/sustained_analysis.py` | Continuous-generation soak, aligned time windows, pure retention/onset classification, and sensor correlation |
 | `results/sustained_event_stage.py` | Request-level sustained journal and whole-soak recovery projection |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
-| `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
+| `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
 | `release/qualification_auto.py` / `release/qualification_automation.py` / `release/qualification_recipe.py` / `release/qualification_runtime.py` | Automatic target/version selection, concrete recipe generation, preview-first resumable execution, isolated snapshot/rollback, and evidence projection |

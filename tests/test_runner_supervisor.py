@@ -173,7 +173,7 @@ def test_unstructured_or_wrong_owner_output_is_only_a_log(tmp_path):
     ]
 
 
-def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
+def test_cancel_stops_the_owned_process_tree(tmp_path, monkeypatch):
     calls = []
 
     class Process:
@@ -183,30 +183,14 @@ def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
         def poll():
             return None
 
-        @staticmethod
-        def wait(timeout=None):
-            calls.append(("wait", timeout))
-            if len([call for call in calls if call[0] == "wait"]) < 3:
-                raise subprocess.TimeoutExpired("runner", timeout or 0)
-
-        @staticmethod
-        def terminate():
-            calls.append(("terminate",))
-
-        @staticmethod
-        def kill():
-            calls.append(("kill",))
-
-    monkeypatch.setattr(runner_supervisor.os, "getpgid", lambda pid: pid + 1000)
-    monkeypatch.setattr(runner_supervisor.os, "killpg", lambda group, sig: calls.append(
-        ("signal", group, sig)))
+    monkeypatch.setattr(
+        runner_supervisor, "stop_process_tree",
+        lambda process, **kwargs: calls.append((process.pid, kwargs)),
+    )
     supervisor = RunnerSupervisor(spec(tmp_path), graceful_timeout=2, system="Linux")
     supervisor.process = cast(SupervisedProcess, Process())
     supervisor.cancel()
-    assert calls == [
-        ("signal", 1123, signal.SIGINT), ("wait", 2), ("terminate",),
-        ("wait", 2), ("kill",), ("wait", None),
-    ]
+    assert calls == [(123, {"timeout": 2, "system": "Linux"})]
 
 
 def test_internal_runner_requires_ownership_token(monkeypatch, capsys):

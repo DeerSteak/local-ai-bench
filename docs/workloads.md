@@ -419,7 +419,7 @@ Two subcommands run per size, both offline — they load the weights themselves 
 
 KV-cache precision stays consistent within each engine so the server and native cross-checks do not silently test different cache formats. `llama-bench` and `llama-batched-bench` receive the same `q8_0` cache used by llama-server, falling back to `f16` for tensor split; `vllm bench latency` and `throughput` receive the same supported `fp8` or fallback `auto` selected for the managed vLLM server.
 
-Native vLLM bench caps `--gpu-memory-utilization` at 0.85, while retaining any lower platform-specific limit such as GB10's 0.70, and runs with `--enforce-eager`. Eager execution avoids CUDA-graph compilation consuming memory outside the executor reservation on unified-memory systems; the same explicit methodology applies to every platform and to both regular and qualification runs.
+Native vLLM bench caps `--gpu-memory-utilization` at 0.85, uses 0.10 on unified-memory GB10 systems, and runs with `--enforce-eager`. The GB10 limit leaves most host memory outside vLLM's executor reservation, while eager execution avoids CUDA-graph compilation consuming memory outside that reservation; the same explicit methodology applies to every platform and to both regular and qualification runs.
 
 Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
 

@@ -393,6 +393,8 @@ class VllmEngine(InferenceEngine):
         return self._executable
 
     def bench_gpu_memory_utilization(self) -> float:
+        if self._gpu_memory_utilization == 0.70:
+            return config.VLLMBENCH_GB10_GPU_MEMORY_UTILIZATION
         return min(self._gpu_memory_utilization, config.VLLMBENCH_GPU_MEMORY_UTILIZATION)
 
     def ensure_running(self) -> bool:

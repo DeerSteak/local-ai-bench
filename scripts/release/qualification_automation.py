@@ -15,6 +15,7 @@ from pathlib import Path
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE, PLATFORM_QUALIFICATION_STEPS
 from scripts.release.qualification_evidence import build_final_manifest, verify_final_manifest
 from scripts.runtime import config
+from scripts.runtime.process_tree import stop_process_tree
 
 
 RECIPE_KEYS = {"target", "coverage", "environment", "steps"}
@@ -298,12 +299,11 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
             )
             return finish(exit_code, f"process exited with code {exit_code}")
         except subprocess.TimeoutExpired:
-            if os.name == "nt":
-                process.kill()
-            else:
-                os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+            stop_process_tree(process, interrupt=False)
             return finish(-1, f"step exceeded {step['timeout_seconds']} seconds")
+        except BaseException:
+            stop_process_tree(process)
+            raise
 
 
 def finalize_qualification_run(recipe: dict, state: dict, output_dir: Path) -> Path | None:
