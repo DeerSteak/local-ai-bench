@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -6,8 +7,8 @@ import pytest
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_automation import (
     execution_recipe_gaps, initial_run_state, load_qualification_recipe, next_qualification_step,
-    log_contains_marker, qualification_entry_from_run, qualification_preview, recipe_digest,
-    validate_qualification_recipe,
+    log_contains_marker, make_evidence_accessible, qualification_entry_from_run,
+    qualification_preview, recipe_digest, sudo_invoking_owner, validate_qualification_recipe,
 )
 
 
@@ -131,6 +132,41 @@ def test_run_projects_complete_and_incomplete_steps_into_evidence():
     }
     assert entry["evidence"] == ["records/run.json"]
     assert entry["coverage"] == state["coverage"]
+
+
+def test_evidence_permissions_are_readable_and_directories_traversable(tmp_path):
+    output = tmp_path / "evidence"
+    nested = output / "nested"
+    nested.mkdir(parents=True)
+    artifact = nested / "result.json"
+    artifact.write_text("{}")
+    os.chmod(output, 0o700)
+    os.chmod(nested, 0o700)
+    os.chmod(artifact, 0o600)
+
+    make_evidence_accessible(output, environ={}, effective_uid=501)
+
+    assert output.stat().st_mode & 0o777 == 0o755
+    assert nested.stat().st_mode & 0o777 == 0o755
+    assert artifact.stat().st_mode & 0o777 == 0o644
+
+
+def test_root_qualification_returns_evidence_to_sudo_invoking_user(tmp_path):
+    output = tmp_path / "evidence"
+    output.mkdir()
+    artifact = output / "result.json"
+    artifact.write_text("{}")
+    ownership = []
+    make_evidence_accessible(
+        output, environ={"SUDO_UID": "1001", "SUDO_GID": "1002"}, effective_uid=0,
+        chown=lambda path, uid, gid: ownership.append((path, uid, gid)),
+    )
+    assert ownership == [(output, 1001, 1002), (artifact, 1001, 1002)]
+
+
+@pytest.mark.parametrize("environ", [{}, {"SUDO_UID": "bad", "SUDO_GID": "1002"}])
+def test_invalid_or_absent_sudo_identity_is_never_used(environ):
+    assert sudo_invoking_owner(environ, 0) is None
 
 
 @pytest.mark.parametrize("value", [0, -1, True])

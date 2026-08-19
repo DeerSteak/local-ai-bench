@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -177,6 +178,35 @@ def _write_json(path: Path, value: dict) -> None:
     os.replace(temporary, path)
 
 
+def sudo_invoking_owner(environ: Mapping[str, str], effective_uid: int) -> tuple[int, int] | None:
+    if effective_uid != 0:
+        return None
+    try:
+        uid, gid = int(environ["SUDO_UID"]), int(environ["SUDO_GID"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (uid, gid) if uid >= 0 and gid >= 0 else None
+
+
+def make_evidence_accessible(output_dir: Path, *, environ=None, effective_uid=None,
+                             chmod=os.chmod, chown=os.chown) -> None:
+    if os.name == "nt":
+        return
+    output_dir = Path(output_dir).resolve()
+    active_environ: Mapping[str, str] = os.environ if environ is None else environ
+    owner = sudo_invoking_owner(
+        active_environ,
+        os.geteuid() if effective_uid is None else effective_uid,
+    )
+    paths = [output_dir, *output_dir.rglob("*")]
+    if any(path.is_symlink() for path in paths):
+        raise ValueError("qualification evidence contains a symbolic link")
+    for path in paths:
+        if owner is not None:
+            chown(path, *owner)
+        chmod(path, 0o755 if path.is_dir() else 0o644)
+
+
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -241,6 +271,7 @@ def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cov
     else:
         state = initial_run_state(recipe)
         _write_json(state_path, state)
+    make_evidence_accessible(output_dir)
     while (name := next_qualification_step(state)) is not None:
         record = state["steps"][name]
         record.update({"status": "running", "started_at": _timestamp(), "finished_at": None})
@@ -256,10 +287,12 @@ def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cov
             "exit_code": exit_code, "detail": detail, "finished_at": _timestamp(),
         })
         _write_json(state_path, state)
+        make_evidence_accessible(output_dir)
         if record["status"] == "failed":
             break
     evidence = qualification_entry_from_run(state, config.VERSION, state_path.name)
     _write_json(output_dir / "qualification-entry.json", evidence)
+    make_evidence_accessible(output_dir)
     return state
 
 

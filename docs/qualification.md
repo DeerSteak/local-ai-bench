@@ -58,6 +58,8 @@ qualification-env/bin/python -m scripts.release.qualification_automation recipe.
 
 Each step has a separate numbered log. `qualification-state.json` is atomically checkpointed before and after every step, and rerunning the same command resumes at the first step that has not passed. A changed recipe is rejected for an existing checkpoint; use a new evidence directory when the target, coverage, command, or timeout changes.
 
+On POSIX systems the runner normalizes every evidence directory to mode `755` and every evidence file to mode `644` after each step, including failed and partial runs. If the launcher itself was invoked through `sudo`, ownership is returned to `SUDO_UID:SUDO_GID`; qualification artifacts must not remain accessible only to root.
+
 `qualification-entry.json` is the machine-readable projection accepted by the support policy. A partial run records failed and uncompleted lifecycle steps rather than claiming support. Review the logs and copy the entry into `QUALIFICATION_MATRIX` only after confirming its target identity, evidence paths, scope, and observed behavior.
 
 ## Human boundaries

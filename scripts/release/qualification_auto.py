@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from scripts.release.qualification_automation import (
-    next_qualification_step, qualification_preview, run_qualification,
+    make_evidence_accessible, next_qualification_step, qualification_preview, run_qualification,
 )
 from scripts.release.qualification_recipe import build_recipe, write_recipe
 from scripts.runtime.shared import Shared
@@ -108,6 +108,7 @@ def main(argv=None) -> int:  # pragma: no cover
         for output, recipe in recipes:
             recipe_path = output / "qualification-recipe.json"
             write_recipe(recipe_path, recipe)
+            make_evidence_accessible(output)
             if args.execute:
                 state = run_qualification(recipe, output)
                 summary = execution_summary(recipe["target"], state, output)
