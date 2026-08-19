@@ -54,8 +54,9 @@ def validate_qualification_recipe(recipe: dict) -> None:
                    or not isinstance(value, str) for key, value in environment.items())):
         raise ValueError("qualification environment contains an unsafe or unknown field")
     steps = recipe["steps"]
-    if not isinstance(steps, dict) or set(steps) != set(QUALIFICATION_LIFECYCLE):
-        raise ValueError("qualification recipe must define every lifecycle step")
+    valid_step_sets = (set(QUALIFICATION_LIFECYCLE), set(PLATFORM_QUALIFICATION_STEPS))
+    if not isinstance(steps, dict) or set(steps) not in valid_step_sets:
+        raise ValueError("qualification recipe must define every platform lifecycle step")
     for name, step in steps.items():
         if not isinstance(step, dict) or set(step) != STEP_KEYS:
             raise ValueError(f"qualification step {name} has missing or unknown fields")
@@ -104,7 +105,7 @@ def qualification_preview(recipe: dict, output_dir: Path) -> dict:
                 "interrupt_when_log_contains":
                     recipe["steps"][name]["interrupt_when_log_contains"],
             }
-            for name in QUALIFICATION_LIFECYCLE
+            for name in PLATFORM_QUALIFICATION_STEPS
         ],
     }
 
@@ -143,18 +144,20 @@ def initial_run_state(recipe: dict) -> dict:
 
 
 def next_qualification_step(state: dict) -> str | None:
-    for name in QUALIFICATION_LIFECYCLE:
-        status = state["steps"][name]["status"]
-        if status != "passed" and (name in PLATFORM_QUALIFICATION_STEPS or status != "failed"):
+    for name in PLATFORM_QUALIFICATION_STEPS:
+        if state["steps"][name]["status"] != "passed":
             return name
     return None
 
 
 def qualification_entry_from_run(state: dict, suite_version: str, evidence_path: str) -> dict:
-    lifecycle = {
-        name: "passed" if state["steps"][name]["status"] == "passed" else "failed"
-        for name in QUALIFICATION_LIFECYCLE
-    }
+    lifecycle = {}
+    for name in QUALIFICATION_LIFECYCLE:
+        status = state["steps"][name]["status"]
+        lifecycle[name] = "passed" if status == "passed" else (
+            "not_tested" if name not in PLATFORM_QUALIFICATION_STEPS and status == "pending"
+            else "failed"
+        )
     failures = [
         {
             "step": name,

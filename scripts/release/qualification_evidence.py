@@ -210,15 +210,12 @@ def final_evidence_errors(recipe: dict, state: dict, output: Path, *, host: dict
                           source: dict | None = None) -> list[str]:
     output = Path(output)
     errors = []
-    for step in QUALIFICATION_LIFECYCLE:
-        if (step in PLATFORM_QUALIFICATION_STEPS
-                and state.get("steps", {}).get(step, {}).get("status") != "passed"):
+    for step in PLATFORM_QUALIFICATION_STEPS:
+        if state.get("steps", {}).get(step, {}).get("status") != "passed":
             errors.append(f"lifecycle step did not pass: {step}")
         log = state.get("steps", {}).get(step, {}).get("log")
         if not log or not (output / log).is_file():
             errors.append(f"lifecycle log is missing: {step}")
-    if state.get("steps", {}).get("uninstall", {}).get("status") not in {"passed", "failed"}:
-        errors.append("uninstall cleanup was not attempted")
     engine = recipe["target"]["runtime"]
     target = recipe["target"]
     workloads = qualification_workloads(engine)

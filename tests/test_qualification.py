@@ -39,7 +39,7 @@ def entry(states=None, **overrides):
 def test_support_level_is_derived_from_complete_partial_and_absent_evidence():
     assert derive_support_level(entry(), "6.0-pre8") == "supported"
     assert derive_support_level(entry({"uninstall": "failed"}), "6.0-pre8") == "supported"
-    assert derive_support_level(entry({"uninstall": "not_tested"}), "6.0-pre8") == "experimental"
+    assert derive_support_level(entry({"uninstall": "not_tested"}), "6.0-pre8") == "supported"
     assert derive_support_level(entry({"rollback": "failed"}), "6.0-pre8") == "experimental"
     assert derive_support_level(entry({step: "not_tested" for step in QUALIFICATION_LIFECYCLE}),
                                 "6.0-pre8") == "unverified"

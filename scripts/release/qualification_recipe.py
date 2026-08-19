@@ -148,7 +148,6 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             "rollback": step(lifecycle + [
                 "rollback", "--root", root, "--engine", engine, "--version", baseline_version,
             ]),
-            "uninstall": step(lifecycle + ["uninstall", "--root", root, "--engine", engine]),
         },
     }
     validate_qualification_recipe(recipe)

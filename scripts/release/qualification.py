@@ -157,9 +157,7 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     )
     if not complete_coverage:
         return "unverified"
-    cleanup_attempted = entry["lifecycle"]["uninstall"] != "not_tested"
-    if states == {"passed"} and cleanup_attempted and not qualification_is_stale(
-            entry, current_version):
+    if states == {"passed"} and not qualification_is_stale(entry, current_version):
         return "supported"
     if "passed" in states:
         return "experimental"

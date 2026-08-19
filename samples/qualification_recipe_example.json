@@ -23,7 +23,6 @@
     "report_generation": {"command": ["REPLACE_WITH_REPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
     "bundle_export": {"command": ["REPLACE_WITH_BUNDLE_EXPORT_COMMAND"], "timeout_seconds": 300, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
     "upgrade": {"command": ["REPLACE_WITH_UPGRADE_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
-    "rollback": {"command": ["REPLACE_WITH_ROLLBACK_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null},
-    "uninstall": {"command": ["REPLACE_WITH_UNINSTALL_COMMAND"], "timeout_seconds": 1800, "expected_exit_codes": [0], "interrupt_when_log_contains": null}
+    "rollback": {"command": ["REPLACE_WITH_ROLLBACK_COMMAND"], "timeout_seconds": 3600, "expected_exit_codes": [0], "interrupt_when_log_contains": null}
   }
 }

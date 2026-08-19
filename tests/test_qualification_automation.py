@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from scripts.release.qualification import QUALIFICATION_LIFECYCLE
+from scripts.release.qualification import QUALIFICATION_LIFECYCLE, PLATFORM_QUALIFICATION_STEPS
 from scripts.release.qualification_automation import (
     execution_recipe_gaps, finalize_qualification_run, initial_run_state,
     load_qualification_recipe, next_qualification_step,
@@ -44,15 +44,21 @@ def recipe():
     }
 
 
-def test_recipe_requires_every_lifecycle_step_and_never_accepts_shell_text():
+def test_recipe_requires_every_platform_lifecycle_step_and_never_accepts_shell_text():
     value = recipe()
     del value["steps"]["rollback"]
-    with pytest.raises(ValueError, match="every lifecycle"):
+    with pytest.raises(ValueError, match="every platform lifecycle"):
         validate_qualification_recipe(value)
     value = recipe()
     value["steps"]["install"]["command"] = "dangerous shell command"
     with pytest.raises(ValueError, match="argv command"):
         validate_qualification_recipe(value)
+
+
+def test_recipe_accepts_legacy_uninstall_but_does_not_require_it():
+    value = recipe()
+    del value["steps"]["uninstall"]
+    validate_qualification_recipe(value)
 
 
 def test_only_cancellation_can_request_an_automatic_interrupt():
@@ -77,7 +83,7 @@ def test_recipe_load_and_preview_are_read_only(tmp_path):
     assert preview["mode"] == "preview"
     assert preview["coverage"]["workloads"] == ["llm"]
     assert preview["checkpoint"].endswith("evidence/qualification-state.json")
-    assert [step["name"] for step in preview["steps"]] == list(QUALIFICATION_LIFECYCLE)
+    assert [step["name"] for step in preview["steps"]] == list(PLATFORM_QUALIFICATION_STEPS)
     assert not (tmp_path / "evidence").exists()
 
 
@@ -90,7 +96,7 @@ def test_published_example_recipe_stays_valid():
         "steps.discovery.command", "steps.first_valid_run.command",
         "steps.cancellation.command", "steps.resume.command",
         "steps.report_generation.command", "steps.bundle_export.command",
-        "steps.upgrade.command", "steps.rollback.command", "steps.uninstall.command",
+        "steps.upgrade.command", "steps.rollback.command",
     ]
 
 
@@ -121,12 +127,21 @@ def test_checkpoint_resumes_at_first_step_that_has_not_passed():
     assert next_qualification_step(state) is None
 
 
-def test_failed_uninstall_is_recorded_without_blocking_platform_completion():
+@pytest.mark.parametrize("status", ("pending", "failed", "passed"))
+def test_uninstall_is_never_executed_or_blocks_platform_completion(status):
     state = initial_run_state(recipe())
     for step in QUALIFICATION_LIFECYCLE:
         state["steps"][step]["status"] = "passed"
-    state["steps"]["uninstall"]["status"] = "failed"
+    state["steps"]["uninstall"]["status"] = status
     assert next_qualification_step(state) is None
+
+
+def test_unattempted_uninstall_is_projected_as_not_tested():
+    state = initial_run_state(recipe())
+    for step in PLATFORM_QUALIFICATION_STEPS:
+        state["steps"][step]["status"] = "passed"
+    projected = qualification_entry_from_run(state, "6.0-pre8", "manifest.json")
+    assert projected["lifecycle"]["uninstall"] == "not_tested"
 
 
 def test_recipe_digest_is_stable_and_changes_with_coverage():

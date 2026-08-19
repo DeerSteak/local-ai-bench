@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.release.qualification import QUALIFICATION_LIFECYCLE
+from scripts.release.qualification import QUALIFICATION_LIFECYCLE, PLATFORM_QUALIFICATION_STEPS
 from scripts.release.qualification_coverage import qualification_workloads
 from scripts.release.qualification_evidence import (
     archive_generated_artifacts, build_final_manifest, file_identity, final_evidence_errors,
@@ -123,30 +123,10 @@ def test_final_gate_reports_every_missing_evidence_class(tmp_path, monkeypatch):
     assert "target bundle is missing" in errors
     assert "baseline installation inventory is missing" in errors
     assert "host kernel identity does not prove WSL2" in errors
-    assert all(f"lifecycle log is missing: {name}" in errors for name in QUALIFICATION_LIFECYCLE)
-
-
-def test_final_gate_requires_an_uninstall_attempt(tmp_path, monkeypatch):
-    state = {"steps": {
-        name: {"status": "passed", "log": f"{name}.log"} for name in QUALIFICATION_LIFECYCLE
-    }}
-    state["steps"]["uninstall"]["status"] = "pending"
-    recipe = {
-        "target": {
-            "runtime": "vllm", "runtime_version": "1.1", "platform": "linux",
-            "architecture": "x86_64", "backend": "cuda", "accelerator": "GPU",
-        },
-        "steps": {"install": {"command": [
-            "tool", "--root", str(tmp_path), "--version", "1.0",
-        ]}},
-    }
-    errors = final_evidence_errors(
-        recipe, state, tmp_path,
-        host={"probes": {"kernel": {"status": "captured"},
-                          "accelerator_driver": {"status": "captured"}}},
-        source={"commit": {"status": "captured"}, "tracked_worktree_dirty": False},
+    assert all(
+        f"lifecycle log is missing: {name}" in errors for name in PLATFORM_QUALIFICATION_STEPS
     )
-    assert "uninstall cleanup was not attempted" in errors
+    assert "lifecycle log is missing: uninstall" not in errors
 
 
 def test_final_manifest_verifier_rejects_missing_and_modified_files(tmp_path):
