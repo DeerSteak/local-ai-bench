@@ -257,7 +257,7 @@ def test_run_opens_measured_window_before_each_native_command(monkeypatch):
             return {"summary": {}}
 
     monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
-    monkeypatch.setattr(config, "VLLMBENCH_INPUT", [512])
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
     monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
     telemetry = Telemetry()
 
@@ -300,7 +300,7 @@ def test_run_discards_timed_out_native_window(monkeypatch):
         def finish_case(self): self.calls.append("finish"); return {}
 
     monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
-    monkeypatch.setattr(config, "VLLMBENCH_INPUT", [512])
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
     monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
     monkeypatch.setattr(
         VllmBenchBenchmark, "run_one",
@@ -340,7 +340,7 @@ def test_run_closes_native_window_when_result_parser_fails(monkeypatch):
         return {"elapsed_time": 1.0, "num_requests": 1}
 
     monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
-    monkeypatch.setattr(config, "VLLMBENCH_INPUT", [512])
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
     monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
     monkeypatch.setattr(VllmBenchBenchmark, "run_one", fake_run_one)
     telemetry = Telemetry()

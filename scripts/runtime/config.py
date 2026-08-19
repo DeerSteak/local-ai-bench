@@ -143,9 +143,7 @@ LLAMABENCH_TIMEOUT = 1800
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
 # `vllm bench` latency/throughput sweep (opt-in `vllmbench` test) — see docs/workloads.md#vllm-bench.
-# Same shapes as LLAMABENCH_PP/TG so both engines sweep the same points; the numbers are
-# still not comparable across engines (different weights and different metric definitions).
-VLLMBENCH_INPUT = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+# Uses LLAMABENCH_PP for input shapes so the shared prompt cap applies identically.
 VLLMBENCH_OUTPUT = [128, 512]
 VLLMBENCH_BATCH_SIZE = 1
 # vllm bench latency defaults to 30 iterations and 10 warmups, far more than this suite needs.

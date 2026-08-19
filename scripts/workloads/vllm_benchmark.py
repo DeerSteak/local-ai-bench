@@ -258,7 +258,7 @@ class VllmBenchBenchmark:
 
                 latency_entries, throughput_entries = [], []
                 sizes = self.sweep_sizes(
-                    config.VLLMBENCH_INPUT, config.VLLMBENCH_OUTPUT,
+                    config.LLAMABENCH_PP, config.VLLMBENCH_OUTPUT,
                     engine.max_context_length(tag),
                 )
                 model_result: VllmBenchModelResult = {

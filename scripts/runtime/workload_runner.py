@@ -302,6 +302,7 @@ def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
         raise ValueError("runner job does not include the native vLLM bench stage")
     settings = plan.effective_config
     apply_runner_settings(settings)
+    config.LLAMABENCH_PP = settings["llamabench_pp"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(

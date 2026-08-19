@@ -406,6 +406,7 @@ def test_vllm_bench_runner_reconstructs_plan_and_commits_case(tmp_path):
 
     class Benchmark:
         def run(self, **kwargs):
+            assert config.LLAMABENCH_PP == [512]
             model = kwargs["models"][0]
             kwargs["journal"].record_case(
                 model, "throughput", 512, 128,

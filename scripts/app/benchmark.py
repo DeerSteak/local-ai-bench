@@ -199,7 +199,7 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
         elif test == "llamabenchconc":
             cases = f"pp {config.LLAMABENCH_CONC_PP}; tg {config.LLAMABENCH_CONC_TG}; concurrency {config.LLAMABENCH_CONC_NPL}"
         elif test == "vllmbench":
-            cases = f"input {config.VLLMBENCH_INPUT}; output {config.VLLMBENCH_OUTPUT}"
+            cases = f"input {config.LLAMABENCH_PP}; output {config.VLLMBENCH_OUTPUT}"
         elif test == "conc_tool":
             cases = f"levels {config.CONCURRENCY_TOOL_LEVELS}"
         elif test == "conc_chat":
@@ -244,7 +244,7 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 def apply_max_prompt_tokens_cap(max_tokens: int | None, context_lengths: list[int],
                                 llamabench_pp: list[int], llamabenchconc_pp: int,
                                 ) -> tuple[list[int], list[int], int]:
-    """Caps 'llm'/'llamabench'/'llamabenchconc' prompt depths to max_tokens — see --max-prompt-tokens.
+    """Caps LLM and native-benchmark prompt depths to max_tokens — see --max-prompt-tokens.
     Raises ValueError if the cap excludes every depth from a list-based sweep."""
     if max_tokens is None:
         return list(context_lengths), list(llamabench_pp), llamabenchconc_pp
