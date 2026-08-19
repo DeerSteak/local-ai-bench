@@ -2,13 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -n "${PYTHON:-}" ]; then
-    QUALIFICATION_PYTHON="$PYTHON"
-elif command -v python3.12 >/dev/null 2>&1; then
-    QUALIFICATION_PYTHON="python3.12"
-else
-    QUALIFICATION_PYTHON="python3"
-fi
+source "$ROOT/qualification_python.sh"
+PATH="${HOME}/.local/bin:${PATH}"
+QUALIFICATION_PYTHON="$(qualification_python || true)"
 VENV="$ROOT/qualification-env"
 
 usage() {
@@ -20,6 +16,10 @@ if [ "${1:-}" = "--list-targets" ]; then
     if [ -x "$VENV/bin/python" ]; then
         exec "$VENV/bin/python" -m scripts.release.qualification_recipe --list-targets
     fi
+    if [ -z "$QUALIFICATION_PYTHON" ]; then
+        echo "Python 3.11 or newer is required; run bootstrap_qualification.sh --execute." >&2
+        exit 1
+    fi
     exec "$QUALIFICATION_PYTHON" -m scripts.release.qualification_recipe --list-targets
 fi
 if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
@@ -27,6 +27,11 @@ if [ "$#" -eq 0 ] || { [ "$#" -eq 1 ] && [ "$1" = "--execute" ]; }; then
         "$ROOT/bootstrap_qualification.sh" --execute
     else
         "$ROOT/bootstrap_qualification.sh"
+    fi
+    QUALIFICATION_PYTHON="$(qualification_python || true)"
+    if [ -z "$QUALIFICATION_PYTHON" ]; then
+        echo "Bootstrap did not provide Python 3.11 or newer." >&2
+        exit 1
     fi
     if [ ! -x "$VENV/bin/python" ]; then
         "$QUALIFICATION_PYTHON" -m venv "$VENV"
@@ -41,6 +46,11 @@ fi
 if [ "$#" -lt 3 ]; then
     usage
     exit 2
+fi
+
+if [ -z "$QUALIFICATION_PYTHON" ]; then
+    echo "Python 3.11 or newer is required; run bootstrap_qualification.sh --execute." >&2
+    exit 1
 fi
 
 TARGET="$1"
