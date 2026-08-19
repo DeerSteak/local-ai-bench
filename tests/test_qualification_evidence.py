@@ -6,7 +6,7 @@ import pytest
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_coverage import qualification_workloads
 from scripts.release.qualification_evidence import (
-    archive_generated_artifacts, file_identity, final_evidence_errors,
+    archive_generated_artifacts, build_final_manifest, file_identity, final_evidence_errors,
     installation_inventory, source_inventory,
     verify_final_manifest,
 )
@@ -95,7 +95,7 @@ def test_final_gate_reports_every_missing_evidence_class(tmp_path, monkeypatch):
     }}
     recipe = {
         "target": {
-            "runtime": "vllm", "runtime_version": "1.1", "platform": "linux",
+            "runtime": "vllm", "runtime_version": "1.1", "platform": "wsl2",
             "architecture": "x86_64", "backend": "cuda", "accelerator": "GPU",
         },
         "steps": {"install": {"command": [
@@ -109,7 +109,8 @@ def test_final_gate_reports_every_missing_evidence_class(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "scripts.release.qualification_evidence.host_inventory",
         lambda: {"probes": {
-            "kernel": {"status": "captured"}, "accelerator_driver": {"status": "captured"},
+            "kernel": {"status": "captured", "detail": "generic Linux"},
+            "accelerator_driver": {"status": "captured"},
         }},
     )
 
@@ -121,6 +122,7 @@ def test_final_gate_reports_every_missing_evidence_class(tmp_path, monkeypatch):
     assert "baseline report is missing" in errors
     assert "target bundle is missing" in errors
     assert "baseline installation inventory is missing" in errors
+    assert "host kernel identity does not prove WSL2" in errors
     assert all(f"lifecycle log is missing: {name}" in errors for name in QUALIFICATION_LIFECYCLE)
 
 
@@ -136,3 +138,82 @@ def test_final_manifest_verifier_rejects_missing_and_modified_files(tmp_path):
     artifact.write_text("modified")
     with pytest.raises(ValueError, match="integrity check failed"):
         verify_final_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("engine", ("llamacpp", "vllm"))
+def test_complete_cross_platform_evidence_builds_a_verified_manifest(engine, tmp_path, monkeypatch):
+    target = {
+        "id": f"linux-{engine}", "platform": "linux", "architecture": "x86_64",
+        "runtime": engine, "runtime_version": "target", "backend": "cuda",
+        "accelerator": "Test GPU",
+    }
+    recipe = {
+        "target": target, "coverage": {"workloads": qualification_workloads(engine),
+                                        "models": ["model"], "notes": "test"},
+        "steps": {"install": {"command": [
+            "tool", "--root", str(tmp_path), "--version", "baseline",
+        ]}},
+    }
+    state = {"recipe_digest": "digest", "steps": {}}
+    for name in QUALIFICATION_LIFECYCLE:
+        log = f"{name}.log"
+        (tmp_path / log).write_text("passed")
+        state["steps"][name] = {"status": "passed", "log": log}
+
+    def result():
+        value = {
+            "engine": engine,
+            "profile": {"os": "Linux 6.0", "arch": "x86_64", "backend": "cuda",
+                        "hostname": "Test GPU"},
+            "run": {"status": "complete"},
+        }
+        markers = {
+            "sustained": ("series", [1]), "llamabench": ("completed_cases", 1),
+            "llamabenchconc": ("entries", [1]), "vllmbench": ("entries", [1]),
+            "mcq": ("answered", 1), "math": ("answered", 1),
+            "reasoning": ("answered", 1), "code": ("answered", 1),
+            "tool": ("answered", 1), "conc_tool": ("valid_runs", 1),
+            "conc_chat": ("valid_runs", 1),
+        }
+        from scripts.release.qualification_coverage import RESULT_SECTIONS
+        for workload in qualification_workloads(engine):
+            marker, evidence = markers.get(workload, ("valid_runs", 1))
+            value[RESULT_SECTIONS[workload]] = {"model": {marker: evidence}}
+        return value
+
+    for name in ("smoke-result", "upgraded-smoke-result"):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(result()))
+        path.with_suffix(".events.sqlite3").write_bytes(b"journal")
+    interrupted = tmp_path / "interrupted-result.json"
+    interrupted.write_text(json.dumps({"run": {"status": "complete"}}))
+    interrupted.with_suffix(".events.sqlite3").write_bytes(b"journal")
+    for label, version in (("baseline", "baseline"), ("target", "target")):
+        (tmp_path / f"{label}-report.html").write_text("report")
+        (tmp_path / f"{label}-result.lab.zip").write_bytes(b"verified bundle")
+        (tmp_path / f"{label}-installation.json").write_text(json.dumps({
+            "version": version, "runtime_files": [1], "model_files": [1],
+            "model_sources": [1], "dependencies": {
+                "python_packages": {"status": "captured"},
+                "comfyui": {"files": [1], "python_packages": {"status": "captured"}},
+            },
+        }))
+        if engine == "llamacpp":
+            image_dir = tmp_path / "artifacts" / label / "images"
+            image_dir.mkdir(parents=True)
+            (image_dir / "image.png").write_bytes(b"png")
+    monkeypatch.setattr("scripts.release.qualification_evidence.verify_result_bundle", lambda _path: {})
+    monkeypatch.setattr("scripts.release.qualification_evidence.source_inventory", lambda _root: {
+        "commit": {"status": "captured", "detail": "abc"},
+        "tracked_worktree_dirty": False, "launcher_files": {},
+    })
+    monkeypatch.setattr("scripts.release.qualification_evidence.host_inventory", lambda: {
+        "probes": {"kernel": {"status": "captured"},
+                   "accelerator_driver": {"status": "captured"}},
+    })
+
+    manifest = build_final_manifest(recipe, state, tmp_path)
+    (tmp_path / "qualification-manifest.json").write_text(json.dumps(manifest))
+
+    assert manifest["status"] == "passed"
+    assert verify_final_manifest(tmp_path)["target"] == target

@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
+from scripts.release.qualification_evidence import build_final_manifest, verify_final_manifest
 from scripts.runtime import config
 
 
@@ -256,6 +257,24 @@ def execute_qualification_step(step: dict, log_path: Path, environment: dict,
             return -1, f"step exceeded {step['timeout_seconds']} seconds"
 
 
+def finalize_qualification_run(recipe: dict, state: dict, output_dir: Path) -> Path | None:
+    if next_qualification_step(state) is not None:
+        return None
+    output_dir = Path(output_dir)
+    state_path = output_dir / "qualification-state.json"
+    manifest_path = output_dir / "qualification-manifest.json"
+    try:
+        _write_json(manifest_path, build_final_manifest(recipe, state, output_dir))
+        verify_final_manifest(output_dir)
+    except ValueError as exc:
+        manifest_path.unlink(missing_ok=True)
+        record = state["steps"]["uninstall"]
+        record.update({"status": "failed", "detail": str(exc), "finished_at": _timestamp()})
+        _write_json(state_path, state)
+        return None
+    return manifest_path
+
+
 def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cover
     validate_qualification_recipe(recipe)
     gaps = execution_recipe_gaps(recipe)
@@ -290,7 +309,9 @@ def run_qualification(recipe: dict, output_dir: Path) -> dict:  # pragma: no cov
         make_evidence_accessible(output_dir)
         if record["status"] == "failed":
             break
-    evidence = qualification_entry_from_run(state, config.VERSION, state_path.name)
+    manifest_path = finalize_qualification_run(recipe, state, output_dir)
+    evidence_path = manifest_path.name if manifest_path else state_path.name
+    evidence = qualification_entry_from_run(state, config.VERSION, evidence_path)
     _write_json(output_dir / "qualification-entry.json", evidence)
     make_evidence_accessible(output_dir)
     return state

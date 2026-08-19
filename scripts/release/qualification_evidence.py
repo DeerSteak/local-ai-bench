@@ -147,7 +147,7 @@ def _probe(command: list[str]) -> dict:
     output = "\n".join(
         line for line in (result.stdout or result.stderr).strip().splitlines()
         if not any(secret in line.casefold() for secret in ("serial number", "uuid"))
-    ).strip()
+    ).strip()[:131072]
     return {"status": "captured" if result.returncode == 0 and output else "unavailable",
             "detail": output or f"exit code {result.returncode}"}
 
@@ -163,7 +163,18 @@ def host_inventory() -> dict:
         probes["accelerator_driver"] = _probe(["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select Name,DriverVersion | Format-List"])
     else:
         probes["hardware_firmware"] = _probe(["sh", "-c", "for f in /sys/class/dmi/id/{bios_version,board_name,product_name}; do test -r \"$f\" && printf '%s: ' \"$f\" && cat \"$f\"; done"])
-        probes["accelerator_driver"] = _probe(["sh", "-c", "command -v nvidia-smi >/dev/null && nvidia-smi || command -v rocminfo >/dev/null && rocminfo | head -200 || command -v lspci >/dev/null && lspci -nnk"])
+        if executable := shutil.which("nvidia-smi"):
+            probes["accelerator_driver"] = _probe([executable])
+        elif executable := shutil.which("rocm-smi"):
+            probes["accelerator_driver"] = _probe([
+                executable, "--showproductname", "--showdriverversion", "--showvbios", "--json",
+            ])
+        elif executable := shutil.which("rocminfo"):
+            probes["accelerator_driver"] = _probe([executable])
+        elif executable := shutil.which("lspci"):
+            probes["accelerator_driver"] = _probe([executable, "-nnk"])
+        else:
+            probes["accelerator_driver"] = {"status": "unavailable", "detail": "no accelerator identity tool"}
     return {
         "system": system, "release": platform.release(), "version": platform.version(),
         "machine": platform.machine(), "python": platform.python_version(),
@@ -286,6 +297,9 @@ def final_evidence_errors(recipe: dict, state: dict, output: Path, *, host: dict
         errors.append("host kernel identity could not be captured")
     if host["probes"]["accelerator_driver"]["status"] != "captured":
         errors.append("accelerator driver identity could not be captured")
+    if target["platform"] == "wsl2" and "microsoft" not in \
+            host["probes"]["kernel"].get("detail", "").casefold():
+        errors.append("host kernel identity does not prove WSL2")
     return errors
 
 

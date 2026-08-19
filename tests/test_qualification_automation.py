@@ -6,7 +6,8 @@ import pytest
 
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_automation import (
-    execution_recipe_gaps, initial_run_state, load_qualification_recipe, next_qualification_step,
+    execution_recipe_gaps, finalize_qualification_run, initial_run_state,
+    load_qualification_recipe, next_qualification_step,
     log_contains_marker, make_evidence_accessible, qualification_entry_from_run,
     qualification_preview, recipe_digest, sudo_invoking_owner, validate_qualification_recipe,
 )
@@ -132,6 +133,41 @@ def test_run_projects_complete_and_incomplete_steps_into_evidence():
     }
     assert entry["evidence"] == ["records/run.json"]
     assert entry["coverage"] == state["coverage"]
+
+
+def test_finalization_refuses_to_leave_a_pass_when_evidence_is_incomplete(monkeypatch, tmp_path):
+    state = initial_run_state(recipe())
+    for step in QUALIFICATION_LIFECYCLE:
+        state["steps"][step]["status"] = "passed"
+    monkeypatch.setattr(
+        "scripts.release.qualification_automation.build_final_manifest",
+        lambda *_args: (_ for _ in ()).throw(ValueError("target bundle missing")),
+    )
+
+    assert finalize_qualification_run(recipe(), state, tmp_path) is None
+    assert state["steps"]["uninstall"]["status"] == "failed"
+    assert state["steps"]["uninstall"]["detail"] == "target bundle missing"
+    assert not (tmp_path / "qualification-manifest.json").exists()
+
+
+def test_finalization_writes_and_verifies_the_pass_manifest(monkeypatch, tmp_path):
+    state = initial_run_state(recipe())
+    for step in QUALIFICATION_LIFECYCLE:
+        state["steps"][step]["status"] = "passed"
+    monkeypatch.setattr(
+        "scripts.release.qualification_automation.build_final_manifest",
+        lambda *_args: {"schema": "qualification-evidence-v1", "status": "passed"},
+    )
+    seen = []
+    monkeypatch.setattr(
+        "scripts.release.qualification_automation.verify_final_manifest",
+        lambda path: seen.append(path),
+    )
+
+    manifest = finalize_qualification_run(recipe(), state, tmp_path)
+
+    assert manifest == tmp_path / "qualification-manifest.json"
+    assert seen == [tmp_path]
 
 
 def test_evidence_permissions_are_readable_and_directories_traversable(tmp_path):

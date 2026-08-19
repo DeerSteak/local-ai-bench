@@ -2,6 +2,7 @@
 
 import re
 from datetime import date
+from pathlib import Path
 
 from scripts.release.qualification_coverage import (
     SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL, SMALLEST_LLM_MODEL,
@@ -103,6 +104,9 @@ def validate_qualification_entry(entry: dict) -> None:
             or any(not isinstance(item, str) or not item.strip() for item in evidence)
             or any(state == "passed" for state in lifecycle.values()) and not evidence):
         raise ValueError("qualification evidence references are invalid")
+    if set(lifecycle.values()) == {"passed"} and not any(
+            Path(item).name == "qualification-manifest.json" for item in evidence):
+        raise ValueError("complete qualification requires a final evidence manifest")
 
 
 def derive_support_level(entry: dict | None, current_version: str) -> str:

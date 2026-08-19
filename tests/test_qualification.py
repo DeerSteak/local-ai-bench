@@ -31,7 +31,7 @@ def entry(states=None, **overrides):
             {"step": step, "detail": f"{state} during qualification"}
             for step, state in lifecycle.items() if state != "passed"
         ],
-        "evidence": ["qualification/linux-x86_64-llamacpp-cuda.json"],
+        "evidence": ["qualification/linux-x86_64-llamacpp-cuda/qualification-manifest.json"],
     }
     return {**value, **overrides}
 
@@ -54,6 +54,11 @@ def test_staleness_downgrades_at_release_boundary():
 def test_support_level_cannot_be_set_in_evidence():
     with pytest.raises(ValueError, match="missing or unknown"):
         validate_qualification_entry(entry(support_level="supported"))
+
+
+def test_complete_lifecycle_requires_the_verified_final_manifest():
+    with pytest.raises(ValueError, match="final evidence manifest"):
+        validate_qualification_entry(entry(evidence=["qualification-state.json"]))
 
 
 def test_complete_lifecycle_without_required_workload_coverage_is_unverified():
