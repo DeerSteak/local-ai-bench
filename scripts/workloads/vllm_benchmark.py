@@ -77,7 +77,9 @@ class VllmBenchBenchmark:
     @staticmethod
     def bench_command(executable: str, subcommand: str, repo: str, output_json: Path,
                       *, input_len: int, output_len: int, extra: list[str],
-                      kv_cache_dtype: str = "auto") -> list[str]:
+                      kv_cache_dtype: str = "auto",
+                      gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                      ) -> list[str]:
         """`vllm bench <subcommand>` for one size. The launcher is never used: it wraps
         `vllm serve`, and these subcommands load the weights themselves."""
         command = [
@@ -85,6 +87,7 @@ class VllmBenchBenchmark:
             "--model", repo,
             "--input-len", str(input_len),
             "--output-len", str(output_len),
+            "--gpu-memory-utilization", str(gpu_memory_utilization),
         ]
         if kv_cache_dtype != "auto":
             command += ["--kv-cache-dtype", kv_cache_dtype]
@@ -93,11 +96,14 @@ class VllmBenchBenchmark:
     @classmethod
     def build_latency_command(cls, executable: str, repo: str, output_json: Path,
                               input_len: int, output_len: int,
-                              kv_cache_dtype: str = "auto") -> list[str]:
+                              kv_cache_dtype: str = "auto",
+                              gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                              ) -> list[str]:
         return cls.bench_command(
             executable, "latency", repo, output_json,
             input_len=input_len, output_len=output_len,
             kv_cache_dtype=kv_cache_dtype,
+            gpu_memory_utilization=gpu_memory_utilization,
             extra=[
                 "--batch-size", str(config.VLLMBENCH_BATCH_SIZE),
                 "--num-iters", str(config.VLLMBENCH_ITERS),
@@ -108,11 +114,14 @@ class VllmBenchBenchmark:
     @classmethod
     def build_throughput_command(cls, executable: str, repo: str, output_json: Path,
                                  input_len: int, output_len: int,
-                                 kv_cache_dtype: str = "auto") -> list[str]:
+                                 kv_cache_dtype: str = "auto",
+                                 gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                                 ) -> list[str]:
         return cls.bench_command(
             executable, "throughput", repo, output_json,
             input_len=input_len, output_len=output_len,
             kv_cache_dtype=kv_cache_dtype,
+            gpu_memory_utilization=gpu_memory_utilization,
             extra=["--num-prompts", str(config.VLLMBENCH_NUM_PROMPTS)],
         )
 
@@ -280,6 +289,7 @@ class VllmBenchBenchmark:
                             command = builder(
                                 executable, repo, out, input_len, output_len,
                                 engine.kv_cache_dtype,
+                                gpu_memory_utilization=engine.bench_gpu_memory_utilization(),
                             )
                             try:
                                 if telemetry:

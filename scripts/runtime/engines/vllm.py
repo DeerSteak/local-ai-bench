@@ -392,6 +392,9 @@ class VllmEngine(InferenceEngine):
         """`vllm bench` needs the real binary — a launcher only wraps `vllm serve`."""
         return self._executable
 
+    def bench_gpu_memory_utilization(self) -> float:
+        return min(self._gpu_memory_utilization, config.VLLMBENCH_GPU_MEMORY_UTILIZATION)
+
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
         if self._server_url:

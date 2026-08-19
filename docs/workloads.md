@@ -419,6 +419,8 @@ Two subcommands run per size, both offline — they load the weights themselves 
 
 KV-cache precision stays consistent within each engine so the server and native cross-checks do not silently test different cache formats. `llama-bench` and `llama-batched-bench` receive the same `q8_0` cache used by llama-server, falling back to `f16` for tensor split; `vllm bench latency` and `throughput` receive the same supported `fp8` or fallback `auto` selected for the managed vLLM server.
 
+Native vLLM bench caps `--gpu-memory-utilization` at 0.85, while retaining any lower platform-specific limit such as GB10's 0.70, because its offline CUDA-graph and FlashInfer initialization needs transient workspace outside the persistent cache reservation.
+
 Each model's `vllmbench` result contains `latency_entries` and `throughput_entries`, each entry carrying its `input_len`/`output_len` alongside the parsed measurements. A model that times out or fails keeps the entries it completed and adds `timed_out`/`timed_out_at`/`error` diagnostics rather than discarding them.
 
 Each completed latency or throughput size is committed to the event journal before the next subprocess starts. Resume skips committed sizes and gives an interrupted, failed, or timed-out size a new numbered attempt; selected-case retry can target one eligible size without rerunning other completed evidence.

@@ -145,6 +145,13 @@ def test_server_command_uses_selected_platform_memory_reservation(engine):
     assert command[command.index("--gpu-memory-utilization") + 1] == "0.7"
 
 
+def test_native_bench_reserves_more_transient_memory_than_the_server(engine):
+    engine._gpu_memory_utilization = 0.90
+    assert engine.bench_gpu_memory_utilization() == 0.85
+    engine._gpu_memory_utilization = 0.70
+    assert engine.bench_gpu_memory_utilization() == 0.70
+
+
 @pytest.mark.parametrize(("available", "expected"), [
     (-3.53, 8),
     (-2.05, 6),
