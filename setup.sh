@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # setup.sh — local-ai-bench setup for macOS and Linux
-# Usage: bash setup.sh
+# Usage: bash setup.sh [--qualification llamacpp|vllm]
 set -euo pipefail
 
 SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -248,7 +248,11 @@ echo ""
 echo -e "  To run benchmarks:"
 echo -e "    ${CYAN}bash run_bench.sh${RESET}"
 echo ""
-read -r -p "  Run the benchmark now? [y/N] " _reply
+if [[ " $* " == *" --qualification "* ]]; then
+    _reply="n"
+else
+    read -r -p "  Run the benchmark now? [y/N] " _reply
+fi
 echo ""
 if [[ "$_reply" =~ ^[Yy](es)?$ ]]; then
     bash "$(dirname "$0")/run_bench.sh"

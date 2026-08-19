@@ -1029,7 +1029,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if experimental_acknowledgement_required(selected_engines, qualification_profiles):
             if not messagebox.askyesno(
                     "Experimental engine",
-                    "vLLM has not passed this suite's full lifecycle qualification on this "
+                    "vLLM has not passed this suite's complete qualification on this "
                     "exact platform and runtime. Continue with an experimental run whose "
                     "result will retain that caveat?",
                     parent=root):

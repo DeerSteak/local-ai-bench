@@ -21,6 +21,13 @@ def test_setup_wrapper_only_offers_benchmark_after_setup_check_succeeds():
     assert "set -euo pipefail" in wrapper
 
 
+def test_setup_wrappers_do_not_offer_an_extra_run_for_qualification():
+    unix = (ROOT / "setup.sh").read_text()
+    windows = (ROOT / "setup.bat").read_text()
+    assert '== *" --qualification "*' in unix
+    assert 'if /i not "%~1"=="--qualification"' in windows
+
+
 def test_linux_desktop_launcher_is_repo_relative_and_forces_gui():
     launcher = (ROOT / "Setup Local AI Bench.desktop").read_text()
     assert launcher.startswith("[Desktop Entry]\n")

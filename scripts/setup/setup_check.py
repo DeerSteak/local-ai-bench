@@ -45,7 +45,9 @@ from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
-from scripts.setup.setup_selection import additional_disk_space_needed, select_models
+from scripts.setup.setup_selection import (
+    additional_disk_space_needed, qualification_model_selection, select_models,
+)
 from scripts.setup.setup_config import (
     configured_comfyui_dir, load_setup_config, vllm_setup_config, write_setup_config,
 )
@@ -58,7 +60,7 @@ from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
 from scripts.setup.engine_selection import (
-    LLAMACPP, VLLM, build_engine_entries, engines_needing_install,
+    LLAMACPP, VLLM, apply_engine_preset, build_engine_entries, engines_needing_install,
     needs_python_headers, select_engines, selected_engine_names,
 )
 from scripts.setup.vllm_install import (
@@ -79,6 +81,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     _arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
     _arg_parser.add_argument("--comfyui", help="Path to an existing ComfyUI or portable root")
     _arg_parser.add_argument("--interface", choices=("auto", "gui", "terminal"), default="auto")
+    _arg_parser.add_argument("--qualification", choices=(LLAMACPP, VLLM))
     args = _arg_parser.parse_args()
     _saved_setup = load_setup_config(config.SETUP_CONFIG_PATH)
     if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
@@ -392,7 +395,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
              "driver, so the Windows driver's passthrough is left intact. Needs sudo.")
         for _command in _cuda_plan:
             print(f"      {' '.join(_command)}")
-        if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+        if args.qualification or input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
             run_cuda_toolkit_install(_cuda_plan)
         else:
             info("Skipped — llama.cpp will build CPU-only")
@@ -417,7 +420,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                  "This downloads uv from astral.sh and does not change your system Python.")
             for command in bootstrap_plan:
                 print(f"      {shlex.join(command)}")
-            if input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
+            if args.qualification or input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
                 if run_python_bootstrap(bootstrap_plan):
                     vllm_support = vllm_platform_support(
                         os_name=os_name, machine=platform.machine(),
@@ -461,6 +464,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
         vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
         vllm_note=vllm_note,
     )
+    if args.qualification:
+        try:
+            apply_engine_preset(engine_entries, args.qualification)
+        except ValueError as exc:
+            _arg_parser.error(str(exc))
 
     # ── 5. Welcome / prerequisites approval ────────────────────────────────────────
 
@@ -470,14 +478,14 @@ def main() -> None:  # pragma: no cover - real interactive installer
     except ImportError:
         _tkinter_available = False
     try:
-        _interface = select_interface_mode(
+        _interface = "terminal" if args.qualification else select_interface_mode(
             args.interface, platform_name=os_name, env=dict(os.environ),
             stdin_is_tty=sys.stdin.isatty(), gui_available=_tkinter_available,
         )
     except ValueError as exc:
         _arg_parser.error(str(exc))
 
-    if _interface != "gui":
+    if _interface != "gui" and not args.qualification:
         select_engines(engine_entries)
 
     section("Setup Plan")
@@ -494,7 +502,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if _interface != "gui" and needs_python_headers(engine_entries, missing_python_header):
         print("    • Install the Python development headers vLLM needs (requires sudo)")
     print()
-    print("  You'll then pick which models to install — everything after that")
+    print("  The selected models will install next — everything after that"
+          if args.qualification else
+          "  You'll then pick which models to install — everything after that")
     print("  runs on its own, with no further prompts.")
     print()
 
@@ -519,7 +529,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         _chosen = set(_gui_plan.get("engines", [LLAMACPP]))
         for entry in engine_entries:
             entry["checked"] = entry["enabled"] and entry["name"] in _chosen
-    elif not confirm("Continue?", default=True):
+    elif not args.qualification and not confirm("Continue?", default=True):
         print(f"\n  Setup cancelled — nothing was installed.\n")
         sys.exit(0)
 
@@ -535,7 +545,12 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     section("Model Selection")
 
-    if _gui_plan is None:
+    if args.qualification:
+        selected_llm, selected_images, selected_embed = qualification_model_selection(
+            args.qualification,
+        )
+        cleanup_names, vllm_cleanup_names = [], []
+    elif _gui_plan is None:
         selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names = select_models(
             memory_ceiling_gb, engines=selected_engines,
             vllm_cache_home=VLLM_CACHE_HOME, cancel=cancel_setup,
@@ -606,7 +621,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         print("  1. Download and manage a compatible ComfyUI copy here (default)")
         print("  2. Enter the path to an existing ComfyUI installation")
         try:
-            comfyui_choice = input(f"  {CYAN}Choose [1/2]:{RESET} ")
+            comfyui_choice = "" if args.qualification else input(f"  {CYAN}Choose [1/2]:{RESET} ")
         except EOFError:
             comfyui_choice = ""
         entered_path = ""

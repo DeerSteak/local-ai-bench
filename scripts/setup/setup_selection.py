@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 from scripts.runtime import config, hardware
-from scripts.setup.engine_selection import LLAMACPP
+from scripts.setup.engine_selection import LLAMACPP, VLLM
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, find_non_catalog_model_dirs,
     find_non_catalog_vllm_repos, fits_any_engine, format_engine_sizes,
@@ -52,6 +52,13 @@ def save_hf_token(path: Path, token: str) -> None:
 def additional_disk_space_needed(free_gb: float, download_gb: float) -> float:
     """Return the download shortfall in GB, or zero when it fits."""
     return max(0.0, download_gb - free_gb)
+
+
+def qualification_model_selection(engine: str) -> tuple[list[dict], list[dict], list[dict]]:
+    if engine not in {LLAMACPP, VLLM}:
+        raise ValueError(f"unknown qualification engine: {engine}")
+    images = [IMAGE_MODELS[0]] if engine == LLAMACPP else []
+    return [LLM_MODELS_XSMALL[0]], images, [EMBED_MODELS[0]]
 
 
 def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,

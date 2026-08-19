@@ -10,14 +10,6 @@ from scripts.release.qualification_coverage import (
 )
 
 
-QUALIFICATION_LIFECYCLE = (
-    "install", "discovery", "first_valid_run", "cancellation", "resume",
-    "report_generation", "bundle_export", "upgrade", "rollback", "uninstall",
-)
-PLATFORM_QUALIFICATION_STEPS = tuple(
-    step for step in QUALIFICATION_LIFECYCLE if step != "uninstall"
-)
-LIFECYCLE_STATES = {"passed", "failed", "not_tested"}
 SUPPORT_LEVELS = {"supported", "experimental", "unverified"}
 MAX_QUALIFICATION_RELEASE_AGE = 1
 QUALIFICATION_MATRIX: tuple[dict, ...] = (
@@ -42,11 +34,9 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
                 "not performance qualification."
             ),
         },
-        "lifecycle": {step: "passed" for step in QUALIFICATION_LIFECYCLE},
-        "known_failures": [],
         "evidence": [
             "qualification-evidence/macos-m5-pro-llamacpp-metal-b10488-v6/"
-            "qualification-manifest.json",
+            "smoke-result.json",
         ],
     },
     {
@@ -73,11 +63,9 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
                 "not performance qualification."
             ),
         },
-        "lifecycle": {step: "passed" for step in QUALIFICATION_LIFECYCLE},
-        "known_failures": [],
         "evidence": [
             "qualification-evidence/geforce-wsl2-llamacpp-cuda-b10488-v7/"
-            "qualification-manifest.json",
+            "smoke-result.json",
         ],
     },
 )
@@ -100,8 +88,7 @@ QUALIFICATION_TARGETS = (
 
 ENTRY_KEYS = {
     "id", "platform", "architecture", "runtime", "runtime_version", "backend",
-    "accelerator", "qualified_at", "suite_version", "coverage", "lifecycle",
-    "known_failures", "evidence",
+    "accelerator", "qualified_at", "suite_version", "coverage", "evidence",
 }
 PLATFORMS = {"macos", "linux", "windows", "wsl2"}
 
@@ -148,37 +135,19 @@ def validate_qualification_entry(entry: dict) -> None:
             or not isinstance(coverage["models"], list) or not coverage["models"]
             or not isinstance(coverage["notes"], str)):
         raise ValueError("qualification coverage is invalid")
-    lifecycle = entry["lifecycle"]
-    if not isinstance(lifecycle, dict) or set(lifecycle) != set(QUALIFICATION_LIFECYCLE):
-        raise ValueError("qualification lifecycle is incomplete")
-    if any(state not in LIFECYCLE_STATES for state in lifecycle.values()):
-        raise ValueError("qualification lifecycle has an invalid state")
-    failures = entry["known_failures"]
-    if not isinstance(failures, list) or any(
-            not isinstance(item, dict) or set(item) != {"step", "detail"}
-            or item["step"] not in QUALIFICATION_LIFECYCLE
-            or not isinstance(item["detail"], str) or not item["detail"].strip()
-            for item in failures):
-        raise ValueError("qualification known failures are invalid")
-    gaps = {step for step, state in lifecycle.items() if state != "passed"}
-    documented = {item["step"] for item in failures}
-    if gaps != documented:
-        raise ValueError("every incomplete lifecycle step requires one known failure")
     evidence = entry["evidence"]
     if (not isinstance(evidence, list)
-            or any(not isinstance(item, str) or not item.strip() for item in evidence)
-            or any(state == "passed" for state in lifecycle.values()) and not evidence):
+            or not evidence
+            or any(not isinstance(item, str) or not item.strip() for item in evidence)):
         raise ValueError("qualification evidence references are invalid")
-    if all(lifecycle[step] == "passed" for step in PLATFORM_QUALIFICATION_STEPS) and not any(
-            Path(item).name == "qualification-manifest.json" for item in evidence):
-        raise ValueError("complete platform qualification requires a final evidence manifest")
+    if any(Path(item).suffix.lower() != ".json" for item in evidence):
+        raise ValueError("qualification evidence must reference ordinary result JSON")
 
 
 def derive_support_level(entry: dict | None, current_version: str) -> str:
     if entry is None:
         return "unverified"
     validate_qualification_entry(entry)
-    states = {entry["lifecycle"][step] for step in PLATFORM_QUALIFICATION_STEPS}
     required_models = {SMALLEST_LLM_MODEL, SMALLEST_EMBEDDING_MODEL}
     if entry["runtime"] == "llamacpp":
         required_models.add(SMALLEST_IMAGE_MODEL)
@@ -188,11 +157,9 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     )
     if not complete_coverage:
         return "unverified"
-    if states == {"passed"} and not qualification_is_stale(entry, current_version):
+    if not qualification_is_stale(entry, current_version):
         return "supported"
-    if "passed" in states:
-        return "experimental"
-    return "unverified"
+    return "experimental"
 
 
 def validate_qualification_matrix(entries=QUALIFICATION_MATRIX) -> None:
@@ -253,7 +220,6 @@ def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
             "qualified_at": evidence.get("qualified_at") if evidence else None,
             "suite_version": evidence.get("suite_version") if evidence else None,
             "stale": qualification_is_stale(evidence, current_version) if evidence else False,
-            "known_failures": evidence.get("known_failures", []) if evidence else [],
         })
     return rows
 
@@ -274,9 +240,9 @@ def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime
     ) if runtime_version else None
     support_level = derive_support_level(evidence, current_version)
     caveat = {
-        "supported": "Full lifecycle qualification recorded for this exact runtime.",
-        "experimental": "Qualification is partial or stale; review its recorded gaps.",
-        "unverified": "No full lifecycle qualification matches this exact runtime.",
+        "supported": "Complete smallest-model workload qualification recorded for this runtime.",
+        "experimental": "Qualification is stale; rerun the current smallest-model workload set.",
+        "unverified": "No complete smallest-model qualification matches this exact runtime.",
     }[support_level]
     return {
         "support_level": support_level, "caveat": caveat,
@@ -307,5 +273,5 @@ def experimental_acknowledgement_required(runtimes, support_profiles: dict[str, 
 def experimental_engine_ack_error(runtimes, acknowledged: bool) -> str | None:
     if "vllm" in runtimes and not acknowledged:
         return ("vLLM requires --ack-experimental-engine until its exact platform and "
-                "runtime pass full lifecycle qualification")
+                "runtime pass complete smallest-model qualification")
     return None

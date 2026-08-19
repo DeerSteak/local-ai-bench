@@ -39,7 +39,7 @@ run_bench.bat [options]   # Windows
 
 See [Flag details](#flag-details) below for what each flag actually does.
 
-When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed the complete qualification lifecycle. The graphical launcher adds the flag only after displaying its experimental-engine confirmation. The resulting support caveat remains recorded in the run profile.
+When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed complete smallest-model qualification. The graphical launcher adds the flag only after displaying its experimental-engine confirmation. The resulting support caveat remains recorded in the run profile.
 
 ## Launch modes
 
@@ -243,15 +243,16 @@ bash run_bench.sh --tests llamabenchconc
 
 A full run takes several hours, depending on your hardware and which options you select.
 
-## Qualification automation
+## Platform qualification
 
-Preview a reviewed lifecycle recipe without creating evidence or running its commands:
+Run the normal setup and benchmark paths with the required smallest-model selection:
 
 ```bash
-bench-env/bin/python -m scripts.release.qualification_automation recipe.json --output qualification-evidence/run-001
+./run_qualification.sh --list-targets
+./run_qualification.sh dgx-spark-vllm-cuda
 ```
 
-Add `--execute` only after reviewing the preview and confirming that install, upgrade, rollback, and uninstall target an isolated qualification installation. The command checkpoints each lifecycle step and resumes an unchanged recipe at the first step that has not passed. See [Platform qualification automation](qualification.md).
+The ordinary result JSON is the qualification evidence. See [Platform qualification](qualification.md).
 
 ## Comparing results
 

@@ -1,6 +1,7 @@
 from scripts.setup.engine_selection import (
     LLAMACPP,
     VLLM,
+    apply_engine_preset,
     build_engine_entries,
     engine_summary_line,
     engines_needing_install,
@@ -27,6 +28,19 @@ def test_terminal_picker_toggles_then_accepts():
     result = select_engines(entries, input_fn=lambda _prompt: next(replies))
 
     assert selected_engine_names(result) == [LLAMACPP, VLLM]
+
+
+def test_qualification_preset_selects_exactly_one_available_engine():
+    entries = build_engine_entries(vllm_support=SUPPORTED)
+    apply_engine_preset(entries, VLLM)
+    assert selected_engine_names(entries) == [VLLM]
+
+
+def test_qualification_preset_rejects_an_unavailable_engine():
+    entries = build_engine_entries(vllm_support=UNSUPPORTED)
+    import pytest
+    with pytest.raises(ValueError, match="vllm is unavailable"):
+        apply_engine_preset(entries, VLLM)
 
 
 def test_terminal_picker_cancel_exits():

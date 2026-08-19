@@ -4,9 +4,19 @@ import pytest
 
 from scripts.setup import setup_selection
 from scripts.setup.setup_selection import (
-    additional_disk_space_needed, save_hf_token, select_models,
+    additional_disk_space_needed, qualification_model_selection, save_hf_token, select_models,
     selected_cleanup_names, toggle_all_models,
 )
+
+
+def test_qualification_model_selection_is_the_smallest_complete_engine_set():
+    llm, images, embeddings = qualification_model_selection("llamacpp")
+    assert [model["tag"] for model in llm] == ["gemma3:1b-it-q4_K_M"]
+    assert [model["short"] for model in images] == ["sd15"]
+    assert [model["tag"] for model in embeddings] == ["nomic-embed-text"]
+    assert qualification_model_selection("vllm")[1] == []
+    with pytest.raises(ValueError, match="unknown qualification engine"):
+        qualification_model_selection("invented")
 
 
 def test_toggle_all_models_selects_models_without_enabling_cleanup():

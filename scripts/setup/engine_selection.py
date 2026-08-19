@@ -66,6 +66,16 @@ def engines_needing_install(entries: list[dict]) -> list[str]:
     ]
 
 
+def apply_engine_preset(entries: list[dict], engine: str) -> list[dict]:
+    target = find_entry(entries, engine)
+    if target is None or not target["enabled"]:
+        reason = target["note"] if target else "unknown engine"
+        raise ValueError(f"{engine} is unavailable: {reason}")
+    for entry in entries:
+        entry["checked"] = entry is target
+    return entries
+
+
 def needs_python_headers(entries: list[dict], missing_header: str | None) -> bool:
     """True when vLLM is selected and its Python headers are absent. Selection, not
     installation: an already-installed vLLM needs them just as much at run time."""

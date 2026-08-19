@@ -21,8 +21,7 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
-| `run_qualification.sh` / `run_qualification.bat` | Fresh-clone bootstrap, concrete target-recipe generation, preview, and resumable lifecycle qualification launchers |
-| `bootstrap_qualification.sh` / `bootstrap_qualification.bat` | Preview-first host prerequisite installation for fresh qualification machines; never changes GPU drivers or SDKs |
+| `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
@@ -143,8 +142,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
-| `release/qualification_auto.py` / `release/qualification_automation.py` / `release/qualification_recipe.py` / `release/qualification_runtime.py` | Automatic target/version selection, concrete recipe generation, preview-first resumable execution, isolated snapshot/rollback, and evidence projection |
-| `release/qualification_coverage.py` / `release/qualification_install.py` | Smallest-model coverage verification and isolated runtime/model/ComfyUI provisioning for qualification |
+| `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_coverage.py` | Explicit platform selection, normal benchmark launch, and smallest-model result validation |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
 | `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |

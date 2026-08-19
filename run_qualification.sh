@@ -2,97 +2,30 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ "$(id -u)" -eq 0 ]; then
-    echo "Do not run qualification with sudo; the bootstrap requests administrator access when needed." >&2
-    exit 1
-fi
-source "$ROOT/qualification_python.sh"
-PATH="${HOME}/.local/bin:${PATH}"
-if [ -d /usr/lib/wsl/lib ]; then PATH="/usr/lib/wsl/lib:${PATH}"; fi
-QUALIFICATION_PYTHON="$(qualification_python || true)"
-VENV="$ROOT/qualification-env"
-
-usage() {
-    echo "Usage: $0 TARGET BASELINE_VERSION TARGET_VERSION [OUTPUT_DIR] [--execute]"
-    echo "       $0 [--execute] [--vllm-only]"
-    echo "       $0 --list-targets"
-}
 
 if [ "${1:-}" = "--list-targets" ]; then
-    if [ -x "$VENV/bin/python" ]; then
-        exec "$VENV/bin/python" -m scripts.release.qualification_recipe --list-targets
+    if [ -x "$ROOT/bench-env/bin/python" ]; then
+        exec "$ROOT/bench-env/bin/python" -m scripts.release.qualification_run --list-targets
     fi
-    if [ -z "$QUALIFICATION_PYTHON" ]; then
-        echo "Python 3.11 or newer is required; run bootstrap_qualification.sh --execute." >&2
-        exit 1
-    fi
-    exec "$QUALIFICATION_PYTHON" -m scripts.release.qualification_recipe --list-targets
-fi
-if [ "$#" -eq 0 ] || [ "${1:-}" = "--execute" ] || [ "${1:-}" = "--vllm-only" ]; then
-    EXECUTE_AUTO=false
-    VLLM_ONLY=false
-    for ARG in "$@"; do
-        case "$ARG" in
-            --execute) EXECUTE_AUTO=true ;;
-            --vllm-only) VLLM_ONLY=true ;;
-            *) usage; exit 2 ;;
-        esac
-    done
-    if [ "$EXECUTE_AUTO" = true ]; then
-        "$ROOT/bootstrap_qualification.sh" --execute
-    else
-        "$ROOT/bootstrap_qualification.sh"
-    fi
-    QUALIFICATION_PYTHON="$(qualification_python || true)"
-    if [ -z "$QUALIFICATION_PYTHON" ]; then
-        echo "Bootstrap did not provide Python 3.11 or newer." >&2
-        exit 1
-    fi
-    if [ ! -x "$VENV/bin/python" ]; then
-        "$QUALIFICATION_PYTHON" -m venv "$VENV"
-        "$VENV/bin/python" -m pip install --upgrade pip
-    fi
-    "$VENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt"
-    cd "$ROOT"
-    COMMAND=("$VENV/bin/python" -m scripts.release.qualification_auto --root "$ROOT")
-    if [ "$EXECUTE_AUTO" = true ]; then COMMAND+=(--execute); fi
-    if [ "$VLLM_ONLY" = true ]; then COMMAND+=(--vllm-only); fi
-    exec "${COMMAND[@]}"
-fi
-if [ "$#" -lt 3 ]; then
-    usage
-    exit 2
+    sed -n 's/^    "\([^"]*\)": ".*",$/\1/p' "$ROOT/scripts/release/qualification_targets.py"
+    exit 0
 fi
 
-if [ -z "$QUALIFICATION_PYTHON" ]; then
-    echo "Python 3.11 or newer is required; run bootstrap_qualification.sh --execute." >&2
-    exit 1
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    echo "Usage: $0 TARGET [RESULT_JSON]" >&2
+    echo "       $0 --list-targets" >&2
+    exit 2
 fi
 
 TARGET="$1"
-BASELINE_VERSION="$2"
-TARGET_VERSION="$3"
-OUTPUT_DIR="${4:-$ROOT/qualification-evidence/$TARGET}"
-EXECUTE="${5:-}"
-if [ "$EXECUTE" != "" ] && [ "$EXECUTE" != "--execute" ]; then
-    usage
+RESULT="${2:-$ROOT/results_qualification_${TARGET}.json}"
+if ! grep -Fq "\"$TARGET\":" "$ROOT/scripts/release/qualification_targets.py"; then
+    echo "Unknown qualification target: $TARGET" >&2
     exit 2
 fi
+ENGINE="llamacpp"
+if [[ "$TARGET" == *-vllm-* ]]; then ENGINE="vllm"; fi
 
-if [ ! -x "$VENV/bin/python" ]; then
-    "$QUALIFICATION_PYTHON" -m venv "$VENV"
-    "$VENV/bin/python" -m pip install --upgrade pip
-fi
-"$VENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt"
-
-cd "$ROOT"
-"$VENV/bin/python" -m scripts.release.qualification_recipe \
-    --target "$TARGET" --root "$ROOT" --output "$OUTPUT_DIR" \
-    --baseline-version "$BASELINE_VERSION" --target-version "$TARGET_VERSION"
-
-COMMAND=("$VENV/bin/python" -m scripts.release.qualification_automation
-    "$OUTPUT_DIR/qualification-recipe.json" --output "$OUTPUT_DIR")
-if [ "$EXECUTE" = "--execute" ]; then
-    COMMAND+=(--execute)
-fi
-exec "${COMMAND[@]}"
+bash "$ROOT/setup.sh" --qualification "$ENGINE"
+exec "$ROOT/bench-env/bin/python" -m scripts.release.qualification_run \
+    "$TARGET" --root "$ROOT" --result "$RESULT"

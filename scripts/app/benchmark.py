@@ -732,7 +732,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     parser.add_argument(
         "--ack-experimental-engine", action="store_true",
-        help="Acknowledge that selected experimental engines lack full lifecycle qualification.",
+        help="Acknowledge that selected experimental engines lack complete qualification.",
     )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:

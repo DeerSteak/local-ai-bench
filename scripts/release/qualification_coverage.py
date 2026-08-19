@@ -136,11 +136,10 @@ def workload_coverage_errors(result: dict, workloads: list[str]) -> list[str]:
     return errors
 
 
-def qualification_command(engine: str, model: str, result: Path,
-                          comfyui: Path | None = None) -> list[str]:
+def qualification_arguments(engine: str, model: str, result: Path) -> list[str]:
     workloads = qualification_workloads(engine)
     command = [
-        sys.executable, "-m", "scripts.app.benchmark", "--engine", engine,
+        "--ui", "none", "--engine", engine,
         "--tests", *workloads, "--llm-models", model,
         "--embedding-models", SMALLEST_EMBEDDING_MODEL,
         "--runs", "1", "--warmup", "0", "--sample", "1",
@@ -148,12 +147,19 @@ def qualification_command(engine: str, model: str, result: Path,
         "--out", str(result),
     ]
     if engine == "llamacpp":
-        if comfyui is None:
-            raise ValueError("llama.cpp qualification requires its managed ComfyUI path")
-        command += ["--image-models", SMALLEST_IMAGE_MODEL, "--comfyui", str(comfyui)]
+        command += ["--image-models", SMALLEST_IMAGE_MODEL]
     else:
         command.append("--ack-experimental-engine")
     return command
+
+
+def qualification_command(engine: str, model: str, result: Path,
+                          comfyui: Path | None = None) -> list[str]:
+    arguments = qualification_arguments(engine, model, result)
+    arguments = arguments[2:]
+    if comfyui is not None:
+        arguments += ["--comfyui", str(comfyui)]
+    return [sys.executable, "-m", "scripts.app.benchmark", *arguments]
 
 
 def run_qualification_coverage(engine: str, model: str, result: Path,

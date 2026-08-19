@@ -1,7 +1,7 @@
 import pytest
 
 from scripts.release.qualification import (
-    QUALIFICATION_LIFECYCLE, QUALIFICATION_MATRIX, derive_support_level, engine_selection_label,
+    QUALIFICATION_MATRIX, derive_support_level, engine_selection_label,
     engine_support_profile, experimental_acknowledgement_required,
     experimental_engine_ack_error, platform_name,
     qualification_entry, qualification_is_stale, qualification_rows,
@@ -10,9 +10,7 @@ from scripts.release.qualification import (
 )
 
 
-def entry(states=None, **overrides):
-    lifecycle = {step: "passed" for step in QUALIFICATION_LIFECYCLE}
-    lifecycle.update(states or {})
+def entry(**overrides):
     value = {
         "id": "linux-x86_64-llamacpp-cuda", "platform": "linux",
         "architecture": "x86_64", "runtime": "llamacpp", "runtime_version": "b6000",
@@ -26,23 +24,14 @@ def entry(states=None, **overrides):
             "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
             "notes": "Smallest-model functional coverage.",
         },
-        "lifecycle": lifecycle,
-        "known_failures": [
-            {"step": step, "detail": f"{state} during qualification"}
-            for step, state in lifecycle.items() if state != "passed"
-        ],
-        "evidence": ["qualification/linux-x86_64-llamacpp-cuda/qualification-manifest.json"],
+        "evidence": ["results_qualification_linux-x86_64-llamacpp-cuda.json"],
     }
     return {**value, **overrides}
 
 
-def test_support_level_is_derived_from_complete_partial_and_absent_evidence():
+def test_support_level_is_derived_from_complete_stale_and_absent_evidence():
     assert derive_support_level(entry(), "6.0-pre8") == "supported"
-    assert derive_support_level(entry({"uninstall": "failed"}), "6.0-pre8") == "supported"
-    assert derive_support_level(entry({"uninstall": "not_tested"}), "6.0-pre8") == "supported"
-    assert derive_support_level(entry({"rollback": "failed"}), "6.0-pre8") == "experimental"
-    assert derive_support_level(entry({step: "not_tested" for step in QUALIFICATION_LIFECYCLE}),
-                                "6.0-pre8") == "unverified"
+    assert derive_support_level(entry(suite_version="6.0"), "6.2") == "experimental"
     assert derive_support_level(None, "6.0-pre8") == "unverified"
 
 
@@ -79,29 +68,15 @@ def test_support_level_cannot_be_set_in_evidence():
         validate_qualification_entry(entry(support_level="supported"))
 
 
-def test_complete_lifecycle_requires_the_verified_final_manifest():
-    with pytest.raises(ValueError, match="final evidence manifest"):
-        validate_qualification_entry(entry(evidence=["qualification-state.json"]))
+def test_qualification_evidence_must_be_an_ordinary_result_json():
+    with pytest.raises(ValueError, match="ordinary result JSON"):
+        validate_qualification_entry(entry(evidence=["qualification-result.lab.zip"]))
 
 
-def test_failed_cleanup_still_requires_the_verified_platform_manifest():
-    with pytest.raises(ValueError, match="final evidence manifest"):
-        validate_qualification_entry(entry(
-            {"uninstall": "failed"}, evidence=["qualification-state.json"],
-        ))
-
-
-def test_complete_lifecycle_without_required_workload_coverage_is_unverified():
+def test_complete_result_without_required_workload_coverage_is_unverified():
     evidence = entry()
     evidence["coverage"]["workloads"].remove("img")
     assert derive_support_level(evidence, "6.0-pre8") == "unverified"
-
-
-def test_partial_evidence_requires_every_gap_to_be_documented():
-    evidence = entry({"rollback": "failed"})
-    evidence["known_failures"] = []
-    with pytest.raises(ValueError, match="every incomplete"):
-        validate_qualification_entry(evidence)
 
 
 def test_matrix_rejects_duplicate_runtime_identity():

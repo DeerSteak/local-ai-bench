@@ -1,104 +1,46 @@
 from pathlib import Path
 import subprocess
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_unix_launcher_bootstraps_then_previews_by_default():
+def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.sh").read_text()
-    assert 'python" -m pip install --quiet -r' in text
-    assert 'VENV="$ROOT/qualification-env"' in text
-    assert "qualification_recipe" in text
-    assert 'if [ "$EXECUTE" = "--execute" ]' in text
-    assert "scripts.release.qualification_auto" in text
-    assert 'bootstrap_qualification.sh" --execute' in text
-    assert "/usr/lib/wsl/lib" in text
-    assert "--vllm-only" in text
+    assert 'setup.sh" --qualification "$ENGINE"' in text
+    assert "scripts.release.qualification_run" in text
+    assert "qualification-env" not in text
+    assert "qualification_automation" not in text
 
 
-def test_windows_launcher_bootstraps_then_previews_by_default():
+def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.bat").read_text()
-    assert "py -3 -m venv qualification-env" in text
-    assert "qualification_recipe" in text
-    assert 'if "%EXECUTE%"=="--execute"' in text
-    assert "scripts.release.qualification_auto" in text
-    assert "bootstrap_qualification.bat --execute" in text
+    assert "call setup.bat --qualification %ENGINE%" in text
+    assert "scripts.release.qualification_run" in text
+    assert "qualification-env" not in text
+    assert "qualification_automation" not in text
 
 
-def test_system_bootstraps_are_preview_first_and_leave_drivers_alone():
-    unix = (ROOT / "bootstrap_qualification.sh").read_text()
-    windows = (ROOT / "bootstrap_qualification.bat").read_text()
-    assert 'if [ "$MODE" != "--execute" ]' in unix
-    assert "GPU drivers and CUDA/ROCm SDKs are intentionally not changed" in unix
-    assert "python3.12-venv" not in unix
-    assert "uv" in unix and "python install 3.12" in unix
-    assert "libopenmpi-dev" in unix and "openmpi openmpi-devel" in unix
-    assert 'if not "%~1"=="--execute"' in windows
-    assert "winget install --id Python.Python.3.12" in windows
-
-
-def test_unix_launcher_keeps_work_unprivileged_and_bootstrap_authenticates_once():
-    launcher = (ROOT / "run_qualification.sh").read_text()
-    bootstrap = (ROOT / "bootstrap_qualification.sh").read_text()
-    assert 'if [ "$(id -u)" -eq 0 ]' in launcher
-    assert "Do not run qualification with sudo" in launcher
-    assert "sudo -v" in bootstrap
-    assert "sudo -n apt-get" in bootstrap
-    assert 'sudo -n chown -R "$(id -u):$(id -g)" "$MANAGED_PATH"' in bootstrap
-    assert 'MANAGED_PATH="$ROOT/$MANAGED"' in bootstrap
-
-
-def test_posix_launcher_accepts_python_314_for_its_own_environment(tmp_path):
-    python = tmp_path / "python3.14"
-    python.write_text("#!/bin/sh\nexit 0\n")
-    python.chmod(0o755)
-    command = (
-        f'source "{ROOT / "qualification_python.sh"}"; qualification_python'
-    )
+def test_posix_qualification_launcher_has_valid_shell_syntax():
     result = subprocess.run(
-        ["/bin/bash", "-c", command], capture_output=True, text=True,
-        env={"PATH": str(tmp_path), "HOME": str(tmp_path)},
+        ["/bin/bash", "-n", ROOT / "run_qualification.sh"], capture_output=True, text=True,
     )
-    assert result.returncode == 0
-    assert result.stdout.strip() == str(python)
+    assert result.returncode == 0, result.stderr
 
 
-def test_posix_python_selector_rejects_an_unsupported_interpreter(tmp_path):
-    python = tmp_path / "python3"
-    python.write_text("#!/bin/sh\nexit 1\n")
-    python.chmod(0o755)
-    command = f'source "{ROOT / "qualification_python.sh"}"; qualification_python'
+def test_target_listing_needs_no_python_environment():
     result = subprocess.run(
-        ["/bin/bash", "-c", command], capture_output=True, text=True,
-        env={"PATH": str(tmp_path), "HOME": str(tmp_path)},
-    )
-    assert result.returncode != 0
-
-
-def test_vllm_python_selector_does_not_mistake_python_314_for_312(tmp_path):
-    python = tmp_path / "python3.12"
-    python.write_text("#!/bin/sh\nexit 1\n")
-    python.chmod(0o755)
-    command = f'source "{ROOT / "qualification_python.sh"}"; qualification_python_312'
-    result = subprocess.run(
-        ["/bin/bash", "-c", command], capture_output=True, text=True,
-        env={"PATH": str(tmp_path), "HOME": str(tmp_path)},
-    )
-    assert result.returncode != 0
-
-
-def test_posix_qualification_scripts_have_valid_shell_syntax():
-    for name in ("qualification_python.sh", "bootstrap_qualification.sh", "run_qualification.sh"):
-        result = subprocess.run(["/bin/bash", "-n", ROOT / name], capture_output=True, text=True)
-        assert result.returncode == 0, result.stderr
-
-
-def test_target_listing_does_not_require_installed_site_packages():
-    result = subprocess.run(
-        [sys.executable, "-S", "-m", "scripts.release.qualification_recipe", "--list-targets"],
+        [ROOT / "run_qualification.sh", "--list-targets"],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
     assert "macos-m5-pro-llamacpp-metal" in result.stdout
+
+
+def test_unknown_target_is_rejected_before_setup():
+    result = subprocess.run(
+        [ROOT / "run_qualification.sh", "invented-target"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert "Unknown qualification target" in result.stderr

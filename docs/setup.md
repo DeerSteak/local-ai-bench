@@ -271,7 +271,7 @@ Close other apps before running — GPU memory contention affects results.
 
 **Linux (AMD/Strix Halo, Ryzen AI Max+ 395)** — llama.cpp uses its normal HIP build. Current upstream vLLM ROCm builds list the RDNA 3.5 `gfx1151` target and require Python 3.12; setup therefore uses the official ROCm wheel channel rather than PyPI's CUDA-oriented package. Qualification still applies to the exact vLLM local-version identifier, bundled ROCm/PyTorch stack, firmware, kernel, and model, so recognizing the wheel target does not by itself create a supported platform claim.
 
-An older preinstalled `vllm-launch` remains discoverable as an external platform runtime, but qualification automation upgrades an isolated managed environment to a pinned current ROCm wheel instead of treating that older image runtime as the target. The preinstalled runtime is retained only as rollback evidence. AWQ behavior remains model- and build-specific, so the pinned target build must pass the verified smallest-model workload matrix and lifecycle.
+An older preinstalled `vllm-launch` remains discoverable as an external platform runtime, but normal setup installs the project's current ROCm environment when that engine is selected. AWQ behavior remains model- and build-specific, so the installed target build must pass the verified smallest-model workload matrix.
 
 **Linux (AMD/ROCm)** — `rocminfo` detection selects llama.cpp's HIP build. When image models are selected, setup replaces ComfyUI's default torch packages with the configured ROCm 6.4 wheels. This path is not verified on every newer APU architecture; if the wheel does not support the detected GPU, install a compatible PyTorch ROCm build manually.
 
