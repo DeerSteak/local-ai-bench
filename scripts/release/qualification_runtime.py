@@ -9,15 +9,18 @@ import sys
 from pathlib import Path
 
 from scripts.release.qualification_install import inspect_install_plan, install_qualification_stack
+from scripts.release.qualification_coverage import run_qualification_coverage
 from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
 from scripts.setup.runtime_identity import parse_runtime_version
 
 
 RUNTIME_NAMES = {"llamacpp": "llama.cpp", "vllm": "vllm-env"}
+PROCESS_MANAGED_NAMES = {*RUNTIME_NAMES.values(), "qualification-comfyui-runtime"}
 RUNTIME_VERSION_MARKER = ".qualification-runtime-version"
 REMOVABLE_NAMES = {
     "llama.cpp", "vllm-env", "qualification-runtime-baseline",
-    "qualification-cache", "qualification-vllm-cache", "models",
+    "qualification-cache", "qualification-vllm-cache", "qualification-comfyui-runtime",
+    "models",
 }
 
 
@@ -104,17 +107,11 @@ def archive_smoke_artifacts(output: Path) -> list[Path]:
     return archived
 
 
-def smoke_runtime(engine: str, output: Path) -> None:  # pragma: no cover
+def smoke_runtime(root: Path, engine: str, model: str, output: Path) -> None:  # pragma: no cover
     archive_smoke_artifacts(output)
-    command = [
-        sys.executable, "-m", "scripts.app.benchmark", "--quick", "--engine", engine,
-        "--out", str(output),
-    ]
-    if engine == "vllm":
-        command.append("--ack-experimental-engine")
-    result = subprocess.run(command)
-    if result.returncode:
-        raise RuntimeError(f"{engine} upgraded-runtime smoke failed with code {result.returncode}")
+    comfyui = Path(root) / "qualification-comfyui-runtime" / "ComfyUI" \
+        if engine == "llamacpp" else None
+    run_qualification_coverage(engine, model, output, comfyui)
 
 
 def runtime_version(root: Path, engine: str) -> str:
@@ -172,7 +169,7 @@ def managed_processes(root: Path, *, run=subprocess.run) -> list[str]:
     result = run(command, capture_output=True, text=True, timeout=30)
     if result.returncode:
         raise ValueError("could not inspect processes before qualification uninstall")
-    markers = [str(root / name).casefold() for name in RUNTIME_NAMES.values()]
+    markers = [str(root / name).casefold() for name in PROCESS_MANAGED_NAMES]
     own_pid = str(os.getpid())
     return [
         line.strip() for line in result.stdout.splitlines()
@@ -228,7 +225,7 @@ def main(argv=None) -> int:  # pragma: no cover
             if args.action == "upgrade":
                 if not args.smoke_output:
                     parser.error("upgrade requires --smoke-output")
-                smoke_runtime(args.engine, args.smoke_output)
+                smoke_runtime(args.root, args.engine, args.model, args.smoke_output)
         elif args.action == "discover":
             actual = (require_runtime_version(args.root, args.engine, args.version)
                       if args.version else runtime_version(args.root, args.engine))

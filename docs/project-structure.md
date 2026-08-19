@@ -144,7 +144,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
 | `release/qualification_auto.py` / `release/qualification_automation.py` / `release/qualification_recipe.py` / `release/qualification_runtime.py` | Automatic target/version selection, concrete recipe generation, preview-first resumable execution, isolated snapshot/rollback, and evidence projection |
-| `release/qualification_install.py` | Preview-first isolated engine-runtime and single smoke-model provisioning for qualification |
+| `release/qualification_coverage.py` / `release/qualification_install.py` | Smallest-model coverage verification and isolated runtime/model/ComfyUI provisioning for qualification |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
 | `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |

@@ -2,19 +2,19 @@
 
 # Platform qualification automation
 
-Platform qualification uses a reviewed JSON recipe and a resumable runner. The runner automates lifecycle evidence; it does not turn a smoke workload into a full-catalog performance claim.
+Platform qualification uses a reviewed JSON recipe and a resumable runner. The runner automates lifecycle and representative functional evidence; it does not turn smallest-model coverage into a full-catalog performance claim.
 
 ## Scope
 
-A lifecycle recipe runs one deliberately small representative workload, normally one xsmall LLM model for the selected engine. It verifies install, discovery, a valid run, cancellation, resume, report generation, bundle export, upgrade, rollback, and uninstall. The recipe records its workload and model coverage so the evidence cannot imply that every model was exercised.
+A lifecycle recipe runs the smallest compatible model through every workload supported by the selected engine. Shared coverage includes single-shot and conversational LLM generation, embeddings, all five accuracy banks, both server concurrency shapes, and the shortened 120-second sustained path; llama.cpp additionally covers both native benchmark paths and image generation through Stable Diffusion 1.5, while vLLM covers its native `vllm bench` path. Accuracy uses one deterministic question per bank, repeated workloads use one measured run without a warmup, and prompt sweeps stop at 2K. The run verifies that every required result section is populated before it can pass; this is broad functional coverage, not representative performance or full-bank accuracy evidence.
 
-Use a separate performance qualification when a claim depends on catalog-wide compatibility, throughput, accuracy, image generation, embeddings, or model-specific behavior.
+Use a separate performance qualification when a claim depends on catalog-wide compatibility, comparative throughput, full-bank accuracy, production-duration sustained behavior, or model-specific behavior.
 
 ## Launchers
 
 Use a disposable clone and run `./run_qualification.sh` on macOS, Linux, or WSL2, or `run_qualification.bat` on Windows. The launcher detects the machine, selects every applicable runtime, uses the repository's reviewed version pins, previews host prerequisites, creates the dedicated `qualification-env`, installs `requirements.txt`, generates concrete recipes, and prints the complete plan. It refuses an unknown accelerator identity, which keeps Radeon and Intel Vulkan evidence separate.
 
-Review the preview, then run the same launcher with `--execute`. Execution installs host prerequisites, the selected runtime builds, and the smoke model, then completes the entire resumable lifecycle unattended:
+Review the preview, then run the same launcher with `--execute`. Execution installs host prerequisites, the selected runtime builds, the smallest LLM and embedding models, and the smallest image model plus an isolated ComfyUI runtime where applicable, then completes the entire resumable lifecycle unattended:
 
 ```bash
 ./run_qualification.sh
@@ -36,9 +36,9 @@ The reviewed pins are llama.cpp `b10486 → b10488`, CUDA vLLM `0.27.0 → 0.27.
 
 The launchers generate the production recipe; [`samples/qualification_recipe_example.json`](../samples/qualification_recipe_example.json) documents its schema for manual integrations. Commands are JSON arrays and are executed directly without a shell. Give install, upgrade, rollback, and uninstall commands an isolated qualification prefix; never point them at the normal installation or model store. The recipe may record only the allowlisted non-secret runtime environment fields; credentials such as a Hugging Face token must be inherited at execution time and never written into the recipe or evidence.
 
-The bundled install step uses `scripts.release.qualification_install` to install the selected llama.cpp or vLLM runtime and download only the recorded smoke model beneath a disposable repository clone. It previews by default and requires both `--execute` and `--confirm-isolated-root` before changing that clone. Runtime installation still obeys the platform support checks; an unsupported vLLM combination fails instead of falling back to another backend. Every engine installation requires `--runtime-version`; vLLM records the complete wheel identity, including a ROCm local-version suffix such as `0.27.1+rocm723`, while llama.cpp records its exact `bNNNNN` release. Qualification never installs a floating latest build. A vLLM recipe sets `HF_HOME` to the disposable clone's `qualification-vllm-cache` directory so installation and the later smoke run resolve the same weights.
+The bundled install step uses `scripts.release.qualification_install` to install the selected llama.cpp or vLLM runtime and download the recorded minimum coverage models beneath a disposable repository clone. llama.cpp targets also receive an isolated `qualification-comfyui-runtime`; vLLM targets omit that engine-independent image path because the same platform's llama.cpp row owns it. Runtime installation still obeys the platform support checks; an unsupported vLLM combination fails instead of falling back to another backend. Every engine installation requires `--runtime-version`; vLLM records the complete wheel identity, including a ROCm local-version suffix such as `0.27.1+rocm723`, while llama.cpp records its exact `bNNNNN` release. Qualification never installs a floating latest build. A vLLM recipe sets `HF_HOME` to the disposable clone's `qualification-vllm-cache` directory so installation and the later functional run resolve the same weights.
 
-On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. The launcher creates `qualification-env`, refreshes `requirements.txt` on every invocation, and then installs the engine and smoke model. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
+On a fresh machine, Python 3.11 or newer and Git are bootstrap prerequisites because the qualification code cannot run before the repository and interpreter exist. The launcher creates `qualification-env`, refreshes `requirements.txt` on every invocation, and then installs the runtime and minimum coverage models. Host package-manager changes require an explicit platform-administrator action; credentials and interactive operating-system permissions are never bypassed by the qualification runner.
 
 The cancellation command is the only command that may define `interrupt_when_log_contains`. The runner launches it in its own process group, waits for the structured model-running progress event in its live log, sends the platform interrupt signal, and accepts only the declared exit codes. Slow installation, model loading, or server startup therefore cannot cause a premature cancellation.
 

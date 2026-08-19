@@ -84,17 +84,24 @@ def test_process_inspection_finds_only_clone_owned_commands(tmp_path):
     assert found == [f"101 /usr/bin/python {root}/llama.cpp/server.py"]
 
 
-def test_upgraded_runtime_smoke_uses_quick_selected_engine(monkeypatch, tmp_path):
+def test_process_inspection_includes_isolated_comfyui(tmp_path):
     from types import SimpleNamespace
+    root = repo(tmp_path)
+    command = root / "qualification-comfyui-runtime" / "python_embeded" / "python.exe"
+    output = f"101 {command} ComfyUI/main.py\n"
+    assert managed_processes(
+        root, run=lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=output),
+    ) == [f"101 {command} ComfyUI/main.py"]
+
+
+def test_upgraded_runtime_repeats_verified_workload_coverage(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(
-        "scripts.release.qualification_runtime.subprocess.run",
-        lambda command: calls.append(command) or SimpleNamespace(returncode=0),
+        "scripts.release.qualification_runtime.run_qualification_coverage",
+        lambda *args: calls.append(args),
     )
-    smoke_runtime("vllm", tmp_path / "upgraded.json")
-    assert "--quick" in calls[0]
-    assert calls[0][calls[0].index("--engine") + 1] == "vllm"
-    assert "--ack-experimental-engine" in calls[0]
+    smoke_runtime(tmp_path, "vllm", "tiny", tmp_path / "upgraded.json")
+    assert calls == [("vllm", "tiny", tmp_path / "upgraded.json", None)]
 
 
 def test_llamacpp_qualification_uses_recorded_release_artifact_identity(tmp_path):

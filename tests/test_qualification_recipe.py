@@ -18,6 +18,12 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     assert "--smoke-output" in recipe["steps"]["upgrade"]["command"]
     assert recipe["steps"]["cancellation"]["interrupt_when_log_contains"]
     assert recipe["steps"]["resume"]["command"][-1].endswith("interrupted-result.json")
+    assert recipe["steps"]["first_valid_run"]["command"][2:4] == [
+        "scripts.release.qualification_coverage", "--engine",
+    ]
+    assert "llm" in recipe["coverage"]["workloads"]
+    assert "emb" in recipe["coverage"]["workloads"]
+    assert "sustained" in recipe["coverage"]["workloads"]
 
 
 def test_recipe_requires_both_lifecycle_versions(tmp_path):
@@ -37,7 +43,22 @@ def test_vllm_recipe_uses_private_cache_and_acknowledges_experimental_engine(tmp
         accelerator_identity="AMD Radeon 8060S",
     )
     assert recipe["environment"]["HF_HOME"].endswith("qualification-vllm-cache")
-    assert "--ack-experimental-engine" in recipe["steps"]["first_valid_run"]["command"]
+    assert "scripts.release.qualification_coverage" in \
+        recipe["steps"]["first_valid_run"]["command"]
+    assert "vllmbench" in recipe["coverage"]["workloads"]
+    assert "img" not in recipe["coverage"]["workloads"]
+
+
+def test_llamacpp_recipe_covers_image_and_native_benchmark_workloads(tmp_path):
+    recipe = build_recipe(
+        target_id="macos-m5-pro-llamacpp-metal", root=tmp_path,
+        output=tmp_path / "evidence", baseline_version="b1", target_version="b2",
+        accelerator_identity="M5 Pro",
+    )
+    assert {"img", "llamabench", "llamabenchconc"} <= set(recipe["coverage"]["workloads"])
+    assert recipe["coverage"]["models"] == [
+        "gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15",
+    ]
 
 
 def test_recipe_preserves_virtualenv_python_symlink_path(tmp_path):

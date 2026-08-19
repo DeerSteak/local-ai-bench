@@ -26,7 +26,7 @@ For each candidate configuration, perform clean install, first launch, setup can
 
 The generated matrices in [Engines](engines.md#qualification-matrix) and [Setup](setup.md#qualification-matrix) are the published authority. `scripts/release/qualification.py` stores exact qualification evidence and derives supported, experimental, or unverified status; the generated sections must never be edited by hand. An entry is supported only when every lifecycle step passed and its suite version is no more than one minor release old. Partial or stale evidence is experimental, and absent evidence is unverified.
 
-The [qualification automation](qualification.md) executes the lifecycle from a reviewed recipe, checkpoints after every step, and records exact smoke coverage. Lifecycle qualification normally needs one representative xsmall model, not the full catalog; claims about model compatibility or performance require their own broader evidence.
+The [qualification automation](qualification.md) executes the lifecycle from a reviewed recipe, checkpoints after every step, and requires populated evidence from every compatible workload using its smallest model. This proves breadth of functional operation without running the full catalog; model-specific compatibility, comparative performance, full-bank accuracy, and production-duration soak claims require their own broader evidence.
 
 ## Stable-release criteria
 

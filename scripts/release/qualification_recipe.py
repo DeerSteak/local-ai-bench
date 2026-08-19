@@ -9,7 +9,12 @@ import platform
 import sys
 from pathlib import Path
 
-SMOKE_MODEL = "gemma3:1b-it-q4_K_M"
+from scripts.release.qualification_coverage import (
+    SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL, SMALLEST_LLM_MODEL,
+    qualification_workloads,
+)
+
+SMOKE_MODEL = SMALLEST_LLM_MODEL
 INTERRUPT_MARKER = '"kind":"model","stage":"llm","status":"running"'
 TARGETS = {
     "macos-m5-pro-llamacpp-metal": ("macos", "arm64", "llamacpp", "metal"),
@@ -73,9 +78,18 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
     lifecycle = [py, "-m", "scripts.release.qualification_runtime"]
     install = lifecycle + ["install", "--root", root, "--engine", engine,
                            "--model", model, "--version", baseline_version]
-    benchmark = [py, "-m", "scripts.app.benchmark", "--quick", "--engine", engine]
+    lifecycle_smoke = [py, "-m", "scripts.app.benchmark", "--quick", "--engine", engine]
+    workload_tests = qualification_workloads(engine)
+    qualification_run = [
+        py, "-m", "scripts.release.qualification_coverage", "--engine", engine,
+        "--model", model, "--result", result,
+    ]
+    if engine == "llamacpp":
+        qualification_run += [
+            "--comfyui", root / "qualification-comfyui-runtime" / "ComfyUI",
+        ]
     if engine == "vllm":
-        benchmark.append("--ack-experimental-engine")
+        lifecycle_smoke.append("--ack-experimental-engine")
     environment = {
         "LOCAL_AI_BENCH_PROGRESS": "1", "LOCAL_AI_BENCH_QUALIFICATION": "1",
     }
@@ -88,8 +102,10 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             "accelerator": accelerator_identity,
         },
         "coverage": {
-            "workloads": ["llm"], "models": [model],
-            "notes": "One-model lifecycle smoke; not full-catalog performance qualification.",
+            "workloads": workload_tests,
+            "models": [model, SMALLEST_EMBEDDING_MODEL]
+                      + ([SMALLEST_IMAGE_MODEL] if engine == "llamacpp" else []),
+            "notes": "Smallest-model functional coverage for every compatible workload; not performance qualification.",
         },
         "environment": environment,
         "steps": {
@@ -97,9 +113,9 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             "discovery": step(lifecycle + [
                 "discover", "--root", root, "--engine", engine, "--version", baseline_version,
             ]),
-            "first_valid_run": step(benchmark + ["--out", result]),
+            "first_valid_run": step(qualification_run, timeout=7200),
             "cancellation": step(
-                benchmark + ["--out", interrupted], exit_codes=(-2, 130, -1073741510),
+                lifecycle_smoke + ["--out", interrupted], exit_codes=(-2, 130, -1073741510),
                 interrupt=INTERRUPT_MARKER,
             ),
             "resume": step([py, "-m", "scripts.results.recovery_executor", interrupted]),
