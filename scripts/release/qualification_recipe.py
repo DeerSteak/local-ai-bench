@@ -77,7 +77,8 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
     interrupted = output / "interrupted-result.json"
     lifecycle = [py, "-m", "scripts.release.qualification_runtime"]
     install = lifecycle + ["install", "--root", root, "--engine", engine,
-                           "--model", model, "--version", baseline_version]
+                           "--model", model, "--version", baseline_version,
+                           "--inventory", output / "baseline-installation.json"]
     lifecycle_smoke = [py, "-m", "scripts.app.benchmark", "--quick", "--engine", engine]
     workload_tests = qualification_workloads(engine)
     qualification_run = [
@@ -121,17 +122,22 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             "resume": step([py, "-m", "scripts.results.recovery_executor", interrupted]),
             "report_generation": step([
                 py, "-m", "scripts.results.decision_report_cli", result,
-                "--html", output / "smoke-report.html", "--reviewed-metadata",
+                "--html", output / "baseline-report.html", "--reviewed-metadata",
                 "--system-alias", target_id, "--hardware-alias", target_id,
             ]),
             "bundle_export": step(lifecycle + [
                 "bundle", "--root", root, "--engine", engine, "--result", result,
-                "--bundle", output / "smoke-result.lab.zip", "--alias", target_id,
+                "--bundle", output / "baseline-result.lab.zip", "--alias", target_id,
+                "--artifact-dir", output / "artifacts" / "baseline" / "images",
             ]),
             "upgrade": step(lifecycle + [
                 "upgrade", "--root", root, "--engine", engine,
                 "--model", model, "--version", target_version,
                 "--smoke-output", output / "upgraded-smoke-result.json",
+                "--inventory", output / "target-installation.json",
+                "--report", output / "target-report.html",
+                "--bundle", output / "target-result.lab.zip", "--alias", target_id,
+                "--artifact-dir", output / "artifacts" / "target" / "images",
             ]),
             "rollback": step(lifecycle + [
                 "rollback", "--root", root, "--engine", engine, "--version", baseline_version,

@@ -24,6 +24,13 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     assert "llm" in recipe["coverage"]["workloads"]
     assert "emb" in recipe["coverage"]["workloads"]
     assert "sustained" in recipe["coverage"]["workloads"]
+    assert recipe["steps"]["install"]["command"][-2:] == [
+        "--inventory", str(tmp_path / "evidence" / "baseline-installation.json"),
+    ]
+    upgrade = recipe["steps"]["upgrade"]["command"]
+    assert str(tmp_path / "evidence" / "target-installation.json") in upgrade
+    assert str(tmp_path / "evidence" / "target-report.html") in upgrade
+    assert str(tmp_path / "evidence" / "target-result.lab.zip") in upgrade
 
 
 def test_recipe_requires_both_lifecycle_versions(tmp_path):

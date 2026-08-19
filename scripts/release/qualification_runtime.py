@@ -10,6 +10,11 @@ from pathlib import Path
 
 from scripts.release.qualification_install import inspect_install_plan, install_qualification_stack
 from scripts.release.qualification_coverage import run_qualification_coverage
+from scripts.release.qualification_evidence import (
+    archive_generated_artifacts, write_installation_inventory,
+)
+from scripts.results.decision_report import load_result, write_html_report
+from scripts.results.outbound_metadata import prepare_outbound_result
 from scripts.results.result_bundle import export_result_bundle, verify_result_bundle
 from scripts.setup.runtime_identity import parse_runtime_version
 
@@ -76,7 +81,7 @@ def restore_runtime(root: Path, engine: str) -> Path:
 
 
 def install_runtime(root: Path, engine: str, model: str, version: str,
-                    *, snapshot: bool = False) -> None:  # pragma: no cover
+                    *, snapshot: bool = False, inventory: Path | None = None) -> None:  # pragma: no cover
     target = runtime_path(root, engine)
     if target.exists():
         remove_managed(target)
@@ -85,6 +90,8 @@ def install_runtime(root: Path, engine: str, model: str, version: str,
         raise RuntimeError(f"failed to install {engine} {version}")
     if engine == "llamacpp":
         (target / RUNTIME_VERSION_MARKER).write_text(version + "\n", encoding="utf-8")
+    if inventory is not None:
+        write_installation_inventory(root, engine, version, model, inventory, include_models=True)
     if snapshot:
         snapshot_runtime(root, engine)
 
@@ -187,9 +194,17 @@ def uninstall(root: Path, engine: str) -> None:
         remove_managed(managed_path(root, name))
 
 
-def export_verified_bundle(result: Path, bundle: Path, alias: str) -> None:
-    export_result_bundle(result, bundle, [], system_alias=alias, hardware_alias=alias)
+def export_verified_bundle(result: Path, bundle: Path, alias: str,
+                           artifact_dir: Path | None = None) -> None:
+    artifacts = archive_generated_artifacts(result, artifact_dir) if artifact_dir else []
+    export_result_bundle(result, bundle, artifacts, system_alias=alias, hardware_alias=alias)
     verify_result_bundle(bundle)
+
+
+def write_reviewed_report(result: Path, report: Path, alias: str) -> None:
+    source = load_result(result)
+    outbound = prepare_outbound_result(source, system_alias=alias, hardware_alias=alias)
+    write_html_report(outbound, report, recommendation_source=source)
 
 
 def main(argv=None) -> int:  # pragma: no cover
@@ -205,18 +220,21 @@ def main(argv=None) -> int:  # pragma: no cover
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--alias")
     parser.add_argument("--smoke-output", type=Path)
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--report", type=Path)
+    parser.add_argument("--artifact-dir", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.action == "bundle":
             if not args.result or not args.bundle or not args.alias:
                 parser.error("bundle requires --result, --bundle, and --alias")
-            export_verified_bundle(args.result, args.bundle, args.alias)
+            export_verified_bundle(args.result, args.bundle, args.alias, args.artifact_dir)
         elif args.action in {"install", "upgrade"}:
             if not args.model or not args.version:
                 parser.error(f"{args.action} requires --model and --version")
             install_runtime(
                 args.root, args.engine, args.model, args.version,
-                snapshot=args.action == "install",
+                snapshot=args.action == "install", inventory=args.inventory,
             )
             print(json.dumps({
                 "engine": args.engine,
@@ -226,6 +244,12 @@ def main(argv=None) -> int:  # pragma: no cover
                 if not args.smoke_output:
                     parser.error("upgrade requires --smoke-output")
                 smoke_runtime(args.root, args.engine, args.model, args.smoke_output)
+                if not args.report or not args.bundle or not args.alias or not args.artifact_dir:
+                    parser.error("upgrade requires --report, --bundle, --alias, and --artifact-dir")
+                write_reviewed_report(args.smoke_output, args.report, args.alias)
+                export_verified_bundle(
+                    args.smoke_output, args.bundle, args.alias, args.artifact_dir,
+                )
         elif args.action == "discover":
             actual = (require_runtime_version(args.root, args.engine, args.version)
                       if args.version else runtime_version(args.root, args.engine))

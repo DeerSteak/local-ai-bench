@@ -54,6 +54,11 @@ def test_uninstall_removes_only_qualification_assets(tmp_path):
 
 def test_bundle_export_is_immediately_verified(monkeypatch, tmp_path):
     calls = []
+    images = [tmp_path / "evidence" / "sd15.png"]
+    monkeypatch.setattr(
+        "scripts.release.qualification_runtime.archive_generated_artifacts",
+        lambda *args: images,
+    )
     monkeypatch.setattr(
         "scripts.release.qualification_runtime.export_result_bundle",
         lambda *args, **kwargs: calls.append(("export", args, kwargs)),
@@ -62,8 +67,11 @@ def test_bundle_export_is_immediately_verified(monkeypatch, tmp_path):
         "scripts.release.qualification_runtime.verify_result_bundle",
         lambda path: calls.append(("verify", path)),
     )
-    export_verified_bundle(tmp_path / "result.json", tmp_path / "bundle.zip", "machine")
+    export_verified_bundle(
+        tmp_path / "result.json", tmp_path / "bundle.zip", "machine", tmp_path / "evidence",
+    )
     assert [call[0] for call in calls] == ["export", "verify"]
+    assert calls[0][1][2] == images
 
 
 def test_discovery_rejects_a_different_runtime_version(monkeypatch, tmp_path):
