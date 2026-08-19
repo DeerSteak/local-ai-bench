@@ -5,6 +5,7 @@ import pytest
 from scripts.release.qualification_install import (
     QUALIFICATION_DGX_CU130_INDEX,
     qualification_install_plan, qualification_model, qualification_vllm_index,
+    validate_vllm_runtime,
 )
 
 
@@ -77,3 +78,27 @@ def test_dgx_qualification_uses_an_immutable_commit_index():
     assert qualification_vllm_index("nightly_cu130") == QUALIFICATION_DGX_CU130_INDEX
     assert "cba06764d7a9da41e6f535d6355c13f725574f07" in QUALIFICATION_DGX_CU130_INDEX
     assert qualification_vllm_index("cuda_wheel") is None
+
+
+def test_vllm_runtime_validation_imports_the_installed_environment(tmp_path):
+    result = type("Result", (), {"returncode": 0, "stdout": "0.27.1+rocm723\n", "stderr": ""})()
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return result
+
+    assert validate_vllm_runtime(tmp_path / "vllm-env", run) == (
+        True, "0.27.1+rocm723",
+    )
+    assert calls[0][0][0].endswith("vllm-env/bin/python")
+    assert calls[0][1]["timeout"] == 300
+
+
+def test_vllm_runtime_validation_preserves_import_failure_detail(tmp_path):
+    result = type("Result", (), {
+        "returncode": 1, "stdout": "", "stderr": "libmpi_cxx.so.40: not found\n",
+    })()
+    assert validate_vllm_runtime(tmp_path / "vllm-env", lambda *_args, **_kwargs: result) == (
+        False, "libmpi_cxx.so.40: not found",
+    )

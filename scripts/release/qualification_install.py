@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +32,20 @@ QUALIFICATION_DGX_CU130_INDEX = (
 
 def qualification_vllm_index(method: str | None) -> str | None:
     return QUALIFICATION_DGX_CU130_INDEX if method == "nightly_cu130" else None
+
+
+def validate_vllm_runtime(runtime_dir: Path, run_fn=subprocess.run) -> tuple[bool, str]:
+    python = Path(runtime_dir) / ("Scripts" if os.name == "nt" else "bin") / \
+        ("python.exe" if os.name == "nt" else "python")
+    try:
+        result = run_fn(
+            [str(python), "-c", "import vllm; print(vllm.__version__)"],
+            capture_output=True, text=True, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)
+    output = (result.stdout or result.stderr).strip()
+    return result.returncode == 0 and bool(output), output or f"exit code {result.returncode}"
 
 
 def qualification_model(tag: str, catalog=None) -> dict:
@@ -133,6 +148,11 @@ def install_qualification_stack(plan: dict, nvidia, rocm) -> bool:  # pragma: no
         model_cache = Path(os.environ.get("HF_HOME", root / "qualification-vllm-cache"))
     if not installed:
         return False
+    if plan["engine"] == "vllm":
+        valid, detail = validate_vllm_runtime(runtime_dir)
+        if not valid:
+            log(f"Installed vLLM could not be imported: {detail}")
+            return False
     provision_catalog_models(
         [model, EMBED_MODELS[0]], [plan["engine"]], models_dir=Path(plan["models_dir"]),
         vllm_cache=model_cache, load_token=lambda: os.environ.get("HF_TOKEN"),
