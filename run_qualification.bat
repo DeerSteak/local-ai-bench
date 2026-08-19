@@ -9,7 +9,7 @@ if not "%~3"=="" goto usage
 set "TARGET=%~1"
 set "RESULT=%~2"
 if "%RESULT%"=="" set "RESULT=%CD%\results_qualification_%TARGET%.json"
-findstr /c:"{\"id\": \"%TARGET%\"," scripts\release\qualification_targets.py >nul || (
+powershell.exe -NoProfile -Command "$text = Get-Content -Raw 'scripts\release\qualification_targets.py'; $ids = [regex]::Matches($text, '\"id\": \"([^\"]+)\"') | ForEach-Object { $_.Groups[1].Value }; if ($ids -notcontains $env:TARGET) { exit 1 }" || (
   echo Unknown qualification target: %TARGET% 1>&2
   exit /b 2
 )
@@ -21,11 +21,7 @@ bench-env\Scripts\python.exe -m scripts.release.qualification_run "%TARGET%" --r
 exit /b %ERRORLEVEL%
 
 :list_targets
-if exist bench-env\Scripts\python.exe (
-  bench-env\Scripts\python.exe -m scripts.release.qualification_run --list-targets
-) else (
-  for /f tokens^=4^ delims^=^\" %%T in ('findstr /c:"{\"id\":" scripts\release\qualification_targets.py') do echo %%T
-)
+powershell.exe -NoProfile -Command "$text = Get-Content -Raw 'scripts\release\qualification_targets.py'; [regex]::Matches($text, '\"id\": \"([^\"]+)\"') | ForEach-Object { $_.Groups[1].Value }"
 exit /b %ERRORLEVEL%
 
 :usage

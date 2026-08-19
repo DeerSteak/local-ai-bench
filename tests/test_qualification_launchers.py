@@ -19,6 +19,8 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
+    assert "powershell.exe -NoProfile" in text
+    assert "for /f" not in text
 
 
 def test_posix_qualification_launcher_has_valid_shell_syntax():
