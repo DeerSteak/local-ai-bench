@@ -21,6 +21,8 @@ This generated matrix reports the current evidence-backed status of each platfor
 | linux | x86_64 | vllm | cuda | Unverified | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
+| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
 | linux | aarch64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | linux | aarch64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 <!-- qualification-matrix:end -->

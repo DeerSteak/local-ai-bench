@@ -53,6 +53,8 @@ def test_target_listing_needs_no_python_environment():
         "radeon-wsl2-vllm-rocm",
         "nvidia-linux-llamacpp-cuda",
         "nvidia-linux-vllm-cuda",
+        "radeon-linux-llamacpp-rocm",
+        "radeon-linux-vllm-rocm",
         "ryzen-ai-halo-llamacpp-rocm",
         "ryzen-ai-halo-vllm-rocm",
         "dgx-spark-llamacpp-cuda",

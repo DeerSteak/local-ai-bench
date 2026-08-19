@@ -10,6 +10,7 @@ from scripts.release.qualification_targets import TARGET_ENGINES, TARGETS, targe
 def test_target_engine_is_explicit_and_rejects_unknown_targets():
     assert target_engine("dgx-spark-vllm-cuda") == "vllm"
     assert target_engine("macos-m5-pro-llamacpp-metal") == "llamacpp"
+    assert target_engine("radeon-linux-vllm-rocm") == "vllm"
     with pytest.raises(ValueError, match="unknown qualification target"):
         target_engine("guessed-platform")
 
