@@ -41,6 +41,16 @@ if TYPE_CHECKING:
 
 
 RUN_LOG_UTC_OFFSET_ENV = "LOCAL_AI_BENCH_RUN_LOG_UTC_OFFSET_MINUTES"
+WINDOWS_DISPLAY_ADAPTERS = {
+    "microsoft basic display adapter", "microsoft remote display adapter",
+}
+
+
+def _windows_gpu_names(output: str) -> list[str]:
+    return [
+        name for line in output.splitlines() if (name := line.strip())
+        and name.casefold() not in WINDOWS_DISPLAY_ADAPTERS
+    ]
 
 
 def _console_timezone(environment=None):
@@ -460,8 +470,7 @@ class Shared:
             if cpu_names:
                 cpu = cpu_names[0]
 
-            _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
-            gpus = [n for n in _ps_names("Win32_VideoController") if n and n.lower() not in _skip]
+            gpus = _windows_gpu_names("\n".join(_ps_names("Win32_VideoController")))
             if gpus:
                 gpu = gpus[0]
             try:
@@ -506,6 +515,17 @@ class Shared:
                         if "Marketing Name:" in line:
                             gpu = line.split(":", 1)[1].strip()
                             break
+                except Exception:
+                    pass
+            if not gpu and Shared.detect_wsl(system, platform.release()):
+                try:
+                    out = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-Command",
+                         "(Get-CimInstance Win32_VideoController).Name"],
+                        capture_output=True, text=True, timeout=10,
+                    ).stdout
+                    gpus = _windows_gpu_names(out)
+                    gpu = gpus[0] if gpus else None
                 except Exception:
                     pass
             if not gpu:
