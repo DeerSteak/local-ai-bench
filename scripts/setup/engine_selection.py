@@ -66,6 +66,14 @@ def engines_needing_install(entries: list[dict]) -> list[str]:
     ]
 
 
+def qualification_engines_needing_install(entries: list[dict], engine: str | None,
+                                           *, vllm_bench_found: bool) -> list[str]:
+    pending = engines_needing_install(entries)
+    if engine == VLLM and not vllm_bench_found and VLLM not in pending:
+        pending.append(VLLM)
+    return pending
+
+
 def apply_engine_preset(entries: list[dict], engine: str) -> list[dict]:
     target = find_entry(entries, engine)
     if target is None or not target["enabled"]:

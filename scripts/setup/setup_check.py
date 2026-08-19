@@ -61,7 +61,8 @@ from scripts.setup.setup_console import (
 )
 from scripts.setup.engine_selection import (
     LLAMACPP, VLLM, apply_engine_preset, build_engine_entries, engines_needing_install,
-    needs_python_headers, select_engines, selected_engine_names,
+    needs_python_headers, qualification_engines_needing_install, select_engines,
+    selected_engine_names,
 )
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server,
@@ -541,7 +542,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
         sys.exit(0)
 
     selected_engines = selected_engine_names(engine_entries)
-    pending_engines = engines_needing_install(engine_entries)
+    pending_engines = (
+        qualification_engines_needing_install(
+            engine_entries, args.qualification, vllm_bench_found=VLLM_BIN is not None,
+        ) if args.qualification else engines_needing_install(engine_entries)
+    )
     _engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}
     ok(f"Engines selected: {', '.join(_engine_labels[name] for name in selected_engines)}")
     for _name in _engine_labels:

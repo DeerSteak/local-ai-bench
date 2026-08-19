@@ -6,6 +6,7 @@ from scripts.setup.engine_selection import (
     engine_summary_line,
     engines_needing_install,
     needs_python_headers,
+    qualification_engines_needing_install,
     select_engines,
     find_entry as _find_entry,
     selected_engine_names,
@@ -146,6 +147,17 @@ def test_only_missing_selected_engines_need_installing():
     assert engines_needing_install(entries) == []  # vLLM not selected yet
     toggle_engine(entries, VLLM)
     assert engines_needing_install(entries) == [VLLM]
+
+
+def test_vllm_qualification_installs_native_bench_beside_a_launcher():
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True)
+    apply_engine_preset(entries, VLLM)
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=False,
+    ) == [VLLM]
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=True,
+    ) == []
 
 
 def test_a_disabled_engine_never_counts_as_selected_or_installable():
