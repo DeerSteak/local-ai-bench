@@ -3,7 +3,8 @@ import json
 import pytest
 
 from scripts.app.benchmark import (
-    checkpoint_terminal_exception, finish_event_job, fork_provenance, interruption_exit_code,
+    checkpoint_terminal_exception, cleanup_signal_numbers, finish_event_job,
+    fork_provenance, interruption_exit_code,
 )
 from scripts.results.event_store import EventStore
 from scripts.app.orchestration import StageExecutionError
@@ -110,3 +111,13 @@ def test_finish_event_job_terminalizes_existing_journal_only(tmp_path):
 def test_interruption_exit_code_uses_standard_signal_status():
     assert interruption_exit_code(2) == 130
     assert interruption_exit_code(15) == 143
+
+
+def test_windows_sigbreak_uses_the_durable_cleanup_handler():
+    class WindowsSignals:
+        SIGINT = 2
+        SIGTERM = 15
+        SIGBREAK = 21
+
+    assert cleanup_signal_numbers(WindowsSignals) == (2, 15, 21)
+    assert interruption_exit_code(WindowsSignals.SIGBREAK) == 149

@@ -121,7 +121,8 @@ def build_recipe(*, target_id: str, root: Path, output: Path, baseline_version: 
             ]),
             "first_valid_run": step(qualification_run, timeout=7200),
             "cancellation": step(
-                lifecycle_smoke + ["--out", interrupted], exit_codes=(-2, 130, -1073741510),
+                lifecycle_smoke + ["--out", interrupted],
+                exit_codes=(-2, 130, 149, -1073741510),
                 interrupt=INTERRUPT_MARKER,
             ),
             "resume": step([py, "-m", "scripts.results.recovery_executor", interrupted]),

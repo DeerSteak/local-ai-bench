@@ -17,6 +17,7 @@ def test_every_declared_target_generates_a_complete_recipe(tmp_path, target_id):
     assert recipe["target"]["runtime_version"] == "target"
     assert "--smoke-output" in recipe["steps"]["upgrade"]["command"]
     assert recipe["steps"]["cancellation"]["interrupt_when_log_contains"]
+    assert 149 in recipe["steps"]["cancellation"]["expected_exit_codes"]
     assert recipe["steps"]["resume"]["command"][-1].endswith("interrupted-result.json")
     assert recipe["steps"]["first_valid_run"]["command"][2:4] == [
         "scripts.release.qualification_coverage", "--engine",

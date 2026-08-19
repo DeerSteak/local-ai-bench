@@ -333,6 +333,13 @@ def interruption_exit_code(sig) -> int:
     return 128 + int(sig)
 
 
+def cleanup_signal_numbers(signal_module: object = signal) -> tuple[int, ...]:
+    values = [int(getattr(signal_module, "SIGINT")), int(getattr(signal_module, "SIGTERM"))]
+    if hasattr(signal_module, "SIGBREAK"):
+        values.append(int(getattr(signal_module, "SIGBREAK")))
+    return tuple(dict.fromkeys(values))
+
+
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          patterns: list[str] | None, concurrency_enabled: bool
                          ) -> tuple[list[dict], list[dict]]:
@@ -1260,8 +1267,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             return _save
 
         _checkpoint("run started")
-        signal.signal(signal.SIGINT,  _cleanup)
-        signal.signal(signal.SIGTERM, _cleanup)
+        for cleanup_signal in cleanup_signal_numbers():
+            signal.signal(cleanup_signal, _cleanup)
 
         lifecycle = LifecycleCoordinator(
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
