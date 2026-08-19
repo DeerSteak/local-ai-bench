@@ -95,6 +95,32 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
             "results_qualification_dgx-spark-llamacpp-cuda.json",
         ],
     },
+    {
+        "id": "dgx-spark-vllm-cuda",
+        "platform": "linux",
+        "architecture": "aarch64",
+        "runtime": "vllm",
+        "runtime_version": "0.27.1",
+        "backend": "cuda",
+        "accelerator": "NVIDIA GB10 122 GB",
+        "qualified_at": "2026-08-19",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "vllmbench",
+            ],
+            "models": ["granite4.1:3b-q4_K_M", "nomic-embed-text"],
+            "notes": (
+                "Smallest complete-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/dgx-spark-vllm-cuda/"
+            "results_qualification_dgx-spark-vllm-cuda.json",
+        ],
+    },
 )
 QUALIFICATION_TARGETS = tuple(
     {key: value for key, value in target.items() if key != "id"} for target in TARGETS
