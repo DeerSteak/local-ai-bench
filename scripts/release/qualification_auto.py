@@ -25,6 +25,7 @@ PINNED_VERSIONS = {
     ),
 }
 AUTOMATION_REVISION = "v8"
+WINDOWS_AUTOMATION_REVISION = "v9"
 
 
 def detected_targets(system: str, machine: str, hostname: str, *, wsl: bool) -> list[str]:
@@ -65,6 +66,10 @@ def safe_version(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value)
 
 
+def evidence_revision(target_id: str) -> str:
+    return WINDOWS_AUTOMATION_REVISION if "-windows-" in target_id else AUTOMATION_REVISION
+
+
 def automatic_recipes(root: Path, output_root: Path, *, system: str | None = None,
                       machine: str | None = None, hostname: str | None = None,
                       wsl: bool | None = None) -> list[tuple[Path, dict]]:
@@ -76,7 +81,8 @@ def automatic_recipes(root: Path, output_root: Path, *, system: str | None = Non
     recipes = []
     for target_id in detected_targets(system, machine, hostname, wsl=wsl):
         baseline, target = target_versions(target_id)
-        output = Path(output_root) / f"{target_id}-{safe_version(target)}-{AUTOMATION_REVISION}"
+        revision = evidence_revision(target_id)
+        output = Path(output_root) / f"{target_id}-{safe_version(target)}-{revision}"
         recipe = build_recipe(
             target_id=target_id, root=root, output=output,
             baseline_version=baseline, target_version=target,

@@ -3,7 +3,7 @@ import pytest
 from scripts.release.qualification import QUALIFICATION_LIFECYCLE
 from scripts.release.qualification_auto import (
     AUTOMATION_REVISION, PINNED_VERSIONS, automatic_recipes, detected_targets,
-    execution_summary, target_versions,
+    evidence_revision, execution_summary, target_versions,
 )
 
 
@@ -38,6 +38,12 @@ def test_pinned_versions_are_complete_for_every_automatic_target():
     ]
     assert all(all(target_versions(target)) for target in targets)
     assert PINNED_VERSIONS["vllm-rocm"][1] == "0.27.1+rocm723"
+
+
+def test_only_native_windows_uses_fresh_post_ctrl_break_evidence():
+    assert evidence_revision("geforce-windows-llamacpp-cuda") == "v9"
+    assert evidence_revision("radeon-windows-llamacpp-vulkan") == "v9"
+    assert evidence_revision("radeon-wsl2-llamacpp-rocm") == "v8"
 
 
 def test_automatic_recipe_records_detected_identity_and_pinned_target(tmp_path):
