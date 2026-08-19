@@ -84,16 +84,6 @@ def test_binary_path_falls_back_to_path(monkeypatch, tmp_path):
     assert LlamaCppEngine._binary_path() == "/usr/local/bin/llama-server"
 
 
-def test_qualification_ignores_path_runtime(monkeypatch, tmp_path):
-    monkeypatch.setenv("LOCAL_AI_BENCH_QUALIFICATION", "1")
-    monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "llama.cpp")
-    executable = config.LLAMACPP_DIR / "build" / "bin" / "llama-server"
-    executable.parent.mkdir(parents=True)
-    executable.touch()
-    monkeypatch.setattr(llamacpp_module.shutil, "which", lambda _name: "/usr/local/bin/llama-server")
-    assert LlamaCppEngine._binary_path() == str(executable)
-
-
 def test_binary_path_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")

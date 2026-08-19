@@ -1,48 +1,11 @@
-import os
 import sys
 
 from scripts.runtime.shared import Shared
 
 
-class _Process:
-    def __init__(self, command, children=()):
-        self.info = {"cmdline": command}
-        self._children = list(children)
-        self.terminated = False
-
-    def children(self, recursive=False):
-        assert recursive is True
-        return self._children
-
-    def terminate(self):
-        self.terminated = True
-
-
 def _touch(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch()
-
-
-def test_qualification_stops_only_comfyui_from_its_managed_tree(tmp_path, monkeypatch):
-    managed = tmp_path / "qualification-comfyui-runtime" / "ComfyUI"
-    child = _Process(["worker"])
-    matching = _Process(["python", str(managed / "main.py")], [child])
-    unrelated = _Process(["python", "/opt/ComfyUI/main.py"])
-    monkeypatch.setenv("LOCAL_AI_BENCH_QUALIFICATION", "1")
-
-    assert Shared.stop_stale_qualification_comfyui(
-        managed, [matching, unrelated],
-    ) is True
-    assert matching.terminated is True
-    assert child.terminated is True
-    assert unrelated.terminated is False
-
-
-def test_normal_benchmark_never_stops_an_existing_comfyui(tmp_path, monkeypatch):
-    process = _Process(["python", str(tmp_path / "ComfyUI" / "main.py")])
-    monkeypatch.delenv("LOCAL_AI_BENCH_QUALIFICATION", raising=False)
-    assert Shared.stop_stale_qualification_comfyui(tmp_path / "ComfyUI", [process]) is False
-    assert process.terminated is False
 
 
 def test_prefers_windows_portable_python_embeded(tmp_path, monkeypatch):

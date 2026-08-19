@@ -915,23 +915,6 @@ def test_base_url_falls_back_to_the_local_port_when_unconfigured(engine):
     assert engine.base_url == config.VLLM_URL
 
 
-def test_qualification_uses_the_same_configured_runtime_as_regular_runs(monkeypatch, tmp_path):
-    monkeypatch.setenv("LOCAL_AI_BENCH_QUALIFICATION", "1")
-    configured = tmp_path / "configured-vllm"
-    monkeypatch.setattr(vllm_module, "load_setup_config", lambda _path: {
-        "vllm": {
-            "executable": str(configured), "launcher": "/usr/bin/vllm-launch",
-            "server_url": "http://localhost:8001", "launcher_extra_args": [],
-        },
-    })
-    monkeypatch.setattr(vllm_module, "find_vllm_launcher", lambda: "/usr/bin/vllm-launch")
-    monkeypatch.setattr(vllm_module.shutil, "which", lambda _name: "/usr/bin/vllm")
-    instance = VllmEngine()
-    assert instance._launcher == "/usr/bin/vllm-launch"
-    assert instance._server_url == "http://localhost:8001"
-    assert instance._executable == str(configured)
-
-
 def test_ensure_running_succeeds_against_a_reachable_configured_server(engine, monkeypatch):
     """The setup-confirmed external server must not require a local launcher/executable
     or a populated model cache — both are irrelevant when we never spawn it ourselves."""

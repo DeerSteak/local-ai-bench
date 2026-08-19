@@ -95,10 +95,9 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _binary_path() -> str | None:
         """Locate llama-server — see docs/engines.md's "Binary resolution"."""
-        which_fn = (lambda _name: None) if os.environ.get("LOCAL_AI_BENCH_QUALIFICATION") else shutil.which
         return find_llamacpp_tool(
             "llama-server", vendored_dir=config.LLAMACPP_DIR,
-            platform_name=platform.system(), which_fn=which_fn,
+            platform_name=platform.system(), which_fn=shutil.which,
         )
 
     def runtime_location(self) -> str | None:
