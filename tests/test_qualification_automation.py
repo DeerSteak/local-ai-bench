@@ -130,7 +130,7 @@ def test_run_projects_complete_and_incomplete_steps_into_evidence():
         "step": "discovery", "detail": "runtime absent",
     }
     assert entry["evidence"] == ["records/run.json"]
-    assert "coverage" not in entry
+    assert entry["coverage"] == state["coverage"]
 
 
 @pytest.mark.parametrize("value", [0, -1, True])

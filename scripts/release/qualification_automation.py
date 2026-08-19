@@ -165,6 +165,7 @@ def qualification_entry_from_run(state: dict, suite_version: str, evidence_path:
         "runtime_version": target["runtime_version"], "backend": target["backend"],
         "accelerator": target["accelerator"],
         "qualified_at": date.today().isoformat(), "suite_version": suite_version,
+        "coverage": dict(state["coverage"]),
         "lifecycle": lifecycle, "known_failures": failures,
         "evidence": [evidence_path] if any(value == "passed" for value in lifecycle.values()) else [],
     }

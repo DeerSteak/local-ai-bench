@@ -3,6 +3,11 @@
 import re
 from datetime import date
 
+from scripts.release.qualification_coverage import (
+    SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL, SMALLEST_LLM_MODEL,
+    qualification_workloads,
+)
+
 
 QUALIFICATION_LIFECYCLE = (
     "install", "discovery", "first_valid_run", "cancellation", "resume",
@@ -29,7 +34,8 @@ QUALIFICATION_TARGETS = (
 
 ENTRY_KEYS = {
     "id", "platform", "architecture", "runtime", "runtime_version", "backend",
-    "accelerator", "qualified_at", "suite_version", "lifecycle", "known_failures", "evidence",
+    "accelerator", "qualified_at", "suite_version", "coverage", "lifecycle",
+    "known_failures", "evidence",
 }
 PLATFORMS = {"macos", "linux", "windows", "wsl2"}
 
@@ -70,6 +76,12 @@ def validate_qualification_entry(entry: dict) -> None:
     except (TypeError, ValueError):
         raise ValueError("qualification date must use YYYY-MM-DD") from None
     release_number(entry["suite_version"])
+    coverage = entry["coverage"]
+    if (not isinstance(coverage, dict) or set(coverage) != {"workloads", "models", "notes"}
+            or not isinstance(coverage["workloads"], list) or not coverage["workloads"]
+            or not isinstance(coverage["models"], list) or not coverage["models"]
+            or not isinstance(coverage["notes"], str)):
+        raise ValueError("qualification coverage is invalid")
     lifecycle = entry["lifecycle"]
     if not isinstance(lifecycle, dict) or set(lifecycle) != set(QUALIFICATION_LIFECYCLE):
         raise ValueError("qualification lifecycle is incomplete")
@@ -98,7 +110,15 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
         return "unverified"
     validate_qualification_entry(entry)
     states = set(entry["lifecycle"].values())
-    if states == {"passed"} and not qualification_is_stale(entry, current_version):
+    required_models = {SMALLEST_LLM_MODEL, SMALLEST_EMBEDDING_MODEL}
+    if entry["runtime"] == "llamacpp":
+        required_models.add(SMALLEST_IMAGE_MODEL)
+    complete_coverage = (
+        set(entry["coverage"]["workloads"]) == set(qualification_workloads(entry["runtime"]))
+        and required_models <= set(entry["coverage"]["models"])
+    )
+    if (states == {"passed"} and complete_coverage
+            and not qualification_is_stale(entry, current_version)):
         return "supported"
     if "passed" in states:
         return "experimental"

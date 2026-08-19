@@ -18,6 +18,14 @@ def entry(states=None, **overrides):
         "architecture": "x86_64", "runtime": "llamacpp", "runtime_version": "b6000",
         "backend": "cuda", "qualified_at": "2026-08-18", "suite_version": "6.0-pre8",
         "accelerator": "NVIDIA GeForce RTX 5090",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": "Smallest-model functional coverage.",
+        },
         "lifecycle": lifecycle,
         "known_failures": [
             {"step": step, "detail": f"{state} during qualification"}
@@ -46,6 +54,12 @@ def test_staleness_downgrades_at_release_boundary():
 def test_support_level_cannot_be_set_in_evidence():
     with pytest.raises(ValueError, match="missing or unknown"):
         validate_qualification_entry(entry(support_level="supported"))
+
+
+def test_complete_lifecycle_without_required_workload_coverage_is_experimental():
+    evidence = entry()
+    evidence["coverage"]["workloads"].remove("img")
+    assert derive_support_level(evidence, "6.0-pre8") == "experimental"
 
 
 def test_partial_evidence_requires_every_gap_to_be_documented():
