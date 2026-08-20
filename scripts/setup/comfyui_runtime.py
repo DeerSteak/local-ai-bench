@@ -110,7 +110,8 @@ def rocm_torch_install_command(python: str, version: tuple[int, int] | None, *,
     base = f"https://repo.radeon.com/rocm/manylinux/rocm-rel-{release}"
     return [
         python, "-m", "pip", "install", "--upgrade", "--force-reinstall",
-        "numpy==1.26.4", *(f"{base}/{wheel}" for wheel in AMD_ROCM_72_WHEELS[wsl]),
+        "numpy==1.26.4", "scipy==1.16.3",
+        *(f"{base}/{wheel}" for wheel in AMD_ROCM_72_WHEELS[wsl]),
     ]
 
 
@@ -122,19 +123,43 @@ def remove_wsl_bundled_hsa_runtime(python: str, *, run=subprocess.run) -> bool:
     return run([python, "-c", script]).returncode == 0
 
 
+def rocm_python_dependencies_available(python: str, *, run=subprocess.run) -> bool:
+    script = (
+        "from importlib.metadata import version; "
+        "assert version('numpy') == '1.26.4'; assert version('scipy') == '1.16.3'"
+    )
+    return run([python, "-c", script]).returncode == 0
+
+
 def _ensure_rocm_torch_backend(python: str, version: tuple[int, int] | None, *,
                                wsl: bool, issues: list[str], info, fail, ok) -> None:
-    if torch_backend_available(python, "ROCm"):
+    rocm_72 = bool(version and version >= (7, 2))
+    backend_available = torch_backend_available(python, "ROCm")
+    if backend_available and (not rocm_72 or rocm_python_dependencies_available(python)):
         ok("ROCm-enabled PyTorch already installed")
         return
+    if backend_available:
+        command = [
+            python, "-m", "pip", "install", "--upgrade", "--force-reinstall",
+            "numpy==1.26.4", "scipy==1.16.3",
+        ]
+        info("Repairing ROCm PyTorch's NumPy and SciPy versions ...")
+        installed = subprocess.run(command).returncode == 0
+        if installed and rocm_python_dependencies_available(python):
+            ok("ROCm-enabled PyTorch dependencies repaired")
+            return
+        fail("ROCm-enabled PyTorch dependency repair failed")
+        issues.append(" ".join(command))
+        return
     command = rocm_torch_install_command(python, version, wsl=wsl)
-    source = "AMD's ROCm wheel repository" if version and version >= (7, 2) \
+    source = "AMD's ROCm wheel repository" if rocm_72 \
         else "PyTorch's ROCm 6.4 index"
     info(f"Installing ROCm-enabled PyTorch from {source} ...")
     installed = subprocess.run(command).returncode == 0
     if installed and wsl:
         installed = remove_wsl_bundled_hsa_runtime(python)
-    if installed and torch_backend_available(python, "ROCm"):
+    dependencies_available = not rocm_72 or rocm_python_dependencies_available(python)
+    if installed and dependencies_available and torch_backend_available(python, "ROCm"):
         ok("ROCm-enabled PyTorch installed")
     else:
         fail("ROCm-enabled PyTorch install failed")

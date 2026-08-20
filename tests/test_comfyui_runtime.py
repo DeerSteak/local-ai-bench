@@ -99,6 +99,7 @@ def test_rocm_72_wsl_uses_amds_pinned_python312_wheels():
         "comfy-python", (7, 2), wsl=True,
     )
     assert "numpy==1.26.4" in command
+    assert "scipy==1.16.3" in command
     assert all("rocm-rel-7.2/" in item for item in command if item.startswith("https://"))
     assert any("torch-2.9.1%2Brocm7.2.0" in item for item in command)
     assert any("triton-3.5.1%2Brocm7.2.0" in item for item in command)
@@ -130,6 +131,17 @@ def test_wsl_hsa_runtime_removal_uses_selected_comfyui_python():
     assert "libhsa-runtime64.so*" in calls[0][2]
 
 
+def test_rocm_dependency_probe_uses_selected_comfyui_python():
+    calls = []
+    assert comfyui_runtime.rocm_python_dependencies_available(
+        "comfy-python",
+        run=lambda command: calls.append(command) or SimpleNamespace(returncode=0),
+    )
+    assert calls[0][:2] == ["comfy-python", "-c"]
+    assert "numpy" in calls[0][2]
+    assert "scipy" in calls[0][2]
+
+
 def test_rocm_wheel_install_removes_wsl_hsa_runtime_then_verifies(monkeypatch):
     probes = iter([False, True])
     events = []
@@ -145,6 +157,10 @@ def test_rocm_wheel_install_removes_wsl_hsa_runtime_then_verifies(monkeypatch):
         comfyui_runtime, "remove_wsl_bundled_hsa_runtime",
         lambda _python: events.append("hsa") or True,
     )
+    monkeypatch.setattr(
+        comfyui_runtime, "rocm_python_dependencies_available",
+        lambda _python: events.append("dependencies") or True,
+    )
     issues = []
 
     comfyui_runtime._ensure_rocm_torch_backend(
@@ -153,7 +169,33 @@ def test_rocm_wheel_install_removes_wsl_hsa_runtime_then_verifies(monkeypatch):
     )
 
     assert issues == []
-    assert events == ["probe", "install", "hsa", "probe"]
+    assert events == ["probe", "install", "hsa", "dependencies", "probe"]
+
+
+def test_existing_rocm_torch_repairs_only_incompatible_python_dependencies(monkeypatch):
+    dependency_probes = iter([False, True])
+    installs = []
+    monkeypatch.setattr(comfyui_runtime, "torch_backend_available", lambda *_args: True)
+    monkeypatch.setattr(
+        comfyui_runtime, "rocm_python_dependencies_available",
+        lambda _python: next(dependency_probes),
+    )
+    monkeypatch.setattr(
+        comfyui_runtime.subprocess, "run",
+        lambda command: installs.append(command) or SimpleNamespace(returncode=0),
+    )
+    issues = []
+
+    comfyui_runtime._ensure_rocm_torch_backend(
+        "comfy-python", (7, 2), wsl=True, issues=issues,
+        info=_log, fail=_log, ok=_log,
+    )
+
+    assert issues == []
+    assert installs == [[
+        "comfy-python", "-m", "pip", "install", "--upgrade", "--force-reinstall",
+        "numpy==1.26.4", "scipy==1.16.3",
+    ]]
 
 
 def test_prepare_installs_rocm_torch_before_comfyui_requirements(monkeypatch, tmp_path):
