@@ -102,6 +102,13 @@ fi
 # Installed here, with any other prerequisite, so vLLM never triggers a later sudo prompt.
 # 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/DGX-Spark wheels require.
 if [ "$OS" = "Linux" ]; then
+    if command -v apt-get &>/dev/null; then
+        info "Refreshing APT package metadata ..."
+        if ! sudo apt-get update -qq; then
+            fail "APT metadata refresh failed — setup cannot resolve required packages"
+            exit 1
+        fi
+    fi
     PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
     MISSING_HEADERS=()
     for _series in $(printf '%s\n' "$PYTHON_SERIES" 3.12 | sort -u); do
@@ -132,12 +139,25 @@ if [ "$OS" = "Linux" ]; then
     # Debian/Ubuntu ship ensurepip separately, and without it `python -m venv` fails
     # for an interpreter this script found rather than installed.
     if ! "$PYTHON" -c "import ensurepip" &>/dev/null; then
-        if command -v apt-get &>/dev/null && apt-cache show "python${PYTHON_SERIES}-venv" &>/dev/null; then
-            info "Installing the Python venv module (python${PYTHON_SERIES}-venv)..."
-            sudo apt-get install -y "python${PYTHON_SERIES}-venv" || \
-                warn "venv install failed — creating $VENV_DIR will not succeed"
+        VENV_PACKAGE=""
+        if command -v apt-get &>/dev/null; then
+            for _package in python3-venv "python${PYTHON_SERIES}-venv"; do
+                if apt-cache show "$_package" &>/dev/null; then
+                    VENV_PACKAGE="$_package"
+                    break
+                fi
+            done
+        fi
+        if [ -n "$VENV_PACKAGE" ]; then
+            info "Installing the Python venv module ($VENV_PACKAGE)..."
+            if ! sudo apt-get install -y "$VENV_PACKAGE"; then
+                fail "Could not install $VENV_PACKAGE — verify Ubuntu's universe repository is enabled"
+                exit 1
+            fi
         else
-            warn "Python's venv module is missing and no package was found to install it."
+            fail "Python's venv module is missing and no package was found"
+            fail "On Ubuntu, enable the universe repository and re-run setup"
+            exit 1
         fi
     fi
 
