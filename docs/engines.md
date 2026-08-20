@@ -15,7 +15,7 @@ Support is derived from the recorded qualification results below. Runtime suppor
 | windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | rocm | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | cuda | Unverified | Unverified | No qualification record |
 | linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |

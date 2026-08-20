@@ -70,12 +70,25 @@ def test_reviewed_geforce_wsl2_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_radeon_wsl2_qualification_is_supported_with_images():
+    evidence = qualification_entry(
+        "wsl2", "x86_64", "llamacpp", "rocm", "0.1.2-dev",
+        accelerator=(
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "AMD Radeon RX 9060 XT 31 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == "radeon-wsl2-llamacpp-rocm"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_reviewed_geforce_windows_qualification_is_supported():
     evidence = qualification_entry(
         "windows", "x86_64", "llamacpp", "cuda", "0.1.2-dev",
         accelerator="NVIDIA GeForce RTX 5060 Ti / 31.8574 GB VRAM",
     )
-    assert evidence == QUALIFICATION_MATRIX[2]
+    assert evidence is not None and evidence["id"] == "geforce-windows-llamacpp-cuda"
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
