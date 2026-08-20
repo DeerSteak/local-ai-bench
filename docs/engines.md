@@ -21,6 +21,7 @@ Support is derived from the recorded qualification results below. Runtime suppor
 | linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | xpu | Unverified | Unverified | No qualification record |
+| linux | x86_64 | vllm | xpu | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
 | linux | aarch64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |

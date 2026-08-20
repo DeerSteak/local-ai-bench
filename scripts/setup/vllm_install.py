@@ -19,6 +19,10 @@ from scripts.runtime.log_redaction import redact_log_text
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
 DGX_CU130_VERSION = "0.27.1"
 DGX_CU130_INDEX = f"https://wheels.vllm.ai/{DGX_CU130_VERSION}/cu130"
+VLLM_XPU_VERSION = "0.27.1"
+VLLM_REPO = "https://github.com/vllm-project/vllm.git"
+TRITON_XPU_VERSION = "3.7.2"
+PYTORCH_XPU_INDEX = "https://download.pytorch.org/whl/xpu"
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
@@ -36,7 +40,7 @@ PINNED_PYTHON = (3, 12)
 @dataclass(frozen=True)
 class VllmSupport:
     status: str            # "supported" | "experimental" | "unsupported"
-    method: str | None     # "cuda_wheel" | "rocm_wheel" | "cu130_wheel"
+    method: str | None     # wheel methods or "xpu_source"
     reason: str
     requires_python: tuple[int, int] | None = None
     # Set only when the sole obstacle is the interpreter, so setup knows an offer can clear it.
@@ -139,9 +143,17 @@ def vllm_platform_support(*, os_name: str, machine: str,
                            requires_python=PINNED_PYTHON)
 
     if intel_gpu:
-        return VllmSupport("unsupported", None,
-                           "vLLM's Intel XPU backend publishes no wheels and needs a long "
-                           "source build — out of scope for this setup script")
+        if is_wsl:
+            return VllmSupport(
+                "unsupported", None,
+                "Intel XPU vLLM is only shipped for native Linux; no Intel WSL2 "
+                "qualification path is available",
+            )
+        return VllmSupport(
+            "experimental", "xpu_source",
+            "Intel Arc uses vLLM's upstream XPU source build",
+            requires_python=PINNED_PYTHON,
+        )
 
     return VllmSupport("unsupported", None,
                        "no supported GPU detected — vLLM's CPU backend is out of scope for "
@@ -269,21 +281,56 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool,
     return [python_exe, "-m", "pip", "install"] + extra
 
 
+@dataclass(frozen=True)
+class VllmSourceInstallStep:
+    command: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...] = ()
+
+
+def vllm_xpu_install_steps(python_exe: str, source_dir: Path,
+                           version: str | None = None) -> tuple[VllmSourceInstallStep, ...]:
+    selected = normalize_vllm_version(version or VLLM_XPU_VERSION)
+    source = str(source_dir)
+    return (
+        VllmSourceInstallStep((
+            "git", "clone", "--branch", f"v{selected}", "--depth", "1",
+            VLLM_REPO, source,
+        )),
+        VllmSourceInstallStep((python_exe, "-m", "pip", "install", "--upgrade", "pip")),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", "-v", "-r",
+            str(source_dir / "requirements" / "xpu.txt"),
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "uninstall", "-y", "triton", "triton-xpu",
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", f"triton-xpu=={TRITON_XPU_VERSION}",
+            "--extra-index-url", PYTORCH_XPU_INDEX,
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", "--no-build-isolation", "-v",
+            f"{source}[bench]",
+        ), (("VLLM_TARGET_DEVICE", "xpu"),)),
+    )
+
+
 def find_vllm_binary(*, platform_name: str, venv_dir: Path | None = None,
-                     which_fn=shutil.which, exists_fn=None) -> str | None:
+                     managed_only: bool = False, which_fn=shutil.which,
+                     exists_fn=None) -> str | None:
     """Locate a `vllm`, system-first — matching the llama.cpp policy."""
-    on_path = which_fn("vllm")
-    if on_path:
-        return on_path
     venv_dir = venv_dir or config.VLLM_VENV
     exists_fn = exists_fn or (lambda path: Path(path).is_file())
     subdir = "Scripts" if platform_name == "Windows" else "bin"
     suffix = ".exe" if platform_name == "Windows" else ""
-    candidates = []
-    candidates.append(Path(venv_dir) / subdir / f"vllm{suffix}")
-    for candidate in candidates:
-        if exists_fn(candidate):
-            return str(candidate)
+    managed = Path(venv_dir) / subdir / f"vllm{suffix}"
+    if managed_only:
+        return str(managed) if exists_fn(managed) else None
+    on_path = which_fn("vllm")
+    if on_path:
+        return on_path
+    if exists_fn(managed):
+        return str(managed)
     return None
 
 
@@ -470,15 +517,29 @@ def install_vllm_build_tools(venv_dir: Path, *, log=print,
     return command is not None and run(command).returncode == 0
 
 
-def vllm_runtime_import_error(venv_dir: Path, *, run=subprocess.run) -> str | None:
+def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
+    statements = [
+        "import torch", "import vllm", "from vllm.platforms import current_platform",
+        "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
+    ]
+    if expected_device_type:
+        statements.append(
+            f"assert current_platform.device_type == {expected_device_type!r}, "
+            "'vLLM detected ' + str(current_platform.device_type)"
+        )
+    if expected_device_type == "xpu":
+        statements.append("assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'")
+    return "; ".join(statements)
+
+
+def vllm_runtime_import_error(venv_dir: Path, *, expected_device_type: str | None = None,
+                              run=subprocess.run) -> str | None:
     python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
         ("python.exe" if os.name == "nt" else "python")
     try:
         result = run(
             [
-                str(python), "-c",
-                "import torch; import vllm; from vllm.platforms import current_platform; "
-                "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
+                str(python), "-c", vllm_runtime_probe_code(expected_device_type),
             ],
             capture_output=True, text=True, timeout=60,
         )
@@ -531,6 +592,17 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
         if created.returncode != 0:
             return False
     venv_python = venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
+    if support.method == "xpu_source":
+        source_dir = venv_dir / "src" / "vllm"
+        if source_dir.exists():
+            shutil.rmtree(source_dir)
+        source_dir.parent.mkdir(parents=True, exist_ok=True)
+        log(f"Building vLLM {version or VLLM_XPU_VERSION} for Intel XPU from source ...")
+        for step in vllm_xpu_install_steps(str(venv_python), source_dir, version):
+            env = {**os.environ, **dict(step.environment)}
+            if run(list(step.command), env=env).returncode != 0:
+                return False
+        return install_vllm_build_tools(venv_dir, log=log, run=run)
     command = vllm_install_command(
         support.method, str(venv_python), bool(shutil.which("uv")), version, index_url,
     )

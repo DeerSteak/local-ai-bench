@@ -10,6 +10,10 @@ from scripts.setup.vllm_install import (
     VLLM_ROCM_WHEEL_TARGETS,
     DGX_CU130_INDEX,
     DGX_CU130_VERSION,
+    PYTORCH_XPU_INDEX,
+    TRITON_XPU_VERSION,
+    VLLM_REPO,
+    VLLM_XPU_VERSION,
     hf_cache_model_complete,
     hf_cache_model_dir,
     hf_cache_snapshot_dir,
@@ -36,6 +40,8 @@ from scripts.setup.vllm_install import (
     fetch_vllm_versions,
     normalize_vllm_version,
     vllm_install_command,
+    vllm_runtime_probe_code,
+    vllm_xpu_install_steps,
     vllm_platform_support,
     vllm_runtime_import_error,
 )
@@ -341,10 +347,16 @@ def test_radeon_wsl2_is_rejected_before_downloading_vllm():
     assert "Docker" in result.reason
 
 
-def test_intel_xpu_is_unsupported():
+def test_native_linux_intel_xpu_uses_the_pinned_source_build():
     result = support(intel_gpu=True)
-    assert result.status == "unsupported"
-    assert "XPU" in result.reason
+    assert (result.status, result.method) == ("experimental", "xpu_source")
+    assert result.requires_python == (3, 12)
+
+
+def test_intel_xpu_is_not_offered_under_wsl2():
+    result = support(intel_gpu=True, is_wsl=True)
+    assert (result.status, result.method) == ("unsupported", None)
+    assert "native Linux" in result.reason
 
 
 def test_cpu_only_linux_is_unsupported():
@@ -425,6 +437,28 @@ def test_rocm_and_nightly_commands_use_their_own_indexes():
     assert f"vllm[bench]=={DGX_CU130_VERSION}" in cu130
 
 
+def test_xpu_source_steps_pin_upstream_tag_torch_stack_and_bench_extra(tmp_path):
+    source = tmp_path / "vllm-env" / "src" / "vllm"
+    steps = vllm_xpu_install_steps("/v/bin/python", source)
+    assert steps[0].command == (
+        "git", "clone", "--branch", f"v{VLLM_XPU_VERSION}", "--depth", "1",
+        VLLM_REPO, str(source),
+    )
+    assert any(str(source / "requirements" / "xpu.txt") in step.command for step in steps)
+    assert any(f"triton-xpu=={TRITON_XPU_VERSION}" in step.command for step in steps)
+    assert any(PYTORCH_XPU_INDEX in step.command for step in steps)
+    assert steps[-1].command[-1] == f"{source}[bench]"
+    assert "-e" not in steps[-1].command
+    assert dict(steps[-1].environment) == {"VLLM_TARGET_DEVICE": "xpu"}
+
+
+def test_xpu_source_steps_accept_an_explicit_stable_version(tmp_path):
+    steps = vllm_xpu_install_steps("python", tmp_path / "source", "0.26.0")
+    assert steps[0].command[3] == "v0.26.0"
+    with pytest.raises(ValueError, match="prereleases"):
+        vllm_xpu_install_steps("python", tmp_path / "source", "0.27.0rc1")
+
+
 def test_nightly_command_accepts_an_immutable_qualification_index():
     immutable = "https://wheels.vllm.ai/commit/cu130"
     command = vllm_install_command(
@@ -480,8 +514,7 @@ def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
     assert calls[0][0] == [
         str(tmp_path / "vllm-env" / "bin" / "python"),
         "-c",
-        "import torch; import vllm; from vllm.platforms import current_platform; "
-        "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
+        vllm_runtime_probe_code(),
     ]
     assert calls[0][1]["timeout"] == 60
 
@@ -489,6 +522,12 @@ def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
 def test_runtime_import_probe_accepts_a_loadable_environment(tmp_path):
     result = SimpleNamespace(returncode=0, stdout="", stderr="")
     assert vllm_runtime_import_error(tmp_path, run=lambda *_args, **_kwargs: result) is None
+
+
+def test_xpu_runtime_probe_requires_vllm_and_torch_to_select_xpu():
+    code = vllm_runtime_probe_code("xpu")
+    assert "current_platform.device_type == 'xpu'" in code
+    assert "torch.xpu.is_available()" in code
 
 
 def test_find_vllm_binary_prefers_a_system_install():
@@ -505,6 +544,19 @@ def test_find_vllm_binary_falls_back_to_the_project_venv():
         exists_fn=lambda path: str(path).endswith("vllm-env/bin/vllm"),
         which_fn=lambda _: None,
     ) == str(venv / "bin" / "vllm")
+
+
+def test_find_vllm_binary_can_require_the_managed_qualification_runtime():
+    venv = Path("/proj/vllm-env")
+    assert find_vllm_binary(
+        platform_name="Linux", venv_dir=venv, managed_only=True,
+        exists_fn=lambda path: path == venv / "bin" / "vllm",
+        which_fn=lambda _: "/usr/bin/vllm",
+    ) == str(venv / "bin" / "vllm")
+    assert find_vllm_binary(
+        platform_name="Linux", venv_dir=venv, managed_only=True,
+        exists_fn=lambda _path: False, which_fn=lambda _: "/usr/bin/vllm",
+    ) is None
 
 
 def test_find_vllm_binary_returns_none_when_nothing_is_installed():

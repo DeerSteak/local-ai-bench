@@ -418,7 +418,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     section("vLLM")
 
-    VLLM_BIN = find_vllm_binary(platform_name=os_name)
+    VLLM_BIN = find_vllm_binary(
+        platform_name=os_name, managed_only=args.qualification == VLLM,
+    )
     # A reachable server counts as present even with no host-side binary — AMD's Strix Halo
     # image ships one preconfigured, and a container/remote server looks the same from here.
     VLLM_LAUNCHER = find_vllm_launcher()
@@ -809,7 +811,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     if VLLM in pending_engines:
         if install_vllm(vllm_support, log=info):
-            VLLM_BIN = find_vllm_binary(platform_name=os_name)
+            VLLM_BIN = find_vllm_binary(
+                platform_name=os_name, managed_only=args.qualification == VLLM,
+            )
             if VLLM_BIN:
                 ok(f"vLLM installed: {VLLM_BIN}")
                 vllm_found = True
@@ -823,7 +827,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
         if not install_vllm_build_tools(config.VLLM_VENV, log=info):
             fail("vLLM build tool install failed — kernel compilation will fail at run time")
             issues.append(f"Install the vLLM build tools in {config.VLLM_VENV}")
-        runtime_error = vllm_runtime_import_error(config.VLLM_VENV)
+        expected_vllm_device = "xpu" if vllm_support.method == "xpu_source" else None
+        runtime_error = vllm_runtime_import_error(
+            config.VLLM_VENV, expected_device_type=expected_vllm_device,
+        )
         if runtime_error:
             fail("vLLM runtime preflight failed")
             info(runtime_error.splitlines()[-1] if runtime_error else "")

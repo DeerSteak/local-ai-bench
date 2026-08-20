@@ -77,6 +77,7 @@ def test_target_listing_needs_no_python_environment():
         "radeon-linux-llamacpp-rocm",
         "radeon-linux-vllm-rocm",
         "intel-arc-linux-llamacpp-sycl",
+        "intel-arc-linux-vllm-xpu",
         "ryzen-ai-halo-llamacpp-rocm",
         "ryzen-ai-halo-vllm-rocm",
         "dgx-spark-llamacpp-cuda",
