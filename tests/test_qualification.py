@@ -1,7 +1,7 @@
 import pytest
 
 from scripts.release.qualification import (
-    QUALIFICATION_MATRIX, derive_support_level, engine_selection_label,
+    QUALIFICATION_MATRIX, derive_image_support_level, derive_support_level, engine_selection_label,
     engine_support_profile, experimental_acknowledgement_required,
     experimental_engine_ack_error, platform_name,
     qualification_entry, qualification_is_stale, qualification_rows,
@@ -131,10 +131,20 @@ def test_qualification_evidence_must_be_an_ordinary_result_json():
         validate_qualification_entry(entry(evidence=["qualification-result.lab.zip"]))
 
 
-def test_complete_result_without_required_workload_coverage_is_unverified():
+def test_runtime_support_does_not_require_image_coverage():
     evidence = entry()
     evidence["coverage"]["workloads"].remove("img")
-    assert derive_support_level(evidence, "6.0-pre8") == "unverified"
+    evidence["coverage"]["models"].remove("sd15")
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    assert derive_image_support_level(evidence, "6.0-pre8") == "unverified"
+
+
+def test_image_support_requires_image_workload_and_model_evidence():
+    evidence = entry()
+    assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+    evidence["coverage"]["models"].remove("sd15")
+    assert derive_image_support_level(evidence, "6.0-pre8") == "unverified"
+    assert derive_image_support_level(None, "6.0-pre8") == "unverified"
 
 
 def test_matrix_rejects_duplicate_runtime_identity():
@@ -160,6 +170,7 @@ def test_matrix_rows_default_missing_targets_to_unverified():
     ]
     rows = qualification_rows("6.0-pre8", targets=targets, entries=[entry()])
     assert [row["support_level"] for row in rows] == ["supported", "unverified"]
+    assert [row["image_support_level"] for row in rows] == ["supported", "unverified"]
     assert rows[1]["platform"] == "wsl2" and rows[1]["qualified_at"] is None
 
 

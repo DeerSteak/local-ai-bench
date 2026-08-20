@@ -6,7 +6,7 @@ Platform qualification is an ordinary Local AI Bench run with an explicit smalle
 
 ## Scope
 
-Shared coverage includes single-shot and conversational generation, embeddings, all five accuracy banks, both server-concurrency shapes, and the shortened 120-second sustained workload. llama.cpp also runs `llamabench`, `llamabenchconc`, and Stable Diffusion 1.5 image generation; vLLM also runs `vllmbench`. Accuracy uses one deterministic question per bank, repeated workloads use one measured run without a warmup, and prompt sweeps stop at 2K. This proves that every shipped workload can complete on the selected platform; it is not full-catalog performance, full-bank accuracy, or production-duration soak evidence.
+Shared engine coverage includes single-shot and conversational generation, embeddings, all five accuracy banks, both server-concurrency shapes, and the shortened 120-second sustained workload. llama.cpp also runs `llamabench` and `llamabenchconc`; vLLM also runs `vllmbench`. The same llama.cpp qualification invocation runs Stable Diffusion 1.5 through ComfyUI, but image support is graded and published separately from llama.cpp support. Accuracy uses one deterministic question per bank, repeated workloads use one measured run without a warmup, and prompt sweeps stop at 2K. This proves that each recorded component's shipped workloads can complete on the selected platform; it is not full-catalog performance, full-bank accuracy, or production-duration soak evidence.
 
 ## Run
 
@@ -36,4 +36,4 @@ The default result is `qualification-evidence/TARGET/results_qualification_TARGE
 
 ## Support records
 
-After reviewing a passing result, add that result path to the platform entry in `scripts/release/qualification.py`. The entry records the exact platform, accelerator, backend, runtime version, suite version, and qualification date. Installer lifecycle, packaging, offline operation, telemetry observer effects, and long-duration thermal claims remain separate release gates with their own evidence; they are not recreated inside platform workload qualification.
+After reviewing a result, add that result path and only its completed workload/model coverage to the platform entry in `scripts/release/qualification.py`. The entry records the exact platform, accelerator, backend, runtime version, suite version, and qualification date. Runtime support is derived from the engine workloads and LLM/embedding models; ComfyUI image support is derived independently from `img` and the qualification image model. A single invocation may therefore publish llama.cpp as supported while leaving ComfyUI unverified. Installer lifecycle, packaging, offline operation, telemetry observer effects, and long-duration thermal claims remain separate release gates with their own evidence; they are not recreated inside platform workload qualification.

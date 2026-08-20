@@ -4,27 +4,27 @@
 
 ## Qualification status
 
-This generated matrix reports the current evidence-backed status of each platform and runtime path. Installation availability does not by itself establish support.
+This generated matrix reports the current evidence-backed runtime and ComfyUI image status of each platform path. One qualification invocation may exercise both components, but each is graded independently; installation availability does not by itself establish support.
 
 <!-- qualification-matrix:start -->
-| Platform | Architecture | Runtime | Backend | Support | Evidence |
-| --- | --- | --- | --- | --- | --- |
-| macos | arm64 | llamacpp | metal | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
-| windows | x86_64 | llamacpp | vulkan | Unverified | No qualification record |
-| wsl2 | x86_64 | llamacpp | cuda | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | llamacpp | rocm | Unverified | No qualification record |
-| wsl2 | x86_64 | vllm | rocm | Unverified | No qualification record |
-| linux | x86_64 | llamacpp | cuda | Unverified | No qualification record |
-| linux | x86_64 | vllm | cuda | Unverified | No qualification record |
-| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
-| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
-| linux | x86_64 | llamacpp | rocm | Unverified | No qualification record |
-| linux | x86_64 | vllm | rocm | Unverified | No qualification record |
-| linux | aarch64 | llamacpp | cuda | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| linux | aarch64 | vllm | cuda | Supported | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| Platform | Architecture | Runtime | Backend | Runtime support | ComfyUI images | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| macos | arm64 | llamacpp | metal | Supported | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
+| windows | x86_64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
+| wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| wsl2 | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
+| wsl2 | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
+| linux | x86_64 | llamacpp | cuda | Unverified | Unverified | No qualification record |
+| linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
+| linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
+| linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
+| linux | aarch64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| linux | aarch64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 <!-- qualification-matrix:end -->
 
 **Contents**

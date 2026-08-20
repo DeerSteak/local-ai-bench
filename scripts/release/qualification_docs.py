@@ -15,8 +15,8 @@ PUBLISHED_DOCS = ("docs/engines.md", "docs/setup.md")
 def render_qualification_matrix(current_version: str) -> str:
     lines = [
         START_MARKER,
-        "| Platform | Architecture | Runtime | Backend | Support | Evidence |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Platform | Architecture | Runtime | Backend | Runtime support | ComfyUI images | Evidence |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in qualification_rows(current_version):
         evidence = (
@@ -24,11 +24,15 @@ def render_qualification_matrix(current_version: str) -> str:
             if row["qualified_at"] else "No qualification record"
         )
         support = row["support_level"].capitalize()
+        image_support = row["image_support_level"].capitalize() \
+            if row["runtime"] == "llamacpp" else "Not applicable"
         if row["stale"]:
             support += " (stale)"
+            if row["runtime"] == "llamacpp" and image_support != "Unverified":
+                image_support += " (stale)"
         lines.append(
             f"| {row['platform']} | {row['architecture']} | {row['runtime']} | "
-            f"{row['backend']} | {support} | {evidence} |"
+            f"{row['backend']} | {support} | {image_support} | {evidence} |"
         )
     lines.append(END_MARKER)
     return "\n".join(lines)

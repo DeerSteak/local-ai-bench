@@ -275,10 +275,9 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     required_models = {
         qualification_llm_model(entry["runtime"])["tag"], SMALLEST_EMBEDDING_MODEL,
     }
-    if entry["runtime"] == "llamacpp":
-        required_models.add(SMALLEST_IMAGE_MODEL)
+    required_workloads = set(qualification_workloads(entry["runtime"])) - {"img"}
     complete_coverage = (
-        set(entry["coverage"]["workloads"]) == set(qualification_workloads(entry["runtime"]))
+        required_workloads <= set(entry["coverage"]["workloads"])
         and required_models <= set(entry["coverage"]["models"])
     )
     if not complete_coverage:
@@ -286,6 +285,19 @@ def derive_support_level(entry: dict | None, current_version: str) -> str:
     if not qualification_is_stale(entry, current_version):
         return "supported"
     return "experimental"
+
+
+def derive_image_support_level(entry: dict | None, current_version: str) -> str:
+    if entry is None or entry["runtime"] != "llamacpp":
+        return "unverified"
+    validate_qualification_entry(entry)
+    complete_coverage = (
+        "img" in entry["coverage"]["workloads"]
+        and SMALLEST_IMAGE_MODEL in entry["coverage"]["models"]
+    )
+    if not complete_coverage:
+        return "unverified"
+    return "experimental" if qualification_is_stale(entry, current_version) else "supported"
 
 
 def validate_qualification_matrix(entries=QUALIFICATION_MATRIX) -> None:
@@ -342,6 +354,7 @@ def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
         rows.append({
             **target,
             "support_level": derive_support_level(evidence, current_version),
+            "image_support_level": derive_image_support_level(evidence, current_version),
             "runtime_version": evidence.get("runtime_version") if evidence else None,
             "qualified_at": evidence.get("qualified_at") if evidence else None,
             "suite_version": evidence.get("suite_version") if evidence else None,
@@ -366,9 +379,9 @@ def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime
     ) if runtime_version else None
     support_level = derive_support_level(evidence, current_version)
     caveat = {
-        "supported": "Complete smallest-model workload qualification recorded for this runtime.",
-        "experimental": "Qualification is stale; rerun the current smallest-model workload set.",
-        "unverified": "No complete smallest-model qualification matches this exact runtime.",
+        "supported": "Complete smallest-model engine qualification recorded for this runtime.",
+        "experimental": "Engine qualification is stale; rerun the current smallest-model workload set.",
+        "unverified": "No complete smallest-model engine qualification matches this exact runtime.",
     }[support_level]
     return {
         "support_level": support_level, "caveat": caveat,

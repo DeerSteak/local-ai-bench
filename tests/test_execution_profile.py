@@ -26,7 +26,7 @@ def test_engine_backed_profile_records_hardware_and_effective_backend():
         "timestamp": "now", "hardware_backend": "metal",
         "backend": "cuda", "engine_support": {
             "support_level": "unverified",
-            "caveat": "No complete smallest-model qualification matches this exact runtime.",
+            "caveat": "No complete smallest-model engine qualification matches this exact runtime.",
             "qualification_id": None, "qualified_at": None, "suite_version": None,
             "runtime_version": "b6000", "platform": "macos", "architecture": "arm64",
             "backend": "cuda", "stale": False,
