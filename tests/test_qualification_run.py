@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from scripts.release.qualification_coverage import qualification_arguments
-from scripts.release.qualification_run import benchmark_wrapper, default_result_path
+from scripts.release.qualification_run import (
+    benchmark_wrapper, default_result_path, qualification_failure_summary,
+)
 from scripts.release.qualification_targets import TARGET_ENGINES, TARGETS, target_engine
 
 
@@ -36,4 +38,36 @@ def test_default_qualification_result_is_grouped_under_ignored_target_directory(
     assert default_result_path(tmp_path, "dgx-spark-vllm-cuda") == (
         tmp_path / "qualification-evidence" / "dgx-spark-vllm-cuda"
         / "results_qualification_dgx-spark-vllm-cuda.json"
+    )
+
+
+def test_comfyui_failure_distinguishes_completed_llamacpp_evidence(monkeypatch):
+    result = {
+        "run": {"status": "failed", "stages": {"img": {"status": "failed"}}},
+    }
+    monkeypatch.setattr(
+        "scripts.release.qualification_run.workload_coverage_errors",
+        lambda _result, workloads: [] if "img" not in workloads else ["img failed"],
+    )
+    assert qualification_failure_summary(result, "llamacpp") == (
+        "llama.cpp workloads passed; ComfyUI image generation did not pass"
+    )
+
+
+def test_comfyui_failure_does_not_hide_an_incomplete_llamacpp_workload(monkeypatch):
+    result = {
+        "run": {"status": "failed", "stages": {
+            "llamabench": {"status": "complete"}, "img": {"status": "failed"},
+        }},
+    }
+    monkeypatch.setattr(
+        "scripts.release.qualification_run.workload_coverage_errors",
+        lambda _result, _workloads: ["llamabench produced no evidence"],
+    )
+    assert qualification_failure_summary(result, "llamacpp") == "benchmark failed during img"
+
+
+def test_failure_without_a_failed_stage_reports_incomplete_exit():
+    assert qualification_failure_summary({"run": {"stages": {}}}, "vllm") == (
+        "benchmark exited before qualification completed"
     )

@@ -1502,5 +1502,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")
 
+
+def cli_main(run=main) -> int:
+    try:
+        run()
+    except StageExecutionError as exc:
+        Shared.err(f"Benchmark stopped: {exc}")
+        Shared.err("Partial results were preserved for inspection or recovery.")
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(cli_main())

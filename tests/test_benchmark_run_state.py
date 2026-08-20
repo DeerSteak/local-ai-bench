@@ -3,13 +3,31 @@ import json
 import pytest
 
 from scripts.app.benchmark import (
-    checkpoint_terminal_exception, cleanup_signal_numbers, finish_event_job,
+    checkpoint_terminal_exception, cleanup_signal_numbers, cli_main, finish_event_job,
     fork_provenance, interruption_exit_code,
 )
 from scripts.results.event_store import EventStore
 from scripts.app.orchestration import StageExecutionError
 from scripts.results.result_store import build_run_manifest
 from scripts.results.run_plan import RunPlan
+
+
+def test_cli_main_reports_stage_failure_without_a_traceback(monkeypatch):
+    messages = []
+    monkeypatch.setattr("scripts.app.benchmark.Shared.err", messages.append)
+
+    def fail():
+        raise StageExecutionError("img", "execution", RuntimeError("ComfyUI unavailable"))
+
+    assert cli_main(fail) == 1
+    assert messages == [
+        "Benchmark stopped: img execution failed: ComfyUI unavailable",
+        "Partial results were preserved for inspection or recovery.",
+    ]
+
+
+def test_cli_main_returns_success_after_a_complete_run():
+    assert cli_main(lambda: None) == 0
 
 
 def make_plan():

@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from scripts.release.qualification_coverage import (
@@ -24,6 +25,18 @@ def default_result_path(root: Path, target_id: str) -> Path:
     return root / "qualification-evidence" / target_id / f"results_qualification_{target_id}.json"
 
 
+def qualification_failure_summary(result: dict, engine: str) -> str:
+    stages = result.get("run", {}).get("stages", {})
+    non_image = [workload for workload in qualification_workloads(engine) if workload != "img"]
+    probe = deepcopy(result)
+    probe.setdefault("run", {})["status"] = "complete"
+    if engine == "llamacpp" and stages.get("img", {}).get("status") == "failed" \
+            and not workload_coverage_errors(probe, non_image):
+        return "llama.cpp workloads passed; ComfyUI image generation did not pass"
+    failed = [stage for stage, state in stages.items() if state.get("status") == "failed"]
+    return f"benchmark failed during {', '.join(failed)}" if failed else "benchmark exited before qualification completed"
+
+
 def run_qualification(target_id: str, root: Path, result: Path) -> None:  # pragma: no cover
     result.parent.mkdir(parents=True, exist_ok=True)
     engine = target_engine(target_id)
@@ -34,6 +47,9 @@ def run_qualification(target_id: str, root: Path, result: Path) -> None:  # prag
     ]
     completed = subprocess.run(command, cwd=root)
     if completed.returncode:
+        if result.is_file():
+            data = json.loads(result.read_text(encoding="utf-8"))
+            raise RuntimeError(qualification_failure_summary(data, engine))
         raise RuntimeError(f"benchmark exited with code {completed.returncode}")
     data = json.loads(result.read_text(encoding="utf-8"))
     errors = workload_coverage_errors(data, qualification_workloads(engine))
