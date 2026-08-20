@@ -41,6 +41,15 @@ def test_default_qualification_output_directory_is_gitignored():
     assert "/qualification-evidence/" in (ROOT / ".gitignore").read_text().splitlines()
 
 
+def test_qualification_results_are_not_tracked():
+    result = subprocess.run(
+        ["git", "ls-files", "qualification-evidence"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
 def test_posix_qualification_launcher_has_valid_shell_syntax():
     result = subprocess.run(
         ["/bin/bash", "-n", ROOT / "run_qualification.sh"], capture_output=True, text=True,
