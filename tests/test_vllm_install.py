@@ -17,8 +17,6 @@ from scripts.setup.vllm_install import (
     build_tools_command,
     missing_build_tools,
     missing_python_headers,
-    missing_shared_library,
-    openmpi_runtime_package_command,
     python_dev_package_command,
     running_as_root,
     python_version_from_include_dir,
@@ -467,7 +465,8 @@ def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
         )
 
     error = vllm_runtime_import_error(tmp_path / "vllm-env", run=run)
-    assert missing_shared_library(error) == "libmpi_cxx.so.40"
+    assert error is not None
+    assert "libmpi_cxx.so.40" in error
     assert calls[0][0] == [
         str(tmp_path / "vllm-env" / "bin" / "python"),
         "-c", "import torch; import vllm",
@@ -478,26 +477,6 @@ def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
 def test_runtime_import_probe_accepts_a_loadable_environment(tmp_path):
     result = SimpleNamespace(returncode=0, stdout="", stderr="")
     assert vllm_runtime_import_error(tmp_path, run=lambda *_args, **_kwargs: result) is None
-    assert missing_shared_library("unrelated import failure") is None
-
-
-def test_openmpi_runtime_package_uses_the_first_available_apt_package(monkeypatch):
-    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
-    command = openmpi_runtime_package_command(
-        which_fn=lambda name: f"/usr/bin/{name}",
-        package_available=lambda name: name == "libopenmpi40",
-    )
-    assert command == ["sudo", "apt-get", "install", "-y", "libopenmpi40"]
-
-
-def test_openmpi_runtime_package_falls_back_and_requires_apt(monkeypatch):
-    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
-    command = openmpi_runtime_package_command(
-        which_fn=lambda name: f"/usr/bin/{name}",
-        package_available=lambda name: name == "libopenmpi3t64",
-    )
-    assert command == ["apt-get", "install", "-y", "libopenmpi3t64"]
-    assert openmpi_runtime_package_command(which_fn=lambda _name: None) is None
 
 
 def test_find_vllm_binary_prefers_a_system_install():

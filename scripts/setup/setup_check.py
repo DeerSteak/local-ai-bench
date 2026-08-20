@@ -68,7 +68,6 @@ from scripts.setup.engine_selection import (
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, find_vllm_server,
     install_vllm, install_vllm_build_tools, missing_python_headers,
-    missing_shared_library, openmpi_runtime_package_command,
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
     read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
     PINNED_PYTHON, python_bootstrap_plan, resolve_python, run_python_bootstrap,
@@ -752,16 +751,6 @@ def main() -> None:  # pragma: no cover - real interactive installer
             fail("vLLM build tool install failed — kernel compilation will fail at run time")
             issues.append(f"Install the vLLM build tools in {config.VLLM_VENV}")
         runtime_error = vllm_runtime_import_error(config.VLLM_VENV)
-        missing_library = missing_shared_library(runtime_error)
-        if rocm_ok and missing_library == "libmpi_cxx.so.40":
-            mpi_command = openmpi_runtime_package_command()
-            if mpi_command is not None:
-                info(f"Installing the OpenMPI runtime required by ROCm PyTorch: "
-                     f"{' '.join(mpi_command)} ...")
-                if subprocess.run(mpi_command).returncode == 0:
-                    runtime_error = vllm_runtime_import_error(config.VLLM_VENV)
-                else:
-                    runtime_error = f"{missing_library} remains unavailable"
         if runtime_error:
             fail("vLLM runtime import failed")
             info(runtime_error.splitlines()[-1] if runtime_error else "")
