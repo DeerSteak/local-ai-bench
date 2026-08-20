@@ -539,7 +539,7 @@ class Shared:
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["lspci"], capture_output=True, text=True, timeout=10,
+                        ["lspci", "-nn"], capture_output=True, text=True, timeout=10,
                     ).stdout
                     for line in out.splitlines():
                         if any(k in line for k in ("VGA", "3D controller", "Display")):
@@ -599,17 +599,19 @@ class Shared:
                 names = [n.strip() for n in out.splitlines() if n.strip()]
                 if any("AMD" in n or "Radeon" in n for n in names):
                     return "rocm"
-                if any("Intel" in n and "Arc" in n for n in names):
+                if any(hardware.is_intel_xpu_display(n) for n in names):
                     return "xpu"
             except Exception:
                 pass
-        # No guaranteed xpu-smi on Linux — reuse the "Intel"+"Arc" heuristic on lspci (not just "Intel", to exclude integrated Iris Xe).
+        # lspci may report Arc Pro B-series by its Battlemage codename.
         if platform.system() == "Linux":
             try:
-                out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+                out = subprocess.check_output(
+                    ["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL,
+                )
                 for line in out.splitlines():
                     if (any(k in line for k in ("VGA", "3D controller", "Display"))
-                            and "Intel" in line and "Arc" in line):
+                            and hardware.is_intel_xpu_display(line)):
                         return "xpu"
             except (FileNotFoundError, subprocess.CalledProcessError):
                 pass

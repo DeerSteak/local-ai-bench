@@ -29,6 +29,9 @@ from scripts.runtime.comfyui_installation import (
 )
 from scripts.runtime.llamacpp_tools import find_nvcc, probe_llamacpp_backend
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
+from scripts.setup.intel_xpu_install import (
+    intel_xpu_install_plan, oneapi_environment, run_intel_xpu_install, sycl_gpu_available,
+)
 from scripts.setup.rocm_wsl_install import (
     WINDOWS_DRIVER, qualification_needs_wsl_rocm, run_wsl_rocm_install,
     wsl_rocm_install_plan,
@@ -229,20 +232,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
     for name in rocm.names[:3] if rocm else []:
         print(f"  ROCm GPU: {name}")
 
-    # See docs/setup.md's Intel Arc platform notes.
-    INTEL_GPU_RUNTIME_PACKAGES = ("intel-opencl-icd", "intel-level-zero-gpu", "level-zero")
-
     def check_linux_intel_gpu_runtime():
-        """Detection-only check for Intel's GPU compute runtime via dpkg — see
-        docs/setup.md's Intel Arc platform notes."""
-        if platform.system() != "Linux" or not shutil.which("dpkg"):
-            return False
-        for pkg in INTEL_GPU_RUNTIME_PACKAGES:
-            result = subprocess.run(["dpkg", "-s", pkg],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result.returncode != 0:
-                return False
-        return True
+        """Detection-only check for a usable Intel GPU through oneAPI SYCL."""
+        environment = oneapi_environment()
+        return bool(environment and sycl_gpu_available(env=environment))
 
     nvidia_ok = nvidia.available
     nvidia_compute_cap = nvidia.compute_capability
@@ -294,21 +287,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
              "with -DGGML_SYCL=ON")
     elif intel_linux:
         ok("Intel Arc GPU detected on Linux")
-        info("Intel Arc support is experimental — this project's maintainers don't have "
-             "Arc hardware to test against, so everything below (runtime check, XPU "
-             "PyTorch install) is unverified. Please report back "
-             "if you try it: https://github.com/DeerSteak/local-ai-bench/issues")
-        warn("LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which "
-             "this script doesn't build; they'll run on CPU unless you build it yourself "
-             "with -DGGML_SYCL=ON")
         if intel_linux_runtime:
-            ok("Intel GPU compute runtime (Level Zero/OpenCL) detected — ready for XPU-accelerated PyTorch")
+            ok("Intel oneAPI/SYCL GPU runtime detected")
         else:
-            warn("Intel GPU compute runtime not installed — image generation will run on "
-                 "CPU until it is. This script won't add a third-party APT repo for you; "
-                 "install it yourself:")
-            warn("  https://dgpu-docs.intel.com/driver/installation.html")
-            warn(f"  (adds Intel's graphics APT repo, then: {' '.join(INTEL_GPU_RUNTIME_PACKAGES)})")
+            warn("Intel oneAPI/SYCL GPU runtime not detected — setup will install it")
     elif metal_ok:
         ok("Apple Metal detected")
     else:
@@ -374,6 +356,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     def install_llamacpp():
         return llamacpp_install.install(
             LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
+            intel_xpu=intel_linux,
             compute_capability=nvidia_compute_cap,
             max_cuda_version=nvidia_max_cuda_version,
             info=info, warn=warn, fail=fail, ok=ok,
@@ -579,6 +562,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
     print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
     print("  This will:")
     print("    • Install Python dependencies from requirements.txt")
+    if intel_linux and not intel_linux_runtime:
+        print("    • Install Intel GPU compute and oneAPI/SYCL prerequisites (requires sudo)")
     if needs_llamacpp_install and LLAMACPP in selected_engine_names(engine_entries):
         build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
         print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
@@ -751,6 +736,28 @@ def main() -> None:  # pragma: no cover - real interactive installer
             warn(f"Could not open the graphical progress window: {exc}")
 
     section("Installing")
+
+    if intel_linux and not intel_linux_runtime:
+        try:
+            _os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+            _intel_plan = intel_xpu_install_plan(
+                _os_release, user=os.environ.get("SUDO_USER") or os.environ.get("USER"),
+            )
+        except (OSError, ValueError) as exc:
+            fail(str(exc))
+            issues.append(str(exc))
+        else:
+            info("Installing Intel GPU compute and oneAPI/SYCL prerequisites ...")
+            if run_intel_xpu_install(_intel_plan, log=info):
+                ok("Intel XPU prerequisites installed")
+                intel_linux_runtime = check_linux_intel_gpu_runtime()
+                if not intel_linux_runtime:
+                    fail("Intel packages installed, but this kernel/login cannot access the GPU yet")
+                    info("Reboot so the HWE kernel and render-group access take effect, then rerun setup")
+                    sys.exit(1)
+            else:
+                fail("Intel XPU prerequisite installation failed")
+                issues.append("Install the Intel GPU compute and oneAPI/SYCL prerequisites")
 
     req_file = SCRIPT_DIR / "requirements.txt"
     info("Installing Python dependencies ...")

@@ -57,6 +57,20 @@ def test_qualification_target_accepts_architecture_alias_and_accelerator_substri
     assert qualification_target_errors(target, profile) == []
 
 
+def test_intel_linux_target_accepts_b65_pci_codename():
+    target = qualification_target("intel-arc-linux-llamacpp-sycl")
+    profile = {
+        "os": "Linux 6.17",
+        "arch": "x86_64",
+        "backend": "xpu",
+        "hostname": (
+            "Intel Core Ultra\nIntel Corporation Battlemage G31 "
+            "[Intel Graphics] [8086:e222] 64 GB"
+        ),
+    }
+    assert qualification_target_errors(target, profile) == []
+
+
 def test_vulkan_target_uses_accelerator_identity_instead_of_compute_backend_probe():
     target = qualification_target("radeon-windows-llamacpp-vulkan")
     profile = {

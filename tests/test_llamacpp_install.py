@@ -35,7 +35,7 @@ def test_linux_install_requires_build_tools(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: None)
 
     result = llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Linux", nvidia=False, rocm=False,
+        tmp_path / "runtime", tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=False,
         compute_capability=None, max_cuda_version=None,
         info=_log, warn=_log, fail=failures.append, ok=_log,
     )
@@ -46,7 +46,7 @@ def test_linux_install_requires_build_tools(monkeypatch, tmp_path):
 
 def test_unknown_platform_is_not_installed(tmp_path):
     assert not llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Haiku", nvidia=False, rocm=False,
+        tmp_path / "runtime", tmp_path, "Haiku", nvidia=False, rocm=False, intel_xpu=False,
         compute_capability=None, max_cuda_version=None,
         info=_log, warn=_log, fail=_log, ok=_log,
     )
@@ -66,7 +66,7 @@ def test_macos_install_resolves_requested_release(monkeypatch, tmp_path):
 
     monkeypatch.setattr(llamacpp_install, "update_macos_llamacpp", update)
     assert llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Darwin", nvidia=False, rocm=False,
+        tmp_path / "runtime", tmp_path, "Darwin", nvidia=False, rocm=False, intel_xpu=False,
         compute_capability=None, max_cuda_version=None, version="b7000",
         info=_log, warn=_log, fail=_log, ok=_log,
     )
@@ -204,7 +204,7 @@ def test_linux_nvidia_without_nvcc_builds_cpu_only_after_failed_pull(monkeypatch
 
     monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
     result = llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=True, rocm=False,
+        runtime, tmp_path, "Linux", nvidia=True, rocm=False, intel_xpu=False,
         compute_capability="8.9", max_cuda_version=None,
         info=_log, warn=warnings.append, fail=_log, ok=_log,
     )
@@ -233,7 +233,7 @@ def test_linux_cuda_unknown_architecture_warns_and_omits_arch_flag(monkeypatch, 
 
     monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
     assert llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=True, rocm=False,
+        runtime, tmp_path, "Linux", nvidia=True, rocm=False, intel_xpu=False,
         compute_capability=None, max_cuda_version=None,
         info=_log, warn=warnings.append, fail=_log, ok=_log,
     )
@@ -241,3 +241,49 @@ def test_linux_cuda_unknown_architecture_warns_and_omits_arch_flag(monkeypatch, 
     configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
     assert "-DGGML_CUDA=ON" in configure
     assert not any("CMAKE_CUDA_ARCHITECTURES" in argument for argument in configure)
+
+
+def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    commands = []
+    build_env = {"PATH": "/opt/intel/oneapi/compiler/latest/bin"}
+    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
+    monkeypatch.setattr(llamacpp_install, "oneapi_environment", lambda: build_env)
+
+    def run(command, **kwargs):
+        commands.append((command, kwargs))
+        if command[:2] == ["cmake", "--build"]:
+            build = runtime / "build"
+            build.mkdir()
+            (build / "llama-server").touch()
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
+    assert llamacpp_install.install(
+        runtime, tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=True,
+        compute_capability=None, max_cuda_version=None,
+        info=_log, warn=_log, fail=_log, ok=_log,
+    )
+    configure = next(entry for entry in commands if entry[0][:2] == ["cmake", "-B"])
+    assert "-DGGML_SYCL=ON" in configure[0]
+    assert "-DCMAKE_C_COMPILER=icx" in configure[0]
+    assert "-DCMAKE_CXX_COMPILER=icpx" in configure[0]
+    assert configure[1]["env"] == build_env
+    build = next(entry for entry in commands if entry[0][:2] == ["cmake", "--build"])
+    assert build[1]["env"] == build_env
+
+
+def test_linux_intel_build_fails_without_oneapi(monkeypatch, tmp_path):
+    failures = []
+    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
+    monkeypatch.setattr(llamacpp_install, "oneapi_environment", lambda: None)
+    assert not llamacpp_install.install(
+        tmp_path / "runtime", tmp_path, "Linux",
+        nvidia=False, rocm=False, intel_xpu=True,
+        compute_capability=None, max_cuda_version=None,
+        info=_log, warn=_log, fail=failures.append, ok=_log,
+    )
+    assert failures == [
+        "Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built",
+    ]

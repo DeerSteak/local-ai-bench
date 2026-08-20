@@ -20,6 +20,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
+| linux | x86_64 | llamacpp | xpu | Unverified | Unverified | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
 | linux | aarch64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
@@ -39,7 +40,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Python, a project-managed official llama.cpp release (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
-| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), and optional vLLM on native Linux ROCm or NVIDIA CUDA, including NVIDIA WSL2; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
+| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, Intel oneAPI/SYCL llama.cpp plus XPU PyTorch on native Linux Arc, and optional vLLM on native Linux ROCm or NVIDIA CUDA, including NVIDIA WSL2; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. Local AI Bench does not automate or close Terminal windows; what happens after the command exits follows the user's Terminal profile settings. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
@@ -279,7 +280,7 @@ An older preinstalled `vllm-launch` remains discoverable as an external platform
 
 **Linux (AMD/ROCm)** — `rocminfo` detection selects llama.cpp's HIP build. With ROCm 7.2 or newer and Python 3.12, setup replaces ComfyUI's default torch packages with AMD's pinned PyTorch 2.9.1 ROCm wheels: ROCm 7.2.1 wheels on native Linux and AMD's WSL-specific ROCm 7.2.0 set under WSL2. The compatible NumPy and SciPy versions are pinned with that stack. The WSL path also removes the wheel's bundled HSA runtime as AMD requires so it uses the installed WSL runtime. Older ROCm installations retain the generic PyTorch ROCm 6.4 fallback. Every path performs a real GPU tensor allocation after installation; failure blocks qualification rather than falling back to CPU.
 
-**Linux (Intel Arc) — experimental** — `lspci` detection records `hardware_backend: "xpu"`, but setup does not build llama.cpp's SYCL backend, so LLM inference remains CPU unless you supply a manual `-DGGML_SYCL=ON` build. For image generation, setup checks for Intel's compute runtime and prints installation commands when it is absent; when image models are selected, it installs PyTorch's XPU wheels. This path has not been verified on real Arc hardware by the project maintainer.
+**Linux (Intel Arc) — qualification pending** — `lspci -nn` detection records `hardware_backend: "xpu"` and retains the PCI device ID needed to distinguish exact Arc models. On Ubuntu 24.04 or 26.04, setup installs Intel's graphics compute packages and the oneAPI compiler, oneDPL, oneDNN, and oneMKL, then builds the managed llama.cpp tools with `GGML_SYCL=ON`; image setup installs PyTorch's XPU wheels and verifies a real GPU tensor allocation. Intel Arc Pro B65 device `8086:e222` has an explicit `intel-arc-linux-llamacpp-sycl` qualification target, but this remains unverified until that hardware produces a complete passing record. B65 needs kernel 6.17, including when Ubuntu 24.04 is used; after first-time setup, log out or reboot if the new `render` group membership is not active, then rerun the same command.
 
 **DGX Spark** — Uses the normal Linux NVIDIA source-build path for llama.cpp; its ARM64 architecture does not require a separate prebuilt package. The optional vLLM install is the exception: GB10 needs the reviewed CUDA 13 wheel channel, since the stock aarch64 wheels pull CPU-only PyTorch — see [Choosing engines](#choosing-engines).
 

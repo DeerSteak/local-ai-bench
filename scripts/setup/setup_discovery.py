@@ -199,7 +199,7 @@ def discover_windows_gpu() -> DisplayDiscovery:
     for name in (line.strip() for line in output.splitlines() if line.strip()):
         if "AMD" in name or "Radeon" in name:
             return DisplayDiscovery("amd", hardware.classify_gpu(name), name)
-        if "Intel" in name and "Arc" in name:
+        if hardware.is_intel_xpu_display(name):
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)
 
@@ -208,12 +208,12 @@ def discover_linux_intel_gpu() -> DisplayDiscovery:
     if platform.system() != "Linux":
         return DisplayDiscovery(None, None, None)
     try:
-        output = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+        output = subprocess.check_output(["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return DisplayDiscovery(None, None, None)
     for line in output.splitlines():
         if (any(key in line for key in ("VGA", "3D controller", "Display"))
-                and "Intel" in line and "Arc" in line):
+                and hardware.is_intel_xpu_display(line)):
             name = line.split(":", 2)[-1].strip()
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)

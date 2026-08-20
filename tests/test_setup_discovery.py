@@ -116,3 +116,21 @@ def test_discovers_linux_intel_arc(monkeypatch):
 
     assert result.vendor == "intel"
     assert result.name == "Intel Arc A770"
+
+
+def test_discovers_linux_arc_pro_b65_pci_codename(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "18:00.0 VGA compatible controller: Intel Corporation "
+            "Battlemage G31 [Intel Graphics] [8086:e222]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_intel_gpu()
+
+    assert result.vendor == "intel"
+    assert result.kind == "discrete"
+    assert result.name is not None
+    assert "Battlemage G31" in result.name

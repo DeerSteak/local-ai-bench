@@ -40,7 +40,15 @@ def parse_size_gb(s: str) -> float:
 
 # See docs/setup.md#memory-fit-estimate for the classification heuristic and its default-to-integrated failure mode.
 _AMD_DISCRETE_PATTERN = re.compile(r"(?:\bRX(?=\b|\d)|\bPRO\b|\bINSTINCT\b)")
-_INTEL_DISCRETE_PATTERN = re.compile(r"\b[AB]\d{3}\b")
+_INTEL_DISCRETE_PATTERN = re.compile(r"\b[AB]\d{3}\b|\bBATTLEMAGE\b|\bE222\b")
+
+
+def is_intel_xpu_display(name: str) -> bool:
+    """True for Intel Arc marketing names and Linux Battlemage PCI identities."""
+    upper = name.upper()
+    return "INTEL" in upper and (
+        "ARC" in upper or "BATTLEMAGE" in upper or "8086:E222" in upper
+    )
 
 
 def classify_gpu(name: str) -> str:

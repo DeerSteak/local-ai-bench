@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
 from scripts.setup.archive_safety import safe_extract_zip
+from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
 from scripts.setup.runtime_update import (
     fetch_llamacpp_release, fetch_llamacpp_release_tag, llamacpp_clone_command,
@@ -94,7 +95,7 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
 
 
 def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
-            nvidia: bool, rocm: bool, compute_capability: str | None,
+            nvidia: bool, rocm: bool, intel_xpu: bool, compute_capability: str | None,
             max_cuda_version: str | None, info, warn, fail, ok,
             version: str | None = None) -> bool:
     release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
@@ -121,6 +122,7 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         fail("git and cmake are required to build llama.cpp from source")
         return False
     flags = []
+    build_env = None
     if nvidia:
         nvcc = find_nvcc()
         if nvcc:
@@ -136,6 +138,15 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
     elif rocm:
         info("Building with ROCm/HIP support ...")
         flags.append("-DGGML_HIP=ON")
+    elif intel_xpu:
+        build_env = oneapi_environment()
+        if build_env is None:
+            fail("Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built")
+            return False
+        info("Building with Intel oneAPI/SYCL support ...")
+        flags += [
+            "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
+        ]
     else:
         info("No GPU backend detected — building CPU-only ...")
     if runtime_dir.exists():
@@ -156,7 +167,9 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         flags.append(f"-DLLAMA_BUILD_NUMBER={build_number}")
     build_dir = runtime_dir / "build"
     info(f"Configuring build ({' '.join(flags) or 'CPU-only'}) ...")
-    if subprocess.run(["cmake", "-B", str(build_dir), "-S", str(runtime_dir), *flags]).returncode:
+    if subprocess.run(
+            ["cmake", "-B", str(build_dir), "-S", str(runtime_dir), *flags],
+            env=build_env).returncode:
         fail("cmake configure failed")
         return False
     info("Building llama-server, llama-bench, and llama-batched-bench ...")
@@ -165,7 +178,7 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         "--target", "llama-bench", "--target", "llama-batched-bench",
         "--config", "Release", "-j",
     ]
-    if subprocess.run(command).returncode:
+    if subprocess.run(command, env=build_env).returncode:
         fail("Build failed")
         return False
     if not any(build_dir.rglob("llama-server")):

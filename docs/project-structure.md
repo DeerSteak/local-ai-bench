@@ -159,6 +159,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
 | `setup/engine_selection.py` | Engine-picker rules and terminal interaction, including disabled engines and installation needs |
 | `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
+| `setup/intel_xpu_install.py` | Native Ubuntu Intel GPU compute/oneAPI prerequisite plan, SYCL environment loading, and XPU probe |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
 | `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
 | `setup/setup_selection.py` | Terminal model picker, fit-based defaults, input parsing, and destructive-cleanup isolation |

@@ -1,0 +1,114 @@
+"""Intel GPU compute and oneAPI prerequisites for native Linux setup."""
+
+from dataclasses import dataclass
+import os
+import re
+import subprocess
+
+from scripts.setup.rocm_wsl_install import parse_os_release
+
+
+SUPPORTED_UBUNTU = {"24.04", "26.04"}
+ONEAPI_SETVARS = "/opt/intel/oneapi/setvars.sh"
+ONEAPI_KEY_URL = (
+    "https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
+)
+
+
+@dataclass(frozen=True)
+class IntelXpuInstallPlan:
+    commands: tuple[tuple[str, ...], ...]
+
+
+def intel_xpu_install_plan(os_release: str, *, user: str | None) -> IntelXpuInstallPlan:
+    release = parse_os_release(os_release)
+    distribution = release.get("ID", "").lower()
+    version = release.get("VERSION_ID", "")
+    if distribution != "ubuntu" or version not in SUPPORTED_UBUNTU:
+        detected = f"{distribution or 'unknown'} {version or 'unknown'}"
+        raise ValueError(
+            "Intel Arc XPU setup supports Ubuntu 24.04 or 26.04; "
+            f"detected {detected}"
+        )
+    if user and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*", user):
+        raise ValueError("could not safely identify the user for Intel GPU permissions")
+    commands = [
+        ("apt-get", "update"),
+        ("apt-get", "install", "-y", "software-properties-common", "gpg-agent", "wget"),
+        ("add-apt-repository", "-y", "ppa:kobuk-team/intel-graphics"),
+        ("apt-get", "update"),
+        (
+            "apt-get", "install", "-y", "libze-intel-gpu1", "libze1",
+            "intel-metrics-discovery", "intel-opencl-icd", "clinfo", "intel-gsc",
+            "libze-dev", "intel-ocloc",
+        ),
+        (
+            "bash", "-c",
+            f"wget -qO- {ONEAPI_KEY_URL} | gpg --dearmor --yes "
+            "--output /usr/share/keyrings/oneapi-archive-keyring.gpg",
+        ),
+        (
+            "bash", "-c",
+            "echo 'deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] "
+            "https://apt.repos.intel.com/oneapi all main' "
+            "> /etc/apt/sources.list.d/oneAPI.list",
+        ),
+        ("apt-get", "update"),
+        (
+            "apt-get", "install", "-y", "intel-oneapi-compiler-dpcpp-cpp",
+            "intel-oneapi-onedpl-devel", "intel-oneapi-dnnl-devel",
+            "intel-oneapi-mkl-devel",
+        ),
+    ]
+    if version == "24.04":
+        commands.insert(2, ("apt-get", "install", "-y", "linux-generic-hwe-24.04"))
+    if user:
+        commands.append(("usermod", "-aG", "render", user))
+    return IntelXpuInstallPlan(tuple(commands))
+
+
+def run_intel_xpu_install(plan: IntelXpuInstallPlan, *, log=print,
+                          run=subprocess.run, geteuid=None) -> bool:
+    effective_uid = geteuid or getattr(os, "geteuid", lambda: 1)
+    prefix = [] if effective_uid() == 0 else ["sudo"]
+    for command in plan.commands:
+        argv = [*prefix, *command]
+        log(f"  Running: {' '.join(argv)}")
+        try:
+            failed = run(argv).returncode != 0
+        except OSError as exc:
+            log(f"  Could not run {command[0]}: {exc}")
+            return False
+        if failed:
+            log("  Intel XPU prerequisite installation failed")
+            return False
+    return True
+
+
+def parse_environment(text: str) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+
+
+def oneapi_environment(*, base_env=None, run=subprocess.run) -> dict[str, str] | None:
+    base = dict(os.environ if base_env is None else base_env)
+    try:
+        result = run(
+            ["bash", "-c", f"source {ONEAPI_SETVARS} >/dev/null && env"],
+            capture_output=True, text=True, env=base,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return {**base, **parse_environment(result.stdout)}
+
+
+def sycl_gpu_available(*, env=None, run=subprocess.run) -> bool:
+    try:
+        result = run(
+            ["sycl-ls"], capture_output=True, text=True, timeout=30, env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+    return result.returncode == 0 and "gpu" in output and "intel" in output

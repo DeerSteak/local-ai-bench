@@ -13,6 +13,7 @@ TARGETS = (
     {"id": "nvidia-linux-vllm-cuda", "platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA"},
     {"id": "radeon-linux-llamacpp-rocm", "platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
     {"id": "radeon-linux-vllm-rocm", "platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
+    {"id": "intel-arc-linux-llamacpp-sycl", "platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "xpu", "accelerator": "8086:e222"},
     {"id": "ryzen-ai-halo-llamacpp-rocm", "platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon 8060S"},
     {"id": "ryzen-ai-halo-vllm-rocm", "platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "Radeon 8060S"},
     {"id": "dgx-spark-llamacpp-cuda", "platform": "linux", "architecture": "aarch64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GB10"},

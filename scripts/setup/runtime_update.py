@@ -15,6 +15,7 @@ from typing import Callable
 import psutil
 
 from scripts.setup.vllm_install import VllmSupport, install_vllm
+from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
 from scripts.setup.directory_transaction import DirectorySwapError, swap_staged_directory
 from scripts.setup.resumable_download import download_file
@@ -212,6 +213,10 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         return flags
     if backend == "rocm":
         return ["-DGGML_HIP=ON"]
+    if backend == "xpu":
+        return [
+            "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
+        ]
     return []
 
 
@@ -529,6 +534,11 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
         return RuntimeUpdateResult(False, "CUDA rebuild requires nvcc; the current runtime was preserved.")
     active_run = control.run if control is not None else run
     capability = detect_nvidia_compute_capability(run=active_run) if backend == "cuda" else None
+    build_env = oneapi_environment() if backend == "xpu" else None
+    if backend == "xpu" and build_env is None:
+        return RuntimeUpdateResult(
+            False, "Intel XPU rebuild requires the oneAPI environment; the current runtime was preserved.",
+        )
     token = token_factory()
     staged = target.with_name(f".{target.name}-update-{token}")
     backup = target.with_name(f".{target.name}-backup-{token}")
@@ -548,7 +558,7 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
             if cancelled := _cancelled(control):
                 return cancelled
             log(f"Running: {' '.join(command)}")
-            if active_run(command).returncode != 0:
+            if active_run(command, env=build_env).returncode != 0:
                 if cancelled := _cancelled(control):
                     return cancelled
                 return RuntimeUpdateResult(False, f"llama.cpp update command failed: {command[0]}")

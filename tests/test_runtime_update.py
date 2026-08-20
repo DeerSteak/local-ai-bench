@@ -318,6 +318,9 @@ def test_llamacpp_cmake_flags_match_backend():
         "-DCMAKE_CUDA_ARCHITECTURES=89",
     ]
     assert llamacpp_cmake_flags("rocm") == ["-DGGML_HIP=ON"]
+    assert llamacpp_cmake_flags("xpu") == [
+        "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
+    ]
     assert llamacpp_cmake_flags("cpu") == []
 
 

@@ -47,6 +47,15 @@ def test_classify_gpu_amd_integrated():
 def test_classify_gpu_intel_discrete():
     assert hardware.classify_gpu("Intel Arc B580") == "discrete"
     assert hardware.classify_gpu("Intel Arc A770") == "discrete"
+    assert hardware.classify_gpu("Intel Corporation Battlemage G31 [Intel Graphics]") == "discrete"
+    assert hardware.classify_gpu("Intel Corporation Device e222 [8086:e222]") == "discrete"
+
+
+def test_intel_xpu_display_accepts_arc_and_battlemage_but_not_generic_intel():
+    assert hardware.is_intel_xpu_display("Intel Arc Pro B65")
+    assert hardware.is_intel_xpu_display("Intel Corporation Battlemage G31 [Intel Graphics]")
+    assert hardware.is_intel_xpu_display("Intel Corporation Device e222 [8086:e222]")
+    assert not hardware.is_intel_xpu_display("Intel UHD Graphics 770")
 
 
 def test_classify_gpu_intel_integrated():
