@@ -957,6 +957,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
         if prepare_comfyui_runtime(
             COMFYUI_DIR, config.COMFYUI_MODELS_DIR, config.COMFYUI_EXTRA_MODEL_PATHS,
             portable_python=PORTABLE_PYTHON, intel_xpu=intel_linux, rocm=rocm_ok,
+            rocm_version=rocm_version() if rocm_ok else None,
+            wsl=hardware.detect_wsl(os_name, platform.release()),
             issues=issues, info=info, warn=warn, fail=fail, ok=ok,
         ):
             found_ckpts = provision_comfyui_assets(
