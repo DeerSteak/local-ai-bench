@@ -79,12 +79,26 @@ def test_reviewed_geforce_windows_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_radeon_8060s_windows_qualification_is_supported():
+    evidence = qualification_entry(
+        "windows", "x86_64", "llamacpp", "vulkan", "0.1.2-dev",
+        accelerator=(
+            "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S / 127 GB RAM\n"
+            "AMD Radeon(TM) 8060S Graphics"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == \
+        "radeon-8060s-windows-llamacpp-vulkan"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_reviewed_dgx_spark_llamacpp_qualification_is_supported():
     evidence = qualification_entry(
         "linux", "aarch64", "llamacpp", "cuda", "0.1.2-dev",
         accelerator="NVIDIA GB10 122 GB",
     )
-    assert evidence == QUALIFICATION_MATRIX[3]
+    assert evidence is not None and evidence["id"] == "dgx-spark-llamacpp-cuda"
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
@@ -93,7 +107,7 @@ def test_reviewed_dgx_spark_vllm_qualification_is_supported():
         "linux", "aarch64", "vllm", "cuda", "0.27.1",
         accelerator="NVIDIA GB10 122 GB",
     )
-    assert evidence == QUALIFICATION_MATRIX[4]
+    assert evidence is not None and evidence["id"] == "dgx-spark-vllm-cuda"
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 

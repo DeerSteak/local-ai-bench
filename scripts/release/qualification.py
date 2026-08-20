@@ -96,6 +96,35 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
     {
+        "id": "radeon-8060s-windows-llamacpp-vulkan",
+        "platform": "windows",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "vulkan",
+        "accelerator": (
+            "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S / 127 GB RAM\n"
+            "AMD Radeon(TM) 8060S Graphics"
+        ),
+        "qualified_at": "2026-08-20",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload using "
+                "native build 10516 (b95502ba9); not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/radeon-windows-llamacpp-vulkan/"
+            "results_qualification_radeon-windows-llamacpp-vulkan.json",
+        ],
+    },
+    {
         "id": "dgx-spark-llamacpp-cuda",
         "platform": "linux",
         "architecture": "aarch64",

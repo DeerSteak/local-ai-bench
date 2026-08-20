@@ -11,7 +11,7 @@ Support is derived from the recorded qualification results below. Runtime suppor
 | --- | --- | --- | --- | --- | --- | --- |
 | macos | arm64 | llamacpp | metal | Supported | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | vulkan | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
