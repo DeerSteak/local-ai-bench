@@ -6,7 +6,9 @@ from scripts.release.qualification_coverage import qualification_arguments
 from scripts.release.qualification_run import (
     benchmark_wrapper, default_result_path, qualification_failure_summary,
 )
-from scripts.release.qualification_targets import TARGET_ENGINES, TARGETS, target_engine
+from scripts.release.qualification_targets import (
+    TARGET_ENGINES, TARGETS, qualification_target, qualification_target_errors, target_engine,
+)
 
 
 def test_target_engine_is_explicit_and_rejects_unknown_targets():
@@ -19,6 +21,51 @@ def test_target_engine_is_explicit_and_rejects_unknown_targets():
 
 def test_target_engines_are_derived_from_the_platform_registry():
     assert TARGET_ENGINES == {target["id"]: target["runtime"] for target in TARGETS}
+
+
+def test_qualification_target_returns_the_shared_target_record():
+    assert qualification_target("radeon-wsl2-llamacpp-rocm")["backend"] == "rocm"
+
+
+def test_qualification_target_rejects_cpu_fallback_and_wrong_platform():
+    target = qualification_target("radeon-wsl2-llamacpp-rocm")
+    profile = {
+        "os": "Linux 6.18.33.2-microsoft-standard-WSL2",
+        "wsl": True,
+        "arch": "x86_64",
+        "backend": "cpu",
+        "hostname": "AMD Ryzen 7 5800XT\nAMD Radeon RX 9060 XT 31 GB",
+    }
+    assert qualification_target_errors(target, profile) == [
+        "requires backend rocm; detected cpu",
+    ]
+    profile["wsl"] = False
+    assert qualification_target_errors(target, profile) == [
+        "requires platform wsl2; detected linux",
+        "requires backend rocm; detected cpu",
+    ]
+
+
+def test_qualification_target_accepts_architecture_alias_and_accelerator_substring():
+    target = qualification_target("dgx-spark-vllm-cuda")
+    profile = {
+        "os": "Linux 6.17",
+        "arch": "arm64",
+        "backend": "cuda",
+        "hostname": "NVIDIA GB10 119 GB",
+    }
+    assert qualification_target_errors(target, profile) == []
+
+
+def test_vulkan_target_uses_accelerator_identity_instead_of_compute_backend_probe():
+    target = qualification_target("radeon-windows-llamacpp-vulkan")
+    profile = {
+        "os": "Windows 11",
+        "arch": "AMD64",
+        "backend": "rocm",
+        "hostname": "AMD Ryzen 7 5800XT\nAMD Radeon RX 9060 XT 16 GB",
+    }
+    assert qualification_target_errors(target, profile) == []
 
 
 def test_qualification_arguments_are_the_normal_smallest_model_benchmark():
