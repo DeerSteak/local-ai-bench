@@ -21,6 +21,9 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
     assert "powershell.exe -NoProfile" in text
+    assert "ForEach-Object" not in text
+    assert all(" | " not in line for line in text.splitlines()
+               if line.startswith("powershell.exe"))
     assert "for /f" not in text
     assert "%CD%\\qualification-evidence\\%TARGET%\\results_qualification_%TARGET%.json" in text
 
