@@ -63,6 +63,7 @@ class LlamaBenchConcurrencyBenchmark:
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,
+            "--flash-attn", "on",
             "--output-format", "jsonl",
         ]
 

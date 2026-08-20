@@ -130,6 +130,7 @@ def test_build_command_shape():
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--flash-attn", "on",
         "--output-format", "jsonl",
     ]
 
