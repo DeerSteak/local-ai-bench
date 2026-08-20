@@ -38,3 +38,57 @@ def test_prepare_installs_missing_requirements(monkeypatch, tmp_path):
         issues=[], info=_log, warn=_log, fail=_log, ok=_log,
     )
     assert calls[1] == ["python", "-m", "pip", "install", "-r", str(comfyui / "requirements.txt")]
+
+
+def test_torch_backend_probe_uses_selected_comfyui_python():
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout="6.4.43482\n")
+
+    assert comfyui_runtime.torch_backend_available("comfy-python", "ROCm", run=run)
+    assert calls == [[
+        "comfy-python", "-c",
+        "import torch; assert torch.version.hip; torch.zeros(1, device='cuda'); "
+        "print(torch.version.hip)",
+    ]]
+
+
+def test_wrong_torch_backend_is_force_reinstalled_and_verified(monkeypatch):
+    probes = iter([False, True])
+    installs = []
+    monkeypatch.setattr(
+        comfyui_runtime, "torch_backend_available",
+        lambda python, marker: next(probes),
+    )
+    monkeypatch.setattr(
+        comfyui_runtime.subprocess, "run",
+        lambda command: installs.append(command) or SimpleNamespace(returncode=0),
+    )
+    issues = []
+
+    comfyui_runtime._ensure_torch_backend(
+        "comfy-python", "rocm6.4", "ROCm", issues, _log, _log, _log,
+    )
+
+    assert issues == []
+    assert installs == [[
+        "comfy-python", "-m", "pip", "install", "--upgrade", "--force-reinstall",
+        "--index-url", "https://download.pytorch.org/whl/rocm6.4",
+        "torch", "torchvision", "torchaudio",
+    ]]
+
+
+def test_backend_install_is_rejected_when_runtime_probe_still_fails(monkeypatch):
+    monkeypatch.setattr(comfyui_runtime, "torch_backend_available", lambda *_args: False)
+    monkeypatch.setattr(
+        comfyui_runtime.subprocess, "run", lambda _command: SimpleNamespace(returncode=0),
+    )
+    issues = []
+
+    comfyui_runtime._ensure_torch_backend(
+        "comfy-python", "rocm6.4", "ROCm", issues, _log, _log, _log,
+    )
+
+    assert issues and "--force-reinstall" in issues[0]

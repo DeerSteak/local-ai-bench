@@ -40,7 +40,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Python, a project-managed official llama.cpp release (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, ROCm-enabled PyTorch on AMD, XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm |
+| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. Local AI Bench does not automate or close Terminal windows; what happens after the command exits follows the user's Terminal profile settings. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
