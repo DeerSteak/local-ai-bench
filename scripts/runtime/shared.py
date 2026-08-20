@@ -97,6 +97,11 @@ def _nvidia_gpu_summary(output):
     return devices[0]["name"], sum(capacities) if len(capacities) == len(devices) else None
 
 
+def _rocm_gpu_summary(output):
+    names = hardware.rocminfo_gpu_names(output)
+    return names[0] if names else None
+
+
 def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
     lines = []
     if cpu:
@@ -517,10 +522,7 @@ class Shared:
                     out = subprocess.run(
                         ["rocminfo"], capture_output=True, text=True, timeout=10,
                     ).stdout
-                    for line in out.splitlines():
-                        if "Marketing Name:" in line:
-                            gpu = line.split(":", 1)[1].strip()
-                            break
+                    gpu = _rocm_gpu_summary(out)
                 except Exception:
                     pass
             if not gpu and Shared.detect_wsl(system, platform.release()):
@@ -582,7 +584,7 @@ class Shared:
         try:
             out = subprocess.check_output(["rocminfo"], text=True,
                                            stderr=subprocess.DEVNULL)
-            if "Marketing Name" in out:
+            if _rocm_gpu_summary(out):
                 return "rocm"
         except (FileNotFoundError, subprocess.CalledProcessError):
             pass
