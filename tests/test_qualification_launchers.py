@@ -72,7 +72,6 @@ def test_target_listing_needs_no_python_environment():
         "geforce-wsl2-llamacpp-cuda",
         "geforce-wsl2-vllm-cuda",
         "radeon-wsl2-llamacpp-rocm",
-        "radeon-wsl2-vllm-rocm",
         "nvidia-linux-llamacpp-cuda",
         "nvidia-linux-vllm-cuda",
         "radeon-linux-llamacpp-rocm",

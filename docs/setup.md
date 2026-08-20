@@ -16,7 +16,6 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | llamacpp | rocm | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| wsl2 | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | cuda | Unverified | Unverified | No qualification record |
 | linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
@@ -40,7 +39,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Python, a project-managed official llama.cpp release (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
-| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
+| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), and optional vLLM on native Linux ROCm or NVIDIA CUDA, including NVIDIA WSL2; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. Local AI Bench does not automate or close Terminal windows; what happens after the command exits follows the user's Terminal profile settings. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
@@ -146,13 +145,14 @@ vLLM's own platform support is much narrower than llama.cpp's, so setup decides 
 | Linux + AMD ROCm (gfx90a/942/950, RX 7900/9000) | Supported | Prebuilt wheels from `wheels.vllm.ai/rocm`; needs ROCm 6.3+ and a CPython 3.12 interpreter, which is the only version those wheels are published for |
 | Linux + AMD ROCm (gfx1150/1151, including Strix Halo) | Supported install path | Current official ROCm wheels include these RDNA 3.5 targets; exact-build platform support still requires qualification |
 | Linux + AMD ROCm, any other gfx target | Experimental | Setup may offer the ROCm wheel, but reports when its published kernel target list does not match the detected GPU |
+| WSL2 + AMD ROCm | Not offered | vLLM's ROCm platform discovery requires AMD SMI interfaces that Radeon WSL2 does not expose; AMD's patched Docker workaround is not the normal environment this project ships |
 | DGX Spark (GB10) | Experimental | Reviewed CUDA 13 wheels — the stock aarch64 wheels would silently install CPU-only PyTorch |
 | macOS | Not offered | Out of scope for this project — see the design note below |
 | Windows (native) | Not offered | vLLM has no upstream Windows support — see [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2) |
 | Linux + Intel XPU | Not offered | No prebuilt wheels exist; the source build is out of scope for this script |
 | CPU-only | Not offered | This benchmark measures accelerated inference |
 
-Support is decided from the OS, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`: the terminal names it in the setup plan, and the wizard warns on both the engines page and the final review that you may be prompted for your password in the terminal behind it. On Linux the bootstrap installs these headers up front, alongside any other prerequisite, for both the interpreter it will use and CPython 3.12 (the version vLLM's ROCm and DGX Spark wheels require) — so the password prompt happens once, early, rather than midway through an unattended install. `setup_check.py` then finds them present and does nothing. Its own header install remains as a fallback for a system whose interpreter arrived some other way. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead. After creating a managed vLLM environment, setup imports PyTorch and vLLM as a runtime preflight; an unresolved native dependency blocks benchmark launch instead of producing partial qualification evidence.
+Support is decided from the OS, virtualization, GPU vendor, architecture (CUDA compute capability or ROCm gfx target), ROCm version, and available Python. When vLLM cannot run on this system, its picker row is shown deselected and disabled, with the reason beside it, rather than being hidden or offered and then failing. Installing vLLM also installs your distribution's Python development headers (`python3.X-dev`, `python3-devel`) when they are absent, because Triton compiles a small CUDA helper at import time and vLLM will not start without `Python.h`. That package install needs `sudo`: the terminal names it in the setup plan, and the wizard warns on both the engines page and the final review that you may be prompted for your password in the terminal behind it. On Linux the bootstrap installs these headers up front, alongside any other prerequisite, for both the interpreter it will use and CPython 3.12 (the version vLLM's ROCm and DGX Spark wheels require) — so the password prompt happens once, early, rather than midway through an unattended install. `setup_check.py` then finds them present and does nothing. Its own header install remains as a fallback for a system whose interpreter arrived some other way. Setup's own bootstrap already installs the headers for a Python it installs itself; this covers the case where the interpreter came from the system instead. After creating a managed vLLM environment, setup imports PyTorch and vLLM and requires vLLM to identify an accelerator; an unresolved dependency or unspecified platform blocks benchmark launch instead of producing partial qualification evidence.
 
 ### When the system Python is too new
 
@@ -176,7 +176,7 @@ Selecting vLLM roughly doubles the download for a given model set, and the two w
 
 ## vLLM on Windows via WSL2
 
-Native Windows cannot run vLLM, but WSL2 can. NVIDIA uses the ordinary Linux CUDA path with the Windows driver's GPU passthrough. AMD requires its WSL-specific ROCm userspace stack; the explicit Radeon WSL2 qualification targets install the project's pinned stack automatically when `rocminfo` is unavailable and refuse to continue until it sees the requested GPU.
+Native Windows cannot run vLLM, but NVIDIA can use the ordinary Linux CUDA path under WSL2 with the Windows driver's GPU passthrough. Radeon WSL2 can run the llama.cpp and ComfyUI paths through AMD's WSL-specific ROCm userspace stack, but vLLM is not offered because its AMD SMI platform discovery does not work through WSL2; the project does not substitute AMD's separately patched Docker environment for the normal managed runtime.
 
 Treat it as a second machine. WSL2 gets its own clone, its own `bench-env/`, and its own HuggingFace cache — nothing is shared with a Windows-side installation, so the model set is downloaded again in full.
 

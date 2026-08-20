@@ -9,7 +9,6 @@ TARGETS = (
     {"id": "geforce-wsl2-llamacpp-cuda", "platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
     {"id": "geforce-wsl2-vllm-cuda", "platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
     {"id": "radeon-wsl2-llamacpp-rocm", "platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
-    {"id": "radeon-wsl2-vllm-rocm", "platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},
     {"id": "nvidia-linux-llamacpp-cuda", "platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA"},
     {"id": "nvidia-linux-vllm-cuda", "platform": "linux", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA"},
     {"id": "radeon-linux-llamacpp-rocm", "platform": "linux", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},

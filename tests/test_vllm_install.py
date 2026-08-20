@@ -326,9 +326,19 @@ def test_windows_is_unsupported_even_with_an_nvidia_gpu():
 
 
 def test_wsl2_takes_the_linux_path_since_it_reports_as_linux():
-    result = support(os_name="Linux", nvidia_ok=True, compute_cap="8.9")
+    result = support(os_name="Linux", is_wsl=True, nvidia_ok=True, compute_cap="8.9")
     assert result.status == "supported"
     assert result.method == "cuda_wheel"
+
+
+def test_radeon_wsl2_is_rejected_before_downloading_vllm():
+    result = support(
+        os_name="Linux", is_wsl=True, rocm_ok=True,
+        rocm_version=(7, 2), rocm_gfx_targets=["gfx1200"],
+    )
+    assert (result.status, result.method) == ("unsupported", None)
+    assert "AMD SMI" in result.reason
+    assert "Docker" in result.reason
 
 
 def test_intel_xpu_is_unsupported():
@@ -469,7 +479,9 @@ def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
     assert "libmpi_cxx.so.40" in error
     assert calls[0][0] == [
         str(tmp_path / "vllm-env" / "bin" / "python"),
-        "-c", "import torch; import vllm",
+        "-c",
+        "import torch; import vllm; from vllm.platforms import current_platform; "
+        "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
     ]
     assert calls[0][1]["timeout"] == 60
 

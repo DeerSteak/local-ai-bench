@@ -63,6 +63,7 @@ def is_dgx_spark(machine: str, gpu_names) -> bool:
 
 def vllm_platform_support(*, os_name: str, machine: str,
                           python_version: tuple[int, int],
+                          is_wsl: bool = False,
                           nvidia_ok: bool = False,
                           rocm_ok: bool = False,
                           intel_gpu: bool = False,
@@ -112,6 +113,12 @@ def vllm_platform_support(*, os_name: str, machine: str,
                            requires_python=None)
 
     if rocm_ok:
+        if is_wsl:
+            return VllmSupport(
+                "unsupported", None,
+                "vLLM's ROCm wheel requires AMD SMI device discovery, which Radeon WSL2 "
+                "does not expose; the project does not ship AMD's patched Docker workaround",
+            )
         if rocm_version is not None and rocm_version < MIN_ROCM_VERSION:
             version_text = ".".join(str(part) for part in rocm_version)
             return VllmSupport("unsupported", None,
@@ -468,7 +475,11 @@ def vllm_runtime_import_error(venv_dir: Path, *, run=subprocess.run) -> str | No
         ("python.exe" if os.name == "nt" else "python")
     try:
         result = run(
-            [str(python), "-c", "import torch; import vllm"],
+            [
+                str(python), "-c",
+                "import torch; import vllm; from vllm.platforms import current_platform; "
+                "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
+            ],
             capture_output=True, text=True, timeout=60,
         )
     except (OSError, subprocess.SubprocessError) as exc:

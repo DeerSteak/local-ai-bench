@@ -46,7 +46,7 @@ def test_rocm_wsl_target_requires_install_only_when_runtime_is_missing():
 
 
 def test_rocm_wsl_target_rejects_native_linux_before_install():
-    target = qualification_target("radeon-wsl2-vllm-rocm")
+    target = qualification_target("radeon-wsl2-llamacpp-rocm")
     with pytest.raises(ValueError, match="requires WSL2"):
         qualification_needs_wsl_rocm(
             target, os_name="Linux", release="6.14-generic", rocm_available=False,

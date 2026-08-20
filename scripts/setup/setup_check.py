@@ -479,6 +479,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                  else f"found at {VLLM_BIN}" if VLLM_BIN else None)
     vllm_support = vllm_platform_support(
         os_name=os_name, machine=platform.machine(), python_version=sys.version_info[:2],
+        is_wsl=hardware.detect_wsl(os_name, platform.release()),
         nvidia_ok=nvidia_ok, rocm_ok=rocm_ok, intel_gpu=intel_linux or intel_windows,
         gpu_names=[device["name"] for device in nvidia_gpus],
         compute_cap=nvidia_compute_cap, rocm_version=rocm_version() if rocm_ok else None,
@@ -510,6 +511,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                     vllm_support = vllm_platform_support(
                         os_name=os_name, machine=platform.machine(),
                         python_version=sys.version_info[:2],
+                        is_wsl=hardware.detect_wsl(os_name, platform.release()),
                         nvidia_ok=nvidia_ok, rocm_ok=rocm_ok,
                         intel_gpu=intel_linux or intel_windows,
                         gpu_names=[device["name"] for device in nvidia_gpus],
@@ -816,7 +818,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
             issues.append(f"Install the vLLM build tools in {config.VLLM_VENV}")
         runtime_error = vllm_runtime_import_error(config.VLLM_VENV)
         if runtime_error:
-            fail("vLLM runtime import failed")
+            fail("vLLM runtime preflight failed")
             info(runtime_error.splitlines()[-1] if runtime_error else "")
             issues.append("Repair the managed vLLM environment before benchmarking")
 
