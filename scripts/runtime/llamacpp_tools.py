@@ -10,6 +10,20 @@ from scripts.setup.setup_config import configured_llamacpp_tool, load_setup_conf
 
 # The WSL-Ubuntu CUDA toolkit installs here and never puts itself on PATH.
 CUDA_BIN_DIRS = ("/usr/local/cuda/bin",)
+LLAMACPP_TOOL_NAMES = ("llama-server", "llama-bench", "llama-batched-bench")
+
+
+def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, str]:
+    exe_suffix = ".exe" if platform_name == "Windows" else ""
+    server_name = f"{LLAMACPP_TOOL_NAMES[0]}{exe_suffix}"
+    for server in sorted(Path(vendored_dir).rglob(server_name)):
+        tools = {
+            name: server.parent / f"{name}{exe_suffix}"
+            for name in LLAMACPP_TOOL_NAMES
+        }
+        if all(path.is_file() for path in tools.values()):
+            return {name: str(path) for name, path in tools.items()}
+    return {}
 
 
 def find_nvcc(*, which_fn=shutil.which, exists_fn=None) -> str | None:
@@ -40,10 +54,10 @@ def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
     vendored_dir = Path(vendored_dir) if vendored_dir is not None else config.LLAMACPP_DIR
     which_fn = which_fn or shutil.which
     exe_name = f"{base_name}.exe" if platform_name == "Windows" else base_name
-    if platform_name == "Darwin" and vendored_dir.exists():
-        managed = next((path for path in vendored_dir.rglob(exe_name) if path.is_file()), None)
-        if managed is not None:
-            return str(managed)
+    managed_tools = managed_llamacpp_tools(vendored_dir, platform_name) \
+        if vendored_dir.exists() else {}
+    if base_name in managed_tools:
+        return managed_tools[base_name]
     found = which_fn(base_name)
     if found:
         return found

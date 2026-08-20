@@ -32,7 +32,7 @@ def test_nvcc_is_absent_when_neither_path_nor_toolkit_has_it():
     assert find_nvcc(which_fn=lambda _name: None, exists_fn=lambda _path: False) is None
 
 
-def test_system_path_wins_over_project_vendored_binary(tmp_path):
+def test_system_path_wins_over_an_incomplete_project_toolset(tmp_path):
     vendored = tmp_path / "vendor"
     vendored.mkdir()
     (vendored / "llama-server").write_text("vendored")
@@ -40,6 +40,34 @@ def test_system_path_wins_over_project_vendored_binary(tmp_path):
         "llama-server", vendored_dir=vendored, platform_name="Linux",
         which_fn=lambda _: "/usr/local/bin/llama-server",
     ) == "/usr/local/bin/llama-server"
+
+
+def test_complete_project_toolset_wins_as_one_coherent_runtime(tmp_path):
+    vendored = tmp_path / "vendor" / "build" / "bin"
+    vendored.mkdir(parents=True)
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        (vendored / name).write_text(name)
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        assert find_llamacpp_tool(
+            name, vendored_dir=tmp_path / "vendor", platform_name="Linux",
+            which_fn=lambda requested: f"/usr/bin/{requested}",
+        ) == str(vendored / name)
+
+
+def test_managed_tools_from_different_directories_are_not_mixed(tmp_path):
+    managed = tmp_path / "vendor"
+    for directory, name in (
+        ("old", "llama-server"),
+        ("new", "llama-bench"),
+        ("new", "llama-batched-bench"),
+    ):
+        path = managed / directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(name)
+    assert find_llamacpp_tool(
+        "llama-bench", vendored_dir=managed, platform_name="Linux",
+        which_fn=lambda requested: f"/usr/bin/{requested}",
+    ) == "/usr/bin/llama-bench"
 
 
 def test_project_binary_is_a_fallback_when_system_tool_is_missing(tmp_path):
@@ -53,9 +81,11 @@ def test_project_binary_is_a_fallback_when_system_tool_is_missing(tmp_path):
 
 
 def test_macos_managed_binary_wins_over_homebrew_or_path(tmp_path):
-    binary = tmp_path / "managed" / "bin" / "llama-server"
-    binary.parent.mkdir(parents=True)
-    binary.touch()
+    managed = tmp_path / "managed" / "bin"
+    managed.mkdir(parents=True)
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        (managed / name).touch()
+    binary = managed / "llama-server"
     assert find_llamacpp_tool(
         "llama-server", vendored_dir=tmp_path / "managed", platform_name="Darwin",
         which_fn=lambda _: "/opt/homebrew/bin/llama-server",
