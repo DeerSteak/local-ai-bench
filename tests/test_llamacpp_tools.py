@@ -1,7 +1,9 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from scripts.runtime.llamacpp_tools import (
     CUDA_BIN_DIRS, cuda_architecture, find_llamacpp_tool, find_nvcc,
+    probe_llamacpp_backend,
 )
 
 
@@ -14,6 +16,22 @@ def test_compute_capability_becomes_a_cmake_architecture():
 def test_unreadable_compute_capability_yields_no_architecture():
     for value in (None, "", "native", "No CUDA devices found.", "8", "8.9.1", "x.y"):
         assert cuda_architecture(value) is None
+
+
+def test_llamacpp_backend_probe_uses_the_explicit_binary_and_both_output_streams():
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="Available devices:\n", stderr="HIP0: AMD")
+
+    assert probe_llamacpp_backend("/managed/llama-server", run=run) == "rocm"
+    assert calls[0][0] == ["/managed/llama-server", "--list-devices"]
+
+
+def test_llamacpp_backend_probe_does_not_guess_after_a_failed_command():
+    run = lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="failed")
+    assert probe_llamacpp_backend("llama-server", run=run) is None
 
 
 def test_nvcc_on_path_is_preferred_over_a_toolkit_directory():

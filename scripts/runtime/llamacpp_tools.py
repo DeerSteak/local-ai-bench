@@ -1,7 +1,9 @@
 """Shared llama.cpp tool discovery for setup and benchmark execution."""
 
 import platform
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
@@ -11,6 +13,32 @@ from scripts.setup.setup_config import configured_llamacpp_tool, load_setup_conf
 # The WSL-Ubuntu CUDA toolkit installs here and never puts itself on PATH.
 CUDA_BIN_DIRS = ("/usr/local/cuda/bin",)
 LLAMACPP_TOOL_NAMES = ("llama-server", "llama-bench", "llama-batched-bench")
+
+
+def llamacpp_backend_from_device_listing(output: str) -> str:
+    for line in output.splitlines():
+        device = line.strip().lower()
+        for pattern, backend in (
+            (r"cuda\d*\s*:", "cuda"), (r"(?:rocm|hip)\d*\s*:", "rocm"),
+            (r"(?:metal|mtl)\d*\s*:", "metal"),
+            (r"(?:sycl|level[- ]?zero)\d*\s*:", "xpu"), (r"vulkan\d*\s*:", "vulkan"),
+        ):
+            if re.match(pattern, device):
+                return backend
+    return "cpu"
+
+
+def probe_llamacpp_backend(binary: str | Path, *, run=None) -> str | None:
+    run = run or subprocess.run
+    try:
+        completed = run(
+            [str(binary), "--list-devices"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode:
+        return None
+    return llamacpp_backend_from_device_listing(f"{completed.stdout}\n{completed.stderr}")
 
 
 def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, str]:

@@ -1098,7 +1098,8 @@ def test_is_connection_crash_false_for_unrelated_error():
     ("Available devices:\n", "cpu"),
 ])
 def test_backend_from_device_listing(listing, expected):
-    assert LlamaCppEngine._backend_from_device_listing(listing) == expected
+    from scripts.runtime.llamacpp_tools import llamacpp_backend_from_device_listing
+    assert llamacpp_backend_from_device_listing(listing) == expected
 
 
 def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch):

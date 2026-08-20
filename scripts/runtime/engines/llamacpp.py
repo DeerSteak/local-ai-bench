@@ -20,7 +20,7 @@ import gguf
 import requests
 
 from scripts.runtime import config
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
@@ -317,36 +317,13 @@ class LlamaCppEngine(InferenceEngine):
                     installed.append(item)
         return installed
 
-    @staticmethod
-    def _backend_from_device_listing(output: str) -> str:
-        for line in output.splitlines():
-            device = line.strip().lower()
-            if re.match(r"cuda\d*\s*:", device):
-                return "cuda"
-            if re.match(r"(?:rocm|hip)\d*\s*:", device):
-                return "rocm"
-            if re.match(r"(?:metal|mtl)\d*\s*:", device):
-                return "metal"
-            if re.match(r"(?:sycl|level[- ]?zero)\d*\s*:", device):
-                return "xpu"
-            if re.match(r"vulkan\d*\s*:", device):
-                return "vulkan"
-        return "cpu"
-
     def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
         if cpu_only:
             return "cpu"
         binary = self._binary_path()
         if binary is None:
             return hardware_backend
-        try:
-            completed = subprocess.run(
-                [binary, "--list-devices"], capture_output=True, text=True, timeout=10,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return hardware_backend
-        output = f"{completed.stdout}\n{completed.stderr}"
-        return self._backend_from_device_listing(output) if completed.returncode == 0 else hardware_backend
+        return probe_llamacpp_backend(binary) or hardware_backend
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
         """Read a model's max context from its GGUF metadata, without loading weights.

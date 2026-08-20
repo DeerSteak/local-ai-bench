@@ -22,6 +22,14 @@ def test_find_tool_uses_runtime_directory(monkeypatch, tmp_path):
     assert calls[0][1]["platform_name"] == "Linux"
 
 
+def test_qualification_rebuilds_existing_runtime_with_wrong_or_unverifiable_backend():
+    assert llamacpp_install.qualification_backend_mismatch("llama-server", "cpu", "rocm")
+    assert llamacpp_install.qualification_backend_mismatch("llama-server", None, "rocm")
+    assert not llamacpp_install.qualification_backend_mismatch("llama-server", "rocm", "rocm")
+    assert not llamacpp_install.qualification_backend_mismatch(None, None, "rocm")
+    assert not llamacpp_install.qualification_backend_mismatch("llama-server", "cpu", None)
+
+
 def test_linux_install_requires_build_tools(monkeypatch, tmp_path):
     failures = []
     monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: None)

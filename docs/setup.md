@@ -40,7 +40,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | Platform | Script | What it can install |
 |---|---|---|
 | macOS | `bash setup.sh` | Python, a project-managed official llama.cpp release (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm |
+| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, verified XPU-enabled PyTorch on Intel Arc (experimental), optionally vLLM on NVIDIA/ROCm; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
 | Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. Local AI Bench does not automate or close Terminal windows; what happens after the command exits follows the user's Terminal profile settings. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
@@ -176,7 +176,7 @@ Selecting vLLM roughly doubles the download for a given model set, and the two w
 
 ## vLLM on Windows via WSL2
 
-Native Windows cannot run vLLM, but **WSL2 can, and needs no special support from this project**: inside a WSL2 distribution `platform.system()` returns `Linux`, so setup takes the ordinary Linux CUDA path described above with no Windows-specific code involved. What follows is a procedure, not a separate install mode.
+Native Windows cannot run vLLM, but WSL2 can. NVIDIA uses the ordinary Linux CUDA path with the Windows driver's GPU passthrough. AMD requires its WSL-specific ROCm userspace stack; the explicit Radeon WSL2 qualification targets install the project's pinned stack automatically when `rocminfo` is unavailable and refuse to continue until it sees the requested GPU.
 
 Treat it as a second machine. WSL2 gets its own clone, its own `bench-env/`, and its own HuggingFace cache — nothing is shared with a Windows-side installation, so the model set is downloaded again in full.
 
@@ -196,6 +196,8 @@ wsl --install
 ```
 
 **3. Install the NVIDIA driver on Windows only.** The host driver projects the GPU into WSL2 through `/dev/dxg`, and `nvidia-smi` works inside the distribution without any Linux driver. Installing an NVIDIA Linux driver inside WSL2 overwrites that passthrough and is the most common way this setup breaks.
+
+For Radeon, use Ubuntu 22.04 or 24.04 and install AMD Software: Adrenalin Edition 26.1.1 for WSL2 on Windows, then reboot. Running a `radeon-wsl2-*-rocm` qualification target downloads AMD's ROCm 7.2 installer, runs its `wsl,rocm` use case with `--no-dkms`, and verifies `rocminfo` before any benchmark starts. Unsupported WSL distributions, a missing host driver, or unavailable GPU passthrough are hard failures; setup does not substitute Vulkan or CPU because neither would validate the requested ROCm target.
 
 **4. Install the CUDA toolkit inside WSL2 — or let setup do it.** The Windows driver provides `libcuda.so` and a working `nvidia-smi`, but not `nvcc`, and llama.cpp is a source build on Linux. Without the toolkit the build is CPU-only. When setup detects WSL2 with an NVIDIA GPU and no `nvcc`, it offers to install this for you, printing the commands first and defaulting to no; declining just means a CPU-only llama.cpp. To do it yourself, use the **WSL-Ubuntu** repository, which ships the toolkit without a Linux driver:
 
@@ -225,7 +227,7 @@ Runs made this way record `wsl: true` in the results profile and are tagged `WSL
 
 For locally managed vLLM processes, the app enables vLLM's WSL2 pinned-memory opt-in to support the V2 Model Runner's UVA allocation. An explicitly configured `VLLM_WSL2_ENABLE_PIN_MEMORY` value is preserved, and external vLLM servers remain unmanaged.
 
-This route is reasoned from the platform detection rather than verified on hardware by the project maintainer. If something does fail first, expect it to be `nvidia-smi`'s compute-capability output or the memory ceiling above.
+Each exact WSL accelerator, backend, and engine combination still requires its own completed qualification record. Setup availability and a successful runtime probe do not create a support claim by themselves.
 
 ## Memory-fit estimate
 

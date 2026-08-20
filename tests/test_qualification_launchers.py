@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.sh").read_text()
-    assert 'setup.sh" --qualification "$ENGINE"' in text
+    assert ('setup.sh" --qualification "$ENGINE" --qualification-target "$TARGET"'
+            in text)
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
@@ -16,7 +17,7 @@ def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
 
 def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.bat").read_text()
-    assert "call setup.bat --qualification %ENGINE%" in text
+    assert 'call setup.bat --qualification %ENGINE% --qualification-target "%TARGET%"' in text
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text

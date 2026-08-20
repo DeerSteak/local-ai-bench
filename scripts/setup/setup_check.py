@@ -27,8 +27,12 @@ from scripts.runtime.comfyui_installation import (
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
 )
-from scripts.runtime.llamacpp_tools import find_nvcc
+from scripts.runtime.llamacpp_tools import find_nvcc, probe_llamacpp_backend
 from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
+from scripts.setup.rocm_wsl_install import (
+    WINDOWS_DRIVER, qualification_needs_wsl_rocm, run_wsl_rocm_install,
+    wsl_rocm_install_plan,
+)
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
     engine_download_size, find_non_catalog_vllm_repos,
@@ -74,6 +78,7 @@ from scripts.setup.vllm_install import (
     vllm_runtime_import_error,
 )
 from scripts.app.interface_mode import select_interface_mode
+from scripts.release.qualification_targets import qualification_target
 
 
 def accessible_file(path: Path) -> bool:
@@ -92,7 +97,21 @@ def main() -> None:  # pragma: no cover - real interactive installer
     _arg_parser.add_argument("--comfyui", help="Path to an existing ComfyUI or portable root")
     _arg_parser.add_argument("--interface", choices=("auto", "gui", "terminal"), default="auto")
     _arg_parser.add_argument("--qualification", choices=(LLAMACPP, VLLM))
+    _arg_parser.add_argument("--qualification-target")
     args = _arg_parser.parse_args()
+    if args.qualification_target and not args.qualification:
+        _arg_parser.error("--qualification-target requires --qualification")
+    try:
+        _qualification_target = (
+            qualification_target(args.qualification_target) if args.qualification_target else None
+        )
+    except ValueError as exc:
+        _arg_parser.error(str(exc))
+    if _qualification_target and _qualification_target["runtime"] != args.qualification:
+        _arg_parser.error(
+            f"target {args.qualification_target} requires "
+            f"--qualification {_qualification_target['runtime']}"
+        )
     _saved_setup = load_setup_config(config.SETUP_CONFIG_PATH)
     if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
         _arg_parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
@@ -158,6 +177,36 @@ def main() -> None:  # pragma: no cover - real interactive installer
         print(f"  Chip:     {system.chip}")
     if total_ram_gb is not None:
         print(f"  RAM:      {total_ram_gb:.0f} GB")
+
+    if _qualification_target:
+        _initial_rocm = discover_rocm()
+        try:
+            _install_wsl_rocm = qualification_needs_wsl_rocm(
+                _qualification_target, os_name=os_name, release=platform.release(),
+                rocm_available=_initial_rocm.available,
+            )
+        except ValueError as exc:
+            _arg_parser.error(str(exc))
+        if _install_wsl_rocm:
+            section("ROCm for WSL2")
+            try:
+                _os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+                _rocm_plan = wsl_rocm_install_plan(_os_release)
+            except (OSError, ValueError) as exc:
+                fail(str(exc))
+                sys.exit(1)
+            info("Installing AMD ROCm 7.2 for WSL2 (requires sudo) ...")
+            info(f"Compatible Windows host driver required: {WINDOWS_DRIVER}")
+            try:
+                run_wsl_rocm_install(_rocm_plan)
+            except (OSError, RuntimeError, urllib.error.URLError) as exc:
+                fail(f"ROCm for WSL2 installation failed: {exc}")
+                sys.exit(1)
+            if not discover_rocm().available:
+                fail("ROCm installed but rocminfo cannot see an AMD GPU")
+                fail(f"Install {WINDOWS_DRIVER}, reboot Windows, then run qualification again")
+                sys.exit(1)
+            ok("ROCm for WSL2 installed and GPU access verified")
 
     # ── 3. GPU / acceleration backend ─────────────────────────────────────────────
 
@@ -335,13 +384,28 @@ def main() -> None:  # pragma: no cover - real interactive installer
     section("llama.cpp")
 
     LLAMACPP_BIN = find_llamacpp_binary()
-    llamacpp_found = LLAMACPP_BIN is not None
+    _required_llamacpp_backend = (
+        _qualification_target["backend"] if _qualification_target
+        and _qualification_target["runtime"] == LLAMACPP else None
+    )
+    _installed_llamacpp_backend = (
+        probe_llamacpp_backend(LLAMACPP_BIN) if LLAMACPP_BIN else None
+    )
+    _llamacpp_backend_mismatch = llamacpp_install.qualification_backend_mismatch(
+        LLAMACPP_BIN, _installed_llamacpp_backend, _required_llamacpp_backend,
+    )
+    llamacpp_found = LLAMACPP_BIN is not None and not _llamacpp_backend_mismatch
     managed_mac_runtime = os_name == "Darwin" and LLAMACPP_DIR.is_dir() and any(
         path.is_file() for path in LLAMACPP_DIR.rglob("llama-server")
     )
     needs_llamacpp_install = not llamacpp_found or (os_name == "Darwin" and not managed_mac_runtime)
     if llamacpp_found:
         ok(f"llama-server found: {LLAMACPP_BIN}")
+    elif _llamacpp_backend_mismatch:
+        warn(
+            f"llama-server has {_installed_llamacpp_backend} devices, but qualification "
+            f"requires {_required_llamacpp_backend} — it will be rebuilt"
+        )
     else:
         warn("llama-server not found — will need to be installed")
 

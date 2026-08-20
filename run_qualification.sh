@@ -26,6 +26,6 @@ fi
 ENGINE="llamacpp"
 if [[ "$TARGET" == *-vllm-* ]]; then ENGINE="vllm"; fi
 
-bash "$ROOT/setup.sh" --qualification "$ENGINE"
+bash "$ROOT/setup.sh" --qualification "$ENGINE" --qualification-target "$TARGET"
 exec "$ROOT/bench-env/bin/python" -m scripts.release.qualification_run \
     "$TARGET" --root "$ROOT" --result "$RESULT"

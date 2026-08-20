@@ -24,6 +24,11 @@ def find_tool(name: str, runtime_dir: Path, platform_name: str) -> str | None:
     )
 
 
+def qualification_backend_mismatch(binary: str | None, installed_backend: str | None,
+                                   required_backend: str | None) -> bool:
+    return bool(binary and required_backend and installed_backend != required_backend)
+
+
 def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str | None,
                     *, info, warn, fail, ok, release_fetcher=None) -> bool:
     info("Fetching latest llama.cpp release info ...")
