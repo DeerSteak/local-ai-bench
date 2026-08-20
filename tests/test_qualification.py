@@ -97,6 +97,16 @@ def test_reviewed_dgx_spark_vllm_qualification_is_supported():
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_ryzen_ai_halo_llamacpp_runtime_is_supported_without_images():
+    evidence = qualification_entry(
+        "linux", "x86_64", "llamacpp", "rocm", "0.1.2-dev",
+        accelerator="AMD Ryzen AI MAX+ 395 w/ Radeon 8060S 125 GB",
+    )
+    assert evidence is not None and evidence["id"] == "ryzen-ai-halo-llamacpp-rocm"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    assert derive_image_support_level(evidence, "6.0-pre8") == "unverified"
+
+
 @pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [
     ("llamacpp", "0.1.2-dev", "geforce-rtx-5090-wsl2-llamacpp-cuda"),
     ("vllm", "0.27.1", "geforce-rtx-5090-wsl2-vllm-cuda"),

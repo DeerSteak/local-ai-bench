@@ -148,6 +148,32 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
     {
+        "id": "ryzen-ai-halo-llamacpp-rocm",
+        "platform": "linux",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "rocm",
+        "accelerator": "AMD Ryzen AI MAX+ 395 w/ Radeon 8060S 125 GB",
+        "qualified_at": "2026-08-20",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text"],
+            "notes": (
+                "Smallest-model functional coverage for every llama.cpp workload using "
+                "native build 10486 (7acdbb1); ComfyUI image generation remains unverified."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/ryzen-ai-halo-llamacpp-rocm/"
+            "results_qualification_ryzen-ai-halo-llamacpp-rocm.json",
+        ],
+    },
+    {
         "id": "geforce-rtx-5090-wsl2-llamacpp-cuda",
         "platform": "wsl2",
         "architecture": "x86_64",
