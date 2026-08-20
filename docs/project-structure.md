@@ -142,7 +142,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
-| `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_coverage.py` | Explicit platform selection, normal benchmark launch, and smallest-model result validation |
+| `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_targets.ps1` / `release/qualification_coverage.py` | Explicit platform selection, dependency-free Windows target parsing, normal benchmark launch, and smallest-model result validation |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
 | `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |

@@ -21,11 +21,20 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
     assert "powershell.exe -NoProfile" in text
+    assert "qualification_targets.ps1" in text
     assert "ForEach-Object" not in text
     assert all(" | " not in line for line in text.splitlines()
                if line.startswith("powershell.exe"))
     assert "for /f" not in text
     assert "%CD%\\qualification-evidence\\%TARGET%\\results_qualification_%TARGET%.json" in text
+
+
+def test_windows_target_helper_lists_and_validates_the_shared_target_registry():
+    text = (ROOT / "scripts" / "release" / "qualification_targets.ps1").read_text()
+    assert 'Join-Path $PSScriptRoot "qualification_targets.py"' in text
+    assert "foreach ($match in [regex]::Matches" in text
+    assert "if ($ids -contains $Target)" in text
+    assert "Write-Output $id" in text
 
 
 def test_default_qualification_output_directory_is_gitignored():
