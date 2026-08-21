@@ -164,6 +164,18 @@ def test_reviewed_intel_arc_linux_llamacpp_qualification_is_supported_with_image
     assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_intel_arc_linux_vllm_qualification_is_supported():
+    evidence = qualification_entry(
+        "linux", "x86_64", "vllm", "xpu", "0.27.1+xpu",
+        accelerator=(
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "Intel Corporation Battlemage G31 [Intel Graphics] [8086:e222] 63 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == "intel-arc-linux-vllm-xpu"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_staleness_downgrades_at_release_boundary():
     evidence = entry(suite_version="6.0")
     assert qualification_is_stale(evidence, "6.1") is False
