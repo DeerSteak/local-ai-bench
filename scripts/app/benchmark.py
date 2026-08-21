@@ -526,6 +526,18 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def supervised_stage_runner(event_path: Path, stage_name: str, save_fn, *,
+                            resume_identity, power_availability,
+                            temperature_availability):
+    def runner(context):
+        return run_supervised_stage(
+            context.plan, event_path, stage_name, save_fn,
+            resume_identity=resume_identity, power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+    return runner
+
+
 def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
     parser = argparse.ArgumentParser(description="LLM benchmark suite")
     parser.add_argument(
@@ -1327,6 +1339,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
+        journal_path = event_store_path(Path(out_path))
 
         def start_case_telemetry():
             if not args.memory_telemetry:
@@ -1338,26 +1351,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         def run_llm(_context):
             return run_supervised_llm(
-                _context.plan, event_store_path(Path(out_path)), make_save("llm"),
+                _context.plan, journal_path, make_save("llm"),
                 resume_identity=resume_identity, power_availability=power_availability,
                 temperature_availability=temperature_availability,
             )
 
-        def run_conversation(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "conv",
-                make_save("llm_conversation", "conv"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_sustained(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "sustained",
-                make_save("sustained"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        stage_runner = lambda stage, save: supervised_stage_runner(
+            journal_path, stage, save, resume_identity=resume_identity,
+            power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+        run_conversation = stage_runner("conv", make_save("llm_conversation", "conv"))
+        run_sustained = stage_runner("sustained", make_save("sustained"))
 
         def release_port_for_runner(_context):
             """A runner is a separate process and cannot stop this one's server, so a
@@ -1365,37 +1370,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if engine.available():
                 engine.stop()
 
-        def run_llamabench(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "llamabench",
-                make_save("llamabench"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_llamabench_concurrency(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "llamabenchconc",
-                make_save("llamabenchconc"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_vllmbench(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "vllmbench",
-                make_save("vllmbench"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_embeddings(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "emb",
-                make_save("embeddings", "emb"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        run_llamabench = stage_runner("llamabench", make_save("llamabench"))
+        run_llamabench_concurrency = stage_runner(
+            "llamabenchconc", make_save("llamabenchconc"),
+        )
+        run_vllmbench = stage_runner("vllmbench", make_save("vllmbench"))
+        run_embeddings = stage_runner("emb", make_save("embeddings", "emb"))
 
         def accuracy_stage(test_name, Bench):
             def runner(_context):
@@ -1405,7 +1385,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
                 section = run_supervised_stage(
-                    _context.plan, event_store_path(Path(out_path)), test_name,
+                    _context.plan, journal_path, test_name,
                     make_save(test_name), resume_identity=resume_identity,
                     power_availability=power_availability,
                     temperature_availability=temperature_availability,
@@ -1421,7 +1401,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not conc_models:
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
                 return run_supervised_stage(
-                    _context.plan, event_store_path(Path(out_path)), key,
+                    _context.plan, journal_path, key,
                     make_save(section, key), resume_identity=resume_identity,
                     power_availability=power_availability,
                     temperature_availability=temperature_availability,
@@ -1433,13 +1413,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             lifecycle.restore_gpu()
             lifecycle.stop_engine()
 
-        def run_images(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "img",
-                make_save("images", "img"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        run_images = stage_runner("img", make_save("images", "img"))
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,

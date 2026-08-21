@@ -5,8 +5,9 @@ from types import SimpleNamespace
 
 from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
-    temperature_telemetry_requested,
+    supervised_stage_runner, temperature_telemetry_requested,
 )
+from scripts.app import benchmark as benchmark_module
 from scripts.runtime.engines.base import EmbeddingMeasurement, GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.accuracy_event_stage import AccuracyEventStage
@@ -41,6 +42,30 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_supervised_stage_runner_forwards_the_shared_stage_contract(monkeypatch, tmp_path):
+    calls = []
+    save_fn = object()
+    power = object()
+    temperature = object()
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"done": True}
+
+    monkeypatch.setattr(benchmark_module, "run_supervised_stage", run)
+    runner = supervised_stage_runner(
+        tmp_path / "events.sqlite3", "conv", save_fn,
+        resume_identity={"digest": "abc"}, power_availability=power,
+        temperature_availability=temperature,
+    )
+    assert runner(SimpleNamespace(plan="plan")) == {"done": True}
+    assert calls == [(('plan', tmp_path / "events.sqlite3", "conv", save_fn), {
+        "resume_identity": {"digest": "abc"},
+        "power_availability": power,
+        "temperature_availability": temperature,
+    })]
 
 
 def test_qualification_temperature_override_controls_default_sustained_sampling():
