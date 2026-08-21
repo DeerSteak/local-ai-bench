@@ -667,7 +667,7 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
         if adl_status.available:
             return adl_status
         failed_sources.append(adl_status)
-    if executable := which_fn("rocm-smi"):
+    if executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         try:
             result = run_fn(
                 [executable, "--showpower", "--json"], capture_output=True, text=True,
@@ -905,7 +905,8 @@ def discover_temperature_source(platform_name: str | None = None, *, which_fn=sh
         if result is not None and result.returncode == 0 and parse_nvidia_temperatures(result.stdout):
             sources["gpu_die_c"] = "nvidia-smi"
             locations["gpu_die_c"] = executable
-    if "gpu_die_c" not in sources and (executable := which_fn("rocm-smi")):
+    if "gpu_die_c" not in sources and (
+            executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn)):
         try:
             result = run_fn(
                 [executable, "--showtemp", "--json"], capture_output=True, text=True,
@@ -1198,7 +1199,7 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         command = [executable, "-r", "-d", "1", "-c", "AGXAccelerator"]
     elif executable := which_fn("nvidia-smi"):
         command = [executable, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
-    elif executable := which_fn("rocm-smi"):
+    elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showuse", "--json"]
     else:
         return None
@@ -1256,7 +1257,7 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
     if executable := which_fn("nvidia-smi"):
         command = [executable, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
         source = "nvidia"
-    elif executable := which_fn("rocm-smi"):
+    elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showmeminfo", "vram", "--json"]
         source = "rocm"
     else:
@@ -1399,7 +1400,7 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
 
 
 def rocm_memory_is_discrete(run_fn=subprocess.run, which_fn=shutil.which) -> bool:
-    executable = which_fn("rocminfo")
+    executable = hardware.rocm_executable("rocminfo", which_fn=which_fn)
     if not executable:
         return False
     try:
@@ -1418,7 +1419,8 @@ def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict
     accelerator = "unsupported"
     if which_fn("nvidia-smi"):
         accelerator = "nvidia-smi"
-    elif which_fn("rocm-smi") and rocm_memory_is_discrete(run_fn, which_fn):
+    elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
+            and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
     return {
         "host_ram_used_gb": "psutil",

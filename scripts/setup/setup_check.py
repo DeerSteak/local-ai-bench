@@ -32,8 +32,9 @@ from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_insta
 from scripts.setup.intel_xpu_install import (
     intel_xpu_install_plan, oneapi_environment, run_intel_xpu_install, sycl_gpu_available,
 )
-from scripts.setup.rocm_wsl_install import (
-    WINDOWS_DRIVER, qualification_needs_wsl_rocm, run_wsl_rocm_install,
+from scripts.setup.rocm_install import (
+    NATIVE_ROCM_VERSION, WINDOWS_DRIVER, native_rocm_install_plan,
+    qualification_needs_native_rocm, qualification_needs_wsl_rocm, run_rocm_install,
     wsl_rocm_install_plan,
 )
 from scripts.setup.model_inventory import (
@@ -60,8 +61,8 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
-    discover_linux_intel_gpu, discover_metal, discover_nvidia, discover_rocm,
-    discover_system, discover_windows_gpu, rocm_version,
+    discover_linux_amd_gpu, discover_linux_intel_gpu, discover_metal, discover_nvidia,
+    discover_rocm, discover_system, discover_windows_gpu, rocm_version,
 )
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
@@ -191,28 +192,48 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 _qualification_target, os_name=os_name, release=platform.release(),
                 rocm_available=_initial_rocm.available,
             )
+            _install_native_rocm = qualification_needs_native_rocm(
+                _qualification_target, os_name=os_name, release=platform.release(),
+                rocm_available=_initial_rocm.available,
+            )
         except ValueError as exc:
             _arg_parser.error(str(exc))
-        if _install_wsl_rocm:
-            section("ROCm for WSL2")
+        if _install_wsl_rocm or _install_native_rocm:
+            section("ROCm for WSL2" if _install_wsl_rocm else "ROCm for native Linux")
             try:
                 _os_release = Path("/etc/os-release").read_text(encoding="utf-8")
-                _rocm_plan = wsl_rocm_install_plan(_os_release)
+                if _install_wsl_rocm:
+                    _rocm_plan = wsl_rocm_install_plan(_os_release)
+                else:
+                    _amd_gpu = discover_linux_amd_gpu()
+                    if _amd_gpu.vendor != "amd":
+                        raise ValueError("native ROCm qualification found no AMD display adapter")
+                    info(f"GPU: {_amd_gpu.name}")
+                    _rocm_plan = native_rocm_install_plan(
+                        _os_release, platform.release(), user=os.environ.get("SUDO_USER")
+                        or os.environ.get("USER"),
+                    )
             except (OSError, ValueError) as exc:
                 fail(str(exc))
                 sys.exit(1)
-            info("Installing AMD ROCm 7.2 for WSL2 (requires sudo) ...")
-            info(f"Compatible Windows host driver required: {WINDOWS_DRIVER}")
+            if _install_wsl_rocm:
+                info("Installing AMD ROCm 7.2 for WSL2 (requires sudo) ...")
+                info(f"Compatible Windows host driver required: {WINDOWS_DRIVER}")
+            else:
+                info(f"Installing AMD ROCm {NATIVE_ROCM_VERSION} for native Linux (requires sudo) ...")
             try:
-                run_wsl_rocm_install(_rocm_plan)
+                run_rocm_install(_rocm_plan)
             except (OSError, RuntimeError, urllib.error.URLError) as exc:
-                fail(f"ROCm for WSL2 installation failed: {exc}")
+                fail(f"ROCm installation failed: {exc}")
                 sys.exit(1)
             if not discover_rocm().available:
                 fail("ROCm installed but rocminfo cannot see an AMD GPU")
-                fail(f"Install {WINDOWS_DRIVER}, reboot Windows, then run qualification again")
+                if _install_wsl_rocm:
+                    fail(f"Install {WINDOWS_DRIVER}, reboot Windows, then run qualification again")
+                else:
+                    fail("Reboot so the AMD driver and render/video group access take effect, then rerun qualification")
                 sys.exit(1)
-            ok("ROCm for WSL2 installed and GPU access verified")
+            ok("ROCm installed and GPU access verified")
 
     # ── 3. GPU / acceleration backend ─────────────────────────────────────────────
 

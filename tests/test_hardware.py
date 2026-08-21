@@ -30,6 +30,23 @@ def test_nvidia_smi_prefers_the_normal_path_discovery(tmp_path):
     ) == "/usr/bin/nvidia-smi"
 
 
+def test_rocm_tool_resolves_opt_install_when_path_omits_it(tmp_path):
+    executable = tmp_path / "rocminfo"
+    executable.write_text("tool", encoding="utf-8")
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: None, rocm_bin=tmp_path,
+    ) == str(executable)
+
+
+def test_rocm_tool_prefers_path_and_returns_none_when_absent(tmp_path):
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: "/usr/bin/rocminfo", rocm_bin=tmp_path,
+    ) == "/usr/bin/rocminfo"
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: None, rocm_bin=tmp_path,
+    ) is None
+
+
 # ── classify_gpu ──
 
 def test_classify_gpu_amd_discrete():

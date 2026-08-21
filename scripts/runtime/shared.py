@@ -246,12 +246,14 @@ class Shared:
 
         try:
             info_out = subprocess.check_output(
-                ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
             )
             gpu_names = hardware.rocminfo_gpu_names(info_out)
             if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names):
                 mem_out = subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                    [hardware.rocm_executable("rocm-smi") or "rocm-smi",
+                     "--showmeminfo", "vram", "--json"],
                     text=True, stderr=subprocess.DEVNULL, timeout=10,
                 )
                 mem_data = json.loads(mem_out)
@@ -519,7 +521,8 @@ class Shared:
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["rocminfo"], capture_output=True, text=True, timeout=10,
+                        [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                        capture_output=True, text=True, timeout=10,
                     ).stdout
                     gpu = _rocm_gpu_summary(out)
                 except Exception:
@@ -581,8 +584,10 @@ class Shared:
             pass
         # ROCm (Linux)
         try:
-            out = subprocess.check_output(["rocminfo"], text=True,
-                                           stderr=subprocess.DEVNULL)
+            out = subprocess.check_output(
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
             if _rocm_gpu_summary(out):
                 return "rocm"
         except (FileNotFoundError, subprocess.CalledProcessError):

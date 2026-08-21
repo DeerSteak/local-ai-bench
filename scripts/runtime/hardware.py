@@ -17,6 +17,13 @@ def nvidia_smi_executable(*, which_fn=shutil.which,
     return discovered or (str(wsl_path) if wsl_path.is_file() else "nvidia-smi")
 
 
+def rocm_executable(name: str, *, which_fn=shutil.which,
+                    rocm_bin: Path = Path("/opt/rocm/bin")) -> str | None:
+    discovered = which_fn(name)
+    managed = rocm_bin / name
+    return discovered or (str(managed) if managed.is_file() else None)
+
+
 def detect_wsl(os_name: str, release: str) -> bool:
     """WSL reports itself as Linux; only the kernel release distinguishes it.
     Lives here, not in shared.py, so setup can call it before requirements are installed."""

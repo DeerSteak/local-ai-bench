@@ -134,3 +134,20 @@ def test_discovers_linux_arc_pro_b65_pci_codename(monkeypatch):
     assert result.kind == "discrete"
     assert result.name is not None
     assert "Battlemage G31" in result.name
+
+
+def test_discovers_linux_amd_gpu_before_rocm_is_installed(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "0d:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] "
+            "Navi 44 [Radeon RX 9060 XT] [1002:7550]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_amd_gpu()
+
+    assert result.vendor == "amd"
+    assert result.kind == "discrete"
+    assert result.name is not None and "Radeon RX 9060 XT" in result.name

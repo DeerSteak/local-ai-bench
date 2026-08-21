@@ -7,7 +7,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from scripts.setup.rocm_wsl_install import parse_os_release
+from scripts.setup.rocm_install import parse_os_release
 
 
 SUPPORTED_UBUNTU = {"24.04", "26.04"}
