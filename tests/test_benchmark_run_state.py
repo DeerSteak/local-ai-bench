@@ -1,15 +1,18 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.app.benchmark import (
     checkpoint_terminal_exception, cleanup_signal_numbers, cli_main, finish_event_job,
-    fork_provenance, interruption_exit_code,
+    fork_provenance, interruption_exit_code, preflight_result, runtime_shaping_config,
+    validated_run_plan,
 )
 from scripts.results.event_store import EventStore
 from scripts.app.orchestration import StageExecutionError
 from scripts.results.result_store import build_run_manifest
 from scripts.results.run_plan import RunPlan
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 
 
 def test_cli_main_reports_stage_failure_without_a_traceback(monkeypatch):
@@ -38,6 +41,38 @@ def make_plan():
             "embeddings": [{"tag": "embed", "short": "embed"}], "images": [],
         }, effective_config={"warmup_runs": 0, "cpu_only": False, "force_all": False},
     )
+
+
+def test_validated_run_plan_preserves_job_identity_during_preflight_rebuild():
+    original = make_plan()
+    effective_config = runtime_shaping_config(SimpleNamespace(
+        warmup=0, cpu_only=False, force_all=False, max_prompt_tokens=None,
+        sample=None, tests=["emb"],
+    ))
+    rebuilt = validated_run_plan(
+        engine_name="llamacpp", tests=["emb"], stage_order=["emb"],
+        models=original.models, effective_config=effective_config,
+        job_id=original.job_id,
+    )
+    assert rebuilt.job_id == original.job_id
+    assert rebuilt.effective_config == effective_config
+
+
+def test_preflight_result_adds_only_requested_telemetry_availability():
+    preflight = type("Preflight", (), {"to_dict": lambda self: {"models": {}}})()
+    power = PowerAvailability(True, "nvidia-smi", "accelerator", location="/private/tool")
+    temperature = TemperatureAvailability(
+        True, {"gpu_die_c": "nvidia-smi"}, locations={"gpu_die_c": "/private/tool"},
+    )
+    result = preflight_result(preflight, power, temperature)
+    assert result == {
+        "models": {},
+        "power": {"available": True, "source": "nvidia-smi",
+                  "scope": "accelerator", "reason": None},
+        "temperature": {"available": True, "sources": {"gpu_die_c": "nvidia-smi"},
+                        "reason": None},
+    }
+    assert preflight_result(preflight, None, None) == {"models": {}}
 
 
 def test_interrupted_exception_checkpoints_pending_data_without_relabeling():

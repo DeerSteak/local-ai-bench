@@ -144,9 +144,8 @@ def format_duration_estimate(seconds: float | None) -> str:
     return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
 
 
-def eta_match_config(args) -> dict:
-    """Runtime-shaping settings required for a historical ETA match."""
-    values = {
+def runtime_shaping_config(args) -> dict:
+    return {
         "runs": config.N_RUNS, "warmup_runs": args.warmup,
         "run_timeout_seconds": config.RUN_TIMEOUT,
         "accuracy_timeout_seconds": config.ACC_TIMEOUT,
@@ -166,6 +165,11 @@ def eta_match_config(args) -> dict:
         "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
         "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
     }
+
+
+def eta_match_config(args) -> dict:
+    """Runtime-shaping settings required for a historical ETA match."""
+    values = runtime_shaping_config(args)
     matched = {key: values[key] for key in ETA_MATCH_KEYS}
     if "sustained" in getattr(args, "tests", []):
         matched.update({key: values[key] for key in (
@@ -381,6 +385,28 @@ def selected_plan_models(tests: list[str], llm_models: list[dict],
                         if selected & set(CONCURRENCY_TESTS) else []),
         "embeddings": model_identity(embedding_models) if "emb" in selected else [],
         "images": model_identity(image_models) if "img" in selected else [],
+    }
+
+
+def validated_run_plan(*, engine_name: str, tests: list[str], stage_order: list[str],
+                       models: dict[str, list[dict]], effective_config: dict,
+                       job_id: str | None = None) -> RunPlan:
+    plan = RunPlan.create(
+        application_version=config.VERSION, engine_name=engine_name,
+        tests=tests, stage_order=stage_order, models=models,
+        effective_config=effective_config, job_id=job_id,
+    )
+    plan.validate_for_execution()
+    return plan
+
+
+def preflight_result(preflight, power_availability, temperature_availability) -> dict:
+    return {
+        **preflight.to_dict(),
+        **({"power": power_availability_dict(power_availability)}
+           if power_availability else {}),
+        **({"temperature": temperature_availability_dict(temperature_availability)}
+           if temperature_availability else {}),
     }
 
 
@@ -1031,24 +1057,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     f"Temperature preflight: unavailable — {temperature_availability.reason}"
                 )
         effective_config = {
-            "runs": config.N_RUNS, "warmup_runs": args.warmup,
-            "run_timeout_seconds": config.RUN_TIMEOUT,
-            "accuracy_timeout_seconds": config.ACC_TIMEOUT,
-            "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
-            "cpu_only": args.cpu_only, "force_all": args.force_all,
+            **runtime_shaping_config(args),
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
-            "max_prompt_tokens": args.max_prompt_tokens,
-            "context_lengths": config.CONTEXT_LENGTHS,
-            "llamabench_pp": config.LLAMABENCH_PP,
-            "llamabench_tg": config.LLAMABENCH_TG,
-            "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
-            "concurrency_chat_levels": config.CONCURRENCY_CHAT_LEVELS,
-            "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
-            "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
-            "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
-            "sample_size": args.sample,
             "offline": args.offline,
             "memory_telemetry": args.memory_telemetry,
             "memory_telemetry_interval_sec": (
@@ -1067,9 +1079,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "temperature_sources": (
                 dict(temperature_availability.sources) if temperature_availability else None
             ),
-            "sustained_duration_sec": args.sustained_duration,
-            "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
-            "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
             "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
@@ -1077,12 +1086,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         plan_models = selected_plan_models(
             tests, llm_models, conc_models, embedding_models, image_models,
         )
-        plan = RunPlan.create(
-            application_version=config.VERSION, engine_name=engine_name,
-            tests=tests, stage_order=stage_order, models=plan_models,
-            effective_config=effective_config,
+        plan = validated_run_plan(
+            engine_name=engine_name, tests=tests, stage_order=stage_order,
+            models=plan_models, effective_config=effective_config,
         )
-        plan.validate_for_execution()
         context_cap = args.max_prompt_tokens or max(LLMConversationBenchmark.CONV_CHECKPOINTS)
         contexts_by_test = {
             "llm": config.CONTEXT_LENGTHS,
@@ -1119,15 +1126,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         llm_models = filter_models(llm_models, preflight.runnable_tags)
         conc_models = filter_models(conc_models, preflight.runnable_tags)
         if any(report.status == "excluded" for report in preflight.reports):
-            plan = RunPlan.create(
-                application_version=config.VERSION, engine_name=engine_name,
-                tests=tests, stage_order=stage_order,
+            plan = validated_run_plan(
+                engine_name=engine_name, tests=tests, stage_order=stage_order,
                 models=selected_plan_models(
                     tests, llm_models, conc_models, embedding_models, image_models,
                 ),
                 effective_config=effective_config, job_id=plan.job_id,
             )
-            plan.validate_for_execution()
         forked_from = (
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
@@ -1152,6 +1157,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             extra_resume_artifacts.update(image_resume_artifacts(image_models))
             extra_resume_runtimes.update(image_resume_runtimes(comfyui_dir))
         model_families = []
+        resume_identity_options: dict | None = None
         if journal_stages:
             if "llamabench" in tests:
                 llama_bench_path = find_llamacpp_tool("llama-bench")
@@ -1183,16 +1189,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log(
                 f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
             )
-            resume_identity = build_engine_resume_identity(
-                plan, engine, model_families=model_families,
-                include_engine_runtime=bool(journal_stages & {
+            resume_identity_options = {
+                "model_families": model_families,
+                "include_engine_runtime": bool(journal_stages & {
                     "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
                     *ACCURACY_TESTS,
                 }),
-                extra_runtimes=extra_resume_runtimes,
-                extra_artifacts=extra_resume_artifacts,
-                digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                environment=profile,
+                "extra_runtimes": extra_resume_runtimes,
+                "extra_artifacts": extra_resume_artifacts,
+                "digest_cache_path": config.RESUME_DIGEST_CACHE_PATH,
+                "environment": profile,
+            }
+            resume_identity = build_engine_resume_identity(
+                plan, engine, **resume_identity_options,
             )
 
         results = {
@@ -1213,13 +1222,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
-            "preflight":       {
-                **preflight.to_dict(),
-                **({"power": power_availability_dict(power_availability)}
-                   if power_availability else {}),
-                **({"temperature": temperature_availability_dict(temperature_availability)}
-                   if temperature_availability else {}),
-            },
+            "preflight":       preflight_result(
+                preflight, power_availability, temperature_availability,
+            ),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
@@ -1304,36 +1309,23 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             llm_models = filter_models(llm_models, preflight.runnable_tags)
             conc_models = filter_models(conc_models, preflight.runnable_tags)
-            plan = RunPlan.create(
-                application_version=config.VERSION, engine_name=engine_name,
-                tests=tests, stage_order=stage_order,
+            plan = validated_run_plan(
+                engine_name=engine_name, tests=tests, stage_order=stage_order,
                 models=selected_plan_models(
                     tests, llm_models, conc_models, embedding_models, image_models,
                 ),
                 effective_config=effective_config, job_id=plan.job_id,
             )
-            plan.validate_for_execution()
-            results["preflight"] = {
-                **preflight.to_dict(),
-                **({"power": power_availability_dict(power_availability)}
-                   if power_availability else {}),
-                **({"temperature": temperature_availability_dict(temperature_availability)}
-                   if temperature_availability else {}),
-            }
+            results["preflight"] = preflight_result(
+                preflight, power_availability, temperature_availability,
+            )
             results["run"].update(
                 models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
             )
             if journal_stages:
+                assert resume_identity_options is not None
                 resume_identity = build_engine_resume_identity(
-                    plan, engine, model_families=model_families,
-                    include_engine_runtime=bool(journal_stages & {
-                        "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
-                        *ACCURACY_TESTS,
-                    }),
-                    extra_runtimes=extra_resume_runtimes,
-                    extra_artifacts=extra_resume_artifacts,
-                    digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                    environment=profile,
+                    plan, engine, **resume_identity_options,
                 )
             _checkpoint("runtime preflight complete")
         context = RunContext(
