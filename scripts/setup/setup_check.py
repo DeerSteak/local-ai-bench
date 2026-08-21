@@ -392,10 +392,14 @@ def main() -> None:  # pragma: no cover - real interactive installer
         LLAMACPP_BIN, _installed_llamacpp_backend, _required_llamacpp_backend,
     )
     llamacpp_found = LLAMACPP_BIN is not None and not _llamacpp_backend_mismatch
+    _managed_llamacpp_ready = llamacpp_install.managed_toolset_ready(LLAMACPP_DIR, os_name)
     managed_mac_runtime = os_name == "Darwin" and LLAMACPP_DIR.is_dir() and any(
         path.is_file() for path in LLAMACPP_DIR.rglob("llama-server")
     )
-    needs_llamacpp_install = not llamacpp_found or (os_name == "Darwin" and not managed_mac_runtime)
+    needs_llamacpp_install = (
+        not llamacpp_found or (os_name == "Darwin" and not managed_mac_runtime)
+        or (args.qualification == LLAMACPP and not _managed_llamacpp_ready)
+    )
     if llamacpp_found:
         ok(f"llama-server found: {LLAMACPP_BIN}")
     elif _llamacpp_backend_mismatch:
@@ -635,6 +639,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         qualification_engines_needing_install(
             engine_entries, args.qualification, vllm_bench_found=VLLM_BIN is not None,
             vllm_runtime_ready=_qualification_vllm_runtime_error is None,
+            llamacpp_runtime_ready=_managed_llamacpp_ready,
         ) if args.qualification else engines_needing_install(engine_entries)
     )
     _engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}

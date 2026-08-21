@@ -5,7 +5,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
+from scripts.runtime.llamacpp_tools import (
+    cuda_architecture, find_llamacpp_tool, find_nvcc, managed_llamacpp_tools,
+)
 from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
@@ -27,6 +29,10 @@ def find_tools(runtime_dir: Path, platform_name: str) -> dict[str, str | None]:
         name: find_tool(name, runtime_dir, platform_name)
         for name in ("llama-server", "llama-bench", "llama-batched-bench")
     }
+
+
+def managed_toolset_ready(runtime_dir: Path, platform_name: str) -> bool:
+    return bool(managed_llamacpp_tools(runtime_dir, platform_name))
 
 
 def qualification_backend_mismatch(binary: str | None, installed_backend: str | None,

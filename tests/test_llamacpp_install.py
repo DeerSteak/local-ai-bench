@@ -40,6 +40,16 @@ def test_find_tools_discovers_the_complete_runtime_toolset(monkeypatch, tmp_path
     ]
 
 
+def test_managed_toolset_requires_all_three_tools(tmp_path):
+    directory = tmp_path / "build" / "bin"
+    directory.mkdir(parents=True)
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        (directory / name).touch()
+    assert llamacpp_install.managed_toolset_ready(tmp_path, "Linux")
+    (directory / "llama-batched-bench").unlink()
+    assert not llamacpp_install.managed_toolset_ready(tmp_path, "Linux")
+
+
 def test_qualification_rebuilds_existing_runtime_with_wrong_or_unverifiable_backend():
     assert llamacpp_install.qualification_backend_mismatch("llama-server", "cpu", "rocm")
     assert llamacpp_install.qualification_backend_mismatch("llama-server", None, "rocm")

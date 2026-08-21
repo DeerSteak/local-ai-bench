@@ -68,8 +68,11 @@ def engines_needing_install(entries: list[dict]) -> list[str]:
 
 def qualification_engines_needing_install(entries: list[dict], engine: str | None,
                                            *, vllm_bench_found: bool,
-                                           vllm_runtime_ready: bool = True) -> list[str]:
+                                           vllm_runtime_ready: bool = True,
+                                           llamacpp_runtime_ready: bool = True) -> list[str]:
     pending = engines_needing_install(entries)
+    if engine == LLAMACPP and not llamacpp_runtime_ready and LLAMACPP not in pending:
+        pending.append(LLAMACPP)
     if engine == VLLM and (not vllm_bench_found or not vllm_runtime_ready) \
             and VLLM not in pending:
         pending.append(VLLM)

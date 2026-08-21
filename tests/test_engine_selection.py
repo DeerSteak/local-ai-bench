@@ -161,6 +161,17 @@ def test_vllm_qualification_installs_native_bench_beside_a_launcher():
     ) == []
 
 
+def test_llamacpp_qualification_installs_complete_managed_toolset():
+    entries = build_engine_entries(vllm_support=SUPPORTED, llamacpp_found=True)
+    apply_engine_preset(entries, LLAMACPP)
+    assert qualification_engines_needing_install(
+        entries, LLAMACPP, vllm_bench_found=False, llamacpp_runtime_ready=False,
+    ) == [LLAMACPP]
+    assert qualification_engines_needing_install(
+        entries, LLAMACPP, vllm_bench_found=False, llamacpp_runtime_ready=True,
+    ) == []
+
+
 def test_vllm_qualification_repairs_a_failed_runtime_preflight():
     entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True)
     apply_engine_preset(entries, VLLM)
