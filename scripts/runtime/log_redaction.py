@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 SECRET_PATTERNS = (
-    re.compile(r"(?i)\bhf_[a-z0-9]{12,}\b"),
+    re.compile(r"(?i)(?<![a-z0-9])hf_[a-z0-9]{12,}\b"),
     re.compile(r"(?i)\bBearer\s+[a-z0-9._~+/=-]{8,}"),
     re.compile(r"(?i)(?<=access_token=)[^&\s]+"),
     re.compile(r"(?i)(?<=token=)[^&\s]+"),

@@ -16,6 +16,7 @@ from scripts.results.local_execution_context import (
     LocalExecutionContext, write_local_execution_context,
 )
 from scripts.runtime import supervised_stage
+from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
@@ -112,6 +113,34 @@ def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):
             '"status":"running","model":"Qwen 4B"}\n')
     relay_runner_log(line)
     assert capsys.readouterr().out == line
+
+
+def test_supervised_progress_log_redacts_secrets_and_private_paths(capsys):
+    secret = "hf_" + "a" * 34
+    line = PROGRESS_PREFIX + json.dumps({
+        "kind": "result",
+        "stage": "run",
+        "status": "complete",
+        "path": f"C:\\Users\\Ben\\results_{secret}.json",
+    }, separators=(",", ":"))
+
+    relay_runner_log(line)
+
+    output = capsys.readouterr().out.strip()
+    assert output.startswith(PROGRESS_PREFIX)
+    payload = json.loads(output.removeprefix(PROGRESS_PREFIX))
+    assert payload["path"] == "<home>\\results_<secret>.json"
+    assert secret not in output
+
+
+def test_malformed_progress_log_is_still_redacted(capsys):
+    secret = "hf_" + "a" * 34
+
+    relay_runner_log(f"{PROGRESS_PREFIX}not-json token={secret}\n")
+
+    output = capsys.readouterr().out
+    assert output.startswith(PROGRESS_PREFIX)
+    assert secret not in output
 
 
 def test_relayed_log_keeps_the_runners_own_timestamp(capsys):
