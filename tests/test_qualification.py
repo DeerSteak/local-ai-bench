@@ -83,6 +83,25 @@ def test_reviewed_radeon_wsl2_qualification_is_supported_with_images():
     assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
 
 
+@pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [
+    ("llamacpp", "0.1.2-dev", "radeon-linux-llamacpp-rocm"),
+    ("vllm", "0.27.1+rocm723", "radeon-linux-vllm-rocm"),
+])
+def test_reviewed_radeon_linux_qualifications_are_supported(
+        runtime, runtime_version, entry_id):
+    evidence = qualification_entry(
+        "linux", "x86_64", runtime, "rocm", runtime_version,
+        accelerator=(
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "AMD Radeon RX 9060 XT 63 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == entry_id
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    if runtime == "llamacpp":
+        assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_reviewed_geforce_windows_qualification_is_supported():
     evidence = qualification_entry(
         "windows", "x86_64", "llamacpp", "cuda", "0.1.2-dev",

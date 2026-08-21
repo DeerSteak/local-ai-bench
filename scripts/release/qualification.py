@@ -99,6 +99,64 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
     {
+        "id": "radeon-linux-llamacpp-rocm",
+        "platform": "linux",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "rocm",
+        "accelerator": (
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "AMD Radeon RX 9060 XT 63 GB"
+        ),
+        "qualified_at": "2026-08-21",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/radeon-linux-llamacpp-rocm/"
+            "results_qualification_radeon-linux-llamacpp-rocm.json",
+        ],
+    },
+    {
+        "id": "radeon-linux-vllm-rocm",
+        "platform": "linux",
+        "architecture": "x86_64",
+        "runtime": "vllm",
+        "runtime_version": "0.27.1+rocm723",
+        "backend": "rocm",
+        "accelerator": (
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "AMD Radeon RX 9060 XT 63 GB"
+        ),
+        "qualified_at": "2026-08-21",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "vllmbench",
+            ],
+            "models": ["granite4.1:3b-q4_K_M", "nomic-embed-text"],
+            "notes": (
+                "Smallest complete-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/radeon-linux-vllm-rocm/"
+            "results_qualification_radeon-linux-vllm-rocm.json",
+        ],
+    },
+    {
         "id": "geforce-windows-llamacpp-cuda",
         "platform": "windows",
         "architecture": "x86_64",
