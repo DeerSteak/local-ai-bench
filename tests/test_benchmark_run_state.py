@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.app.benchmark import (
-    checkpoint_terminal_exception, cleanup_signal_numbers, cli_main, finish_event_job,
-    fork_provenance, interruption_exit_code, preflight_result, runtime_shaping_config,
-    validated_run_plan,
+    apply_preflight_plan, checkpoint_terminal_exception, cleanup_signal_numbers, cli_main,
+    finish_event_job, fork_provenance, interruption_exit_code, preflight_result,
+    runtime_shaping_config, validated_run_plan,
 )
 from scripts.results.event_store import EventStore
 from scripts.app.orchestration import StageExecutionError
@@ -73,6 +73,32 @@ def test_preflight_result_adds_only_requested_telemetry_availability():
                         "reason": None},
     }
     assert preflight_result(preflight, None, None) == {"models": {}}
+
+
+def test_apply_preflight_plan_filters_both_llm_scopes_and_preserves_job_identity():
+    effective_config = runtime_shaping_config(SimpleNamespace(
+        warmup=0, cpu_only=False, force_all=False, max_prompt_tokens=None,
+        sample=None, tests=["llm"],
+    ))
+    llm_models = [
+        {"tag": "keep", "short": "keep"}, {"tag": "drop", "short": "drop"},
+    ]
+    plan = validated_run_plan(
+        engine_name="llamacpp", tests=["llm"], stage_order=["llm"],
+        models={"llm": llm_models, "concurrency": llm_models,
+                "embeddings": [], "images": []},
+        effective_config=effective_config,
+    )
+    rebuilt, selected_llm, selected_concurrency = apply_preflight_plan(
+        plan, SimpleNamespace(runnable_tags={"keep"}), engine_name="llamacpp",
+        tests=["llm"], stage_order=["llm"], llm_models=llm_models,
+        concurrency_models=llm_models, embedding_models=[], image_models=[],
+        effective_config=effective_config,
+    )
+    assert rebuilt.job_id == plan.job_id
+    assert [model["tag"] for model in selected_llm] == ["keep"]
+    assert [model["tag"] for model in selected_concurrency] == ["keep"]
+    assert [model["tag"] for model in rebuilt.models["llm"]] == ["keep"]
 
 
 def test_interrupted_exception_checkpoints_pending_data_without_relabeling():

@@ -410,6 +410,23 @@ def preflight_result(preflight, power_availability, temperature_availability) ->
     }
 
 
+def apply_preflight_plan(plan: RunPlan, preflight, *, engine_name: str,
+                         tests: list[str], stage_order: list[str],
+                         llm_models: list[dict], concurrency_models: list[dict],
+                         embedding_models: list[dict], image_models: list[dict],
+                         effective_config: dict) -> tuple[RunPlan, list[dict], list[dict]]:
+    llm_models = filter_models(llm_models, preflight.runnable_tags)
+    concurrency_models = filter_models(concurrency_models, preflight.runnable_tags)
+    plan = validated_run_plan(
+        engine_name=engine_name, tests=tests, stage_order=stage_order,
+        models=selected_plan_models(
+            tests, llm_models, concurrency_models, embedding_models, image_models,
+        ),
+        effective_config=effective_config, job_id=plan.job_id,
+    )
+    return plan, llm_models, concurrency_models
+
+
 def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
                            image_patterns: list[str] | None) -> tuple[list[dict], list[dict]]:
     """Resolve the engine-independent embedding and image model scopes."""
@@ -1123,16 +1140,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             f"Static model preflight completed in {preflight.elapsed_seconds:.2f}s "
             f"({len(preflight.reports)} model(s))"
         )
-        llm_models = filter_models(llm_models, preflight.runnable_tags)
-        conc_models = filter_models(conc_models, preflight.runnable_tags)
-        if any(report.status == "excluded" for report in preflight.reports):
-            plan = validated_run_plan(
-                engine_name=engine_name, tests=tests, stage_order=stage_order,
-                models=selected_plan_models(
-                    tests, llm_models, conc_models, embedding_models, image_models,
-                ),
-                effective_config=effective_config, job_id=plan.job_id,
-            )
+        plan, llm_models, conc_models = apply_preflight_plan(
+            plan, preflight, engine_name=engine_name, tests=tests,
+            stage_order=stage_order, llm_models=llm_models,
+            concurrency_models=conc_models, embedding_models=embedding_models,
+            image_models=image_models, effective_config=effective_config,
+        )
         forked_from = (
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
@@ -1307,14 +1320,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 f"Model preflight completed in {preflight.elapsed_seconds:.2f}s "
                 f"({len(preflight.reports)} model(s))"
             )
-            llm_models = filter_models(llm_models, preflight.runnable_tags)
-            conc_models = filter_models(conc_models, preflight.runnable_tags)
-            plan = validated_run_plan(
-                engine_name=engine_name, tests=tests, stage_order=stage_order,
-                models=selected_plan_models(
-                    tests, llm_models, conc_models, embedding_models, image_models,
-                ),
-                effective_config=effective_config, job_id=plan.job_id,
+            plan, llm_models, conc_models = apply_preflight_plan(
+                plan, preflight, engine_name=engine_name, tests=tests,
+                stage_order=stage_order, llm_models=llm_models,
+                concurrency_models=conc_models, embedding_models=embedding_models,
+                image_models=image_models, effective_config=effective_config,
             )
             results["preflight"] = preflight_result(
                 preflight, power_availability, temperature_availability,
