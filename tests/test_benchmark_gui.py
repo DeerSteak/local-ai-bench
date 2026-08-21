@@ -39,6 +39,7 @@ from scripts.app.benchmark_gui import (
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
 )
+from scripts.app.benchmark_gui_process import open_path_process_options
 from scripts.app.result_actions import (
     completed_result_paths, dashboard_launcher_command, record_result_path,
     result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
@@ -341,6 +342,20 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Darwin") == ["open", "/tmp/results"]
     assert open_path_command(path, "Linux") == ["xdg-open", "/tmp/results"]
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
+
+
+def test_open_path_process_does_not_inherit_terminal_streams():
+    assert open_path_process_options("Linux") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
+    assert open_path_process_options("Windows") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
 
 
 def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tmp_path):

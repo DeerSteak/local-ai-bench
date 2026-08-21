@@ -5,6 +5,7 @@ import pytest
 
 from scripts.setup.setup_progress import (
     finish_setup_progress,
+    progress_exit_delay_ms,
     progress_status_text,
     read_progress_status,
     start_setup_progress,
@@ -41,6 +42,13 @@ def test_finish_setup_progress_rejects_unknown_status(tmp_path):
         finish_setup_progress(tmp_path / "progress.json", "unknown")
 
 
+def test_progress_window_exits_after_every_terminal_status():
+    assert progress_exit_delay_ms("running") is None
+    assert all(progress_exit_delay_ms(status) == 1500 for status in (
+        "complete", "action_items", "stopped",
+    ))
+
+
 def test_start_setup_progress_initializes_status_and_launches_module(monkeypatch, tmp_path):
     status_path = tmp_path / "progress.json"
     monkeypatch.setattr("scripts.setup.setup_progress.tempfile.mkstemp", lambda **_: (5, str(status_path)))
@@ -56,6 +64,13 @@ def test_start_setup_progress_initializes_status_and_launches_module(monkeypatch
     assert returned_path == status_path
     assert read_progress_status(status_path) == "running"
     assert launched[0][0][1:3] == ["-m", "scripts.setup.setup_progress"]
+    assert launched[0][1] == {
+        "creationflags": 0,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
 
 
 def test_start_setup_progress_uses_separate_process_group_on_windows(monkeypatch, tmp_path):
@@ -70,7 +85,12 @@ def test_start_setup_progress_uses_separate_process_group_on_windows(monkeypatch
         lambda command, **kwargs: launched.append((command, kwargs)) or object(),
     )
     start_setup_progress()
-    assert launched[0][1]["creationflags"] == 512
+    assert launched[0][1] == {
+        "creationflags": 512,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
 
 
 def test_process_is_running_uses_windows_probe_instead_of_os_kill(monkeypatch):

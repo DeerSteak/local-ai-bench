@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -590,3 +591,25 @@ def test_run_log_export_writes_current_text(monkeypatch, tmp_path):
 
     assert destination.read_text(encoding="utf-8") == "benchmark output\n"
     assert messages[0][0][0] == "Log exported"
+
+
+def test_run_log_open_folder_detaches_desktop_process(monkeypatch, tmp_path):
+    calls = []
+    controller = RunLogActions.__new__(RunLogActions)
+    controller.option_vars = {"out": SimpleNamespace(get=lambda: str(tmp_path / "result.json"))}
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.platform.system", lambda: "Linux",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.subprocess.Popen",
+        lambda command, **options: calls.append((command, options)),
+    )
+
+    controller.open_results_folder()
+
+    assert calls == [(["xdg-open", str(tmp_path.resolve())], {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    })]
