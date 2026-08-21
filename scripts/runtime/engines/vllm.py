@@ -287,6 +287,9 @@ class VllmEngine(InferenceEngine):
         repo = self._repo(tag)
         return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
 
+    def _request_model_id(self, tag: str) -> str | None:
+        return self._loaded_model_id or self._repo(tag)
+
     def _standalone_chat_template(self, tag: str) -> tuple[str | None, str | None]:
         snapshot = self._snapshot_dir(tag)
         path = snapshot / "chat_template.jinja" if snapshot else None
@@ -918,7 +921,7 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
-            "model": self._loaded_model_id or self._repo(tag),
+            "model": self._request_model_id(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
             "temperature": 0.0,
@@ -980,7 +983,7 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
-            "model": self._loaded_model_id or self._repo(tag),
+            "model": self._request_model_id(tag),
             "messages": messages,
             "temperature": 0.0,
             "stream": True,
@@ -1094,24 +1097,28 @@ class VllmEngine(InferenceEngine):
         )
         return first, second, budget_nudged, model_load_sec
 
-    def chat(self, tag: str, messages: list, timeout: int = 600,
-             num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
-        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
-            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget)
-        return chat_measurement(
-            first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
-            self._loaded_cpu_offload_gb,
-        )
-
-    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_ctx: int | None = None, num_predict: int = 1024,
-                   check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+    def _chat_measurement(self, tag: str, messages: list, tools: list | None,
+                          timeout: int, num_ctx: int | None, num_predict: int,
+                          check_loop: bool, token_budget: int | None) -> ChatMeasurement:
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
         return chat_measurement(
             first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
             self._loaded_cpu_offload_gb,
+        )
+
+    def chat(self, tag: str, messages: list, timeout: int = 600,
+             num_ctx: int | None = None, num_predict: int = 1024,
+             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+        return self._chat_measurement(
+            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
+        )
+
+    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
+                   num_ctx: int | None = None, num_predict: int = 1024,
+                   check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+        return self._chat_measurement(
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:
@@ -1122,7 +1129,7 @@ class VllmEngine(InferenceEngine):
 
         t0 = time.perf_counter()
         resp = requests.post(f"{self.base_url}/v1/embeddings",
-                              json={"model": self._loaded_model_id or self._repo(tag),
+                              json={"model": self._request_model_id(tag),
                                     "input": inputs}, timeout=timeout)
         if not resp.ok:
             try:
