@@ -140,6 +140,26 @@ def vllm_gpu_memory_utilization(machine: str, devices: list[dict]) -> float:
     return config.VLLM_GPU_MEMORY_UTILIZATION
 
 
+def streamed_usage(chunk: dict, completion_tokens: int,
+                   prompt_tokens: int | None) -> tuple[int, int | None]:
+    usage = chunk.get("usage") or {}
+    if usage.get("completion_tokens") is not None:
+        completion_tokens = usage["completion_tokens"]
+    if usage.get("prompt_tokens") is not None:
+        prompt_tokens = usage["prompt_tokens"]
+    return completion_tokens, prompt_tokens
+
+
+def stream_timing(total: float, ttft: float | None,
+                  tokens: int) -> tuple[float, float, float, float]:
+    ttft = total if ttft is None else ttft
+    decode_seconds = max(total - ttft, 0)
+    raw_tps = tokens / decode_seconds if decode_seconds else 0
+    return ttft, decode_seconds, raw_tps, openai_api.sanitize_tps(
+        raw_tps, tokens, ttft, total,
+    )
+
+
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -948,22 +968,14 @@ class VllmEngine(InferenceEngine):
                     response_parts.append(text)
                 if choice.get("finish_reason") is not None:
                     finish_reason = choice["finish_reason"]
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_tokens = usage["prompt_tokens"]
+                tokens, prompt_tokens = streamed_usage(chunk, tokens, prompt_tokens)
                 if time.perf_counter() > deadline:
                     raise EngineTimeout(f"vllm_generate exceeded {timeout}s wall-clock timeout",
                                         partial_text="".join(response_parts))
 
         total = time.perf_counter() - request_start
         prefill_sec = self.prefill_seconds_from_delta(prefill_before, self._prefill_reading())
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = stream_timing(total, ttft, tokens)
         return GenerationMeasurement(
             client_ttft_sec=ttft,
             generated_tokens=tokens,
@@ -1027,11 +1039,9 @@ class VllmEngine(InferenceEngine):
                 if tool_calls:
                     openai_api.accumulate_tool_fragments(tool_fragments, tool_calls)
 
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
+                tokens, prompt_eval_count = streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
                 now = time.perf_counter()
                 response_text = "".join(response_parts) or "".join(reasoning_parts)
@@ -1050,11 +1060,7 @@ class VllmEngine(InferenceEngine):
                             partial_text=response_text, budget_nudged=budget_nudged)
 
         total = time.perf_counter() - request_start
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = stream_timing(total, ttft, tokens)
         return {
             "ttft": ttft,
             "server_prompt_sec": None,
