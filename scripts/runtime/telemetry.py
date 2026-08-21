@@ -172,6 +172,14 @@ def _nvidia_scalar_values(output: str, unit: str,
     return values
 
 
+def _json_object(output: str) -> dict | None:
+    try:
+        value = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def parse_powermetrics_power(output: str) -> PowerReading | None:
     patterns = (
         r"Combined Power \(CPU \+ GPU \+ ANE\):\s*([0-9.]+)\s*(m?W)\b",
@@ -195,11 +203,8 @@ def parse_nvidia_power(output: str) -> PowerReading | None:
 
 
 def parse_rocm_power(output: str) -> PowerReading | None:
-    try:
-        payload = json.loads(output)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
+    payload = _json_object(output)
+    if payload is None:
         return None
     keys = ("Average Graphics Package Power (W)", "Current Socket Graphics Package Power (W)")
     values = []
@@ -260,11 +265,8 @@ def parse_nvidia_telemetry(output: str) -> NvidiaTelemetryReading | None:
 
 
 def parse_rocm_temperatures(output: str) -> TemperatureReading | None:
-    try:
-        payload = json.loads(output)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
+    payload = _json_object(output)
+    if payload is None:
         return None
     die_values = []
     hotspot_values = []
@@ -1732,22 +1734,21 @@ class CaseTelemetry:
             memory_sources=self.sources,
         )
         self.ceiling_gb = memory_ceiling_gb(self.sources)
+        self._reset_cursors()
+        self.last_power: dict[str, Any] | None = None
+        self.last_temperature: dict[str, Any] | None = None
+
+    def _reset_cursors(self) -> None:
         self._cursor = 0
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
         self._power_failure_cursor = 0
         self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
-        self.last_power: dict[str, Any] | None = None
-        self.last_temperature: dict[str, Any] | None = None
 
     def start(self) -> "CaseTelemetry":
         self.sampler.start()
         self.sampler.mark_window("idle")
-        self._cursor = 0
-        self._failed_cursor = 0
-        self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
-        self._power_failure_cursor = 0
-        self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
+        self._reset_cursors()
         self.last_power = None
         self.last_temperature = None
         return self
