@@ -31,7 +31,9 @@ def test_post_install_xpu_probe_uses_oneapi_environment():
     source = SETUP_CHECK.read_text(encoding="utf-8")
 
     assert '_llamacpp_probe_env = oneapi_environment() if _required_llamacpp_backend == "xpu"' in source
-    assert source.count("env=_llamacpp_probe_env") == 2
+    assert source.count("env=_llamacpp_probe_env") == 1
+    assert '_post_install_probe_env = (' in source
+    assert 'probe_llamacpp_backend(binary, env=_post_install_probe_env)' in source
 
 
 def test_setup_coordinator_import_is_safe():

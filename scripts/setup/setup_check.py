@@ -781,9 +781,12 @@ def main() -> None:  # pragma: no cover - real interactive installer
             ok("llama.cpp installed successfully")
             llamacpp_found = True
             LLAMACPP_BIN = find_llamacpp_binary()
+            _post_install_probe_env = (
+                oneapi_environment() if _required_llamacpp_backend == "xpu" else None
+            )
             _post_install_backend_error = llamacpp_install.qualification_backend_error(
                 LLAMACPP_BIN, _required_llamacpp_backend,
-                probe=lambda binary: probe_llamacpp_backend(binary, env=_llamacpp_probe_env),
+                probe=lambda binary: probe_llamacpp_backend(binary, env=_post_install_probe_env),
             )
             if _post_install_backend_error:
                 fail(_post_install_backend_error)
