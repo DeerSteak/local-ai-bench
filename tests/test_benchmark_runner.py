@@ -832,10 +832,19 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cpu"
 
 
-def test_runner_skips_cache_policy_for_engines_without_configuration_hook():
+def test_runner_initializes_runtime_without_cache_configuration_hook():
     from scripts.runtime.workload_runner import configure_runner_engine
 
-    assert configure_runner_engine(object(), "cuda", False) == "auto"
+    class Engine:
+        configured = None
+
+        def runtime_backend(self, hardware_backend, *, cpu_only=False):
+            self.configured = (hardware_backend, cpu_only)
+            return "cpu" if cpu_only else hardware_backend
+
+    engine = Engine()
+    assert configure_runner_engine(engine, "xpu", False) == "auto"
+    assert engine.configured == ("xpu", False)
 
 
 def test_runner_restores_recorded_gpu_split_mode(monkeypatch):

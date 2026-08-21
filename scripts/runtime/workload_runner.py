@@ -100,10 +100,10 @@ def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
 
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
     configure = getattr(engine, "configure_kv_cache", None)
     if configure is None:
         return "auto"
-    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
     return configure(runtime_backend)
 
 
