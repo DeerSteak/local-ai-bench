@@ -1,7 +1,6 @@
 """Supervised journal-stage execution shared by benchmark and recovery flows."""
 
 import json
-import sys
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -24,7 +23,7 @@ from scripts.results.run_plan import RunPlan
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.runner_supervisor import RunnerSpec, RunnerSupervisor
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
-from scripts.runtime.shared import Shared, _console_safe_text
+from scripts.runtime.shared import Shared
 from scripts.results.regrade import answer_sidecar_path
 from scripts.results.result_store import atomic_write_json
 from scripts.stage_registry import ACCURACY_TESTS
@@ -63,10 +62,7 @@ def _redact_runner_text(text: str) -> str:
 
 def relay_runner_log(text: str) -> None:
     """Relay runner timestamps unchanged after redacting every output shape."""
-    output = _console_safe_text(f"{_redact_runner_text(text)}\n")
-    # codeql[py/clear-text-logging-sensitive-data]
-    sys.stdout.write(output)
-    sys.stdout.flush()
+    Shared.plain_output(_redact_runner_text(text))
 
 
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,
