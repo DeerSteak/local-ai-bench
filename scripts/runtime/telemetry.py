@@ -1023,26 +1023,32 @@ def create_temperature_source(availability: TemperatureAvailability,
     return PollingTemperatureSource(availability, **kwargs)
 
 
+def _telemetry_windows(samples: Sequence[TelemetrySample]) \
+        -> Iterator[tuple[list[TelemetrySample], dict[str, Any]]]:
+    for name in dict.fromkeys(sample.window for sample in samples):
+        selected = [sample for sample in samples if sample.window == name]
+        yield selected, {
+            "name": name,
+            "sample_count": len(selected),
+            "duration_sec": max(
+                0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec,
+            ) if selected else 0.0,
+        }
+
+
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
     windows = []
     idle_values = []
-    for name in dict.fromkeys(sample.window for sample in samples):
-        selected = [sample for sample in samples if sample.window == name]
+    for selected, window in _telemetry_windows(samples):
         values = [value for sample in selected
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
         energy = integrate_power_joules([
             (sample.timestamp_sec, sample.power_watts) for sample in selected
         ])
-        if name == "idle":
+        if window["name"] == "idle":
             idle_values.extend(values)
-        windows.append({
-            "name": name,
-            "sample_count": len(selected),
-            "duration_sec": (
-                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
-                if selected else 0.0
-            ),
+        window.update({
             "mean_watts": sum(values) / len(values) if values else None,
             "peak_watts": max(values) if values else None,
             "energy_joules": energy,
@@ -1051,6 +1057,7 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 for sample in selected
             ],
         })
+        windows.append(window)
     all_values = [value for sample in samples
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
     measured_groups: list[list[TelemetrySample]] = []
@@ -1098,8 +1105,7 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
                       availability: TemperatureAvailability,
                       channel_failures: Mapping[str, int]) -> dict[str, Any]:
     windows = []
-    for name in dict.fromkeys(sample.window for sample in samples):
-        selected = [sample for sample in samples if sample.window == name]
+    for selected, window in _telemetry_windows(samples):
         channels = {}
         for channel in TEMPERATURE_CHANNELS:
             values = [value for sample in selected
@@ -1110,28 +1116,22 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 "final_c": values[-1] if values else None,
                 "valid_samples": len(values),
             }
-        windows.append({
-            "name": name,
-            "sample_count": len(selected),
-            "duration_sec": (
-                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
-                if selected else 0.0
-            ),
+        window.update({
             "channels": channels,
             "samples": [{
                 "timestamp_sec": sample.timestamp_sec,
                 **{channel: getattr(sample, channel) for channel in TEMPERATURE_CHANNELS},
             } for sample in selected],
         })
+        windows.append(window)
+    recorded = any(
+        getattr(sample, channel) is not None
+        for sample in samples for channel in TEMPERATURE_CHANNELS
+    )
     return {
-        "status": "recorded" if any(
-            getattr(sample, channel) is not None
-            for sample in samples for channel in TEMPERATURE_CHANNELS
-        ) else "unavailable",
+        "status": "recorded" if recorded else "unavailable",
         "reason": availability.reason or (
-            None if any(getattr(sample, channel) is not None
-                        for sample in samples for channel in TEMPERATURE_CHANNELS)
-            else "no valid temperature samples were recorded"
+            None if recorded else "no valid temperature samples were recorded"
         ),
         "windows": windows,
         "provenance": {
