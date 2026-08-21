@@ -26,7 +26,6 @@ from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_versio
 
 LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp"
 LLAMACPP_TARGETS = ("llama-server", "llama-bench", "llama-batched-bench")
-LLAMACPP_RELEASE_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 LLAMACPP_RELEASES_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
 
 
@@ -307,14 +306,10 @@ def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run,
 
 
 def fetch_llamacpp_release(*, opener=urllib.request.urlopen) -> dict:
-    request = urllib.request.Request(
-        LLAMACPP_RELEASE_URL, headers={"Accept": "application/vnd.github+json"},
-    )
-    with opener(request, timeout=15) as response:
-        payload = json.load(response)
-    if not isinstance(payload, dict) or not isinstance(payload.get("assets"), list):
-        raise ValueError("GitHub returned invalid llama.cpp release metadata")
-    return payload
+    releases = fetch_llamacpp_releases(opener=opener)
+    if not releases:
+        raise ValueError("GitHub returned no published llama.cpp build releases")
+    return releases[0]
 
 
 def fetch_llamacpp_releases(*, opener=urllib.request.urlopen) -> list[dict]:

@@ -9,7 +9,8 @@ import pytest
 
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
-    fetch_llamacpp_releases, homebrew_llamacpp_prefix, llamacpp_clone_command,
+    fetch_llamacpp_release, fetch_llamacpp_releases, homebrew_llamacpp_prefix,
+    llamacpp_clone_command,
     llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
@@ -55,6 +56,22 @@ def test_release_history_keeps_recent_published_build_tags():
     )
 
     assert [release["tag_name"] for release in releases] == ["b10362", "b10361"]
+
+
+def test_latest_llamacpp_release_uses_first_build_tag_not_unrelated_latest_release():
+    payload = [
+        {"tag_name": "v0.2.0", "draft": False, "prerelease": False, "assets": []},
+        {"tag_name": "b10362", "draft": False, "prerelease": False, "assets": []},
+    ]
+
+    class Response:
+        def __init__(self): self.stream = io.StringIO(json.dumps(payload))
+        def read(self, *args): return self.stream.read(*args)
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+
+    assert fetch_llamacpp_release(opener=lambda *_args, **_kwargs: Response())["tag_name"] \
+        == "b10362"
 
 
 def test_llamacpp_clone_checks_out_exact_release_tag(tmp_path):

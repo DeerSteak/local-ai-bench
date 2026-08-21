@@ -1,10 +1,8 @@
 """llama.cpp runtime discovery and installation for setup."""
 
-import json
 import platform
 import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
@@ -51,15 +49,7 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
                     release_fetcher=None) -> bool:
     info("Fetching latest llama.cpp release info ...")
     try:
-        if release_fetcher is None:
-            request = urllib.request.Request(
-                "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
-                headers={"Accept": "application/vnd.github+json"},
-            )
-            with urllib.request.urlopen(request, timeout=15) as response:
-                release = json.load(response)
-        else:
-            release = release_fetcher()
+        release = release_fetcher() if release_fetcher else fetch_llamacpp_release()
         tag = release["tag_name"]
     except Exception as exc:
         fail(f"Could not fetch llama.cpp release info: {exc}")

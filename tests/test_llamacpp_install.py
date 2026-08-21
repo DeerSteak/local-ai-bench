@@ -118,14 +118,6 @@ def test_windows_intel_dispatch_requests_the_sycl_package(monkeypatch, tmp_path)
     assert calls[0]["intel_xpu"] is True
 
 
-class _Response:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
-
-
 def _windows_release(*assets):
     return {"tag_name": "b9999", "assets": list(assets)}
 
@@ -135,8 +127,7 @@ def _asset(name, size=1024):
 
 
 def _install_windows(monkeypatch, tmp_path, release, *, intel_xpu=False, **callbacks):
-    monkeypatch.setattr(llamacpp_install.urllib.request, "urlopen", lambda *_args, **_kwargs: _Response())
-    monkeypatch.setattr(llamacpp_install.json, "load", lambda _response: release)
+    monkeypatch.setattr(llamacpp_install, "fetch_llamacpp_release", lambda: release)
     logs = {name: [] for name in ("info", "warn", "fail", "ok")}
     logs.update(callbacks)
     result = llamacpp_install.install_windows(
@@ -232,8 +223,8 @@ def test_windows_intel_install_replaces_existing_vulkan_runtime(monkeypatch, tmp
 
 def test_windows_install_reports_release_fetch_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        llamacpp_install.urllib.request, "urlopen",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("offline")),
+        llamacpp_install, "fetch_llamacpp_release",
+        lambda: (_ for _ in ()).throw(OSError("offline")),
     )
     failures = []
     result = llamacpp_install.install_windows(
