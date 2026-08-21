@@ -35,7 +35,7 @@ from scripts.setup.intel_xpu_install import (
 from scripts.setup.rocm_install import (
     NATIVE_ROCM_VERSION, WINDOWS_DRIVER, native_rocm_install_plan,
     qualification_needs_native_rocm, qualification_needs_wsl_rocm, run_rocm_install,
-    wsl_rocm_install_plan,
+    ryzen_ai_halo_oem_kernel_ready, wsl_rocm_install_plan,
 )
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -196,6 +196,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 _qualification_target, os_name=os_name, release=platform.release(),
                 rocm_available=_initial_rocm.available,
             )
+            _install_native_rocm = _install_native_rocm or not ryzen_ai_halo_oem_kernel_ready(
+                _qualification_target["id"], platform.release(),
+            )
         except ValueError as exc:
             _arg_parser.error(str(exc))
         if _install_wsl_rocm or _install_native_rocm:
@@ -210,8 +213,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
                         raise ValueError("native ROCm qualification found no AMD display adapter")
                     info(f"GPU: {_amd_gpu.name}")
                     _rocm_plan = native_rocm_install_plan(
-                        _os_release, platform.release(), user=os.environ.get("SUDO_USER")
-                        or os.environ.get("USER"),
+                        _os_release, platform.release(), target_id=_qualification_target["id"],
+                        user=os.environ.get("SUDO_USER") or os.environ.get("USER"),
                     )
             except (OSError, ValueError) as exc:
                 fail(str(exc))
@@ -225,6 +228,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 run_rocm_install(_rocm_plan)
             except (OSError, RuntimeError, urllib.error.URLError) as exc:
                 fail(f"ROCm installation failed: {exc}")
+                sys.exit(1)
+            if _rocm_plan.reboot_required:
+                fail("Ryzen AI Halo OEM kernel installed; reboot, then rerun qualification")
                 sys.exit(1)
             if not discover_rocm().available:
                 fail("ROCm installed but rocminfo cannot see an AMD GPU")

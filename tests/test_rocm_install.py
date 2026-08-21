@@ -5,7 +5,8 @@ import pytest
 from scripts.release.qualification_targets import qualification_target
 from scripts.setup.rocm_install import (
     native_rocm_install_plan, qualification_needs_native_rocm,
-    qualification_needs_wsl_rocm, run_rocm_install, wsl_rocm_install_plan,
+    qualification_needs_wsl_rocm, run_rocm_install, ryzen_ai_halo_oem_kernel_ready,
+    wsl_rocm_install_plan,
 )
 
 
@@ -30,15 +31,18 @@ def test_wsl_rocm_plan_supports_ubuntu_2204(tmp_path):
 def test_native_rocm_plan_pins_supported_ubuntu_kernel_and_permissions(tmp_path):
     plan = native_rocm_install_plan(
         'ID=ubuntu\nVERSION_ID="24.04"\n', "6.17.0-14-generic",
-        user="ben", temp_dir=tmp_path,
+        target_id="radeon-linux-llamacpp-rocm", user="ben", temp_dir=tmp_path,
     )
     assert plan.package_url == (
         "https://repo.radeon.com/amdgpu-install/7.2.1/ubuntu/noble/"
         "amdgpu-install_7.2.1.70201-1_all.deb"
     )
     assert plan.commands == (
-        ("apt-get", "install", "-y", str(plan.package_path)),
         ("apt-get", "update"),
+        (
+            "apt-get", "install", "-y", "python3-setuptools", "python3-wheel",
+            str(plan.package_path),
+        ),
         ("amdgpu-install", "-y", "--usecase=graphics,rocm"),
         ("usermod", "-aG", "render,video", "ben"),
     )
@@ -48,8 +52,57 @@ def test_native_rocm_plan_pins_supported_ubuntu_kernel_and_permissions(tmp_path)
 def test_native_rocm_plan_rejects_unsupported_kernel(kernel):
     with pytest.raises(ValueError, match="requires kernel 6.8 or 6.17"):
         native_rocm_install_plan(
-            'ID=ubuntu\nVERSION_ID="24.04"\n', kernel, user="ben",
+            'ID=ubuntu\nVERSION_ID="24.04"\n', kernel,
+            target_id="radeon-linux-llamacpp-rocm", user="ben",
         )
+
+
+def test_halo_rocm_plan_installs_oem_kernel_and_uses_inbox_driver(tmp_path):
+    plan = native_rocm_install_plan(
+        'ID=ubuntu\nVERSION_ID="24.04"\n', "6.8.0-90-generic",
+        target_id="ryzen-ai-halo-llamacpp-rocm", user="ben", temp_dir=tmp_path,
+    )
+    assert plan.reboot_required
+    assert plan.commands == (
+        ("dpkg", "--purge", "amdgpu-dkms"),
+        ("apt-get", "update"),
+        (
+            "apt-get", "install", "-y", "linux-oem-24.04", "python3-setuptools",
+            "python3-wheel", str(plan.package_path),
+        ),
+        ("amdgpu-install", "-y", "--usecase=rocm", "--no-dkms"),
+        ("usermod", "-aG", "render,video", "ben"),
+    )
+
+
+def test_halo_rocm_plan_reuses_supported_oem_kernel(tmp_path):
+    plan = native_rocm_install_plan(
+        'ID=ubuntu\nVERSION_ID="24.04"\n', "6.14.0-1018-oem",
+        target_id="ryzen-ai-halo-vllm-rocm", user="ben", temp_dir=tmp_path,
+    )
+    assert not plan.reboot_required
+    assert "linux-oem-24.04" not in plan.commands[0]
+    assert plan.commands[3] == (
+        "amdgpu-install", "-y", "--usecase=rocm", "--no-dkms",
+    )
+
+
+@pytest.mark.parametrize("kernel", [
+    "6.14.0-1017-oem", "6.17.0-14-generic", "7.0.0-30-generic", "unknown",
+])
+def test_halo_requires_supported_oem_kernel(kernel):
+    assert not ryzen_ai_halo_oem_kernel_ready(
+        "ryzen-ai-halo-llamacpp-rocm", kernel,
+    )
+
+
+def test_halo_accepts_newer_oem_kernel_and_other_targets_ignore_flavor():
+    assert ryzen_ai_halo_oem_kernel_ready(
+        "ryzen-ai-halo-vllm-rocm", "6.17.0-14-oem",
+    )
+    assert ryzen_ai_halo_oem_kernel_ready(
+        "radeon-linux-vllm-rocm", "6.17.0-14-generic",
+    )
 
 
 @pytest.mark.parametrize("release", [

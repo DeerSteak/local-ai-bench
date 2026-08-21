@@ -19,6 +19,9 @@ WINDOWS_DRIVER = "AMD Software: Adrenalin Edition 26.1.1 for WSL2"
 UBUNTU_CODENAMES = {"22.04": "jammy", "24.04": "noble"}
 NATIVE_UBUNTU_VERSIONS = {"24.04"}
 NATIVE_KERNELS = {(6, 8), (6, 17)}
+RYZEN_AI_HALO_TARGET_PREFIX = "ryzen-ai-halo-"
+RYZEN_AI_HALO_OEM_PACKAGE = "linux-oem-24.04"
+RYZEN_AI_HALO_MIN_OEM_KERNEL = (6, 14, 0, 1018)
 GET_EFFECTIVE_UID = getattr(os, "geteuid", lambda: 1)
 
 
@@ -27,6 +30,7 @@ class RocmInstallPlan:
     package_url: str
     package_path: Path
     commands: tuple[tuple[str, ...], ...]
+    reboot_required: bool = False
 
 
 def parse_os_release(text: str) -> dict[str, str]:
@@ -62,8 +66,15 @@ def wsl_rocm_install_plan(os_release: str, *, temp_dir: Path | None = None) -> R
     return RocmInstallPlan(package_url, package_path, commands)
 
 
-def native_rocm_install_plan(os_release: str, kernel_release: str, *, user: str | None,
-                             temp_dir: Path | None = None) -> RocmInstallPlan:
+def ryzen_ai_halo_oem_kernel_ready(target_id: str, kernel_release: str) -> bool:
+    if not target_id.startswith(RYZEN_AI_HALO_TARGET_PREFIX):
+        return True
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)-(\d+)-oem(?:$|[-+])", kernel_release)
+    return bool(match and tuple(map(int, match.groups())) >= RYZEN_AI_HALO_MIN_OEM_KERNEL)
+
+
+def native_rocm_install_plan(os_release: str, kernel_release: str, *, target_id: str,
+                             user: str | None, temp_dir: Path | None = None) -> RocmInstallPlan:
     release = parse_os_release(os_release)
     distribution = release.get("ID", "").lower()
     version = release.get("VERSION_ID", "")
@@ -73,9 +84,10 @@ def native_rocm_install_plan(os_release: str, kernel_release: str, *, user: str 
             f"native ROCm {NATIVE_ROCM_VERSION} qualification requires Ubuntu 24.04; "
             f"detected {detected}"
         )
+    halo = target_id.startswith(RYZEN_AI_HALO_TARGET_PREFIX)
     match = re.match(r"(\d+)\.(\d+)", kernel_release)
     kernel = tuple(map(int, match.groups())) if match else None
-    if kernel not in NATIVE_KERNELS:
+    if not halo and kernel not in NATIVE_KERNELS:
         supported = " or ".join(".".join(map(str, item)) for item in sorted(NATIVE_KERNELS))
         raise ValueError(
             f"native ROCm {NATIVE_ROCM_VERSION} qualification requires kernel {supported}; "
@@ -89,14 +101,27 @@ def native_rocm_install_plan(os_release: str, kernel_release: str, *, user: str 
         f"{package}"
     )
     package_path = (temp_dir or Path(tempfile.gettempdir())) / package
-    commands = [
-        ("apt-get", "install", "-y", str(package_path)),
+    packages = ["python3-setuptools", "python3-wheel", str(package_path)]
+    reboot_required = halo and not ryzen_ai_halo_oem_kernel_ready(target_id, kernel_release)
+    if reboot_required:
+        packages.insert(0, RYZEN_AI_HALO_OEM_PACKAGE)
+    commands = []
+    if halo:
+        commands.append(("dpkg", "--purge", "amdgpu-dkms"))
+    commands.extend((
         ("apt-get", "update"),
-        ("amdgpu-install", "-y", "--usecase=graphics,rocm"),
-    ]
+        ("apt-get", "install", "-y", *packages),
+        (
+            "amdgpu-install", "-y", "--usecase=rocm", "--no-dkms",
+        ) if halo else (
+            "amdgpu-install", "-y", "--usecase=graphics,rocm",
+        ),
+    ))
     if user:
         commands.append(("usermod", "-aG", "render,video", user))
-    return RocmInstallPlan(package_url, package_path, tuple(commands))
+    return RocmInstallPlan(
+        package_url, package_path, tuple(commands), reboot_required=reboot_required,
+    )
 
 
 def qualification_needs_wsl_rocm(target: dict, *, os_name: str, release: str,
