@@ -22,6 +22,24 @@ def test_find_tool_uses_runtime_directory(monkeypatch, tmp_path):
     assert calls[0][1]["platform_name"] == "Linux"
 
 
+def test_find_tools_discovers_the_complete_runtime_toolset(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        llamacpp_install, "find_tool",
+        lambda name, runtime_dir, platform_name: calls.append(
+            (name, runtime_dir, platform_name)
+        ) or f"/{name}",
+    )
+    assert llamacpp_install.find_tools(tmp_path, "Linux") == {
+        "llama-server": "/llama-server",
+        "llama-bench": "/llama-bench",
+        "llama-batched-bench": "/llama-batched-bench",
+    }
+    assert [call[0] for call in calls] == [
+        "llama-server", "llama-bench", "llama-batched-bench",
+    ]
+
+
 def test_qualification_rebuilds_existing_runtime_with_wrong_or_unverifiable_backend():
     assert llamacpp_install.qualification_backend_mismatch("llama-server", "cpu", "rocm")
     assert llamacpp_install.qualification_backend_mismatch("llama-server", None, "rocm")

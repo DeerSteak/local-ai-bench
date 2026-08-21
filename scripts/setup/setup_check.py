@@ -344,15 +344,6 @@ def main() -> None:  # pragma: no cover - real interactive installer
         info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
              "then run 'wsl --shutdown' — see docs/setup.md")
 
-    def find_llamacpp_binary():
-        return llamacpp_install.find_tool("llama-server", LLAMACPP_DIR, os_name)
-
-    def find_llamacpp_bench_binary():
-        return llamacpp_install.find_tool("llama-bench", LLAMACPP_DIR, os_name)
-
-    def find_llamacpp_batched_bench_binary():
-        return llamacpp_install.find_tool("llama-batched-bench", LLAMACPP_DIR, os_name)
-
     def install_llamacpp():
         return llamacpp_install.install(
             LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
@@ -366,7 +357,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     section("llama.cpp")
 
-    LLAMACPP_BIN = find_llamacpp_binary()
+    llamacpp_tools = llamacpp_install.find_tools(LLAMACPP_DIR, os_name)
+    LLAMACPP_BIN = llamacpp_tools["llama-server"]
     _required_llamacpp_backend = (
         _qualification_target["backend"] if _qualification_target
         and _qualification_target["runtime"] == LLAMACPP else None
@@ -393,7 +385,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     else:
         warn("llama-server not found — will need to be installed")
 
-    LLAMACPP_BENCH_BIN = find_llamacpp_bench_binary()
+    LLAMACPP_BENCH_BIN = llamacpp_tools["llama-bench"]
     llamacpp_bench_found = LLAMACPP_BENCH_BIN is not None
     if llamacpp_bench_found:
         ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")
@@ -404,7 +396,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
              "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
              "the llamabench test")
 
-    LLAMACPP_BATCHED_BENCH_BIN = find_llamacpp_batched_bench_binary()
+    LLAMACPP_BATCHED_BENCH_BIN = llamacpp_tools["llama-batched-bench"]
     llamacpp_batched_bench_found = LLAMACPP_BATCHED_BENCH_BIN is not None
     if llamacpp_batched_bench_found:
         ok(f"llama-batched-bench found: {LLAMACPP_BATCHED_BENCH_BIN}")
@@ -790,7 +782,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
         if llamacpp_installed:
             ok("llama.cpp installed successfully")
             llamacpp_found = True
-            LLAMACPP_BIN = find_llamacpp_binary()
+            llamacpp_tools = llamacpp_install.find_tools(LLAMACPP_DIR, os_name)
+            LLAMACPP_BIN = llamacpp_tools["llama-server"]
             _post_install_probe_env = (
                 oneapi_environment() if _required_llamacpp_backend == "xpu" else None
             )
@@ -802,12 +795,12 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 fail(_post_install_backend_error)
                 issues.append(_post_install_backend_error)
                 llamacpp_found = False
-            LLAMACPP_BENCH_BIN = find_llamacpp_bench_binary()
+            LLAMACPP_BENCH_BIN = llamacpp_tools["llama-bench"]
             if LLAMACPP_BENCH_BIN:
                 ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")
             else:
                 warn("llama-bench still not found after install — llama-bench-based tests won't be available")
-            LLAMACPP_BATCHED_BENCH_BIN = find_llamacpp_batched_bench_binary()
+            LLAMACPP_BATCHED_BENCH_BIN = llamacpp_tools["llama-batched-bench"]
             if LLAMACPP_BATCHED_BENCH_BIN:
                 ok(f"llama-batched-bench found: {LLAMACPP_BATCHED_BENCH_BIN}")
             else:

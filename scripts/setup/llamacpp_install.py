@@ -24,6 +24,13 @@ def find_tool(name: str, runtime_dir: Path, platform_name: str) -> str | None:
     )
 
 
+def find_tools(runtime_dir: Path, platform_name: str) -> dict[str, str | None]:
+    return {
+        name: find_tool(name, runtime_dir, platform_name)
+        for name in ("llama-server", "llama-bench", "llama-batched-bench")
+    }
+
+
 def qualification_backend_mismatch(binary: str | None, installed_backend: str | None,
                                    required_backend: str | None) -> bool:
     return bool(binary and required_backend and installed_backend != required_backend)
