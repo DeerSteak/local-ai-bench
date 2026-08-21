@@ -6,8 +6,10 @@ from scripts.setup.intel_xpu_install import (
     ONEAPI_DNNL_PACKAGE,
     ONEAPI_SETVARS,
     ONEAPI_TOOLKIT_PACKAGE,
+    ONEAPI_UNIFIED_VARS,
     intel_xpu_install_plan,
     oneapi_environment,
+    oneapi_environment_script,
     parse_environment,
     run_intel_xpu_install,
     sycl_gpu_available,
@@ -89,19 +91,36 @@ def test_install_omits_sudo_as_root():
 
 def test_oneapi_environment_merges_sourced_values():
     def run(command, **kwargs):
-        assert command == ["bash", "-c", f"source {ONEAPI_SETVARS} >/dev/null && env"]
+        assert command == ["bash", "-c", f"source {ONEAPI_UNIFIED_VARS} >/dev/null && env"]
         assert kwargs["env"] == {"BASE": "yes"}
         return SimpleNamespace(returncode=0, stdout="PATH=/opt/intel/bin\nLD_LIBRARY_PATH=/opt/intel/lib\n")
 
-    assert oneapi_environment(base_env={"BASE": "yes"}, run=run) == {
+    assert oneapi_environment(
+        base_env={"BASE": "yes"}, run=run, is_file=lambda path: path == ONEAPI_UNIFIED_VARS,
+    ) == {
         "BASE": "yes", "PATH": "/opt/intel/bin", "LD_LIBRARY_PATH": "/opt/intel/lib",
     }
     assert parse_environment("A=one=two\ninvalid\n") == {"A": "one=two"}
 
 
+def test_oneapi_environment_prefers_pinned_unified_layout():
+    assert oneapi_environment_script(is_file=lambda _path: True) == ONEAPI_UNIFIED_VARS
+
+
+def test_oneapi_environment_falls_back_to_component_layout():
+    assert oneapi_environment_script(
+        is_file=lambda path: path == ONEAPI_SETVARS,
+    ) == ONEAPI_SETVARS
+
+
+def test_oneapi_environment_rejects_missing_initializers():
+    assert oneapi_environment(base_env={}, is_file=lambda _path: False) is None
+
+
 def test_oneapi_environment_rejects_failed_setvars():
     result = oneapi_environment(
         base_env={}, run=lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
+        is_file=lambda path: path == ONEAPI_UNIFIED_VARS,
     )
     assert result is None
 

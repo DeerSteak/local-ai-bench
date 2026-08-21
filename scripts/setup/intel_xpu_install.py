@@ -3,13 +3,16 @@
 from dataclasses import dataclass
 import os
 import re
+import shlex
 import subprocess
+from pathlib import Path
 
 from scripts.setup.rocm_wsl_install import parse_os_release
 
 
 SUPPORTED_UBUNTU = {"24.04", "26.04"}
 ONEAPI_SETVARS = "/opt/intel/oneapi/setvars.sh"
+ONEAPI_UNIFIED_VARS = "/opt/intel/oneapi/2026.1/oneapi-vars.sh"
 ONEAPI_TOOLKIT_PACKAGE = "intel-deep-learning-essentials-2026.1"
 ONEAPI_DNNL_PACKAGE = "intel-oneapi-dnnl-devel-2026.0"
 ONEAPI_KEY_URL = (
@@ -87,11 +90,22 @@ def parse_environment(text: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
 
 
-def oneapi_environment(*, base_env=None, run=subprocess.run) -> dict[str, str] | None:
+def oneapi_environment_script(*, is_file=None) -> str | None:
+    is_file = is_file or (lambda value: Path(value).is_file())
+    return next(
+        (script for script in (ONEAPI_UNIFIED_VARS, ONEAPI_SETVARS) if is_file(script)),
+        None,
+    )
+
+
+def oneapi_environment(*, base_env=None, run=subprocess.run, is_file=None) -> dict[str, str] | None:
     base = dict(os.environ if base_env is None else base_env)
+    script = oneapi_environment_script(is_file=is_file)
+    if script is None:
+        return None
     try:
         result = run(
-            ["bash", "-c", f"source {ONEAPI_SETVARS} >/dev/null && env"],
+            ["bash", "-c", f"source {shlex.quote(script)} >/dev/null && env"],
             capture_output=True, text=True, env=base,
         )
     except (OSError, subprocess.SubprocessError):
