@@ -37,6 +37,12 @@ class RuntimeUpdateResult:
     version: str | None = None
 
 
+@dataclass(frozen=True)
+class WindowsLlamacppRelease:
+    label: str
+    assets: tuple[dict, ...]
+
+
 class RuntimeUpdateControl:
     def __init__(self, output: Callable[[str], None] | None = None):
         self._cancelled = threading.Event()
@@ -341,15 +347,31 @@ def fetch_llamacpp_release_tag(tag: str, *, opener=urllib.request.urlopen) -> di
     return payload
 
 
-def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None) -> list[dict]:
+def select_windows_llamacpp_release(release: dict, max_cuda_version: str | None, *,
+                                    intel_xpu: bool = False) -> WindowsLlamacppRelease | None:
     assets = release.get("assets", [])
+    if intel_xpu:
+        sycl = next((asset for asset in assets
+                     if "win-sycl-x64" in str(asset.get("name", "")).lower()
+                     and str(asset.get("name", "")).endswith(".zip")), None)
+        return WindowsLlamacppRelease("SYCL", (sycl,)) if sycl is not None else None
     cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
     if cuda_pair is not None:
-        return [cuda_pair[0], cuda_pair[1]]
+        return WindowsLlamacppRelease(
+            f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
+        )
     vulkan = next((asset for asset in assets
                    if "win-vulkan-x64" in str(asset.get("name", "")).lower()
                    and str(asset.get("name", "")).endswith(".zip")), None)
-    return [vulkan] if vulkan is not None else []
+    return WindowsLlamacppRelease("Vulkan", (vulkan,)) if vulkan is not None else None
+
+
+def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None, *,
+                                   intel_xpu: bool = False) -> list[dict]:
+    selected = select_windows_llamacpp_release(
+        release, max_cuda_version, intel_xpu=intel_xpu,
+    )
+    return list(selected.assets) if selected is not None else []
 
 
 def select_macos_llamacpp_asset(release: dict, machine: str) -> dict | None:
@@ -446,6 +468,7 @@ def update_macos_llamacpp(target: Path, machine: str, *,
 
 
 def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
+                            intel_xpu: bool = False,
                             release_fetcher=fetch_llamacpp_release,
                             downloader=download_file, extractor=safe_extract_zip,
                             run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
@@ -462,7 +485,9 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
     active_run = control.run if control is not None else run
     try:
         release = release_fetcher()
-        assets = select_windows_llamacpp_assets(release, max_cuda_version)
+        assets = select_windows_llamacpp_assets(
+            release, max_cuda_version, intel_xpu=intel_xpu,
+        )
         if not assets:
             return RuntimeUpdateResult(False, "The latest release has no compatible Windows asset.")
         downloads.mkdir(parents=True)

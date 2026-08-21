@@ -388,6 +388,20 @@ def test_select_windows_assets_prefers_compatible_cuda_pair():
     ]
 
 
+def test_select_windows_assets_uses_sycl_exclusively_for_intel_xpu():
+    assets = [
+        {"name": "llama-b1-bin-win-sycl-x64.zip"},
+        {"name": "llama-b1-bin-win-vulkan-x64.zip"},
+    ]
+    selected = select_windows_llamacpp_assets(
+        {"assets": assets}, None, intel_xpu=True,
+    )
+    assert [asset["name"] for asset in selected] == ["llama-b1-bin-win-sycl-x64.zip"]
+    assert select_windows_llamacpp_assets(
+        {"assets": assets[1:]}, None, intel_xpu=True,
+    ) == []
+
+
 def test_select_macos_asset_matches_machine_architecture():
     assets = [
         {"name": "llama-b10362-bin-macos-arm64.tar.gz"},

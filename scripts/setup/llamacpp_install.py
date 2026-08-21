@@ -7,15 +7,14 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from scripts.runtime import hardware
 from scripts.runtime.llamacpp_tools import cuda_architecture, find_llamacpp_tool, find_nvcc
 from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
 from scripts.setup.runtime_update import (
     fetch_llamacpp_release, fetch_llamacpp_release_tag, llamacpp_clone_command,
-    llamacpp_source_release,
-    update_macos_llamacpp,
+    llamacpp_source_release, select_windows_llamacpp_release,
+    update_macos_llamacpp, update_windows_llamacpp,
 )
 
 
@@ -30,8 +29,19 @@ def qualification_backend_mismatch(binary: str | None, installed_backend: str | 
     return bool(binary and required_backend and installed_backend != required_backend)
 
 
+def qualification_backend_error(binary: str | None, required_backend: str | None, *,
+                                probe) -> str | None:
+    if binary is None or required_backend is None:
+        return None
+    installed = probe(binary)
+    if not qualification_backend_mismatch(binary, installed, required_backend):
+        return None
+    return f"qualification requires {required_backend}, but installed llama.cpp exposes {installed or 'no backend'}"
+
+
 def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str | None,
-                    *, info, warn, fail, ok, release_fetcher=None) -> bool:
+                    *, intel_xpu: bool = False, info, warn, fail, ok,
+                    release_fetcher=None) -> bool:
     info("Fetching latest llama.cpp release info ...")
     try:
         if release_fetcher is None:
@@ -47,20 +57,24 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
     except Exception as exc:
         fail(f"Could not fetch llama.cpp release info: {exc}")
         return False
-    cuda_pair = hardware.select_cuda_release_assets(release["assets"], max_cuda_version)
-    if cuda_pair is not None:
-        binary, runtime, cuda_version = cuda_pair
-        label, assets = f"CUDA {cuda_version}", [binary, runtime]
-    else:
-        vulkan = next(
-            (asset for asset in release["assets"]
-             if "win-vulkan-x64" in asset["name"].lower()
-             and asset["name"].endswith(".zip")), None,
+    selected = select_windows_llamacpp_release(
+        release, max_cuda_version, intel_xpu=intel_xpu,
+    )
+    if selected is None:
+        backend = "SYCL" if intel_xpu else "Vulkan"
+        fail(f"No Windows {backend} build found in the latest llama.cpp release")
+        return False
+    label, assets = selected.label, selected.assets
+    if runtime_dir.is_dir():
+        result = update_windows_llamacpp(
+            runtime_dir, max_cuda_version, intel_xpu=intel_xpu,
+            release_fetcher=lambda: release,
         )
-        if vulkan is None:
-            fail("No Windows Vulkan build found in the latest llama.cpp release")
-            return False
-        label, assets = "Vulkan", [vulkan]
+        if result.success:
+            ok(f"llama.cpp {tag} ({label}) replaced the prior managed runtime")
+        else:
+            fail(result.detail)
+        return result.success
     size_mb = sum(asset["size"] for asset in assets) // (1024 ** 2)
     info(f"Downloading llama.cpp {tag} ({label}, {size_mb} MB) ...")
     archives = [download_dir / asset["name"] for asset in assets]
@@ -114,6 +128,7 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
     if platform_name == "Windows":
         return install_windows(
             runtime_dir, download_dir, max_cuda_version,
+            intel_xpu=intel_xpu,
             info=info, warn=warn, fail=fail, ok=ok, release_fetcher=release_fetcher,
         )
     if platform_name != "Linux":

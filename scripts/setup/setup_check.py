@@ -280,11 +280,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
         ok("AMD/Radeon GPU detected on Windows")
     elif intel_windows:
         ok("Intel Arc GPU detected on Windows")
-        info("Intel Arc support is experimental — this project's maintainers don't have "
-             "Arc hardware to test against, so treat this as unverified")
-        warn("LLM tests need llama.cpp's SYCL backend for Intel Arc acceleration, which "
-             "this script doesn't build; they'll run on CPU unless you build it yourself "
-             "with -DGGML_SYCL=ON")
+        info("Intel Arc support remains unverified until qualification completes")
+        info("Setup will use llama.cpp's official self-contained Windows SYCL package")
     elif intel_linux:
         ok("Intel Arc GPU detected on Linux")
         if intel_linux_runtime:
@@ -356,7 +353,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     def install_llamacpp():
         return llamacpp_install.install(
             LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
-            intel_xpu=intel_linux,
+            intel_xpu=intel_linux or intel_windows,
             compute_capability=nvidia_compute_cap,
             max_cuda_version=nvidia_max_cuda_version,
             info=info, warn=warn, fail=fail, ok=ok,
@@ -780,6 +777,13 @@ def main() -> None:  # pragma: no cover - real interactive installer
             ok("llama.cpp installed successfully")
             llamacpp_found = True
             LLAMACPP_BIN = find_llamacpp_binary()
+            _post_install_backend_error = llamacpp_install.qualification_backend_error(
+                LLAMACPP_BIN, _required_llamacpp_backend, probe=probe_llamacpp_backend,
+            )
+            if _post_install_backend_error:
+                fail(_post_install_backend_error)
+                issues.append(_post_install_backend_error)
+                llamacpp_found = False
             LLAMACPP_BENCH_BIN = find_llamacpp_bench_binary()
             if LLAMACPP_BENCH_BIN:
                 ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")

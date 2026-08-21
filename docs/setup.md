@@ -12,7 +12,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | macos | arm64 | llamacpp | metal | Supported | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | vulkan | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | vulkan | Unverified | Unverified | No qualification record |
+| windows | x86_64 | llamacpp | xpu | Unverified | Unverified | No qualification record |
 | wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | llamacpp | rocm | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
@@ -27,6 +27,12 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | linux | aarch64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | linux | aarch64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 <!-- qualification-matrix:end -->
+
+### Explicitly unsupported paths
+
+| Platform | Architecture | Runtime | Backend | Accelerator | Status | Reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| windows | x86_64 | llamacpp | vulkan | Intel Arc Pro B65 | Not supported | Windows Application Control blocked the official runtime's `ggml-vulkan.dll` because its signing level could not be verified. Local AI Bench does not bypass that policy; Intel Windows qualification uses SYCL instead. |
 
 **Contents**
 - [What the setup scripts do](#what-the-setup-scripts-do)
@@ -291,7 +297,7 @@ An older preinstalled `vllm-launch` remains discoverable as an external platform
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc) — experimental** — Setup downloads ComfyUI's Intel portable build and uses llama.cpp's Vulkan package. Results therefore report `backend: "vulkan"` while retaining `hardware_backend: "xpu"`; a manual SYCL build reports `xpu`. This path has not been verified on real Arc hardware by the project maintainer.
+**Windows (Intel Arc) — qualification pending** — Setup downloads ComfyUI's Intel portable build and llama.cpp's official self-contained Windows SYCL package, which includes its required runtime DLLs and does not require a separate oneAPI installation. Results report `backend: "xpu"`. The prior Vulkan candidate is explicitly unsupported because Windows Application Control rejected `ggml-vulkan.dll`; setup does not download it for Intel or weaken the host policy. Intel Arc Pro B65 has the explicit `intel-arc-windows-llamacpp-sycl` qualification target, which remains unverified until the hardware produces a complete passing record.
 
 **Windows (vLLM)** — Not available natively; run the benchmark inside WSL2, where the ordinary Linux CUDA path applies. See [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2). llama.cpp and image generation are unaffected and run natively.
 

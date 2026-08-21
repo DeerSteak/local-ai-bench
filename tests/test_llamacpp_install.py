@@ -30,6 +30,18 @@ def test_qualification_rebuilds_existing_runtime_with_wrong_or_unverifiable_back
     assert not llamacpp_install.qualification_backend_mismatch("llama-server", "cpu", None)
 
 
+def test_qualification_rejects_an_installed_runtime_that_does_not_expose_required_backend():
+    assert llamacpp_install.qualification_backend_error(
+        "llama-server", "xpu", probe=lambda _binary: "xpu",
+    ) is None
+    assert llamacpp_install.qualification_backend_error(
+        "llama-server", "xpu", probe=lambda _binary: None,
+    ) == "qualification requires xpu, but installed llama.cpp exposes no backend"
+    assert llamacpp_install.qualification_backend_error(
+        None, "xpu", probe=lambda _binary: "vulkan",
+    ) is None
+
+
 def test_linux_install_requires_build_tools(monkeypatch, tmp_path):
     failures = []
     monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: None)
@@ -73,6 +85,21 @@ def test_macos_install_resolves_requested_release(monkeypatch, tmp_path):
     assert requested == ["b7000"]
 
 
+def test_windows_intel_dispatch_requests_the_sycl_package(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        llamacpp_install, "install_windows",
+        lambda *_args, **kwargs: calls.append(kwargs) or True,
+    )
+    assert llamacpp_install.install(
+        tmp_path / "runtime", tmp_path, "Windows",
+        nvidia=False, rocm=False, intel_xpu=True,
+        compute_capability=None, max_cuda_version=None,
+        info=_log, warn=_log, fail=_log, ok=_log,
+    )
+    assert calls[0]["intel_xpu"] is True
+
+
 class _Response:
     def __enter__(self):
         return self
@@ -89,13 +116,14 @@ def _asset(name, size=1024):
     return {"name": name, "size": size, "browser_download_url": f"https://example/{name}"}
 
 
-def _install_windows(monkeypatch, tmp_path, release, **callbacks):
+def _install_windows(monkeypatch, tmp_path, release, *, intel_xpu=False, **callbacks):
     monkeypatch.setattr(llamacpp_install.urllib.request, "urlopen", lambda *_args, **_kwargs: _Response())
     monkeypatch.setattr(llamacpp_install.json, "load", lambda _response: release)
     logs = {name: [] for name in ("info", "warn", "fail", "ok")}
     logs.update(callbacks)
     result = llamacpp_install.install_windows(
         tmp_path / "runtime", tmp_path / "downloads", "12.8",
+        intel_xpu=intel_xpu,
         info=logs["info"].append, warn=logs["warn"].append,
         fail=logs["fail"].append, ok=logs["ok"].append,
     )
@@ -104,7 +132,6 @@ def _install_windows(monkeypatch, tmp_path, release, **callbacks):
 
 def test_windows_install_falls_back_to_vulkan_without_cuda_pair(monkeypatch, tmp_path):
     release = _windows_release(_asset("llama-win-vulkan-x64.zip"))
-    monkeypatch.setattr(llamacpp_install.hardware, "select_cuda_release_assets", lambda *_args: None)
 
     def download(_url, archive, **_kwargs):
         archive.parent.mkdir(exist_ok=True)
@@ -123,12 +150,66 @@ def test_windows_install_falls_back_to_vulkan_without_cuda_pair(monkeypatch, tmp
 
 
 def test_windows_install_fails_without_vulkan_fallback(monkeypatch, tmp_path):
-    monkeypatch.setattr(llamacpp_install.hardware, "select_cuda_release_assets", lambda *_args: None)
     result, logs = _install_windows(
         monkeypatch, tmp_path, _windows_release(_asset("source.zip")),
     )
     assert result is False
     assert logs["fail"] == ["No Windows Vulkan build found in the latest llama.cpp release"]
+
+
+def test_windows_intel_install_uses_sycl_and_never_falls_back_to_vulkan(monkeypatch, tmp_path):
+    release = _windows_release(
+        _asset("llama-win-sycl-x64.zip"), _asset("llama-win-vulkan-x64.zip"),
+    )
+
+    def download(_url, archive, **_kwargs):
+        archive.parent.mkdir(exist_ok=True)
+        archive.touch()
+
+    def extract(archive, runtime):
+        assert "sycl" in archive.name
+        runtime.mkdir(exist_ok=True)
+        for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+            (runtime / f"{name}.exe").touch()
+
+    monkeypatch.setattr(llamacpp_install, "download_file", download)
+    monkeypatch.setattr(llamacpp_install, "safe_extract_zip", extract)
+    result, logs = _install_windows(
+        monkeypatch, tmp_path, release, intel_xpu=True,
+    )
+    assert result is True
+    assert any("SYCL" in message for message in logs["ok"])
+
+
+def test_windows_intel_install_fails_instead_of_using_vulkan_without_sycl(
+        monkeypatch, tmp_path):
+    result, logs = _install_windows(
+        monkeypatch, tmp_path,
+        _windows_release(_asset("llama-win-vulkan-x64.zip")), intel_xpu=True,
+    )
+    assert result is False
+    assert logs["fail"] == ["No Windows SYCL build found in the latest llama.cpp release"]
+
+
+def test_windows_intel_install_replaces_existing_vulkan_runtime(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "ggml-vulkan.dll").touch()
+    calls = []
+    monkeypatch.setattr(
+        llamacpp_install, "update_windows_llamacpp",
+        lambda target, max_cuda, **kwargs: calls.append((target, max_cuda, kwargs))
+        or SimpleNamespace(success=True, detail="replaced"),
+    )
+    result, logs = _install_windows(
+        monkeypatch, tmp_path,
+        _windows_release(_asset("llama-win-sycl-x64.zip")), intel_xpu=True,
+    )
+    assert result is True
+    assert calls[0][0:2] == (runtime, "12.8")
+    assert calls[0][2]["intel_xpu"] is True
+    assert calls[0][2]["release_fetcher"]()["tag_name"] == "b9999"
+    assert any("replaced" in message for message in logs["ok"])
 
 
 def test_windows_install_reports_release_fetch_failure(monkeypatch, tmp_path):
@@ -147,16 +228,15 @@ def test_windows_install_reports_release_fetch_failure(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("failure_stage", ["download", "extract"])
 def test_windows_install_cleans_all_archives_after_failure(monkeypatch, tmp_path, failure_stage):
-    assets = [_asset("cuda.zip"), _asset("runtime.zip")]
-    monkeypatch.setattr(
-        llamacpp_install.hardware, "select_cuda_release_assets",
-        lambda *_args: (assets[0], assets[1], "12.8"),
-    )
+    assets = [
+        _asset("llama-b9999-bin-win-cuda-12.8-x64.zip"),
+        _asset("cudart-llama-bin-win-cuda-12.8-x64.zip"),
+    ]
 
     def download(_url, archive, **_kwargs):
         archive.parent.mkdir(exist_ok=True)
         archive.touch()
-        if failure_stage == "download" and archive.name == "runtime.zip":
+        if failure_stage == "download" and archive.name.startswith("cudart-"):
             raise OSError("download failed")
 
     def extract(_archive, _runtime):
@@ -172,7 +252,6 @@ def test_windows_install_cleans_all_archives_after_failure(monkeypatch, tmp_path
 
 def test_windows_install_requires_server_after_extraction(monkeypatch, tmp_path):
     asset = _asset("llama-win-vulkan-x64.zip")
-    monkeypatch.setattr(llamacpp_install.hardware, "select_cuda_release_assets", lambda *_args: None)
 
     def download(_url, archive, **_kwargs):
         archive.parent.mkdir(exist_ok=True)

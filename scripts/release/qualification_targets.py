@@ -5,7 +5,7 @@ TARGETS = (
     {"id": "macos-m5-pro-llamacpp-metal", "platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},
     {"id": "geforce-windows-llamacpp-cuda", "platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
     {"id": "radeon-windows-llamacpp-vulkan", "platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "AMD Radeon"},
-    {"id": "intel-arc-windows-llamacpp-vulkan", "platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "vulkan", "accelerator": "Intel Arc Pro B65"},
+    {"id": "intel-arc-windows-llamacpp-sycl", "platform": "windows", "architecture": "x86_64", "runtime": "llamacpp", "backend": "xpu", "accelerator": "B65"},
     {"id": "geforce-wsl2-llamacpp-cuda", "platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
     {"id": "geforce-wsl2-vllm-cuda", "platform": "wsl2", "architecture": "x86_64", "runtime": "vllm", "backend": "cuda", "accelerator": "NVIDIA GeForce"},
     {"id": "radeon-wsl2-llamacpp-rocm", "platform": "wsl2", "architecture": "x86_64", "runtime": "llamacpp", "backend": "rocm", "accelerator": "Radeon RX 9060 XT"},

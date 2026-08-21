@@ -71,6 +71,21 @@ def test_intel_linux_target_accepts_b65_pci_codename():
     assert qualification_target_errors(target, profile) == []
 
 
+def test_intel_windows_target_accepts_decorated_b65_name_and_requires_xpu():
+    target = qualification_target("intel-arc-windows-llamacpp-sycl")
+    profile = {
+        "os": "Windows 11",
+        "arch": "AMD64",
+        "backend": "xpu",
+        "hostname": "Intel(R) Arc(TM) Pro B65 Graphics 32 GB",
+    }
+    assert qualification_target_errors(target, profile) == []
+    profile["backend"] = "vulkan"
+    assert qualification_target_errors(target, profile) == [
+        "requires backend xpu; detected vulkan",
+    ]
+
+
 def test_vulkan_target_uses_accelerator_identity_instead_of_compute_backend_probe():
     target = qualification_target("radeon-windows-llamacpp-vulkan")
     profile = {

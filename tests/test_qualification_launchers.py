@@ -68,7 +68,7 @@ def test_target_listing_needs_no_python_environment():
         "macos-m5-pro-llamacpp-metal",
         "geforce-windows-llamacpp-cuda",
         "radeon-windows-llamacpp-vulkan",
-        "intel-arc-windows-llamacpp-vulkan",
+        "intel-arc-windows-llamacpp-sycl",
         "geforce-wsl2-llamacpp-cuda",
         "geforce-wsl2-vllm-cuda",
         "radeon-wsl2-llamacpp-rocm",
