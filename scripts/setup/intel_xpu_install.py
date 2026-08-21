@@ -10,6 +10,8 @@ from scripts.setup.rocm_wsl_install import parse_os_release
 
 SUPPORTED_UBUNTU = {"24.04", "26.04"}
 ONEAPI_SETVARS = "/opt/intel/oneapi/setvars.sh"
+ONEAPI_TOOLKIT_PACKAGE = "intel-deep-learning-essentials-2026.1"
+ONEAPI_DNNL_PACKAGE = "intel-oneapi-dnnl-devel-2026.0"
 ONEAPI_KEY_URL = (
     "https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB"
 )
@@ -54,11 +56,7 @@ def intel_xpu_install_plan(os_release: str, *, user: str | None) -> IntelXpuInst
             "> /etc/apt/sources.list.d/oneAPI.list",
         ),
         ("apt-get", "update"),
-        (
-            "apt-get", "install", "-y", "intel-oneapi-compiler-dpcpp-cpp",
-            "intel-oneapi-onedpl-devel", "intel-oneapi-dnnl-devel",
-            "intel-oneapi-mkl-devel",
-        ),
+        ("apt-get", "install", "-y", ONEAPI_TOOLKIT_PACKAGE, ONEAPI_DNNL_PACKAGE),
     ]
     if version == "24.04":
         commands.insert(2, ("apt-get", "install", "-y", "linux-generic-hwe-24.04"))
@@ -75,12 +73,12 @@ def run_intel_xpu_install(plan: IntelXpuInstallPlan, *, log=print,
         argv = [*prefix, *command]
         log(f"  Running: {' '.join(argv)}")
         try:
-            failed = run(argv).returncode != 0
+            result = run(argv)
         except OSError as exc:
             log(f"  Could not run {command[0]}: {exc}")
             return False
-        if failed:
-            log("  Intel XPU prerequisite installation failed")
+        if result.returncode != 0:
+            log(f"  Command failed with exit code {result.returncode}: {' '.join(argv)}")
             return False
     return True
 

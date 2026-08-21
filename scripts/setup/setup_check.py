@@ -747,7 +747,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
             )
         except (OSError, ValueError) as exc:
             fail(str(exc))
-            issues.append(str(exc))
+            sys.exit(1)
         else:
             info("Installing Intel GPU compute and oneAPI/SYCL prerequisites ...")
             if run_intel_xpu_install(_intel_plan, log=info):
@@ -759,7 +759,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                     sys.exit(1)
             else:
                 fail("Intel XPU prerequisite installation failed")
-                issues.append("Install the Intel GPU compute and oneAPI/SYCL prerequisites")
+                sys.exit(1)
 
     req_file = SCRIPT_DIR / "requirements.txt"
     info("Installing Python dependencies ...")

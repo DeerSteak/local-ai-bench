@@ -3,7 +3,9 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.intel_xpu_install import (
+    ONEAPI_DNNL_PACKAGE,
     ONEAPI_SETVARS,
+    ONEAPI_TOOLKIT_PACKAGE,
     intel_xpu_install_plan,
     oneapi_environment,
     parse_environment,
@@ -20,10 +22,11 @@ def test_plan_installs_intel_compute_and_oneapi_build_dependencies():
     assert "ppa:kobuk-team/intel-graphics" in flattened
     assert "libze-intel-gpu1" in flattened
     assert "intel-ocloc" in flattened
-    assert "intel-oneapi-compiler-dpcpp-cpp" in flattened
-    assert "intel-oneapi-onedpl-devel" in flattened
-    assert "intel-oneapi-dnnl-devel" in flattened
-    assert "intel-oneapi-mkl-devel" in flattened
+    assert ONEAPI_TOOLKIT_PACKAGE == "intel-deep-learning-essentials-2026.1"
+    assert ONEAPI_DNNL_PACKAGE == "intel-oneapi-dnnl-devel-2026.0"
+    assert ONEAPI_TOOLKIT_PACKAGE in flattened
+    assert ONEAPI_DNNL_PACKAGE in flattened
+    assert "intel-oneapi-onedpl-devel" not in flattened
     assert plan.commands[-1] == ("usermod", "-aG", "render", "tester")
     assert any("linux-generic-hwe-24.04" in command for command in plan.commands)
 
@@ -57,6 +60,19 @@ def test_install_uses_sudo_and_stops_on_failure():
 
     assert not run_intel_xpu_install(plan, run=run, geteuid=lambda: 1000, log=lambda _m: None)
     assert calls == [["sudo", *plan.commands[0]]]
+
+
+def test_install_failure_identifies_command_and_exit_code():
+    plan = intel_xpu_install_plan("ID=ubuntu\nVERSION_ID=26.04\n", user=None)
+    messages = []
+
+    assert not run_intel_xpu_install(
+        plan,
+        run=lambda _command: SimpleNamespace(returncode=100),
+        geteuid=lambda: 1000,
+        log=messages.append,
+    )
+    assert messages[-1] == "  Command failed with exit code 100: sudo apt-get update"
 
 
 def test_install_omits_sudo_as_root():
