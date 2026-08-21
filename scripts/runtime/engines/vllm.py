@@ -287,6 +287,35 @@ class VllmEngine(InferenceEngine):
         repo = self._repo(tag)
         return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
 
+    def _standalone_chat_template(self, tag: str) -> tuple[str | None, str | None]:
+        snapshot = self._snapshot_dir(tag)
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if path is None or not path.is_file():
+            return None, None
+        try:
+            template = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, str(exc)
+        return template, None
+
+    def _chat_template_argument(self, tag: str) -> str | None:
+        snapshot = self._snapshot_dir(tag)
+        try:
+            tokenizer_data = json.loads(
+                (snapshot / "tokenizer_config.json").read_text(encoding="utf-8")
+            ) if snapshot else {}
+        except (OSError, json.JSONDecodeError):
+            return None
+        if tokenizer_data.get("chat_template"):
+            return None
+        template, error = self._standalone_chat_template(tag)
+        if error is not None or template is None:
+            return None
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if self._uses_launcher:
+            return template
+        return str(path.resolve()) if path else None
+
     # ── per-request prefill timing ──
 
     # vLLM exposes no prompt duration on the response itself, but it records one
@@ -520,7 +549,10 @@ class VllmEngine(InferenceEngine):
         snapshot = self._snapshot_dir(tag)
         if snapshot is None:
             raise ValueError(f"cannot identify local model artifact for resume: {tag}")
-        paths = sorted(snapshot.glob("*.safetensors")) + [snapshot / "config.json"]
+        paths = sorted(snapshot.glob("*.safetensors")) + [
+            snapshot / "config.json", snapshot / "tokenizer_config.json",
+            snapshot / "chat_template.jinja",
+        ]
         return tuple(path.resolve() for path in paths if path.exists())
 
     def resume_runtime_paths(self) -> dict[str, Path]:
@@ -559,6 +591,11 @@ class VllmEngine(InferenceEngine):
             )
         except (OSError, json.JSONDecodeError) as exc:
             return {}, str(exc)
+        chat_template = tokenizer_data.get("chat_template")
+        if not chat_template:
+            chat_template, template_error = self._standalone_chat_template(tag)
+            if template_error is not None:
+                return {}, template_error
         architecture = next(iter(config_data.get("architectures") or []), None)
         context = next((
             config_data.get(key) or (config_data.get("text_config") or {}).get(key)
@@ -567,7 +604,7 @@ class VllmEngine(InferenceEngine):
         ), None)
         return {
             "general.architecture": architecture,
-            "tokenizer.chat_template": tokenizer_data.get("chat_template"),
+            "tokenizer.chat_template": chat_template,
             "model.context_length": context,
         }, None
 
@@ -675,7 +712,8 @@ class VllmEngine(InferenceEngine):
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None,
-                       cpu_offload_gb: int = 0) -> list[str]:
+                       cpu_offload_gb: int = 0,
+                       chat_template: str | None = None) -> list[str]:
         """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
@@ -686,6 +724,8 @@ class VllmEngine(InferenceEngine):
             options += ["--max-model-len", str(num_ctx)]
         if cpu_offload_gb:
             options += ["--cpu-offload-gb", str(cpu_offload_gb)]
+        if chat_template:
+            options += ["--chat-template", chat_template]
         if embedding:
             # --task was replaced by --runner; pooling is the embedding runner.
             options += ["--runner", "pooling"]
@@ -770,6 +810,7 @@ class VllmEngine(InferenceEngine):
                 args = self.server_command(
                     repo, context_limit, embedding=embedding, n_parallel=n_parallel,
                     tool_parser=tool_parser, cpu_offload_gb=cpu_offload_gb,
+                    chat_template=self._chat_template_argument(tag),
                 )
                 log_fh = tempfile.NamedTemporaryFile(
                     mode="w", suffix="-vllm-server.log", delete=False)

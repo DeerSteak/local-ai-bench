@@ -140,6 +140,11 @@ def test_cpu_offload_is_only_added_when_calibrated(engine):
     assert command[command.index("--cpu-offload-gb") + 1] == "8"
 
 
+def test_server_command_accepts_an_explicit_chat_template(engine):
+    command = engine.server_command("org/m", 4096, chat_template="/cache/chat_template.jinja")
+    assert command[command.index("--chat-template") + 1] == "/cache/chat_template.jinja"
+
+
 def test_dgx_reserves_host_memory_on_unified_gb10():
     from scripts.runtime.engines.vllm import vllm_gpu_memory_utilization
     assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA GB10"}]) == 0.70
@@ -600,9 +605,12 @@ def _cache_snapshot(engine, symlink, repo=None, files=("model.safetensors", "con
 
 
 def test_resume_artifacts_resolve_through_the_cache_symlinks(engine, symlink_or_skip):
-    _cache_snapshot(engine, symlink_or_skip, files=("model-00001.safetensors", "model-00002.safetensors", "config.json"))
+    _cache_snapshot(engine, symlink_or_skip, files=(
+        "model-00001.safetensors", "model-00002.safetensors", "config.json",
+        "tokenizer_config.json", "chat_template.jinja",
+    ))
     paths = engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
-    assert len(paths) == 3
+    assert len(paths) == 5
     assert all(path.parent.name == "blobs" for path in paths), "identity follows the blob, not the link"
     assert all(path.exists() for path in paths)
 
@@ -634,6 +642,51 @@ def test_resume_identity_builds_for_a_cached_model(engine, symlink_or_skip):
     for path in engine.resume_artifact_paths("qwen3.5:9b-q4_K_M"):
         assert cached_file_identity(path, cache)["sha256"]
     assert len(cache) == 2
+
+
+def test_compatibility_metadata_reads_a_standalone_chat_template(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "config.json").resolve().write_text(json.dumps({"architectures": ["Granite"]}))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    (snapshot / "chat_template.jinja").resolve().write_text("{{ messages }}")
+
+    metadata, error = engine.compatibility_metadata("qwen3.5:9b-q4_K_M")
+
+    assert error is None
+    assert metadata["tokenizer.chat_template"] == "{{ messages }}"
+
+
+def test_managed_runtime_passes_standalone_chat_template_by_path(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    expected = str((snapshot / "chat_template.jinja").resolve())
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") == expected
+
+
+def test_platform_launcher_passes_standalone_chat_template_inline(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    (snapshot / "chat_template.jinja").resolve().write_text("{{ messages }}")
+    engine._executable = None
+    engine._launcher = "/usr/bin/vllm-launch"
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") == "{{ messages }}"
+
+
+def test_embedded_chat_template_does_not_get_overridden(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text(
+        json.dumps({"chat_template": "embedded"})
+    )
+    (snapshot / "chat_template.jinja").resolve().write_text("standalone")
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") is None
 
 
 # ── tool-call capability ──
