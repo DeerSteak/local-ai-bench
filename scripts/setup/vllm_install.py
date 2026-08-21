@@ -23,6 +23,7 @@ VLLM_XPU_VERSION = "0.27.1"
 VLLM_REPO = "https://github.com/vllm-project/vllm.git"
 TRITON_XPU_VERSION = "3.7.2"
 PYTORCH_XPU_INDEX = "https://download.pytorch.org/whl/xpu"
+VLLM_BENCH_DEPENDENCIES = ("pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly")
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
@@ -302,6 +303,9 @@ def vllm_xpu_install_steps(python_exe: str, source_dir: Path,
             str(source_dir / "requirements" / "xpu.txt"),
         )),
         VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", *VLLM_BENCH_DEPENDENCIES,
+        )),
+        VllmSourceInstallStep((
             python_exe, "-m", "pip", "uninstall", "-y", "triton", "triton-xpu",
         )),
         VllmSourceInstallStep((
@@ -309,8 +313,8 @@ def vllm_xpu_install_steps(python_exe: str, source_dir: Path,
             "--extra-index-url", PYTORCH_XPU_INDEX,
         )),
         VllmSourceInstallStep((
-            python_exe, "-m", "pip", "install", "--no-build-isolation", "-v",
-            f"{source}[bench]",
+            python_exe, "-m", "pip", "install", "--no-build-isolation", "--no-deps", "-v",
+            source,
         ), (("VLLM_TARGET_DEVICE", "xpu"),)),
     )
 
@@ -528,7 +532,12 @@ def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
             "'vLLM detected ' + str(current_platform.device_type)"
         )
     if expected_device_type == "xpu":
-        statements.append("assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'")
+        statements.extend([
+            "assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'",
+            "import triton",
+            "from torch.utils._triton import has_triton",
+            "assert has_triton(), 'TorchInductor cannot use Intel XPU Triton'",
+        ])
     return "; ".join(statements)
 
 

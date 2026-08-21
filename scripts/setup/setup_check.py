@@ -609,9 +609,19 @@ def main() -> None:  # pragma: no cover - real interactive installer
         sys.exit(0)
 
     selected_engines = selected_engine_names(engine_entries)
+    _qualification_vllm_runtime_error = None
+    if args.qualification == VLLM and VLLM_BIN is not None \
+            and (config.VLLM_VENV / "bin" / "python").is_file():
+        _qualification_vllm_runtime_error = vllm_runtime_import_error(
+            config.VLLM_VENV,
+            expected_device_type="xpu" if vllm_support.method == "xpu_source" else None,
+        )
+        if _qualification_vllm_runtime_error:
+            warn("Managed vLLM runtime failed preflight — setup will rebuild it")
     pending_engines = (
         qualification_engines_needing_install(
             engine_entries, args.qualification, vllm_bench_found=VLLM_BIN is not None,
+            vllm_runtime_ready=_qualification_vllm_runtime_error is None,
         ) if args.qualification else engines_needing_install(engine_entries)
     )
     _engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}

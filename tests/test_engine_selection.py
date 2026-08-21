@@ -161,6 +161,14 @@ def test_vllm_qualification_installs_native_bench_beside_a_launcher():
     ) == []
 
 
+def test_vllm_qualification_repairs_a_failed_runtime_preflight():
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True)
+    apply_engine_preset(entries, VLLM)
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=True, vllm_runtime_ready=False,
+    ) == [VLLM]
+
+
 def test_qualification_setup_failure_blocks_the_benchmark_launch():
     assert qualification_setup_failed(VLLM, ["Install vLLM manually"])
     assert not qualification_setup_failed(VLLM, [])
