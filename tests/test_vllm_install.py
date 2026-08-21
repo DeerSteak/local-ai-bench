@@ -456,10 +456,14 @@ def test_xpu_source_steps_pin_upstream_tag_torch_stack_and_bench_extra(tmp_path)
     assert all(package in steps[3].command for package in (
         "pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly",
     ))
-    assert steps[-1].command[-1] == str(source)
-    assert "--no-deps" in steps[-1].command
-    assert "-e" not in steps[-1].command
-    assert dict(steps[-1].environment) == {"VLLM_TARGET_DEVICE": "xpu"}
+    source_step = next(step for step in steps if "--no-deps" in step.command)
+    assert "--no-deps" in source_step.command
+    assert "-e" not in source_step.command
+    assert dict(source_step.environment) == {"VLLM_TARGET_DEVICE": "xpu"}
+    assert steps.index(source_step) < next(
+        index for index, step in enumerate(steps) if step.command == triton_step
+    )
+    assert steps[-1].command == triton_step
 
 
 def test_xpu_source_steps_accept_an_explicit_stable_version(tmp_path):
@@ -538,6 +542,7 @@ def test_xpu_runtime_probe_requires_vllm_and_torch_to_select_xpu():
     code = vllm_runtime_probe_code("xpu")
     assert "current_platform.device_type == 'xpu'" in code
     assert "torch.xpu.is_available()" in code
+    assert "Plain Triton conflicts with Intel XPU Triton" in code
     assert "import triton" in code
     assert "from triton._C.libtriton import intel" in code
     assert "has_triton()" in code
