@@ -289,6 +289,35 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
             "results_qualification_geforce-wsl2-vllm-cuda.json",
         ],
     },
+    {
+        "id": "intel-arc-linux-llamacpp-sycl",
+        "platform": "linux",
+        "architecture": "x86_64",
+        "runtime": "llamacpp",
+        "runtime_version": "0.1.2-dev",
+        "backend": "xpu",
+        "accelerator": (
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "Intel Corporation Battlemage G31 [Intel Graphics] [8086:e222] 63 GB"
+        ),
+        "qualified_at": "2026-08-21",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
+            ],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
+            "notes": (
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/intel-arc-linux-llamacpp-sycl/"
+            "results_qualification_intel-arc-linux-llamacpp-sycl.json",
+        ],
+    },
 )
 QUALIFICATION_TARGETS = tuple(
     {key: value for key, value in target.items() if key != "id"} for target in TARGETS

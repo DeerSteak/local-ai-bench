@@ -151,6 +151,19 @@ def test_reviewed_geforce_rtx_5090_wsl2_qualifications_are_supported(
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
 
 
+def test_reviewed_intel_arc_linux_llamacpp_qualification_is_supported_with_images():
+    evidence = qualification_entry(
+        "linux", "x86_64", "llamacpp", "xpu", "0.1.2-dev",
+        accelerator=(
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "Intel Corporation Battlemage G31 [Intel Graphics] [8086:e222] 63 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == "intel-arc-linux-llamacpp-sycl"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_staleness_downgrades_at_release_boundary():
     evidence = entry(suite_version="6.0")
     assert qualification_is_stale(evidence, "6.1") is False

@@ -20,7 +20,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Unverified | Unverified | No qualification record |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
-| linux | x86_64 | llamacpp | xpu | Unverified | Unverified | No qualification record |
+| linux | x86_64 | llamacpp | xpu | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
 | linux | x86_64 | vllm | xpu | Unverified | Not applicable | No qualification record |
 | linux | x86_64 | llamacpp | rocm | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
