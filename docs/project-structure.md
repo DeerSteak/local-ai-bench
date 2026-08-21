@@ -50,6 +50,7 @@
 | `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
+| `docs/strix-halo-troubleshooting-ubuntu-24.04.md` | Ubuntu OEM-kernel, inbox-driver, ROCm, DKMS recovery, and qualification runbook for Strix Halo |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
 | `docs/result-history.md` | Filesystem-owned result discovery, filtering, dashboard launch, and policy evaluation |

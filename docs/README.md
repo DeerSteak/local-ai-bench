@@ -14,6 +14,7 @@ This index separates current user guidance, scientific contracts, developer refe
 | [CLI Reference](cli-reference.md) | Commands, flags, defaults, and examples |
 | [Dashboard](dashboard.md) | Loading, comparing, interpreting, and exporting results |
 | [Troubleshooting](troubleshooting.md) | Setup, execution, result, and report failures |
+| [Strix Halo Troubleshooting: Ubuntu 24.04](strix-halo-troubleshooting-ubuntu-24.04.md) | OEM-kernel, inbox-driver, ROCm, DKMS recovery, and qualification checks |
 | [Limitations](limitations.md) | Representativeness, variance, compatibility, and interpretation bounds |
 
 ## Results and decisions
