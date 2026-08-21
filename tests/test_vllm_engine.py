@@ -10,8 +10,7 @@ from scripts.runtime import config
 from scripts.runtime.engines.vllm import (
     VllmEngine, available_kv_cache_gib, load_attempt_deadline, load_timeout_error,
     next_cpu_offload_gb, offload_calibration_timeout, offload_retry_allowed,
-    offload_stop_reason, offload_timeout_message, stream_timing, streamed_usage,
-    tensor_parallel_size,
+    offload_stop_reason, offload_timeout_message, tensor_parallel_size,
 )
 import scripts.runtime.engines.vllm as vllm_module
 from scripts.workloads.models import LLM_MODELS
@@ -72,19 +71,6 @@ def _delta_chunk(content=None, finish=None, tool_calls=None):
     if tool_calls is not None:
         delta["tool_calls"] = tool_calls
     return {"choices": [{"delta": delta, "finish_reason": finish}]}
-
-
-def test_streamed_usage_preserves_prior_counts_until_the_usage_chunk_arrives():
-    assert streamed_usage({"choices": []}, 3, 7) == (3, 7)
-    assert streamed_usage(
-        {"usage": {"completion_tokens": 5, "prompt_tokens": 11}}, 3, 7,
-    ) == (5, 11)
-
-
-def test_stream_timing_handles_missing_first_token_and_zero_decode_window():
-    assert stream_timing(2.5, None, 4) == (2.5, 0, 0, 0)
-    ttft, decode, raw_tps, tps = stream_timing(3.0, 1.0, 4)
-    assert (ttft, decode, raw_tps, tps) == (1.0, 2.0, 2.0, 2.0)
 
 
 # ── command construction ──

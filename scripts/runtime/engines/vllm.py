@@ -140,26 +140,6 @@ def vllm_gpu_memory_utilization(machine: str, devices: list[dict]) -> float:
     return config.VLLM_GPU_MEMORY_UTILIZATION
 
 
-def streamed_usage(chunk: dict, completion_tokens: int,
-                   prompt_tokens: int | None) -> tuple[int, int | None]:
-    usage = chunk.get("usage") or {}
-    if usage.get("completion_tokens") is not None:
-        completion_tokens = usage["completion_tokens"]
-    if usage.get("prompt_tokens") is not None:
-        prompt_tokens = usage["prompt_tokens"]
-    return completion_tokens, prompt_tokens
-
-
-def stream_timing(total: float, ttft: float | None,
-                  tokens: int) -> tuple[float, float, float, float]:
-    ttft = total if ttft is None else ttft
-    decode_seconds = max(total - ttft, 0)
-    raw_tps = tokens / decode_seconds if decode_seconds else 0
-    return ttft, decode_seconds, raw_tps, openai_api.sanitize_tps(
-        raw_tps, tokens, ttft, total,
-    )
-
-
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -306,9 +286,6 @@ class VllmEngine(InferenceEngine):
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
         return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
-
-    def _request_model_id(self, tag: str) -> str | None:
-        return self._loaded_model_id or self._repo(tag)
 
     def _standalone_chat_template(self, tag: str) -> tuple[str | None, str | None]:
         snapshot = self._snapshot_dir(tag)
@@ -941,7 +918,7 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
-            "model": self._request_model_id(tag),
+            "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
             "temperature": 0.0,
@@ -968,14 +945,16 @@ class VllmEngine(InferenceEngine):
                     response_parts.append(text)
                 if choice.get("finish_reason") is not None:
                     finish_reason = choice["finish_reason"]
-                tokens, prompt_tokens = streamed_usage(chunk, tokens, prompt_tokens)
+                tokens, prompt_tokens = openai_api.streamed_usage(
+                    chunk, tokens, prompt_tokens,
+                )
                 if time.perf_counter() > deadline:
                     raise EngineTimeout(f"vllm_generate exceeded {timeout}s wall-clock timeout",
                                         partial_text="".join(response_parts))
 
         total = time.perf_counter() - request_start
         prefill_sec = self.prefill_seconds_from_delta(prefill_before, self._prefill_reading())
-        ttft, decode_seconds, raw_tps, tps = stream_timing(total, ttft, tokens)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return GenerationMeasurement(
             client_ttft_sec=ttft,
             generated_tokens=tokens,
@@ -995,7 +974,7 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
-            "model": self._request_model_id(tag),
+            "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
             "temperature": 0.0,
             "stream": True,
@@ -1039,7 +1018,7 @@ class VllmEngine(InferenceEngine):
                 if tool_calls:
                     openai_api.accumulate_tool_fragments(tool_fragments, tool_calls)
 
-                tokens, prompt_eval_count = streamed_usage(
+                tokens, prompt_eval_count = openai_api.streamed_usage(
                     chunk, tokens, prompt_eval_count,
                 )
 
@@ -1060,7 +1039,7 @@ class VllmEngine(InferenceEngine):
                             partial_text=response_text, budget_nudged=budget_nudged)
 
         total = time.perf_counter() - request_start
-        ttft, decode_seconds, raw_tps, tps = stream_timing(total, ttft, tokens)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return {
             "ttft": ttft,
             "server_prompt_sec": None,
@@ -1135,7 +1114,7 @@ class VllmEngine(InferenceEngine):
 
         t0 = time.perf_counter()
         resp = requests.post(f"{self.base_url}/v1/embeddings",
-                              json={"model": self._request_model_id(tag),
+                              json={"model": self._loaded_model_id or self._repo(tag),
                                     "input": inputs}, timeout=timeout)
         if not resp.ok:
             try:

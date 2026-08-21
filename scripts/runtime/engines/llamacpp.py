@@ -720,11 +720,9 @@ class LlamaCppEngine(InferenceEngine):
                         server_prompt_sec = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
-                usage = chunk.get("usage")
-                if usage and usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
-                if usage and usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
+                tokens, prompt_eval_count = openai_api.streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
         total = time.perf_counter() - request_start
         if ttft is None:

@@ -114,22 +114,14 @@ def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
     return "\n".join(lines)
 
 
-def _set_partial_generation_state(error: BaseException, partial_text: str,
-                                  budget_nudged: bool) -> None:
-    setattr(error, "partial_text", partial_text)
-    setattr(error, "budget_nudged", budget_nudged)
-
-
 class EngineTimeout(TimeoutError):
     """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
     had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
-    partial_text: str
-    budget_nudged: bool
-
     def __init__(self, message: str, partial_text: str = "",
                  budget_nudged: bool = False):
         super().__init__(message)
-        _set_partial_generation_state(self, partial_text, budget_nudged)
+        self.partial_text = partial_text
+        self.budget_nudged = budget_nudged
 
 
 class EngineLoopDetected(EngineTimeout):
@@ -139,13 +131,12 @@ class EngineLoopDetected(EngineTimeout):
 
 class EngineBudgetExceeded(Exception):
     """Raised when the finalize pass consumes the remaining token budget."""
-    partial_text: str
-    budget_nudged: bool
 
     def __init__(self, message: str, partial_text: str = "",
                  budget_nudged: bool = True):
         super().__init__(message)
-        _set_partial_generation_state(self, partial_text, budget_nudged)
+        self.partial_text = partial_text
+        self.budget_nudged = budget_nudged
 
 
 def split_token_budget(token_budget: int, first_pass_fraction: float) -> tuple[int, int]:
