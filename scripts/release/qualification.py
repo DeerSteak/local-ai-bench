@@ -8,7 +8,7 @@ from scripts.release.qualification_coverage import (
     SMALLEST_EMBEDDING_MODEL, SMALLEST_IMAGE_MODEL,
     qualification_workloads,
 )
-from scripts.release.qualification_targets import TARGETS
+from scripts.release.qualification_targets import TARGETS, normalize_architecture
 from scripts.workloads.models import qualification_llm_model
 
 
@@ -411,21 +411,45 @@ def platform_name(system: str, *, wsl: bool = False) -> str:
         raise ValueError(f"unsupported qualification operating system: {system}") from None
 
 
+def normalize_accelerator_identity(value: str) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _qualification_candidates(platform: str, architecture: str, runtime: str, backend: str,
+                              runtime_version: str | None, entries) -> list[dict]:
+    matches = [entry for entry in entries if (
+        entry["platform"], normalize_architecture(entry["architecture"]),
+        entry["runtime"], entry["backend"]
+    ) == (platform, normalize_architecture(architecture), runtime, backend)]
+    if runtime_version is not None:
+        matches = [entry for entry in matches if entry["runtime_version"] == runtime_version]
+    return matches
+
+
 def qualification_entry(platform: str, architecture: str, runtime: str, backend: str,
                         runtime_version: str | None = None,
                         entries=QUALIFICATION_MATRIX,
                         accelerator: str | None = None) -> dict | None:
-    matches = [entry for entry in entries if (
-        entry["platform"], entry["architecture"], entry["runtime"], entry["backend"]
-    ) == (platform, architecture, runtime, backend)]
-    if runtime_version is not None:
-        matches = [entry for entry in matches if entry["runtime_version"] == runtime_version]
+    matches = _qualification_candidates(
+        platform, architecture, runtime, backend, runtime_version, entries,
+    )
     if accelerator is not None:
-        expected = accelerator.casefold()
+        expected = normalize_accelerator_identity(accelerator)
         matches = [entry for entry in matches if (
-            expected in entry["accelerator"].casefold()
-            or entry["accelerator"].casefold() in expected
+            normalize_accelerator_identity(entry["accelerator"]) == expected
         )]
+    return max(matches, key=lambda item: item["qualified_at"], default=None)
+
+
+def _qualification_entry_for_target(target: dict, entries) -> dict | None:
+    matches = _qualification_candidates(
+        target["platform"], target["architecture"], target["runtime"], target["backend"],
+        None, entries,
+    )
+    selector = normalize_accelerator_identity(target["accelerator"])
+    matches = [entry for entry in matches if (
+        selector in normalize_accelerator_identity(entry["accelerator"])
+    )]
     return max(matches, key=lambda item: item["qualified_at"], default=None)
 
 
@@ -434,7 +458,7 @@ def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
     validate_qualification_matrix(entries)
     rows = []
     for target in targets:
-        evidence = qualification_entry(**target, entries=entries)
+        evidence = _qualification_entry_for_target(target, entries)
         rows.append({
             **target,
             "support_level": derive_support_level(evidence, current_version),
@@ -445,12 +469,6 @@ def qualification_rows(current_version: str, *, targets=QUALIFICATION_TARGETS,
             "stale": qualification_is_stale(evidence, current_version) if evidence else False,
         })
     return rows
-
-
-def normalize_architecture(value: str) -> str:
-    return {"AMD64": "x86_64", "x86-64": "x86_64", "arm64": "arm64"}.get(value, value)
-
-
 def engine_support_profile(*, system: str, architecture: str, wsl: bool, runtime: str,
                            runtime_version: str | None, backend: str,
                            current_version: str, entries=QUALIFICATION_MATRIX,

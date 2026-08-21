@@ -201,7 +201,7 @@ def test_wsl2_is_a_distinct_platform_and_requires_linux():
 def test_matrix_rows_default_missing_targets_to_unverified():
     targets = [
         {"platform": "linux", "architecture": "x86_64", "runtime": "llamacpp",
-         "backend": "cuda", "accelerator": "NVIDIA GeForce RTX 5090"},
+         "backend": "cuda", "accelerator": "NVIDIA GeForce"},
         {"platform": "wsl2", "architecture": "x86_64", "runtime": "vllm",
          "backend": "cuda", "accelerator": "NVIDIA GeForce RTX 5090"},
     ]
@@ -221,6 +221,14 @@ def test_runtime_lookup_can_require_the_exact_qualified_version():
     ) is None
 
 
+def test_runtime_lookup_normalizes_architecture_aliases_on_both_sides():
+    evidence = entry(architecture="aarch64")
+    assert qualification_entry(
+        "linux", "arm64", "llamacpp", "cuda", "b6000", [evidence],
+        accelerator="NVIDIA GeForce RTX 5090",
+    ) == evidence
+
+
 def test_runtime_lookup_distinguishes_accelerators_with_the_same_backend():
     evidence = entry(accelerator="AMD Radeon")
     assert qualification_entry(
@@ -229,7 +237,7 @@ def test_runtime_lookup_distinguishes_accelerators_with_the_same_backend():
     ) is None
 
 
-def test_runtime_lookup_matches_ryzen_ai_halo_identity_by_gpu_model():
+def test_runtime_lookup_does_not_treat_gpu_model_as_a_complete_host_identity():
     evidence = entry(
         backend="rocm",
         accelerator="AMD Ryzen AI MAX+395 w/ Radeon 8060S\nAMD Ryzen AI Max+ 395 125 GB",
@@ -237,6 +245,22 @@ def test_runtime_lookup_matches_ryzen_ai_halo_identity_by_gpu_model():
     assert qualification_entry(
         "linux", "x86_64", "llamacpp", "rocm", "b6000", [evidence],
         accelerator="Radeon 8060S",
+    ) is None
+
+
+def test_runtime_lookup_rejects_accelerator_substrings_across_products():
+    evidence = entry(accelerator="NVIDIA GeForce RTX 5090")
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "cuda", "b6000", [evidence],
+        accelerator="NVIDIA GeForce RTX 5090 Laptop GPU",
+    ) is None
+
+
+def test_runtime_lookup_normalizes_accelerator_case_and_whitespace():
+    evidence = entry(accelerator="NVIDIA GeForce RTX 5090\n32 GB")
+    assert qualification_entry(
+        "linux", "x86_64", "llamacpp", "cuda", "b6000", [evidence],
+        accelerator="  nvidia geforce rtx 5090   32 gb ",
     ) == evidence
 
 

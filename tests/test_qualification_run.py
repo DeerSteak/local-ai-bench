@@ -58,6 +58,17 @@ def test_qualification_target_accepts_architecture_alias_and_accelerator_substri
     assert qualification_target_errors(target, profile) == []
 
 
+def test_macos_target_accepts_native_arm64_architecture():
+    target = qualification_target("macos-m5-pro-llamacpp-metal")
+    profile = {
+        "os": "Darwin 25.0",
+        "arch": "arm64",
+        "backend": "metal",
+        "hostname": "MacBook Pro\nM5 Pro 48 GB",
+    }
+    assert qualification_target_errors(target, profile) == []
+
+
 def test_intel_linux_target_accepts_b65_pci_codename():
     target = qualification_target("intel-arc-linux-llamacpp-sycl")
     profile = {

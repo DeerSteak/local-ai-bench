@@ -29,6 +29,14 @@ TARGETS = (
 TARGET_ENGINES = {target["id"]: target["runtime"] for target in TARGETS}
 
 
+def normalize_architecture(value: str) -> str:
+    architecture = str(value or "").strip().lower()
+    return {
+        "amd64": "x86_64", "x64": "x86_64", "x86-64": "x86_64",
+        "aarch64": "arm64",
+    }.get(architecture, architecture)
+
+
 def qualification_target(target_id: str) -> dict:
     try:
         return next(target for target in TARGETS if target["id"] == target_id)
@@ -65,16 +73,16 @@ def qualification_target_errors(target: dict, profile: dict) -> list[str]:
         "wsl2" if profile.get("wsl") else
         "macos" if os_name == "darwin" else os_name
     )
-    architecture = str(profile.get("arch", "")).lower()
-    actual_architecture = {
-        "amd64": "x86_64", "x64": "x86_64", "arm64": "aarch64",
-    }.get(architecture, architecture)
+    actual_architecture = normalize_architecture(profile.get("arch", ""))
     errors = []
     for field, actual in (
         ("platform", actual_platform), ("architecture", actual_architecture),
     ):
         expected = target[field]
-        if actual != expected:
+        comparable_expected = (
+            normalize_architecture(expected) if field == "architecture" else expected
+        )
+        if actual != comparable_expected:
             errors.append(f"requires {field} {expected}; detected {actual or 'unknown'}")
     expected_backend = target["backend"]
     actual_backend = str(profile.get("backend", "")).lower()
